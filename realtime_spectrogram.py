@@ -6,7 +6,7 @@ import time
 # Define global variables.
 CHANNELS = 1
 RATE = 44100
-FRAMES_PER_BUFFER = 1000
+FRAMES_PER_BUFFER = 1024
 
 SCREEN_WIDTH = 178
 ENERGY_THRESHOLD = 0.1
@@ -27,7 +27,7 @@ def melspectrum_from_audio(audio_data):
 
     return melspectrum
 
-def show_spectrum(melspectrum):
+def show_spectrogram(melspectrum):
     # Initialize output characters to display.
     char_list = [' ']*SCREEN_WIDTH
 
