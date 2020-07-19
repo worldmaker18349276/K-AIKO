@@ -17,13 +17,13 @@ N_FFT = 4096
 F_LO = librosa.note_to_hz('C2')
 F_HI = librosa.note_to_hz('C9')
 bank = librosa.filters.mel(RATE, N_FFT, SCREEN_WIDTH, fmin=F_LO, fmax=F_HI)
-bank *= scipy.signal.get_window('hann', N_FFT//2+1)[None,:]
 bank /= ENERGY_THRESHOLD
+window = scipy.signal.get_window('hann', FRAMES_PER_BUFFER)
 
 def melspectrum_from_audio(audio_data):
     # This function takes one audio buffer as a numpy array and returns a string to be printed to the terminal.
     # Compute real FFT.
-    x_fft = numpy.fft.rfft(audio_data, n=N_FFT)
+    x_fft = numpy.fft.rfft(audio_data*window, n=N_FFT)
 
     # Compute mel spectrum.
     melspectrum = bank.dot(abs(x_fft)).astype(int)
