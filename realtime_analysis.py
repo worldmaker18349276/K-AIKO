@@ -1,3 +1,4 @@
+import functools
 import numpy
 import scipy
 import scipy.fftpack
@@ -47,28 +48,25 @@ def melspectrogram(sr, win_length, hop_length, n_mels=128):
     window = scipy.signal.get_window("hann", win_length)
 
     x = numpy.zeros(win_length, dtype=numpy.float32)
+    x[-hop_length:] = yield None
     while True:
         X = power2db(weights.dot(numpy.abs(numpy.fft.rfft(x*window))**2))
         x[:-hop_length] = x[hop_length:]
         x[-hop_length:] = yield X
 
-def logrms(sr, win_length, hop_length):
-    x2 = numpy.zeros(win_length, dtype=numpy.float32)
-    while True:
-        E = numpy.log1p(10*numpy.sum(x2)**0.5)
-        x2[:-hop_length] = x2[hop_length:]
-        x2[-hop_length:] = (yield E)**2
-
 def onset_strength():
-    prev = yield 0.0
-    curr = yield 0.0
+    curr = yield None
+    prev = numpy.zeros_like(curr)
     while True:
         prev, curr = curr, (yield numpy.maximum(0.0, curr - prev).mean(0))
 
-def onset_detect(sr, hop_length, lag=0.10,
-                    pre_max=0.03, post_max=0.00,
-                    pre_avg=0.10, post_avg=0.10,
-                    wait=0.03, delta=0.07):
+def onset_detect(sr, hop_length, lag=None,
+                 pre_max=0.03, post_max=0.00,
+                 pre_avg=0.10, post_avg=0.10,
+                 wait=0.03, delta=0.07):
+    if lag is None:
+        lag = max(post_max, post_avg)
+
     lag = int(lag * sr / hop_length) + 1
     pre_max  = int(pre_max  * sr / hop_length)
     post_max = int(post_max * sr / hop_length) + 1
@@ -79,16 +77,36 @@ def onset_detect(sr, hop_length, lag=0.10,
     if lag < post_max or lag < post_avg:
         raise ValueError
 
-    i0 = max(pre_max, pre_avg)
-    buf = numpy.zeros(i0+lag, dtype=numpy.float32)
+    center = max(pre_max, pre_avg)
+    buf = numpy.zeros(center+lag, dtype=numpy.float32)
     prev = wait+1
+    buf[-1] = yield None
     while True:
         detected = True
-        detected = detected and buf[i0] == buf[i0-pre_max:i0+post_max].max()
-        detected = detected and buf[i0] >= buf[i0-pre_avg:i0+post_avg].mean() + delta
+        detected = detected and buf[center] == buf[center-pre_max:center+post_max].max()
+        detected = detected and buf[center] >= buf[center-pre_avg:center+post_avg].mean() + delta
         detected = detected and prev > wait
 
         prev = 0 if detected else prev+1
         buf[:-1] = buf[1:]
         buf[-1] = yield detected
 
+
+def pipe(*iters):
+    for it in iters:
+        next(it)
+    input = yield None
+    while True:
+        input = yield functools.reduce(lambda input, it: it.send(input), iters, input)
+
+def pair(*iters):
+    for it in iters:
+        next(it)
+    inputs = yield None
+    while True:
+        inputs = yield tuple(map(lambda input, it: it.send(input), inputs, iters))
+
+def transform(func=lambda a: a):
+    arr = yield None
+    while True:
+        arr = yield func(arr)
