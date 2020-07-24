@@ -43,16 +43,28 @@ def mel_weights(sr, n_fft, n_mels):
 def power2db(power):
     return 10.0 * numpy.log10(numpy.maximum(1e-5, power))
 
-def melspectrogram(sr, win_length, hop_length, n_mels=128):
-    weights = mel_weights(sr, win_length, n_mels)
-    window = scipy.signal.get_window("hann", win_length)
-
+def frame(win_length, hop_length):
     x = numpy.zeros(win_length, dtype=numpy.float32)
     x[-hop_length:] = yield None
     while True:
-        X = power2db(weights.dot(numpy.abs(numpy.fft.rfft(x*window))**2))
+        x_last = yield x
         x[:-hop_length] = x[hop_length:]
-        x[-hop_length:] = yield X
+        x[-hop_length:] = x_last
+
+def energy(win_length):
+    window = scipy.signal.get_window("hann", win_length)
+    
+    x = yield None
+    while True:
+        x = yield power2db((x**2 * window).sum())
+
+def mel_fft(sr, win_length, n_mels=128):
+    window = scipy.signal.get_window("hann", win_length)
+    weights = mel_weights(sr, win_length, n_mels)
+
+    x = yield None
+    while True:
+        x = yield power2db(weights.dot(numpy.abs(numpy.fft.rfft(x*window))**2))
 
 def onset_strength():
     curr = yield None
@@ -110,3 +122,37 @@ def transform(func=lambda a: a):
     arr = yield None
     while True:
         arr = yield func(arr)
+
+
+def peak_pick(buffer_length, pre_max, post_max, pre_avg, post_avg, delta, wait):
+    max_length = pre_max + post_max
+    max_origin = (1 - max_length) // 2
+    avg_length = pre_avg + post_avg
+    avg_origin = (1 - avg_length) // 2
+    tail = max(max_origin-max_length, avg_origin-avg_length)
+
+    mov_max = scipy.ndimage.filters.maximum_filter1d(x, max_length, mode="constant", origin=max_origin, cval=0)
+    mov_avg = scipy.ndimage.filters.uniform_filter1d(x, avg_length, mode="constant", origin=avg_origin, cval=0)
+    x = x[:-tail]
+    mov_max = mov_max[:-tail]
+    mov_avg = mov_avg[:-tail]
+
+    detections = x * (x == mov_max)
+
+    # Then mask out all entries less than the thresholded average
+    detections = detections * (detections >= (mov_avg + delta))
+
+    # Initialize peaks array, to be filled greedily
+    peaks = []
+
+    # Remove onsets which are close together in time
+    last_onset = -np.inf
+
+    for i in np.nonzero(detections)[0]:
+        # Only report an onset if the "wait" samples was reported
+        if i > last_onset + wait:
+            peaks.append(i)
+            # Save last reported onset
+            last_onset = i
+
+    return np.array(peaks)
