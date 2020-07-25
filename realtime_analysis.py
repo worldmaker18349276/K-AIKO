@@ -18,6 +18,12 @@ def mel2hz(m):
     # else:
     #     return 1000.0 * numpy.exp(0.06875177742094912 * m - 1.0312766613142368)
 
+def click(sr, freq=1000.0, duration=0.1, length=None):
+    if length is None:
+        length = int(1.0*sr)
+    t = numpy.arange(length) / sr
+    return 2**(-10*t/duration) * numpy.sin(2 * numpy.pi * freq * t)
+
 def mel_freq(fmin, fmax, n_mels, extend=0):
     mel_min = hz2mel(fmin)
     mel_max = hz2mel(fmax)
