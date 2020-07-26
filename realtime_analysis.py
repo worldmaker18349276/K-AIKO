@@ -1,4 +1,5 @@
 import functools
+import itertools
 import numpy
 import scipy
 import scipy.fftpack
@@ -18,11 +19,15 @@ def mel2hz(m):
     # else:
     #     return 1000.0 * numpy.exp(0.06875177742094912 * m - 1.0312766613142368)
 
-def click(sr, freq=1000.0, duration=0.1, length=None):
+def click(sr, freq=1000.0, decay_time=0.1, length=None):
     if length is None:
         length = int(1.0*sr)
-    t = numpy.arange(length) / sr
-    return 2**(-10*t/duration) * numpy.sin(2 * numpy.pi * freq * t)
+    t = numpy.linspace(0, length/sr, length, endpoint=False, dtype=numpy.float32)
+    return 2**(-10*t/decay_time) * numpy.sin(2 * numpy.pi * freq * t)
+
+def clicks(times, duration, sr, buffer_length=1024, freq=1000.0, decay_time=0.1):
+    signals = ((t, click(sr, freq, decay_time, int(decay_time*sr))) for t in times)
+    return merge(signals, duration, sr, buffer_length)
 
 def mel_freq(fmin, fmax, n_mels, extend=0):
     mel_min = hz2mel(fmin)
@@ -85,28 +90,30 @@ def onset_strength():
     while True:
         prev, curr = curr, (yield numpy.maximum(0.0, curr - prev).mean(0))
 
-def onset_detect(sr, hop_length, lag=None,
+def onset_detect(sr, hop_length, delay=None,
                  pre_max=0.03, post_max=0.00,
                  pre_avg=0.10, post_avg=0.10,
                  wait=0.03, delta=0.07):
-    if lag is None:
-        lag = max(post_max, post_avg)
+    if delay is None:
+        delay = max(post_max, post_avg)
 
-    lag = int(lag * sr / hop_length) + 1
+    delay = int(delay * sr / hop_length) + 1
     pre_max  = int(pre_max  * sr / hop_length)
     post_max = int(post_max * sr / hop_length) + 1
     pre_avg  = int(pre_avg  * sr / hop_length)
     post_avg = int(post_avg * sr / hop_length) + 1
     wait = int(wait * sr / hop_length)
 
-    if lag < post_max or lag < post_avg:
+    if delay < post_max or delay < post_avg:
         raise ValueError
 
     center = max(pre_max, pre_avg)
-    buf = numpy.zeros(center+lag, dtype=numpy.float32)
+    buf = numpy.zeros(center+delay, dtype=numpy.float32)
     prev = wait+1
+    index = 1-delay
     buf[-1] = yield None
     while True:
+        index += 1
         detected = True
         detected = detected and buf[center] == buf[center-pre_max:center+post_max].max()
         detected = detected and buf[center] >= buf[center-pre_avg:center+post_avg].mean() + delta
@@ -114,24 +121,78 @@ def onset_detect(sr, hop_length, lag=None,
 
         prev = 0 if detected else prev+1
         buf[:-1] = buf[1:]
-        buf[-1] = yield detected
+        buf[-1] = yield (index * hop_length / sr, detected)
 
 
 def pipe(*iters):
     for it in iters:
         next(it)
-    input = yield None
+    data = yield None
     while True:
-        input = yield functools.reduce(lambda input, it: it.send(input), iters, input)
+        data = yield functools.reduce(lambda data, it: it.send(data), iters, data)
 
 def pair(*iters):
     for it in iters:
         next(it)
-    inputs = yield None
+    data = yield None
     while True:
-        inputs = yield tuple(map(lambda input, it: it.send(input), inputs, iters))
+        data = yield tuple(map(lambda subdata, it: it.send(subdata), data, iters))
 
-def transform(func=lambda a: a):
-    arr = yield None
+def transform(func=lambda i, a: a):
+    index = 0
+    data = yield None
     while True:
-        arr = yield func(arr)
+        index += 1
+        data = yield func(index, data)
+
+def inwhich(*iters):
+    it = pipe(*iters)
+    data = yield None
+    while True:
+        side = it.send(data)
+        data = yield (data, side)
+
+def whenever(func, cond=bool):
+    index = 0
+    data = yield None
+    while True:
+        index += 1
+        if cond(data):
+            func(index, data)
+        data = yield data
+
+def window(ranges, timespan, offset=0):
+    playing = []
+    waiting = next(ranges, None)
+
+    time = yield None
+    while True:
+        t0 = time - offset
+        tf = time - offset + timespan
+
+        while waiting is not None and waiting[0] < tf:
+            playing.append(waiting)
+            waiting = next(ranges, None)
+
+        while len(playing) > 0 and playing[0][1] < t0:
+            playing.pop(0)
+
+        time = yield playing
+
+def merge(signals, duration, sr, buffer_length=1024):
+    buffer = numpy.zeros(buffer_length, dtype=numpy.float32)
+    windowed_signals = window(((int(t*sr), int(t*sr)+signal.shape[0], signal) for t, signal in signals), buffer_length)
+    next(windowed_signals)
+
+    yield None
+
+    for index in range(0, int(duration*sr), buffer_length):
+        buffer[:] = 0
+
+        for start, end, signal in windowed_signals.send(index):
+            i = max(start, index)
+            j = min(end, index+buffer_length)
+            buffer[i-index:j-index] += signal[i-start:j-start]
+
+        yield buffer.tobytes()
+
