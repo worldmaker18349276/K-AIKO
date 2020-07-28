@@ -5,20 +5,6 @@ import scipy
 import scipy.fftpack
 import scipy.signal
 
-def hz2mel(f):
-    return 2595.0 * numpy.log10(1.0 + f / 700.0)
-    # if f < 1000.0:
-    #     return f * 0.015
-    # else:
-    #     return numpy.log(f) * 14.54507850578556 - 85.4738428315498
-
-def mel2hz(m):
-    return 700.0 * (10.0**(m / 2595.0) - 1.0)
-    # if m < 1000.0:
-    #     return m / 0.015
-    # else:
-    #     return 1000.0 * numpy.exp(0.06875177742094912 * m - 1.0312766613142368)
-
 def click(sr, freq=1000.0, decay_time=0.1, length=None):
     if length is None:
         length = int(1.0*sr)
@@ -29,30 +15,8 @@ def clicks(times, duration, sr, buffer_length=1024, freq=1000.0, decay_time=0.1)
     signals = ((t, click(sr, freq, decay_time, int(decay_time*sr))) for t in times)
     return merge(signals, duration, sr, buffer_length)
 
-def mel_freq(fmin, fmax, n_mels, extend=0):
-    mel_min = hz2mel(fmin)
-    mel_max = hz2mel(fmax)
-    m, dm = numpy.linspace(mel_min, mel_max, n_mels, retstep=True, dtype=numpy.float32)
-    if extend != 0:
-        m_ = mel_max + numpy.arange(1, extend+1, dtype=numpy.float32)*dm
-        m = numpy.concatenate((m, m_))
-    return mel2hz(m)
-
-def mel_weights(sr, n_fft, n_mels):
-    fft_f = numpy.linspace(0, sr/2, n_fft//2+1, dtype=numpy.float32)
-    mel_f = mel_freq(0, sr/2, n_mels, 2)
-
-    weights = numpy.empty((n_mels, n_fft//2+1), dtype=numpy.float32)
-    for i in range(1, n_mels+1):
-        lower = (fft_f - mel_f[i-1]) / (mel_f[i] - mel_f[i-1])
-        upper = (mel_f[i+1] - fft_f) / (mel_f[i+1] - mel_f[i])
-        weights[i-1] = numpy.maximum(0, numpy.minimum(lower, upper))
-        weights[i-1] *= 2 / (mel_f[i+1] - mel_f[i-1])
-
-    return weights
-
-def power2db(power):
-    return 10.0 * numpy.log10(numpy.maximum(1e-5, power))
+def power2db(power, scale=(1e-5, 1e8)):
+    return 10.0 * numpy.log10(numpy.maximum(scale[0], power*scale[1]))
 
 def frame(win_length, hop_length):
     x = numpy.zeros(win_length, dtype=numpy.float32)
@@ -62,66 +26,50 @@ def frame(win_length, hop_length):
         x[:-hop_length] = x[hop_length:]
         x[-hop_length:] = x_last
 
-def energy(win_length):
-    window = scipy.signal.get_window("hann", win_length)
-    
-    x = yield None
-    while True:
-        x = yield power2db((x**2 * window).sum())
-
-def power_freq(sr, win_length):
+def power_spectrum(sr, win_length):
     window = scipy.signal.get_window("hann", win_length)
 
     x = yield None
     while True:
-        x = yield power2db(numpy.abs(numpy.fft.rfft(x*window))**2)
+        x = yield 2/win_length/sr * numpy.abs(numpy.fft.rfft(x*window))**2
+        # (J * df).sum() == (x**2).mean()
 
-def power_mel(sr, win_length, n_mels=128):
-    window = scipy.signal.get_window("hann", win_length)
-    weights = mel_weights(sr, win_length, n_mels)
-
-    x = yield None
-    while True:
-        x = yield power2db(weights.dot(numpy.abs(numpy.fft.rfft(x*window))**2))
-
-def onset_strength():
+def onset_strength(df, dt):
     curr = yield None
     prev = numpy.zeros_like(curr)
     while True:
-        prev, curr = curr, (yield numpy.maximum(0.0, curr - prev).mean(0))
+        prev, curr = curr, (yield numpy.maximum(0.0, (curr - prev)/dt  * df).sum(0))
 
-def onset_detect(sr, hop_length, delay=None,
+def onset_detect(sr, hop_length,
                  pre_max=0.03, post_max=0.00,
                  pre_avg=0.10, post_avg=0.10,
                  wait=0.03, delta=0.07):
-    if delay is None:
-        delay = max(post_max, post_avg)
-
-    delay = int(delay * sr / hop_length) + 1
     pre_max  = int(pre_max  * sr / hop_length)
-    post_max = int(post_max * sr / hop_length) + 1
+    post_max = int(post_max * sr / hop_length)
     pre_avg  = int(pre_avg  * sr / hop_length)
-    post_avg = int(post_avg * sr / hop_length) + 1
+    post_avg = int(post_avg * sr / hop_length)
     wait = int(wait * sr / hop_length)
 
-    if delay < post_max or delay < post_avg:
-        raise ValueError
-
     center = max(pre_max, pre_avg)
-    buf = numpy.zeros(center+delay, dtype=numpy.float32)
-    prev = wait+1
-    index = 1-delay
-    buf[-1] = yield None
+    delay = max(post_max, post_avg)
+    buffer = numpy.zeros(center+delay+1, dtype=numpy.float32)
+    max_buffer = buffer[center-pre_max:center+post_max+1]
+    avg_buffer = buffer[center-pre_avg:center+post_avg+1]
+    index = -delay
+    prev_index = -wait
+
+    buffer[-1] = yield None
     while True:
         index += 1
         detected = True
-        detected = detected and buf[center] == buf[center-pre_max:center+post_max].max()
-        detected = detected and buf[center] >= buf[center-pre_avg:center+post_avg].mean() + delta
-        detected = detected and prev > wait
+        detected = detected and index > prev_index + wait
+        detected = detected and buffer[center] == max_buffer.max()
+        detected = detected and buffer[center] >= avg_buffer.mean() + delta
 
-        prev = 0 if detected else prev+1
-        buf[:-1] = buf[1:]
-        buf[-1] = yield (index * hop_length / sr, detected)
+        if detected:
+            prev_index = index
+        buffer[:-1] = buffer[1:]
+        buffer[-1] = yield (index * hop_length / sr, detected)
 
 
 def pipe(*iters):

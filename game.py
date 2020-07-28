@@ -54,17 +54,16 @@ def judge(beatmap, judgements, scores, offset=0):
 
         time, detected = yield
 
-delay = 0.1
 pre_max = 0.03
 post_max = 0.00
 pre_avg = 0.10
 post_avg = 0.10
 wait = 0.03
-delta = 1
+delta = 0.1
 dect = ra.pipe(ra.frame(WIN_LENGTH, HOP_LENGTH),
-               ra.power_freq(RATE, WIN_LENGTH),
-               ra.onset_strength(),
-               ra.onset_detect(RATE, HOP_LENGTH, delay=delay,
+               ra.power_spectrum(RATE, WIN_LENGTH),
+               ra.onset_strength(RATE/WIN_LENGTH, HOP_LENGTH/RATE),
+               ra.onset_detect(RATE, HOP_LENGTH,
                                pre_max=pre_max, post_max=post_max,
                                pre_avg=pre_avg, post_avg=post_avg,
                                wait=wait, delta=delta),
