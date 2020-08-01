@@ -61,16 +61,16 @@ def onset_detect(sr, hop_length,
     buffer[-1] = yield None
     while True:
         index += 1
+        strength = buffer[center]
         detected = True
         detected = detected and index > prev_index + wait
-        detected = detected and buffer[center] == max_buffer.max()
-        detected = detected and buffer[center] >= avg_buffer.mean() + delta
+        detected = detected and strength == max_buffer.max()
+        detected = detected and strength >= avg_buffer.mean() + delta
 
         if detected:
             prev_index = index
         buffer[:-1] = buffer[1:]
-        buffer[-1] = yield (index * hop_length / sr, detected)
-
+        buffer[-1] = yield (index * hop_length / sr, strength, detected)
 
 def pipe(*iters):
     for it in iters:
