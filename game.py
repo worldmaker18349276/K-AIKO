@@ -132,17 +132,27 @@ def judge(beats, hits, thresholds, judgements):
         beat = next(beats, None)
 
 
-def draw_track(beats, hits, track_width, bar_offset, drop_speed, thresholds, sustain):
+def draw_track(beats, hits, track_width, bar_offset, drop_speed, levels, sustain):
     dt = 1 / drop_speed
-
-    beats_iter = ((i, b, int(b.time/dt)) for i, b in enumerate(beats))
-    windowed_beats = ra.window(beats_iter, track_width, bar_offset, key=lambda a: a[2:]*2)
-    next(windowed_beats)
 
     hitted_beats = set()
     hit = None
     hit_index = 0
     beat_index = -1
+    index = -1
+
+    score = 0
+    progress = 0
+
+    beats_syms = "□▣" # □ ▣ ◧ ◨
+    target_sym = "⛶"
+    wrong_sym = "˽"
+    loudness_syms = "🞓🞒🞑🞐🞏🞎"
+    accuracy_syms = "⟪⟬⟨⟩⟭⟫"
+
+    beats_iter = ((i, b, int(b.time/dt)) for i, b in enumerate(beats))
+    windowed_beats = ra.window(beats_iter, track_width, bar_offset, key=lambda a: a[2:]*2)
+    next(windowed_beats)
 
     while True:
         current_time = yield
@@ -152,53 +162,72 @@ def draw_track(beats, hits, track_width, bar_offset, drop_speed, thresholds, sus
 
         # updating `hitted_beats`, it also catches the last item in `hits`
         for hit in hits[hit_index:]:
+            score += hit.score
             if not isinstance(hit, Hit.Unexpected):
                 beat_index += 1
                 if not isinstance(hit, Hit.Miss):
                     hitted_beats.add(beat_index)
             hit_index += 1
 
-        if hit is not None and abs(hit.time - current_time) >= sustain:
-            hit = None
-
-        # draw un-hitted beats
+        # draw un-hitted beats, it also catches the last visible beat
         for index, beat, beat_pixel in windowed_beats.send(current_pixel):
             if index not in hitted_beats:
-                # "░▄▀█", "□ ▣ ■"
                 if isinstance(beat, Beat.Soft):
-                    symbol = "+"
+                    symbol = beats_syms[0]
                 elif isinstance(beat, Beat.Loud):
-                    symbol = "o"
-                else:
-                    symbol = " "
+                    symbol = beats_syms[1]
                 view[beat_pixel - current_pixel + bar_offset] = symbol
 
-        view[0] = "("
-        view[bar_offset] = "|"
-        view[-1] = ")"
+        progress = 1000*(index+1) // len(beats)
 
-        if hit is not None:
-            # visual feedback for hit strength
-            if hit.strength >= thresholds[1]:
-                view[bar_offset] = "H"
-            elif hit.strength >= thresholds[0]:
-                view[bar_offset] = "I"
+        # draw target
+        view[bar_offset] = target_sym
 
-            # visual feedback for hit accuracy
-            pass
+        # visual feedback for hit loudness
+        if hit is not None and current_time - hit.time < sustain:
+            symbol = next((sym for thr, sym in zip(levels[5::-1], loudness_syms) if hit.strength >= thr), target_sym)
+            view[bar_offset] = symbol
 
-        sys.stdout.write("".join(view) + "\r")
+        # visual feedback for wrong key
+        if hit is not None and current_time - hit.time < sustain:
+            if not isinstance(hit, (Hit.Great, Hit.LateGood, Hit.EarlyGood,
+                                               Hit.LateBad, Hit.EarlyBad,
+                                               Hit.LateFailed, Hit.EarlyFailed)):
+                view[bar_offset+1] = wrong_sym
+
+        # visual feedback for hit accuracy
+        if hit is not None and current_time - hit.time < sustain/3:
+            if isinstance(hit, (Hit.LateGood, Hit.WrongButLateGood)):
+                view[bar_offset-1] = accuracy_syms[2]
+            elif isinstance(hit, (Hit.EarlyGood, Hit.WrongButEarlyGood)):
+                view[bar_offset+2] = accuracy_syms[3]
+            elif isinstance(hit, (Hit.LateBad, Hit.WrongButLateBad)):
+                view[bar_offset-1] = accuracy_syms[1]
+            elif isinstance(hit, (Hit.EarlyBad, Hit.WrongButEarlyBad)):
+                view[bar_offset+2] = accuracy_syms[4]
+            elif isinstance(hit, (Hit.LateFailed, Hit.WrongButLateFailed)):
+                view[bar_offset-1] = accuracy_syms[0]
+            elif isinstance(hit, (Hit.EarlyFailed, Hit.WrongButEarlyFailed)):
+                view[bar_offset+2] = accuracy_syms[5]
+
+        # print
+        sys.stdout.write("[{:>5d}]".format(score))
+        sys.stdout.write("".join(view))
+        sys.stdout.write(" [{:>5.1f}%]".format(progress/10))
+        sys.stdout.write("\r")
         sys.stdout.flush()
 
 
 class Game:
     def __init__(self, thresholds=(0.1, 2.0), judgements=(0.14, 0.10, 0.06, 0.02),
-                       track_width=100, bar_offset=10, drop_speed=100.0, sustain=0.2):
+                       track_width=100, bar_offset=10, drop_speed=100.0,
+                       levels=(0.0, 0.7, 1.3, 2.0, 2.7, 3.3), sustain=0.2):
         self.thresholds = thresholds
         self.judgements = judgements
         self.track_width = track_width
         self.bar_offset = bar_offset
         self.drop_speed = drop_speed # pixels per sec
+        self.levels = levels
         self.sustain = sustain
 
         self.pyaudio = pyaudio.PyAudio()
@@ -258,7 +287,7 @@ class Game:
     def get_view_callback(self, beatmap, hits):
         drawer = draw_track(beatmap.beats, hits,
                             self.track_width, self.bar_offset, self.drop_speed,
-                            self.thresholds, self.sustain)
+                            self.levels, self.sustain)
         next(drawer)
 
         return drawer.send
@@ -292,9 +321,11 @@ beatmap = Beatmap(16.5,
                   Beat.Soft(5.0),  Beat.Soft(6.0),  Beat.Soft(7.0),  Beat.Soft(7.5),  Beat.Loud(8.0),
                   Beat.Soft(9.0),  Beat.Soft(10.0), Beat.Soft(11.0), Beat.Soft(11.5), Beat.Loud(12.0),
                   Beat.Soft(13.0), Beat.Soft(14.0), Beat.Soft(15.0), Beat.Soft(15.5), Beat.Loud(16.0))
+# beatmap = Beatmap(10)
 
 game = Game(thresholds=(0.1, 2.0), judgements=(0.14, 0.10, 0.06, 0.02),
-            track_width=100, bar_offset=10, drop_speed=100.0, sustain=0.2)
+            track_width=100, bar_offset=10, drop_speed=100.0,
+            levels=(0.0, 0.7, 1.3, 2.0, 2.7, 3.3), sustain=0.2)
 
 hits = game.play(beatmap)
 print()
