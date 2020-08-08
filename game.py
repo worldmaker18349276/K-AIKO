@@ -41,6 +41,7 @@ class Beat:
 
 Beat.Soft = type("Soft", (Beat,), dict(score=10))
 Beat.Loud = type("Loud", (Beat,), dict(score=10))
+Beat.Incr = type("Incr", (Beat,), dict(score=10))
 
 
 class Hit:
@@ -85,6 +86,9 @@ def judge(beats, hits):
     beats = iter(beats)
     beat = next(beats, None)
 
+    prev_strength = 0.0
+    incr_tol = (THRESHOLDS[3] - THRESHOLDS[0])/6
+
     while True:
         time, strength, detected = yield
         time -= AUDIO_DELAY
@@ -95,7 +99,7 @@ def judge(beats, hits):
             hits.append(Hit.Miss(time, 0.0))
             beat = next(beats, None)
 
-        if not detected:
+        if not detected or strength < THRESHOLDS[0]:
             continue
 
         # if next beat isn't in the range yet
@@ -104,16 +108,12 @@ def judge(beats, hits):
             continue
 
         # judge pressed key (determined by loudness)
-        loudness = 0
-        if strength >= THRESHOLDS[3]:
-            loudness = 2
-        elif strength >= THRESHOLDS[0]:
-            loudness = 1
-
         if isinstance(beat, Beat.Soft):
-            is_correct_key = loudness == 1
+            is_correct_key = strength < THRESHOLDS[3]
         elif isinstance(beat, Beat.Loud):
-            is_correct_key = loudness == 2
+            is_correct_key = strength >= THRESHOLDS[3]
+        elif isinstance(beat, Beat.Incr):
+            is_correct_key = strength >= prev_strength - incr_tol
 
         # judge accuracy
         err = abs(time - beat.time)
@@ -145,6 +145,7 @@ def judge(beats, hits):
 
         # add hit and wait for next beat
         hits.append(hit_type(time, strength))
+        prev_strength = max(strength, prev_strength) if isinstance(beat, Beat.Incr) else 0.0
         beat = next(beats, None)
 
 
@@ -162,7 +163,7 @@ def draw_track(beats, hits):
     total_score = sum(beat.score for beat in beats)
     progress = 0
 
-    beats_syms = "□▣" # □ ▣ ◧ ◨
+    beats_syms = "□▣◨" # □ ▣ ◧ ◨
     target_sym = "⛶"
     wrong_sym = "˽"
     loudness_syms = "🞓🞒🞑🞐🞏🞎"
@@ -194,6 +195,8 @@ def draw_track(beats, hits):
                     symbol = beats_syms[0]
                 elif isinstance(beat, Beat.Loud):
                     symbol = beats_syms[1]
+                elif isinstance(beat, Beat.Incr):
+                    symbol = beats_syms[2]
                 view[BAR_OFFSET + beat_pixel - current_pixel] = symbol
 
         progress = 1000*(index+1) // len(beats)
@@ -326,7 +329,8 @@ beatmap = Beatmap(16.5,
                   Beat.Soft(1.0),  Beat.Soft(2.0),  Beat.Soft(3.0),  Beat.Soft(3.5),  Beat.Loud(4.0),
                   Beat.Soft(5.0),  Beat.Soft(6.0),  Beat.Soft(7.0),  Beat.Soft(7.5),  Beat.Loud(8.0),
                   Beat.Soft(9.0),  Beat.Soft(10.0), Beat.Soft(11.0), Beat.Soft(11.5), Beat.Loud(12.0),
-                  Beat.Soft(13.0), Beat.Soft(14.0), Beat.Soft(15.0), Beat.Soft(15.5), Beat.Loud(16.0))
+                  Beat.Incr(13.0), Beat.Incr(13.5), Beat.Incr(14.0), Beat.Incr(14.5),
+                  Beat.Incr(15.0), Beat.Incr(15.5), Beat.Incr(16.0))
 # beatmap = Beatmap(10)
 
 game = Game()
