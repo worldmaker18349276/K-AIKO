@@ -6,20 +6,29 @@ import realtime_analysis as ra
 
 CHANNELS = 1
 RATE = 44100
+SAMPLES_PER_BUFFER = 1024
 WIN_LENGTH = 512*4
 HOP_LENGTH = 512
-SAMPLES_PER_BUFFER = 1024
-# frame resolution: 11.6 ms
-
 PRE_MAX = 0.03
 POST_MAX = 0.03
 PRE_AVG = 0.03
 POST_AVG = 0.03
 WAIT = 0.03
 DELTA = 0.1
+# frame resolution: 11.6 ms
+# delay: 30 ms
+# fastest tempo: 2000 bpm
 
 DISPLAY_FPS = 200
-DISPLAY_DELAY = -0.03
+DISPLAY_DELAY = 0.03
+AUDIO_VOLUME = 1.2
+AUDIO_DELAY = 0.03
+
+TRACK_WIDTH = 100
+BAR_OFFSET = 10
+DROP_SPEED = 100.0 # pixels per sec
+THRESHOLDS = (0.0, 0.7, 1.3, 2.0, 2.7, 3.3)
+TOLERANCES = (0.02, 0.06, 0.10, 0.14)
 
 
 # beats and hits
@@ -30,8 +39,8 @@ class Beat:
     def __repr__(self):
         return "Beat.{}(time={})".format(type(self).__name__, repr(self.time))
 
-Beat.Soft = type("Soft", (Beat,), dict())
-Beat.Loud = type("Loud", (Beat,), dict())
+Beat.Soft = type("Soft", (Beat,), dict(score=10))
+Beat.Loud = type("Loud", (Beat,), dict(score=10))
 
 
 class Hit:
@@ -42,24 +51,24 @@ class Hit:
     def __repr__(self):
         return "Hit.{}(time={}, strength={})".format(type(self).__name__, repr(self.time), repr(self.strength))
 
-Hit.Miss       = type("Miss",       (Hit,), dict(score=0, accuracy=0))
-Hit.Unexpected = type("Unexpected", (Hit,), dict(score=0, accuracy=0))
+Hit.Miss       = type("Miss",       (Hit,), dict(score=0))
+Hit.Unexpected = type("Unexpected", (Hit,), dict(score=0))
 
-Hit.Great       = type("Great",       (Hit,), dict(score=10, accuracy=3))
-Hit.LateGood    = type("LateGood",    (Hit,), dict(score=5, accuracy=2))
-Hit.EarlyGood   = type("EarlyGood",   (Hit,), dict(score=5, accuracy=2))
-Hit.LateBad     = type("LateBad",     (Hit,), dict(score=3, accuracy=1))
-Hit.EarlyBad    = type("EarlyBad",    (Hit,), dict(score=3, accuracy=1))
-Hit.LateFailed  = type("LateFailed",  (Hit,), dict(score=0, accuracy=0))
-Hit.EarlyFailed = type("EarlyFailed", (Hit,), dict(score=0, accuracy=0))
+Hit.Great       = type("Great",       (Hit,), dict(score=10))
+Hit.LateGood    = type("LateGood",    (Hit,), dict(score=5))
+Hit.EarlyGood   = type("EarlyGood",   (Hit,), dict(score=5))
+Hit.LateBad     = type("LateBad",     (Hit,), dict(score=3))
+Hit.EarlyBad    = type("EarlyBad",    (Hit,), dict(score=3))
+Hit.LateFailed  = type("LateFailed",  (Hit,), dict(score=0))
+Hit.EarlyFailed = type("EarlyFailed", (Hit,), dict(score=0))
 
-Hit.WrongButGreat       = type("WrongButGreat",       (Hit,), dict(score=5, accuracy=3))
-Hit.WrongButLateGood    = type("WrongButLateGood",    (Hit,), dict(score=3, accuracy=2))
-Hit.WrongButEarlyGood   = type("WrongButEarlyGood",   (Hit,), dict(score=3, accuracy=2))
-Hit.WrongButLateBad     = type("WrongButLateBad",     (Hit,), dict(score=1, accuracy=1))
-Hit.WrongButEarlyBad    = type("WrongButEarlyBad",    (Hit,), dict(score=1, accuracy=1))
-Hit.WrongButLateFailed  = type("WrongButLateFailed",  (Hit,), dict(score=0, accuracy=0))
-Hit.WrongButEarlyFailed = type("WrongButEarlyFailed", (Hit,), dict(score=0, accuracy=0))
+Hit.WrongButGreat       = type("WrongButGreat",       (Hit,), dict(score=5))
+Hit.WrongButLateGood    = type("WrongButLateGood",    (Hit,), dict(score=3))
+Hit.WrongButEarlyGood   = type("WrongButEarlyGood",   (Hit,), dict(score=3))
+Hit.WrongButLateBad     = type("WrongButLateBad",     (Hit,), dict(score=1))
+Hit.WrongButEarlyBad    = type("WrongButEarlyBad",    (Hit,), dict(score=1))
+Hit.WrongButLateFailed  = type("WrongButLateFailed",  (Hit,), dict(score=0))
+Hit.WrongButEarlyFailed = type("WrongButEarlyFailed", (Hit,), dict(score=0))
 
 
 class Beatmap:
@@ -72,28 +81,34 @@ class Beatmap:
         return ra.clicks(times, sr=RATE, duration=self.duration)
 
 
-def judge(beats, hits, thresholds, judgements):
+def judge(beats, hits):
     beats = iter(beats)
     beat = next(beats, None)
 
     while True:
         time, strength, detected = yield
+        time -= AUDIO_DELAY
+        strength *= AUDIO_VOLUME
 
         # if next beat has passed through
-        while beat is not None and beat.time + judgements[0] <= time:
-            hits.append(Hit.Miss(time, 0))
+        while beat is not None and beat.time + TOLERANCES[3] <= time:
+            hits.append(Hit.Miss(time, 0.0))
             beat = next(beats, None)
 
         if not detected:
             continue
 
         # if next beat isn't in the range yet
-        if beat is None or beat.time - judgements[0] > time:
+        if beat is None or beat.time - TOLERANCES[3] > time:
             hits.append(Hit.Unexpected(time, strength))
             continue
 
         # judge pressed key (determined by loudness)
-        loudness = next((i+1 for i, thr in reversed(list(enumerate(thresholds))) if strength >= thr), 0)
+        loudness = 0
+        if strength >= THRESHOLDS[3]:
+            loudness = 2
+        elif strength >= THRESHOLDS[0]:
+            loudness = 1
 
         if isinstance(beat, Beat.Soft):
             is_correct_key = loudness == 1
@@ -101,39 +116,41 @@ def judge(beats, hits, thresholds, judgements):
             is_correct_key = loudness == 2
 
         # judge accuracy
-        err = time - beat.time
-        accuracy = next((i for i, acc in reversed(list(enumerate(judgements))) if abs(err) < acc), 0)
+        err = abs(time - beat.time)
+        is_late = time > beat.time
 
-        if accuracy == 0:
-            if is_correct_key:
-                hit_type = Hit.LateFailed         if err > 0 else Hit.EarlyFailed
-            else:
-                hit_type = Hit.WrongButLateFailed if err > 0 else Hit.WrongButEarlyFailed
-
-        elif accuracy == 1:
-            if is_correct_key:
-                hit_type = Hit.LateBad            if err > 0 else Hit.EarlyBad
-            else:
-                hit_type = Hit.WrongButLateBad    if err > 0 else Hit.WrongButEarlyBad
-
-        elif accuracy == 2:
-            if is_correct_key:
-                hit_type = Hit.LateGood           if err > 0 else Hit.EarlyGood
-            else:
-                hit_type = Hit.WrongButLateGood   if err > 0 else Hit.WrongButEarlyGood
-
-        elif accuracy == 3:
+        if err < TOLERANCES[0]:
             if is_correct_key:
                 hit_type = Hit.Great
             else:
                 hit_type = Hit.WrongButGreat
 
+        elif err < TOLERANCES[1]:
+            if is_correct_key:
+                hit_type = Hit.LateGood           if is_late else Hit.EarlyGood
+            else:
+                hit_type = Hit.WrongButLateGood   if is_late else Hit.WrongButEarlyGood
+
+        elif err < TOLERANCES[2]:
+            if is_correct_key:
+                hit_type = Hit.LateBad            if is_late else Hit.EarlyBad
+            else:
+                hit_type = Hit.WrongButLateBad    if is_late else Hit.WrongButEarlyBad
+
+        else:
+            if is_correct_key:
+                hit_type = Hit.LateFailed         if is_late else Hit.EarlyFailed
+            else:
+                hit_type = Hit.WrongButLateFailed if is_late else Hit.WrongButEarlyFailed
+
+        # add hit and wait for next beat
         hits.append(hit_type(time, strength))
         beat = next(beats, None)
 
 
-def draw_track(beats, hits, track_width, bar_offset, drop_speed, levels, sustain):
-    dt = 1 / drop_speed
+def draw_track(beats, hits):
+    dt = 1 / DROP_SPEED
+    sustain = 20 / DROP_SPEED
 
     hitted_beats = set()
     hit = None
@@ -142,6 +159,7 @@ def draw_track(beats, hits, track_width, bar_offset, drop_speed, levels, sustain
     index = -1
 
     score = 0
+    total_score = sum(beat.score for beat in beats)
     progress = 0
 
     beats_syms = "□▣" # □ ▣ ◧ ◨
@@ -151,13 +169,13 @@ def draw_track(beats, hits, track_width, bar_offset, drop_speed, levels, sustain
     accuracy_syms = "⟪⟬⟨⟩⟭⟫"
 
     beats_iter = ((i, b, int(b.time/dt)) for i, b in enumerate(beats))
-    windowed_beats = ra.window(beats_iter, track_width, bar_offset, key=lambda a: a[2:]*2)
+    windowed_beats = ra.window(beats_iter, TRACK_WIDTH, BAR_OFFSET, key=lambda a: a[2:]*2)
     next(windowed_beats)
 
     while True:
         current_time = yield
 
-        view = [" "]*track_width
+        view = [" "]*TRACK_WIDTH
         current_pixel = int(current_time/dt)
 
         # updating `hitted_beats`, it also catches the last item in `hits`
@@ -176,42 +194,42 @@ def draw_track(beats, hits, track_width, bar_offset, drop_speed, levels, sustain
                     symbol = beats_syms[0]
                 elif isinstance(beat, Beat.Loud):
                     symbol = beats_syms[1]
-                view[beat_pixel - current_pixel + bar_offset] = symbol
+                view[BAR_OFFSET + beat_pixel - current_pixel] = symbol
 
         progress = 1000*(index+1) // len(beats)
 
         # draw target
-        view[bar_offset] = target_sym
+        view[BAR_OFFSET] = target_sym
 
         # visual feedback for hit loudness
         if hit is not None and current_time - hit.time < sustain:
-            symbol = next((sym for thr, sym in zip(levels[5::-1], loudness_syms) if hit.strength >= thr), target_sym)
-            view[bar_offset] = symbol
+            symbol = next((sym for thr, sym in zip(THRESHOLDS[5::-1], loudness_syms) if hit.strength >= thr), target_sym)
+            view[BAR_OFFSET] = symbol
 
         # visual feedback for wrong key
         if hit is not None and current_time - hit.time < sustain:
             if not isinstance(hit, (Hit.Great, Hit.LateGood, Hit.EarlyGood,
                                                Hit.LateBad, Hit.EarlyBad,
                                                Hit.LateFailed, Hit.EarlyFailed)):
-                view[bar_offset+1] = wrong_sym
+                view[BAR_OFFSET+1] = wrong_sym
 
         # visual feedback for hit accuracy
         if hit is not None and current_time - hit.time < sustain/3:
             if isinstance(hit, (Hit.LateGood, Hit.WrongButLateGood)):
-                view[bar_offset-1] = accuracy_syms[2]
+                view[BAR_OFFSET-1] = accuracy_syms[2]
             elif isinstance(hit, (Hit.EarlyGood, Hit.WrongButEarlyGood)):
-                view[bar_offset+2] = accuracy_syms[3]
+                view[BAR_OFFSET+2] = accuracy_syms[3]
             elif isinstance(hit, (Hit.LateBad, Hit.WrongButLateBad)):
-                view[bar_offset-1] = accuracy_syms[1]
+                view[BAR_OFFSET-1] = accuracy_syms[1]
             elif isinstance(hit, (Hit.EarlyBad, Hit.WrongButEarlyBad)):
-                view[bar_offset+2] = accuracy_syms[4]
+                view[BAR_OFFSET+2] = accuracy_syms[4]
             elif isinstance(hit, (Hit.LateFailed, Hit.WrongButLateFailed)):
-                view[bar_offset-1] = accuracy_syms[0]
+                view[BAR_OFFSET-1] = accuracy_syms[0]
             elif isinstance(hit, (Hit.EarlyFailed, Hit.WrongButEarlyFailed)):
-                view[bar_offset+2] = accuracy_syms[5]
+                view[BAR_OFFSET+2] = accuracy_syms[5]
 
         # print
-        sys.stdout.write("[{:>5d}]".format(score))
+        sys.stdout.write("[{:>5d}/{:>5d}]".format(score, total_score))
         sys.stdout.write("".join(view))
         sys.stdout.write(" [{:>5.1f}%]".format(progress/10))
         sys.stdout.write("\r")
@@ -219,17 +237,7 @@ def draw_track(beats, hits, track_width, bar_offset, drop_speed, levels, sustain
 
 
 class Game:
-    def __init__(self, thresholds=(0.1, 2.0), judgements=(0.14, 0.10, 0.06, 0.02),
-                       track_width=100, bar_offset=10, drop_speed=100.0,
-                       levels=(0.0, 0.7, 1.3, 2.0, 2.7, 3.3), sustain=0.2):
-        self.thresholds = thresholds
-        self.judgements = judgements
-        self.track_width = track_width
-        self.bar_offset = bar_offset
-        self.drop_speed = drop_speed # pixels per sec
-        self.levels = levels
-        self.sustain = sustain
-
+    def __init__(self):
         self.pyaudio = pyaudio.PyAudio()
 
     def __del__(self):
@@ -262,7 +270,7 @@ class Game:
                                        pre_max=PRE_MAX, post_max=POST_MAX,
                                        pre_avg=PRE_AVG, post_avg=POST_AVG,
                                        wait=WAIT, delta=DELTA),
-                       judge(beatmap.beats, hits, self.thresholds, self.judgements))
+                       judge(beatmap.beats, hits))
         next(dect)
 
         def input_callback(in_data, frame_count, time_info, status):
@@ -285,9 +293,7 @@ class Game:
         return input_stream
 
     def get_view_callback(self, beatmap, hits):
-        drawer = draw_track(beatmap.beats, hits,
-                            self.track_width, self.bar_offset, self.drop_speed,
-                            self.levels, self.sustain)
+        drawer = draw_track(beatmap.beats, hits)
         next(drawer)
 
         return drawer.send
@@ -304,7 +310,7 @@ class Game:
         output_stream.start_stream()
 
         while output_stream.is_active() and input_stream.is_active():
-            view_callback(time.time() - reference_time + DISPLAY_DELAY)
+            view_callback(time.time() - reference_time - DISPLAY_DELAY)
             time.sleep(1/DISPLAY_FPS)
 
         output_stream.stop_stream()
@@ -323,9 +329,7 @@ beatmap = Beatmap(16.5,
                   Beat.Soft(13.0), Beat.Soft(14.0), Beat.Soft(15.0), Beat.Soft(15.5), Beat.Loud(16.0))
 # beatmap = Beatmap(10)
 
-game = Game(thresholds=(0.1, 2.0), judgements=(0.14, 0.10, 0.06, 0.02),
-            track_width=100, bar_offset=10, drop_speed=100.0,
-            levels=(0.0, 0.7, 1.3, 2.0, 2.7, 3.3), sustain=0.2)
+game = Game()
 
 hits = game.play(beatmap)
 print()
