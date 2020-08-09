@@ -43,6 +43,20 @@ Beat.Soft = type("Soft", (Beat,), dict(score=10))
 Beat.Loud = type("Loud", (Beat,), dict(score=10))
 Beat.Incr = type("Incr", (Beat,), dict(score=10))
 
+class Roll(Beat):
+    def __init__(self, time, end, number):
+        super().__init__(time)
+        self.end = end
+        self.number = number
+
+    @property
+    def score(self):
+        return 10+2*(self.number-1)
+
+    def __repr__(self):
+        return "Beat.Roll(time={}, end={}, number={})".format(repr(self.time), repr(self.end), repr(self.number))
+Beat.Roll = Roll
+
 
 class Hit:
     def __init__(self, time, strength):
@@ -71,6 +85,26 @@ Hit.WrongButEarlyBad    = type("WrongButEarlyBad",    (Hit,), dict(score=1))
 Hit.WrongButLateFailed  = type("WrongButLateFailed",  (Hit,), dict(score=0))
 Hit.WrongButEarlyFailed = type("WrongButEarlyFailed", (Hit,), dict(score=0))
 
+class Rock(Hit):
+    def __init__(self, time, strength, roll, total):
+        super().__init__(time, strength)
+        self.roll = roll
+        self.total = total
+
+    @property
+    def score(self):
+        if self.roll <= self.total:
+            return 2
+        elif self.roll <= self.total*2:
+            return -2
+        else:
+            return 0
+
+    def __repr__(self):
+        return "Hit.Rock(time={}, strength={}, roll={}, total={})".format(
+                    repr(self.time), repr(self.strength), repr(self.roll), repr(self.total))
+Hit.Rock = Rock
+
 
 class Beatmap:
     def __init__(self, duration, *beats):
@@ -78,34 +112,54 @@ class Beatmap:
         self.beats = beats
 
     def gen_music(self):
-        times = [beat.time for beat in self.beats]
+        times = []
+        for beat in self.beats:
+            if isinstance(beat, Beat.Roll):
+                step = (beat.end - beat.time)/beat.number
+                for i in range(beat.number):
+                    times.append(beat.time + step * i)
+            else:
+                times.append(beat.time)
         return ra.clicks(times, sr=RATE, duration=self.duration)
 
 
 def judge(beats, hits):
     beats = iter(beats)
-    beat = next(beats, None)
 
     prev_strength = 0.0
     incr_tol = (THRESHOLDS[3] - THRESHOLDS[0])/6
+    roll_number = 0
 
+    beat = next(beats, None)
     while True:
         time, strength, detected = yield
         time -= AUDIO_DELAY
         strength *= AUDIO_VOLUME
 
         # if next beat has passed through
-        while beat is not None and beat.time + TOLERANCES[3] <= time:
-            hits.append(Hit.Miss(time, 0.0))
+        if roll_number != 0 and beat.end - TOLERANCES[2] < time:
             beat = next(beats, None)
+            roll_number = 0
+
+        if roll_number == 0:
+            while beat is not None and beat.time + TOLERANCES[3] < time:
+                hits.append(Hit.Miss(time, 0.0))
+                beat = next(beats, None)
 
         if not detected or strength < THRESHOLDS[0]:
             continue
 
         # if next beat isn't in the range yet
-        if beat is None or beat.time - TOLERANCES[3] > time:
+        if beat is None or beat.time - TOLERANCES[3] >= time:
             hits.append(Hit.Unexpected(time, strength))
             continue
+
+        # drumrolls (only for the second or later hits of rolls)
+        if isinstance(beat, Beat.Roll):
+            roll_number += 1
+            if roll_number > 1:
+                hits.append(Hit.Rock(time, strength, roll_number, beat.number))
+                continue
 
         # judge pressed key (determined by loudness)
         if isinstance(beat, Beat.Soft):
@@ -114,6 +168,8 @@ def judge(beats, hits):
             is_correct_key = strength >= THRESHOLDS[3]
         elif isinstance(beat, Beat.Incr):
             is_correct_key = strength >= prev_strength - incr_tol
+        elif isinstance(beat, Beat.Roll):
+            is_correct_key = True
 
         # judge accuracy
         err = abs(time - beat.time)
@@ -146,7 +202,8 @@ def judge(beats, hits):
         # add hit and wait for next beat
         hits.append(hit_type(time, strength))
         prev_strength = max(strength, prev_strength) if isinstance(beat, Beat.Incr) else 0.0
-        beat = next(beats, None)
+        if not isinstance(beat, Beat.Roll):
+            beat = next(beats, None)
 
 
 def draw_track(beats, hits):
@@ -163,14 +220,18 @@ def draw_track(beats, hits):
     total_score = sum(beat.score for beat in beats)
     progress = 0
 
-    beats_syms = "□▣◨" # □ ▣ ◧ ◨
+    beats_syms = "□▣◀◎"
     target_sym = "⛶"
     wrong_sym = "˽"
     loudness_syms = "🞓🞒🞑🞐🞏🞎"
     accuracy_syms = "⟪⟬⟨⟩⟭⟫"
 
-    beats_iter = ((i, b, int(b.time/dt)) for i, b in enumerate(beats))
-    windowed_beats = ra.window(beats_iter, TRACK_WIDTH, BAR_OFFSET, key=lambda a: a[2:]*2)
+    def range_of(b):
+        if isinstance(b[1], Beat.Roll):
+            return (int(b[1].time/dt), int(b[1].end/dt))
+        else:
+            return (int(b[1].time/dt), int(b[1].time/dt))
+    windowed_beats = ra.window(enumerate(beats), TRACK_WIDTH, BAR_OFFSET, key=range_of)
     next(windowed_beats)
 
     while True:
@@ -182,38 +243,52 @@ def draw_track(beats, hits):
         # updating `hitted_beats`, it also catches the last item in `hits`
         for hit in hits[hit_index:]:
             score += hit.score
-            if not isinstance(hit, Hit.Unexpected):
+            if not isinstance(hit, (Hit.Unexpected, Hit.Rock)):
                 beat_index += 1
                 if not isinstance(hit, Hit.Miss):
                     hitted_beats.add(beat_index)
             hit_index += 1
 
         # draw un-hitted beats, it also catches the last visible beat
-        for index, beat, beat_pixel in windowed_beats.send(current_pixel):
-            if index not in hitted_beats:
+        for index, beat in windowed_beats.send(current_pixel):
+            start_pixel, end_pixel = range_of((index, beat))
+
+            if isinstance(beat, Beat.Roll):
+                unrolled = 0 if index not in hitted_beats else 1 if not isinstance(hit, Hit.Rock) else hit.roll+1
+                step_pixel = (end_pixel - start_pixel) // beat.number
+
+                for beat_pixel in range(start_pixel, end_pixel, step_pixel)[unrolled:beat.number]:
+                    pixel = BAR_OFFSET + beat_pixel - current_pixel
+                    if pixel in range(TRACK_WIDTH):
+                        view[pixel] = beats_syms[3]
+
+            elif index not in hitted_beats:
                 if isinstance(beat, Beat.Soft):
                     symbol = beats_syms[0]
                 elif isinstance(beat, Beat.Loud):
                     symbol = beats_syms[1]
                 elif isinstance(beat, Beat.Incr):
                     symbol = beats_syms[2]
-                view[BAR_OFFSET + beat_pixel - current_pixel] = symbol
 
-        progress = 1000*(index+1) // len(beats)
+                view[BAR_OFFSET + start_pixel - current_pixel] = symbol
+
+            progress = 1000*(index+1) // len(beats)
 
         # draw target
         view[BAR_OFFSET] = target_sym
 
         # visual feedback for hit loudness
         if hit is not None and current_time - hit.time < sustain:
-            symbol = next((sym for thr, sym in zip(THRESHOLDS[5::-1], loudness_syms) if hit.strength >= thr), target_sym)
+            symbol = next((sym for thr, sym in zip(THRESHOLDS[::-1], loudness_syms) if hit.strength >= thr), target_sym)
             view[BAR_OFFSET] = symbol
 
         # visual feedback for wrong key
         if hit is not None and current_time - hit.time < sustain:
-            if not isinstance(hit, (Hit.Great, Hit.LateGood, Hit.EarlyGood,
-                                               Hit.LateBad, Hit.EarlyBad,
-                                               Hit.LateFailed, Hit.EarlyFailed)):
+            hitted_types = (Hit.Great, Hit.Rock,
+                            Hit.LateGood, Hit.EarlyGood,
+                            Hit.LateBad, Hit.EarlyBad,
+                            Hit.LateFailed, Hit.EarlyFailed)
+            if not isinstance(hit, hitted_types) or isinstance(hit, Hit.Rock) and hit.roll > hit.total:
                 view[BAR_OFFSET+1] = wrong_sym
 
         # visual feedback for hit accuracy
@@ -325,13 +400,13 @@ class Game:
 
 
 # test
-beatmap = Beatmap(16.5,
-                  Beat.Soft(1.0),  Beat.Soft(2.0),  Beat.Soft(3.0),  Beat.Soft(3.5),  Beat.Loud(4.0),
-                  Beat.Soft(5.0),  Beat.Soft(6.0),  Beat.Soft(7.0),  Beat.Soft(7.5),  Beat.Loud(8.0),
-                  Beat.Soft(9.0),  Beat.Soft(10.0), Beat.Soft(11.0), Beat.Soft(11.5), Beat.Loud(12.0),
-                  Beat.Incr(13.0), Beat.Incr(13.5), Beat.Incr(14.0), Beat.Incr(14.5),
-                  Beat.Incr(15.0), Beat.Incr(15.5), Beat.Incr(16.0))
-# beatmap = Beatmap(10)
+# beatmap = Beatmap(9.0,
+#                   Beat.Soft(1.0), Beat.Soft(1.5),  Beat.Soft(2.0), Beat.Soft(2.25), Beat.Loud(2.5),
+#                   Beat.Soft(3.0), Beat.Soft(3.5),  Beat.Soft(4.0), Beat.Soft(4.25), Beat.Roll(4.5, 5.0, 4),
+#                   Beat.Soft(5.0), Beat.Soft(5.5),  Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5),
+#                   Beat.Incr(7.0), Beat.Incr(7.25), Beat.Incr(7.5), Beat.Incr(7.75),
+#                   Beat.Incr(8.0), Beat.Incr(8.25), Beat.Loud(8.5))
+beatmap = Beatmap(10)
 
 game = Game()
 
