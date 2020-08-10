@@ -208,7 +208,8 @@ def judge(beats, hits):
 
 def draw_track(beats, hits):
     dt = 1 / DROP_SPEED
-    sustain = 20 / DROP_SPEED
+    sustain = 10 / DROP_SPEED
+    decay = 25 / DROP_SPEED
 
     hitted_beats = set()
     hit = None
@@ -220,11 +221,12 @@ def draw_track(beats, hits):
     total_score = sum(beat.score for beat in beats)
     progress = 0
 
-    beats_syms = "□▣◀◎"
+    beats_syms = ["□", "▣", "◀", "◎"]
     target_sym = "⛶"
-    wrong_sym = "˽"
-    loudness_syms = "🞓🞒🞑🞐🞏🞎"
-    accuracy_syms = "⟪⟬⟨⟩⟭⟫"
+
+    loudness_syms = ["🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
+    accuracy_syms = ["⟪", "⟪", "⟨", "⟩", "⟫", "⟫"]
+    correct_sym = "˽"
 
     def range_of(b):
         if isinstance(b[1], Beat.Roll):
@@ -278,21 +280,20 @@ def draw_track(beats, hits):
         view[BAR_OFFSET] = target_sym
 
         # visual feedback for hit loudness
-        if hit is not None and current_time - hit.time < sustain:
-            symbol = next((sym for thr, sym in zip(THRESHOLDS[::-1], loudness_syms) if hit.strength >= thr), target_sym)
-            view[BAR_OFFSET] = symbol
-
-        # visual feedback for wrong key
-        if hit is not None and current_time - hit.time < sustain:
-            hitted_types = (Hit.Great, Hit.Rock,
-                            Hit.LateGood, Hit.EarlyGood,
-                            Hit.LateBad, Hit.EarlyBad,
-                            Hit.LateFailed, Hit.EarlyFailed)
-            if not isinstance(hit, hitted_types) or isinstance(hit, Hit.Rock) and hit.roll > hit.total:
-                view[BAR_OFFSET+1] = wrong_sym
+        if hit is not None and current_time - hit.time < decay:
+            loudness = next(i for i, thr in reversed(list(enumerate(THRESHOLDS))) if hit.strength >= thr)
+            loudness -= max(0, int(loudness * (current_time - hit.time) / decay))
+            view[BAR_OFFSET] = loudness_syms[loudness]
 
         # visual feedback for hit accuracy
-        if hit is not None and current_time - hit.time < sustain/3:
+        if hit is not None and current_time - hit.time < sustain:
+            correct_types = (Hit.Great,
+                             Hit.LateGood, Hit.EarlyGood,
+                             Hit.LateBad, Hit.EarlyBad,
+                             Hit.LateFailed, Hit.EarlyFailed)
+            if isinstance(hit, correct_types):
+                view[BAR_OFFSET+1] = correct_sym
+
             if isinstance(hit, (Hit.LateGood, Hit.WrongButLateGood)):
                 view[BAR_OFFSET-1] = accuracy_syms[2]
             elif isinstance(hit, (Hit.EarlyGood, Hit.WrongButEarlyGood)):
@@ -400,13 +401,13 @@ class Game:
 
 
 # test
-# beatmap = Beatmap(9.0,
-#                   Beat.Soft(1.0), Beat.Soft(1.5),  Beat.Soft(2.0), Beat.Soft(2.25), Beat.Loud(2.5),
-#                   Beat.Soft(3.0), Beat.Soft(3.5),  Beat.Soft(4.0), Beat.Soft(4.25), Beat.Roll(4.5, 5.0, 4),
-#                   Beat.Soft(5.0), Beat.Soft(5.5),  Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5),
-#                   Beat.Incr(7.0), Beat.Incr(7.25), Beat.Incr(7.5), Beat.Incr(7.75),
-#                   Beat.Incr(8.0), Beat.Incr(8.25), Beat.Loud(8.5))
-beatmap = Beatmap(10)
+beatmap = Beatmap(9.0,
+                  Beat.Soft(1.0), Beat.Soft(1.5),  Beat.Soft(2.0), Beat.Soft(2.25), Beat.Loud(2.5),
+                  Beat.Soft(3.0), Beat.Soft(3.5),  Beat.Soft(4.0), Beat.Soft(4.25), Beat.Roll(4.5, 5.0, 4),
+                  Beat.Soft(5.0), Beat.Soft(5.5),  Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5),
+                  Beat.Incr(7.0), Beat.Incr(7.25), Beat.Incr(7.5), Beat.Incr(7.75),
+                  Beat.Incr(8.0), Beat.Incr(8.25), Beat.Loud(8.5))
+# beatmap = Beatmap(10)
 
 game = Game()
 
