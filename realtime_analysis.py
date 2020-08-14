@@ -5,15 +5,11 @@ import scipy
 import scipy.fftpack
 import scipy.signal
 
-def click(sr, freq=1000.0, decay_time=0.1, length=None):
+def click(sr, freq=1000.0, decay_time=0.1, amplitude=1.0, length=None):
     if length is None:
-        length = int(1.0*sr)
-    t = numpy.linspace(0, length/sr, length, endpoint=False, dtype=numpy.float32)
-    return 2**(-10*t/decay_time) * numpy.sin(2 * numpy.pi * freq * t)
-
-def clicks(times, duration, sr, buffer_length=1024, freq=1000.0, decay_time=0.1):
-    signals = ((t, click(sr, freq, decay_time, int(decay_time*sr))) for t in times)
-    return merge(signals, duration, sr, buffer_length)
+        length = decay_time
+    t = numpy.linspace(0, length, int(length*sr), endpoint=False, dtype=numpy.float32)
+    return amplitude * 2**(-10*t/decay_time) * numpy.sin(2 * numpy.pi * freq * t)
 
 def power2db(power, scale=(1e-5, 1e8)):
     return 10.0 * numpy.log10(numpy.maximum(scale[0], power*scale[1]))
@@ -142,5 +138,5 @@ def merge(signals, duration, sr, buffer_length=1024):
             j = min(end, index+buffer_length)
             buffer[i-index:j-index] += signal[i-start:j-start]
 
-        yield buffer.tobytes()
+        yield buffer
 

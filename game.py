@@ -39,6 +39,25 @@ class Beat:
     def __repr__(self):
         return "Beat.{}(time={})".format(type(self).__name__, repr(self.time))
 
+    def to_sound(self):
+        if isinstance(self, Beat.Soft):
+            return ra.click(sr=RATE, freq=1000.0, decay_time=0.1, amplitude=0.5)
+
+        elif isinstance(self, Beat.Loud):
+            return ra.click(sr=RATE, freq=1000.0, decay_time=0.1, amplitude=1.0)
+
+        elif isinstance(self, Beat.Incr):
+            return ra.click(sr=RATE, freq=1000.0, decay_time=0.1, amplitude=1.0)
+
+        elif isinstance(self, Beat.Roll):
+            sound = ra.click(sr=RATE, freq=1000.0, decay_time=0.1, amplitude=1.0)
+            step = (self.end - self.time)/self.number
+            signals = [(step*i, sound) for i in range(self.number)]
+            duration = self.end-self.time
+            gen = ra.merge(signals, duration, RATE, int(duration*RATE))
+            next(gen)
+            return next(gen)
+
 Beat.Soft = type("Soft", (Beat,), dict(score=10))
 Beat.Loud = type("Loud", (Beat,), dict(score=10))
 Beat.Incr = type("Incr", (Beat,), dict(score=10))
@@ -111,16 +130,9 @@ class Beatmap:
         self.duration = duration
         self.beats = beats
 
-    def gen_music(self):
-        times = []
-        for beat in self.beats:
-            if isinstance(beat, Beat.Roll):
-                step = (beat.end - beat.time)/beat.number
-                for i in range(beat.number):
-                    times.append(beat.time + step * i)
-            else:
-                times.append(beat.time)
-        return ra.clicks(times, sr=RATE, duration=self.duration)
+    def clicks(self):
+        signals = [(beat.time, beat.to_sound()) for beat in self.beats]
+        return ra.merge(signals, self.duration, RATE, SAMPLES_PER_BUFFER)
 
 
 def judge(beats, hits):
@@ -323,12 +335,15 @@ class Game:
         self.pyaudio.terminate()
 
     def get_output_stream(self, beatmap):
-        signal_gen = beatmap.gen_music()
+        signal_gen = beatmap.clicks()
         next(signal_gen, None)
 
         def output_callback(in_data, frame_count, time_info, status):
             out_data = next(signal_gen, None)
-            return out_data, pyaudio.paContinue
+            if out_data is None:
+                return b'', pyaudio.paComplete
+            else:
+                return out_data.tobytes(), pyaudio.paContinue
 
         output_stream = self.pyaudio.open(format=pyaudio.paFloat32,
                                           channels=CHANNELS,
