@@ -47,7 +47,8 @@ class Beat:
             return ra.click(sr=RATE, freq=1000.0, decay_time=0.1, amplitude=1.0)
 
         elif isinstance(self, Beat.Incr):
-            return ra.click(sr=RATE, freq=1000.0, decay_time=0.1, amplitude=1.0)
+            amplitude = 0.5 + 0.5 * (self.count-1)/(self.total-1) if self.total > 0 else 1.0
+            return ra.click(sr=RATE, freq=1000.0, decay_time=0.1, amplitude=amplitude)
 
         elif isinstance(self, Beat.Roll):
             sound = ra.click(sr=RATE, freq=1000.0, decay_time=0.1, amplitude=1.0)
@@ -60,7 +61,18 @@ class Beat:
 
 Beat.Soft = type("Soft", (Beat,), dict(score=10))
 Beat.Loud = type("Loud", (Beat,), dict(score=10))
-Beat.Incr = type("Incr", (Beat,), dict(score=10))
+
+class Incr(Beat):
+    score = 10
+
+    def __init__(self, time, count, total):
+        super().__init__(time)
+        self.count = count
+        self.total = total
+
+    def __repr__(self):
+        return "Beat.Incr(time={}, count={}, total={})".format(repr(self.time), repr(self.count), repr(self.total))
+Beat.Incr = Incr
 
 class Roll(Beat):
     def __init__(self, time, end, number):
@@ -417,11 +429,11 @@ class Game:
 
 # test
 beatmap = Beatmap(9.0,
-                  Beat.Soft(1.0), Beat.Soft(1.5),  Beat.Soft(2.0), Beat.Soft(2.25), Beat.Loud(2.5),
-                  Beat.Soft(3.0), Beat.Soft(3.5),  Beat.Soft(4.0), Beat.Soft(4.25), Beat.Roll(4.5, 5.0, 4),
-                  Beat.Soft(5.0), Beat.Soft(5.5),  Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5),
-                  Beat.Incr(7.0), Beat.Incr(7.25), Beat.Incr(7.5), Beat.Incr(7.75),
-                  Beat.Incr(8.0), Beat.Incr(8.25), Beat.Loud(8.5))
+                  Beat.Soft(1.0), Beat.Soft(1.5), Beat.Soft(2.0), Beat.Soft(2.25), Beat.Loud(2.5),
+                  Beat.Soft(3.0), Beat.Soft(3.5), Beat.Soft(4.0), Beat.Soft(4.25), Beat.Roll(4.5, 5.0, 4),
+                  Beat.Soft(5.0), Beat.Soft(5.5), Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5),
+                  Beat.Incr(7.0, 1, 6), Beat.Incr(7.25, 2, 6), Beat.Incr(7.5, 3, 6), Beat.Incr(7.75, 4, 6),
+                  Beat.Incr(8.0, 5, 6), Beat.Incr(8.25, 6, 6), Beat.Loud(8.5))
 # beatmap = Beatmap(10)
 
 game = Game()
