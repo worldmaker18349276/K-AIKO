@@ -1,5 +1,6 @@
 import sys
 import time
+import enum
 import numpy as np
 import pyaudio
 import realtime_analysis as ra
@@ -33,13 +34,14 @@ TOLERANCES = (0.02, 0.06, 0.10, 0.14)
 
 # beats and hits
 class Beat:
-    def __init__(self, time):
+    def __init__(self, time, perf=None):
         self.time = time
+        self.perf = perf
 
     def __repr__(self):
-        return "Beat.{}(time={})".format(type(self).__name__, repr(self.time))
+        return "Beat.{}(time={!r}, perf={!r})".format(type(self).__name__, self.time, self.perf)
 
-    def to_sound(self):
+    def click(self):
         if isinstance(self, Beat.Soft):
             return ra.click(sr=RATE, freq=1000.0, decay_time=0.1, amplitude=0.5)
 
@@ -47,7 +49,7 @@ class Beat:
             return ra.click(sr=RATE, freq=1000.0, decay_time=0.1, amplitude=1.0)
 
         elif isinstance(self, Beat.Incr):
-            amplitude = 0.5 + 0.5 * (self.count-1)/(self.total-1) if self.total > 0 else 1.0
+            amplitude = 0.5 + 0.5 * (self.count-1)/self.total
             return ra.click(sr=RATE, freq=1000.0, decay_time=0.1, amplitude=amplitude)
 
         elif isinstance(self, Beat.Roll):
@@ -59,130 +61,95 @@ class Beat:
             next(gen)
             return next(gen)
 
-Beat.Soft = type("Soft", (Beat,), dict(score=10))
-Beat.Loud = type("Loud", (Beat,), dict(score=10))
+Beat.Soft = type("Soft", (Beat,), dict())
+Beat.Loud = type("Loud", (Beat,), dict())
 
 class Incr(Beat):
-    score = 10
-
-    def __init__(self, time, count, total):
-        super().__init__(time)
+    def __init__(self, time, count, total, perf=None):
+        super().__init__(time, perf)
         self.count = count
         self.total = total
 
     def __repr__(self):
-        return "Beat.Incr(time={}, count={}, total={})".format(repr(self.time), repr(self.count), repr(self.total))
+        return "Beat.Incr(time={!r}, count={!r}, total={!r}, perf={!r})".format(
+                        self.time, self.count, self.total, self.perf)
 Beat.Incr = Incr
 
 class Roll(Beat):
-    def __init__(self, time, end, number):
-        super().__init__(time)
+    def __init__(self, time, end, number, perf=None, roll=0):
+        super().__init__(time, perf)
         self.end = end
         self.number = number
-
-    @property
-    def score(self):
-        return 10+2*(self.number-1)
+        self.roll = roll
 
     def __repr__(self):
-        return "Beat.Roll(time={}, end={}, number={})".format(repr(self.time), repr(self.end), repr(self.number))
+        return "Beat.Roll(time={!r}, end={!r}, number={!r}, perf={!r}, roll={!r})".format(
+                        self.time, self.end, self.number, self.perf, self.roll)
 Beat.Roll = Roll
 
-
-class Hit:
-    def __init__(self, time, strength):
-        self.time = time
-        self.strength = strength
-
-    def __repr__(self):
-        return "Hit.{}(time={}, strength={})".format(type(self).__name__, repr(self.time), repr(self.strength))
-
-Hit.Miss       = type("Miss",       (Hit,), dict(score=0))
-Hit.Unexpected = type("Unexpected", (Hit,), dict(score=0))
-
-Hit.Great       = type("Great",       (Hit,), dict(score=10))
-Hit.LateGood    = type("LateGood",    (Hit,), dict(score=5))
-Hit.EarlyGood   = type("EarlyGood",   (Hit,), dict(score=5))
-Hit.LateBad     = type("LateBad",     (Hit,), dict(score=3))
-Hit.EarlyBad    = type("EarlyBad",    (Hit,), dict(score=3))
-Hit.LateFailed  = type("LateFailed",  (Hit,), dict(score=0))
-Hit.EarlyFailed = type("EarlyFailed", (Hit,), dict(score=0))
-
-Hit.WrongButGreat       = type("WrongButGreat",       (Hit,), dict(score=5))
-Hit.WrongButLateGood    = type("WrongButLateGood",    (Hit,), dict(score=3))
-Hit.WrongButEarlyGood   = type("WrongButEarlyGood",   (Hit,), dict(score=3))
-Hit.WrongButLateBad     = type("WrongButLateBad",     (Hit,), dict(score=1))
-Hit.WrongButEarlyBad    = type("WrongButEarlyBad",    (Hit,), dict(score=1))
-Hit.WrongButLateFailed  = type("WrongButLateFailed",  (Hit,), dict(score=0))
-Hit.WrongButEarlyFailed = type("WrongButEarlyFailed", (Hit,), dict(score=0))
-
-class Rock(Hit):
-    def __init__(self, time, strength, roll, total):
-        super().__init__(time, strength)
-        self.roll = roll
-        self.total = total
-
-    @property
-    def score(self):
-        if self.roll <= self.total:
-            return 2
-        elif self.roll <= self.total*2:
-            return -2
-        else:
-            return 0
-
-    def __repr__(self):
-        return "Hit.Rock(time={}, strength={}, roll={}, total={})".format(
-                    repr(self.time), repr(self.strength), repr(self.roll), repr(self.total))
-Hit.Rock = Rock
+class Performance(enum.Enum):
+    MISS = 0
+    GREAT = 1
+    LATE_GOOD = 2
+    EARLY_GOOD = 3
+    LATE_BAD = 4
+    EARLY_BAD = 5
+    LATE_FAILED = 6
+    EARLY_FAILED = 7
+    WRONG_BUT_GREAT = 8
+    WRONG_BUT_LATE_GOOD = 9
+    WRONG_BUT_EARLY_GOOD = 10
+    WRONG_BUT_LATE_BAD = 11
+    WRONG_BUT_EARLY_BAD = 12
+    WRONG_BUT_LATE_FAILED = 13
+    WRONG_BUT_EARLY_FAILED = 14
 
 
 class Beatmap:
     def __init__(self, duration, *beats):
         self.duration = duration
         self.beats = beats
+        self.hit = dict(time=-1.0, strength=0.0, beat=None)
 
     def clicks(self):
-        signals = [(beat.time, beat.to_sound()) for beat in self.beats]
+        signals = [(beat.time, beat.click()) for beat in self.beats]
         return ra.merge(signals, self.duration, RATE, SAMPLES_PER_BUFFER)
 
 
-def judge(beats, hits):
-    beats = iter(beats)
+def judge(beatmap):
+    beats = iter(beatmap.beats)
+    INCR_TOL = (THRESHOLDS[3] - THRESHOLDS[0])/6
 
-    prev_strength = 0.0
-    incr_tol = (THRESHOLDS[3] - THRESHOLDS[0])/6
-    roll_number = 0
+    incr_threshold = 0.0
 
     beat = next(beats, None)
     while True:
         time, strength, detected = yield
-        time -= AUDIO_DELAY
-        strength *= AUDIO_VOLUME
 
         # if next beat has passed through
-        if roll_number != 0 and beat.end - TOLERANCES[2] < time:
+        if isinstance(beat, Beat.Roll) and beat.roll != 0 and beat.end - TOLERANCES[2] < time:
             beat = next(beats, None)
-            roll_number = 0
 
-        if roll_number == 0:
+        if not isinstance(beat, Beat.Roll) or beat.roll == 0:
             while beat is not None and beat.time + TOLERANCES[3] < time:
-                hits.append(Hit.Miss(time, 0.0))
+                beat.perf = Performance.MISS
                 beat = next(beats, None)
 
+        # update state
         if not detected or strength < THRESHOLDS[0]:
             continue
+        beatmap.hit = dict(time=time, strength=strength, beat=beat)
+        # beatmap.score = ...
+        # beatmap.progress = ...
 
         # if next beat isn't in the range yet
         if beat is None or beat.time - TOLERANCES[3] >= time:
-            hits.append(Hit.Unexpected(time, strength))
             continue
 
-        # drumrolls (only for the second or later hits of rolls)
+        # drumrolls
         if isinstance(beat, Beat.Roll):
-            roll_number += 1
-            if roll_number > 1:
-                hits.append(Hit.Rock(time, strength, roll_number, beat.number))
+            beat.roll += 1
+            if beat.roll > 1:
                 continue
 
         # judge pressed key (determined by loudness)
@@ -191,59 +158,50 @@ def judge(beats, hits):
         elif isinstance(beat, Beat.Loud):
             is_correct_key = strength >= THRESHOLDS[3]
         elif isinstance(beat, Beat.Incr):
-            is_correct_key = strength >= prev_strength - incr_tol
+            is_correct_key = strength >= incr_threshold - INCR_TOL
         elif isinstance(beat, Beat.Roll):
             is_correct_key = True
 
         # judge accuracy
         err = abs(time - beat.time)
-        is_late = time > beat.time
+        too_late = time > beat.time
 
         if err < TOLERANCES[0]:
             if is_correct_key:
-                hit_type = Hit.Great
+                perf = Performance.GREAT
             else:
-                hit_type = Hit.WrongButGreat
+                perf = Performance.WRONG_BUT_GREAT
 
         elif err < TOLERANCES[1]:
             if is_correct_key:
-                hit_type = Hit.LateGood           if is_late else Hit.EarlyGood
+                perf = Performance.LATE_GOOD             if too_late else Performance.EARLY_GOOD
             else:
-                hit_type = Hit.WrongButLateGood   if is_late else Hit.WrongButEarlyGood
+                perf = Performance.WRONG_BUT_LATE_GOOD   if too_late else Performance.WRONG_BUT_EARLY_GOOD
 
         elif err < TOLERANCES[2]:
             if is_correct_key:
-                hit_type = Hit.LateBad            if is_late else Hit.EarlyBad
+                perf = Performance.LATE_BAD              if too_late else Performance.EARLY_BAD
             else:
-                hit_type = Hit.WrongButLateBad    if is_late else Hit.WrongButEarlyBad
+                perf = Performance.WRONG_BUT_LATE_BAD    if too_late else Performance.WRONG_BUT_EARLY_BAD
 
         else:
             if is_correct_key:
-                hit_type = Hit.LateFailed         if is_late else Hit.EarlyFailed
+                perf = Performance.LATE_FAILED           if too_late else Performance.EARLY_FAILED
             else:
-                hit_type = Hit.WrongButLateFailed if is_late else Hit.WrongButEarlyFailed
+                perf = Performance.WRONG_BUT_LATE_FAILED if too_late else Performance.WRONG_BUT_EARLY_FAILED
+
+        beat.perf = perf
 
         # add hit and wait for next beat
-        hits.append(hit_type(time, strength))
-        prev_strength = max(strength, prev_strength) if isinstance(beat, Beat.Incr) else 0.0
+        incr_threshold = max(strength, incr_threshold) if isinstance(beat, Beat.Incr) else 0.0
         if not isinstance(beat, Beat.Roll):
             beat = next(beats, None)
 
 
-def draw_track(beats, hits):
+def draw_track(beatmap):
     dt = 1 / DROP_SPEED
     sustain = 10 / DROP_SPEED
     decay = 25 / DROP_SPEED
-
-    hitted_beats = set()
-    hit = None
-    hit_index = 0
-    beat_index = -1
-    index = -1
-
-    score = 0
-    total_score = sum(beat.score for beat in beats)
-    progress = 0
 
     beats_syms = ["□", "▣", "◀", "◎"]
     target_sym = "⛶"
@@ -253,11 +211,11 @@ def draw_track(beats, hits):
     correct_sym = "˽"
 
     def range_of(b):
-        if isinstance(b[1], Beat.Roll):
-            return (int(b[1].time/dt), int(b[1].end/dt))
+        if isinstance(b, Beat.Roll):
+            return (int(b.time/dt), int(b.end/dt))
         else:
-            return (int(b[1].time/dt), int(b[1].time/dt))
-    windowed_beats = ra.window(enumerate(beats), TRACK_WIDTH, BAR_OFFSET, key=range_of)
+            return (int(b.time/dt), int(b.time/dt))
+    windowed_beats = ra.window(beatmap.beats, TRACK_WIDTH, BAR_OFFSET, key=range_of)
     next(windowed_beats)
 
     while True:
@@ -266,32 +224,19 @@ def draw_track(beats, hits):
         view = [" "]*TRACK_WIDTH
         current_pixel = int(current_time/dt)
 
-        # updating `hitted_beats`, it also catches the last item in `hits`
-        for hit in hits[hit_index:]:
-            score += hit.score
-            if isinstance(hit, Hit.Rock):
-                hitted_beats.add((beat_index, hit.roll))
-            elif not isinstance(hit, Hit.Unexpected):
-                beat_index += 1
-                if not isinstance(hit, Hit.Miss):
-                    hitted_beats.add(beat_index)
-            hit_index += 1
-
         # draw un-hitted beats, it also catches the last visible beat
-        for index, beat in windowed_beats.send(current_pixel):
-            start_pixel, end_pixel = range_of((index, beat))
+        for beat in windowed_beats.send(current_pixel):
+            start_pixel, end_pixel = range_of(beat)
 
             if isinstance(beat, Beat.Roll):
                 step_pixel = (end_pixel - start_pixel) // beat.number
+                for r in range(beat.number)[beat.roll:]:
+                    pixel = BAR_OFFSET + start_pixel + step_pixel * r - current_pixel
+                    if pixel in range(TRACK_WIDTH):
+                        view[pixel] = beats_syms[3]
+                continue
 
-                for r in range(beat.number):
-                    subindex = index if r == 0 else (index, r+1)
-                    if subindex not in hitted_beats:
-                        pixel = BAR_OFFSET + start_pixel + step_pixel * r - current_pixel
-                        if pixel in range(TRACK_WIDTH):
-                            view[pixel] = beats_syms[3]
-
-            elif index not in hitted_beats:
+            if beat.perf in (None, Performance.MISS):
                 if isinstance(beat, Beat.Soft):
                     symbol = beats_syms[0]
                 elif isinstance(beat, Beat.Loud):
@@ -301,43 +246,44 @@ def draw_track(beats, hits):
 
                 view[BAR_OFFSET + start_pixel - current_pixel] = symbol
 
-            progress = 1000*(index+1) // len(beats)
-
         # draw target
         view[BAR_OFFSET] = target_sym
 
         # visual feedback for hit loudness
-        if hit is not None and current_time - hit.time < decay:
-            loudness = next(i for i, thr in reversed(list(enumerate(THRESHOLDS))) if hit.strength >= thr)
-            loudness -= max(0, int(loudness * (current_time - hit.time) / decay))
+        if current_time - beatmap.hit["time"] < decay:
+            loudness = next(i for i, thr in reversed(list(enumerate(THRESHOLDS))) if beatmap.hit["strength"] >= thr)
+            loudness -= max(0, int(loudness * (current_time - beatmap.hit["time"]) / decay))
             view[BAR_OFFSET] = loudness_syms[loudness]
 
         # visual feedback for hit accuracy
-        if hit is not None and current_time - hit.time < sustain:
-            correct_types = (Hit.Great,
-                             Hit.LateGood, Hit.EarlyGood,
-                             Hit.LateBad, Hit.EarlyBad,
-                             Hit.LateFailed, Hit.EarlyFailed)
-            if isinstance(hit, correct_types):
+        if current_time - beatmap.hit["time"] < sustain and beatmap.hit["beat"] is not None:
+            correct_types = (Performance.GREAT,
+                             Performance.LATE_GOOD, Performance.EARLY_GOOD,
+                             Performance.LATE_BAD, Performance.EARLY_BAD,
+                             Performance.LATE_FAILED, Performance.EARLY_FAILED)
+            perf = beatmap.hit["beat"].perf
+            if perf in correct_types:
                 view[BAR_OFFSET+1] = correct_sym
 
-            if isinstance(hit, (Hit.LateGood, Hit.WrongButLateGood)):
+            if perf in (Performance.LATE_GOOD, Performance.WRONG_BUT_LATE_GOOD):
                 view[BAR_OFFSET-1] = accuracy_syms[2]
-            elif isinstance(hit, (Hit.EarlyGood, Hit.WrongButEarlyGood)):
+            elif perf in (Performance.EARLY_GOOD, Performance.WRONG_BUT_EARLY_GOOD):
                 view[BAR_OFFSET+2] = accuracy_syms[3]
-            elif isinstance(hit, (Hit.LateBad, Hit.WrongButLateBad)):
+            elif perf in (Performance.LATE_BAD, Performance.WRONG_BUT_LATE_BAD):
                 view[BAR_OFFSET-1] = accuracy_syms[1]
-            elif isinstance(hit, (Hit.EarlyBad, Hit.WrongButEarlyBad)):
+            elif perf in (Performance.EARLY_BAD, Performance.WRONG_BUT_EARLY_BAD):
                 view[BAR_OFFSET+2] = accuracy_syms[4]
-            elif isinstance(hit, (Hit.LateFailed, Hit.WrongButLateFailed)):
+            elif perf in (Performance.LATE_FAILED, Performance.WRONG_BUT_LATE_FAILED):
                 view[BAR_OFFSET-1] = accuracy_syms[0]
-            elif isinstance(hit, (Hit.EarlyFailed, Hit.WrongButEarlyFailed)):
+            elif perf in (Performance.EARLY_FAILED, Performance.WRONG_BUT_EARLY_FAILED):
                 view[BAR_OFFSET+2] = accuracy_syms[5]
 
         # print
-        sys.stdout.write("[{:>5d}/{:>5d}]".format(score, total_score))
+        # sys.stdout.write("[{:>5d}/{:>5d}]".format(score, total_score))
+        sys.stdout.write("[")
         sys.stdout.write("".join(view))
-        sys.stdout.write(" [{:>5.1f}%]".format(progress/10))
+        sys.stdout.write("]")
+        # sys.stdout.write(" [{:>5.1f}%]".format(progress/10))
         sys.stdout.write("\r")
         sys.stdout.flush()
 
@@ -371,7 +317,7 @@ class Game:
 
         return output_stream
 
-    def get_input_stream(self, beatmap, hits):
+    def get_input_stream(self, beatmap):
         dect = ra.pipe(ra.frame(WIN_LENGTH, HOP_LENGTH),
                        ra.power_spectrum(RATE, WIN_LENGTH),
                        ra.onset_strength(RATE/WIN_LENGTH, HOP_LENGTH/RATE),
@@ -379,7 +325,8 @@ class Game:
                                        pre_max=PRE_MAX, post_max=POST_MAX,
                                        pre_avg=PRE_AVG, post_avg=POST_AVG,
                                        wait=WAIT, delta=DELTA),
-                       judge(beatmap.beats, hits))
+                       ra.transform(lambda _, a: (a[0]-AUDIO_DELAY, a[1]*AUDIO_VOLUME, a[2])),
+                       judge(beatmap))
         next(dect)
 
         def input_callback(in_data, frame_count, time_info, status):
@@ -401,18 +348,16 @@ class Game:
 
         return input_stream
 
-    def get_view_callback(self, beatmap, hits):
-        drawer = draw_track(beatmap.beats, hits)
+    def get_view_callback(self, beatmap):
+        drawer = draw_track(beatmap)
         next(drawer)
 
         return drawer.send
 
     def play(self, beatmap):
-        hits = []
-
         output_stream = self.get_output_stream(beatmap)
-        input_stream = self.get_input_stream(beatmap, hits)
-        view_callback = self.get_view_callback(beatmap, hits)
+        input_stream = self.get_input_stream(beatmap)
+        view_callback = self.get_view_callback(beatmap)
 
         reference_time = time.time()
         input_stream.start_stream()
@@ -427,8 +372,6 @@ class Game:
         output_stream.close()
         input_stream.close()
 
-        return hits
-
 
 # test
 beatmap = Beatmap(9.0,
@@ -441,7 +384,7 @@ beatmap = Beatmap(9.0,
 
 game = Game()
 
-hits = game.play(beatmap)
+game.play(beatmap)
 print()
-for hit in hits:
-    print(hit)
+for beat in beatmap.beats:
+    print(beat)

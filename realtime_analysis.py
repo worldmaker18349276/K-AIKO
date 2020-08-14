@@ -105,9 +105,10 @@ def whenever(func, cond=bool):
             func(index, data)
         data = yield data
 
-def window(iter, timespan, offset=0, key=lambda item: item):
+def window(it, timespan, offset=0, key=lambda item: item):
+    it = iter(it)
     playing = []
-    waiting = next(iter, None)
+    waiting = next(it, None)
 
     time = yield None
     while True:
@@ -116,7 +117,7 @@ def window(iter, timespan, offset=0, key=lambda item: item):
 
         while waiting is not None and key(waiting)[0] < tf:
             playing.append(waiting)
-            waiting = next(iter, None)
+            waiting = next(it, None)
 
         while len(playing) > 0 and key(playing[0])[1] < t0:
             playing.pop(0)
