@@ -25,7 +25,7 @@ AUDIO_VOLUME = 1.2
 AUDIO_DELAY = 0.03
 
 TRACK_WIDTH = 100
-BAR_OFFSET = 10
+BAR_OFFSET = 40
 DROP_SPEED = 100.0 # pixels per sec
 THRESHOLDS = (0.0, 0.7, 1.3, 2.0, 2.7, 3.3)
 TOLERANCES = (0.02, 0.06, 0.10, 0.14)
@@ -269,7 +269,9 @@ def draw_track(beats, hits):
         # updating `hitted_beats`, it also catches the last item in `hits`
         for hit in hits[hit_index:]:
             score += hit.score
-            if not isinstance(hit, (Hit.Unexpected, Hit.Rock)):
+            if isinstance(hit, Hit.Rock):
+                hitted_beats.add((beat_index, hit.roll))
+            elif not isinstance(hit, Hit.Unexpected):
                 beat_index += 1
                 if not isinstance(hit, Hit.Miss):
                     hitted_beats.add(beat_index)
@@ -280,13 +282,14 @@ def draw_track(beats, hits):
             start_pixel, end_pixel = range_of((index, beat))
 
             if isinstance(beat, Beat.Roll):
-                unrolled = 0 if index not in hitted_beats else 1 if not isinstance(hit, Hit.Rock) else hit.roll+1
                 step_pixel = (end_pixel - start_pixel) // beat.number
 
-                for beat_pixel in range(start_pixel, end_pixel, step_pixel)[unrolled:beat.number]:
-                    pixel = BAR_OFFSET + beat_pixel - current_pixel
-                    if pixel in range(TRACK_WIDTH):
-                        view[pixel] = beats_syms[3]
+                for r in range(beat.number):
+                    subindex = index if r == 0 else (index, r+1)
+                    if subindex not in hitted_beats:
+                        pixel = BAR_OFFSET + start_pixel + step_pixel * r - current_pixel
+                        if pixel in range(TRACK_WIDTH):
+                            view[pixel] = beats_syms[3]
 
             elif index not in hitted_beats:
                 if isinstance(beat, Beat.Soft):
