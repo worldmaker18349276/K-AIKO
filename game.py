@@ -1,11 +1,11 @@
 import sys
 import time
 import enum
+import wave
 import numpy as np
 import pyaudio
 import realtime_analysis as ra
 
-CHANNELS = 1
 RATE = 44100
 SAMPLES_PER_BUFFER = 1024
 WIN_LENGTH = 512*4
@@ -152,10 +152,19 @@ class Performance(enum.Enum):
 
 # beatmap
 class Beatmap:
-    def __init__(self, duration, *beats):
-        self.duration = duration
+    def __init__(self, filename, *beats):
         self.beats = beats
         self.hit = dict(time=-1.0, strength=0.0, beat=None)
+        if isinstance(filename, float):
+            self.file = None
+            self.duration = filename
+        else:
+            self.file = wave.open(filename, "rb")
+            self.duration = self.file.getnframes() / self.file.getframerate()
+
+    def __del__(self):
+        if self.file is not None:
+            self.file.close()
 
     @property
     def total_score(self):
@@ -172,6 +181,12 @@ class Beatmap:
     def clicks(self):
         signals = [(beat.time, beat.click()) for beat in self.beats]
         return ra.merge(signals, self.duration, RATE, SAMPLES_PER_BUFFER)
+
+    def music(self):
+        if self.file is not None:
+            return ra.load(self.file, RATE, SAMPLES_PER_BUFFER)
+        else:
+            return self.clicks()
 
     def judge(self):
         beats = iter(self.beats)
@@ -349,7 +364,7 @@ class KnockConsole:
         self.pyaudio.terminate()
 
     def get_output_stream(self, beatmap):
-        signal_gen = beatmap.clicks()
+        signal_gen = beatmap.music()
         next(signal_gen, None)
 
         def output_callback(in_data, frame_count, time_info, status):
@@ -360,7 +375,7 @@ class KnockConsole:
                 return out_data.tobytes(), pyaudio.paContinue
 
         output_stream = self.pyaudio.open(format=pyaudio.paFloat32,
-                                          channels=CHANNELS,
+                                          channels=1,
                                           rate=RATE,
                                           input=False,
                                           output=True,
@@ -391,7 +406,7 @@ class KnockConsole:
             return in_data, pyaudio.paContinue
 
         input_stream = self.pyaudio.open(format=pyaudio.paFloat32,
-                                         channels=CHANNELS,
+                                         channels=1,
                                          rate=RATE,
                                          input=True,
                                          output=False,
@@ -433,7 +448,7 @@ beatmap = Beatmap(9.0,
                   Beat.Soft(5.0), Beat.Loud(5.5), Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5),
                   Beat.Incr(7.0, 1, 6), Beat.Incr(7.25, 2, 6), Beat.Incr(7.5, 3, 6), Beat.Incr(7.75, 4, 6),
                   Beat.Incr(8.0, 5, 6), Beat.Incr(8.25, 6, 6), Beat.Loud(8.5))
-# beatmap = Beatmap(10)
+# beatmap = Beatmap("test2.wav", Beat.Soft(1.0))
 
 console = KnockConsole()
 
