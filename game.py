@@ -154,7 +154,7 @@ class Performance(enum.Enum):
 class Beatmap:
     def __init__(self, filename, *beats):
         self.beats = beats
-        self.hit = dict(time=-1.0, strength=0.0, beat=None)
+        self.hit = dict(number=-1, strength=0.0, beat=None)
         if isinstance(filename, float):
             self.file = None
             self.duration = filename
@@ -176,6 +176,8 @@ class Beatmap:
 
     @property
     def progress(self):
+        if len(self.beats) == 0:
+            return 1000
         return int(sum(1 for beat in self.beats if beat.perf is not None) / len(self.beats) * 1000)
 
     def clicks(self):
@@ -193,6 +195,7 @@ class Beatmap:
         INCR_TOL = (THRESHOLDS[3] - THRESHOLDS[0])/6
 
         incr_threshold = 0.0
+        hit_number = 0
 
         beat = next(beats, None)
         while True:
@@ -210,7 +213,8 @@ class Beatmap:
             # update state
             if not detected or strength < THRESHOLDS[0]:
                 continue
-            self.hit = dict(time=time, strength=strength, beat=beat)
+            self.hit = dict(number=hit_number, strength=strength, beat=beat)
+            hit_number += 1
 
             # if next beat isn't in the range yet
             if beat is None or beat.time - TOLERANCES[3] >= time:
@@ -270,11 +274,13 @@ class Beatmap:
     def draw(self):
         dt = 1 / DROP_SPEED
         sustain = 10 / DROP_SPEED
-        decay = 25 / DROP_SPEED
+        decay = 5 / DROP_SPEED
 
         beats_syms = ["□", "▣", "◀", "◎"]
         target_sym = "⛶"
 
+        hit_number = -1
+        hit_time = -1.0
         loudness_syms = ["🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
         accuracy_syms = ["⟪", "⟪", "⟨", "⟩", "⟫", "⟫"]
         correct_sym = "˽"
@@ -318,14 +324,19 @@ class Beatmap:
             # draw target
             view[BAR_OFFSET] = target_sym
 
+            if hit_number != self.hit["number"]:
+                hit_number = self.hit["number"]
+                hit_time = current_time
+
             # visual feedback for hit loudness
-            if current_time - self.hit["time"] < decay:
+            if current_time - hit_time < 6*decay:
                 loudness = next(i for i, thr in reversed(list(enumerate(THRESHOLDS))) if self.hit["strength"] >= thr)
-                loudness -= max(0, int(loudness * (current_time - self.hit["time"]) / decay))
-                view[BAR_OFFSET] = loudness_syms[loudness]
+                loudness -= int((current_time - hit_time) / decay)
+                if loudness >= 0:
+                    view[BAR_OFFSET] = loudness_syms[loudness]
 
             # visual feedback for hit accuracy
-            if current_time - self.hit["time"] < sustain and self.hit["beat"] is not None:
+            if current_time - hit_time < sustain and self.hit["beat"] is not None:
                 correct_types = (Performance.GREAT,
                                  Performance.LATE_GOOD, Performance.EARLY_GOOD,
                                  Performance.LATE_BAD, Performance.EARLY_BAD,
@@ -448,7 +459,8 @@ beatmap = Beatmap(9.0,
                   Beat.Soft(5.0), Beat.Loud(5.5), Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5),
                   Beat.Incr(7.0, 1, 6), Beat.Incr(7.25, 2, 6), Beat.Incr(7.5, 3, 6), Beat.Incr(7.75, 4, 6),
                   Beat.Incr(8.0, 5, 6), Beat.Incr(8.25, 6, 6), Beat.Loud(8.5))
-# beatmap = Beatmap("test2.wav", Beat.Soft(1.0))
+# beatmap = Beatmap("test.wav")
+# beatmap = Beatmap(10.0)
 
 console = KnockConsole()
 
