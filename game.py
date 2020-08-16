@@ -78,50 +78,54 @@ class Beat:
                 return self.perf.score
 
 class Soft(Beat):
-    def __init__(self, time, perf=None):
+    def __init__(self, time, speed=1.0, perf=None):
         super().__init__()
         self.time = time
+        self.speed = speed
         self.perf = perf
 
     def __repr__(self):
-        return "Beat.Soft(time={!r}, perf={!r})".format(self.time, self.perf)
+        return "Beat.Soft(time={!r}, speed={!r}, perf={!r})".format(self.time, self.speed, self.perf)
 Beat.Soft = Soft
 
 class Loud(Beat):
-    def __init__(self, time, perf=None):
+    def __init__(self, time, speed=1.0, perf=None):
         super().__init__()
         self.time = time
+        self.speed = speed
         self.perf = perf
 
     def __repr__(self):
-        return "Beat.Loud(time={!r}, perf={!r})".format(self.time, self.perf)
+        return "Beat.Loud(time={!r}, speed={!r}, perf={!r})".format(self.time, self.speed, self.perf)
 Beat.Loud = Loud
 
 class Incr(Beat):
-    def __init__(self, time, count, total, perf=None):
+    def __init__(self, time, count, total, speed=1.0, perf=None):
         super().__init__()
         self.time = time
         self.count = count
         self.total = total
+        self.speed = speed
         self.perf = perf
 
     def __repr__(self):
-        return "Beat.Incr(time={!r}, count={!r}, total={!r}, perf={!r})".format(
-                        self.time, self.count, self.total, self.perf)
+        return "Beat.Incr(time={!r}, count={!r}, total={!r}, speed={!r}, perf={!r})".format(
+                        self.time, self.count, self.total, self.speed, self.perf)
 Beat.Incr = Incr
 
 class Roll(Beat):
-    def __init__(self, time, end, number, perf=None, roll=0):
+    def __init__(self, time, end, number, speed=1.0, perf=None, roll=0):
         super().__init__()
         self.time = time
         self.end = end
         self.number = number
-        self.roll = roll
+        self.speed = speed
         self.perf = perf
+        self.roll = roll
 
     def __repr__(self):
-        return "Beat.Roll(time={!r}, end={!r}, number={!r}, perf={!r}, roll={!r})".format(
-                        self.time, self.end, self.number, self.perf, self.roll)
+        return "Beat.Roll(time={!r}, end={!r}, number={!r}, speed={!r}, perf={!r}, roll={!r})".format(
+                        self.time, self.end, self.number, self.speed, self.perf, self.roll)
 Beat.Roll = Roll
 
 class Performance(enum.Enum):
@@ -321,12 +325,7 @@ class Beatmap:
         accuracy_syms = ["⟪", "⟪", "⟨", "⟩", "⟫", "⟫"]
         correct_sym = "˽"
 
-        def range_of(b):
-            if isinstance(b, Beat.Roll):
-                return (int(b.time/dt), int(b.end/dt))
-            else:
-                return (int(b.time/dt), int(b.time/dt))
-        windowed_beats = ra.window(self.beats, track_width, bar_offset, key=range_of)
+        windowed_beats = self.windowed_beats(drop_speed, track_width)
         next(windowed_beats)
 
         out = ""
@@ -334,21 +333,21 @@ class Beatmap:
             current_time = yield out
 
             view = [" "]*track_width
-            current_pixel = int(current_time/dt)
 
             # draw un-hitted beats, it also catches the last visible beat
-            for beat in windowed_beats.send(current_pixel):
-                start_pixel, end_pixel = range_of(beat)
-
+            for beat in windowed_beats.send(current_time):
                 if isinstance(beat, Beat.Roll):
-                    step_pixel = (end_pixel - start_pixel) // beat.number
+                    step_time = (beat.end - beat.time) / beat.number
+
                     for r in range(beat.number)[beat.roll:]:
-                        pixel = bar_offset + start_pixel + step_pixel * r - current_pixel
+                        pixel = bar_offset + int((beat.time + step_time * r - current_time) * drop_speed * beat.speed)
                         if pixel in range(track_width):
                             view[pixel] = beats_syms[3]
                     continue
 
                 if beat.perf in (None, Performance.MISS):
+                    pixel = bar_offset + int((beat.time - current_time) * drop_speed * beat.speed)
+
                     if isinstance(beat, Beat.Soft):
                         symbol = beats_syms[0]
                     elif isinstance(beat, Beat.Loud):
@@ -356,7 +355,8 @@ class Beatmap:
                     elif isinstance(beat, Beat.Incr):
                         symbol = beats_syms[2]
 
-                    view[bar_offset + start_pixel - current_pixel] = symbol
+                    if pixel in range(track_width):
+                        view[pixel] = symbol
 
             # draw target
             view[bar_offset] = target_sym
@@ -401,6 +401,31 @@ class Beatmap:
             out = out + "[{:>5d}/{:>5d}]".format(self.score, self.total_score)
             out = out + "".join(view)
             out = out + " [{:>5.1f}%]".format(self.progress/10)
+
+    def windowed_beats(self, drop_speed, width):
+        dt = 1 / drop_speed
+
+        def range_of(beat):
+            cross_time = width / abs(drop_speed * beat.speed) + dt
+            if isinstance(beat, Beat.Roll):
+                return (beat.time-cross_time, beat.end+cross_time)
+            else:
+                return (beat.time-cross_time, beat.time+cross_time)
+
+        it = iter(sorted((*range_of(b), b) for b in self.beats))
+
+        playing = []
+        waiting = next(it, None)
+
+        time = yield None
+        while True:
+            while waiting is not None and waiting[0] < time:
+                playing.append(waiting)
+                waiting = next(it, None)
+
+            playing = [item for item in playing if item[1] >= time]
+
+            time = yield sorted([beat for _, _, beat in playing], key=lambda b: (b.time>time-dt, -b.time))
 
 # console
 class KnockConsole:
@@ -492,11 +517,12 @@ class KnockConsole:
                 input_stream.close()
 
 # test
-beatmap = Beatmap(9.0, [Beat.Soft(1.0), Beat.Loud(1.5), Beat.Soft(2.0), Beat.Soft(2.25), Beat.Loud(2.5),
-                        Beat.Soft(3.0), Beat.Loud(3.5), Beat.Soft(4.0), Beat.Soft(4.25), Beat.Roll(4.5, 5.0, 4),
-                        Beat.Soft(5.0), Beat.Loud(5.5), Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5),
-                        Beat.Incr(7.0, 1, 6), Beat.Incr(7.25, 2, 6), Beat.Incr(7.5, 3, 6), Beat.Incr(7.75, 4, 6),
-                        Beat.Incr(8.0, 5, 6), Beat.Incr(8.25, 6, 6), Beat.Loud(8.5)])
+beatmap = Beatmap(9.0, [Beat.Soft(1.0), Beat.Loud(1.5, -0.5), Beat.Soft(2.0), Beat.Soft(2.25), Beat.Loud(2.5, 0.5),
+                        Beat.Soft(3.0), Beat.Loud(3.5, -0.5), Beat.Soft(4.0), Beat.Soft(4.25), Beat.Roll(4.5, 5.0, 4, 1.5),
+                        Beat.Soft(5.0), Beat.Loud(5.5, -0.5), Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5, 0.5),
+                        Beat.Incr(7.0, 1, 6, 0.5), Beat.Incr(7.25, 2, 6, 0.7), Beat.Incr(7.5, 3, 6, 0.9),
+                        Beat.Incr(7.75, 4, 6, 1.1), Beat.Incr(8.0, 5, 6, 1.3), Beat.Incr(8.25, 6, 6, 1.5),
+                        Beat.Loud(8.5, 1.7)])
 # beatmap = Beatmap("test.wav", [])
 # beatmap = Beatmap(10.0, [])
 
