@@ -90,20 +90,12 @@ def transform(func=lambda i, a: a):
         data = yield func(index, data)
 
 def inwhich(*iters):
-    it = pipe(*iters)
+    for it in iters:
+        next(it)
     data = yield None
     while True:
-        side = it.send(data)
-        data = yield (data, side)
-
-def whenever(func, cond=bool):
-    index = 0
-    data = yield None
-    while True:
-        index += 1
-        if cond(data):
-            func(index, data)
-        data = yield data
+        side = [it.send(data) for it in iters]
+        data = yield tuple([data, *side])
 
 def window(it, timespan, offset=0, key=lambda item: item):
     it = iter(it)
@@ -179,4 +171,3 @@ def load(file, sr=None, buffer_length=1024):
         if n == N:
             buf[start+tail_length:start+buffer_length] = 0.0
         yield buf[start:start+buffer_length]
-
