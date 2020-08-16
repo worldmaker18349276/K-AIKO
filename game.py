@@ -22,8 +22,8 @@ DELTA = 0.1
 
 DISPLAY_FPS = 200
 DISPLAY_DELAY = 0.03
-AUDIO_VOLUME = 1.2
-AUDIO_DELAY = 0.03
+KNOCK_VOLUME = 1.2
+KNOCK_DELAY = 0.03
 
 TRACK_WIDTH = 100
 BAR_OFFSET = 40
@@ -154,9 +154,9 @@ class Performance(enum.Enum):
 
 # beatmap
 class Beatmap:
-    def __init__(self, filename, *beats):
-        self.beats = beats
-        self.hit = dict(number=-1, strength=0.0, beat=None)
+    def __init__(self, filename, beats):
+        self.beats = tuple(beats)
+        self.hit = dict(number=-1, loudness=-1, beat=None)
 
         if isinstance(filename, float):
             self.file = None
@@ -167,7 +167,10 @@ class Beatmap:
 
         self.spectrogram = " "*5
 
-    def __del__(self):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, type, value, traceback):
         if self.file is not None:
             self.file.close()
 
@@ -189,16 +192,16 @@ class Beatmap:
         signals = [(beat.time, beat.click()) for beat in self.beats]
         return ra.merge(signals, self.duration, RATE, SAMPLES_PER_BUFFER)
 
-    def music(self):
+    def get_sound_handler(self, sr, buffer_length, win_length):
         if self.file is None:
             sound = self.clicks()
         else:
-            sound = ra.load(self.file, RATE, SAMPLES_PER_BUFFER)
+            sound = ra.load(self.file, sr, buffer_length)
 
         return ra.pipe(sound,
-                       ra.inwhich(ra.pipe(ra.frame(WIN_LENGTH, SAMPLES_PER_BUFFER),
-                                          ra.power_spectrum(RATE, WIN_LENGTH),
-                                          self.draw_spectrogram(RATE, WIN_LENGTH))),
+                       ra.inwhich(ra.pipe(ra.frame(win_length, buffer_length),
+                                          ra.power_spectrum(sr, win_length),
+                                          self.draw_spectrogram(sr, win_length))),
                        ra.transform(lambda _, a: a[0]))
 
     def draw_spectrogram(self, sr, win_length):
@@ -222,9 +225,9 @@ class Beatmap:
             buf = [max(0, min(4, int(vol(J, start, end) / 80 * 4))) for start, end in slices]
             self.spectrogram = "".join(chr(0x2800 + A[a] + B[b]) for a, b in zip(buf[0::2], buf[1::2]))
 
-    def judge(self):
+    def get_knock_handler(self, thresholds, tolerances):
         beats = iter(self.beats)
-        INCR_TOL = (THRESHOLDS[3] - THRESHOLDS[0])/6
+        incr_tol = (thresholds[3] - thresholds[0])/6
 
         incr_threshold = 0.0
         hit_number = 0
@@ -234,22 +237,23 @@ class Beatmap:
             time, strength, detected = yield
 
             # if next beat has passed through
-            if isinstance(beat, Beat.Roll) and beat.roll != 0 and beat.end - TOLERANCES[2] < time:
+            if isinstance(beat, Beat.Roll) and beat.roll != 0 and beat.end - tolerances[2] < time:
                 beat = next(beats, None)
 
             if not isinstance(beat, Beat.Roll) or beat.roll == 0:
-                while beat is not None and beat.time + TOLERANCES[3] < time:
+                while beat is not None and beat.time + tolerances[3] < time:
                     beat.perf = Performance.MISS
                     beat = next(beats, None)
 
             # update state
-            if not detected or strength < THRESHOLDS[0]:
+            if not detected or strength < thresholds[0]:
                 continue
-            self.hit = dict(number=hit_number, strength=strength, beat=beat)
+            loudness = next(i for i, thr in reversed(list(enumerate(thresholds))) if strength >= thr)
+            self.hit = dict(number=hit_number, loudness=loudness, beat=beat)
             hit_number += 1
 
             # if next beat isn't in the range yet
-            if beat is None or beat.time - TOLERANCES[3] >= time:
+            if beat is None or beat.time - tolerances[3] >= time:
                 continue
 
             # drumrolls
@@ -260,11 +264,11 @@ class Beatmap:
 
             # judge pressed key (determined by loudness)
             if isinstance(beat, Beat.Soft):
-                is_correct_key = strength < THRESHOLDS[3]
+                is_correct_key = strength < thresholds[3]
             elif isinstance(beat, Beat.Loud):
-                is_correct_key = strength >= THRESHOLDS[3]
+                is_correct_key = strength >= thresholds[3]
             elif isinstance(beat, Beat.Incr):
-                is_correct_key = strength >= incr_threshold - INCR_TOL
+                is_correct_key = strength >= incr_threshold - incr_tol
             elif isinstance(beat, Beat.Roll):
                 is_correct_key = True
 
@@ -272,19 +276,19 @@ class Beatmap:
             err = abs(time - beat.time)
             too_late = time > beat.time
 
-            if err < TOLERANCES[0]:
+            if err < tolerances[0]:
                 if is_correct_key:
                     perf = Performance.GREAT
                 else:
                     perf = Performance.GREAT_WRONG
 
-            elif err < TOLERANCES[1]:
+            elif err < tolerances[1]:
                 if is_correct_key:
                     perf = Performance.LATE_GOOD         if too_late else Performance.EARLY_GOOD
                 else:
                     perf = Performance.LATE_GOOD_WRONG   if too_late else Performance.EARLY_GOOD_WRONG
 
-            elif err < TOLERANCES[2]:
+            elif err < tolerances[2]:
                 if is_correct_key:
                     perf = Performance.LATE_BAD          if too_late else Performance.EARLY_BAD
                 else:
@@ -303,10 +307,10 @@ class Beatmap:
             if not isinstance(beat, Beat.Roll):
                 beat = next(beats, None)
 
-    def draw(self):
-        dt = 1 / DROP_SPEED
-        sustain = 10 / DROP_SPEED
-        decay = 5 / DROP_SPEED
+    def get_screen_handler(self, drop_speed, track_width, bar_offset):
+        dt = 1 / drop_speed
+        sustain = 10 / drop_speed
+        decay = 5 / drop_speed
 
         beats_syms = ["□", "▣", "◀", "◎"]
         target_sym = "⛶"
@@ -322,13 +326,14 @@ class Beatmap:
                 return (int(b.time/dt), int(b.end/dt))
             else:
                 return (int(b.time/dt), int(b.time/dt))
-        windowed_beats = ra.window(self.beats, TRACK_WIDTH, BAR_OFFSET, key=range_of)
+        windowed_beats = ra.window(self.beats, track_width, bar_offset, key=range_of)
         next(windowed_beats)
 
+        out = ""
         while True:
-            current_time = yield
+            current_time = yield out
 
-            view = [" "]*TRACK_WIDTH
+            view = [" "]*track_width
             current_pixel = int(current_time/dt)
 
             # draw un-hitted beats, it also catches the last visible beat
@@ -338,8 +343,8 @@ class Beatmap:
                 if isinstance(beat, Beat.Roll):
                     step_pixel = (end_pixel - start_pixel) // beat.number
                     for r in range(beat.number)[beat.roll:]:
-                        pixel = BAR_OFFSET + start_pixel + step_pixel * r - current_pixel
-                        if pixel in range(TRACK_WIDTH):
+                        pixel = bar_offset + start_pixel + step_pixel * r - current_pixel
+                        if pixel in range(track_width):
                             view[pixel] = beats_syms[3]
                     continue
 
@@ -351,10 +356,10 @@ class Beatmap:
                     elif isinstance(beat, Beat.Incr):
                         symbol = beats_syms[2]
 
-                    view[BAR_OFFSET + start_pixel - current_pixel] = symbol
+                    view[bar_offset + start_pixel - current_pixel] = symbol
 
             # draw target
-            view[BAR_OFFSET] = target_sym
+            view[bar_offset] = target_sym
 
             if hit_number != self.hit["number"]:
                 hit_number = self.hit["number"]
@@ -362,10 +367,10 @@ class Beatmap:
 
             # visual feedback for hit loudness
             if current_time - hit_time < 6*decay:
-                loudness = next(i for i, thr in reversed(list(enumerate(THRESHOLDS))) if self.hit["strength"] >= thr)
+                loudness = self.hit["loudness"]
                 loudness -= int((current_time - hit_time) / decay)
                 if loudness >= 0:
-                    view[BAR_OFFSET] = loudness_syms[loudness]
+                    view[bar_offset] = loudness_syms[loudness]
 
             # visual feedback for hit accuracy
             if current_time - hit_time < sustain and self.hit["beat"] is not None:
@@ -375,29 +380,27 @@ class Beatmap:
                                  Performance.LATE_FAILED, Performance.EARLY_FAILED)
                 perf = self.hit["beat"].perf
                 if perf in correct_types:
-                    view[BAR_OFFSET+1] = correct_sym
+                    view[bar_offset+1] = correct_sym
 
                 if perf in (Performance.LATE_GOOD, Performance.LATE_GOOD_WRONG):
-                    view[BAR_OFFSET-1] = accuracy_syms[2]
+                    view[bar_offset-1] = accuracy_syms[2]
                 elif perf in (Performance.EARLY_GOOD, Performance.EARLY_GOOD_WRONG):
-                    view[BAR_OFFSET+2] = accuracy_syms[3]
+                    view[bar_offset+2] = accuracy_syms[3]
                 elif perf in (Performance.LATE_BAD, Performance.LATE_BAD_WRONG):
-                    view[BAR_OFFSET-1] = accuracy_syms[1]
+                    view[bar_offset-1] = accuracy_syms[1]
                 elif perf in (Performance.EARLY_BAD, Performance.EARLY_BAD_WRONG):
-                    view[BAR_OFFSET+2] = accuracy_syms[4]
+                    view[bar_offset+2] = accuracy_syms[4]
                 elif perf in (Performance.LATE_FAILED, Performance.LATE_FAILED_WRONG):
-                    view[BAR_OFFSET-1] = accuracy_syms[0]
+                    view[bar_offset-1] = accuracy_syms[0]
                 elif perf in (Performance.EARLY_FAILED, Performance.EARLY_FAILED_WRONG):
-                    view[BAR_OFFSET+2] = accuracy_syms[5]
+                    view[bar_offset+2] = accuracy_syms[5]
 
             # print
-            sys.stdout.write(" ")
-            sys.stdout.write(" " + self.spectrogram + " ")
-            sys.stdout.write("[{:>5d}/{:>5d}]".format(self.score, self.total_score))
-            sys.stdout.write("".join(view))
-            sys.stdout.write(" [{:>5.1f}%]".format(self.progress/10))
-            sys.stdout.write("\r")
-            sys.stdout.flush()
+            out = ""
+            out = out + " " + self.spectrogram + " "
+            out = out + "[{:>5d}/{:>5d}]".format(self.score, self.total_score)
+            out = out + "".join(view)
+            out = out + " [{:>5.1f}%]".format(self.progress/10)
 
 # console
 class KnockConsole:
@@ -407,12 +410,11 @@ class KnockConsole:
     def __del__(self):
         self.pyaudio.terminate()
 
-    def get_output_stream(self, beatmap):
-        signal_gen = beatmap.music()
-        next(signal_gen, None)
+    def get_output_stream(self, sound_handler):
+        next(sound_handler, None)
 
         def output_callback(in_data, frame_count, time_info, status):
-            out_data = next(signal_gen, None)
+            out_data = next(sound_handler, None)
             if out_data is None:
                 return b'', pyaudio.paComplete
             else:
@@ -429,7 +431,7 @@ class KnockConsole:
 
         return output_stream
 
-    def get_input_stream(self, beatmap):
+    def get_input_stream(self, knock_handler):
         dect = ra.pipe(ra.frame(WIN_LENGTH, HOP_LENGTH),
                        ra.power_spectrum(RATE, WIN_LENGTH),
                        ra.onset_strength(RATE/WIN_LENGTH, HOP_LENGTH/RATE),
@@ -437,8 +439,8 @@ class KnockConsole:
                                        pre_max=PRE_MAX, post_max=POST_MAX,
                                        pre_avg=PRE_AVG, post_avg=POST_AVG,
                                        wait=WAIT, delta=DELTA),
-                       ra.transform(lambda _, a: (a[0]-AUDIO_DELAY, a[1]*AUDIO_VOLUME, a[2])),
-                       beatmap.judge())
+                       ra.transform(lambda _, a: (a[0]-KNOCK_DELAY, a[1]*KNOCK_VOLUME, a[2])),
+                       knock_handler)
         next(dect)
 
         def input_callback(in_data, frame_count, time_info, status):
@@ -460,40 +462,43 @@ class KnockConsole:
 
         return input_stream
 
-    def get_view_callback(self, beatmap):
-        drawer = beatmap.draw()
-        next(drawer)
-
-        return drawer.send
-
     def play(self, beatmap):
-        output_stream = self.get_output_stream(beatmap)
-        input_stream = self.get_input_stream(beatmap)
-        view_callback = self.get_view_callback(beatmap)
+        with beatmap:
+            sound_handler = beatmap.get_sound_handler(RATE, SAMPLES_PER_BUFFER, WIN_LENGTH)
+            knock_handler = beatmap.get_knock_handler(THRESHOLDS, TOLERANCES)
+            screen_handler = beatmap.get_screen_handler(DROP_SPEED, TRACK_WIDTH, BAR_OFFSET)
 
-        reference_time = time.time()
-        input_stream.start_stream()
-        output_stream.start_stream()
+            output_stream = self.get_output_stream(sound_handler)
+            input_stream = self.get_input_stream(knock_handler)
+            next(screen_handler, None)
 
-        while output_stream.is_active() and input_stream.is_active():
-            view_callback(time.time() - reference_time - DISPLAY_DELAY)
-            time.sleep(1/DISPLAY_FPS)
+            try:
+                reference_time = time.time()
+                input_stream.start_stream()
+                output_stream.start_stream()
 
-        output_stream.stop_stream()
-        input_stream.stop_stream()
-        output_stream.close()
-        input_stream.close()
+                while output_stream.is_active() and input_stream.is_active():
+                    view = screen_handler.send(time.time() - reference_time - DISPLAY_DELAY)
+                    sys.stdout.write(" ")
+                    sys.stdout.write(view)
+                    sys.stdout.write("\r")
+                    sys.stdout.flush()
+                    time.sleep(1/DISPLAY_FPS)
 
+            finally:
+                output_stream.stop_stream()
+                input_stream.stop_stream()
+                output_stream.close()
+                input_stream.close()
 
 # test
-# beatmap = Beatmap(9.0,
-#                   Beat.Soft(1.0), Beat.Loud(1.5), Beat.Soft(2.0), Beat.Soft(2.25), Beat.Loud(2.5),
-#                   Beat.Soft(3.0), Beat.Loud(3.5), Beat.Soft(4.0), Beat.Soft(4.25), Beat.Roll(4.5, 5.0, 4),
-#                   Beat.Soft(5.0), Beat.Loud(5.5), Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5),
-#                   Beat.Incr(7.0, 1, 6), Beat.Incr(7.25, 2, 6), Beat.Incr(7.5, 3, 6), Beat.Incr(7.75, 4, 6),
-#                   Beat.Incr(8.0, 5, 6), Beat.Incr(8.25, 6, 6), Beat.Loud(8.5))
-beatmap = Beatmap("test.wav")
-# beatmap = Beatmap(10.0)
+beatmap = Beatmap(9.0, [Beat.Soft(1.0), Beat.Loud(1.5), Beat.Soft(2.0), Beat.Soft(2.25), Beat.Loud(2.5),
+                        Beat.Soft(3.0), Beat.Loud(3.5), Beat.Soft(4.0), Beat.Soft(4.25), Beat.Roll(4.5, 5.0, 4),
+                        Beat.Soft(5.0), Beat.Loud(5.5), Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5),
+                        Beat.Incr(7.0, 1, 6), Beat.Incr(7.25, 2, 6), Beat.Incr(7.5, 3, 6), Beat.Incr(7.75, 4, 6),
+                        Beat.Incr(8.0, 5, 6), Beat.Incr(8.25, 6, 6), Beat.Loud(8.5)])
+# beatmap = Beatmap("test.wav", [])
+# beatmap = Beatmap(10.0, [])
 
 console = KnockConsole()
 
