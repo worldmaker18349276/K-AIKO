@@ -67,6 +67,29 @@ def delay(*prepend):
         data = yield buffer.pop(0)
 
 @DataNode.from_generator
+def take(number):
+    """A data node takes finite signals.
+
+    Parameters
+    ----------
+    number : int
+        The number of period to take.
+
+    Receives
+    --------
+    x : any
+        The input signal.
+
+    Yields
+    ------
+    x : any
+        The output signal.
+    """
+    data = yield None
+    for _ in range(number):
+        data = yield data
+
+@DataNode.from_generator
 def pipe(*nodes):
     """A data node processes data sequentially.
 
@@ -129,13 +152,36 @@ def branch(*nodes):
     Yields
     ------
     x : any
-        The processed signal.
+        The input signal.
     """
     data = None
     while True:
         data = yield data
         for node in nodes:
             node.send(data)
+
+@DataNode.from_generator
+def merge(*nodes):
+    """A data node processes additional data.
+
+    Parameters
+    ----------
+    nodes : list of DataNode
+        The data nodes to merge.
+
+    Receives
+    --------
+    x : any
+        The input signal.
+
+    Yields
+    ------
+    x : tuple
+        The input signal and additional data.
+    """
+    data = yield None
+    while True:
+        data = yield (data,) + tuple(next(node) for node in nodes)
 
 @DataNode.from_generator
 def drip(items, schedule):
@@ -176,13 +222,17 @@ def drip(items, schedule):
 
 
 @DataNode.from_generator
-def empty(buffer_length=1024):
+def empty(sr, buffer_length=1024, duration=None):
     """A data node produces empty data.
 
     Parameters
     ----------
+    sr : int
+        The sample rate.
     buffer_length : int, optional
         The length of data, default is `1024`.
+    duration : float, optional
+        The duration of signal.
 
     Yields
     ------
@@ -190,8 +240,12 @@ def empty(buffer_length=1024):
         The empty signal with length `buffer_length`.
     """
     yield None
-    while True:
-        yield numpy.zeros(buffer_length, dtype=numpy.float32)
+    if duration is None:
+        while True:
+            yield numpy.zeros(buffer_length, dtype=numpy.float32)
+    else:
+        for _ in range(int(duration*sr/buffer_length)+1):
+            yield numpy.zeros(buffer_length, dtype=numpy.float32)
 
 @DataNode.from_generator
 def load(file, sr=None, buffer_length=1024):
@@ -247,6 +301,19 @@ def load(file, sr=None, buffer_length=1024):
         if n == N:
             buf[start+tail_length:start+buffer_length] = 0.0
         yield numpy.copy(buf[start:start+buffer_length])
+
+@DataNode.from_generator
+def save(file, samplerate, width=2):
+    scale = 2.0 ** (8*width - 1)
+    fmt = "<i{:d}".format(width)
+
+    file.setsampwidth(width)
+    file.setnchannels(1)
+    file.setframerate(samplerate)
+    file.setnframes(0)
+
+    while True:
+        file.writeframes(((yield) * scale).astype(fmt).tobytes())
 
 @DataNode.from_generator
 def slice(signal, buffer_length=1024):
@@ -348,6 +415,10 @@ def power_spectrum(sr, win_length, windowing=True, weighting=True):
         The sample rate of input signal.
     win_length : int
         The length of input signal.
+    windowing : bool or ndarray, optional
+        The window function of signal, `True` for default Hann window, `False` for no windowing.
+    weighting : bool or ndarray, optional
+        The weight function of spectrum, `True` for default A-weighting, `False` for no weighting.
 
     Receives
     --------
@@ -359,13 +430,15 @@ def power_spectrum(sr, win_length, windowing=True, weighting=True):
     J : ndarray
         The power spectrum, with length `win_length//2+1`.
     """
-    window = get_Hann_window(win_length) if windowing else 1
-    weight = get_A_weight(sr, win_length) if weighting else 1
-    weight *= 2/win_length/sr
+    if isinstance(windowing, bool):
+        windowing = get_Hann_window(win_length) if windowing else 1
+    if isinstance(weighting, bool):
+        weighting = get_A_weight(sr, win_length) if weighting else 1
+    weighting *= 2/win_length/sr
 
     x = yield None
     while True:
-        x = yield weight * numpy.abs(numpy.fft.rfft(x*window))**2
+        x = yield weighting * numpy.abs(numpy.fft.rfft(x*windowing))**2
 
 @DataNode.from_generator
 def onset_strength(df, Dt):
@@ -391,7 +464,7 @@ def onset_strength(df, Dt):
     curr = yield None
     prev = numpy.zeros_like(curr)
     while True:
-        prev, curr = curr, (yield numpy.maximum(0.0, (curr - prev)/Dt * df).sum(0))
+        prev, curr = curr, (yield numpy.maximum(0.0, curr - prev).sum(0) * df / Dt)
 
 @DataNode.from_generator
 def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
