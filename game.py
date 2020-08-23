@@ -1,5 +1,6 @@
 import sys
 import time
+import itertools
 import enum
 import wave
 import numpy as np
@@ -10,25 +11,25 @@ RATE = 44100
 SAMPLES_PER_BUFFER = 1024
 WIN_LENGTH = 512*4
 HOP_LENGTH = 512
-PRE_MAX = 0.03
-POST_MAX = 0.03
-PRE_AVG = 0.03
-POST_AVG = 0.03
-WAIT = 0.03
-DELTA = 0.1
+PRE_MAX = int(0.03 * RATE / HOP_LENGTH)
+POST_MAX = int(0.03 * RATE / HOP_LENGTH)
+PRE_AVG = int(0.03 * RATE / HOP_LENGTH)
+POST_AVG = int(0.03 * RATE / HOP_LENGTH)
+WAIT = int(0.03 * RATE / HOP_LENGTH)
+DELTA = 8.2e-06 * 20 # noise_power * 20
 # frame resolution: 11.6 ms
 # delay: 30 ms
 # fastest tempo: 2000 bpm
 
 DISPLAY_FPS = 200
 DISPLAY_DELAY = 0.03
-KNOCK_VOLUME = 1.2
+KNOCK_VOLUME = HOP_LENGTH / RATE / 0.00017 # Dt / knock_max_energy
 KNOCK_DELAY = 0.03
 
 TRACK_WIDTH = 100
 BAR_OFFSET = 40
 DROP_SPEED = 100.0 # pixels per sec
-THRESHOLDS = (0.0, 0.7, 1.3, 2.0, 2.7, 3.3)
+THRESHOLDS = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
 TOLERANCES = (0.02, 0.06, 0.10, 0.14)
 
 
@@ -36,23 +37,23 @@ TOLERANCES = (0.02, 0.06, 0.10, 0.14)
 class Beat:
     def click(self):
         if isinstance(self, Beat.Soft):
-            return ra.click(sr=RATE, freq=1000.0, decay_time=0.1, amplitude=0.5)
+            return ra.pulse(sr=RATE, freq=1000.0, decay_time=0.01, amplitude=0.5)
 
         elif isinstance(self, Beat.Loud):
-            return ra.click(sr=RATE, freq=1000.0, decay_time=0.1, amplitude=1.0)
+            return ra.pulse(sr=RATE, freq=1000.0, decay_time=0.01, amplitude=1.0)
 
         elif isinstance(self, Beat.Incr):
             amplitude = 0.5 + 0.5 * (self.count-1)/self.total
-            return ra.click(sr=RATE, freq=1000.0, decay_time=0.1, amplitude=amplitude)
+            return ra.pulse(sr=RATE, freq=1000.0, decay_time=0.01, amplitude=amplitude)
 
         elif isinstance(self, Beat.Roll):
-            sound = ra.click(sr=RATE, freq=1000.0, decay_time=0.1, amplitude=1.0)
+            sound = ra.pulse(sr=RATE, freq=1000.0, decay_time=0.01, amplitude=1.0)
             step = (self.end - self.time)/self.number
             signals = [(step*i, sound) for i in range(self.number)]
-            duration = self.end-self.time
-            gen = ra.merge(signals, duration, RATE, int(duration*RATE))
-            next(gen)
-            return next(gen)
+            duration = self.end - self.time
+            gen = ra.pipe(ra.empty(RATE, SAMPLES_PER_BUFFER, duration),
+                          ra.attach(signals, RATE, SAMPLES_PER_BUFFER))
+            return np.concatenate(list(gen))
 
     @property
     def total_score(self):
@@ -169,7 +170,7 @@ class Beatmap:
             self.file = wave.open(filename, "rb")
             self.duration = self.file.getnframes() / self.file.getframerate()
 
-        self.spectrogram = " "*5
+        self.spectrum = " "*5
 
     def __enter__(self):
         return self
@@ -192,43 +193,21 @@ class Beatmap:
             return 1000
         return sum(1 for beat in self.beats if beat.perf is not None) * 1000 // len(self.beats)
 
-    def clicks(self):
-        signals = [(beat.time, beat.click()) for beat in self.beats]
-        return ra.merge(signals, self.duration, RATE, SAMPLES_PER_BUFFER)
-
     def get_sound_handler(self, sr, buffer_length, win_length):
         if self.file is None:
-            sound = self.clicks()
+            sound = ra.empty(RATE, SAMPLES_PER_BUFFER, self.duration)
         else:
             sound = ra.load(self.file, sr, buffer_length)
 
-        return ra.pipe(sound,
-                       ra.inwhich(ra.pipe(ra.frame(win_length, buffer_length),
-                                          ra.power_spectrum(sr, win_length),
-                                          self.draw_spectrogram(sr, win_length))),
-                       ra.transform(lambda _, a: a[0]))
+        signals = [(beat.time, beat.click()) for beat in self.beats]
+        spec = ra.pipe(ra.frame(win_length, buffer_length),
+                       ra.power_spectrum(sr, win_length, windowing=True, weighting=False),
+                       ra.draw_spectrum(len(self.spectrum), sr, win_length),
+                       lambda s: setattr(self, "spectrum", s))
 
-    def draw_spectrogram(self, sr, win_length):
-        A = np.cumsum([0, 2**6, 2**2, 2**1, 2**0])
-        B = np.cumsum([0, 2**7, 2**5, 2**4, 2**3])
+        return ra.pipe(sound, ra.branch(spec), ra.attach(signals, RATE, SAMPLES_PER_BUFFER))
 
-        length = len(self.spectrogram)*2
-        df = sr/win_length
-        n_fft = win_length // 2 + 1
-
-        sec = [0] + [2**i for i in range(length)]
-        sec = [n_fft * s // sec[-1] for s in sec]
-        slices = list(zip(sec[:-1], sec[1:]))
-
-        scale = 0.01
-        def vol(J, start, end):
-            return ra.power2db(J[start:end].sum() * df * n_fft/(end-start) * scale)
-
-        while True:
-            J = yield None
-            buf = [max(0, min(4, int(vol(J, start, end) / 80 * 4))) for start, end in slices]
-            self.spectrogram = "".join(chr(0x2800 + A[a] + B[b]) for a, b in zip(buf[0::2], buf[1::2]))
-
+    @ra.DataNode.from_generator
     def get_knock_handler(self, thresholds, tolerances):
         beats = iter(self.beats)
         incr_tol = (thresholds[3] - thresholds[0])/6
@@ -311,6 +290,7 @@ class Beatmap:
             if not isinstance(beat, Beat.Roll):
                 beat = next(beats, None)
 
+    @ra.DataNode.from_generator
     def get_screen_handler(self, drop_speed, track_width, bar_offset):
         dt = 1 / drop_speed
         sustain = 10 / drop_speed
@@ -325,17 +305,24 @@ class Beatmap:
         accuracy_syms = ["⟪", "⟪", "⟨", "⟩", "⟫", "⟫"]
         correct_sym = "˽"
 
-        windowed_beats = self.windowed_beats(drop_speed, track_width)
-        next(windowed_beats)
+        def range_of(beat):
+            cross_time = track_width / abs(drop_speed * beat.speed) + dt
+            if isinstance(beat, Beat.Roll):
+                return (beat.time-cross_time, beat.end+cross_time)
+            else:
+                return (beat.time-cross_time, beat.time+cross_time)
 
-        out = ""
+        dripping_beats = ra.drip(self.beats, range_of)
+
+        current_time = yield
         while True:
-            current_time = yield out
-
             view = [" "]*track_width
 
             # draw un-hitted beats, it also catches the last visible beat
-            for beat in windowed_beats.send(current_time):
+            beats = dripping_beats.send(current_time)
+            beats = sorted(beats, key=lambda b: (b.time>current_time-dt, -b.time))
+            for beat in beats:
+
                 if isinstance(beat, Beat.Roll):
                     step_time = (beat.end - beat.time) / beat.number
 
@@ -397,35 +384,12 @@ class Beatmap:
 
             # print
             out = ""
-            out = out + " " + self.spectrogram + " "
+            out = out + " " + self.spectrum + " "
             out = out + "[{:>5d}/{:>5d}]".format(self.score, self.total_score)
             out = out + "".join(view)
             out = out + " [{:>5.1f}%]".format(self.progress/10)
 
-    def windowed_beats(self, drop_speed, width):
-        dt = 1 / drop_speed
-
-        def range_of(beat):
-            cross_time = width / abs(drop_speed * beat.speed) + dt
-            if isinstance(beat, Beat.Roll):
-                return (beat.time-cross_time, beat.end+cross_time)
-            else:
-                return (beat.time-cross_time, beat.time+cross_time)
-
-        it = iter(sorted((*range_of(b), b) for b in self.beats))
-
-        playing = []
-        waiting = next(it, None)
-
-        time = yield None
-        while True:
-            while waiting is not None and waiting[0] < time:
-                playing.append(waiting)
-                waiting = next(it, None)
-
-            playing = [item for item in playing if item[1] >= time]
-
-            time = yield sorted([beat for _, _, beat in playing], key=lambda b: (b.time>time-dt, -b.time))
+            current_time = yield out
 
 # console
 class KnockConsole:
@@ -436,8 +400,6 @@ class KnockConsole:
         self.pyaudio.terminate()
 
     def get_output_stream(self, sound_handler):
-        next(sound_handler, None)
-
         def output_callback(in_data, frame_count, time_info, status):
             out_data = next(sound_handler, None)
             if out_data is None:
@@ -457,16 +419,17 @@ class KnockConsole:
         return output_stream
 
     def get_input_stream(self, knock_handler):
+        pick_peak = ra.pick_peak(pre_max=PRE_MAX, post_max=POST_MAX,
+                                 pre_avg=PRE_AVG, post_avg=POST_AVG,
+                                 wait=WAIT, delta=DELTA)
+        halfhann_window = np.sin(np.linspace(0, np.pi/2, WIN_LENGTH))**2
         dect = ra.pipe(ra.frame(WIN_LENGTH, HOP_LENGTH),
-                       ra.power_spectrum(RATE, WIN_LENGTH),
-                       ra.onset_strength(RATE/WIN_LENGTH, HOP_LENGTH/RATE),
-                       ra.onset_detect(RATE, HOP_LENGTH,
-                                       pre_max=PRE_MAX, post_max=POST_MAX,
-                                       pre_avg=PRE_AVG, post_avg=POST_AVG,
-                                       wait=WAIT, delta=DELTA),
-                       ra.transform(lambda _, a: (a[0]-KNOCK_DELAY, a[1]*KNOCK_VOLUME, a[2])),
+                       ra.power_spectrum(RATE, WIN_LENGTH, windowing=halfhann_window, weighting=True),
+                       ra.onset_strength(RATE/WIN_LENGTH),
+                       (lambda a: (None, a, a)),
+                       ra.pair(itertools.count(-pick_peak.delay), ra.delay(pick_peak.delay), pick_peak),
+                       (lambda a: (a[0]*HOP_LENGTH/RATE-KNOCK_DELAY, (a[1] or 0.0)*KNOCK_VOLUME, a[2])),
                        knock_handler)
-        next(dect)
 
         def input_callback(in_data, frame_count, time_info, status):
             audio_data = np.frombuffer(in_data, dtype=np.float32)
@@ -495,7 +458,6 @@ class KnockConsole:
 
             output_stream = self.get_output_stream(sound_handler)
             input_stream = self.get_input_stream(knock_handler)
-            next(screen_handler, None)
 
             try:
                 reference_time = time.time()
@@ -523,7 +485,8 @@ beatmap = Beatmap(9.0, [Beat.Soft(1.0), Beat.Loud(1.5, -0.5), Beat.Soft(2.0), Be
                         Beat.Incr(7.0, 1, 6, 0.5), Beat.Incr(7.25, 2, 6, 0.7), Beat.Incr(7.5, 3, 6, 0.9),
                         Beat.Incr(7.75, 4, 6, 1.1), Beat.Incr(8.0, 5, 6, 1.3), Beat.Incr(8.25, 6, 6, 1.5),
                         Beat.Loud(8.5, 1.7)])
-# beatmap = Beatmap("test.wav", [])
+# beatmap = Beatmap("音階.wav", [])
+# beatmap = Beatmap("test_music.wav", [])
 # beatmap = Beatmap(10.0, [])
 
 console = KnockConsole()

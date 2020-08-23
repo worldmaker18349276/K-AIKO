@@ -35,15 +35,26 @@ class DataNode:
 
         return node_builder
 
+    @staticmethod
+    def wrap(arg):
+        if isinstance(arg, DataNode):
+            return arg
+        elif hasattr(arg, "send"):
+            return DataNode(arg.send)
+        elif hasattr(arg, "__next__"):
+            return DataNode(lambda _: next(arg))
+        else:
+            return DataNode(arg)
+
 
 @DataNode.from_generator
-def delay(*prepend):
+def delay(prepend):
     """A data node delays signal and prepends given values.
 
     Parameters
     ----------
-    prepend : list
-        The list of prepended values.
+    prepend : list or int
+        The list of prepended values or number of delay with prepending `None`.
 
     Attributes
     ----------
@@ -60,7 +71,7 @@ def delay(*prepend):
     x : any
         The delayed signal.
     """
-    buffer = list(prepend)
+    buffer = [None]*prepend if isinstance(prepend, int) else list(prepend)
     data = yield dict(delay=len(buffer))
     while True:
         buffer.append(data)
@@ -108,6 +119,7 @@ def pipe(*nodes):
     x : any
         The processed signal.
     """
+    nodes = list(map(DataNode.wrap, nodes))
     data = yield None
     while True:
         data = yield functools.reduce(lambda data, node: node.send(data), nodes, data)
@@ -131,6 +143,7 @@ def pair(*nodes):
     x : tuple
         The processed signal; its length should equal to number of nodes.
     """
+    nodes = list(map(DataNode.wrap, nodes))
     data = yield None
     while True:
         data = yield tuple(node.send(subdata) for node, subdata in zip(nodes, data))
@@ -142,7 +155,7 @@ def branch(*nodes):
     Parameters
     ----------
     nodes : list of DataNode
-        The data nodes to branch.
+        The sequence of data nodes to branch.
 
     Receives
     --------
@@ -154,11 +167,11 @@ def branch(*nodes):
     x : any
         The input signal.
     """
+    node = pipe(*nodes)
     data = None
     while True:
         data = yield data
-        for node in nodes:
-            node.send(data)
+        node.send(data)
 
 @DataNode.from_generator
 def merge(*nodes):
@@ -179,6 +192,7 @@ def merge(*nodes):
     x : tuple
         The input signal and additional data.
     """
+    nodes = list(map(DataNode.wrap, nodes))
     data = yield None
     while True:
         data = yield (data,) + tuple(next(node) for node in nodes)
@@ -359,13 +373,14 @@ def attach(scheduled_signals, sr, buffer_length=1024):
     x : ndarray
         The processed signal.
     """
-    dripping_signals = drip(scheduled_signals, lambda a: (a[0]*sr - buffer_length, a[0]*sr + len(a[1])))
+    dripping_signals = drip(scheduled_signals, lambda a: (int(a[0]*sr) - buffer_length, int(a[0]*sr) + len(a[1])))
 
     buffer = None
     for index in itertools.count(0, buffer_length):
         buffer = yield buffer
 
-        for start, signal in dripping_signals.send(index):
+        for time, signal in dripping_signals.send(index):
+            start = int(time*sr)
             i = max(start, index)
             j = min(start+len(signal), index+buffer_length)
             buffer[i-index:j-index] += signal[i-start:j-start]
@@ -441,15 +456,13 @@ def power_spectrum(sr, win_length, windowing=True, weighting=True):
         x = yield weighting * numpy.abs(numpy.fft.rfft(x*windowing))**2
 
 @DataNode.from_generator
-def onset_strength(df, Dt):
+def onset_strength(df):
     """A data node maps spectrum `J` to onset strength `st`.
 
     Parameters
     ----------
     df : float
         The frequency resolution of input spectrum.
-    Dt : float
-        The time interval between each period.
 
     Receives
     --------
@@ -464,7 +477,7 @@ def onset_strength(df, Dt):
     curr = yield None
     prev = numpy.zeros_like(curr)
     while True:
-        prev, curr = curr, (yield numpy.maximum(0.0, curr - prev).sum(0) * df / Dt)
+        prev, curr = curr, (yield numpy.maximum(0.0, curr - prev).sum(0) * df)
 
 @DataNode.from_generator
 def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
@@ -517,7 +530,7 @@ def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
         buffer[-1] = yield detected
 
 @DataNode.from_generator
-def draw_spectrum(length, sr, win_length, scale=0.01):
+def draw_spectrum(length, sr, win_length):
     """A data node to show given spectrum by braille patterns.
 
     Parameters
@@ -528,6 +541,8 @@ def draw_spectrum(length, sr, win_length, scale=0.01):
         The sample rate of input signal.
     win_length : int
         The length of input signal before fourier transform.
+    scale : float
+        The scale of power.
 
     Receives
     --------
@@ -543,28 +558,32 @@ def draw_spectrum(length, sr, win_length, scale=0.01):
     B = numpy.cumsum([0, 2**7, 2**5, 2**4, 2**3])
 
     df = sr/win_length
-    n_fft = win_length // 2 + 1
+    n_fft = win_length//2+1
+    f_ran = int(10/df), min(int(20000/df), n_fft)
 
     sec = [0] + [2**i for i in range(length*2)]
-    sec = [n_fft * s // sec[-1] for s in sec]
+    sec = [f_ran[0] + (f_ran[1] - f_ran[0]) * s // sec[-1] for s in sec]
     slices = list(zip(sec[:-1], sec[1:]))
 
     def vol(J, start, end):
-        return power2db(J[start:end].sum() * df * n_fft/(end-start) * scale)
+        return power2db(J[start:end].sum() * df * n_fft/(end-start))
 
     J = yield None
     while True:
-        buf = [max(0, min(4, int(vol(J, start, end) / 80 * 4))) for start, end in slices]
+        buf = [max(0, min(4, int(vol(J, start, end) / 60 * 4))) for start, end in slices]
         J = yield "".join(chr(0x2800 + A[a] + B[b]) for a, b in zip(buf[0::2], buf[1::2]))
 
 
-def click(sr, freq=1000.0, decay_time=0.1, amplitude=1.0, length=None):
+def filter(x, distr):
+    return numpy.fft.irfft(numpy.fft.rfft(x) * distr)
+
+def pulse(sr, freq=1000.0, decay_time=0.01, amplitude=1.0, length=None):
     if length is None:
         length = decay_time
     t = numpy.linspace(0, length, int(length*sr), endpoint=False, dtype=numpy.float32)
-    return amplitude * 2**(-10*t/decay_time) * numpy.sin(2 * numpy.pi * freq * t)
+    return amplitude * 2**(-t/decay_time) * numpy.sin(2 * numpy.pi * freq * t)
 
-def power2db(power, scale=(1e-5, 1e8)):
+def power2db(power, scale=(1e-5, 1e6)):
     return 10.0 * numpy.log10(numpy.maximum(scale[0], power*scale[1]))
 
 def get_Hann_window(win_length):
@@ -596,6 +615,8 @@ def get_A_weight(sr, win_length):
     # weight0 == 10**-0.1
 
     weight /= weight0
+    weight[f<10] = 0.0
+    weight[f>20000] = 0.0
 
     return weight
 
