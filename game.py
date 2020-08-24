@@ -202,7 +202,7 @@ class Beatmap:
         signals = [(beat.time, beat.click()) for beat in self.beats]
         spec = ra.pipe(ra.frame(win_length, buffer_length),
                        ra.power_spectrum(sr, win_length, windowing=True, weighting=False),
-                       ra.draw_spectrum(len(self.spectrum), sr, win_length),
+                       ra.draw_spectrum(len(self.spectrum), sr, win_length, decay=(buffer_length/sr)/0.01),
                        lambda s: setattr(self, "spectrum", s))
 
         return ra.pipe(sound, ra.branch(spec), ra.attach(signals, RATE, SAMPLES_PER_BUFFER))
@@ -479,14 +479,14 @@ class KnockConsole:
                 input_stream.close()
 
 # test
-beatmap = Beatmap(9.0, [Beat.Soft(1.0), Beat.Loud(1.5, -0.5), Beat.Soft(2.0), Beat.Soft(2.25), Beat.Loud(2.5, 0.5),
-                        Beat.Soft(3.0), Beat.Loud(3.5, -0.5), Beat.Soft(4.0), Beat.Soft(4.25), Beat.Roll(4.5, 5.0, 4, 1.5),
-                        Beat.Soft(5.0), Beat.Loud(5.5, -0.5), Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5, 0.5),
-                        Beat.Incr(7.0, 1, 6, 0.5), Beat.Incr(7.25, 2, 6, 0.7), Beat.Incr(7.5, 3, 6, 0.9),
-                        Beat.Incr(7.75, 4, 6, 1.1), Beat.Incr(8.0, 5, 6, 1.3), Beat.Incr(8.25, 6, 6, 1.5),
-                        Beat.Loud(8.5, 1.7)])
+# beatmap = Beatmap(9.0, [Beat.Soft(1.0), Beat.Loud(1.5, -0.5), Beat.Soft(2.0), Beat.Soft(2.25), Beat.Loud(2.5, 0.5),
+#                         Beat.Soft(3.0), Beat.Loud(3.5, -0.5), Beat.Soft(4.0), Beat.Soft(4.25), Beat.Roll(4.5, 5.0, 4, 1.5),
+#                         Beat.Soft(5.0), Beat.Loud(5.5, -0.5), Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5, 0.5),
+#                         Beat.Incr(7.0, 1, 6, 0.5), Beat.Incr(7.25, 2, 6, 0.7), Beat.Incr(7.5, 3, 6, 0.9),
+#                         Beat.Incr(7.75, 4, 6, 1.1), Beat.Incr(8.0, 5, 6, 1.3), Beat.Incr(8.25, 6, 6, 1.5),
+#                         Beat.Loud(8.5, 1.7)])
 # beatmap = Beatmap("音階.wav", [])
-# beatmap = Beatmap("test_music.wav", [])
+beatmap = Beatmap("test_music.wav", [])
 # beatmap = Beatmap(10.0, [])
 
 console = KnockConsole()

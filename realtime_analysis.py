@@ -530,7 +530,7 @@ def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
         buffer[-1] = yield detected
 
 @DataNode.from_generator
-def draw_spectrum(length, sr, win_length):
+def draw_spectrum(length, sr, win_length, decay=1.0):
     """A data node to show given spectrum by braille patterns.
 
     Parameters
@@ -541,8 +541,8 @@ def draw_spectrum(length, sr, win_length):
         The sample rate of input signal.
     win_length : int
         The length of input signal before fourier transform.
-    scale : float
-        The scale of power.
+    decay : float, optional
+        The decay volume per period, default is `1.0`.
 
     Receives
     --------
@@ -565,13 +565,12 @@ def draw_spectrum(length, sr, win_length):
     sec = [f_ran[0] + (f_ran[1] - f_ran[0]) * s // sec[-1] for s in sec]
     slices = list(zip(sec[:-1], sec[1:]))
 
-    def vol(J, start, end):
-        return power2db(J[start:end].sum() * df * n_fft/(end-start))
-
+    buf = [0.0]*(length*2)
     J = yield None
     while True:
-        buf = [max(0, min(4, int(vol(J, start, end) / 60 * 4))) for start, end in slices]
-        J = yield "".join(chr(0x2800 + A[a] + B[b]) for a, b in zip(buf[0::2], buf[1::2]))
+        vols = [power2db(J[start:end].sum() * df * n_fft/(end-start)) / 60.0 * 4.0 for start, end in slices]
+        buf = [max(0.0, prev-decay, min(4.0, v)) for v, prev in zip(vols, buf)]
+        J = yield "".join(chr(0x2800 + A[int(a)] + B[int(b)]) for a, b in zip(buf[0::2], buf[1::2]))
 
 
 def filter(x, distr):
