@@ -24,12 +24,11 @@ DELTA = 8.2e-06 * 20 # noise_power * 20
 DISPLAY_FPS = 200
 DISPLAY_DELAY = 0.03
 KNOCK_VOLUME = HOP_LENGTH / RATE / 0.00017 # Dt / knock_max_energy
-KNOCK_DELAY = 0.03
+KNOCK_DELAY = 0.0
 
 TRACK_WIDTH = 100
-BAR_OFFSET = 40
-DROP_SPEED = 100.0 # pixels per sec
-THRESHOLDS = (0.0, 0.2, 0.4, 0.6, 0.8, 1.0)
+BAR_OFFSET = 0.1
+DROP_SPEED = 0.5 # screen per sec
 TOLERANCES = (0.02, 0.06, 0.10, 0.14)
 
 
@@ -161,7 +160,7 @@ class Performance(enum.Enum):
 class Beatmap:
     def __init__(self, filename, beats):
         self.beats = tuple(beats)
-        self.hit = dict(number=-1, loudness=-1, beat=None)
+        self.hit = dict(number=-1, strength=-1.0, beat=None)
 
         if isinstance(filename, float):
             self.file = None
@@ -208,9 +207,9 @@ class Beatmap:
         return ra.pipe(sound, ra.branch(spec), ra.attach(signals, RATE, SAMPLES_PER_BUFFER))
 
     @ra.DataNode.from_generator
-    def get_knock_handler(self, thresholds, tolerances):
+    def get_knock_handler(self, tolerances):
         beats = iter(self.beats)
-        incr_tol = (thresholds[3] - thresholds[0])/6
+        incr_tol = 0.1
 
         incr_threshold = 0.0
         hit_number = 0
@@ -229,10 +228,9 @@ class Beatmap:
                     beat = next(beats, None)
 
             # update state
-            if not detected or strength < thresholds[0]:
+            if not detected:
                 continue
-            loudness = next(i for i, thr in reversed(list(enumerate(thresholds))) if strength >= thr)
-            self.hit = dict(number=hit_number, loudness=loudness, beat=beat)
+            self.hit = dict(number=hit_number, strength=strength, beat=beat)
             hit_number += 1
 
             # if next beat isn't in the range yet
@@ -247,9 +245,9 @@ class Beatmap:
 
             # judge pressed key (determined by loudness)
             if isinstance(beat, Beat.Soft):
-                is_correct_key = strength < thresholds[3]
+                is_correct_key = strength < 0.5
             elif isinstance(beat, Beat.Loud):
-                is_correct_key = strength >= thresholds[3]
+                is_correct_key = strength >= 0.5
             elif isinstance(beat, Beat.Incr):
                 is_correct_key = strength >= incr_threshold - incr_tol
             elif isinstance(beat, Beat.Roll):
@@ -292,11 +290,12 @@ class Beatmap:
 
     @ra.DataNode.from_generator
     def get_screen_handler(self, drop_speed, track_width, bar_offset):
-        dt = 1 / drop_speed
-        sustain = 10 / drop_speed
-        decay = 5 / drop_speed
+        dt = 1.0 / track_width / drop_speed
+        sustain = 0.1 / drop_speed
+        decay = 0.2 / drop_speed
+        bar_index = int(track_width * bar_offset)
 
-        beats_syms = ["□", "▣", "◀", "◎"]
+        beats_syms = ["□", "■", "◬", "◎"]
         target_sym = "⛶"
 
         hit_number = -1
@@ -306,7 +305,7 @@ class Beatmap:
         correct_sym = "˽"
 
         def range_of(beat):
-            cross_time = track_width / abs(drop_speed * beat.speed) + dt
+            cross_time = (track_width / abs(beat.speed) + 1.0) * dt
             if isinstance(beat, Beat.Roll):
                 return (beat.time-cross_time, beat.end+cross_time)
             else:
@@ -322,18 +321,19 @@ class Beatmap:
             beats = dripping_beats.send(current_time)
             beats = sorted(beats, key=lambda b: (b.time>current_time-dt, -b.time))
             for beat in beats:
+                velocity = track_width * drop_speed * beat.speed
 
                 if isinstance(beat, Beat.Roll):
                     step_time = (beat.end - beat.time) / beat.number
 
                     for r in range(beat.number)[beat.roll:]:
-                        pixel = bar_offset + int((beat.time + step_time * r - current_time) * drop_speed * beat.speed)
+                        pixel = bar_index + int((beat.time + step_time * r - current_time) / dt * beat.speed)
                         if pixel in range(track_width):
                             view[pixel] = beats_syms[3]
                     continue
 
                 if beat.perf in (None, Performance.MISS):
-                    pixel = bar_offset + int((beat.time - current_time) * drop_speed * beat.speed)
+                    pixel = bar_index + int((beat.time - current_time) / dt * beat.speed)
 
                     if isinstance(beat, Beat.Soft):
                         symbol = beats_syms[0]
@@ -346,18 +346,18 @@ class Beatmap:
                         view[pixel] = symbol
 
             # draw target
-            view[bar_offset] = target_sym
+            view[bar_index] = target_sym
 
             if hit_number != self.hit["number"]:
                 hit_number = self.hit["number"]
                 hit_time = current_time
 
-            # visual feedback for hit loudness
-            if current_time - hit_time < 6*decay:
-                loudness = self.hit["loudness"]
-                loudness -= int((current_time - hit_time) / decay)
-                if loudness >= 0:
-                    view[bar_offset] = loudness_syms[loudness]
+            # visual feedback for hit strength
+            if current_time - hit_time < decay:
+                strength = min(1.0, self.hit["strength"])
+                strength -= (current_time - hit_time) / decay
+                if strength >= 0:
+                    view[bar_index] = loudness_syms[int(strength * (len(loudness_syms) - 1))]
 
             # visual feedback for hit accuracy
             if current_time - hit_time < sustain and self.hit["beat"] is not None:
@@ -367,20 +367,20 @@ class Beatmap:
                                  Performance.LATE_FAILED, Performance.EARLY_FAILED)
                 perf = self.hit["beat"].perf
                 if perf in correct_types:
-                    view[bar_offset+1] = correct_sym
+                    view[bar_index+1] = correct_sym
 
                 if perf in (Performance.LATE_GOOD, Performance.LATE_GOOD_WRONG):
-                    view[bar_offset-1] = accuracy_syms[2]
+                    view[bar_index-1] = accuracy_syms[2]
                 elif perf in (Performance.EARLY_GOOD, Performance.EARLY_GOOD_WRONG):
-                    view[bar_offset+2] = accuracy_syms[3]
+                    view[bar_index+2] = accuracy_syms[3]
                 elif perf in (Performance.LATE_BAD, Performance.LATE_BAD_WRONG):
-                    view[bar_offset-1] = accuracy_syms[1]
+                    view[bar_index-1] = accuracy_syms[1]
                 elif perf in (Performance.EARLY_BAD, Performance.EARLY_BAD_WRONG):
-                    view[bar_offset+2] = accuracy_syms[4]
+                    view[bar_index+2] = accuracy_syms[4]
                 elif perf in (Performance.LATE_FAILED, Performance.LATE_FAILED_WRONG):
-                    view[bar_offset-1] = accuracy_syms[0]
+                    view[bar_index-1] = accuracy_syms[0]
                 elif perf in (Performance.EARLY_FAILED, Performance.EARLY_FAILED_WRONG):
-                    view[bar_offset+2] = accuracy_syms[5]
+                    view[bar_index+2] = accuracy_syms[5]
 
             # print
             out = ""
@@ -453,7 +453,7 @@ class KnockConsole:
     def play(self, beatmap):
         with beatmap:
             sound_handler = beatmap.get_sound_handler(RATE, SAMPLES_PER_BUFFER, WIN_LENGTH)
-            knock_handler = beatmap.get_knock_handler(THRESHOLDS, TOLERANCES)
+            knock_handler = beatmap.get_knock_handler(TOLERANCES)
             screen_handler = beatmap.get_screen_handler(DROP_SPEED, TRACK_WIDTH, BAR_OFFSET)
 
             output_stream = self.get_output_stream(sound_handler)
@@ -478,19 +478,146 @@ class KnockConsole:
                 output_stream.close()
                 input_stream.close()
 
+
 # test
-# beatmap = Beatmap(9.0, [Beat.Soft(1.0), Beat.Loud(1.5, -0.5), Beat.Soft(2.0), Beat.Soft(2.25), Beat.Loud(2.5, 0.5),
-#                         Beat.Soft(3.0), Beat.Loud(3.5, -0.5), Beat.Soft(4.0), Beat.Soft(4.25), Beat.Roll(4.5, 5.0, 4, 1.5),
-#                         Beat.Soft(5.0), Beat.Loud(5.5, -0.5), Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5, 0.5),
-#                         Beat.Incr(7.0, 1, 6, 0.5), Beat.Incr(7.25, 2, 6, 0.7), Beat.Incr(7.5, 3, 6, 0.9),
-#                         Beat.Incr(7.75, 4, 6, 1.1), Beat.Incr(8.0, 5, 6, 1.3), Beat.Incr(8.25, 6, 6, 1.5),
-#                         Beat.Loud(8.5, 1.7)])
-# beatmap = Beatmap("音階.wav", [])
-beatmap = Beatmap("test_music.wav", [])
+# beatmap = Beatmap(9.0, [Beat.Loud(1.0 + t*0.5) for t in range(16)])
+beatmap = Beatmap(9.0, [Beat.Soft(1.0), Beat.Loud(1.5, -0.5), Beat.Soft(2.0), Beat.Soft(2.25), Beat.Loud(2.5, 0.5),
+                        Beat.Soft(3.0), Beat.Loud(3.5, -0.5), Beat.Soft(4.0), Beat.Soft(4.25),
+                        Beat.Roll(4.5, 5.0, 4, 1.5),
+                        Beat.Soft(5.0), Beat.Loud(5.5, -0.5), Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5, 0.5),
+                        Beat.Incr(7.0, 1, 6, 0.5), Beat.Incr(7.25, 2, 6, 0.7), Beat.Incr(7.5, 3, 6, 0.9),
+                        Beat.Incr(7.75, 4, 6, 1.1), Beat.Incr(8.0, 5, 6, 1.3), Beat.Incr(8.25, 6, 6, 1.5),
+                        Beat.Loud(8.5, 1.7)])
+# beatmap = Beatmap("test_scale.wav", [])
 # beatmap = Beatmap(10.0, [])
 
-console = KnockConsole()
+# def from_pattern(t0, dt, pattern):
+#     incring = None
+#     for j, c in enumerate(pattern):
+#         if incring is not None and c != ",":
+#             for n, t in enumerate(incring):
+#                 yield Beat.Incr(t, n+1, len(incring))
+#             incring = None
 
+#         if c == ".":
+#             yield Beat.Soft(t0 + j/2*dt)
+#         elif c == "-":
+#             yield Beat.Loud(t0 + j/2*dt)
+#         elif c == ":":
+#             yield Beat.Roll(t0 + j/2*dt, t0 + (j+1)/2*dt, 2)
+#         elif c == ",":
+#             incring = (incring or []) + [t0 + j/2*dt]
+# test_beats = list(from_pattern(2.233, 60.0/140.0,
+#     #| - | - | - | - |
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.-.- "
+#     #| - | - | - | - |
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     #| - | - | - | - |
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.-.- "
+#     #| - | - | - | - |
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-..:- "
+#     #| - | - | - | - |
+#     "..- ..- ..- - - "
+#     "..- ..- ..- - - "
+#     "..- ..- ..- -.-."
+#     ",,,,,,,,-             - "
+#     #| - | - | - | - | - | - |
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.-.- "
+#     #| - | - | - | - |
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.-.- "
+#     #| - | - | - | - |
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+
+#     #| - | - | - | - |
+#     ". -..- .-..-  - "
+#     ". -..- .-..-  -."
+#     ". -..- .-..-  - "
+#     ". -..- .-..-- - "
+#     #| - | - | - | - |
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-..:- "
+#     #| - | - | - | - |
+#     "..- ..- ..- - - "
+#     "..- ..- ..- - - "
+#     "..- ..- ..- -.-."
+#     ",,,,,,,,-     - "
+#     #| - | - | - | - |
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.-.- "
+#     #| - | - | - | - |
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.-:- "
+#     #| - | - | - | - |
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-..:- "
+
+#     #| - | - | - | - |
+#     "..-  .- ..-  .- "
+#     "..-  .- ..- ..- "
+#     "..-  .- ..-  .- "
+#     "..-.. -. .-. .- "
+#     #| - | - | - | - |
+#     "- - - - - - - - "
+#     "- - - - - - - - "
+#     "-       -       "
+#     ".  . . ..       "
+#     "              - "
+#     #| - | - | - | - |
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     #| - | - | - | - |
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.-.- "
+#     #| - | - | - | - |
+#     ". -..- .-..-  - "
+#     ". -..- .-.. - - "
+#     #| - | - | - | - |
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.-.- "
+#     #| - | - | - | - |
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-.. - "
+#     ". -.. -. .-..:- "
+#     ))
+# beatmap = Beatmap("test_music.wav", test_beats)
+
+console = KnockConsole()
 console.play(beatmap)
 print()
 for beat in beatmap.beats:
