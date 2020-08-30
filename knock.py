@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import itertools
+import signal
 import numpy as np
 import pyaudio
 import realtime_analysis as ra
@@ -61,6 +62,7 @@ class KnockConsole:
         self.knock_delay = knock_delay
 
         self.pyaudio = pyaudio.PyAudio()
+        self.stop = False
 
     def __del__(self):
         self.pyaudio.terminate()
@@ -68,7 +70,7 @@ class KnockConsole:
     def get_output_stream(self, sound_handler, sr, hop_length):
         def output_callback(in_data, frame_count, time_info, status):
             out_data = next(sound_handler, None)
-            if out_data is None:
+            if self.stop or out_data is None:
                 return b'', pyaudio.paComplete
             else:
                 return out_data.tobytes(), pyaudio.paContinue
@@ -114,7 +116,12 @@ class KnockConsole:
         return input_stream
 
     def play(self, beatmap):
+        def SIGINT_handler(sig, frame):
+            self.stop = True
+
         with beatmap:
+            signal.signal(signal.SIGINT, SIGINT_handler)
+
             sound_handler = beatmap.get_sound_handler(self.samplerate, self.hop_length)
             knock_handler = beatmap.get_knock_handler()
             screen_handler = beatmap.get_screen_handler(self.display_width-2)
@@ -128,6 +135,8 @@ class KnockConsole:
                 output_stream.start_stream()
 
                 while output_stream.is_active() and input_stream.is_active():
+                    signal.signal(signal.SIGINT, SIGINT_handler)
+
                     view = screen_handler.send(time.time() - reference_time - self.display_delay)
                     sys.stdout.write(" ")
                     sys.stdout.write(view)
