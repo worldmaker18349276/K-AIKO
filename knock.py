@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import itertools
+import curses
 import signal
 import numpy as np
 import pyaudio
@@ -21,7 +22,6 @@ DELTA = 8.2e-06 * 20 # noise_power * 20
 # delay: 30 ms
 # fastest tempo: 2000 bpm
 
-DISPLAY_WIDTH = int(os.popen("stty size", "r").read().split()[1])
 DISPLAY_FPS = 120
 DISPLAY_DELAY = 0.03
 KNOCK_VOLUME = HOP_LENGTH / RATE / 0.00017 # Dt / knock_max_energy
@@ -38,7 +38,6 @@ class KnockConsole:
                        post_avg=POST_AVG,
                        wait=WAIT,
                        delta=DELTA,
-                       display_width=DISPLAY_WIDTH,
                        display_fps=DISPLAY_FPS,
                        display_delay=DISPLAY_DELAY,
                        knock_volume=KNOCK_VOLUME,
@@ -55,7 +54,6 @@ class KnockConsole:
         self.wait = wait
         self.delta = delta
 
-        self.display_width = display_width
         self.display_fps = display_fps
         self.display_delay = display_delay
         self.knock_volume = knock_volume
@@ -122,30 +120,37 @@ class KnockConsole:
         with beatmap:
             signal.signal(signal.SIGINT, SIGINT_handler)
 
-            sound_handler = beatmap.get_sound_handler(self.samplerate, self.hop_length)
-            knock_handler = beatmap.get_knock_handler()
-            screen_handler = beatmap.get_screen_handler(self.display_width-2)
-
-            output_stream = self.get_output_stream(sound_handler, self.samplerate, self.hop_length)
-            input_stream = self.get_input_stream(knock_handler, self.samplerate, self.hop_length, self.win_length)
-
             try:
-                reference_time = time.time()
-                input_stream.start_stream()
-                output_stream.start_stream()
+                stdscr = curses.initscr()
+                curses.noecho()
+                curses.cbreak()
+                stdscr.nodelay(True)
+                stdscr.keypad(1)
+                curses.curs_set(0)
 
-                while output_stream.is_active() and input_stream.is_active():
-                    signal.signal(signal.SIGINT, SIGINT_handler)
+                sound_handler = beatmap.get_sound_handler(self.samplerate, self.hop_length)
+                knock_handler = beatmap.get_knock_handler()
+                screen_handler = beatmap.get_screen_handler(stdscr)
 
-                    view = screen_handler.send(time.time() - reference_time - self.display_delay)
-                    sys.stdout.write(" ")
-                    sys.stdout.write(view)
-                    sys.stdout.write("\r")
-                    sys.stdout.flush()
-                    time.sleep(1/self.display_fps)
+                output_stream = self.get_output_stream(sound_handler, self.samplerate, self.hop_length)
+                input_stream = self.get_input_stream(knock_handler, self.samplerate, self.hop_length, self.win_length)
+
+                try:
+                    reference_time = time.time()
+                    input_stream.start_stream()
+                    output_stream.start_stream()
+
+                    while output_stream.is_active() and input_stream.is_active():
+                        signal.signal(signal.SIGINT, SIGINT_handler)
+
+                        screen_handler.send(time.time() - reference_time - self.display_delay)
+                        time.sleep(1/self.display_fps)
+
+                finally:
+                    output_stream.stop_stream()
+                    input_stream.stop_stream()
+                    output_stream.close()
+                    input_stream.close()
 
             finally:
-                output_stream.stop_stream()
-                input_stream.stop_stream()
-                output_stream.close()
-                input_stream.close()
+                curses.endwin()

@@ -289,8 +289,9 @@ class Beatmap:
                 beat = next(beats, None)
 
     @ra.DataNode.from_generator
-    def get_screen_handler(self, width):
-        track_width = width - 24 - len(self.spectrum)
+    def get_screen_handler(self, scr):
+        _, width = scr.getmaxyx()
+        track_width = width - 26 - len(self.spectrum)
 
         bar_offset = 0.1
         dt = 1.0 / track_width / self.drop_speed
@@ -386,13 +387,17 @@ class Beatmap:
                     view[bar_index+2] = accuracy_syms[5]
 
             # print
-            out = ""
+            out = " "
             out = out + " " + self.spectrum + " "
             out = out + "[{:>5d}/{:>5d}]".format(self.score, self.total_score)
             out = out + "".join(view) + " "
             out = out + "[{:>5.1f}%]".format(self.progress/10)
 
-            current_time = yield out
+            scr.clear()
+            scr.addstr(0,0, out)
+            scr.refresh()
+
+            current_time = yield
 
 
 def from_pattern(t0, dt, pattern):
