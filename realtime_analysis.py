@@ -559,16 +559,15 @@ def draw_spectrum(length, sr, win_length, decay=1.0):
 
     df = sr/win_length
     n_fft = win_length//2+1
-    f_ran = int(10/df), min(int(20000/df), n_fft)
-
-    sec = [0] + [2**i for i in range(length*2)]
-    sec = [f_ran[0] + (f_ran[1] - f_ran[0]) * s // sec[-1] for s in sec]
-    slices = list(zip(sec[:-1], sec[1:]))
+    f = numpy.logspace(numpy.log10(10.0), numpy.log10(min(20000.0, sr/2)), length*2)
+    sec = numpy.concatenate(([0], (f/df).round().astype(int)))
+    slices = list(zip(sec[:-1], (sec+1)[1:]))
 
     buf = [0.0]*(length*2)
     J = yield None
     while True:
         vols = [power2db(J[start:end].sum() * df * n_fft/(end-start)) / 60.0 * 4.0 for start, end in slices]
+        # buf = [min(4.0, v) for v, prev in zip(vols, buf)]
         buf = [max(0.0, prev-decay, min(4.0, v)) for v, prev in zip(vols, buf)]
         J = yield "".join(chr(0x2800 + A[int(a)] + B[int(b)]) for a, b in zip(buf[0::2], buf[1::2]))
 
