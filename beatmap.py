@@ -407,6 +407,8 @@ def from_pattern(t0, dt, pattern):
             yield Beat.Soft(t0 + j/2*dt)
         elif c == "-":
             yield Beat.Loud(t0 + j/2*dt)
+        elif c == "=":
+            yield Beat.Loud(t0 + j/2*dt)
         elif c == ":":
             yield Beat.Roll(t0 + j/2*dt, t0 + (j+1)/2*dt, 2)
         elif c == ",":
