@@ -2,16 +2,15 @@ from knock import *
 from beatmap import *
 
 # test
-# beatmap = Beatmap(9.0, [Beat.Loud(1.0 + t*0.5) for t in range(16)])
-# beatmap = Beatmap(9.0, [Beat.Soft(1.0), Beat.Loud(1.5, -0.5), Beat.Soft(2.0), Beat.Soft(2.25), Beat.Loud(2.5, 0.5),
-#                         Beat.Soft(3.0), Beat.Loud(3.5, -0.5), Beat.Soft(4.0), Beat.Soft(4.25),
-#                         Beat.Roll(4.5, 5.0, 4, 1.5),
-#                         Beat.Soft(5.0), Beat.Loud(5.5, -0.5), Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5, 0.5),
-#                         Beat.Incr(7.0, 1, 6, 0.5), Beat.Incr(7.25, 2, 6, 0.7), Beat.Incr(7.5, 3, 6, 0.9),
-#                         Beat.Incr(7.75, 4, 6, 1.1), Beat.Incr(8.0, 5, 6, 1.3), Beat.Incr(8.25, 6, 6, 1.5),
-#                         Beat.Loud(8.5, 1.7)])
-# beatmap = Beatmap("test_scale.wav", [])
-# beatmap = Beatmap(10.0, [])
+# beatmap = Beatmap(None, 9.0, [Beat.Loud(1.0 + t*0.5) for t in range(16)])
+incrs = Incrs()
+beatmap = Beatmap(None, 13.0, [Beat.Soft(1.0), Beat.Loud(1.5, -0.5), Beat.Soft(2.0), Beat.Soft(2.25), Beat.Loud(2.5, 0.5),
+                               Beat.Soft(3.0), Beat.Loud(3.5, -0.5), Beat.Soft(4.0), Beat.Soft(4.25),
+                               Beat.Roll(4.5, 5.0, 4, 1.5, endpoint=False),
+                               Beat.Soft(5.0), Beat.Loud(5.5, -0.5), Beat.Soft(6.0), Beat.Soft(6.25), Beat.Loud(6.5, 0.5),
+                               incrs.add(7.0, 0.5), incrs.add(7.25, 0.7), incrs.add(7.5, 0.9),
+                               incrs.add(7.75, 1.1), incrs.add(8.0, 1.3), incrs.add(8.25, 1.5),
+                               Beat.Spin(8.5, 12.5, 30.0, 1.7)])
 
 test_beats = list(from_pattern(2.233, 60.0/140.0,
     #| - | - | - | - |
@@ -56,10 +55,10 @@ test_beats = list(from_pattern(2.233, 60.0/140.0,
     ". -.. -. .-...- "
 
     #| - | - | - | - |
-    ". -..- .-. -  - "
-    ". -..- .-. -  -."
-    ". -..- .-. -  - "
-    ". -..- .-..-- - "
+    ". -..- . .-.. - "
+    ". -..- . .-.. - "
+    ". -..- . .-.. - "
+    ". -..- . ..-- - "
     #| - | - | - | - |
     ". -.. -. .-.. - "
     ". -.. -. .-...- "
@@ -108,8 +107,8 @@ test_beats = list(from_pattern(2.233, 60.0/140.0,
     ". -.. -. .-.. - "
     ". -.. -. .-...- "
     #| - | - | - | - |
-    ". -..- .-. -  - "
-    ". -..- .-.. -.- "
+    ". -..- . .-.. - "
+    ". -..- . .-.=.= "
     #| - | - | - | - |
     ". -.. -. .-.. - "
     ". -.. -. .-...- "
@@ -121,7 +120,7 @@ test_beats = list(from_pattern(2.233, 60.0/140.0,
     ". -.. -. .-.. - "
     ". -.. -. .-..:- "
     ))
-beatmap = Beatmap("test_music.wav", test_beats)
+# beatmap = Beatmap("test_music.wav", 291.0, test_beats)
 
 console = KnockConsole()
 console.play(beatmap)
