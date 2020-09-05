@@ -1,6 +1,6 @@
 import time
 import itertools
-from contextlib import contextmanager
+import contextlib
 import curses
 import signal
 import numpy
@@ -59,108 +59,89 @@ class KnockConsole:
         self.knock_volume = knock_volume
         self.knock_delay = knock_delay
 
-        self.pyaudio = pyaudio.PyAudio()
-        self.stop = False
+        self.closed = False
 
-    def __del__(self):
-        self.pyaudio.terminate()
+    def close(self):
+        self.closed = True
 
-    def get_output_stream(self, sound_handler):
-        def output_callback(in_data, frame_count, time_info, status):
-            data = next(sound_handler, None)
-            if self.stop or data is None:
-                return b'', pyaudio.paComplete
-            data *= MUSIC_VOLUME
-            return data.tobytes(), pyaudio.paContinue
+    @ra.DataNode.from_generator
+    def get_output_node(self, knock_game):
+        sound_handler = knock_game.get_sound_handler(self.samplerate, self.hop_length)
+        with contextlib.closing(self), sound_handler:
+            yield
+            while not self.closed:
+                data = next(sound_handler)
+                data *= MUSIC_VOLUME
+                yield data
 
-        output_stream = self.pyaudio.open(format=pyaudio.paFloat32,
-                                          channels=1,
-                                          rate=self.samplerate,
-                                          input=False,
-                                          output=True,
-                                          frames_per_buffer=self.hop_length,
-                                          stream_callback=output_callback,
-                                          start=False)
+    @ra.DataNode.from_generator
+    def get_input_node(self, knock_game):
+        # use halfhann window
+        window = numpy.sin(numpy.linspace(0, numpy.pi/2, self.win_length))**2
 
-        return output_stream
-
-    def get_input_stream(self, knock_handler):
+        knock_handler = knock_game.get_knock_handler()
         picker = ra.pick_peak(self.pre_max, self.post_max,
                               self.pre_avg, self.post_avg,
                               self.wait, self.delta)
 
-        # use halfhann window
-        window = numpy.sin(numpy.linspace(0, numpy.pi/2, self.win_length))**2
-        detector = ra.pipe(ra.frame(self.win_length, self.hop_length),
-                           ra.power_spectrum(self.samplerate, self.win_length, windowing=window, weighting=True),
-                           ra.onset_strength(self.samplerate/self.win_length),
-                           (lambda a: (None, a, a)),
-                           ra.pair(itertools.count(-picker.delay), # generate index
-                                   ra.delay([0.0]*picker.delay), # delay signal
-                                   picker # pick peak
-                                   ),
-                           (lambda a: (a[0]*self.hop_length/self.samplerate-self.knock_delay,
-                                       a[1]*self.knock_volume,
-                                       a[2])),
-                           knock_handler)
+        with picker:
+            detector = ra.pipe(ra.frame(self.win_length, self.hop_length),
+                               ra.power_spectrum(self.win_length, samplerate=self.samplerate,
+                                                                  windowing=window,
+                                                                  weighting=True),
+                               ra.onset_strength(self.samplerate/self.win_length),
+                               (lambda a: (None, a, a)),
+                               ra.pair(itertools.count(-picker.delay), # generate index
+                                       ra.delay([0.0]*picker.delay), # delay signal
+                                       picker # pick peak
+                                       ),
+                               (lambda a: (a[0]*self.hop_length/self.samplerate-self.knock_delay,
+                                           a[1]*self.knock_volume,
+                                           a[2])),
+                               knock_handler)
 
-        def input_callback(in_data, frame_count, time_info, status):
-            data = numpy.frombuffer(in_data, dtype=numpy.float32)
-            detector.send(data)
-            return in_data, pyaudio.paContinue
+            with contextlib.closing(self), detector:
+                while not self.closed:
+                    detector.send((yield))
 
-        input_stream = self.pyaudio.open(format=pyaudio.paFloat32,
-                                         channels=1,
-                                         rate=self.samplerate,
-                                         input=True,
-                                         output=False,
-                                         frames_per_buffer=self.hop_length,
-                                         stream_callback=input_callback,
-                                         start=False)
+    @ra.DataNode.from_generator
+    def get_screen_node(self, knock_game):
+        stdscr = curses.initscr()
+        knock_handler = knock_game.get_screen_handler(stdscr)
 
-        return input_stream
-
-    @contextmanager
-    def get_screen(self):
         try:
-            stdscr = curses.initscr()
             curses.noecho()
             curses.cbreak()
             stdscr.nodelay(True)
             stdscr.keypad(1)
             curses.curs_set(0)
 
-            yield stdscr
+            with knock_handler:
+                while not self.closed:
+                    knock_handler.send((yield) - self.display_delay)
 
         finally:
             curses.endwin()
 
     def play(self, knock_game):
         def SIGINT_handler(sig, frame):
-            self.stop = True
+            self.close()
 
-        with knock_game, self.get_screen() as screen:
+        with contextlib.closing(self), knock_game:
             signal.signal(signal.SIGINT, SIGINT_handler)
 
-            sound_handler = knock_game.get_sound_handler(self.samplerate, self.hop_length)
-            knock_handler = knock_game.get_knock_handler()
-            screen_handler = knock_game.get_screen_handler(screen)
+            output_node = self.get_output_node(knock_game)
+            input_node = self.get_input_node(knock_game)
+            screen_node = self.get_screen_node(knock_game)
 
-            output_stream = self.get_output_stream(sound_handler)
-            input_stream = self.get_input_stream(knock_handler)
+            with screen_node, ra.record(input_node, self.hop_length, self.samplerate) as input_stream,\
+                              ra.play(output_node, self.hop_length, self.samplerate) as output_stream:
 
-            try:
                 reference_time = time.time()
                 input_stream.start_stream()
                 output_stream.start_stream()
 
-                while output_stream.is_active() and input_stream.is_active():
+                while not self.closed:
                     signal.signal(signal.SIGINT, SIGINT_handler)
-                    screen_handler.send(time.time() - reference_time - self.display_delay)
+                    screen_node.send(time.time() - reference_time)
                     time.sleep(1/self.display_fps)
-
-            finally:
-                output_stream.stop_stream()
-                input_stream.stop_stream()
-                output_stream.close()
-                input_stream.close()

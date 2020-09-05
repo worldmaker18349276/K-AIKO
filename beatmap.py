@@ -27,7 +27,7 @@ class Beat:
     # lifespan, speed, score, total_score, finished
     # def hit(self, time, strength): pass
     # def finish(self): pass
-    # def sound(self, sr): pass
+    # def sound(self, samplerate): pass
     # def draw(self, track, time, drop_speed): pass
 
     def draw_judging(self, track, time): pass
@@ -69,28 +69,26 @@ class SingleBeat(Beat):
         self.perf.draw(track, self.speed < 0, self.perf_syms)
 
 class Soft(SingleBeat):
-    total_score = 10
     symbol = BEATS_SYMS[0]
 
     def hit(self, time, strength):
         super().hit(time, strength, strength < 0.5)
 
-    def sound(self, sr):
-        return ra.pulse(sr=sr, freq=1000.0, decay_time=0.01, amplitude=0.5)
+    def sound(self, samplerate):
+        return ra.pulse(samplerate=samplerate, freq=1000.0, decay_time=0.01, amplitude=0.5)
 
     def __repr__(self):
         return "Soft(time={!r}, speed={!r}, perf={!r})".format(self.time, self.speed, self.perf)
 Beat.Soft = Soft
 
 class Loud(SingleBeat):
-    total_score = 10
     symbol = BEATS_SYMS[1]
 
     def hit(self, time, strength):
         super().hit(time, strength, strength >= 0.5)
 
-    def sound(self, sr):
-        return ra.pulse(sr=sr, freq=1000.0, decay_time=0.01, amplitude=1.0)
+    def sound(self, samplerate):
+        return ra.pulse(samplerate=samplerate, freq=1000.0, decay_time=0.01, amplitude=1.0)
 
     def __repr__(self):
         return "Loud(time={!r}, speed={!r}, perf={!r})".format(self.time, self.speed, self.perf)
@@ -112,7 +110,6 @@ class IncrLevel:
         return "IncrLevel(threshold={!r}, total={!r})".format(self.threshold, self.total)
 
 class Incr(SingleBeat):
-    total_score = 10
     symbol = BEATS_SYMS[2]
     incr_tol = INCR_TOL
 
@@ -127,9 +124,9 @@ class Incr(SingleBeat):
         super().hit(time, strength, strength >= self.level.threshold - self.incr_tol)
         self.level.hit(strength)
 
-    def sound(self, sr):
+    def sound(self, samplerate):
         amplitude = 0.5 + 0.5 * (self.count-1)/self.level.total
-        return ra.pulse(sr=sr, freq=1000.0, decay_time=0.01, amplitude=amplitude)
+        return ra.pulse(samplerate=samplerate, freq=1000.0, decay_time=0.01, amplitude=amplitude)
 
     def __repr__(self):
         return "Incr(time={!r}, speed={!r}, perf={!r}, count={!r}, level={!r})".format(
@@ -139,9 +136,7 @@ Beat.Incr = Incr
 class Roll(Beat):
     symbol = BEATS_SYMS[3]
 
-    def __init__(self, time, end, number, speed=1.0, roll=0, finished=False, endpoint=True):
-        if not endpoint:
-            end = time + (end - time)/number*(number-1)
+    def __init__(self, time, end, number, speed=1.0, roll=0, finished=False):
         self.time = time
         self.end = end
         self.speed = speed
@@ -172,15 +167,16 @@ class Roll(Beat):
     def finish(self):
         self.finished = True
 
-    def sound(self, sr):
-        sound = ra.pulse(sr=sr, freq=1000.0, decay_time=0.01, amplitude=1.0)
+    def sound(self, samplerate):
+        sound = ra.pulse(samplerate=samplerate, freq=1000.0, decay_time=0.01, amplitude=1.0)
         step = (self.end - self.time)/(self.number-1) if self.number > 1 else 0.0
         rolls_sounds = [(step*i, sound) for i in range(self.number)]
         duration = self.end - self.time + 0.01
 
-        beats_sounds = ra.pipe(ra.empty(sr, duration=duration),
-                               ra.attach(rolls_sounds, sr))
-        return numpy.concatenate(list(beats_sounds))
+        gen = ra.pipe(ra.empty(samplerate=samplerate, duration=duration),
+                      ra.attach(rolls_sounds, samplerate=samplerate))
+        with gen:
+            return numpy.concatenate(list(gen))
 
     def draw(self, track, time, drop_speed):
         step = (self.end - self.time)/(self.number-1) if self.number > 1 else 0.0
@@ -224,15 +220,16 @@ class Spin(Beat):
     def finish(self):
         self.finished = True
 
-    def sound(self, sr):
-        sound = ra.pulse(sr=sr, freq=1000.0, decay_time=0.01, amplitude=0.5)
+    def sound(self, samplerate):
+        sound = ra.pulse(samplerate=samplerate, freq=1000.0, decay_time=0.01, amplitude=0.5)
         step = (self.end - self.time)/self.capacity if self.capacity > 0.0 else 0.0
         spin_sounds = [(step*i, sound) for i in range(int(self.capacity))]
         duration = self.end - self.time
 
-        gen = ra.pipe(ra.empty(sr, duration=duration),
-                      ra.attach(spin_sounds, sr))
-        return numpy.concatenate(list(gen))
+        gen = ra.pipe(ra.empty(samplerate=samplerate, duration=duration),
+                      ra.attach(spin_sounds, samplerate=samplerate))
+        with gen:
+            return numpy.concatenate(list(gen))
 
     def draw(self, track, time, drop_speed):
         if self.charge < self.capacity:
@@ -245,8 +242,9 @@ class Spin(Beat):
         return True
 
     def draw_hitting(self, track, time):
-        track.draw(0.0, self.finished_sym)
-        return True
+        if self.charge == self.capacity:
+            track.draw(0.0, self.finished_sym)
+            return True
 
     def __repr__(self):
         return "Spin(time={!r}, end={!r}, capacity={!r}, speed={!r}, charge={!r}, finished={!r})".format(
@@ -375,10 +373,10 @@ class Hitter:
         return sum(1 for beat in self.beats if beat.finished) * 1000 // len(self.beats)
 
     @ra.DataNode.from_generator
-    def get_beats_handler(self):
-        beats = iter(self.beats)
+    def get_beats_handler(self, beats):
+        beats = iter(beats)
         beat = next(beats, None)
-        time = yield None
+        time = yield
         while True:
             while beat is not None and (beat.finished or beat.lifespan[1] < time):
                 if not beat.finished:
@@ -389,24 +387,23 @@ class Hitter:
 
     @ra.DataNode.from_generator
     def get_knock_handler(self):
-        beats_handler = self.get_beats_handler()
+        with self.get_beats_handler(self.beats) as beats_handler:
+            while True:
+                time, strength, detected = yield
+                self.current_beat = beats_handler.send(time)
 
-        while True:
-            time, strength, detected = yield
-            self.current_beat = beats_handler.send(time)
+                if not detected:
+                    continue
 
-            if not detected:
-                continue
+                self.hit_index += 1
+                self.hit_strength = strength
+                self.hit_beat = self.current_beat
+                
+                if self.current_beat is None:
+                    continue
 
-            self.hit_index += 1
-            self.hit_strength = strength
-            self.hit_beat = self.current_beat
-            
-            if self.current_beat is None:
-                continue
-
-            self.current_beat.hit(time, strength)
-            self.current_beat = beats_handler.send(time)
+                self.current_beat.hit(time, strength)
+                self.current_beat = beats_handler.send(time)
 
     def update_draw_index(self, time):
         if self.draw_index != self.hit_index:
@@ -445,46 +442,44 @@ class Beatmap:
         self.beats = tuple(beats)
         self.hitter = Hitter(self.beats)
 
-        self.file = None
         self.filename = filename
         self.duration = duration
 
         self.spectrum = " "*spec_width
 
     def __enter__(self):
-        if self.filename is not None:
-            self.file = wave.open(self.filename, "rb")
         return self
 
     def __exit__(self, type, value, traceback):
-        if self.file is not None:
-            self.file.close()
+        pass
 
     def get_knock_handler(self):
         return self.hitter.get_knock_handler()
 
-    def get_spectrum_handler(self, sr, hop_length, win_length, decay_time):
+    def get_spectrum_handler(self, samplerate, hop_length, win_length, decay_time):
         spec = ra.pipe(ra.frame(win_length, hop_length),
-                       ra.power_spectrum(sr, win_length, windowing=True, weighting=False),
-                       ra.draw_spectrum(len(self.spectrum), sr, win_length, decay=(hop_length/sr)/decay_time),
+                       ra.power_spectrum(win_length, samplerate=samplerate, windowing=True, weighting=False),
+                       ra.draw_spectrum(len(self.spectrum), win_length=win_length,
+                                                            samplerate=samplerate,
+                                                            decay=(hop_length/samplerate)/decay_time),
                        lambda s: setattr(self, "spectrum", s))
         return spec
 
-    def get_sound_handler(self, sr, hop_length):
+    def get_sound_handler(self, samplerate, hop_length):
         # generate music
-        if self.file is None:
-            music = ra.empty(sr, hop_length, self.duration)
+        if self.filename is None:
+            music = ra.empty(buffer_length=hop_length, samplerate=samplerate, duration=self.duration)
         else:
-            music = ra.load(self.file, sr, hop_length)
+            music = ra.load(self.filename, buffer_length=hop_length, samplerate=samplerate)
 
         # add spec
         WIN_LENGTH = 512*4
         DECAY_TIME = 0.01
-        music = ra.pipe(music, ra.branch(self.get_spectrum_handler(sr, hop_length, WIN_LENGTH, DECAY_TIME)))
+        music = ra.pipe(music, ra.branch(self.get_spectrum_handler(samplerate, hop_length, WIN_LENGTH, DECAY_TIME)))
 
         # add beats sounds
-        beats_sounds = [(beat.time, beat.sound(sr)) for beat in self.beats]
-        music = ra.pipe(music, ra.attach(beats_sounds, sr, hop_length))
+        beats_sounds = [(beat.time, beat.sound(samplerate)) for beat in self.beats]
+        music = ra.pipe(music, ra.attach(beats_sounds, buffer_length=hop_length, samplerate=samplerate))
 
         return music
 
@@ -509,34 +504,35 @@ class Beatmap:
             return (start-cross_time, end+cross_time)
         dripper = ra.drip(self.beats, range_of)
 
-        while True:
-            time = yield
-            self.hitter.update_draw_index(time)
-            scr.clear()
+        with dripper:
+            while True:
+                time = yield
+                self.hitter.update_draw_index(time)
+                scr.clear()
 
-            # draw beats
-            ## find visible beats, and move finished beats to the bottom
-            beats = dripper.send(time)
-            beats = sorted(beats, key=lambda b: b.finished)
-            for beat in beats[::-1]:
-                beat.draw(track, time, self.drop_speed)
+                # draw beats
+                ## find visible beats, and move finished beats to the bottom
+                beats = dripper.send(time)
+                beats = sorted(beats, key=lambda b: b.finished)
+                for beat in beats[::-1]:
+                    beat.draw(track, time, self.drop_speed)
 
-            # draw target
-            stop_drawing = False
-            if not stop_drawing and self.hitter.current_beat is not None:
-                stop_drawing = self.hitter.current_beat.draw_judging(track, time)
-            if not stop_drawing and self.hitter.hit_beat is not None:
-                if abs(time - self.hitter.hit_time) < self.hitter.hit_sustain:
-                    stop_drawing = self.hitter.hit_beat.draw_hitting(track, time)
-            if not stop_drawing:
-                self.hitter.draw(track, time)
+                # draw target
+                stop_drawing = False
+                if not stop_drawing and self.hitter.current_beat is not None:
+                    stop_drawing = self.hitter.current_beat.draw_judging(track, time)
+                if not stop_drawing and self.hitter.hit_beat is not None:
+                    if abs(time - self.hitter.hit_time) < self.hitter.hit_sustain:
+                        stop_drawing = self.hitter.hit_beat.draw_hitting(track, time)
+                if not stop_drawing:
+                    self.hitter.draw(track, time)
 
-            # draw others
-            scr.addstr(0, spec_offset, self.spectrum)
-            scr.addstr(0, score_offset, "[{:>5d}/{:>5d}]".format(self.hitter.score, self.hitter.total_score))
-            scr.addstr(0, progress_offset, "[{:>5.1f}%]".format(self.hitter.progress/10))
+                # draw others
+                scr.addstr(0, spec_offset, self.spectrum)
+                scr.addstr(0, score_offset, "[{:>5d}/{:>5d}]".format(self.hitter.score, self.hitter.total_score))
+                scr.addstr(0, progress_offset, "[{:>5.1f}%]".format(self.hitter.progress/10))
 
-            scr.refresh()
+                scr.refresh()
 
 
 def from_pattern(t0, dt, pattern):
@@ -554,8 +550,6 @@ def from_pattern(t0, dt, pattern):
         elif c == "=":
             yield Beat.Loud(t0 + j/2*dt)
         elif c == ":":
-            # yield Beat.Soft(t0 + j/2*dt)
-            # yield Beat.Soft(t0 + (j+1/2)/2*dt)
-            yield Beat.Roll(t0 + j/2*dt, t0 + (j+1)/2*dt, 2, endpoint=False)
+            yield Beat.Roll(t0 + j/2*dt, t0 + (j+0.5)/2*dt, 2)
         elif c == ",":
             yield incring.add(t0 + j/2*dt)
