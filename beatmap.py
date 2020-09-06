@@ -175,8 +175,7 @@ class Roll(Beat):
 
         gen = ra.pipe(ra.empty(samplerate=samplerate, duration=duration),
                       ra.attach(rolls_sounds, samplerate=samplerate))
-        with gen:
-            return numpy.concatenate(list(gen))
+        return ra.collect(gen)
 
     def draw(self, track, time, drop_speed):
         step = (self.end - self.time)/(self.number-1) if self.number > 1 else 0.0
@@ -228,8 +227,7 @@ class Spin(Beat):
 
         gen = ra.pipe(ra.empty(samplerate=samplerate, duration=duration),
                       ra.attach(spin_sounds, samplerate=samplerate))
-        with gen:
-            return numpy.concatenate(list(gen))
+        return ra.collect(gen)
 
     def draw(self, track, time, drop_speed):
         if self.charge < self.capacity:
@@ -470,7 +468,7 @@ class Beatmap:
         if self.filename is None:
             music = ra.empty(buffer_length=hop_length, samplerate=samplerate, duration=self.duration)
         else:
-            music = ra.load(self.filename, buffer_length=hop_length, samplerate=samplerate)
+            music = ra.load(self.filename, buffer_length=hop_length, samplerate=samplerate, end=self.duration)
 
         # add spec
         WIN_LENGTH = 512*4

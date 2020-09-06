@@ -64,13 +64,16 @@ class KnockConsole:
     def close(self):
         self.closed = True
 
+    def SIGINT_handler(self, sig, frame):
+        self.close()
+
     @ra.DataNode.from_generator
     def get_output_node(self, knock_game):
         sound_handler = knock_game.get_sound_handler(self.samplerate, self.hop_length)
         with contextlib.closing(self), sound_handler:
             yield
-            while not self.closed:
-                data = next(sound_handler)
+            while True:
+                data = sound_handler.send()
                 data *= MUSIC_VOLUME
                 yield data
 
@@ -80,29 +83,27 @@ class KnockConsole:
         window = numpy.sin(numpy.linspace(0, numpy.pi/2, self.win_length))**2
 
         knock_handler = knock_game.get_knock_handler()
-        picker = ra.pick_peak(self.pre_max, self.post_max,
-                              self.pre_avg, self.post_avg,
-                              self.wait, self.delta)
+        delay = max(self.post_max, self.post_avg)
+        detector = ra.pipe(ra.frame(self.win_length, self.hop_length),
+                           ra.power_spectrum(self.win_length, samplerate=self.samplerate,
+                                                              windowing=window,
+                                                              weighting=True),
+                           ra.onset_strength(self.samplerate/self.win_length),
+                           (lambda a: (None, a, a)),
+                           ra.pair(itertools.count(-delay), # generate index
+                                   ra.delay([0.0]*delay), # delay signal
+                                   ra.pick_peak(self.pre_max, self.post_max,
+                                                self.pre_avg, self.post_avg,
+                                                self.wait, self.delta) # pick peak
+                                   ),
+                           (lambda a: (a[0]*self.hop_length/self.samplerate-self.knock_delay,
+                                       a[1]*self.knock_volume,
+                                       a[2])),
+                           knock_handler)
 
-        with picker:
-            detector = ra.pipe(ra.frame(self.win_length, self.hop_length),
-                               ra.power_spectrum(self.win_length, samplerate=self.samplerate,
-                                                                  windowing=window,
-                                                                  weighting=True),
-                               ra.onset_strength(self.samplerate/self.win_length),
-                               (lambda a: (None, a, a)),
-                               ra.pair(itertools.count(-picker.delay), # generate index
-                                       ra.delay([0.0]*picker.delay), # delay signal
-                                       picker # pick peak
-                                       ),
-                               (lambda a: (a[0]*self.hop_length/self.samplerate-self.knock_delay,
-                                           a[1]*self.knock_volume,
-                                           a[2])),
-                               knock_handler)
-
-            with contextlib.closing(self), detector:
-                while not self.closed:
-                    detector.send((yield))
+        with contextlib.closing(self), detector:
+            while True:
+                detector.send((yield))
 
     @ra.DataNode.from_generator
     def get_screen_node(self, knock_game):
@@ -116,32 +117,32 @@ class KnockConsole:
             stdscr.keypad(1)
             curses.curs_set(0)
 
-            with knock_handler:
-                while not self.closed:
-                    knock_handler.send((yield) - self.display_delay)
+            with contextlib.closing(self), knock_handler:
+                reference_time = time.time()
+
+                while True:
+                    yield
+                    signal.signal(signal.SIGINT, self.SIGINT_handler)
+                    knock_handler.send(time.time() - reference_time - self.display_delay)
 
         finally:
             curses.endwin()
 
     def play(self, knock_game):
-        def SIGINT_handler(sig, frame):
-            self.close()
+        try:
+            session = pyaudio.PyAudio()
 
-        with contextlib.closing(self), knock_game:
-            signal.signal(signal.SIGINT, SIGINT_handler)
+            with contextlib.closing(self), knock_game:
+                output_node = self.get_output_node(knock_game)
+                input_node = self.get_input_node(knock_game)
+                screen_node = self.get_screen_node(knock_game)
 
-            output_node = self.get_output_node(knock_game)
-            input_node = self.get_input_node(knock_game)
-            screen_node = self.get_screen_node(knock_game)
+                with ra.record(session, input_node, self.hop_length, self.samplerate) as input_stream,\
+                     ra.play(session, output_node, self.hop_length, self.samplerate) as output_stream:
 
-            with screen_node, ra.record(input_node, self.hop_length, self.samplerate) as input_stream,\
-                              ra.play(output_node, self.hop_length, self.samplerate) as output_stream:
+                    input_stream.start_stream()
+                    output_stream.start_stream()
+                    ra.loop(screen_node, 1/self.display_fps, lambda: self.closed)
 
-                reference_time = time.time()
-                input_stream.start_stream()
-                output_stream.start_stream()
-
-                while not self.closed:
-                    signal.signal(signal.SIGINT, SIGINT_handler)
-                    screen_node.send(time.time() - reference_time)
-                    time.sleep(1/self.display_fps)
+        finally:
+            session.terminate()
