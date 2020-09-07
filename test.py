@@ -120,7 +120,7 @@ test_beats = list(from_pattern(2.233, 60.0/140.0,
     ". -.. -. .-.. - "
     ". -.. -. .-..:- "
     ))
-beatmap = Beatmap("test_music.m4a", 291.0, test_beats)
+beatmap = Beatmap("ひとり旅 ／ 瀬名航 feat.鎖那.m4a", 291.0, test_beats)
 
 console = KnockConsole()
 console.play(beatmap)
