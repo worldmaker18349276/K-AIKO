@@ -10,7 +10,8 @@ TOLERANCES = (0.02, 0.06, 0.10, 0.14)
 BEATS_SYMS = ("□", "■", "◬", "◎", "◴◵◶◷")
 #             Soft Loud Incr Roll Spin
 PERF_SYMS = ("⟪", "⟪", "⟨", "˽", "⟩", "⟫", "⟫")
-SPIN_FINISHED_SYM = "😊"
+SPIN_FINISHED_SYM = "☺"
+USE_FULLWIDTH = True
 TARGET_SYMS = ("⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓")
 
 INCR_TOL = 0.1
@@ -66,7 +67,7 @@ class SingleBeat(Beat):
             track.draw(pos, self.symbol)
 
     def draw_hitting(self, track, time):
-        self.perf.draw(track, self.speed < 0, self.perf_syms)
+        self.perf.draw(track, self.speed < 0, self.perf_syms, USE_FULLWIDTH)
 
 class Soft(SingleBeat):
     symbol = BEATS_SYMS[0]
@@ -307,13 +308,13 @@ class Performance(enum.Enum):
 
         return perf
 
-    def draw(self, track, flipped, perf_syms):
+    def draw(self, track, flipped, perf_syms, use_fullwidth=True):
         CORRECT_TYPES = (Performance.GREAT,
                          Performance.LATE_GOOD, Performance.EARLY_GOOD,
                          Performance.LATE_BAD, Performance.EARLY_BAD,
                          Performance.LATE_FAILED, Performance.EARLY_FAILED)
 
-        if self in CORRECT_TYPES:
+        if use_fullwidth and self in CORRECT_TYPES:
             track.draw(0.0, perf_syms[3], 1)
 
         LEFT_GOOD    = (Performance.LATE_GOOD,    Performance.LATE_GOOD_WRONG)
@@ -327,18 +328,20 @@ class Performance(enum.Enum):
             LEFT_BAD, RIGHT_BAD = RIGHT_BAD, LEFT_BAD
             LEFT_FAILED, RIGHT_FAILED = RIGHT_FAILED, LEFT_FAILED
 
+        left = -1
+        right = +2 if use_fullwidth else +1
         if self in LEFT_GOOD:
-            track.draw(0.0, perf_syms[2], -1)
+            track.draw(0.0, perf_syms[2], left)
         elif self in RIGHT_GOOD:
-            track.draw(0.0, perf_syms[4], +2)
+            track.draw(0.0, perf_syms[4], right)
         elif self in LEFT_BAD:
-            track.draw(0.0, perf_syms[1], -1)
+            track.draw(0.0, perf_syms[1], left)
         elif self in RIGHT_BAD:
-            track.draw(0.0, perf_syms[5], +2)
+            track.draw(0.0, perf_syms[5], right)
         elif self in LEFT_FAILED:
-            track.draw(0.0, perf_syms[0], -1)
+            track.draw(0.0, perf_syms[0], left)
         elif self in RIGHT_FAILED:
-            track.draw(0.0, perf_syms[6], +2)
+            track.draw(0.0, perf_syms[6], right)
 
 
 class Hitter:
@@ -485,12 +488,11 @@ class Beatmap:
     def get_screen_handler(self, scr):
         _, width = scr.getmaxyx()
 
-        "  ⣿⣴⣧⣰⣄ [  384/ 2240] □   □⛶  □   ■       ■   □   □   ■   ■   □   [ 21.8%] "
-        spec_offset = 2
-        score_offset = len(self.spectrum) + 3
-        track_offset = len(self.spectrum) + 16
+        spec_offset = 1
+        score_offset = len(self.spectrum) + 2
+        track_offset = len(self.spectrum) + 15
         progress_offset = width - 9
-        track_width = width - 25 - len(self.spectrum)
+        track_width = width - 24 - len(self.spectrum)
         track_win = scr.subwin(1, track_width, 0, track_offset)
 
         bar_offset = 0.1
