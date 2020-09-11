@@ -1,6 +1,6 @@
 ![](logo.png)
 
-KAIK▣  is a sound-control one-line terminal-based rhythm game.
+K-AIK▣  is a sound-control one-line terminal-based rhythm game.
 
 ```
  ⣿⣴⣧⣰⣄ [  384/ 2240] □   □⛶  □   ■       ■   □   □   ■   ■   □   [ 21.8%] 
@@ -13,7 +13,8 @@ KAIK▣  is a sound-control one-line terminal-based rhythm game.
 - best theme: Rxvt
 
 TODO
-- add Theme system
+- add theme system
 - design beatmap file
 - read osu file
-
+- add pause/resume/skip
+- beatmap editor
