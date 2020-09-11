@@ -250,6 +250,34 @@ class Spin(Beat):
                      self.time, self.end, self.capacity, self.speed, self.charge, self.finished)
 Beat.Spin = Spin
 
+class Sym(Beat):
+    total_score = 0
+    score = 0
+    finished = True
+
+    def __init__(self, time, speed=1.0, symbol=" "):
+        self.time = time
+        self.speed = speed
+        self.symbol = symbol
+
+    @property
+    def lifespan(self):
+        return (self.time, self.time)
+
+    def hit(self, time, strength, is_correct_key):
+        pass
+
+    def sound(self, samplerate):
+        return numpy.zeros((0,))
+
+    def draw(self, track, time, drop_speed):
+        pos = (self.time - time) * drop_speed * self.speed
+        track.draw(pos, self.symbol)
+
+    def __repr__(self):
+        return "Sym(time={!r}, speed={!r}, symbol={!r})".format(self.time, self.speed, self.symbol)
+Beat.Sym = Sym
+
 class Performance(enum.Enum):
     MISS               = ("Miss"                      , 0)
     GREAT              = ("Great"                     , 10)
@@ -371,7 +399,8 @@ class Hitter:
     def progress(self):
         if len(self.beats) == 0:
             return 1000
-        return sum(1 for beat in self.beats if beat.finished) * 1000 // len(self.beats)
+        beats_ = list(beat for beat in self.beats if not isinstance(beat, Beat.Sym))
+        return sum(1 for beat in beats_ if beat.finished) * 1000 // len(beats_)
 
     @ra.DataNode.from_generator
     def get_beats_handler(self, beats):
@@ -468,10 +497,11 @@ class Beatmap:
 
     def get_sound_handler(self, samplerate, hop_length):
         # generate music
+        start, end = self.duration if isinstance(self.duration, tuple) else (0.0, self.duration)
         if self.filename is None:
-            music = ra.empty(buffer_length=hop_length, samplerate=samplerate, duration=self.duration)
+            music = ra.empty(buffer_length=hop_length, samplerate=samplerate, duration=end-start)
         else:
-            music = ra.load(self.filename, buffer_length=hop_length, samplerate=samplerate, end=self.duration)
+            music = ra.load(self.filename, buffer_length=hop_length, samplerate=samplerate, start=start, end=end)
 
         # add spec
         WIN_LENGTH = 512*4
@@ -537,19 +567,32 @@ class Beatmap:
 
 def from_pattern(t0, dt, pattern):
     incring = None
-    for j, c in enumerate(pattern):
+    t = t0
+    for c in pattern:
         if incring is not None and c != ",":
             incring = None
         elif incring is None and c == ",":
             incring = IncrLevel()
 
-        if c == ".":
-            yield Beat.Soft(t0 + j/2*dt)
+        if c == "_":
+            pass
+        elif c == " ":
+            continue
+        elif c == "|":
+            yield Beat.Sym(t - dt/4, symbol="❘")
+            # yield Beat.Sym(t, symbol="▏")
+            continue
+        elif c == ".":
+            yield Beat.Soft(t)
         elif c == "-":
-            yield Beat.Loud(t0 + j/2*dt)
+            yield Beat.Loud(t)
         elif c == "=":
-            yield Beat.Loud(t0 + j/2*dt)
+            yield Beat.Loud(t)
         elif c == ":":
-            yield Beat.Roll(t0 + j/2*dt, t0 + (j+0.5)/2*dt, 2)
+            yield Beat.Roll(t, t + dt/4, 2)
         elif c == ",":
-            yield incring.add(t0 + j/2*dt)
+            yield incring.add(t)
+        else:
+            raise ValueError
+
+        t += dt/2
