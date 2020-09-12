@@ -7,14 +7,16 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
 ```
 
 - dependencies: numpy, scipy, pyaudio, audioread
-- used characters: ⛶ 🞎 🞏 🞐 🞑 🞒 🞓 □ ■ ◬ ◎ ◴ ◵ ◶ ◷ ☺ ⟪ ⟨ ˽ ⟩ ⟫
+- used characters: ⛶ 🞎 🞏 🞐 🞑 🞒 🞓 ⬚ □ ■ ⬒ ◎ ◴ ◵ ◶ ◷ ☺ ⟪ ⟨ ⟩ ⟫
 - best terminal: GNOME Terminal (set __ambiguous-width characters__ to narrow)
 - best font: Ubuntu Mono Regular, 16pt
 - best theme: Rxvt
 
 TODO
 - add theme system
+- add config system
 - design beatmap file
 - read osu file
-- add pause/resume/skip
+- add Script (as a superclass of Sym)
+- add travel (pause/resume/skip/scroll)
 - beatmap editor

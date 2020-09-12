@@ -70,6 +70,7 @@ class KnockConsole:
     @ra.DataNode.from_generator
     def get_output_node(self, knock_game):
         sound_handler = knock_game.get_sound_handler(self.samplerate, self.hop_length)
+
         with contextlib.closing(self), sound_handler:
             yield
             while True:
@@ -79,10 +80,10 @@ class KnockConsole:
 
     @ra.DataNode.from_generator
     def get_input_node(self, knock_game):
+        knock_handler = knock_game.get_knock_handler()
+
         # use halfhann window
         window = numpy.sin(numpy.linspace(0, numpy.pi/2, self.win_length))**2
-
-        knock_handler = knock_game.get_knock_handler()
         delay = max(self.post_max, self.post_avg)
         detector = ra.pipe(ra.frame(self.win_length, self.hop_length),
                            ra.power_spectrum(self.win_length, samplerate=self.samplerate,
@@ -123,7 +124,8 @@ class KnockConsole:
                 while True:
                     yield
                     signal.signal(signal.SIGINT, self.SIGINT_handler)
-                    knock_handler.send(time.time() - reference_time - self.display_delay)
+                    t = time.time() - reference_time - self.display_delay
+                    knock_handler.send(t)
 
         finally:
             curses.endwin()

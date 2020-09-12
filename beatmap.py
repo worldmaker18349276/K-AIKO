@@ -3,13 +3,15 @@ import wave
 import curses
 import numpy
 import realtime_analysis as ra
+import audioread
 
 
 TOLERANCES = (0.02, 0.06, 0.10, 0.14)
 #             GREAT GOOD  BAD   FAILED
-BEATS_SYMS = ("□", "■", "◬", "◎", "◴◵◶◷")
+BEATS_SYMS = ("□", "■", "⬒", "◎", "◴◵◶◷")
 #             Soft Loud Incr Roll Spin
-PERF_SYMS = ("⟪", "⟪", "⟨", "˽", "⟩", "⟫", "⟫")
+WRONG_SYM = "⬚"
+PERF_SYMS = ("⟪", "⟪", "⟨", "⟩", "⟫", "⟫")
 SPIN_FINISHED_SYM = "☺"
 USE_FULLWIDTH = True
 TARGET_SYMS = ("⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓")
@@ -19,6 +21,8 @@ DROP_SPEED = 0.5 # screen per sec
 SPEC_WIDTH = 5
 HIT_DECAY = 0.4
 HIT_SUSTAIN = 0.1
+PREPARE_TIME = 1.0
+SKIP_TIME = 8.0
 
 
 # beats and performances
@@ -37,6 +41,7 @@ class Beat:
 class SingleBeat(Beat):
     total_score = 10
     perf_syms = PERF_SYMS
+    wrong_symbol = WRONG_SYM
 
     def __init__(self, time, speed=1.0, perf=None):
         self.time = time
@@ -62,9 +67,18 @@ class SingleBeat(Beat):
         self.perf = Performance.judge(time - self.time, is_correct_key, self.tolerances)
 
     def draw(self, track, time, drop_speed):
+        CORRECT_TYPES = (Performance.GREAT,
+                         Performance.LATE_GOOD, Performance.EARLY_GOOD,
+                         Performance.LATE_BAD, Performance.EARLY_BAD,
+                         Performance.LATE_FAILED, Performance.EARLY_FAILED)
+
         if self.perf in (None, Performance.MISS):
             pos = (self.time - time) * drop_speed * self.speed
             track.draw(pos, self.symbol)
+
+        elif self.perf not in CORRECT_TYPES:
+            pos = (self.time - time) * drop_speed * self.speed
+            track.draw(pos, self.wrong_symbol)
 
     def draw_hitting(self, track, time):
         self.perf.draw(track, self.speed < 0, self.perf_syms, USE_FULLWIDTH)
@@ -337,14 +351,6 @@ class Performance(enum.Enum):
         return perf
 
     def draw(self, track, flipped, perf_syms, use_fullwidth=True):
-        CORRECT_TYPES = (Performance.GREAT,
-                         Performance.LATE_GOOD, Performance.EARLY_GOOD,
-                         Performance.LATE_BAD, Performance.EARLY_BAD,
-                         Performance.LATE_FAILED, Performance.EARLY_FAILED)
-
-        if use_fullwidth and self in CORRECT_TYPES:
-            track.draw(0.0, perf_syms[3], 1)
-
         LEFT_GOOD    = (Performance.LATE_GOOD,    Performance.LATE_GOOD_WRONG)
         RIGHT_GOOD   = (Performance.EARLY_GOOD,   Performance.EARLY_GOOD_WRONG)
         LEFT_BAD     = (Performance.LATE_BAD,     Performance.LATE_BAD_WRONG)
@@ -361,15 +367,15 @@ class Performance(enum.Enum):
         if self in LEFT_GOOD:
             track.draw(0.0, perf_syms[2], left)
         elif self in RIGHT_GOOD:
-            track.draw(0.0, perf_syms[4], right)
+            track.draw(0.0, perf_syms[3], right)
         elif self in LEFT_BAD:
             track.draw(0.0, perf_syms[1], left)
         elif self in RIGHT_BAD:
-            track.draw(0.0, perf_syms[5], right)
+            track.draw(0.0, perf_syms[4], right)
         elif self in LEFT_FAILED:
             track.draw(0.0, perf_syms[0], left)
         elif self in RIGHT_FAILED:
-            track.draw(0.0, perf_syms[6], right)
+            track.draw(0.0, perf_syms[5], right)
 
 
 class Hitter:
@@ -381,7 +387,7 @@ class Hitter:
         self.beats = tuple(beats)
 
         self.hit_index = 0
-        self.hit_time = -1.0
+        self.hit_time = -100.0
         self.hit_strength = 0.0
         self.hit_beat = None
         self.draw_index = 0
@@ -465,15 +471,22 @@ class Track:
 
 # beatmap
 class Beatmap:
-    def __init__(self, filename, duration, beats, drop_speed=DROP_SPEED,
-                                                  spec_width=SPEC_WIDTH):
+    def __init__(self, song, beats, drop_speed=DROP_SPEED,
+                                    spec_width=SPEC_WIDTH):
         self.drop_speed = drop_speed
 
-        self.beats = tuple(beats)
-        self.hitter = Hitter(self.beats)
+        self.song = song
+        if self.song is not None:
+            with audioread.audio_open(self.song) as file:
+                self.duration = file.duration
+        else:
+            self.duration = 0.0
 
-        self.filename = filename
-        self.duration = duration
+        self.beats = tuple(beats)
+        self.start = min(0.0, min(beat.lifespan[0] - PREPARE_TIME for beat in self.beats))
+        self.end = max(self.duration, max(beat.lifespan[1] + PREPARE_TIME for beat in self.beats))
+
+        self.hitter = Hitter(self.beats)
 
         self.spectrum = " "*spec_width
 
@@ -483,8 +496,13 @@ class Beatmap:
     def __exit__(self, type, value, traceback):
         pass
 
+    @ra.DataNode.from_generator
     def get_knock_handler(self):
-        return self.hitter.get_knock_handler()
+        knock_handler = self.hitter.get_knock_handler()
+        with knock_handler:
+            time, strength, detected = yield
+            while True:
+                time, strength, detected = yield knock_handler.send((time+self.start, strength, detected))
 
     def get_spectrum_handler(self, samplerate, hop_length, win_length, decay_time):
         spec = ra.pipe(ra.frame(win_length, hop_length),
@@ -497,11 +515,17 @@ class Beatmap:
 
     def get_sound_handler(self, samplerate, hop_length):
         # generate music
-        start, end = self.duration if isinstance(self.duration, tuple) else (0.0, self.duration)
-        if self.filename is None:
-            music = ra.empty(buffer_length=hop_length, samplerate=samplerate, duration=end-start)
+        if self.song is None:
+            music = ra.DataNode.wrap([])
+        elif isinstance(self.song, str):
+            music = ra.load(self.song, buffer_length=hop_length, samplerate=samplerate)
         else:
-            music = ra.load(self.filename, buffer_length=hop_length, samplerate=samplerate, start=start, end=end)
+            raise ValueError
+
+        if self.start < 0:
+            music = ra.chain(ra.empty(hop_length, samplerate, -self.start), music)
+        if self.end > self.duration:
+            music = ra.chain(music, ra.empty(hop_length, samplerate, self.end - self.duration))
 
         # add spec
         WIN_LENGTH = 512*4
@@ -509,7 +533,7 @@ class Beatmap:
         music = ra.pipe(music, ra.branch(self.get_spectrum_handler(samplerate, hop_length, WIN_LENGTH, DECAY_TIME)))
 
         # add beats sounds
-        beats_sounds = [(beat.time, beat.sound(samplerate)) for beat in self.beats]
+        beats_sounds = [(beat.time - self.start, beat.sound(samplerate)) for beat in self.beats]
         music = ra.pipe(music, ra.attach(beats_sounds, buffer_length=hop_length, samplerate=samplerate))
 
         return music
@@ -537,6 +561,7 @@ class Beatmap:
         with dripper:
             while True:
                 time = yield
+                time += self.start
                 self.hitter.update_draw_index(time)
                 scr.clear()
 
@@ -590,7 +615,7 @@ def from_pattern(t0, dt, pattern):
             yield Beat.Loud(t)
         elif c == ":":
             yield Beat.Roll(t, t + dt/4, 2)
-        elif c == ",":
+        elif c == "<":
             yield incring.add(t)
         else:
             raise ValueError
