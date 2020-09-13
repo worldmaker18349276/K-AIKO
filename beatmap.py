@@ -109,43 +109,43 @@ class Loud(SingleBeat):
         return "Loud(time={!r}, speed={!r}, perf={!r})".format(self.time, self.speed, self.perf)
 Beat.Loud = Loud
 
-class IncrLevel:
+class IncrGroup:
     def __init__(self, threshold=0.0, total=0):
         self.threshold = threshold
         self.total = total
 
     def add(self, time, speed=1.0, perf=None):
         self.total += 1
-        return Incr(time, speed, perf, count=self.total, level=self)
+        return Incr(time, speed, perf, count=self.total, group=self)
 
     def hit(self, strength):
         self.threshold = max(self.threshold, strength)
 
     def __repr__(self):
-        return "IncrLevel(threshold={!r}, total={!r})".format(self.threshold, self.total)
+        return "IncrGroup(threshold={!r}, total={!r})".format(self.threshold, self.total)
 
 class Incr(SingleBeat):
     symbol = BEATS_SYMS[2]
     incr_tol = INCR_TOL
 
-    def __init__(self, time, speed=1.0, perf=None, count=None, level=None):
+    def __init__(self, time, speed=1.0, perf=None, count=None, group=None):
         super().__init__(time, speed, perf)
-        if count is None or level is None:
+        if count is None or group is None:
             raise ValueError
         self.count = count
-        self.level = level
+        self.group = group
 
     def hit(self, time, strength):
-        super().hit(time, strength, strength >= self.level.threshold - self.incr_tol)
-        self.level.hit(strength)
+        super().hit(time, strength, strength >= self.group.threshold - self.incr_tol)
+        self.group.hit(strength)
 
     def sound(self, samplerate):
-        amplitude = 0.5 + 0.5 * (self.count-1)/self.level.total
+        amplitude = 0.5 + 0.5 * (self.count-1)/self.group.total
         return ra.pulse(samplerate=samplerate, freq=1000.0, decay_time=0.01, amplitude=amplitude)
 
     def __repr__(self):
-        return "Incr(time={!r}, speed={!r}, perf={!r}, count={!r}, level={!r})".format(
-                     self.time, self.speed, self.perf, self.count, self.level)
+        return "Incr(time={!r}, speed={!r}, perf={!r}, count={!r}, group={!r})".format(
+                     self.time, self.speed, self.perf, self.count, self.group)
 Beat.Incr = Incr
 
 class Roll(Beat):
@@ -482,7 +482,7 @@ class Beatmap:
         else:
             self.duration = 0.0
 
-        self.beats = tuple(beats)
+        self.beats = sorted(beats, key=lambda b: b.lifespan[0])
         self.start = min(0.0, min(beat.lifespan[0] - PREPARE_TIME for beat in self.beats))
         self.end = max(self.duration, max(beat.lifespan[1] + PREPARE_TIME for beat in self.beats))
 
@@ -590,34 +590,59 @@ class Beatmap:
                 scr.refresh()
 
 
-def from_pattern(t0, dt, pattern):
-    incring = None
-    t = t0
-    for c in pattern:
-        if incring is not None and c != ",":
-            incring = None
-        elif incring is None and c == ",":
-            incring = IncrLevel()
+class BeatmapStdSheet:
+    def __init__(self):
+        self.metadata = ""
+        self.audio = None
+        self.offset = 0.0
+        self.bpm = 120.0
 
-        if c == "_":
-            pass
-        elif c == " ":
-            continue
-        elif c == "|":
-            yield Beat.Sym(t - dt/4, symbol="❘")
-            # yield Beat.Sym(t, symbol="▏")
-            continue
-        elif c == ".":
-            yield Beat.Soft(t)
-        elif c == "-":
-            yield Beat.Loud(t)
-        elif c == "=":
-            yield Beat.Loud(t)
-        elif c == ":":
-            yield Beat.Roll(t, t + dt/4, 2)
-        elif c == "<":
-            yield incring.add(t)
+        self.incr_groups = dict()
+        self.patterns = dict()
+        self.beats = []
+
+    def time(self, t):
+        return self.offset+t*60.0/self.bpm
+
+    def skip(self):
+        return lambda t: []
+
+    def soft(self, speed=1.0):
+        return lambda t: [Beat.Soft(self.time(t), speed=speed)]
+
+    def loud(self, speed=1.0):
+        return lambda t: [Beat.Loud(self.time(t), speed=speed)]
+
+    def incr(self, group, speed=1.0):
+        if group not in self.incr_groups:
+            self.incr_groups[group] = IncrGroup()
+        return lambda t: [self.incr_groups[group].add(self.time(t), speed=speed)]
+
+    def roll(self, duration, step, speed=1.0):
+        number = round(duration/step)+1
+        return lambda t: [Beat.Roll(self.time(t), self.time(t+duration), number=number, speed=speed)]
+
+    def spin(self, duration, step, speed=1.0):
+        capacity = duration/step
+        return lambda t: [Beat.Spin(self.time(t), self.time(t+duration), capacity=capacity, speed=speed)]
+
+    def sym(self, symbol, speed=1.0):
+        return lambda t: [Beat.Sym(self.time(t), symbol=symbol, speed=speed)]
+
+    def pattern(self, offset, step, term):
+        if hasattr(term, "__call__"):
+            return lambda t: term(offset+t)
+        elif isinstance(term, str):
+            return lambda t: [beat for i, p in enumerate(term.split()) for beat in self.patterns[p](offset+t+i*step)]
         else:
-            raise ValueError
+            raise ValueError("invalid term: {!r}".format(term))
 
-        t += dt/2
+    def __setitem__(self, key, value):
+        if not isinstance(key, str) or ' ' in key:
+            raise KeyError("invalid key: {!r}".format(key))
+        self.patterns[key] = self.pattern(*value)
+
+    def __iadd__(self, value):
+        self.beats += self.pattern(*value)(0)
+        return self
+
