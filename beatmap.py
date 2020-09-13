@@ -16,7 +16,6 @@ SPIN_FINISHED_SYM = "☺"
 TARGET_SYMS = ("⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓")
 
 INCR_TOL = 0.1
-DROP_SPEED = 0.5 # screen per sec
 SPEC_WIDTH = 5
 HIT_DECAY = 0.4
 HIT_SUSTAIN = 0.1
@@ -24,16 +23,59 @@ PREPARE_TIME = 1.0
 SKIP_TIME = 8.0
 
 
-# beats and performances
-class Beat:
-    tolerances = TOLERANCES
+# scripts
+class Event:
+    pass
+    # time, lifespan, zindex
+    # def sound(self, samplerate): pass
+    # def draw(self, track, time): pass
 
-    # lifespan, speed, score, total_score, finished
+class Sym(Event):
+    zindex = -2
+
+    def __init__(self, time, symbol=" ", speed=1.0):
+        self.time = time
+        self.symbol = symbol
+        self.speed = speed
+
+    @property
+    def lifespan(self):
+        cross_time = 1.0 / abs(0.5 * self.speed)
+        return (self.time-cross_time, self.time+cross_time)
+
+    def sound(self, samplerate):
+        return numpy.zeros((0,))
+
+    def draw(self, track, time):
+        pos = (self.time - time) * 0.5 * self.speed
+        track.addstr(pos, self.symbol)
+
+    def __repr__(self):
+        return "Sym(time={!r}, symbol={!r}, speed={!r})".format(self.time, self.symbol, self.speed)
+
+
+# beats
+class Beat(Event):
+    # time, lifespan, zindex, range, speed, score, total_score, finished
     # def hit(self, time, strength): pass
     # def finish(self): pass
     # def sound(self, samplerate): pass
-    # def draw(self, track, time, drop_speed): pass
+    # def draw(self, track, time): pass
+    # def draw_judging(self, track, time): pass
+    # def draw_hitting(self, track, time): pass
 
+    tolerances = TOLERANCES
+
+    @property
+    def zindex(self):
+        return -1 if self.finished else 1
+
+    @property
+    def lifespan(self):
+        cross_time = 1.0 / abs(0.5 * self.speed)
+        start, end = self.range
+        return (start-cross_time, end+cross_time)
+    
     def draw_judging(self, track, time): pass
     def draw_hitting(self, track, time): pass
 
@@ -48,7 +90,7 @@ class SingleBeat(Beat):
         self.perf = perf
 
     @property
-    def lifespan(self):
+    def range(self):
         return (self.time - self.tolerances[3], self.time + self.tolerances[3])
     
     @property
@@ -65,18 +107,18 @@ class SingleBeat(Beat):
     def hit(self, time, strength, is_correct_key):
         self.perf = Performance.judge(time - self.time, is_correct_key, self.tolerances)
 
-    def draw(self, track, time, drop_speed):
+    def draw(self, track, time):
         CORRECT_TYPES = (Performance.GREAT,
                          Performance.LATE_GOOD, Performance.EARLY_GOOD,
                          Performance.LATE_BAD, Performance.EARLY_BAD,
                          Performance.LATE_FAILED, Performance.EARLY_FAILED)
 
         if self.perf in (None, Performance.MISS):
-            pos = (self.time - time) * drop_speed * self.speed
+            pos = (self.time - time) * 0.5 * self.speed
             track.addstr(pos, self.symbol)
 
         elif self.perf not in CORRECT_TYPES:
-            pos = (self.time - time) * drop_speed * self.speed
+            pos = (self.time - time) * 0.5 * self.speed
             track.addstr(pos, self.wrong_symbol)
 
     def draw_hitting(self, track, time):
@@ -93,7 +135,6 @@ class Soft(SingleBeat):
 
     def __repr__(self):
         return "Soft(time={!r}, speed={!r}, perf={!r})".format(self.time, self.speed, self.perf)
-Beat.Soft = Soft
 
 class Loud(SingleBeat):
     symbol = BEATS_SYMS[1]
@@ -106,7 +147,6 @@ class Loud(SingleBeat):
 
     def __repr__(self):
         return "Loud(time={!r}, speed={!r}, perf={!r})".format(self.time, self.speed, self.perf)
-Beat.Loud = Loud
 
 class IncrGroup:
     def __init__(self, threshold=0.0, total=0):
@@ -145,7 +185,6 @@ class Incr(SingleBeat):
     def __repr__(self):
         return "Incr(time={!r}, speed={!r}, perf={!r}, count={!r}, group={!r})".format(
                      self.time, self.speed, self.perf, self.count, self.group)
-Beat.Incr = Incr
 
 class Roll(Beat):
     symbol = BEATS_SYMS[3]
@@ -159,7 +198,7 @@ class Roll(Beat):
         self.finished = finished
 
     @property
-    def lifespan(self):
+    def range(self):
         return (self.time - self.tolerances[2], self.end)
 
     @property
@@ -191,18 +230,17 @@ class Roll(Beat):
                       ra.attach(rolls_sounds, samplerate=samplerate))
         return ra.collect(gen)
 
-    def draw(self, track, time, drop_speed):
+    def draw(self, track, time):
         step = (self.end - self.time)/(self.number-1) if self.number > 1 else 0.0
 
         for r in range(self.number):
             if r > self.roll-1:
-                pos = (self.time + step * r - time) * drop_speed * self.speed
+                pos = (self.time + step * r - time) * 0.5 * self.speed
                 track.addstr(pos, self.symbol)
 
     def __repr__(self):
         return "Roll(time={!r}, end={!r}, number={!r}, speed={!r}, roll={!r}, finished={!r})".format(
                      self.time, self.end, self.number, self.speed, self.roll, self.finished)
-Beat.Roll = Roll
 
 class Spin(Beat):
     total_score = 10
@@ -218,7 +256,7 @@ class Spin(Beat):
         self.finished = finished
 
     @property
-    def lifespan(self):
+    def range(self):
         return (self.time - self.tolerances[2], self.end + self.tolerances[2])
 
     @property
@@ -243,11 +281,11 @@ class Spin(Beat):
                       ra.attach(spin_sounds, samplerate=samplerate))
         return ra.collect(gen)
 
-    def draw(self, track, time, drop_speed):
+    def draw(self, track, time):
         if self.charge < self.capacity:
             pos = 0.0
-            pos += max(0.0, (self.time - time) * drop_speed * self.speed)
-            pos += min(0.0, (self.end - time) * drop_speed * self.speed)
+            pos += max(0.0, (self.time - time) * 0.5 * self.speed)
+            pos += min(0.0, (self.end - time) * 0.5 * self.speed)
             track.addstr(pos, self.symbols[int(self.charge) % 4])
 
     def draw_judging(self, track, time):
@@ -261,35 +299,6 @@ class Spin(Beat):
     def __repr__(self):
         return "Spin(time={!r}, end={!r}, capacity={!r}, speed={!r}, charge={!r}, finished={!r})".format(
                      self.time, self.end, self.capacity, self.speed, self.charge, self.finished)
-Beat.Spin = Spin
-
-class Sym(Beat):
-    total_score = 0
-    score = 0
-    finished = True
-
-    def __init__(self, time, speed=1.0, symbol=" "):
-        self.time = time
-        self.speed = speed
-        self.symbol = symbol
-
-    @property
-    def lifespan(self):
-        return (self.time, self.time)
-
-    def hit(self, time, strength, is_correct_key):
-        pass
-
-    def sound(self, samplerate):
-        return numpy.zeros((0,))
-
-    def draw(self, track, time, drop_speed):
-        pos = (self.time - time) * drop_speed * self.speed
-        track.addstr(pos, self.symbol)
-
-    def __repr__(self):
-        return "Sym(time={!r}, speed={!r}, symbol={!r})".format(self.time, self.speed, self.symbol)
-Beat.Sym = Sym
 
 class Performance(enum.Enum):
     MISS               = ("Miss"                      , 0)
@@ -375,13 +384,14 @@ class Performance(enum.Enum):
             track.addstr(0.0, perf_syms[5])
 
 
+# beatmap
 class Hitter:
     hit_decay = HIT_DECAY
     hit_sustain = HIT_SUSTAIN
     target_syms = TARGET_SYMS
 
     def __init__(self, beats):
-        self.beats = tuple(beats)
+        self.beats = sorted(beats, key=lambda e: e.range[0])
 
         self.hit_index = 0
         self.hit_time = -100.0
@@ -402,25 +412,24 @@ class Hitter:
     def progress(self):
         if len(self.beats) == 0:
             return 1000
-        beats_ = list(beat for beat in self.beats if not isinstance(beat, Beat.Sym))
-        return sum(1 for beat in beats_ if beat.finished) * 1000 // len(beats_)
+        return sum(1 for beat in self.beats if beat.finished) * 1000 // len(self.beats)
 
     @ra.DataNode.from_generator
-    def get_beats_handler(self, beats):
-        beats = iter(beats)
+    def get_beats_handler(self):
+        beats = iter(self.beats)
         beat = next(beats, None)
         time = yield
         while True:
-            while beat is not None and (beat.finished or beat.lifespan[1] < time):
+            while beat is not None and (beat.finished or beat.range[1] < time):
                 if not beat.finished:
                     beat.finish()
                 beat = next(beats, None)
 
-            time = yield (beat if beat is not None and beat.lifespan[0] < time else None)
+            time = yield (beat if beat is not None and beat.range[0] < time else None)
 
     @ra.DataNode.from_generator
     def get_knock_handler(self):
-        with self.get_beats_handler(self.beats) as beats_handler:
+        with self.get_beats_handler() as beats_handler:
             while True:
                 time, strength, detected = yield
                 self.current_beat = beats_handler.send(time)
@@ -452,7 +461,6 @@ class Hitter:
             loudness = max(1, loudness)
         track.addstr(0.0, self.target_syms[loudness])
 
-
 class Track:
     def __init__(self, win, offset, padding=5):
         self.win = win
@@ -474,25 +482,22 @@ class Track:
         if index in range(self.width):
             self.pad.addstr(0, index + self.padding, msg)
 
-
-# beatmap
 class Beatmap:
-    def __init__(self, song, beats, drop_speed=DROP_SPEED,
-                                    spec_width=SPEC_WIDTH):
-        self.drop_speed = drop_speed
+    prepare_time = PREPARE_TIME
 
-        self.song = song
-        if self.song is not None:
-            with audioread.audio_open(self.song) as file:
+    def __init__(self, audio, events, spec_width=SPEC_WIDTH):
+        self.audio = audio
+        if self.audio is not None:
+            with audioread.audio_open(self.audio) as file:
                 self.duration = file.duration
         else:
             self.duration = 0.0
 
-        self.beats = sorted(beats, key=lambda b: b.lifespan[0])
-        self.start = min(0.0, min(beat.lifespan[0] - PREPARE_TIME for beat in self.beats))
-        self.end = max(self.duration, max(beat.lifespan[1] + PREPARE_TIME for beat in self.beats))
+        self.events = list(events)
+        self.start = min(0.0, min(event.lifespan[0] - self.prepare_time for event in self.events))
+        self.end = max(self.duration, max(event.lifespan[1] + self.prepare_time for event in self.events))
 
-        self.hitter = Hitter(self.beats)
+        self.hitter = Hitter(event for event in self.events if isinstance(event, Beat))
 
         self.spectrum = " "*spec_width
 
@@ -520,29 +525,29 @@ class Beatmap:
         return spec
 
     def get_sound_handler(self, samplerate, hop_length):
-        # generate music
-        if self.song is None:
-            music = ra.DataNode.wrap([])
-        elif isinstance(self.song, str):
-            music = ra.load(self.song, buffer_length=hop_length, samplerate=samplerate)
+        # generate sound
+        if self.audio is None:
+            sound = ra.DataNode.wrap([])
+        elif isinstance(self.audio, str):
+            sound = ra.load(self.audio, buffer_length=hop_length, samplerate=samplerate)
         else:
             raise ValueError
 
         if self.start < 0:
-            music = ra.chain(ra.empty(hop_length, samplerate, -self.start), music)
+            sound = ra.chain(ra.empty(hop_length, samplerate, -self.start), sound)
         if self.end > self.duration:
-            music = ra.chain(music, ra.empty(hop_length, samplerate, self.end - self.duration))
+            sound = ra.chain(sound, ra.empty(hop_length, samplerate, self.end - self.duration))
 
         # add spec
         WIN_LENGTH = 512*4
         DECAY_TIME = 0.01
-        music = ra.pipe(music, ra.branch(self.get_spectrum_handler(samplerate, hop_length, WIN_LENGTH, DECAY_TIME)))
+        sound = ra.pipe(sound, ra.branch(self.get_spectrum_handler(samplerate, hop_length, WIN_LENGTH, DECAY_TIME)))
 
         # add beats sounds
-        beats_sounds = [(beat.time - self.start, beat.sound(samplerate)) for beat in self.beats]
-        music = ra.pipe(music, ra.attach(beats_sounds, buffer_length=hop_length, samplerate=samplerate))
+        beats_sounds = [(event.time - self.start, event.sound(samplerate)) for event in self.events]
+        sound = ra.pipe(sound, ra.attach(beats_sounds, buffer_length=hop_length, samplerate=samplerate))
 
-        return music
+        return sound
 
     @ra.DataNode.from_generator
     def get_screen_handler(self, scr):
@@ -557,11 +562,7 @@ class Beatmap:
         bar_offset = 0.1
         track = Track(scr.subwin(1, track_width, 0, track_offset), bar_offset)
 
-        def range_of(beat):
-            cross_time = 1.0 / abs(self.drop_speed * beat.speed)
-            start, end = beat.lifespan
-            return (start-cross_time, end+cross_time)
-        dripper = ra.drip(self.beats, range_of)
+        dripper = ra.drip(self.events, lambda e: e.lifespan)
 
         with dripper:
             while True:
@@ -571,21 +572,21 @@ class Beatmap:
                 scr.clear()
                 track.clear()
 
-                # draw beats
-                ## find visible beats, and move finished beats to the bottom
-                beats = dripper.send(time)
-                beats = sorted(beats, key=lambda b: b.finished)
-                for beat in beats[::-1]:
-                    beat.draw(track, time, self.drop_speed)
+                # draw events
+                ## find visible events, and move finished events to the bottom
+                events = dripper.send(time)
+                events = sorted(events, key=lambda e: -e.zindex)
+                for event in events[::-1]:
+                    event.draw(track, time)
 
                 # draw target
-                stop_drawing = False
-                if not stop_drawing and self.hitter.current_beat is not None:
-                    stop_drawing = self.hitter.current_beat.draw_judging(track, time)
-                if not stop_drawing and self.hitter.hit_beat is not None:
+                stop_drawing_target = False
+                if not stop_drawing_target and self.hitter.current_beat is not None:
+                    stop_drawing_target = self.hitter.current_beat.draw_judging(track, time)
+                if not stop_drawing_target and self.hitter.hit_beat is not None:
                     if abs(time - self.hitter.hit_time) < self.hitter.hit_sustain:
-                        stop_drawing = self.hitter.hit_beat.draw_hitting(track, time)
-                if not stop_drawing:
+                        stop_drawing_target = self.hitter.hit_beat.draw_hitting(track, time)
+                if not stop_drawing_target:
                     self.hitter.draw(track, time)
 
                 # draw others
@@ -606,7 +607,7 @@ class BeatmapStdSheet:
 
         self.incr_groups = dict()
         self.patterns = dict()
-        self.beats = []
+        self.events = []
 
     def time(self, t):
         return self.offset+t*60.0/self.bpm
@@ -615,10 +616,10 @@ class BeatmapStdSheet:
         return lambda t: []
 
     def soft(self, speed=1.0):
-        return lambda t: [Beat.Soft(self.time(t), speed=speed)]
+        return lambda t: [Soft(self.time(t), speed=speed)]
 
     def loud(self, speed=1.0):
-        return lambda t: [Beat.Loud(self.time(t), speed=speed)]
+        return lambda t: [Loud(self.time(t), speed=speed)]
 
     def incr(self, group, speed=1.0):
         if group not in self.incr_groups:
@@ -627,14 +628,14 @@ class BeatmapStdSheet:
 
     def roll(self, duration, step, speed=1.0):
         number = round(duration/step)+1
-        return lambda t: [Beat.Roll(self.time(t), self.time(t+duration), number=number, speed=speed)]
+        return lambda t: [Roll(self.time(t), self.time(t+duration), number=number, speed=speed)]
 
     def spin(self, duration, step, speed=1.0):
         capacity = duration/step
-        return lambda t: [Beat.Spin(self.time(t), self.time(t+duration), capacity=capacity, speed=speed)]
+        return lambda t: [Spin(self.time(t), self.time(t+duration), capacity=capacity, speed=speed)]
 
     def sym(self, symbol, speed=1.0):
-        return lambda t: [Beat.Sym(self.time(t), symbol=symbol, speed=speed)]
+        return lambda t: [Sym(self.time(t), symbol=symbol, speed=speed)]
 
     def pattern(self, offset, step, term):
         if hasattr(term, "__call__"):
@@ -650,6 +651,6 @@ class BeatmapStdSheet:
         self.patterns[key] = self.pattern(*value)
 
     def __iadd__(self, value):
-        self.beats += self.pattern(*value)(0)
+        self.events += self.pattern(*value)(0)
         return self
 

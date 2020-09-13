@@ -17,8 +17,8 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
 - add config system
   - theme: beats (symbols/sounds), target (hit), spectrum/score/progress
   - difficulty: tolerances, incr_tol
-  - ui: drop_speed, hit_decay, hit_sustain, beat_sounds, pure_mode
-  - controls: prepare_time, skip_time
+  - accessibility: track_width, hit_decay, hit_sustain, beat_sounds, pure_mode, show_barlines
+  - controls: prepare_time, skip_time, countdown
   - knock console config:
     - sample: samplerate, hop_length, win_length
     - peak: pre_max, post_max, pre_avg, post_avg, wait, delta
@@ -42,24 +42,20 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
 - add Script
   - Sym(symbol, sound)
   - target controls: Flip, Move
-  - pure mode (fixed speed, no custom theme, no script)
+  - pure mode (fixed speed, no custom theme, no script) => BeatmapStdSheet.purify()
 
 - add time control (pause/resume/skip; scroll/Nx)
   - console pause/resume
   - in-game time control
 
 - .ka
-  - subset of python
-  - multi-layers
-  - substitution-based
-  - define layer by (time, bpm, pattern)
-  - define pattern
+  - parse
   - convert from .osu
   - .ka-theme
 
 - KnockGame
-  - KnockGame -> Beatmap -> BeatmapStd, BeatmapEditor, BeatmapAdjuster
+  - KnockAdjuster: display_delay, knock_delay, knock_volume
+  - KnockGame.record, KnockGame.examine
+  - KnockGame -> Beatmap -> BeatmapStd, BeatmapEditor
   - make KnockGame mergeable
   - KAIKO(Beatmap, BeatmapReport, BeatmapMenu)
-  - BeatBuilder read "sheet.ka" and generate BeatmapStd
-  - define custom beatmap as the same form of "sheet.ka" => "sheet.ka" is subset of python
