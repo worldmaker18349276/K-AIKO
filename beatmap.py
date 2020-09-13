@@ -11,9 +11,8 @@ TOLERANCES = (0.02, 0.06, 0.10, 0.14)
 BEATS_SYMS = ("□", "■", "⬒", "◎", "◴◵◶◷")
 #             Soft Loud Incr Roll Spin
 WRONG_SYM = "⬚"
-PERF_SYMS = ("⟪", "⟪", "⟨", "⟩", "⟫", "⟫")
+PERF_SYMS = ("\b⟪", "\b⟪", "\b⟨", "  ⟩", "  ⟫", "  ⟫")
 SPIN_FINISHED_SYM = "☺"
-USE_FULLWIDTH = True
 TARGET_SYMS = ("⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓")
 
 INCR_TOL = 0.1
@@ -74,14 +73,14 @@ class SingleBeat(Beat):
 
         if self.perf in (None, Performance.MISS):
             pos = (self.time - time) * drop_speed * self.speed
-            track.draw(pos, self.symbol)
+            track.addstr(pos, self.symbol)
 
         elif self.perf not in CORRECT_TYPES:
             pos = (self.time - time) * drop_speed * self.speed
-            track.draw(pos, self.wrong_symbol)
+            track.addstr(pos, self.wrong_symbol)
 
     def draw_hitting(self, track, time):
-        self.perf.draw(track, self.speed < 0, self.perf_syms, USE_FULLWIDTH)
+        self.perf.draw(track, self.speed < 0, self.perf_syms)
 
 class Soft(SingleBeat):
     symbol = BEATS_SYMS[0]
@@ -198,7 +197,7 @@ class Roll(Beat):
         for r in range(self.number):
             if r > self.roll-1:
                 pos = (self.time + step * r - time) * drop_speed * self.speed
-                track.draw(pos, self.symbol)
+                track.addstr(pos, self.symbol)
 
     def __repr__(self):
         return "Roll(time={!r}, end={!r}, number={!r}, speed={!r}, roll={!r}, finished={!r})".format(
@@ -249,14 +248,14 @@ class Spin(Beat):
             pos = 0.0
             pos += max(0.0, (self.time - time) * drop_speed * self.speed)
             pos += min(0.0, (self.end - time) * drop_speed * self.speed)
-            track.draw(pos, self.symbols[int(self.charge) % 4])
+            track.addstr(pos, self.symbols[int(self.charge) % 4])
 
     def draw_judging(self, track, time):
         return True
 
     def draw_hitting(self, track, time):
         if self.charge == self.capacity:
-            track.draw(0.0, self.finished_sym)
+            track.addstr(0.0, self.finished_sym)
             return True
 
     def __repr__(self):
@@ -286,7 +285,7 @@ class Sym(Beat):
 
     def draw(self, track, time, drop_speed):
         pos = (self.time - time) * drop_speed * self.speed
-        track.draw(pos, self.symbol)
+        track.addstr(pos, self.symbol)
 
     def __repr__(self):
         return "Sym(time={!r}, speed={!r}, symbol={!r})".format(self.time, self.speed, self.symbol)
@@ -350,7 +349,7 @@ class Performance(enum.Enum):
 
         return perf
 
-    def draw(self, track, flipped, perf_syms, use_fullwidth=True):
+    def draw(self, track, flipped, perf_syms):
         LEFT_GOOD    = (Performance.LATE_GOOD,    Performance.LATE_GOOD_WRONG)
         RIGHT_GOOD   = (Performance.EARLY_GOOD,   Performance.EARLY_GOOD_WRONG)
         LEFT_BAD     = (Performance.LATE_BAD,     Performance.LATE_BAD_WRONG)
@@ -362,20 +361,18 @@ class Performance(enum.Enum):
             LEFT_BAD, RIGHT_BAD = RIGHT_BAD, LEFT_BAD
             LEFT_FAILED, RIGHT_FAILED = RIGHT_FAILED, LEFT_FAILED
 
-        left = -1
-        right = +2 if use_fullwidth else +1
         if self in LEFT_GOOD:
-            track.draw(0.0, perf_syms[2], left)
+            track.addstr(0.0, perf_syms[2])
         elif self in RIGHT_GOOD:
-            track.draw(0.0, perf_syms[3], right)
+            track.addstr(0.0, perf_syms[3])
         elif self in LEFT_BAD:
-            track.draw(0.0, perf_syms[1], left)
+            track.addstr(0.0, perf_syms[1])
         elif self in RIGHT_BAD:
-            track.draw(0.0, perf_syms[4], right)
+            track.addstr(0.0, perf_syms[4])
         elif self in LEFT_FAILED:
-            track.draw(0.0, perf_syms[0], left)
+            track.addstr(0.0, perf_syms[0])
         elif self in RIGHT_FAILED:
-            track.draw(0.0, perf_syms[5], right)
+            track.addstr(0.0, perf_syms[5])
 
 
 class Hitter:
@@ -453,20 +450,29 @@ class Hitter:
         loudness = int(strength * (len(self.target_syms) - 1))
         if abs(time - self.hit_time) < self.hit_sustain:
             loudness = max(1, loudness)
-        track.draw(0.0, self.target_syms[loudness])
+        track.addstr(0.0, self.target_syms[loudness])
 
 
 class Track:
-    def __init__(self, win, offset):
+    def __init__(self, win, offset, padding=5):
         self.win = win
         self.offset = offset
 
-    def draw(self, pos, sym, shift=0):
         _, width = self.win.getmaxyx()
-        index = round((self.offset + pos) * width) + shift
+        self.width = width
+        self.padding = padding
+        self.pad = curses.newpad(1, self.width+self.padding*2)
 
-        if index in range(width-1):
-            self.win.addstr(0, index, sym)
+    def clear(self):
+        self.pad.clear()
+
+    def refresh(self):
+        self.pad.overwrite(self.win, 0, self.padding, 0, 0, 0, self.width-1)
+
+    def addstr(self, pos, msg):
+        index = round((pos + self.offset) * self.width)
+        if index in range(self.width):
+            self.pad.addstr(0, index + self.padding, msg)
 
 
 # beatmap
@@ -547,10 +553,9 @@ class Beatmap:
         track_offset = len(self.spectrum) + 15
         progress_offset = width - 9
         track_width = width - 24 - len(self.spectrum)
-        track_win = scr.subwin(1, track_width, 0, track_offset)
 
         bar_offset = 0.1
-        track = Track(track_win, bar_offset)
+        track = Track(scr.subwin(1, track_width, 0, track_offset), bar_offset)
 
         def range_of(beat):
             cross_time = 1.0 / abs(self.drop_speed * beat.speed)
@@ -564,6 +569,7 @@ class Beatmap:
                 time += self.start
                 self.hitter.update_draw_index(time)
                 scr.clear()
+                track.clear()
 
                 # draw beats
                 ## find visible beats, and move finished beats to the bottom
@@ -583,6 +589,7 @@ class Beatmap:
                     self.hitter.draw(track, time)
 
                 # draw others
+                track.refresh()
                 scr.addstr(0, spec_offset, self.spectrum)
                 scr.addstr(0, score_offset, "[{:>5d}/{:>5d}]".format(self.hitter.score, self.hitter.total_score))
                 scr.addstr(0, progress_offset, "[{:>5.1f}%]".format(self.hitter.progress/10))

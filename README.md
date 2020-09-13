@@ -17,7 +17,7 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
 - add config system
   - theme: beats (symbols/sounds), target (hit), spectrum/score/progress
   - difficulty: tolerances, incr_tol
-  - ui: drop_speed, hit_decay, hit_sustain, use_fullwidth, beat_sounds, pure_mode
+  - ui: drop_speed, hit_decay, hit_sustain, beat_sounds, pure_mode
   - controls: prepare_time, skip_time
   - knock console config:
     - sample: samplerate, hop_length, win_length
@@ -63,5 +63,3 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
   - KAIKO(Beatmap, BeatmapReport, BeatmapMenu)
   - BeatBuilder read "sheet.ka" and generate BeatmapStd
   - define custom beatmap as the same form of "sheet.ka" => "sheet.ka" is subset of python
-
-- use '\b' and ' ' to shift sym: Track.draw(self, pos, sym, shift) => Track.draw(self, pos, sym)
