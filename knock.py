@@ -69,7 +69,7 @@ class KnockConsole:
 
     @ra.DataNode.from_generator
     def get_output_node(self, knock_game):
-        sound_handler = knock_game.get_sound_handler(self.samplerate, self.hop_length)
+        sound_handler = knock_game.get_sound_handler()
 
         with contextlib.closing(self), sound_handler:
             yield
@@ -135,6 +135,8 @@ class KnockConsole:
             session = pyaudio.PyAudio()
 
             with contextlib.closing(self), knock_game:
+                knock_game.set_audio_params(self.samplerate, self.hop_length)
+
                 output_node = self.get_output_node(knock_game)
                 input_node = self.get_input_node(knock_game)
                 screen_node = self.get_screen_node(knock_game)

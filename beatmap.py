@@ -1,5 +1,6 @@
 import enum
 import wave
+import re
 import curses
 import numpy
 import realtime_analysis as ra
@@ -484,8 +485,9 @@ class Track:
 
 class Beatmap:
     prepare_time = PREPARE_TIME
+    spec_width = SPEC_WIDTH
 
-    def __init__(self, audio, events, spec_width=SPEC_WIDTH):
+    def __init__(self, audio, events):
         self.audio = audio
         if self.audio is not None:
             with audioread.audio_open(self.audio) as file:
@@ -499,13 +501,17 @@ class Beatmap:
 
         self.hitter = Hitter(event for event in self.events if isinstance(event, Beat))
 
-        self.spectrum = " "*spec_width
+        self.spectrum = " "*self.spec_width
 
     def __enter__(self):
         return self
 
     def __exit__(self, type, value, traceback):
         pass
+
+    def set_audio_params(self, samplerate, hop_length):
+        self.samplerate = samplerate
+        self.hop_length = hop_length
 
     @ra.DataNode.from_generator
     def get_knock_handler(self):
@@ -515,37 +521,37 @@ class Beatmap:
             while True:
                 time, strength, detected = yield knock_handler.send((time+self.start, strength, detected))
 
-    def get_spectrum_handler(self, samplerate, hop_length, win_length, decay_time):
-        spec = ra.pipe(ra.frame(win_length, hop_length),
-                       ra.power_spectrum(win_length, samplerate=samplerate, windowing=True, weighting=False),
-                       ra.draw_spectrum(len(self.spectrum), win_length=win_length,
-                                                            samplerate=samplerate,
-                                                            decay=(hop_length/samplerate)/decay_time),
+    def get_spectrum_handler(self):
+        WIN_LENGTH = 512*4
+        DECAY_TIME = 0.01
+        spec = ra.pipe(ra.frame(WIN_LENGTH, self.hop_length),
+                       ra.power_spectrum(WIN_LENGTH, samplerate=self.samplerate, windowing=True, weighting=False),
+                       ra.draw_spectrum(self.spec_width, win_length=WIN_LENGTH,
+                                                         samplerate=self.samplerate,
+                                                         decay=(self.hop_length/self.samplerate)/DECAY_TIME),
                        lambda s: setattr(self, "spectrum", s))
         return spec
 
-    def get_sound_handler(self, samplerate, hop_length):
+    def get_sound_handler(self):
         # generate sound
         if self.audio is None:
             sound = ra.DataNode.wrap([])
         elif isinstance(self.audio, str):
-            sound = ra.load(self.audio, buffer_length=hop_length, samplerate=samplerate)
+            sound = ra.load(self.audio, buffer_length=self.hop_length, samplerate=self.samplerate)
         else:
             raise ValueError
 
         if self.start < 0:
-            sound = ra.chain(ra.empty(hop_length, samplerate, -self.start), sound)
+            sound = ra.chain(ra.empty(self.hop_length, self.samplerate, -self.start), sound)
         if self.end > self.duration:
-            sound = ra.chain(sound, ra.empty(hop_length, samplerate, self.end - self.duration))
+            sound = ra.chain(sound, ra.empty(self.hop_length, self.samplerate, self.end - self.duration))
 
         # add spec
-        WIN_LENGTH = 512*4
-        DECAY_TIME = 0.01
-        sound = ra.pipe(sound, ra.branch(self.get_spectrum_handler(samplerate, hop_length, WIN_LENGTH, DECAY_TIME)))
+        sound = ra.pipe(sound, ra.branch(self.get_spectrum_handler()))
 
         # add beats sounds
-        beats_sounds = [(event.time - self.start, event.sound(samplerate)) for event in self.events]
-        sound = ra.pipe(sound, ra.attach(beats_sounds, buffer_length=hop_length, samplerate=samplerate))
+        beats_sounds = [(event.time - self.start, event.sound(self.samplerate)) for event in self.events]
+        sound = ra.pipe(sound, ra.attach(beats_sounds, buffer_length=self.hop_length, samplerate=self.samplerate))
 
         return sound
 
@@ -554,10 +560,10 @@ class Beatmap:
         _, width = scr.getmaxyx()
 
         spec_offset = 1
-        score_offset = len(self.spectrum) + 2
-        track_offset = len(self.spectrum) + 15
+        score_offset = self.spec_width + 2
+        track_offset = self.spec_width + 15
         progress_offset = width - 9
-        track_width = width - 24 - len(self.spectrum)
+        track_width = width - 24 - self.spec_width
 
         bar_offset = 0.1
         track = Track(scr.subwin(1, track_width, 0, track_offset), bar_offset)
@@ -646,7 +652,7 @@ class BeatmapStdSheet:
             raise ValueError("invalid term: {!r}".format(term))
 
     def __setitem__(self, key, value):
-        if not isinstance(key, str) or ' ' in key:
+        if not isinstance(key, str) or re.search(r"\s", key):
             raise KeyError("invalid key: {!r}".format(key))
         self.patterns[key] = self.pattern(*value)
 
