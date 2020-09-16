@@ -1,0 +1,30 @@
+[input]
+# device = None
+samplerate = 44100
+channels = 1
+format = f4
+buffer = 512
+
+[output]
+# device = None
+samplerate = 44100
+channels = 1
+format = f4
+buffer = 512
+
+[detector]
+win_length = 2048
+pre_max = 0.03
+post_max = 0.03
+pre_avg = 0.03
+post_avg = 0.03
+wait = 0.03
+delta = 1.64e-04
+
+[controls]
+display_fps = 60
+display_delay = 0.03
+knock_volume = 68.294
+knock_delay = 0.0
+music_volume = 0.5
+
