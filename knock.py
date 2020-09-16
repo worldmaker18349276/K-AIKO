@@ -120,8 +120,10 @@ class KnockConsole:
     def play(self, knock_game):
         input_samplerate = int(self.config["input"]["samplerate"])
         input_buffer_length = int(self.config["input"]["buffer"])
+        input_format = self.config["input"]["format"]
         output_samplerate = int(self.config["output"]["samplerate"])
         output_buffer_length = int(self.config["output"]["buffer"])
+        output_format = self.config["output"]["format"]
         display_fps = int(self.config["controls"]["display_fps"])
 
         try:
@@ -134,8 +136,8 @@ class KnockConsole:
                 input_node = self.get_input_node(knock_game)
                 screen_node = self.get_screen_node(knock_game)
 
-                with ra.record(manager, input_node, input_buffer_length, input_samplerate) as input_stream,\
-                     ra.play(manager, output_node, output_buffer_length, output_samplerate) as output_stream:
+                with ra.record(manager, input_node, input_buffer_length, input_samplerate, input_format) as input_stream,\
+                     ra.play(manager, output_node, output_buffer_length, output_samplerate, output_format) as output_stream:
 
                     input_stream.start_stream()
                     output_stream.start_stream()

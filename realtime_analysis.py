@@ -718,12 +718,12 @@ def draw_spectrum(length, win_length, samplerate=44100, decay=1.0):
 
 
 @contextlib.contextmanager
-def record(session, node, buffer_length=1024, samplerate=44100):
+def record(manager, node, buffer_length=1024, samplerate=44100, format="f4"):
     """A context manager of input stream processing by given node.
 
     Parameters
     ----------
-    session : pyaudio.PyAudio
+    manager : pyaudio.PyAudio
         The PyAudio object.
     node : DataNode
         The data node to process recorded sound.
@@ -731,21 +731,40 @@ def record(session, node, buffer_length=1024, samplerate=44100):
         The length of input signal, default is `1024`.
     samplerate : int, optional
         The sample rate of input signal, default is `44100`.
+    format : str, optional
+        The sample format of input signal, default is `"f4"`.
 
     Yields
     ------
     input_stream : pyaudio.Stream
         The stopped input stream to record sound.
     """
+    pa_format = {"f4": pyaudio.paFloat32,
+                 "i4": pyaudio.paInt32,
+                 "i2": pyaudio.paInt16,
+                 "i1": pyaudio.paInt8,
+                 "u1": pyaudio.paUInt8,
+                 }[format]
+
+    scale = 2.0 ** (8*int(format[1]) - 1)
+    normalize = {"f4": (lambda d: d),
+                 "i4": (lambda d: d / scale),
+                 "i2": (lambda d: d / scale),
+                 "i1": (lambda d: d / scale),
+                 "u1": (lambda d: (d - 128)/128),
+                 }[format]
+
     def input_callback(in_data, frame_count, time_info, status):
         try:
-            data = numpy.frombuffer(in_data, dtype=numpy.float32)
+            data = numpy.frombuffer(in_data, dtype=format)
+            data = normalize(data)
             node.send(data)
+
             return b'', pyaudio.paContinue
         except StopIteration:
             return b'', pyaudio.paComplete
 
-    input_stream = session.open(format=pyaudio.paFloat32,
+    input_stream = manager.open(format=pa_format,
                                 channels=1,
                                 rate=samplerate,
                                 input=True,
@@ -762,12 +781,12 @@ def record(session, node, buffer_length=1024, samplerate=44100):
             input_stream.close()
 
 @contextlib.contextmanager
-def play(session, node, buffer_length=1024, samplerate=44100):
+def play(manager, node, buffer_length=1024, samplerate=44100, format="f4"):
     """A context manager of output stream processing by given node.
 
     Parameters
     ----------
-    session : pyaudio.PyAudio
+    manager : pyaudio.PyAudio
         The PyAudio object.
     node : DataNode
         The data node to process playing sound.
@@ -775,20 +794,38 @@ def play(session, node, buffer_length=1024, samplerate=44100):
         The length of output signal, default is `1024`.
     samplerate : int, optional
         The sample rate of output signal, default is `44100`.
+    format : str, optional
+        The sample format of output signal, default is `"f4"`.
 
     Yields
     ------
     output_stream : pyaudio.Stream
         The stopped output stream to play sound.
     """
+    pa_format = {"f4": pyaudio.paFloat32,
+                 "i4": pyaudio.paInt32,
+                 "i2": pyaudio.paInt16,
+                 "i1": pyaudio.paInt8,
+                 "u1": pyaudio.paUInt8,
+                 }[format]
+
+    scale = 2.0 ** (8*int(format[1]) - 1)
+    normalize = {"f4": (lambda d: d),
+                 "i4": (lambda d: d * scale),
+                 "i2": (lambda d: d * scale),
+                 "i1": (lambda d: d * scale),
+                 "u1": (lambda d: d * 128 + 128),
+                 }[format]
+
     def output_callback(in_data, frame_count, time_info, status):
         try:
             data = node.send(None)
+            data = normalize(data).astype(format)
             return data.tobytes(), pyaudio.paContinue
         except StopIteration:
             return b'', pyaudio.paComplete
 
-    output_stream = session.open(format=pyaudio.paFloat32,
+    output_stream = manager.open(format=pa_format,
                                  channels=1,
                                  rate=samplerate,
                                  input=False,
