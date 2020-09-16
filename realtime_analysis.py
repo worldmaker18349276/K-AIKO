@@ -352,8 +352,9 @@ def load(filename, buffer_length=1024, samplerate=44100, start=None, end=None):
         if file.samplerate != samplerate:
             raise ValueError("mismatch samplerate")
 
-        start_index = round(start * file.samplerate / buffer_length) if start is not None else None
-        end_index = round(end * file.samplerate / buffer_length) if end is not None else None
+        Dt = buffer_length / file.samplerate
+        start_index = round(start / Dt) if start is not None else None
+        end_index = round(end / Dt) if end is not None else None
 
         def frombuffer(data):
             data = scale * numpy.frombuffer(data, fmt).astype(numpy.float32)
@@ -718,7 +719,7 @@ def draw_spectrum(length, win_length, samplerate=44100, decay=1.0):
 
 
 @contextlib.contextmanager
-def record(manager, node, buffer_length=1024, samplerate=44100, format="f4"):
+def record(manager, node, buffer_length=1024, samplerate=44100, format="f4", channels=1, device=None):
     """A context manager of input stream processing by given node.
 
     Parameters
@@ -733,6 +734,10 @@ def record(manager, node, buffer_length=1024, samplerate=44100, format="f4"):
         The sample rate of input signal, default is `44100`.
     format : str, optional
         The sample format of input signal, default is `"f4"`.
+    channels : int, optional
+        The number of channels of input signal, default is `1`.
+    device : int, optional
+        The input device index.
 
     Yields
     ------
@@ -765,10 +770,11 @@ def record(manager, node, buffer_length=1024, samplerate=44100, format="f4"):
             return b'', pyaudio.paComplete
 
     input_stream = manager.open(format=pa_format,
-                                channels=1,
+                                channels=channels,
                                 rate=samplerate,
                                 input=True,
                                 output=False,
+                                input_device_index=device,
                                 frames_per_buffer=buffer_length,
                                 stream_callback=input_callback,
                                 start=False)
@@ -781,7 +787,7 @@ def record(manager, node, buffer_length=1024, samplerate=44100, format="f4"):
             input_stream.close()
 
 @contextlib.contextmanager
-def play(manager, node, buffer_length=1024, samplerate=44100, format="f4"):
+def play(manager, node, buffer_length=1024, samplerate=44100, format="f4", channels=1, device=None):
     """A context manager of output stream processing by given node.
 
     Parameters
@@ -796,6 +802,10 @@ def play(manager, node, buffer_length=1024, samplerate=44100, format="f4"):
         The sample rate of output signal, default is `44100`.
     format : str, optional
         The sample format of output signal, default is `"f4"`.
+    channels : int, optional
+        The number of channels of output signal, default is `1`.
+    device : int, optional
+        The output device index.
 
     Yields
     ------
@@ -826,10 +836,11 @@ def play(manager, node, buffer_length=1024, samplerate=44100, format="f4"):
             return b'', pyaudio.paComplete
 
     output_stream = manager.open(format=pa_format,
-                                 channels=1,
+                                 channels=channels,
                                  rate=samplerate,
                                  input=False,
                                  output=True,
+                                 output_device_index=device,
                                  frames_per_buffer=buffer_length,
                                  stream_callback=output_callback,
                                  start=False)
