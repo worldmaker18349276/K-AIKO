@@ -509,9 +509,11 @@ class Beatmap:
     def __exit__(self, type, value, traceback):
         pass
 
-    def set_audio_params(self, samplerate, hop_length):
-        self.samplerate = samplerate
-        self.hop_length = hop_length
+    def set_audio_params(self, input_samplerate, input_hop_length, output_samplerate, output_hop_length):
+        self.input_samplerate = input_samplerate
+        self.input_hop_length = input_hop_length
+        self.output_samplerate = output_samplerate
+        self.output_hop_length = output_hop_length
 
     @ra.DataNode.from_generator
     def get_knock_handler(self):
@@ -524,11 +526,11 @@ class Beatmap:
     def get_spectrum_handler(self):
         WIN_LENGTH = 512*4
         DECAY_TIME = 0.01
-        spec = ra.pipe(ra.frame(WIN_LENGTH, self.hop_length),
-                       ra.power_spectrum(WIN_LENGTH, samplerate=self.samplerate, windowing=True, weighting=False),
+        spec = ra.pipe(ra.frame(WIN_LENGTH, self.output_hop_length),
+                       ra.power_spectrum(WIN_LENGTH, samplerate=self.output_samplerate, windowing=True, weighting=False),
                        ra.draw_spectrum(self.spec_width, win_length=WIN_LENGTH,
-                                                         samplerate=self.samplerate,
-                                                         decay=(self.hop_length/self.samplerate)/DECAY_TIME),
+                                                         samplerate=self.output_samplerate,
+                                                         decay=(self.output_hop_length/self.output_samplerate)/DECAY_TIME),
                        lambda s: setattr(self, "spectrum", s))
         return spec
 
@@ -537,21 +539,21 @@ class Beatmap:
         if self.audio is None:
             sound = ra.DataNode.wrap([])
         elif isinstance(self.audio, str):
-            sound = ra.load(self.audio, buffer_length=self.hop_length, samplerate=self.samplerate)
+            sound = ra.load(self.audio, buffer_length=self.output_hop_length, samplerate=self.output_samplerate)
         else:
             raise ValueError
 
         if self.start < 0:
-            sound = ra.chain(ra.empty(self.hop_length, self.samplerate, -self.start), sound)
+            sound = ra.chain(ra.empty(self.output_hop_length, self.output_samplerate, -self.start), sound)
         if self.end > self.duration:
-            sound = ra.chain(sound, ra.empty(self.hop_length, self.samplerate, self.end - self.duration))
+            sound = ra.chain(sound, ra.empty(self.output_hop_length, self.output_samplerate, self.end - self.duration))
 
         # add spec
         sound = ra.pipe(sound, ra.branch(self.get_spectrum_handler()))
 
         # add beats sounds
-        beats_sounds = [(event.time - self.start, event.sound(self.samplerate)) for event in self.events]
-        sound = ra.pipe(sound, ra.attach(beats_sounds, buffer_length=self.hop_length, samplerate=self.samplerate))
+        beats_sounds = [(event.time - self.start, event.sound(self.output_samplerate)) for event in self.events]
+        sound = ra.pipe(sound, ra.attach(beats_sounds, buffer_length=self.output_hop_length, samplerate=self.output_samplerate))
 
         return sound
 
