@@ -71,8 +71,7 @@ class KnockConsole:
 
         knock_handler = knock_game.get_knock_handler()
 
-        # use halfhann window
-        window = numpy.sin(numpy.linspace(0, numpy.pi/2, win_length))**2
+        window = ra.get_half_Hann_window(win_length)
         detector = ra.pipe(ra.frame(win_length, hop_length),
                            ra.power_spectrum(win_length, samplerate=samplerate, windowing=window, weighting=True),
                            ra.onset_strength(1),
@@ -124,14 +123,12 @@ class KnockConsole:
 
     def play(self, knock_game):
         input_device = int(self.config["input"]["device"]) if "device" in self.config["input"] else None
+        output_device = int(self.config["output"]["device"]) if "device" in self.config["output"] else None
 
         input_params = dict(channels=int(self.config["input"]["channels"]),
                             format=self.config["input"]["format"],
                             samplerate=int(self.config["input"]["samplerate"]),
                             buffer_length=int(self.config["input"]["buffer_length"]))
-
-        output_device = int(self.config["output"]["device"]) if "device" in self.config["output"] else None
-
         output_params = dict(channels=int(self.config["output"]["channels"]),
                              format=self.config["output"]["format"],
                              samplerate=int(self.config["output"]["samplerate"]),

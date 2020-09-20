@@ -323,7 +323,7 @@ def merge(*nodes):
 
 
 @DataNode.from_generator
-def load(filename, buffer_length=1024, samplerate=44100, start=None, end=None):
+def load(filename, buffer_length=1024, samplerate=44100, start=None, end=None, win_length=None):
     """A data node to load sound file with given sample rate.
 
     Parameters
@@ -338,6 +338,8 @@ def load(filename, buffer_length=1024, samplerate=44100, start=None, end=None):
         The start time to load.
     end : float, optional
         The end time to load.
+    win_length : int, optional
+        The window length for resampling, default is file's sample rate.
 
     Yields
     ------
@@ -349,9 +351,6 @@ def load(filename, buffer_length=1024, samplerate=44100, start=None, end=None):
     fmt = "<i{:d}".format(width)
 
     with audioread.audio_open(filename) as file:
-        if file.samplerate != samplerate:
-            raise ValueError("mismatch samplerate")
-
         Dt = buffer_length / file.samplerate
         start_index = round(start / Dt) if start is not None else None
         end_index = round(end / Dt) if end is not None else None
@@ -361,7 +360,16 @@ def load(filename, buffer_length=1024, samplerate=44100, start=None, end=None):
             if file.channels > 1:
                 data = data.reshape((-1, file.channels)).mean(axis=1)
             return data
-        chunker = chunk(map(frombuffer, file), buffer_length)
+
+        chunker = DataNode.wrap(map(frombuffer, file))
+
+        if file.samplerate != samplerate:
+            if win_length is None:
+                win_length = file.samplerate
+            chunker = chunk(chunker, win_length)
+            chunker = resample(chunker, (samplerate, file.samplerate))
+
+        chunker = chunk(chunker, buffer_length)
         chunker = nslice(chunker, start_index, end_index)
 
         with chunker:
@@ -426,13 +434,13 @@ def empty(buffer_length=1024, samplerate=44100, duration=None):
             yield numpy.zeros(buffer_length, dtype=numpy.float32)
 
 @DataNode.from_generator
-def chunk(signals, buffer_length=1024):
+def chunk(node, buffer_length=1024):
     """A data node produces data by chunking given signal.
 
     Parameters
     ----------
-    signals : iterable of ndarray
-        The iterator of signal to chunk.
+    node : DataNode
+        The data node to chunk.
     buffer_length : int, optional
         The length of chunk, default is `1024`.
 
@@ -441,28 +449,46 @@ def chunk(signals, buffer_length=1024):
     data : ndarray
         The chunked signal with length `buffer_length`.
     """
+    node = DataNode.wrap(node)
     buffer = numpy.zeros(buffer_length, dtype=numpy.float32)
     index = 0
 
-    yield
-    for data in signals:
-        while data.shape[0] > 0:
-            length = min(buffer_length - index, data.shape[0])
-            buffer[index:index+length] = data[:length]
-            index += length
-            data = data[length:]
+    with node:
+        yield
+        try:
+            while True:
+                data = node.send()
+                while data.shape[0] > 0:
+                    length = min(buffer_length - index, data.shape[0])
+                    buffer[index:index+length] = data[:length]
+                    index += length
+                    data = data[length:]
 
-            if index == buffer_length:
+                    if index == buffer_length:
+                        yield numpy.copy(buffer)
+                        index = 0
+
+        except StopIteration:
+            if index > 0:
+                buffer[index:] = 0.0
                 yield numpy.copy(buffer)
-                index = 0
-
-    else:
-        if index > 0:
-            buffer[index:] = 0.0
-            yield numpy.copy(buffer)
 
 @DataNode.from_generator
 def unchunk(node, buffer_length=1024):
+    """Make a data node receives data with any length.
+
+    Parameters
+    ----------
+    node : DataNode
+        The data node.
+    buffer_length : int, optional
+        The received length of given data node, default is `1024`.
+
+    Receives
+    ------
+    data : ndarray
+        The unchunked signal with any length.
+    """
     buffer = numpy.zeros(buffer_length, dtype=numpy.float32)
     index = 0
 
@@ -478,6 +504,35 @@ def unchunk(node, buffer_length=1024):
                 if index == buffer_length:
                     node.send(numpy.copy(buffer))
                     index = 0
+
+@DataNode.from_generator
+def resample(node, ratio):
+    """A data node with resampled data.
+
+    Parameters
+    ----------
+    node : DataNode
+        The data node to resample.
+    ratio : float or tuple of int
+        The resampling factor.
+
+    Yields
+    ------
+    data : ndarray
+        The resampled signal.
+    """
+    node = DataNode.wrap(node)
+    index = 0.0
+    up, down = (ratio, 1) if isinstance(ratio, float) else ratio
+
+    with node:
+        yield
+        while True:
+            data = node.send()
+            length = int(index + data.shape[0]*up/down) - int(index)
+            data_ = scipy.signal.resample(data, length)
+            index = (index + data.shape[0]*up/down) % 1.0
+            yield data_
 
 @DataNode.from_generator
 def drip(signals, schedule):
@@ -564,7 +619,7 @@ def frame(win_length, hop_length):
     win_length : int
         The length of framed data.
     hop_length : int
-        The length of input data, it should be shorter than input data.
+        The length of input data.
 
     Receives
     --------
@@ -576,6 +631,12 @@ def frame(win_length, hop_length):
     data : ndarray
         The framed signal.
     """
+    if win_length < hop_length:
+        data = yield
+        while True:
+            data = yield numpy.copy(data[-win_length:])
+        return
+
     data = numpy.zeros(win_length, dtype=numpy.float32)
     data[-hop_length:] = yield
     while True:
@@ -928,6 +989,11 @@ def get_Hann_window(win_length):
     window = numpy.sin(a)**2
     gain = (3/8)**0.5 # (window**2).mean()**0.5
     return window / gain
+
+def get_half_Hann_window(win_length):
+    a = numpy.linspace(0, numpy.pi/2, win_length)
+    window = numpy.sin(a)**2
+    return window
 
 def get_A_weight(samplerate, win_length):
     f = numpy.arange(win_length//2+1) * (samplerate/win_length)
