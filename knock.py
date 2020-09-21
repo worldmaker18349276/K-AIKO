@@ -36,6 +36,18 @@ class KnockConsole:
     @ra.DataNode.from_generator
     def get_output_node(self, knock_game):
         sound_handler = knock_game.get_sound_handler()
+        sound_samplerate = knock_game.samplerate
+        sound_channels = knock_game.channels
+
+        samplerate = int(self.config["output"]["samplerate"])
+        buffer_length = int(self.config["output"]["buffer_length"])
+        channels = int(self.config["output"]["channels"])
+
+        if channels != sound_channels:
+            sound_handler = ra.pipe(sound_handler, lambda a: numpy.tile(a.mean(axis=1, keepdims=True), (1, channels)))
+        if samplerate != sound_samplerate:
+            sound_handler = ra.resample(sound_handler, ratio=(samplerate, sound_samplerate))
+        sound_handler = ra.chunk(sound_handler, chunk_shape=(buffer_length, channels))
 
         with contextlib.closing(self), sound_handler:
             yield
@@ -72,8 +84,11 @@ class KnockConsole:
         knock_handler = knock_game.get_knock_handler()
 
         window = ra.get_half_Hann_window(win_length)
-        detector = ra.pipe(ra.frame(win_length, hop_length),
-                           ra.power_spectrum(win_length, samplerate=samplerate, windowing=window, weighting=True),
+        detector = ra.pipe(ra.frame(win_length=win_length, hop_length=hop_length),
+                           ra.power_spectrum(win_length=win_length,
+                                             samplerate=samplerate,
+                                             windowing=window,
+                                             weighting=True),
                            ra.onset_strength(1),
                            (lambda a: (None, a, a)),
                            ra.pair(itertools.count(-delay), # generate index
@@ -85,11 +100,8 @@ class KnockConsole:
                                        a[2])),
                            knock_handler)
 
-        if channels > 1:
-            detector = ra.pipe((lambda data: data.reshape((-1, channels)).mean(axis=1)), detector)
-
         if buffer_length != hop_length:
-            detector = ra.unchunk(detector, hop_length)
+            detector = ra.unchunk(detector, chunk_shape=(hop_length, channels))
 
         with contextlib.closing(self), detector:
             while True:
@@ -122,17 +134,18 @@ class KnockConsole:
             curses.endwin()
 
     def play(self, knock_game):
-        input_device = int(self.config["input"]["device"]) if "device" in self.config["input"] else None
-        output_device = int(self.config["output"]["device"]) if "device" in self.config["output"] else None
-
-        input_params = dict(channels=int(self.config["input"]["channels"]),
+        input_params = dict(samplerate=int(self.config["input"]["samplerate"]),
+                            buffer_shape=(int(self.config["input"]["buffer_length"]),
+                                          int(self.config["input"]["channels"])),
                             format=self.config["input"]["format"],
-                            samplerate=int(self.config["input"]["samplerate"]),
-                            buffer_length=int(self.config["input"]["buffer_length"]))
-        output_params = dict(channels=int(self.config["output"]["channels"]),
+                            device=(int(self.config["input"]["device"]) if "device" in self.config["input"] else None)
+                            )
+        output_params = dict(samplerate=int(self.config["output"]["samplerate"]),
+                             buffer_shape=(int(self.config["output"]["buffer_length"]),
+                                           int(self.config["output"]["channels"])),
                              format=self.config["output"]["format"],
-                             samplerate=int(self.config["output"]["samplerate"]),
-                             buffer_length=int(self.config["output"]["buffer_length"]))
+                             device=(int(self.config["output"]["device"]) if "device" in self.config["output"] else None)
+                             )
 
         display_fps = int(self.config["controls"]["display_fps"])
 
@@ -140,15 +153,12 @@ class KnockConsole:
             manager = pyaudio.PyAudio()
 
             with contextlib.closing(self), knock_game:
-                knock_game.set_audio_params(input_params["samplerate"], input_params["buffer_length"],
-                                            output_params["samplerate"], output_params["buffer_length"])
-
                 output_node = self.get_output_node(knock_game)
                 input_node = self.get_input_node(knock_game)
                 screen_node = self.get_screen_node(knock_game)
 
-                with ra.record(manager, input_node, device=input_device, **input_params) as input_stream,\
-                     ra.play(manager, output_node, device=output_device, **output_params) as output_stream:
+                with ra.record(manager, input_node, **input_params) as input_stream,\
+                     ra.play(manager, output_node, **output_params) as output_stream:
 
                     input_stream.start_stream()
                     output_stream.start_stream()

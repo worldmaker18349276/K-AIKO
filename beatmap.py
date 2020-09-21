@@ -227,9 +227,9 @@ class Roll(Beat):
         rolls_sounds = [(step*i, sound) for i in range(self.number)]
         duration = self.end - self.time + 0.01
 
-        gen = ra.pipe(ra.empty(samplerate=samplerate, duration=duration),
-                      ra.attach(rolls_sounds, samplerate=samplerate))
-        return ra.collect(gen)
+        length = round(duration*samplerate)
+        data = numpy.zeros(length, dtype=numpy.float32)
+        return ra.collect(ra.pipe([data], ra.attach(rolls_sounds, samplerate=samplerate, buffer_shape=length)))
 
     def draw(self, track, time):
         step = (self.end - self.time)/(self.number-1) if self.number > 1 else 0.0
@@ -278,9 +278,9 @@ class Spin(Beat):
         spin_sounds = [(step*i, sound) for i in range(int(self.capacity))]
         duration = self.end - self.time
 
-        gen = ra.pipe(ra.empty(samplerate=samplerate, duration=duration),
-                      ra.attach(spin_sounds, samplerate=samplerate))
-        return ra.collect(gen)
+        length = round(duration*samplerate)
+        data = numpy.zeros(length, dtype=numpy.float32)
+        return ra.collect(ra.pipe([data], ra.attach(spin_sounds, samplerate=samplerate, buffer_shape=length)))
 
     def draw(self, track, time):
         if self.charge < self.capacity:
@@ -486,14 +486,21 @@ class Track:
 class Beatmap:
     prepare_time = PREPARE_TIME
     spec_width = SPEC_WIDTH
+    buffer_length = 512
+    win_length = 512*4
+    decay_time = 0.01
 
     def __init__(self, audio, events):
         self.audio = audio
         if self.audio is not None:
             with audioread.audio_open(self.audio) as file:
                 self.duration = file.duration
+                self.samplerate = file.samplerate
+                self.channels = file.channels
         else:
             self.duration = 0.0
+            self.samplerate = 44100
+            self.channels = 1
 
         self.events = list(events)
         self.start = min(0.0, min(event.lifespan[0] - self.prepare_time for event in self.events))
@@ -509,12 +516,6 @@ class Beatmap:
     def __exit__(self, type, value, traceback):
         pass
 
-    def set_audio_params(self, input_samplerate, input_hop_length, output_samplerate, output_hop_length):
-        self.input_samplerate = input_samplerate
-        self.input_hop_length = input_hop_length
-        self.output_samplerate = output_samplerate
-        self.output_hop_length = output_hop_length
-
     @ra.DataNode.from_generator
     def get_knock_handler(self):
         knock_handler = self.hitter.get_knock_handler()
@@ -524,13 +525,12 @@ class Beatmap:
                 time, strength, detected = yield knock_handler.send((time+self.start, strength, detected))
 
     def get_spectrum_handler(self):
-        WIN_LENGTH = 512*4
-        DECAY_TIME = 0.01
-        spec = ra.pipe(ra.frame(WIN_LENGTH, self.output_hop_length),
-                       ra.power_spectrum(WIN_LENGTH, samplerate=self.output_samplerate, windowing=True, weighting=False),
-                       ra.draw_spectrum(self.spec_width, win_length=WIN_LENGTH,
-                                                         samplerate=self.output_samplerate,
-                                                         decay=(self.output_hop_length/self.output_samplerate)/DECAY_TIME),
+        Dt = self.buffer_length / self.samplerate
+        spec = ra.pipe(ra.frame(self.win_length, self.buffer_length),
+                       ra.power_spectrum(self.win_length, samplerate=self.samplerate, windowing=True, weighting=False),
+                       ra.draw_spectrum(self.spec_width, win_length=self.win_length,
+                                                         samplerate=self.samplerate,
+                                                         decay=Dt/self.decay_time),
                        lambda s: setattr(self, "spectrum", s))
         return spec
 
@@ -539,21 +539,24 @@ class Beatmap:
         if self.audio is None:
             sound = ra.DataNode.wrap([])
         elif isinstance(self.audio, str):
-            sound = ra.load(self.audio, buffer_length=self.output_hop_length, samplerate=self.output_samplerate)
+            sound = ra.load(self.audio)
         else:
             raise ValueError
 
+        empty = ra.DataNode.wrap(lambda _: numpy.zeros((self.buffer_length, self.channels), dtype=numpy.float32))
         if self.start < 0:
-            sound = ra.chain(ra.empty(self.output_hop_length, self.output_samplerate, -self.start), sound)
+            sound = ra.chain(ra.tslice(empty, samplerate=self.samplerate, end=abs(self.start)), sound)
         if self.end > self.duration:
-            sound = ra.chain(sound, ra.empty(self.output_hop_length, self.output_samplerate, self.end - self.duration))
+            sound = ra.chain(sound, ra.tslice(empty, samplerate=self.samplerate, end=self.end-self.duration))
+
+        sound = ra.chunk(sound, chunk_shape=(self.buffer_length, self.channels))
 
         # add spec
         sound = ra.pipe(sound, ra.branch(self.get_spectrum_handler()))
 
         # add beats sounds
-        beats_sounds = [(event.time - self.start, event.sound(self.output_samplerate)) for event in self.events]
-        sound = ra.pipe(sound, ra.attach(beats_sounds, buffer_length=self.output_hop_length, samplerate=self.output_samplerate))
+        beats_sounds = [(event.time - self.start, numpy.tile(event.sound(self.samplerate)[:,None], (1, self.channels))) for event in self.events]
+        sound = ra.pipe(sound, ra.attach(beats_sounds, samplerate=self.samplerate, buffer_shape=(self.buffer_length, self.channels)))
 
         return sound
 

@@ -21,10 +21,8 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
                    beat_sounds, show_barlines, fixed_speed, custom_theme, use_script (in sheet)
   - controls: prepare_time, skip_time, countdown
   - knock console config:
-    - device: device_index, samplerate, sample_width, nchannel, buffer_length
-    - detector: time_res, freq_res, pre_max, post_max, pre_avg, post_avg, wait, delta
     - screen: color_palette, ...
-    - controls: display_fps, display_delay, knock_energy, knock_delay
+    - config device (device_index, is_format_supported)
 
 - add menu
   - score, error report
@@ -42,16 +40,12 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
   - Sym(symbol, sound)
   - target controls: Flip, Move, Jiggle
 
-- add time control (pause/resume/skip; scroll/Nx)
+- time control
+  - pause, resume, skip
+  - scroll, Nx
+  - audio time sync
   - console pause/resume
   - in-game time control
-
-- audio
-  - ra.resample
-  - remove samplerate, hop_length in beatmap, add nchannel
-  - audio nodes merger
-  - time sync
-  - device_index, is_format_supported
 
 - BeatmapStdSheet
   - .ka, .ka-theme file format
@@ -60,6 +54,6 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
   - modifiers: no_beat_sounds, show_barlines, purify (fixed_speed, no_custom_theme, no_script)
 
 - KnockGame
-  - KnockConfigurator: output/input device, display_delay/knock_delay/knock_volume
+  - KnockConfigurator: output/input device, display_delay/knock_delay/knock_energy
   - KnockGame: record/examine, pause/resume, merge
   - KnockGame -> Beatmap -> BeatmapStd, BeatmapEditor
