@@ -11,20 +11,11 @@ import realtime_analysis as ra
 
 class KnockConsole:
     def __init__(self, config_filename=None):
-        config = configparser.ConfigParser()
+        self.config = configparser.ConfigParser()
+        self.config.read("default.kconfig")
         if config_filename is not None:
-            config.read(config_filename)
+            self.config.read(config_filename)
 
-        default = configparser.ConfigParser()
-        default.read("default.kconfig")
-        for section in default:
-            if section not in config:
-                config.add_section(section)
-            for key in default[section]:
-                if key not in config[section]:
-                    config.set(section, key, default[section][key])
-
-        self.config = config
         self.closed = False
 
     def close(self):
@@ -39,9 +30,9 @@ class KnockConsole:
         sound_samplerate = knock_game.samplerate
         sound_channels = knock_game.channels
 
-        samplerate = int(self.config["output"]["samplerate"])
-        buffer_length = int(self.config["output"]["buffer_length"])
-        channels = int(self.config["output"]["channels"])
+        samplerate = self.config.getint("output", "samplerate")
+        buffer_length = self.config.getint("output", "buffer_length")
+        channels = self.config.getint("output", "channels")
 
         if channels != sound_channels:
             sound_handler = ra.pipe(sound_handler, lambda a: numpy.tile(a.mean(axis=1, keepdims=True), (1, channels)))
@@ -56,20 +47,20 @@ class KnockConsole:
 
     @ra.DataNode.from_generator
     def get_input_node(self, knock_game):
-        samplerate = int(self.config["input"]["samplerate"])
-        buffer_length = int(self.config["input"]["buffer_length"])
-        channels = int(self.config["input"]["channels"])
+        samplerate = self.config.getint("input", "samplerate")
+        buffer_length = self.config.getint("input", "buffer_length")
+        channels = self.config.getint("input", "channels")
 
-        time_res = float(self.config["detector"]["time_res"])
+        time_res = self.config.getfloat("detector", "time_res")
         hop_length = round(samplerate*time_res)
-        freq_res = float(self.config["detector"]["freq_res"])
+        freq_res = self.config.getfloat("detector", "freq_res")
         win_length = round(samplerate/freq_res)
-        pre_max = float(self.config["detector"]["pre_max"])
-        post_max = float(self.config["detector"]["post_max"])
-        pre_avg = float(self.config["detector"]["pre_avg"])
-        post_avg = float(self.config["detector"]["post_avg"])
-        wait = float(self.config["detector"]["wait"])
-        delta = float(self.config["detector"]["delta"])
+        pre_max = self.config.getfloat("detector", "pre_max")
+        post_max = self.config.getfloat("detector", "post_max")
+        pre_avg = self.config.getfloat("detector", "pre_avg")
+        post_avg = self.config.getfloat("detector", "post_avg")
+        wait = self.config.getfloat("detector", "wait")
+        delta = self.config.getfloat("detector", "delta")
 
         pre_max = round(pre_max / time_res)
         post_max = round(post_max / time_res)
@@ -78,8 +69,8 @@ class KnockConsole:
         wait = round(wait / time_res)
         delay = max(post_max, post_avg)
 
-        knock_delay = float(self.config["controls"]["knock_delay"])
-        knock_energy = float(self.config["controls"]["knock_energy"])
+        knock_delay = self.config.getfloat("controls", "knock_delay")
+        knock_energy = self.config.getfloat("controls", "knock_energy")
 
         knock_handler = knock_game.get_knock_handler()
 
@@ -109,7 +100,7 @@ class KnockConsole:
 
     @ra.DataNode.from_generator
     def get_screen_node(self, knock_game):
-        display_delay = float(self.config["controls"]["display_delay"])
+        display_delay = self.config.getfloat("controls", "display_delay")
 
         stdscr = curses.initscr()
         knock_handler = knock_game.get_screen_handler(stdscr)
@@ -137,20 +128,20 @@ class KnockConsole:
             curses.endwin()
 
     def play(self, knock_game):
-        input_params = dict(samplerate=int(self.config["input"]["samplerate"]),
-                            buffer_shape=(int(self.config["input"]["buffer_length"]),
-                                          int(self.config["input"]["channels"])),
-                            format=self.config["input"]["format"],
-                            device=(int(self.config["input"]["device"]) if "device" in self.config["input"] else None)
+        input_params = dict(samplerate=self.config.getint("input", "samplerate"),
+                            buffer_shape=(self.config.getint("input", "buffer_length"),
+                                          self.config.getint("input", "channels")),
+                            format=self.config.get("input", "format"),
+                            device=self.config.getint("input", "device", fallback=None)
                             )
-        output_params = dict(samplerate=int(self.config["output"]["samplerate"]),
-                             buffer_shape=(int(self.config["output"]["buffer_length"]),
-                                           int(self.config["output"]["channels"])),
-                             format=self.config["output"]["format"],
-                             device=(int(self.config["output"]["device"]) if "device" in self.config["output"] else None)
+        output_params = dict(samplerate=self.config.getint("output", "samplerate"),
+                             buffer_shape=(self.config.getint("output", "buffer_length"),
+                                           self.config.getint("output", "channels")),
+                             format=self.config.get("output", "format"),
+                             device=self.config.getint("output", "device", fallback=None)
                              )
 
-        display_fps = int(self.config["controls"]["display_fps"])
+        display_fps = self.config.getint("controls", "display_fps")
 
         try:
             manager = pyaudio.PyAudio()
