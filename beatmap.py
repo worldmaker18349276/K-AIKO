@@ -265,7 +265,7 @@ class Spin(Beat):
         return self.total_score if self.charge == self.capacity else 0
 
     def hit(self, time, strength):
-        self.charge = min(self.charge + min(1.0, strength)*2.0, self.capacity)
+        self.charge = min(self.charge + min(1.0, strength), self.capacity)
         if self.charge == self.capacity:
             self.finished = True
 
@@ -473,7 +473,7 @@ class Track:
         self.pad = curses.newpad(1, self.width+self.padding*2)
 
     def clear(self):
-        self.pad.clear()
+        self.pad.erase()
 
     def refresh(self):
         self.pad.overwrite(self.win, 0, self.padding, 0, 0, 0, self.width-1)
@@ -543,11 +543,14 @@ class Beatmap:
         else:
             raise ValueError
 
-        empty = ra.DataNode.wrap(lambda _: numpy.zeros((self.buffer_length, self.channels), dtype=numpy.float32))
         if self.start < 0:
-            sound = ra.chain(ra.tslice(empty, samplerate=self.samplerate, end=abs(self.start)), sound)
+            empty_start = ra.DataNode.wrap(lambda _: numpy.zeros((self.buffer_length, self.channels), dtype=numpy.float32))
+            empty_start = ra.tslice(empty_start, samplerate=self.samplerate, end=abs(self.start))
+            sound = ra.chain(empty_start, sound)
         if self.end > self.duration:
-            sound = ra.chain(sound, ra.tslice(empty, samplerate=self.samplerate, end=self.end-self.duration))
+            empty_end = ra.DataNode.wrap(lambda _: numpy.zeros((self.buffer_length, self.channels), dtype=numpy.float32))
+            empty_end = ra.tslice(empty_end, samplerate=self.samplerate, end=self.end-self.duration)
+            sound = ra.chain(sound, empty_end)
 
         sound = ra.chunk(sound, chunk_shape=(self.buffer_length, self.channels))
 
@@ -562,17 +565,7 @@ class Beatmap:
 
     @ra.DataNode.from_generator
     def get_screen_handler(self, scr):
-        _, width = scr.getmaxyx()
-
-        spec_offset = 1
-        score_offset = self.spec_width + 2
-        track_offset = self.spec_width + 15
-        progress_offset = width - 9
-        track_width = width - 24 - self.spec_width
-
         bar_offset = 0.1
-        track = Track(scr.subwin(1, track_width, 0, track_offset), bar_offset)
-
         dripper = ra.drip(self.events, lambda e: e.lifespan)
 
         with dripper:
@@ -580,6 +573,19 @@ class Beatmap:
                 time = yield
                 time += self.start
                 self.hitter.update_draw_index(time)
+
+                if scr.getch() == curses.KEY_RESIZE:
+                    _, width = scr.getmaxyx()
+
+                    spec_offset = 1
+                    score_offset = self.spec_width + 2
+                    track_offset = self.spec_width + 15
+                    progress_offset = width - 9
+                    track_width = width - 24 - self.spec_width
+
+                    track = Track(scr.subwin(1, track_width, 0, track_offset), bar_offset)
+
+                # clear
                 scr.clear()
                 track.clear()
 
@@ -606,7 +612,6 @@ class Beatmap:
                 scr.addstr(0, score_offset, "[{:>5d}/{:>5d}]".format(self.hitter.score, self.hitter.total_score))
                 scr.addstr(0, progress_offset, "[{:>5.1f}%]".format(self.hitter.progress/10))
 
-                scr.refresh()
 
 
 class BeatmapStdSheet:

@@ -118,17 +118,20 @@ class KnockConsole:
             curses.noecho()
             curses.cbreak()
             stdscr.nodelay(True)
+            stdscr.idcok(False)
             stdscr.keypad(1)
             curses.curs_set(0)
 
             with contextlib.closing(self), knock_handler:
                 reference_time = time.time()
+                curses.ungetch(curses.KEY_RESIZE)
 
                 while True:
                     yield
                     signal.signal(signal.SIGINT, self.SIGINT_handler)
                     t = time.time() - reference_time - display_delay
                     knock_handler.send(t)
+                    stdscr.refresh()
 
         finally:
             curses.endwin()
