@@ -12,6 +12,41 @@ import audioread
 
 
 class DataNode:
+    # def send(self, value=None)
+    # def __enter__(self)
+    # def __exit__(self, type=None, value=None, traceback=None)
+
+    @staticmethod
+    def from_generator(gen):
+        @functools.wraps(gen)
+        def node_builder(*args, **kwargs):
+            return GeneratorDataNode(gen(*args, **kwargs))
+        return node_builder
+
+    @staticmethod
+    def wrap(node_like):
+        if isinstance(node_like, DataNode):
+            return node_like
+
+        elif hasattr(node_like, "__iter__"):
+            @DataNode.from_generator
+            @functools.wraps(node_like)
+            def iterator():
+                yield
+                for item in node_like:
+                    yield item
+            return iterator()
+
+        else:
+            @DataNode.from_generator
+            @functools.wraps(node_like)
+            def pure_func():
+                data = yield
+                while True:
+                    data = yield node_like(data)
+            return pure_func()
+
+class GeneratorDataNode(DataNode):
     def __init__(self, generator):
         self.generator = generator
         self.started = False
@@ -62,36 +97,6 @@ class DataNode:
 
         else:
             raise RuntimeError("generator didn't stop after throw()")
-
-    @staticmethod
-    def from_generator(gen):
-        @functools.wraps(gen)
-        def node_builder(*args, **kwargs):
-            return DataNode(gen(*args, **kwargs))
-        return node_builder
-
-    @staticmethod
-    def wrap(node_like):
-        if isinstance(node_like, DataNode):
-            return node_like
-
-        elif hasattr(node_like, "__iter__"):
-            @DataNode.from_generator
-            @functools.wraps(node_like)
-            def iterator():
-                yield
-                for item in node_like:
-                    yield item
-            return iterator()
-
-        else:
-            @DataNode.from_generator
-            @functools.wraps(node_like)
-            def pure_func():
-                data = yield
-                while True:
-                    data = yield node_like(data)
-            return pure_func()
 
 # basic data nodes
 @DataNode.from_generator
@@ -981,7 +986,7 @@ def collect(node, collector=numpy.concatenate):
                 buffer.append(node.send())
     return collector(buffer)
 
-def loop(node, dt=None, until=lambda: False):
+def loop(node, dt=0, until=lambda: False):
     """Loop data node with given time interval.
 
     Parameters
@@ -998,8 +1003,7 @@ def loop(node, dt=None, until=lambda: False):
         with contextlib.suppress(StopIteration):
             while not until():
                 node.send()
-                if dt is not None:
-                    time.sleep(dt)
+                time.sleep(dt)
 
 
 # not data nodes

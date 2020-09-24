@@ -132,7 +132,7 @@ class Soft(SingleBeat):
         super().hit(time, strength, strength < 0.5)
 
     def sound(self, samplerate):
-        return ra.pulse(samplerate=samplerate, freq=1000.0, decay_time=0.01, amplitude=0.5)
+        return ra.pulse(samplerate=samplerate, freq=830.61, decay_time=0.03, amplitude=0.5)
 
     def __repr__(self):
         return "Soft(time={!r}, speed={!r}, perf={!r})".format(self.time, self.speed, self.perf)
@@ -144,7 +144,7 @@ class Loud(SingleBeat):
         super().hit(time, strength, strength >= 0.5)
 
     def sound(self, samplerate):
-        return ra.pulse(samplerate=samplerate, freq=1000.0, decay_time=0.01, amplitude=1.0)
+        return ra.pulse(samplerate=samplerate, freq=1661.2, decay_time=0.03, amplitude=1.0)
 
     def __repr__(self):
         return "Loud(time={!r}, speed={!r}, perf={!r})".format(self.time, self.speed, self.perf)
@@ -180,8 +180,8 @@ class Incr(SingleBeat):
         self.group.hit(strength)
 
     def sound(self, samplerate):
-        amplitude = 0.5 + 0.5 * (self.count-1)/self.group.total
-        return ra.pulse(samplerate=samplerate, freq=1000.0, decay_time=0.01, amplitude=amplitude)
+        amplitude = 0.2 + 0.8 * (self.count-1)/self.group.total
+        return ra.pulse(samplerate=samplerate, freq=1661.2, decay_time=0.03, amplitude=amplitude)
 
     def __repr__(self):
         return "Incr(time={!r}, speed={!r}, perf={!r}, count={!r}, group={!r})".format(
@@ -222,7 +222,7 @@ class Roll(Beat):
         self.finished = True
 
     def sound(self, samplerate):
-        sound = ra.pulse(samplerate=samplerate, freq=1000.0, decay_time=0.01, amplitude=1.0)
+        sound = ra.pulse(samplerate=samplerate, freq=1661.2, decay_time=0.01, amplitude=0.5)
         step = (self.end - self.time)/(self.number-1) if self.number > 1 else 0.0
         rolls_sounds = [(step*i, sound) for i in range(self.number)]
         duration = self.end - self.time + 0.01
@@ -273,7 +273,7 @@ class Spin(Beat):
         self.finished = True
 
     def sound(self, samplerate):
-        sound = ra.pulse(samplerate=samplerate, freq=1000.0, decay_time=0.01, amplitude=0.5)
+        sound = ra.pulse(samplerate=samplerate, freq=1661.2, decay_time=0.01, amplitude=1.0)
         step = (self.end - self.time)/self.capacity if self.capacity > 0.0 else 0.0
         spin_sounds = [(step*i, sound) for i in range(int(self.capacity))]
         duration = self.end - self.time
@@ -619,14 +619,14 @@ class BeatmapStdSheet:
         self.metadata = ""
         self.audio = None
         self.offset = 0.0
-        self.bpm = 120.0
+        self.tempo = 120.0
 
         self.incr_groups = dict()
         self.patterns = dict()
         self.events = []
 
     def time(self, t):
-        return self.offset+t*60.0/self.bpm
+        return self.offset+t*60.0/self.tempo
 
     def skip(self):
         return lambda t: []

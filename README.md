@@ -18,10 +18,10 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
   - theme: beats (symbols/sounds), target (hit), spectrum/score/progress
   - difficulty: tolerances, incr_tol
   - accessibility: track_width, hit_decay, hit_sustain, show/hide spectrum/score/progress (in beatmap)
-                   beat_sounds, show_barlines, fixed_speed, custom_theme, use_script (in sheet)
+                   beat_sounds, show_measures, fixed_speed, custom_theme, use_script (in sheet)
   - controls: prepare_time, skip_time, countdown
   - knock console config:
-    - screen: color_palette, ...
+    - screen: color_palette, size, ...
     - config device (device_index, is_format_supported)
 
 - add menu
@@ -40,6 +40,11 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
   - Sym(symbol, sound)
   - target controls: Flip, Move, Jiggle
 
+- add mixer
+  - AudioNode
+  - AudioMixer: play, stop (resample, channels, chunk, attach)
+  - use mixer as interface of knock_game
+
 - time control
   - pause, resume, skip
   - scroll, Nx
@@ -51,7 +56,7 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
   - .ka, .ka-theme file format
   - parse, load, save
   - convert from .osu
-  - modifiers: no_beat_sounds, show_barlines, purify (fixed_speed, no_custom_theme, no_script)
+  - modifiers: no_beat_sounds, show_measures, purify (fixed_speed, no_custom_theme, no_script)
 
 - KnockGame
   - KnockConfigurator: output/input device, display_delay/knock_delay/knock_energy

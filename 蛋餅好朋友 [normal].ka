@@ -11,7 +11,7 @@ source: https://www.youtube.com/watch?v=SrGCmZqjz7o
 # general:
 sheet.audio = "蛋餅好朋友.mp4"
 sheet.offset = 0.6
-sheet.bpm = 175.0
+sheet.tempo = 175.0
 
 # patterns:
 sheet["s"] = 0, 1, sheet.soft()

@@ -10,11 +10,17 @@ import realtime_analysis as ra
 
 
 class KnockConsole:
-    def __init__(self, config_filename=None):
+    def __init__(self, config=None):
         self.config = configparser.ConfigParser()
         self.config.read("default.kconfig")
-        if config_filename is not None:
-            self.config.read(config_filename)
+        if isinstance(config, str):
+            self.config.read(config)
+        elif isinstance(config, (dict, configparser.ConfigParser)):
+            self.config.read_dict(config)
+        elif config is None:
+            pass
+        else:
+            raise ValueError("invalid configuration", config)
 
         self.closed = False
 
