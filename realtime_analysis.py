@@ -552,7 +552,7 @@ def draw_spectrum(length, win_length, samplerate=44100, decay=1.0):
     buf = [0.0]*(length*2)
     J = yield
     while True:
-        vols = [power2db(J[start:end].sum() * df * n_fft/(end-start)) / 60.0 * 4.0 for start, end in slices]
+        vols = [power2db(numpy.mean(J[start:end].sum(axis=0)) * df * n_fft/(end-start)) / 60.0 * 4.0 for start, end in slices]
         # buf = [min(4.0, v) for v, prev in zip(vols, buf)]
         buf = [max(0.0, prev-decay, min(4.0, v)) for v, prev in zip(vols, buf)]
         J = yield "".join(chr(0x2800 + A[int(a)] + B[int(b)]) for a, b in zip(buf[0::2], buf[1::2]))
