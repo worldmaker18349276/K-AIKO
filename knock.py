@@ -116,19 +116,21 @@ class KnockConsole:
             curses.cbreak()
             stdscr.nodelay(True)
             stdscr.idcok(False)
+            stdscr.idlok(False)
             stdscr.keypad(1)
             curses.curs_set(0)
+            stdscr.clear()
+            curses.ungetch(curses.KEY_RESIZE)
 
             with contextlib.closing(self), knock_handler:
+                yield
                 reference_time = time.time()
-                curses.ungetch(curses.KEY_RESIZE)
-
                 while True:
-                    yield
                     signal.signal(signal.SIGINT, self.SIGINT_handler)
                     t = time.time() - reference_time - display_delay
                     knock_handler.send(t)
                     stdscr.refresh()
+                    yield
 
         finally:
             curses.endwin()
@@ -222,6 +224,7 @@ def test_mic(manager, samplerate=44100, buffer_length=1024, channels=1, format="
                                   format=format, device=device) as input_stream:
         input_stream.start_stream()
         time.sleep(duration)
+    print()
     print("finish!")
 
 def input_with_default(hint, default, type=None):

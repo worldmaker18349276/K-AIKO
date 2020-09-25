@@ -545,8 +545,9 @@ def draw_spectrum(length, win_length, samplerate=44100, decay=1.0):
 
     df = samplerate/win_length
     n_fft = win_length//2+1
-    f = numpy.logspace(numpy.log10(10.0), numpy.log10(min(20000.0, samplerate/2)), length*2)
-    sec = numpy.concatenate(([0], (f/df).round().astype(int)))
+    n = numpy.linspace(1, 88, length*2+1)
+    f = 440 * 2**((n-49)/12)
+    sec = numpy.minimum(n_fft-1, (f/df).round().astype(int))
     slices = list(zip(sec[:-1], (sec+1)[1:]))
 
     buf = [0.0]*(length*2)
