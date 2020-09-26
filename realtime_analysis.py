@@ -825,7 +825,7 @@ def save(filename, samplerate=44100, channels=1, width=2):
 
 # data node consumers
 @contextlib.contextmanager
-def record(manager, node, samplerate=44100, buffer_shape=1024, format="f4", device=None):
+def record(manager, node, samplerate=44100, buffer_shape=1024, format="f4", device=-1):
     """A context manager of input stream processing by given node.
 
     Parameters
@@ -841,7 +841,7 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format="f4", devi
     format : str, optional
         The sample format of input signal, default is `"f4"`.
     device : int, optional
-        The input device index.
+        The input device index, and `-1` for default input device.
 
     Yields
     ------
@@ -863,6 +863,9 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format="f4", devi
                  "i1": (lambda d: d / scale),
                  "u1": (lambda d: (d - 64) / 64),
                  }[format]
+
+    if device == -1:
+        device = None
 
     buffer_length, channels = (buffer_shape, 1) if isinstance(buffer_shape, int) else buffer_shape
 
@@ -896,7 +899,7 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format="f4", devi
             input_stream.close()
 
 @contextlib.contextmanager
-def play(manager, node, samplerate=44100, buffer_shape=1024, format="f4", device=None):
+def play(manager, node, samplerate=44100, buffer_shape=1024, format="f4", device=-1):
     """A context manager of output stream processing by given node.
 
     Parameters
@@ -912,7 +915,7 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format="f4", device
     format : str, optional
         The sample format of output signal, default is `"f4"`.
     device : int, optional
-        The output device index.
+        The output device index, and `-1` for default output device.
 
     Yields
     ------
@@ -934,6 +937,9 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format="f4", device
                  "i1": (lambda d: d * scale),
                  "u1": (lambda d: d * 64 + 64),
                  }[format]
+
+    if device == -1:
+        device = None
 
     buffer_length, channels = (buffer_shape, 1) if isinstance(buffer_shape, int) else buffer_shape
 

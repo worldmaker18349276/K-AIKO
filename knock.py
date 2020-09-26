@@ -140,13 +140,13 @@ class KnockConsole:
                             buffer_shape=(self.config.getint("input", "buffer_length"),
                                           self.config.getint("input", "channels")),
                             format=self.config.get("input", "format"),
-                            device=self.config.getint("input", "device", fallback=None)
+                            device=self.config.getint("input", "device")
                             )
         output_params = dict(samplerate=self.config.getint("output", "samplerate"),
                              buffer_shape=(self.config.getint("output", "buffer_length"),
                                            self.config.getint("output", "channels")),
                              format=self.config.get("output", "format"),
-                             device=self.config.getint("output", "device", fallback=None)
+                             device=self.config.getint("output", "device")
                              )
 
         display_fps = self.config.getint("controls", "display_fps")
@@ -181,7 +181,7 @@ class KnockGame:
     # def __exit__(self, type=None, value=None, traceback=None)
 
 
-def test_speaker(manager, samplerate=44100, buffer_length=1024, channels=1, format="f4", device=None):
+def test_speaker(manager, samplerate=44100, buffer_length=1024, channels=1, format="f4", device=-1):
     buffer_shape = (buffer_length, channels)
     duration = 2.0+0.5*4*channels
 
@@ -206,7 +206,7 @@ def test_speaker(manager, samplerate=44100, buffer_length=1024, channels=1, form
             time.sleep(0.1)
     print("finish!")
 
-def test_mic(manager, samplerate=44100, buffer_length=1024, channels=1, format="f4", device=None):
+def test_mic(manager, samplerate=44100, buffer_length=1024, channels=1, format="f4", device=-1):
     duration = 8.0
 
     spec_width = 5
@@ -279,7 +279,7 @@ def configure_audio(config_name=None):
         buffer_length = input_with_default("buffer_length = ", config.getint("output", "buffer_length"), int)
         channels = input_with_default("channels = ", config.getint("output", "channels"), int)
         format = input_with_default("format = ", config.get("output", "format"))
-        device = input_with_default("device = ", config.get("output", "device", fallback=None))
+        device = input_with_default("device = ", config.getint("output", "device"), int)
         test_speaker(manager, samplerate=samplerate,
                               buffer_length=buffer_length,
                               channels=channels,
@@ -291,7 +291,7 @@ def configure_audio(config_name=None):
         buffer_length = input_with_default("buffer_length = ", config.getint("input", "buffer_length"), int)
         channels = input_with_default("channels = ", config.getint("input", "channels"), int)
         format = input_with_default("format = ", config.get("input", "format"))
-        device = input_with_default("device = ", config.get("input", "device", fallback=None))
+        device = input_with_default("device = ", config.getint("input", "device"), int)
         test_mic(manager, samplerate=samplerate,
                           buffer_length=buffer_length,
                           channels=channels,

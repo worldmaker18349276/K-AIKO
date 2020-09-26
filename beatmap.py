@@ -489,6 +489,7 @@ class Beatmap:
     buffer_length = 512
     win_length = 512*4
     decay_time = 0.01
+    beats_volume = 0.5
 
     def __init__(self, audio, events):
         self.audio = audio
@@ -558,7 +559,7 @@ class Beatmap:
         sound = ra.pipe(sound, ra.branch(self.get_spectrum_handler()))
 
         # add beats sounds
-        beats_sounds = [(event.time - self.start, numpy.tile(event.sound(self.samplerate)[:,None], (1, self.channels))) for event in self.events]
+        beats_sounds = [(event.time - self.start, numpy.tile(event.sound(self.samplerate)[:,None]*self.beats_volume, (1, self.channels))) for event in self.events]
         sound = ra.pipe(sound, ra.attach(beats_sounds, samplerate=self.samplerate, buffer_shape=(self.buffer_length, self.channels)))
 
         return sound

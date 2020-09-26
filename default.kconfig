@@ -1,12 +1,12 @@
 [input]
-# device = None
+device = -1
 samplerate = 44100
 buffer_length = 512
 channels = 1
 format = f4
 
 [output]
-# device = None
+device = -1
 samplerate = 44100
 buffer_length = 512
 channels = 1
