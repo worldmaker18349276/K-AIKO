@@ -106,31 +106,42 @@ class KnockConsole:
 
     @ra.DataNode.from_generator
     def get_screen_node(self, knock_game):
-        display_delay = self.config.getfloat("controls", "display_delay")
-
         stdscr = curses.initscr()
         knock_handler = knock_game.get_screen_handler(stdscr)
+        display_delay = self.config.getfloat("controls", "display_delay")
+        display_fps = self.config.getint("controls", "display_fps")
+        dt = 1/display_fps
 
         try:
             curses.noecho()
             curses.cbreak()
+            curses.curs_set(0)
             stdscr.nodelay(True)
             stdscr.idcok(False)
             stdscr.idlok(False)
+            stdscr.immedok(False)
             stdscr.keypad(1)
-            curses.curs_set(0)
             stdscr.clear()
+
             curses.ungetch(curses.KEY_RESIZE)
 
             with contextlib.closing(self), knock_handler:
+                t0 = time.time()
+                t1 = t0 + dt
                 yield
-                reference_time = time.time()
-                while True:
-                    signal.signal(signal.SIGINT, self.SIGINT_handler)
-                    t = time.time() - reference_time - display_delay
-                    knock_handler.send(t)
+
+                while not self.closed:
+                    t = time.time()
+
+                    if t < t1 - 0.001:
+                        signal.signal(signal.SIGINT, self.SIGINT_handler)
+                        time.sleep(t1 - t)
+                        continue
+
+                    knock_handler.send(t - t0 - display_delay)
                     stdscr.refresh()
                     yield
+                    t1 += dt
 
         finally:
             curses.endwin()
@@ -149,8 +160,6 @@ class KnockConsole:
                              device=self.config.getint("output", "device")
                              )
 
-        display_fps = self.config.getint("controls", "display_fps")
-
         try:
             manager = pyaudio.PyAudio()
 
@@ -160,11 +169,14 @@ class KnockConsole:
                 screen_node = self.get_screen_node(knock_game)
 
                 with ra.record(manager, input_node, **input_params) as input_stream,\
-                     ra.play(manager, output_node, **output_params) as output_stream:
+                     ra.play(manager, output_node, **output_params) as output_stream,\
+                     screen_node, contextlib.suppress(StopIteration):
 
                     input_stream.start_stream()
                     output_stream.start_stream()
-                    ra.loop(screen_node, 1/display_fps, lambda: self.closed)
+
+                    while True:
+                        screen_node.send()
 
         finally:
             manager.terminate()
