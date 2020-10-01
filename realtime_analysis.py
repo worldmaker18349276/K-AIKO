@@ -12,9 +12,20 @@ import audioread
 
 
 class DataNode:
-    # def send(self, value=None)
-    # def __enter__(self)
-    # def __exit__(self, type=None, value=None, traceback=None)
+    def send(self, value=None):
+        return value
+
+    def __enter__(self):
+        pass
+
+    def __exit__(self, type=None, value=None, traceback=None):
+        pass
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        return self.send()
 
     @staticmethod
     def from_generator(gen):
@@ -29,22 +40,24 @@ class DataNode:
             return node_like
 
         elif hasattr(node_like, "__iter__"):
-            @DataNode.from_generator
-            @functools.wraps(node_like)
-            def iterator():
-                yield
-                for item in node_like:
-                    yield item
-            return iterator()
+            return IteratorDataNode(iter(node_like))
 
         else:
-            @DataNode.from_generator
-            @functools.wraps(node_like)
-            def pure_func():
-                data = yield
-                while True:
-                    data = yield node_like(data)
-            return pure_func()
+            return PureDataNode(node_like)
+
+class IteratorDataNode(DataNode):
+    def __init__(self, iterator):
+        self.iterator = iterator
+
+    def send(self, value=None):
+        return next(self.iterator)
+
+class PureDataNode(DataNode):
+    def __init__(self, function):
+        self.function = function
+
+    def send(self, value=None):
+        return self.function(value)
 
 class GeneratorDataNode(DataNode):
     def __init__(self, generator):
@@ -56,7 +69,7 @@ class GeneratorDataNode(DataNode):
         if not self.started:
             raise RuntimeError("try to access un-initialized data node")
         if self.stopped:
-            raise RuntimeError("try to access finalized data node")
+            raise StopIteration
 
         return self.generator.send(value)
 
@@ -98,10 +111,11 @@ class GeneratorDataNode(DataNode):
         else:
             raise RuntimeError("generator didn't stop after throw()")
 
+
 # basic data nodes
 @DataNode.from_generator
 def delay(prepend):
-    """A data node delays signal and prepends given values.
+    """A data node delays signals and prepends given values.
 
     Parameters
     ----------
@@ -123,6 +137,41 @@ def delay(prepend):
     while True:
         buffer.append(data)
         data = yield buffer.pop(0)
+
+@DataNode.from_generator
+def skip(node, prefeed):
+    """A data node skips signals and prefeed given values.
+
+    Parameters
+    ----------
+    prefeed : list or int
+        The list of prefeeded values or number of skips with prefeeding `None`.
+
+    Receives
+    --------
+    data : any
+        The input signal.
+
+    Yields
+    ------
+    data : any
+        The advance signal.
+    """
+    node = DataNode.wrap(node)
+    buffer = itertools.repeat(None, prefeed) if isinstance(prefeed, int) else prefeed
+
+    with node:
+        try:
+            for data in buffer:
+                node.send(data)
+
+        except StopIteration:
+            yield
+
+        else:
+            data = yield
+            while True:
+                data = yield node.send(data)
 
 @DataNode.from_generator
 def take(number):
@@ -231,49 +280,12 @@ def chain(*nodes):
 
         data = yield
         for node in nodes:
-            with contextlib.suppress(StopIteration):
-                while True:
-                    data = yield node.send(data)
-
-@DataNode.from_generator
-def nslice(node, start=None, stop=None):
-    """A data node processes data with slicing periods.
-
-    Parameters
-    ----------
-    node : DataNode
-        The data node to slice.
-    start : int, optional
-        The start period to process, default is no slicing.
-    end : int, optional
-        The end period to process, default is no slicing.
-
-    Receives
-    --------
-    data : any
-        The input signal.
-
-    Yields
-    ------
-    data : any
-        The processed signal.
-    """
-    node = DataNode.wrap(node)
-    index = 0
-    with node:
-        try:
-            while start is not None and start > index:
-                index += 1
-                node.send()
-        except StopIteration:
-            yield
-            return
-
-        data = yield
-
-        while stop is None or stop > index:
-            index += 1
-            data = yield node.send(data)
+            while True:
+                try:
+                    data = node.send(data)
+                except StopIteration:
+                    break
+                data = yield data
 
 @DataNode.from_generator
 def branch(*nodes):
@@ -295,11 +307,19 @@ def branch(*nodes):
         The input signal.
     """
     node = pipe(*nodes)
+
     with node:
         data = yield
+
         while True:
-            node.send(data)
+            try:
+                node.send(data)
+            except StopIteration:
+                break
             data = yield data
+
+    while True:
+        data = yield data
 
 @DataNode.from_generator
 def merge(*nodes):
@@ -485,8 +505,9 @@ def power_spectrum(win_length, samplerate=44100, windowing=True, weighting=True)
     weighting *= 2/win_length/samplerate
 
     x = yield
-    windowing = windowing.reshape(-1, *[1]*(x.ndim-1)) if numpy.ndim(windowing) > 0 else windowing
-    weighting = weighting.reshape(-1, *[1]*(x.ndim-1)) if numpy.ndim(weighting) > 0 else weighting
+    if x.ndim > 1:
+        windowing = windowing[:, None] if numpy.ndim(windowing) > 0 else windowing
+        weighting = weighting[:, None] if numpy.ndim(weighting) > 0 else weighting
 
     while True:
         x = yield weighting * numpy.abs(numpy.fft.rfft(x*windowing, axis=0))**2
@@ -558,52 +579,11 @@ def draw_spectrum(length, win_length, samplerate=44100, decay=1.0):
         buf = [max(0.0, prev-decay, min(4.0, v)) for v, prev in zip(vols, buf)]
         J = yield "".join(chr(0x2800 + A[int(a)] + B[int(b)]) for a, b in zip(buf[0::2], buf[1::2]))
 
-@DataNode.from_generator
-def attach(scheduled_signals, samplerate=44100, buffer_shape=1024):
-    """A data node attaches scheduled signals to input signal (in place).
-
-    Parameters
-    ----------
-    scheduled_signals : list
-        The list of scheduled signals, composed by tuples of scheduled time and data.
-    samplerate : int, optional
-        The sample rate to load, default is `44100`.
-    buffer_shape : int or tuple, optional
-        The shape of input signal, default is `1024`.
-
-    Receives
-    --------
-    data : ndarray
-        The input signal.
-
-    Yields
-    ------
-    data : ndarray
-        The processed signal.
-    """
-    buffer_length = buffer_shape[0] if isinstance(buffer_shape, tuple) else buffer_shape
-
-    def schedule(item):
-        time, data = item
-        index = round(time*samplerate)
-        return (index - buffer_length, index + data.shape[0])
-    dripping_signals = drip(scheduled_signals, schedule)
-
-    with dripping_signals:
-        data = yield
-        for index in itertools.count(0, buffer_length):
-            for time, signal in dripping_signals.send(index):
-                start = int(time*samplerate)
-                i = max(start, index)
-                j = min(start+signal.shape[0], index+buffer_length)
-                data[i-index:j-index] += signal[i-start:j-start]
-            data = yield data
-
 
 # for variable-width data
 @DataNode.from_generator
-def chunk(node, chunk_shape=1024):
-    """A data node produces data by chunking given signal.
+def chunk(node, chunk_shape=1024, offset=0):
+    """Make a data node be able to produce fixed width data.
 
     Parameters
     ----------
@@ -611,6 +591,8 @@ def chunk(node, chunk_shape=1024):
         The data node to chunk.
     chunk_shape : int or tuple, optional
         The shape of chunk, default is `1024`.
+    offset : int, optional
+        The offset of the first data, default is `0`.
 
     Yields
     ------
@@ -619,36 +601,35 @@ def chunk(node, chunk_shape=1024):
     """
     node = DataNode.wrap(node)
     chunk = numpy.zeros(chunk_shape, dtype=numpy.float32)
-    index = 0
+    index = offset
 
     with node:
         yield
-        try:
-            while True:
-                data = node.send()
-                while data.shape[0] > 0:
-                    length = min(chunk.shape[0] - index, data.shape[0])
-                    chunk[index:index+length] = data[:length]
-                    index += length
-                    data = data[length:]
 
-                    if index == chunk.shape[0]:
-                        yield numpy.copy(chunk)
-                        index = 0
+        for data in node:
+            while data.shape[0] > 0:
+                length = min(chunk.shape[0] - index, data.shape[0])
+                chunk[index:index+length] = data[:length]
+                index += length
+                data = data[length:]
 
-        except StopIteration:
+                if index == chunk.shape[0]:
+                    yield numpy.copy(chunk)
+                    index = 0
+
+        else:
             if index > 0:
                 chunk[index:] = 0.0
                 yield numpy.copy(chunk)
 
 @DataNode.from_generator
 def unchunk(node, chunk_shape=1024):
-    """Make a data node receives data with any length.
+    """Make a data node be able to receive data with any length.
 
     Parameters
     ----------
     node : DataNode
-        The data node.
+        The data node to unchunk.
     chunk_shape : int or tuple, optional
         The received shape of given data node, default is `1024`.
 
@@ -675,38 +656,107 @@ def unchunk(node, chunk_shape=1024):
                     index = 0
 
 @DataNode.from_generator
-def resample(node, ratio):
-    """A data node with resampled data.
+def reader(node):
+    """Make a data node be able to produce data with given length.
 
     Parameters
     ----------
     node : DataNode
-        The data node to resample.
+        The data node to read.
+
+    Receives
+    ------
+    length : int
+        The length to read.
+
+    Yields
+    ------
+    data : ndarray
+        The data with given length.
+    """
+    node = DataNode.wrap(node)
+
+    buffer = []
+    with node:
+        required = length = yield
+        if length == 0: raise ValueError("the first length cannot be 0.")
+
+        for data in node:
+            buffer.append(data)
+            required -= data.shape[0]
+
+            while required <= 0:
+                last = buffer.pop()
+                buffer.append(last[:required])
+                length = yield numpy.concatenate(buffer, axis=0)
+                buffer = [last[required:]]
+
+                if length < 0: raise ValueError("the length cannot be less than 0.")
+                required += length
+
+        else:
+            if len(buffer) > 0:
+                yield numpy.concatenate(buffer, axis=0)
+
+
+def rechannel(channels):
+    """A data node to rechannel data.
+
+    Parameters
+    ----------
+    channels : int or list
+        The channel mapping.
+
+    Receives
+    ------
+    data : ndarray
+        The original signal.
+
+    Yields
+    ------
+    data : ndarray
+        The rechanneled signal.
+    """
+    if channels == 0:
+        return lambda data: (data if data.ndim == 1 else numpy.mean(data, axis=1))
+    elif isinstance(channels, int):
+        return lambda data: (data if data.ndim == 1 else numpy.mean(data, axis=1))[:, None][:, [0]*channels]
+    else:
+        return lambda data: (data[:, None] if data.ndim == 1 else data)[:, channels]
+
+@DataNode.from_generator
+def resample(ratio):
+    """A data node to resample data.
+
+    Parameters
+    ----------
     ratio : float or tuple
         The resampling factor.
+
+    Receives
+    ------
+    data : ndarray
+        The original signal.
 
     Yields
     ------
     data : ndarray
         The resampled signal.
     """
-    node = DataNode.wrap(node)
     index = 0.0
     up, down = (ratio, 1) if isinstance(ratio, float) else ratio
 
-    with node:
-        yield
-        while True:
-            data = node.send()
-            next_index = index + data.shape[0] * up/down
-            length = int(next_index) - int(index)
-            data_ = scipy.signal.resample(data, length, axis=0)
-            index = next_index % 1.0
-            yield data_
+    data = yield
+    while True:
+        next_index = index + data.shape[0] * up/down
+        length = int(next_index) - int(index)
+        data_ = scipy.signal.resample(data, length, axis=0)
+        index = next_index % 1.0
+        data = yield data_
 
 @DataNode.from_generator
 def tslice(node, samplerate=44100, start=None, end=None):
-    """A data node in given timespan.
+    """A data node sliced by given timespan.
 
     Parameters
     ----------
@@ -722,48 +772,34 @@ def tslice(node, samplerate=44100, start=None, end=None):
     Yields
     ------
     data : ndarray
-        The signal.
+        The sliced signal.
     """
     node = DataNode.wrap(node)
     index = 0
-    start = round(start*samplerate) if start is not None else start
+    start = max(0, round(start*samplerate)) if start is not None else 0
     end = round(end*samplerate) if end is not None else end
 
     with node:
-        if start is None or start <= 0:
-            yield
-            data = node.send()
+        for data in node:
+            index += data.shape[0]
 
-        else:
-            try:
-                data = node.send()
+            if index <= start:
+                continue
 
-                while start >= index + data.shape[0]:
-                    index += data.shape[0]
-                    data = node.send()
-                else:
-                    data = data[start-index:]
-                    index = start
-
-            except StopIteration:
+            if index - data.shape[0] <= start:
                 yield
-                return
+                data = data[start-index:]
 
-        if end is None:
-            while True:
-                yield data
-                data = node.send()
+            if end is not None and index > end:
+                data = data[:end-index]
 
-        else:
-            while end >= index + data.shape[0]:
-                yield data
-                index += data.shape[0]
-                data = node.send()
-            else:
-                yield data[:end-index]
+            yield data
+
+            if end is not None and index > end:
+                break
 
 
-# terminal data nodes
+# IO data nodes
 @DataNode.from_generator
 def load(filename):
     """A data node to load sound file.
@@ -778,17 +814,16 @@ def load(filename):
     data : ndarray
         The loaded signal.
     """
-    width = 2
-    scale = 2.0 ** (1 - 8*width)
-    fmt = "<i{:d}".format(width)
 
     with audioread.audio_open(filename) as file:
-        node = DataNode.wrap(scale * numpy.frombuffer(data, fmt).astype(numpy.float32).reshape(-1, file.channels) for data in file)
+        width = 2
+        scale = 2.0 ** (1 - 8*width)
+        fmt = "<i{:d}".format(width)
+        def frombuffer(data):
+            return scale * numpy.frombuffer(data, fmt).astype(numpy.float32).reshape(-1, file.channels)
 
-        with node:
-            yield
-            while True:
-                yield node.send()
+        for data in file:
+            yield frombuffer(data)
 
 @DataNode.from_generator
 def save(filename, samplerate=44100, channels=1, width=2):
@@ -810,20 +845,20 @@ def save(filename, samplerate=44100, channels=1, width=2):
     data : ndarray
         The signal to save.
     """
-    scale = 2.0 ** (8*width - 1)
-    fmt = "<i{:d}".format(width)
-
     with wave.open(filename, "wb") as file:
+        scale = 2.0 ** (8*width - 1)
+        fmt = "<i{:d}".format(width)
+        def tobuffer(data):
+            return (data * scale).astype(fmt).tobytes()
+
         file.setsampwidth(width)
         file.setnchannels(channels)
         file.setframerate(samplerate)
         file.setnframes(0)
 
         while True:
-            file.writeframes(((yield) * scale).astype(fmt).tobytes())
+            file.writeframes(tobuffer((yield)))
 
-
-# data node consumers
 @contextlib.contextmanager
 def record(manager, node, samplerate=44100, buffer_shape=1024, format="f4", device=-1):
     """A context manager of input stream processing by given node.
@@ -867,14 +902,11 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format="f4", devi
     if device == -1:
         device = None
 
-    buffer_length, channels = (buffer_shape, 1) if isinstance(buffer_shape, int) else buffer_shape
+    length, channels = (buffer_shape, 1) if isinstance(buffer_shape, int) else buffer_shape
 
     def input_callback(in_data, frame_count, time_info, status):
         try:
-            if node.stopped:
-                raise StopIteration
-            data = numpy.frombuffer(in_data, dtype=format).reshape(buffer_shape)
-            data = normalize(data)
+            data = normalize(numpy.frombuffer(in_data, dtype=format).reshape(buffer_shape))
             node.send(data)
 
             return b'', pyaudio.paContinue
@@ -887,7 +919,7 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format="f4", devi
                                 input=True,
                                 output=False,
                                 input_device_index=device,
-                                frames_per_buffer=buffer_length,
+                                frames_per_buffer=length,
                                 stream_callback=input_callback,
                                 start=False)
 
@@ -941,15 +973,14 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format="f4", device
     if device == -1:
         device = None
 
-    buffer_length, channels = (buffer_shape, 1) if isinstance(buffer_shape, int) else buffer_shape
+    length, channels = (buffer_shape, 1) if isinstance(buffer_shape, int) else buffer_shape
 
     def output_callback(in_data, frame_count, time_info, status):
         try:
-            if node.stopped:
-                raise StopIteration
             data = node.send(None)
-            data = normalize(data).astype(format)
-            return data.tobytes(), pyaudio.paContinue
+            out_data = normalize(data).astype(format).tobytes()
+
+            return out_data, pyaudio.paContinue
         except StopIteration:
             return b'', pyaudio.paComplete
 
@@ -959,7 +990,7 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format="f4", device
                                  input=False,
                                  output=True,
                                  output_device_index=device,
-                                 frames_per_buffer=buffer_length,
+                                 frames_per_buffer=length,
                                  stream_callback=output_callback,
                                  start=False)
 
@@ -969,48 +1000,6 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format="f4", device
         finally:
             output_stream.stop_stream()
             output_stream.close()
-
-def collect(node, collector=numpy.concatenate):
-    """Collect all data generated by given node.
-
-    Parameters
-    ----------
-    node : DataNode
-        The data node to collect.
-    collector : function, optional
-        The function to process collected data, default is `numpy.concatenate`.
-
-    Returns
-    ------
-    data : ndarray
-        The collected data.
-    """
-    node = DataNode.wrap(node)
-    buffer = []
-    with node:
-        with contextlib.suppress(StopIteration):
-            while True:
-                buffer.append(node.send())
-    return collector(buffer)
-
-def loop(node, dt=0, until=lambda: False):
-    """Loop data node with given time interval.
-
-    Parameters
-    ----------
-    node : DataNode
-        The data node to loop.
-    dt : float, optional
-        The time interval of each period.
-    until : function, optional
-        The condition to stop looping.
-    """
-    node = DataNode.wrap(node)
-    with node:
-        with contextlib.suppress(StopIteration):
-            while not until():
-                node.send()
-                time.sleep(dt)
 
 
 # not data nodes
@@ -1064,4 +1053,73 @@ def get_A_weight(samplerate, win_length):
     weight[f>20000] = 0.0
 
     return weight
+
+
+# mixer
+class AudioMixer(DataNode):
+    def __init__(self, samplerate=44100, buffer_shape=1024):
+        self.samplerate = samplerate
+        self.buffer_shape = buffer_shape
+        self.index = 0
+        self.new_nodes = []
+        self.proxy = self.get_proxy()
+
+    def send(self, value=None):
+        return self.proxy.send(value)
+
+    def __enter__(self):
+        return self.proxy.__enter__()
+
+    def __exit__(self, type=None, value=None, traceback=None):
+        return self.proxy.__exit__(type, value, traceback)
+
+    @DataNode.from_generator
+    def get_proxy(self):
+        buffer = numpy.zeros(self.buffer_shape, dtype=numpy.float32)
+
+        nodes = []
+        with contextlib.ExitStack() as stack:
+
+            yield
+            while True:
+                for node in self.new_nodes:
+                    stack.enter_context(node)
+                    nodes.append(node)
+                self.new_nodes.clear()
+
+                self.index += 1
+
+                signals = []
+                for node in list(nodes):
+                    try:
+                        data = node.send()
+                        if data is not 0:
+                            signals.append(data)
+                    except StopIteration:
+                        node.__exit__()
+                        nodes.remove(node)
+
+                buffer[:] = 0.0
+                for signal in signals:
+                    buffer += signal
+
+                yield numpy.copy(buffer)
+
+    def play(self, node, samplerate=44100, channels=None, time=None, start=None, end=None):
+        if channels is None: channels = self.buffer_shape[1] if isinstance(self.buffer_shape, tuple) else 0
+
+        node_ = pipe(tslice(node, samplerate, start, end),
+                     rechannel(channels),
+                     resample(ratio=(self.samplerate, samplerate)))
+
+        if time is None:
+            node_ = chunk(node_, self.buffer_shape)
+        else:
+            offset = round(time*self.samplerate)
+            buffer_length = self.buffer_shape[0] if isinstance(self.buffer_shape, tuple) else self.buffer_shape
+            node_ = chunk(node_, self.buffer_shape, offset % buffer_length)
+            node_ = chain(itertools.repeat(0, offset // buffer_length), node_)
+            node_ = skip(node_, self.index)
+
+        self.new_nodes.append(node_)
 

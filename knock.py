@@ -32,24 +32,20 @@ class KnockConsole:
 
     @ra.DataNode.from_generator
     def get_output_node(self, knock_game):
-        sound_handler = knock_game.get_sound_handler()
-        sound_samplerate = knock_game.samplerate
-        sound_channels = knock_game.channels
-
         samplerate = self.config.getint("output", "samplerate")
         buffer_length = self.config.getint("output", "buffer_length")
         channels = self.config.getint("output", "channels")
 
-        if channels != sound_channels:
-            sound_handler = ra.pipe(sound_handler, lambda a: numpy.tile(a.mean(axis=1, keepdims=True), (1, channels)))
-        if samplerate != sound_samplerate:
-            sound_handler = ra.resample(sound_handler, ratio=(samplerate, sound_samplerate))
-        sound_handler = ra.chunk(sound_handler, chunk_shape=(buffer_length, channels))
+        Dt = buffer_length/samplerate
 
-        with contextlib.closing(self), sound_handler:
+        mixer = ra.AudioMixer(samplerate, (buffer_length, channels))
+        sound_handler = knock_game.get_sound_handler(mixer)
+
+        with contextlib.closing(self), mixer, sound_handler:
             yield
-            while True:
-                yield sound_handler.send()
+            for time in itertools.count(0, Dt):
+                sound_handler.send(time)
+                yield mixer.send()
 
     @ra.DataNode.from_generator
     def get_input_node(self, knock_game):
