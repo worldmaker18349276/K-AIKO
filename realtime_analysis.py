@@ -12,71 +12,37 @@ import audioread
 
 
 class DataNode:
+    def __init__(self, generator):
+        self.generator = generator
+        self.initialized = False
+        self.finalized = False
+
     def send(self, value=None):
-        return value
+        if not self.initialized:
+            raise RuntimeError("try to access un-initialized data node")
+        if self.finalized:
+            raise StopIteration
 
-    def __enter__(self):
-        pass
+        try:
+            res = self.generator.send(value)
+        except:
+            self.finalized = True
+            raise
+        else:
+            return res
 
-    def __exit__(self, type=None, value=None, traceback=None):
-        pass
+    def __next__(self):
+        return self.send(None)
 
     def __iter__(self):
         return self
 
-    def __next__(self):
-        return self.send()
-
-    @staticmethod
-    def from_generator(gen):
-        @functools.wraps(gen)
-        def node_builder(*args, **kwargs):
-            return GeneratorDataNode(gen(*args, **kwargs))
-        return node_builder
-
-    @staticmethod
-    def wrap(node_like):
-        if isinstance(node_like, DataNode):
-            return node_like
-
-        elif hasattr(node_like, "__iter__"):
-            return IteratorDataNode(iter(node_like))
-
-        else:
-            return PureDataNode(node_like)
-
-class IteratorDataNode(DataNode):
-    def __init__(self, iterator):
-        self.iterator = iterator
-
-    def send(self, value=None):
-        return next(self.iterator)
-
-class PureDataNode(DataNode):
-    def __init__(self, function):
-        self.function = function
-
-    def send(self, value=None):
-        return self.function(value)
-
-class GeneratorDataNode(DataNode):
-    def __init__(self, generator):
-        self.generator = generator
-        self.started = False
-        self.stopped = False
-
-    def send(self, value=None):
-        if not self.started:
-            raise RuntimeError("try to access un-initialized data node")
-        if self.stopped:
-            raise StopIteration
-
-        return self.generator.send(value)
-
     def __enter__(self):
-        if self.started:
+        if self.finalized:
+            raise RuntimeError("try to initialize finalized data node")
+        if self.initialized:
             return self
-        self.started = True
+        self.initialized = True
 
         try:
             next(self.generator)
@@ -86,33 +52,68 @@ class GeneratorDataNode(DataNode):
             raise RuntimeError("generator didn't yield") from None
 
     def __exit__(self, type=None, value=None, traceback=None):
-        if not self.started:
+        if not self.initialized:
             raise RuntimeError("try to finalize un-initialized data node")
-        if self.stopped:
-            return False
-        self.stopped = True
-
-        if type is None:
-            self.generator.close()
+        if self.finalized:
             return False
 
-        try:
-            if value is None:
-                value = type()
-            self.generator.throw(type, value, traceback)
+        self.generator.close()
+        self.finalized = True
+        return False
 
-        except BaseException as exc:
-            if exc is value:
-                return False
-            if isinstance(exc, StopIteration):
-                return True
-            raise
+    @staticmethod
+    def from_generator(gen):
+        @functools.wraps(gen)
+        def node_builder(*args, **kwargs):
+            return DataNode(gen(*args, **kwargs))
+        return node_builder
+
+    @staticmethod
+    def wrap(node_like):
+        if isinstance(node_like, DataNode):
+            return node_like
+
+        elif hasattr(node_like, "__iter__"):
+            def iter(it):
+                yield
+                for data in it:
+                    yield data 
+            return DataNode(iter(node_like))
 
         else:
-            raise RuntimeError("generator didn't stop after throw()")
+            def pure(func):
+                data = yield
+                while True:
+                    data = yield func(data)
+            return DataNode(pure(node_like))
 
 
 # basic data nodes
+@DataNode.from_generator
+def rewrap(node):
+    """A data node processing data by another data node.
+
+    Parameters
+    ----------
+    node : DataNode
+        The data node.
+
+    Receives
+    --------
+    data : any
+        The input signal.
+
+    Yields
+    ------
+    data : any
+        The processed signal.
+    """
+    with node:
+        data = yield
+        while True:
+            res = node.send(data)
+            data = yield res
+
 @DataNode.from_generator
 def delay(prepend):
     """A data node delays signals and prepends given values.
@@ -222,9 +223,10 @@ def pipe(*nodes):
 
         data = yield
         while True:
+            res = data
             for node in nodes:
-                data = node.send(data)
-            data = yield data
+                res = node.send(res)
+            data = yield res
 
 @DataNode.from_generator
 def pair(*nodes):
@@ -282,10 +284,10 @@ def chain(*nodes):
         for node in nodes:
             while True:
                 try:
-                    data = node.send(data)
+                    res = node.send(data)
                 except StopIteration:
                     break
-                data = yield data
+                data = yield res
 
 @DataNode.from_generator
 def branch(*nodes):
@@ -537,7 +539,7 @@ def onset_strength(df):
         prev, curr = curr, (yield numpy.mean(numpy.maximum(0.0, curr - prev).sum(axis=0)) * df)
 
 @DataNode.from_generator
-def draw_spectrum(length, win_length, samplerate=44100, decay=1.0):
+def draw_spectrum(length, win_length, samplerate=44100, decay=1/4):
     """A data node to show given spectrum by braille patterns.
 
     Parameters
@@ -549,7 +551,7 @@ def draw_spectrum(length, win_length, samplerate=44100, decay=1.0):
     samplerate : int, optional
         The sample rate of input signal, default is `44100`.
     decay : float, optional
-        The decay volume per period, default is `1.0`.
+        The decay volume per period, default is `1/4`.
 
     Receives
     --------
@@ -569,15 +571,14 @@ def draw_spectrum(length, win_length, samplerate=44100, decay=1.0):
     n = numpy.linspace(1, 88, length*2+1)
     f = 440 * 2**((n-49)/12)
     sec = numpy.minimum(n_fft-1, (f/df).round().astype(int))
-    slices = list(zip(sec[:-1], (sec+1)[1:]))
+    slices = [slice(start, stop) for start, stop in zip(sec[:-1], (sec+1)[1:])]
 
-    buf = [0.0]*(length*2)
+    volume_of = lambda J: power2db(J.mean() * samplerate / 2, scale=(1e-5, 1e6)) / 60.0
+    vols = [0.0]*(length*2)
     J = yield
     while True:
-        vols = [power2db(numpy.mean(J[start:end].sum(axis=0)) * df * n_fft/(end-start)) / 60.0 * 4.0 for start, end in slices]
-        # buf = [min(4.0, v) for v, prev in zip(vols, buf)]
-        buf = [max(0.0, prev-decay, min(4.0, v)) for v, prev in zip(vols, buf)]
-        J = yield "".join(chr(0x2800 + A[int(a)] + B[int(b)]) for a, b in zip(buf[0::2], buf[1::2]))
+        vols = [max(0.0, prev-decay, min(1.0, volume_of(J[slic]))) for slic, prev in zip(slices, vols)]
+        J = yield "".join(chr(0x2800 + A[int(a*4)] + B[int(b*4)]) for a, b in zip(vols[0::2], vols[1::2]))
 
 
 # for variable-width data
@@ -1058,23 +1059,13 @@ def get_A_weight(samplerate, win_length):
 # mixer
 class AudioMixer(DataNode):
     def __init__(self, samplerate=44100, buffer_shape=1024):
+        super().__init__(self.proxy())
         self.samplerate = samplerate
         self.buffer_shape = buffer_shape
         self.index = 0
         self.new_nodes = []
-        self.proxy = self.get_proxy()
 
-    def send(self, value=None):
-        return self.proxy.send(value)
-
-    def __enter__(self):
-        return self.proxy.__enter__()
-
-    def __exit__(self, type=None, value=None, traceback=None):
-        return self.proxy.__exit__(type, value, traceback)
-
-    @DataNode.from_generator
-    def get_proxy(self):
+    def proxy(self):
         buffer = numpy.zeros(self.buffer_shape, dtype=numpy.float32)
 
         nodes = []

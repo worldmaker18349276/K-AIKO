@@ -519,7 +519,7 @@ class Beatmap:
                        ra.power_spectrum(self.win_length, samplerate=self.samplerate),
                        ra.draw_spectrum(self.spec_width, win_length=self.win_length,
                                                          samplerate=self.samplerate,
-                                                         decay=Dt/self.decay_time),
+                                                         decay=Dt/self.decay_time/4),
                        lambda s: setattr(self, "spectrum", s))
         return spec
 
@@ -550,7 +550,7 @@ class Beatmap:
                     if event not in played:
                         played.add(event)
                         for beat_sound, samplerate, offset in event.sound:
-                            mixer.play(beat_sound, samplerate=samplerate, time=event.time-self.start+offset)
+                            mixer.play(beat_sound, samplerate=samplerate, time=event.time+offset-self.start)
 
                 time = (yield) + self.start
 
