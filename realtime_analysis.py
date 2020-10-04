@@ -77,7 +77,7 @@ class DataNode:
             def iter(it):
                 yield
                 for data in it:
-                    yield data 
+                    yield data
             return DataNode(iter(node_like))
 
         else:

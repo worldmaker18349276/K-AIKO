@@ -1,3 +1,4 @@
+import os
 import time
 import itertools
 import contextlib
@@ -101,7 +102,7 @@ class KnockConsole:
                 detector.send((yield))
 
     @ra.DataNode.from_generator
-    def get_screen_node(self, knock_game):
+    def _get_screen_node(self, knock_game):
         stdscr = curses.initscr()
         knock_handler = knock_game.get_screen_handler(stdscr)
         display_delay = self.config.getfloat("controls", "display_delay")
@@ -118,8 +119,6 @@ class KnockConsole:
             stdscr.immedok(False)
             stdscr.keypad(1)
             stdscr.clear()
-
-            curses.ungetch(curses.KEY_RESIZE)
 
             with contextlib.closing(self), knock_handler:
                 t0 = time.time()
@@ -141,6 +140,39 @@ class KnockConsole:
 
         finally:
             curses.endwin()
+
+    @ra.DataNode.from_generator
+    def get_screen_node(self, knock_game):
+        width = curses.initscr().getmaxyx()[1]
+        curses.endwin()
+        scr = curses.newpad(1, width)
+
+        knock_handler = knock_game.get_screen_handler(scr)
+        display_delay = self.config.getfloat("controls", "display_delay")
+        display_fps = self.config.getint("controls", "display_fps")
+        dt = 1/display_fps
+
+        try:
+            with contextlib.closing(self), knock_handler:
+                t0 = time.time()
+                t1 = t0 + dt
+                yield
+
+                while not self.closed:
+                    t = time.time()
+
+                    if t < t1 - 0.001:
+                        signal.signal(signal.SIGINT, self.SIGINT_handler)
+                        time.sleep(t1 - t)
+                        continue
+
+                    knock_handler.send(t - t0 - display_delay)
+                    print(scr.instr(0, 0).decode(), end="\r", flush=True)
+                    yield
+                    t1 += dt
+
+        finally:
+            print()
 
     def play(self, knock_game):
         input_params = dict(samplerate=self.config.getint("input", "samplerate"),
@@ -179,7 +211,6 @@ class KnockConsole:
 
 
 class KnockGame:
-    pass
     # def get_sound_handler(self, mixer): (time_start, time_end) -> None
     # def get_knock_handler(self): (time, strength, detected) -> None
     # def get_screen_handler(self, scr): time -> None
@@ -187,6 +218,7 @@ class KnockGame:
     # def resume(self)
     # def __enter__(self)
     # def __exit__(self, type=None, value=None, traceback=None)
+    pass
 
 
 def test_speaker(manager, samplerate=44100, buffer_length=1024, channels=1, format="f4", device=-1):
