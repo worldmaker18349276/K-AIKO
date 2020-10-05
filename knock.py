@@ -1,4 +1,3 @@
-import os
 import time
 import itertools
 import contextlib
@@ -102,52 +101,8 @@ class KnockConsole:
                 detector.send((yield))
 
     @ra.DataNode.from_generator
-    def _get_screen_node(self, knock_game):
-        stdscr = curses.initscr()
-        knock_handler = knock_game.get_screen_handler(stdscr)
-        display_delay = self.config.getfloat("controls", "display_delay")
-        display_fps = self.config.getint("controls", "display_fps")
-        dt = 1/display_fps
-
-        try:
-            curses.noecho()
-            curses.cbreak()
-            curses.curs_set(0)
-            stdscr.nodelay(True)
-            stdscr.idcok(False)
-            stdscr.idlok(False)
-            stdscr.immedok(False)
-            stdscr.keypad(1)
-            stdscr.clear()
-
-            with contextlib.closing(self), knock_handler:
-                t0 = time.time()
-                t1 = t0 + dt
-                yield
-
-                while not self.closed:
-                    t = time.time()
-
-                    if t < t1 - 0.001:
-                        signal.signal(signal.SIGINT, self.SIGINT_handler)
-                        time.sleep(t1 - t)
-                        continue
-
-                    knock_handler.send(t - t0 - display_delay)
-                    stdscr.refresh()
-                    yield
-                    t1 += dt
-
-        finally:
-            curses.endwin()
-
-    @ra.DataNode.from_generator
-    def get_screen_node(self, knock_game):
-        width = curses.initscr().getmaxyx()[1]
-        curses.endwin()
-        scr = curses.newpad(1, width)
-
-        knock_handler = knock_game.get_screen_handler(scr)
+    def get_view_node(self, knock_game):
+        knock_handler = knock_game.get_view_handler()
         display_delay = self.config.getfloat("controls", "display_delay")
         display_fps = self.config.getint("controls", "display_fps")
         dt = 1/display_fps
@@ -155,19 +110,18 @@ class KnockConsole:
         try:
             with contextlib.closing(self), knock_handler:
                 t0 = time.time()
-                t1 = t0 + dt
-                yield
+                t1 = dt
 
+                yield
                 while not self.closed:
-                    t = time.time()
+                    t = time.time() - t0
 
                     if t < t1 - 0.001:
                         signal.signal(signal.SIGINT, self.SIGINT_handler)
                         time.sleep(t1 - t)
                         continue
 
-                    knock_handler.send(t - t0 - display_delay)
-                    print(scr.instr(0, 0).decode(), end="\r", flush=True)
+                    knock_handler.send(t - display_delay)
                     yield
                     t1 += dt
 
@@ -194,17 +148,17 @@ class KnockConsole:
             with contextlib.closing(self), knock_game:
                 output_node = self.get_output_node(knock_game)
                 input_node = self.get_input_node(knock_game)
-                screen_node = self.get_screen_node(knock_game)
+                view_node = self.get_view_node(knock_game)
 
                 with ra.record(manager, input_node, **input_params) as input_stream,\
                      ra.play(manager, output_node, **output_params) as output_stream,\
-                     screen_node, contextlib.suppress(StopIteration):
+                     view_node, contextlib.suppress(StopIteration):
 
                     input_stream.start_stream()
                     output_stream.start_stream()
 
                     while True:
-                        screen_node.send()
+                        view_node.send()
 
         finally:
             manager.terminate()
@@ -213,7 +167,7 @@ class KnockConsole:
 class KnockGame:
     # def get_sound_handler(self, mixer): (time_start, time_end) -> None
     # def get_knock_handler(self): (time, strength, detected) -> None
-    # def get_screen_handler(self, scr): time -> None
+    # def get_view_handler(self): time -> None
     # def pause(self)
     # def resume(self)
     # def __enter__(self)

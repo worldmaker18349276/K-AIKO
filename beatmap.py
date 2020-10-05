@@ -1,3 +1,4 @@
+import os
 import enum
 import wave
 import re
@@ -46,7 +47,7 @@ class Sym(Event):
 
     def draw(self, track, time):
         pos = (self.time - time) * 0.5 * self.speed
-        track.addstr(pos, self.symbol)
+        track.draw_sym(pos, self.symbol)
 
     def __repr__(self):
         return "Sym(time={!r}, symbol={!r}, speed={!r})".format(self.time, self.symbol, self.speed)
@@ -112,11 +113,11 @@ class SingleBeat(Beat):
 
         if self.perf in (None, Performance.MISS):
             pos = (self.time - time) * 0.5 * self.speed
-            track.addstr(pos, self.symbol)
+            track.draw_sym(pos, self.symbol)
 
         elif self.perf not in CORRECT_TYPES:
             pos = (self.time - time) * 0.5 * self.speed
-            track.addstr(pos, self.wrong_symbol)
+            track.draw_sym(pos, self.wrong_symbol)
 
     def draw_hitting(self, track, time):
         self.perf.draw(track, self.speed < 0, self.perf_syms)
@@ -234,7 +235,7 @@ class Roll(Beat):
         for r in range(self.number):
             if r > self.roll-1:
                 pos = (self.time + step * r - time) * 0.5 * self.speed
-                track.addstr(pos, self.symbol)
+                track.draw_sym(pos, self.symbol)
 
     def __repr__(self):
         return "Roll(time={!r}, end={!r}, number={!r}, speed={!r}, roll={!r}, finished={!r})".format(
@@ -281,14 +282,14 @@ class Spin(Beat):
             pos = 0.0
             pos += max(0.0, (self.time - time) * 0.5 * self.speed)
             pos += min(0.0, (self.end - time) * 0.5 * self.speed)
-            track.addstr(pos, self.symbols[int(self.charge) % 4])
+            track.draw_sym(pos, self.symbols[int(self.charge) % 4])
 
     def draw_judging(self, track, time):
         return True
 
     def draw_hitting(self, track, time):
         if self.charge == self.capacity:
-            track.addstr(0.0, self.finished_sym)
+            track.draw_sym(0.0, self.finished_sym)
             return True
 
     def __repr__(self):
@@ -366,47 +367,70 @@ class Performance(enum.Enum):
             LEFT_FAILED, RIGHT_FAILED = RIGHT_FAILED, LEFT_FAILED
 
         if self in LEFT_GOOD:
-            track.addstr(0.0, perf_syms[2])
+            track.draw_sym(0.0, perf_syms[2])
         elif self in RIGHT_GOOD:
-            track.addstr(0.0, perf_syms[3])
+            track.draw_sym(0.0, perf_syms[3])
         elif self in LEFT_BAD:
-            track.addstr(0.0, perf_syms[1])
+            track.draw_sym(0.0, perf_syms[1])
         elif self in RIGHT_BAD:
-            track.addstr(0.0, perf_syms[4])
+            track.draw_sym(0.0, perf_syms[4])
         elif self in LEFT_FAILED:
-            track.addstr(0.0, perf_syms[0])
+            track.draw_sym(0.0, perf_syms[0])
         elif self in RIGHT_FAILED:
-            track.addstr(0.0, perf_syms[5])
+            track.draw_sym(0.0, perf_syms[5])
 
 
 # beatmap
 class BeatTrack:
-    def __init__(self, win, width, offset, shift):
-        self.win = win
+    def __init__(self, width, shift, spec_width):
         self.width = width
-        self.offset = offset
         self.shift = shift
         self.chars = [' ']*width
+        self.spec_width = spec_width
+
+    def __str__(self):
+        return "".join(self.chars)
 
     def clear(self):
         for i in range(self.width):
             self.chars[i] = ' '
 
-    def refresh(self):
-        for i, ch in enumerate(self.chars):
-            if ch != ' ':
-                self.win.addstr(0, self.offset+i, ch)
+    def addstr(self, index, str):
+        for ch in str:
+            if ch == ' ':
+                index += 1
+            elif ch == '\b':
+                index -= 1
+            else:
+                if index in range(self.width):
+                    self.chars[index] = ch
+                index += 1
 
-    def addstr(self, pos, msg):
-        i = round((pos + self.shift) * (self.width - 1))
-        for ch in msg:
+    def draw_spectrum(self, spectrum):
+        spec_offset = 1
+        self.addstr(spec_offset, spectrum)
+
+    def draw_score(self, score, total_score):
+        score_offset = self.spec_width + 2
+        self.addstr(score_offset, "[{:>5d}/{:>5d}]".format(score, total_score))
+
+    def draw_progress(self, progress):
+        progress_offset = self.width - 9
+        self.addstr(progress_offset, "[{:>5.1f}%]".format(progress*100))
+
+    def draw_sym(self, pos, sym):
+        track_offset = self.spec_width + 15
+        track_width = self.width - 24 - self.spec_width
+
+        i = round((pos + self.shift) * (track_width - 1))
+        for ch in sym:
             if ch == ' ':
                 i += 1
             elif ch == '\b':
                 i -= 1
             else:
-                if i in range(self.width):
-                    self.chars[i] = ch
+                if i in range(track_width):
+                    self.chars[track_offset+i] = ch
                 i += 1
 
 class Beatmap:
@@ -463,39 +487,47 @@ class Beatmap:
     @property
     def progress(self):
         if len(self.beats) == 0:
-            return 1000
-        return sum(1 for beat in self.beats if beat.finished) * 1000 // len(self.beats)
+            return 1.0
+        return sum(1 for beat in self.beats if beat.finished) / len(self.beats)
 
     @ra.DataNode.from_generator
-    def get_knock_handler(self):
+    def get_beats_handler(self):
         beats = iter(sorted(self.beats, key=lambda e: e.range[0]))
         beat = next(beats, None)
 
+        time = yield
         while True:
-            time, strength, detected = yield
-            time += self.start
-
-            # drip beats
             while beat is not None and (beat.finished or beat.range[1] < time):
                 if not beat.finished:
                     beat.finish()
                 beat = next(beats, None)
 
-            self.current_beat = beat if beat is not None and beat.range[0] < time else None
+            time = yield (beat if beat is not None and beat.range[0] < time else None)
 
-            if not detected:
-                continue
+    @ra.DataNode.from_generator
+    def get_knock_handler(self):
+        beats_handler = self.get_beats_handler()
 
-            # hit beat
-            self.hit_index += 1
-            self.hit_strength = min(1.0, strength)
-            self.hit_beat = self.current_beat
+        with beats_handler:
+            while True:
+                time, strength, detected = yield
+                time += self.start
 
-            if self.current_beat is None:
-                continue
+                self.current_beat = beats_handler.send(time)
 
-            self.current_beat.hit(time, strength)
-            self.current_beat = beats_handler.send(time)
+                if not detected:
+                    continue
+
+                # hit beat
+                self.hit_index += 1
+                self.hit_strength = min(1.0, strength)
+                self.hit_beat = self.current_beat
+
+                if self.current_beat is None:
+                    continue
+
+                self.current_beat.hit(time, strength)
+                self.current_beat = beats_handler.send(time)
 
     def get_spectrum_handler(self):
         Dt = self.buffer_length / self.samplerate
@@ -551,57 +583,56 @@ class Beatmap:
         loudness = int(strength * (len(self.target_syms) - 1))
         if abs(time - self.hit_time) < self.hit_sustain:
             loudness = max(1, loudness)
-        track.addstr(0.0, self.target_syms[loudness])
+        track.draw_sym(0.0, self.target_syms[loudness])
 
     @ra.DataNode.from_generator
-    def get_screen_handler(self, scr):
-        bar_offset = 0.1
+    def get_view_handler(self):
+        bar_shift = 0.1
+        width = int(os.popen("stty size", "r").read().split()[1])
+        track = BeatTrack(width, bar_shift, self.spec_width)
+
         dripper = ra.drip(self.events, lambda e: e.lifespan)
 
-        width = scr.getmaxyx()[1]
-
-        spec_offset = 1
-        score_offset = self.spec_width + 2
-        track_offset = self.spec_width + 15
-        progress_offset = width - 9
-        track_width = width - 24 - self.spec_width
-
-        track = BeatTrack(scr, track_width, track_offset, bar_offset)
-
         with dripper:
-            while True:
-                time = yield
-                time += self.start
+            try:
+                while True:
+                    time = yield
+                    time += self.start
 
-                if self.draw_index != self.hit_index:
-                    self.hit_time = time
-                    self.draw_index = self.hit_index
+                    if self.draw_index != self.hit_index:
+                        self.hit_time = time
+                        self.draw_index = self.hit_index
 
-                # draw events
-                track.clear()
+                    # draw events
+                    track.clear()
 
-                ## find visible events
-                events = dripper.send(time)
-                events = sorted(events, key=lambda e: -e.zindex)
-                for event in events[::-1]:
-                    event.draw(track, time)
+                    ## find visible events
+                    events = dripper.send(time)
+                    events = sorted(events, key=lambda e: -e.zindex)
+                    for event in events[::-1]:
+                        event.draw(track, time)
 
-                # draw target
-                stop_drawing_target = False
-                if not stop_drawing_target and self.current_beat is not None:
-                    stop_drawing_target = self.current_beat.draw_judging(track, time)
-                if not stop_drawing_target and self.hit_beat is not None:
-                    if abs(time - self.hit_time) < self.hit_sustain:
-                        stop_drawing_target = self.hit_beat.draw_hitting(track, time)
-                if not stop_drawing_target:
-                    self.draw_target(track, time)
+                    # draw target
+                    stop_drawing_target = False
+                    if not stop_drawing_target and self.current_beat is not None:
+                        stop_drawing_target = self.current_beat.draw_judging(track, time)
+                    if not stop_drawing_target and self.hit_beat is not None:
+                        if abs(time - self.hit_time) < self.hit_sustain:
+                            stop_drawing_target = self.hit_beat.draw_hitting(track, time)
+                    if not stop_drawing_target:
+                        self.draw_target(track, time)
 
-                # draw others
-                scr.clear()
-                track.refresh()
-                scr.addstr(0, spec_offset, self.spectrum)
-                scr.addstr(0, score_offset, "[{:>5d}/{:>5d}]".format(self.score, self.total_score))
-                scr.addstr(0, progress_offset, "[{:>5.1f}%]".format(self.progress/10))
+                    # draw others
+                    track.draw_spectrum(self.spectrum)
+                    track.draw_score(self.score, self.total_score)
+                    track.draw_progress(self.progress)
+
+                    # render
+                    print('\r' + str(track) + '\r', end='', flush=True)
+
+            finally:
+                print()
+
 
 
 class BeatmapStdSheet:
