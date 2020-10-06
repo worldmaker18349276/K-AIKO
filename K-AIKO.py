@@ -8,7 +8,7 @@ if __name__ == "__main__":
     filename = sys.argv[1]
 
     with open(filename) as file:
-        sheet = BeatmapStdSheet()
+        sheet = BeatSheetStd()
         exec(file.read(), dict(), dict(sheet=sheet))
         beatmap = Beatmap(sheet.audio, sheet.events)
 

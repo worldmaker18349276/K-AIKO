@@ -1062,7 +1062,8 @@ class AudioMixer(DataNode):
         super().__init__(self.proxy())
         self.samplerate = samplerate
         self.buffer_shape = buffer_shape
-        self.index = 0
+        self.index = -1
+        self.time = 0.0
         self.new_nodes = []
 
     def proxy(self):
@@ -1079,6 +1080,7 @@ class AudioMixer(DataNode):
                 self.new_nodes.clear()
 
                 self.index += 1
+                self.time = self.index * buffer.shape[0] / self.samplerate
 
                 signals = []
                 for node in list(nodes):
@@ -1096,21 +1098,25 @@ class AudioMixer(DataNode):
 
                 yield numpy.copy(buffer)
 
-    def play(self, node, samplerate=44100, channels=None, time=None, start=None, end=None):
+    def play(self, node, samplerate=44100, channels=None, delay=None, start=None, end=None):
         if channels is None: channels = self.buffer_shape[1] if isinstance(self.buffer_shape, tuple) else 0
 
         node_ = pipe(tslice(node, samplerate, start, end),
                      rechannel(channels),
                      resample(ratio=(self.samplerate, samplerate)))
 
-        if time is None:
+        if delay is None:
             node_ = chunk(node_, self.buffer_shape)
         else:
-            offset = round(time*self.samplerate)
+            offset = round(delay*self.samplerate)
             buffer_length = self.buffer_shape[0] if isinstance(self.buffer_shape, tuple) else self.buffer_shape
+            prepend = offset // buffer_length
+
             node_ = chunk(node_, self.buffer_shape, offset % buffer_length)
-            node_ = chain(itertools.repeat(0, offset // buffer_length), node_)
-            node_ = skip(node_, self.index)
+            if prepend < 0:
+                node_ = skip(node_, -prepend)
+            else:
+                node_ = chain(itertools.repeat(0, prepend), node_)
 
         self.new_nodes.append(node_)
 

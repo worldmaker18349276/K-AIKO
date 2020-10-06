@@ -52,7 +52,7 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
   - console pause/resume
   - in-game time control
 
-- BeatmapStdSheet
+- BeatSheetStd
   - .ka, .ka-theme file format
   - parse, load, save
   - convert from .osu
