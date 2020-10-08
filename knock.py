@@ -36,15 +36,13 @@ class KnockConsole:
         buffer_length = self.config.getint("output", "buffer_length")
         channels = self.config.getint("output", "channels")
 
-        Dt = buffer_length/samplerate
-
         mixer = ra.AudioMixer(samplerate, (buffer_length, channels))
         sound_handler = knock_game.get_sound_handler(mixer)
 
         with contextlib.closing(self), mixer, sound_handler:
             yield
-            for time in itertools.count(0, Dt):
-                sound_handler.send(time)
+            while True:
+                sound_handler.send(mixer.time)
                 yield mixer.send()
 
     @ra.DataNode.from_generator
@@ -102,13 +100,13 @@ class KnockConsole:
 
     @ra.DataNode.from_generator
     def get_view_node(self, knock_game):
-        knock_handler = knock_game.get_view_handler()
+        view_handler = knock_game.get_view_handler()
         display_delay = self.config.getfloat("controls", "display_delay")
         display_fps = self.config.getint("controls", "display_fps")
         dt = 1/display_fps
 
         try:
-            with contextlib.closing(self), knock_handler:
+            with contextlib.closing(self), view_handler:
                 t0 = time.time()
                 t1 = dt
 
@@ -121,9 +119,15 @@ class KnockConsole:
                         time.sleep(t1 - t)
                         continue
 
-                    knock_handler.send(t - display_delay)
-                    yield
+                    view_handler.send(t - display_delay)
+
+                    t = time.time() - t0
                     t1 += dt
+                    while t > t1:
+                        print("underrun")
+                        t1 += dt
+
+                    yield
 
         finally:
             print()
@@ -165,7 +169,7 @@ class KnockConsole:
 
 
 class KnockGame:
-    # def get_sound_handler(self, mixer): (time_start, time_end) -> None
+    # def get_sound_handler(self, mixer): time -> None
     # def get_knock_handler(self): (time, strength, detected) -> None
     # def get_view_handler(self): time -> None
     # def pause(self)

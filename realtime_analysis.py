@@ -1062,7 +1062,7 @@ class AudioMixer(DataNode):
         super().__init__(self.proxy())
         self.samplerate = samplerate
         self.buffer_shape = buffer_shape
-        self.index = -1
+        self.index = 0
         self.time = 0.0
         self.new_nodes = []
 
@@ -1079,9 +1079,6 @@ class AudioMixer(DataNode):
                     nodes.append(node)
                 self.new_nodes.clear()
 
-                self.index += 1
-                self.time = self.index * buffer.shape[0] / self.samplerate
-
                 signals = []
                 for node in list(nodes):
                     try:
@@ -1095,6 +1092,9 @@ class AudioMixer(DataNode):
                 buffer[:] = 0.0
                 for signal in signals:
                     buffer += signal
+
+                self.index += 1
+                self.time = self.index * buffer.shape[0] / self.samplerate
 
                 yield numpy.copy(buffer)
 
