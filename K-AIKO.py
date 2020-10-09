@@ -9,7 +9,10 @@ if __name__ == "__main__":
 
     with open(filename) as file:
         sheet = BeatSheetStd()
-        sheet.load(file.read())
+        if filename.endswith(".ka"):
+            sheet.load(file.read())
+        elif filename.endswith(".osu"):
+            sheet.load_from_osu(file.read())
         beatmap = Beatmap(sheet.audio, sheet.events)
 
         console = KnockConsole()

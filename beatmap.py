@@ -776,3 +776,114 @@ class BeatSheetStd:
             }
         exec(str, dict(), terms)
 
+    def load_from_osu(self, str):
+        regex = r"""osu file format v(?P<version>\d+)
+
+        \[General\]
+        ...
+        AudioFilename: *(?P<audio>.*?) *
+        ...
+
+        \[Editor\]
+        ...
+
+        \[Metadata\]
+        (?P<metadata>(.|\n)*?)
+
+        \[Difficulty\]
+        ...
+        SliderMultiplier: *(?P<multiplier>\d+(.\d+)?) *
+        ...
+
+        \[Events\]
+        ...
+
+        \[TimingPoints\]
+        (?P<timings>(.|\n)*?)
+
+        \[HitObjects\]
+        (?P<beats>(.|\n)*?)
+
+        """
+
+        regex = regex.replace("\n        ", "\n")
+        regex = regex.replace("\n\n", "\n" + r"[\n\r]*")
+        regex = regex.replace("...\n", r"(.*\n)*?")
+        regex = re.compile(regex)
+
+        match = regex.fullmatch(str.replace("\r\n", "\n"))
+        if not match:
+            raise ValueError("invalid syntax")
+        if match.group("version") != "14":
+            raise ValueError("wrong version: {}".format(match.group("version")))
+
+        self.audio = match.group("audio")
+        self.metadata = "\n" + match.group("metadata") + "\n"
+        self.offset = 0.0
+        self.tempo = 60.0
+
+        multiplier = multiplier0 = float(match.group("multiplier"))
+        timings = match.group("timings").split()
+        beats = match.group("beats").split()
+        beat_length = 0
+        meter = 4
+
+        @ra.DataNode.from_generator
+        def timer():
+            nonlocal meter, beat_length, multiplier, multiplier0
+            format = re.compile(r"(?P<time>\d+),(?P<length>[\+\-\.\d]+),(?P<meter>\d+),"
+                                r"\d+,\d+,\d+,(?P<uninherited>0|1),\d+")
+
+            time = yield
+            for timing in timings:
+                match = format.fullmatch(timing)
+                if not match:
+                    raise ValueError("wrong timing point format: {}".format(timing))
+
+                while time < int(match.group("time")):
+                    time = yield
+
+
+                if match.group("uninherited") == "1":
+                    beat_length = float(match.group("length"))
+                    meter = int(match.group("meter"))
+                else:
+                    multiplier = multiplier0 / (-0.01 * float(match.group("length")))
+        timer = timer()
+
+        with timer:
+            for beat in beats:
+                beat = beat.split(",")
+                time = int(beat[2])
+                type = int(beat[3])
+                try:
+                    timer.send(time)
+                except StopIteration:
+                    pass
+                speed = multiplier / 1.4
+
+                # type: [_:_:_:_:Spinner:_:Slider:Circle]
+                # hit_sound: [Loud:Big:Loud:Soft]
+
+                if type & 1: # circle
+                    hit_sound = int(beat[4])
+
+                    if hit_sound == 0 or hit_sound & 1:
+                        self += self.soft(time=time/1000, speed=speed)
+                    elif hit_sound & 10:
+                        self += self.loud(time=time/1000, speed=speed)
+
+                elif type & 2: # slider
+                    slider_length = int(beat[7])
+                    duration = slider_length / (multiplier * 100) * (beat_length/1000)
+                    step = (beat_length/1000) * meter / 8
+
+                    self += self.roll(duration, step, time=time/1000, speed=speed)
+
+                elif type & 8: # spinner
+                    end_time = int(beat[5])
+                    duration = (end_time - time)/1000
+                    step = (beat_length/1000) * meter / 8
+
+                    self += self.spin(duration, step, time=time/1000, speed=speed)
+
