@@ -9,7 +9,7 @@ if __name__ == "__main__":
 
     with open(filename) as file:
         sheet = BeatSheetStd()
-        exec(file.read(), dict(), dict(sheet=sheet))
+        sheet.load(file.read())
         beatmap = Beatmap(sheet.audio, sheet.events)
 
         console = KnockConsole()

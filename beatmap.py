@@ -663,12 +663,54 @@ class Beatmap:
             finally:
                 print()
 
+
+def make_std_regex():
+    res = dict(
+        number=r"[\+\-]?\d+(\.\d+|/\d+)?",
+        str=r"'((?<!\\)\\'|.)*?'",
+        mstr=r"'''((?<!\\)\\'''|.|\n)*?'''",
+        nl=r"((#.*?)?(\n|\r))",
+        sp=r" *",
+        )
+
+    notes = {
+        "rest": r" ",
+        "soft": r"( | time = {number} | speed = {number} | time = {number} , speed = {number} )",
+        "loud": r"( | time = {number} | speed = {number} | time = {number} , speed = {number} )",
+        "incr": r" {str} (, time = {number} )?(, speed = {number} )?",
+        "roll": r" {number} , {number} (, time = {number} )?(, speed = {number} )?",
+        "spin": r" {number} , {number} (, time = {number} )?(, speed = {number} )?",
+        "sym": r" {str} (, time = {number} )?(, speed = {number} )?",
+        "pattern": r" {number} , {number} , {mstr} "
+        }
+
+    res["note"] = "(" + "|".join((name + r" \(" + args + r"\)").replace(" ", "{sp}")
+                                 for name, args in notes.items()).format(**res) + ")"
+
+    header = r"#K-AIKO-std-(?P<version>\d+\.\d+\.\d+)(\n|\r)"
+
+    main = r"""
+    {nl}*
+    (sheet \. metadata = {mstr} {nl}+)?
+    (sheet \. audio = {str} {nl}+)?
+    (sheet \. offset = {number} {nl}+)?
+    (sheet \. tempo = {number} {nl}+)?
+    (sheet \[ {str} \] = {note} {nl}+)*
+    (sheet \+= {note} {nl}+)*
+    """
+    main = main.replace("\n    ", "").replace(" ", "{sp}").format(**res)
+
+    return re.compile(header + main)
+
 class BeatSheetStd:
+    version = "0.0.1"
+    regex = make_std_regex()
+
     def __init__(self):
         self.metadata = ""
         self.audio = None
         self.offset = 0.0
-        self.tempo = 120.0
+        self.tempo = 60.0
 
         self.incr_groups = dict()
         self.patterns = dict()
@@ -677,45 +719,60 @@ class BeatSheetStd:
     def time(self, t):
         return self.offset+t*60.0/self.tempo
 
-    def skip(self):
+    def rest(self):
         return lambda t: []
 
-    def soft(self, speed=1.0):
-        return lambda t: [Soft(self.time(t), speed=speed)]
+    def soft(self, time=0, speed=1.0):
+        return lambda t: [Soft(self.time(time+t), speed=speed)]
 
-    def loud(self, speed=1.0):
-        return lambda t: [Loud(self.time(t), speed=speed)]
+    def loud(self, time=0, speed=1.0):
+        return lambda t: [Loud(self.time(time+t), speed=speed)]
 
-    def incr(self, group, speed=1.0):
+    def incr(self, group, time=0, speed=1.0):
         if group not in self.incr_groups:
             self.incr_groups[group] = IncrGroup()
-        return lambda t: [self.incr_groups[group].add(self.time(t), speed=speed)]
+        return lambda t: [self.incr_groups[group].add(self.time(time+t), speed=speed)]
 
-    def roll(self, duration, step, speed=1.0):
+    def roll(self, duration, step, time=0, speed=1.0):
         number = round(duration/step)+1
-        return lambda t: [Roll(self.time(t), self.time(t+duration), number=number, speed=speed)]
+        return lambda t: [Roll(self.time(time+t), self.time(time+t+duration), number=number, speed=speed)]
 
-    def spin(self, duration, step, speed=1.0):
+    def spin(self, duration, step, time=0, speed=1.0):
         capacity = duration/step
-        return lambda t: [Spin(self.time(t), self.time(t+duration), capacity=capacity, speed=speed)]
+        return lambda t: [Spin(self.time(time+t), self.time(time+t+duration), capacity=capacity, speed=speed)]
 
-    def sym(self, symbol, speed=1.0):
-        return lambda t: [Sym(self.time(t), symbol=symbol, speed=speed)]
+    def sym(self, symbol, time=0, speed=1.0):
+        return lambda t: [Sym(self.time(time+t), symbol=symbol, speed=speed)]
 
-    def pattern(self, offset, step, term):
-        if hasattr(term, "__call__"):
-            return lambda t: term(offset+t)
-        elif isinstance(term, str):
-            return lambda t: [beat for i, p in enumerate(term.split()) for beat in self.patterns[p](offset+t+i*step)]
-        else:
-            raise ValueError("invalid term: {!r}".format(term))
+    def pattern(self, time, step, term):
+        return lambda t: [beat for i, p in enumerate(term.split()) for beat in self.patterns[p](time+t+i*step)]
 
     def __setitem__(self, key, value):
         if not isinstance(key, str) or re.search(r"\s", key):
             raise KeyError("invalid key: {!r}".format(key))
-        self.patterns[key] = self.pattern(*value)
+        self.patterns[key] = value
 
     def __iadd__(self, value):
-        self.events += self.pattern(*value)(0)
+        self.events += value(0)
         return self
+
+    def load(self, str):
+        match = self.regex.fullmatch(str)
+        if not match:
+            raise ValueError("invalid syntax")
+        if match.group("version") != self.version:
+            raise ValueError("wrong version: {}".format(match.group("version")))
+
+        terms = {
+            "sheet": self,
+            "rest": self.rest,
+            "soft": self.soft,
+            "loud": self.loud,
+            "incr": self.incr,
+            "roll": self.roll,
+            "spin": self.spin,
+            "sym": self.sym,
+            "pattern": self.pattern
+            }
+        exec(str, dict(), terms)
 

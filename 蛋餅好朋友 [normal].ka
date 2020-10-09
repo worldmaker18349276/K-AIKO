@@ -1,26 +1,26 @@
-# K-AIKO-std-0.0.0
+#K-AIKO-std-0.0.1
 
 # metadata:
-sheet.metadata = """
+sheet.metadata = '''
 title: 蛋餅好朋友
 composer: 好和弦
 performer: 艾可
 source: https://www.youtube.com/watch?v=SrGCmZqjz7o
-"""
+'''
 
 # general:
-sheet.audio = "蛋餅好朋友.mp4"
+sheet.audio = '蛋餅好朋友.mp4'
 sheet.offset = 0.6
 sheet.tempo = 175.0
 
 # patterns:
-sheet["s"] = 0, 1, sheet.soft()
-sheet["l"] = 0, 1, sheet.loud()
-sheet["_"] = 0, 1, sheet.skip()
-sheet["|"] = -1/4, 1, sheet.sym("|")
+sheet['_'] = rest()
+sheet['s'] = soft()
+sheet['l'] = loud()
+sheet['|'] = sym('|', time=-1/4)
 
 # beats:
-sheet += 0, 1/2, """
+sheet += pattern(0, 1/2, '''
 | _ _ _   _ _ _ _   | _ _ _   _ _ _ _
 | _ _ _   _ _ _ _   | _ _ _   _ _ _ _
 
@@ -51,8 +51,8 @@ sheet += 0, 1/2, """
 | _ _ _   _ _ _ _   | _ _ _   _ _ _ _
 | _ _ _   _ _ _ _   | _ _ _   _ _ _ _
 | _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-"""
-sheet += 0, 1/2, """
+''')
+sheet += pattern(0, 1/2, '''
 s _ s _   s _ s _   s _ s _   s _ s _
 s _ s _   s _ s _   l _ l _   l _ _ _
 
@@ -83,4 +83,4 @@ s s l l   s s l l   s s l l   l s s l
 l _ _ _   _ _ _ _   l _ l _   l _ _ _
 s _ l _   s _ l _   s _ l _   s _ l _
 s _ l _   s _ l _   l _ l _   l _ _ _
-"""
+''')
