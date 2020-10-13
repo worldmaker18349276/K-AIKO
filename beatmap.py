@@ -501,8 +501,8 @@ class Beatmap:
         # events, beats
         self.events = list(events)
         self.beats = list(event for event in self.events if isinstance(event, Beat))
-        self.start = min(0.0, min(event.lifespan[0] - self.prepare_time for event in self.events))
-        self.end = max(self.duration, max(event.lifespan[1] + self.prepare_time for event in self.events))
+        self.start = min([0.0, *[event.lifespan[0] - self.prepare_time for event in self.events]])
+        self.end = max([self.duration, *[event.lifespan[1] + self.prepare_time for event in self.events]])
 
         # hit state
         self.current_beat = None
@@ -665,42 +665,42 @@ class Beatmap:
 
 
 def make_std_regex():
-    res = dict(
-        number=r"[\+\-]?\d+(\.\d+|/\d+)?",
-        str=r"'((?<!\\)\\'|.)*?'",
-        mstr=r"'''((?<!\\)\\'''|.|\n)*?'''",
-        nl=r"((#.*?)?(\n|\r))",
-        sp=r" *",
+    exprs = dict(
+        number=r"([-+]?(0|[1-9][0-9]*)(\.[0-9]+|/[1-9][0-9]*)?)",
+        str=r"('((?![\\\r\n]|').|\\.|\\\r\n)*')",
+        mstr=r"('''((?!\\|''').|\\.)*''')",
+        nl=r"((\#[^\r\n$]*)?(\r\n?|\n|$))",
+        sp=r"[ ]",
         )
 
-    notes = {
-        "rest": r" ",
-        "soft": r"( | time = {number} | speed = {number} | time = {number} , speed = {number} )",
-        "loud": r"( | time = {number} | speed = {number} | time = {number} , speed = {number} )",
-        "incr": r" {str} (, time = {number} )?(, speed = {number} )?",
-        "roll": r" {number} , {number} (, time = {number} )?(, speed = {number} )?",
-        "spin": r" {number} , {number} (, time = {number} )?(, speed = {number} )?",
-        "sym": r" {str} (, time = {number} )?(, speed = {number} )?",
-        "pattern": r" {number} , {number} , {mstr} "
-        }
+    notes = dict(
+        rest=r" ",
+        soft=r"( | time = {number} | speed = {number} | time = {number} , speed = {number} )",
+        loud=r"( | time = {number} | speed = {number} | time = {number} , speed = {number} )",
+        incr=r" {str} (, time = {number} )?(, speed = {number} )?",
+        roll=r" {number} , {number} (, time = {number} )?(, speed = {number} )?",
+        spin=r" {number} , {number} (, time = {number} )?(, speed = {number} )?",
+        sym=r" {str} (, time = {number} )?(, speed = {number} )?",
+        pattern=r" {number} , {number} , {mstr} ",
+        )
 
-    res["note"] = "(" + "|".join((name + r" \(" + args + r"\)").replace(" ", "{sp}")
-                                 for name, args in notes.items()).format(**res) + ")"
+    exprs["note"] = "(" + "|".join((name + r" \(" + args + r"\)").replace(" ", "{sp}*")
+                                 for name, args in notes.items()).format(**exprs) + ")"
 
-    header = r"#K-AIKO-std-(?P<version>\d+\.\d+\.\d+)(\n|\r)"
+    header = r"#K-AIKO-std-(?P<version>\d+\.\d+\.\d+)(\r\n?|\n)"
 
     main = r"""
-    {nl}*
-    (sheet \. metadata = {mstr} {nl}+)?
-    (sheet \. audio = {str} {nl}+)?
-    (sheet \. offset = {number} {nl}+)?
-    (sheet \. tempo = {number} {nl}+)?
-    (sheet \[ {str} \] = {note} {nl}+)*
-    (sheet \+= {note} {nl}+)*
+    ({sp}*{nl})*
+    (sheet \. metadata = {mstr} ({sp}*{nl})+)?
+    (sheet \. audio = {str} ({sp}*{nl})+)?
+    (sheet \. offset = {number} ({sp}*{nl})+)?
+    (sheet \. tempo = {number} ({sp}*{nl})+)?
+    (sheet \[ {str} \] = {note} ({sp}*{nl})+)*
+    (sheet \+= {note} ({sp}*{nl})+)*
     """
-    main = main.replace("\n    ", "").replace(" ", "{sp}").format(**res)
+    main = main.replace("\n    ", "").replace(" ", "{sp}*").format(**exprs)
 
-    return re.compile(header + main)
+    return re.compile(header + main, re.S)
 
 class BeatSheetStd:
     version = "0.0.1"
@@ -781,7 +781,7 @@ class BeatSheetStd:
 
         \[General\]
         ...
-        AudioFilename: *(?P<audio>.*?) *
+        AudioFilename:[ ]*(?P<audio>.*?)[ ]*
         ...
 
         \[Editor\]
@@ -792,7 +792,7 @@ class BeatSheetStd:
 
         \[Difficulty\]
         ...
-        SliderMultiplier: *(?P<multiplier>\d+(.\d+)?) *
+        SliderMultiplier:[ ]*(?P<multiplier>\d+(.\d+)?)[ ]*
         ...
 
         \[Events\]
@@ -802,9 +802,7 @@ class BeatSheetStd:
         (?P<timings>(.|\n)*?)
 
         \[HitObjects\]
-        (?P<beats>(.|\n)*?)
-
-        """
+        (?P<beats>(.|\n)*?)[\n\r]*"""
 
         regex = regex.replace("\n        ", "\n")
         regex = regex.replace("\n\n", "\n" + r"[\n\r]*")
@@ -831,7 +829,7 @@ class BeatSheetStd:
         @ra.DataNode.from_generator
         def timer():
             nonlocal meter, beat_length, multiplier, multiplier0
-            format = re.compile(r"(?P<time>\d+),(?P<length>[\+\-\.\d]+),(?P<meter>\d+),"
+            format = re.compile(r"(?P<time>\d+),(?P<length>[-+.\d]+),(?P<meter>\d+),"
                                 r"\d+,\d+,\d+,(?P<uninherited>0|1),\d+")
 
             time = yield

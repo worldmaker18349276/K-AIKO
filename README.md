@@ -6,7 +6,7 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
  ⣿⣴⣧⣰⣄ [  384/ 2240] □   □⛶  □   ■       ■   □   □   ■   ■   □   [ 21.8%] 
 ```
 
-- dependencies: numpy, scipy, pyaudio, audioread
+- dependencies: python3.6, dataclasses, numpy, scipy, audioread, pyaudio
 - used characters: ⛶ 🞎 🞏 🞐 🞑 🞒 🞓 ⬚ □ ■ ⬒ ◎ ◴ ◵ ◶ ◷ ☺ ⟪ ⟨ ⟩ ⟫
 - best terminal: GNOME Terminal (set __ambiguous-width characters__ to narrow)
 - best font: Ubuntu Mono Regular, 16pt
@@ -37,13 +37,7 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
   - add hint sound (?)
 
 - Script
-  - Sym(symbol, sound)
   - target controls: Flip, Move, Jiggle
-
-- add mixer
-  - AudioNode
-  - AudioMixer: play, stop (resample, channels, chunk, attach)
-  - use mixer as interface of knock_game
 
 - time control
   - pause, resume, skip
@@ -53,9 +47,8 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
   - in-game time control
 
 - BeatSheetStd
-  - .ka, .ka-theme file format
-  - parse, load, save
-  - convert from .osu
+  - .kaiko, .kaiko-theme file format
+  - Note: save, edit
   - modifiers: no_beat_sounds, show_measures, purify (fixed_speed, no_custom_theme, no_script)
 
 - KnockGame

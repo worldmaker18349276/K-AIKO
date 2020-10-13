@@ -9,7 +9,7 @@ if __name__ == "__main__":
 
     with open(filename) as file:
         sheet = BeatSheetStd()
-        if filename.endswith(".ka"):
+        if filename.endswith(".kaiko"):
             sheet.load(file.read())
         elif filename.endswith(".osu"):
             sheet.load_from_osu(file.read())
