@@ -371,7 +371,7 @@ def drip(signals, schedule):
     data : list
         The signals occurred in the given time.
     """
-    it = iter(sorted((schedule(data), data) for data in signals))
+    it = iter(sorted([(schedule(data), data) for data in signals], key=lambda e: e[0]))
 
     buffer = []
     waiting = next(it, None)
