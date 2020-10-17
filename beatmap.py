@@ -39,6 +39,7 @@ class Sym(Event):
         self.time = time
         self.symbol = symbol
         self.speed = speed
+        self.sound = sound
         self.samplerate = samplerate
         self.played = False
 
@@ -58,8 +59,8 @@ class Sym(Event):
             bar.draw_sym(pos, self.symbol)
 
 
-# beats
-class Beat(Event):
+# hit objects
+class HitObject(Event):
     # lifespan, range, score, total_score, finished
     # def hit(self, time, strength): pass
     # def finish(self): pass
@@ -77,7 +78,7 @@ class Beat(Event):
     def draw_judging(self, bar, time): pass
     def draw_hitting(self, bar, time): pass
 
-class SingleBeat(Beat):
+class SingleHitObject(HitObject):
     # time, speed, volume, perf, played, symbol, sound, samplerate
     # def hit(self, time, strength): pass
 
@@ -221,7 +222,7 @@ class Performance(enum.Enum):
         elif self in RIGHT_FAILED:
             bar.draw_sym(0.0, perf_syms[5])
 
-class Soft(SingleBeat):
+class Soft(SingleHitObject):
     symbol = BEATS_SYMS[0]
     sound = [ra.pulse(samplerate=44100, freq=830.61, decay_time=0.03, amplitude=0.5)]
     samplerate = 44100
@@ -229,7 +230,7 @@ class Soft(SingleBeat):
     def hit(self, time, strength):
         super().hit(time, strength, strength < 0.5)
 
-class Loud(SingleBeat):
+class Loud(SingleHitObject):
     symbol = BEATS_SYMS[1]
     sound = [ra.pulse(samplerate=44100, freq=1661.2, decay_time=0.03, amplitude=1.0)]
     samplerate = 44100
@@ -249,7 +250,7 @@ class IncrGroup:
     def hit(self, strength):
         self.threshold = max(self.threshold, strength)
 
-class Incr(SingleBeat):
+class Incr(SingleHitObject):
     symbol = BEATS_SYMS[2]
     samplerate = 44100
     incr_tol = INCR_TOL
@@ -268,7 +269,7 @@ class Incr(SingleBeat):
         amplitude = (0.2 + 0.8 * (self.count-1)/self.group.total) * 10**(self.volume/20)
         return [ra.pulse(samplerate=44100, freq=1661.2, decay_time=0.03, amplitude=amplitude)]
 
-class Roll(Beat):
+class Roll(HitObject):
     symbol = BEATS_SYMS[3]
     sound = [ra.pulse(samplerate=44100, freq=1661.2, decay_time=0.01, amplitude=0.5)]
     samplerate = 44100
@@ -327,7 +328,7 @@ class Roll(Beat):
                 pos = (self.time + self.step * r - time) * 0.5 * self.speed
                 bar.draw_sym(pos, self.symbol)
 
-class Spin(Beat):
+class Spin(HitObject):
     total_score = 10
     symbols = BEATS_SYMS[4]
     sound = [ra.pulse(samplerate=44100, freq=1661.2, decay_time=0.01, amplitude=1.0)]
@@ -468,18 +469,18 @@ class Beatmap:
             self.samplerate = 44100
             self.channels = 1
 
-        # events, beats
+        # events, hits
         self.events = list(events)
-        self.beats = list(event for event in self.events if isinstance(event, Beat))
+        self.hits = [event for event in self.events if isinstance(event, HitObject)]
         self.start = min([0.0, *[event.lifespan[0] - self.prepare_time for event in self.events]])
         self.end = max([self.duration, *[event.lifespan[1] + self.prepare_time for event in self.events]])
 
         # hit state
-        self.current_beat = None
+        self.judging_object = None
         self.hit_index = 0
         self.hit_time = self.start - max(self.hit_decay, self.hit_sustain)*2
         self.hit_strength = 0.0
-        self.hit_beat = None
+        self.hit_object = None
         self.draw_index = self.hit_index
         self.draw_time = self.hit_time
 
@@ -494,57 +495,57 @@ class Beatmap:
 
     @property
     def total_score(self):
-        return sum(beat.total_score for beat in self.beats)
+        return sum(hit.total_score for hit in self.hits)
 
     @property
     def score(self):
-        return sum(beat.score for beat in self.beats)
+        return sum(hit.score for hit in self.hits)
 
     @property
     def progress(self):
-        if len(self.beats) == 0:
+        if len(self.hits) == 0:
             return 1.0
-        return sum(1 for beat in self.beats if beat.finished) / len(self.beats)
+        return sum(1 for hit in self.hits if hit.finished) / len(self.hits)
 
     @ra.DataNode.from_generator
-    def get_beats_handler(self):
-        beats = iter(sorted(self.beats, key=lambda e: e.range))
-        beat = next(beats, None)
+    def get_hits_handler(self):
+        hits = iter(sorted(self.hits, key=lambda e: e.range))
+        hit = next(hits, None)
 
         time = yield
         while True:
-            while beat is not None and (beat.finished or time > beat.range[1]):
-                if not beat.finished:
-                    beat.finish()
-                beat = next(beats, None)
+            while hit is not None and (hit.finished or time > hit.range[1]):
+                if not hit.finished:
+                    hit.finish()
+                hit = next(hits, None)
 
-            time = yield (beat if beat is not None and time > beat.range[0] else None)
+            time = yield (hit if hit is not None and time > hit.range[0] else None)
 
     @ra.DataNode.from_generator
     def get_knock_handler(self):
-        beats_handler = self.get_beats_handler()
+        hits_handler = self.get_hits_handler()
 
-        with beats_handler:
+        with hits_handler:
             while True:
                 time, strength, detected = yield
                 time += self.start
 
-                self.current_beat = beats_handler.send(time)
+                self.judging_object = hits_handler.send(time)
 
                 if not detected:
                     continue
 
-                # hit beat
+                # hit note
                 self.hit_index += 1
                 self.hit_time = time
                 self.hit_strength = min(1.0, strength)
-                self.hit_beat = self.current_beat
+                self.hit_object = self.judging_object
 
-                if self.current_beat is None:
+                if self.judging_object is None:
                     continue
 
-                self.current_beat.hit(time, strength)
-                self.current_beat = beats_handler.send(time)
+                self.judging_object.hit(time, strength)
+                self.judging_object = hits_handler.send(time)
 
     def get_spectrum_handler(self):
         Dt = self.buffer_length / self.samplerate
@@ -614,11 +615,11 @@ class Beatmap:
 
                     # draw target
                     stop_drawing_target = False
-                    if not stop_drawing_target and self.current_beat is not None:
-                        stop_drawing_target = self.current_beat.draw_judging(bar, time)
-                    if not stop_drawing_target and self.hit_beat is not None:
+                    if not stop_drawing_target and self.judging_object is not None:
+                        stop_drawing_target = self.judging_object.draw_judging(bar, time)
+                    if not stop_drawing_target and self.hit_object is not None:
                         if abs(time - self.draw_time) < self.hit_sustain:
-                            stop_drawing_target = self.hit_beat.draw_hitting(bar, time)
+                            stop_drawing_target = self.hit_object.draw_hitting(bar, time)
                     if not stop_drawing_target:
                         self.draw_target(bar, time)
 
@@ -715,7 +716,7 @@ class BeatSheetStd:
         return lambda t: [Sym(self.time(time+t), symbol=symbol, speed=speed)]
 
     def pattern(self, time, step, term):
-        return lambda t: [beat for i, p in enumerate(term.split()) for beat in self.patterns[p](time+t+i*step)]
+        return lambda t: [note for i, p in enumerate(term.split()) for note in self.patterns[p](time+t+i*step)]
 
     def __setitem__(self, key, value):
         if not isinstance(key, str) or re.search(r"\s", key):
@@ -772,7 +773,7 @@ class BeatSheetStd:
         (?P<timings>(.|\n)*?)
 
         \[HitObjects\]
-        (?P<beats>(.|\n)*?)[\n\r]*"""
+        (?P<notes>(.|\n)*?)[\n\r]*"""
 
         regex = regex.replace("\n        ", "\n")
         regex = regex.replace("\n\n", "\n" + r"[\n\r]*")
@@ -792,13 +793,13 @@ class BeatSheetStd:
 
         multiplier = multiplier0 = float(match.group("multiplier"))
         timings = match.group("timings").split()
-        beats = match.group("beats").split()
-        beat_length = 0
+        notes = match.group("notes").split()
+        note_length = 0
         meter = 4
 
         @ra.DataNode.from_generator
         def timer():
-            nonlocal meter, beat_length, multiplier, multiplier0
+            nonlocal meter, note_length, multiplier, multiplier0
             format = re.compile(r"(?P<time>\d+),(?P<length>[-+.\d]+),(?P<meter>\d+),"
                                 r"\d+,\d+,\d+,(?P<uninherited>0|1),\d+")
 
@@ -813,17 +814,17 @@ class BeatSheetStd:
 
 
                 if match.group("uninherited") == "1":
-                    beat_length = float(match.group("length"))
+                    note_length = float(match.group("length"))
                     meter = int(match.group("meter"))
                 else:
                     multiplier = multiplier0 / (-0.01 * float(match.group("length")))
         timer = timer()
 
         with timer:
-            for beat in beats:
-                beat = beat.split(",")
-                time = int(beat[2])
-                type = int(beat[3])
+            for note in notes:
+                note = note.split(",")
+                time = int(note[2])
+                type = int(note[3])
                 try:
                     timer.send(time)
                 except StopIteration:
@@ -834,7 +835,7 @@ class BeatSheetStd:
                 # hit_sound: [Loud:Big:Loud:Soft]
 
                 if type & 1: # circle
-                    hit_sound = int(beat[4])
+                    hit_sound = int(note[4])
 
                     if hit_sound == 0 or hit_sound & 1:
                         self += self.soft(time=time/1000, speed=speed)
@@ -842,16 +843,16 @@ class BeatSheetStd:
                         self += self.loud(time=time/1000, speed=speed)
 
                 elif type & 2: # slider
-                    slider_length = int(beat[7])
-                    duration = slider_length / (multiplier * 100) * (beat_length/1000)
-                    step = (beat_length/1000) * meter / 8
+                    slider_length = int(note[7])
+                    duration = slider_length / (multiplier * 100) * (note_length/1000)
+                    step = (note_length/1000) * meter / 8
 
                     self += self.roll(duration, step, time=time/1000, speed=speed)
 
                 elif type & 8: # spinner
-                    end_time = int(beat[5])
+                    end_time = int(note[5])
                     duration = (end_time - time)/1000
-                    step = (beat_length/1000) * meter / 8
+                    step = (note_length/1000) * meter / 8
 
                     self += self.spin(duration, step, time=time/1000, speed=speed)
 
