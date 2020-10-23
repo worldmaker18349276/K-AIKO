@@ -8,13 +8,8 @@ if __name__ == "__main__":
     filename = sys.argv[1]
 
     with open(filename) as file:
-        sheet = BeatSheetStd()
-        if filename.endswith(".kaiko"):
-            sheet.load(file.read())
-        elif filename.endswith(".osu"):
-            sheet.load_from_osu(file.read())
-        beatmap = Beatmap(sheet.audio, sheet.events)
-
+        beatmap = Beatmap()
+        beatmap.read(file.read())
         console = KnockConsole()
         console.play(beatmap)
 

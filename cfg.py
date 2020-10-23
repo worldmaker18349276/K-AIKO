@@ -62,11 +62,9 @@ def make_basic_parser_full():
 
     msp = fr" ( {sp}* ( {nl} {sp}* )* ) "
     list_parser = fr"""
-        ( \[ {msp} \]
-        | \[ {msp}
+        ( \[ {msp}
             ( {{0}} {msp} , {msp} )*
-              {{0}} {msp}
-            (, {msp})?
+            ( {{0}} {msp} )?
           \]
         )
         """
@@ -74,19 +72,16 @@ def make_basic_parser_full():
         ( set {sp}* \( {msp} \)
         | \x7b # Left Curly Bracket
             {msp}
-            ( {{0}} {msp} , {msp} )*
-              {{0}} {msp}
-            (, {msp})?
+            ( {{0}} {msp}  , {msp} )*
+              {{0}} {msp} (, {msp})?
           \x7d # Right Curly Bracket
         )
         """
     dict_parser = fr"""
-        ( \x7b {msp} \x7d
-        | \x7b # Left Curly Bracket
+        ( \x7b # Left Curly Bracket
             {msp}
             ( {{0}} {msp} : {msp} {{1}} {msp} , {msp} )*
-              {{0}} {msp} : {msp} {{1}} {msp}
-            (, {msp})?
+            ( {{0}} {msp} : {msp} {{1}} {msp} )?
           \x7d # Right Curly Bracket
         )
         """

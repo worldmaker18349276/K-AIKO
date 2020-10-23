@@ -1,9 +1,12 @@
 import os
-import enum
-import re
+from enum import Enum
+from collections import OrderedDict, namedtuple
+from fractions import Fraction
+import inspect
+import parsy
 import numpy
-import realtime_analysis as ra
 import audioread
+import realtime_analysis as ra
 
 
 TOLERANCES = (0.02, 0.06, 0.10, 0.14)
@@ -28,15 +31,16 @@ PREPARE_TIME = 1.0
 # scripts
 class Event:
     # lifespan, zindex
-    # def play(self, mixer, time): pass
-    # def draw(self, bar, time): pass
+    # __init__(beatmap, context, **kwargs)
+    # play(mixer, time)
+    # draw(bar, time)
     pass
 
 class Sym(Event):
     zindex = -2
 
-    def __init__(self, time, symbol=None, speed=1.0, sound=None, samplerate=44100):
-        self.time = time
+    def __init__(self, beatmap, context, symbol=None, sound=None, *, beat, speed=1.0, samplerate=44100):
+        self.time = beatmap.time(beat)
         self.symbol = symbol
         self.speed = speed
         self.sound = sound
@@ -62,12 +66,13 @@ class Sym(Event):
 # hit objects
 class HitObject(Event):
     # lifespan, range, score, total_score, finished
-    # def hit(self, time, strength): pass
-    # def finish(self): pass
-    # def play(self, mixer, time): pass
-    # def draw(self, bar, time): pass
-    # def draw_judging(self, bar, time): pass
-    # def draw_hitting(self, bar, time): pass
+    # __init__(beatmap, context, **kwargs)
+    # hit(time, strength)
+    # finish()
+    # play(mixer, time)
+    # draw(bar, time)
+    # draw_judging(bar, time)
+    # draw_hitting(bar, time)
 
     tolerances = TOLERANCES
 
@@ -80,14 +85,14 @@ class HitObject(Event):
 
 class SingleHitObject(HitObject):
     # time, speed, volume, perf, played, symbol, sound, samplerate
-    # def hit(self, time, strength): pass
+    # hit(time, strength)
 
     total_score = 10
     perf_syms = PERF_SYMS
     wrong_symbol = WRONG_SYM
 
-    def __init__(self, time, speed=1.0, volume=0.0):
-        self.time = time
+    def __init__(self, beatmap, context, *, beat, speed=1.0, volume=0.0):
+        self.time = beatmap.time(beat)
         self.speed = speed
         self.volume = volume
         self.perf = None
@@ -139,7 +144,7 @@ class SingleHitObject(HitObject):
     def draw_hitting(self, bar, time):
         self.perf.draw(bar, self.speed < 0, self.perf_syms)
 
-class Performance(enum.Enum):
+class Performance(Enum):
     MISS               = ("Miss"                      , 0)
     GREAT              = ("Great"                     , 10)
     LATE_GOOD          = ("Late Good"                 , 5)
@@ -243,10 +248,6 @@ class IncrGroup:
         self.threshold = threshold
         self.total = total
 
-    def add(self, time, speed=1.0, volume=0.0):
-        self.total += 1
-        return Incr(time, self.total, self, speed=speed, volume=volume)
-
     def hit(self, strength):
         self.threshold = max(self.threshold, strength)
 
@@ -255,9 +256,30 @@ class Incr(SingleHitObject):
     samplerate = 44100
     incr_tol = INCR_TOL
 
-    def __init__(self, time, count, group, speed=1.0, volume=0.0):
-        super().__init__(time, speed, volume)
-        self.count = count
+    def __init__(self, beatmap, context, group=None, *, beat, speed=1.0, volume=0.0):
+        super().__init__(beatmap, context, beat=beat, speed=speed, volume=volume)
+
+        if "incrs" not in context:
+            context["incrs"] = OrderedDict()
+
+        group_key = group
+        if group_key is None:
+            # determine group of incr note according to the context
+            for key, (_, last_beat) in list(context["incrs"].items()).reverse():
+                if beat - 1 <= last_beat <= beat:
+                    group_key = key
+                    break
+            else:
+                group_key = 0
+                while group_key in context["incrs"]:
+                    group_key += 1
+
+        group, _ = context["incrs"].get(group_key, (IncrGroup(), beat))
+        context["incrs"][group_key] = group, beat
+        context["incrs"].move_to_end(group_key)
+
+        group.total += 1
+        self.count = group.total
         self.group = group
 
     def hit(self, time, strength):
@@ -274,10 +296,13 @@ class Roll(HitObject):
     sound = [ra.pulse(samplerate=44100, freq=1661.2, decay_time=0.01, amplitude=0.5)]
     samplerate = 44100
 
-    def __init__(self, time, step, number, speed=1.0, volume=0.0):
-        self.time = time
-        self.step = step
-        self.number = number
+    def __init__(self, beatmap, context, density=2, *, beat, length, speed=1.0, volume=0.0):
+        self.time = beatmap.time(beat)
+
+        self.number = int(length * density)
+        self.end = beatmap.time(beat+length)
+        self.times = [beatmap.time(beat+i/density) for i in range(self.number)]
+
         self.speed = speed
         self.volume = volume
         self.roll = 0
@@ -286,8 +311,7 @@ class Roll(HitObject):
 
     @property
     def range(self):
-        return (self.time - self.tolerances[2],
-                self.time + self.step * self.number - min(self.step, self.tolerances[2]))
+        return (self.time - self.tolerances[2], self.end - self.tolerances[2])
 
     @property
     def total_score(self):
@@ -311,21 +335,20 @@ class Roll(HitObject):
     @property
     def lifespan(self):
         cross_time = 1.0 / abs(0.5 * self.speed)
-        return (self.time-cross_time, self.time+self.step*self.number+cross_time)
+        return (self.time-cross_time, self.end+cross_time)
 
     def play(self, mixer, time):
         if not self.played:
             self.played = True
 
-            for r in range(self.number):
-                delay = self.time + self.step * r - time
-                sound = [s * 10**(self.volume/20) for s in self.sound]
-                mixer.play(sound, samplerate=self.samplerate, delay=delay)
+            sound = [s * 10**(self.volume/20) for s in self.sound]
+            for t in self.times:
+                mixer.play(sound, samplerate=self.samplerate, delay=t-time)
 
     def draw(self, bar, time):
-        for r in range(self.number):
+        for r, t in enumerate(self.times):
             if r > self.roll-1:
-                pos = (self.time + self.step * r - time) * 0.5 * self.speed
+                pos = (t - time) * 0.5 * self.speed
                 bar.draw_sym(pos, self.symbol)
 
 class Spin(HitObject):
@@ -335,10 +358,13 @@ class Spin(HitObject):
     samplerate = 44100
     finished_sym = SPIN_FINISHED_SYM
 
-    def __init__(self, time, duration, capacity, speed=1.0, volume=0.0):
-        self.time = time
-        self.duration = duration
-        self.capacity = capacity
+    def __init__(self, beatmap, context, density=2, *, beat, length, speed=1.0, volume=0.0):
+        self.time = beatmap.time(beat)
+
+        self.capacity = length * density
+        self.end = beatmap.time(beat+length)
+        self.times = [beatmap.time(beat+i/density) for i in range(int(self.capacity))]
+
         self.speed = speed
         self.volume = volume
         self.charge = 0.0
@@ -347,7 +373,7 @@ class Spin(HitObject):
 
     @property
     def range(self):
-        return (self.time - self.tolerances[2], self.time + self.duration + self.tolerances[2])
+        return (self.time - self.tolerances[2], self.end + self.tolerances[2])
 
     @property
     def score(self):
@@ -364,23 +390,21 @@ class Spin(HitObject):
     @property
     def lifespan(self):
         cross_time = 1.0 / abs(0.5 * self.speed)
-        return (self.time-cross_time, self.time+self.duration+cross_time)
+        return (self.time-cross_time, self.end+cross_time)
 
     def play(self, mixer, time):
         if not self.played:
             self.played = True
 
-            step = self.duration/self.capacity if self.capacity > 0.0 else 0.0
-            for i in range(int(self.capacity)):
-                delay = self.time + step * i - time
-                sound = [s * 10**(self.volume/20) for s in self.sound]
-                mixer.play(sound, samplerate=44100, delay=delay)
+            sound = [s * 10**(self.volume/20) for s in self.sound]
+            for t in self.times:
+                mixer.play(sound, samplerate=44100, delay=t-time)
 
     def draw(self, bar, time):
         if self.charge < self.capacity:
             pos = 0.0
             pos += max(0.0, (self.time - time) * 0.5 * self.speed)
-            pos += min(0.0, (self.time + self.duration - time) * 0.5 * self.speed)
+            pos += min(0.0, (self.end - time) * 0.5 * self.speed)
             bar.draw_sym(pos, self.symbols[int(self.charge) % 4])
 
     def draw_judging(self, bar, time):
@@ -446,6 +470,8 @@ class ScrollingBar:
                 index += 1
 
 class Beatmap:
+    version = "1.0.0"
+
     prepare_time = PREPARE_TIME
     buffer_length = BUF_LENGTH
     win_length = WIN_LENGTH
@@ -456,9 +482,79 @@ class Beatmap:
     hit_sustain = HIT_SUSTAIN
     target_syms = TARGET_SYMS
 
-    def __init__(self, audio, events):
+    def __init__(self):
+        self.metadata = ""
+        self.audio = None
+        self.offset = 0.0
+        self.tempo = 60.0
+
+        self.definitions = {}
+        self.charts = []
+
+        self["x"] = Soft
+        self["o"] = Loud
+        self["<"] = Incr
+        self["%"] = Roll
+        self["@"] = Spin
+        self["s"] = Sym
+
+    def time(self, beat):
+        return self.offset + beat*60/self.tempo
+
+    def beat(self, time):
+        return (time - self.offset)*self.tempo/60
+
+    def dtime(self, beat, length):
+        return self.time(beat+length) - self.time(beat)
+
+    def __setitem__(self, symbol, builder):
+        if symbol in self.definitions:
+            raise ValueError(f"symbol `{symbol}` is already defined")
+        self.definitions[symbol] = NoteType(symbol, builder)
+
+    def __delitem__(self, symbol):
+        del self.definitions[symbol]
+
+    def __getitem__(self, symbol):
+        return self.definitions[symbol].builder
+
+    def __iadd__(self, chart_str):
+        self.charts.append(NoteChart.read(self.definitions, chart_str))
+        return self
+
+    def parser():
+        exprs = dict(
+            number=r"([-+]?(0|[1-9][0-9]*)(\.[0-9]+|/[1-9][0-9]*)?)",
+            str=r"('((?![\\\r\n]|').|\\.|\\\r\n)*')",
+            mstr=r"('''((?!\\|''').|\\.)*''')",
+            nl=r"((\#[^\r\n$]*)?(\r\n?|\n|$))",
+            sp=r"[ ]",
+            )
+
+        header_parser = parsy.regex(r"#K-AIKO-std-1\.0\.0(\r\n?|\n)")
+
+        body = (r"(?msu)"
+                r"({sp}*{nl})*"
+                r"(beatmap \. metadata = {mstr} ({sp}*{nl})+)?"
+                r"(beatmap \. audio = {str} ({sp}*{nl})+)?"
+                r"(beatmap \. offset = {number} ({sp}*{nl})+)?"
+                r"(beatmap \. tempo = {number} ({sp}*{nl})+)?"
+                r"(beatmap \+= r{mstr} ({sp}*{nl})+)*"
+                ).replace(" ", "{sp}*").format(**exprs)
+
+        return header_parser >> parsy.regex(body)
+    parser = parser()
+
+    def read(self, str):
+        try:
+            self.parser.parse(str)
+            exec(str, dict(), dict(beatmap=self))
+
+        except parsy.ParseError:
+            raise ValueError("unsupported format")
+
+    def __enter__(self):
         # audio metadata
-        self.audio = audio
         if self.audio is not None:
             with audioread.audio_open(self.audio) as file:
                 self.duration = file.duration
@@ -470,7 +566,7 @@ class Beatmap:
             self.channels = 1
 
         # events, hits
-        self.events = list(events)
+        self.events = [event for chart in self.charts for event in chart.build_events(self)]
         self.hits = [event for event in self.events if isinstance(event, HitObject)]
         self.start = min([0.0, *[event.lifespan[0] - self.prepare_time for event in self.events]])
         self.end = max([self.duration, *[event.lifespan[1] + self.prepare_time for event in self.events]])
@@ -487,7 +583,6 @@ class Beatmap:
         # spectrum show
         self.spectrum = " "*self.spec_width
 
-    def __enter__(self):
         return self
 
     def __exit__(self, type, value, traceback):
@@ -635,224 +730,174 @@ class Beatmap:
                 print()
 
 
-def make_std_regex():
-    exprs = dict(
-        number=r"([-+]?(0|[1-9][0-9]*)(\.[0-9]+|/[1-9][0-9]*)?)",
-        str=r"('((?![\\\r\n]|').|\\.|\\\r\n)*')",
-        mstr=r"('''((?!\\|''').|\\.)*''')",
-        nl=r"((\#[^\r\n$]*)?(\r\n?|\n|$))",
-        sp=r"[ ]",
-        )
+class NoteChart:
+    def __init__(self, *, beat=0, length=1, meter=4, hide=False):
+        self.beat = beat
+        self.length = length
+        self.meter = meter
+        self.hide = hide
+        self.notes = []
 
-    notes = dict(
-        rest=r" ",
-        soft=r"( | time = {number} | speed = {number} | time = {number} , speed = {number} )",
-        loud=r"( | time = {number} | speed = {number} | time = {number} , speed = {number} )",
-        incr=r" {str} (, time = {number} )?(, speed = {number} )?",
-        roll=r" {number} , {number} (, time = {number} )?(, speed = {number} )?",
-        spin=r" {number} , {number} (, time = {number} )?(, speed = {number} )?",
-        sym=r" {str} (, time = {number} )?(, speed = {number} )?",
-        pattern=r" {number} , {number} , {mstr} ",
-        )
+    @staticmethod
+    def read(definitions, chart_str):
+        # make parser
+        sp = parsy.regex(r"[ \t]*((#[^\r\n]*)?(\r\n?|\n)[ \t]*)*").result(" ")
 
-    exprs["note"] = "(" + "|".join((name + r" \(" + args + r"\)").replace(" ", "{sp}*")
-                                 for name, args in notes.items()).format(**exprs) + ")"
+        literal_parser = parsy.alt(parsy.string("None").result(None),
+                                   parsy.string("True").result(True),
+                                   parsy.string("False").result(False),
+                                   parsy.regex(r"[-+]?(0|[1-9][0-9]*)(?!/)").map(int),
+                                   parsy.regex(r"[-+]?(0|[1-9][0-9]*)/[1-9][0-9]*").map(Fraction),
+                                   parsy.regex(r"[-+]?[0-9]+.[0-9]+").map(float),
+                                   parsy.regex(r"'([^\\\r\n']|\\.|\\\n|\\\r\n?)*'").map(eval),
+                                   parsy.regex(r'"([^\\\r\n"]|\\.|\\\n|\\\r\n?)*"').map(eval),
+                                   ).desc("literal")
+        keyword_parser = (parsy.regex(r"[a-zA-Z_][a-zA-Z0-9_]*") << sp << parsy.string("=") << sp).optional()
+        args_parser = (  parsy.string("(") >> sp
+                      >> parsy.seq(keyword_parser, literal_parser << sp).sep_by(parsy.string(",") << sp)
+                      << parsy.string(")") << sp
+                      ).optional().map(lambda r: r or [])
 
-    header = r"#K-AIKO-std-(?P<version>\d+\.\d+\.\d+)(\r\n?|\n)"
+        ChartNode = namedtuple("Chart", "arguments pattern")
+        NoteNode = namedtuple("Note", "symbol arguments")
+        LengthenNode = namedtuple("Lengthen", "symbol")
+        MeasureNode = namedtuple("Measure", "symbol")
+        DivisionNode = namedtuple("Division", "arguments pattern")
+        InstantNode = namedtuple("Instant", "pattern")
 
-    main = r"""
-    ({sp}*{nl})*
-    (sheet \. metadata = {mstr} ({sp}*{nl})+)?
-    (sheet \. audio = {str} ({sp}*{nl})+)?
-    (sheet \. offset = {number} ({sp}*{nl})+)?
-    (sheet \. tempo = {number} ({sp}*{nl})+)?
-    (sheet \[ {str} \] = {note} ({sp}*{nl})+)*
-    (sheet \+= {note} ({sp}*{nl})+)*
-    """
-    main = main.replace("\n    ", "").replace(" ", "{sp}*").format(**exprs)
+        @parsy.generate
+        def pattern_parser():
+            return (yield parsy.alt(note_parser, lengthen_parser, measure_parser,
+                                    division_parser, instant_parser).skip(sp).many())
 
-    return re.compile(header + main, re.S)
+        symbol_parser = parsy.regex(r"[^\s\(\)\[\]\{\}\'\"\\\|\#]+")
+        note_parser = parsy.seq(symbol_parser, args_parser).combine(NoteNode).desc("`<sym>(...)`")
+        lengthen_parser = (parsy.string("~") << sp).map(LengthenNode).desc("`~`")
+        measure_parser = (parsy.string("|") << sp).map(MeasureNode).desc("`|`")
+        division_parser = (  parsy.string("[") >> sp
+                          >> parsy.seq(args_parser, pattern_parser).combine(DivisionNode)
+                          << parsy.string("]") << sp
+                          ).desc("`[...]`")
+        instant_parser = (  parsy.string("{") >> sp
+                         >> pattern_parser.map(InstantNode)
+                         << parsy.string("}") << sp
+                         ).desc("`{...}`")
 
-class BeatSheetStd:
-    version = "0.0.1"
-    regex = make_std_regex()
+        parser = parsy.seq(sp >> args_parser, pattern_parser).combine(ChartNode)
 
-    def __init__(self):
-        self.metadata = ""
-        self.audio = None
-        self.offset = 0.0
-        self.tempo = 60.0
+        chart_ast = parser.parse(chart_str)
 
-        self.incr_groups = dict()
-        self.patterns = dict()
-        self.events = []
+        # build chart
+        def call(func, arguments, defaults=dict()):
+            posargs = []
+            kwargs = dict()
 
-    def time(self, t, offset=None):
-        if offset is None:
-            offset = self.offset
-        return offset+t*60.0/self.tempo
-
-    def rest(self):
-        return lambda t: []
-
-    def soft(self, time=0, speed=1.0, volume=0.0):
-        return lambda t: [Soft(self.time(time+t), speed=speed, volume=volume)]
-
-    def loud(self, time=0, speed=1.0, volume=0.0):
-        return lambda t: [Loud(self.time(time+t), speed=speed, volume=volume)]
-
-    def incr(self, group, time=0, speed=1.0, volume=0.0):
-        if group not in self.incr_groups:
-            self.incr_groups[group] = IncrGroup()
-        return lambda t: [self.incr_groups[group].add(self.time(time+t), speed=speed, volume=volume)]
-
-    def roll(self, step, number, time=0, speed=1.0, volume=0.0):
-        return lambda t: [Roll(self.time(time+t), self.time(step, 0), number, speed=speed, volume=volume)]
-
-    def spin(self, duration, density, time=0, speed=1.0, volume=0.0):
-        return lambda t: [Spin(self.time(time+t), self.time(duration, 0), duration*density, speed=speed, volume=volume)]
-
-    def sym(self, symbol, time=0, speed=1.0):
-        return lambda t: [Sym(self.time(time+t), symbol=symbol, speed=speed)]
-
-    def pattern(self, time, step, term):
-        return lambda t: [note for i, p in enumerate(term.split()) for note in self.patterns[p](time+t+i*step)]
-
-    def __setitem__(self, key, value):
-        if not isinstance(key, str) or re.search(r"\s", key):
-            raise KeyError("invalid key: {!r}".format(key))
-        self.patterns[key] = value
-
-    def __iadd__(self, value):
-        self.events += value(0)
-        return self
-
-    def load(self, str):
-        match = self.regex.fullmatch(str)
-        if not match:
-            raise ValueError("invalid syntax")
-        if match.group("version") != self.version:
-            raise ValueError("wrong version: {}".format(match.group("version")))
-
-        terms = {
-            "sheet": self,
-            "rest": self.rest,
-            "soft": self.soft,
-            "loud": self.loud,
-            "incr": self.incr,
-            "roll": self.roll,
-            "spin": self.spin,
-            "sym": self.sym,
-            "pattern": self.pattern
-            }
-        exec(str, dict(), terms)
-
-    def load_from_osu(self, str):
-        regex = r"""osu file format v(?P<version>\d+)
-
-        \[General\]
-        ...
-        AudioFilename:[ ]*(?P<audio>.*?)[ ]*
-        ...
-
-        \[Editor\]
-        ...
-
-        \[Metadata\]
-        (?P<metadata>(.|\n)*?)
-
-        \[Difficulty\]
-        ...
-        SliderMultiplier:[ ]*(?P<multiplier>\d+(.\d+)?)[ ]*
-        ...
-
-        \[Events\]
-        ...
-
-        \[TimingPoints\]
-        (?P<timings>(.|\n)*?)
-
-        \[HitObjects\]
-        (?P<notes>(.|\n)*?)[\n\r]*"""
-
-        regex = regex.replace("\n        ", "\n")
-        regex = regex.replace("\n\n", "\n" + r"[\n\r]*")
-        regex = regex.replace("...\n", r"(.*\n)*?")
-        regex = re.compile(regex)
-
-        match = regex.fullmatch(str.replace("\r\n", "\n"))
-        if not match:
-            raise ValueError("invalid syntax")
-        if match.group("version") != "14":
-            raise ValueError("wrong version: {}".format(match.group("version")))
-
-        self.audio = match.group("audio")
-        self.metadata = "\n" + match.group("metadata") + "\n"
-        self.offset = 0.0
-        self.tempo = 60.0
-
-        multiplier = multiplier0 = float(match.group("multiplier"))
-        timings = match.group("timings").split()
-        notes = match.group("notes").split()
-        note_length = 0
-        meter = 4
-
-        @ra.DataNode.from_generator
-        def timer():
-            nonlocal meter, note_length, multiplier, multiplier0
-            format = re.compile(r"(?P<time>\d+),(?P<length>[-+.\d]+),(?P<meter>\d+),"
-                                r"\d+,\d+,\d+,(?P<uninherited>0|1),\d+")
-
-            time = yield
-            for timing in timings:
-                match = format.fullmatch(timing)
-                if not match:
-                    raise ValueError("wrong timing point format: {}".format(timing))
-
-                while time < int(match.group("time")):
-                    time = yield
-
-
-                if match.group("uninherited") == "1":
-                    note_length = float(match.group("length"))
-                    meter = int(match.group("meter"))
+            for key, value in arguments:
+                if key is None:
+                    if len(kwargs) > 0:
+                        raise ValueError("positional argument follows keyword argument")
+                    posargs.append(value)
                 else:
-                    multiplier = multiplier0 / (-0.01 * float(match.group("length")))
-        timer = timer()
+                    if key in kwargs:
+                        raise ValueError("keyword argument repeated")
+                    kwargs[key] = value
 
-        with timer:
-            for note in notes:
-                note = note.split(",")
-                time = int(note[2])
-                type = int(note[3])
-                try:
-                    timer.send(time)
-                except StopIteration:
-                    pass
-                speed = multiplier / 1.4
+            kwargs = {**defaults, **kwargs}
 
-                # type: [_:_:_:_:Spinner:_:Slider:Circle]
-                # hit_sound: [Loud:Big:Loud:Soft]
+            return func(*posargs, **kwargs)
 
-                if type & 1: # circle
-                    hit_sound = int(note[4])
+        chart = call(NoteChart, chart_ast.arguments)
+        beat = chart.beat
+        length = chart.length
+        note = None
 
-                    if hit_sound == 0 or hit_sound & 1:
-                        self += self.soft(time=time/1000, speed=speed)
-                    elif hit_sound & 10:
-                        self += self.loud(time=time/1000, speed=speed)
+        def build_pattern(pattern, chart, beat, length, note):
+            for node in pattern:
+                if isinstance(node, NoteNode):
+                    if node.symbol == "_":
+                        call((lambda:None), node.arguments)
 
-                elif type & 2: # slider
-                    slider_length = int(note[7])
-                    duration = slider_length / (multiplier * 100) * (note_length/1000)
-                    step = (note_length/1000) * meter / 8
+                    elif node.symbol in definitions:
+                        defaults = dict()
+                        defaults["beat"] = beat
+                        if "length" in definitions[node.symbol].signature.parameters:
+                            defaults["length"] = length
 
-                    self += self.roll(duration, step, time=time/1000, speed=speed)
+                        note = call(definitions[node.symbol], node.arguments, defaults)
+                        chart.notes.append(note)
 
-                elif type & 8: # spinner
-                    end_time = int(note[5])
-                    duration = (end_time - time)/1000
-                    step = (note_length/1000) * meter / 8
+                    else:
+                        raise ValueError(f"undefined symbol {node.symbol}")
 
-                    self += self.spin(duration, step, time=time/1000, speed=speed)
+                    beat = beat + length
+
+                elif isinstance(node, LengthenNode):
+                    if note is not None and "length" in note.bound.arguments:
+                        note.length = note.length + length
+
+                    beat = beat + length
+
+                elif isinstance(node, MeasureNode):
+                    if beat % length != 0:
+                        raise ValueError("wrong measure")
+
+                elif isinstance(node, DivisionNode):
+                    divisor = call((lambda divisor=2:divisor), node.arguments)
+
+                    old_length = length
+                    length = Fraction(1, 1) * length / divisor
+
+                    chart, beat, length, note = build_pattern(node.pattern, chart, beat, length, note)
+
+                    length = old_length
+
+                elif isinstance(node, InstantNode):
+                    old_length = length
+                    length = 0
+
+                    chart, beat, length, note = build_pattern(node.pattern, chart, beat, length, note)
+
+                    length = old_length
+
+                else:
+                    raise ValueError(f"unknown node {repr(node)}")
+
+            return chart, beat, length, note
+
+        chart, beat, length, note = build_pattern(chart_ast.pattern, chart, beat, length, note)
+
+        return chart
+
+    def build_events(self, beatmap):
+        events = []
+
+        if self.hide:
+            return events
+
+        context = dict()
+        for note in self.notes:
+            event = note.create(beatmap, context)
+            if event is not None:
+                events.append(event)
+
+        return events
+
+def NoteType(symbol, builder):
+    # builder(beatmap, context, *, beat, **) -> Event | None
+    signature = inspect.signature(builder)
+    signature = signature.replace(parameters=list(signature.parameters.values())[2:])
+    return type(builder.__name__+"Note", (Note,), dict(symbol=symbol, builder=builder, signature=signature))
+
+class Note:
+    def __init__(self, *posargs, **kwargs):
+        self.bound = self.signature.bind(*posargs, **kwargs)
+
+    def __str__(self):
+        posargs_str = [repr(value) for value in self.bound.args]
+        kwargs_str = [key+"="+repr(value) for key, value in self.bound.kwargs.items()]
+        args_str = ", ".join([*posargs_str, *kwargs_str])
+        return f"{self.symbol}({args_str})"
+
+    def create(self, beatmap, context):
+        return self.builder(beatmap, context, *self.bound.args, **self.bound.kwargs)
 

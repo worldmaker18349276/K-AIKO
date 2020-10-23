@@ -1,7 +1,7 @@
-#K-AIKO-std-0.0.1
+#K-AIKO-std-1.0.0
 
 # metadata:
-sheet.metadata = '''
+beatmap.metadata = '''
 title: 蛋餅好朋友
 composer: 好和弦
 performer: 艾可
@@ -9,78 +9,74 @@ source: https://www.youtube.com/watch?v=SrGCmZqjz7o
 '''
 
 # general:
-sheet.audio = '蛋餅好朋友.mp4'
-sheet.offset = 0.6
-sheet.tempo = 175.0
+beatmap.audio = '蛋餅好朋友.mp4'
+beatmap.offset = 0.6
+beatmap.tempo = 175.0
 
-# patterns:
-sheet['_'] = rest()
-sheet['s'] = soft()
-sheet['l'] = loud()
-sheet['|'] = sym('|', time=-1/4)
+beatmap += r'''
+(length=1/2, meter=2)
+x _ x _ | x _ x _ | x _ x _ | x _ x _ |
+x _ x _ | x _ x _ | o _ o _ | o _ _ _ |
 
-# beats:
-sheet += pattern(0, 1/2, '''
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
+x _ o _ | x _ o _ | x _ o _ | x _ o _ |
+x _ o x | x _ o _ | x _ o _ | x _ o _ |
+x _ o x | x _ o x | x _ o _ | x _ o _ |
+o _ _ _ | _ _ _ _ | o _ o _ | o _ _ _ |
 
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
+_ _ _ _ | x _ _ _ | x _ _ _ | x _ _ _ |
+x _ o _ | x _ o _ | x _ o _ | x x o _ |
+x _ o _ | x _ o _ | x _ o _ | x x o _ |
+x _ o _ | x _ o _ | x _ o _ | x x o _ |
+x _ o _ | x _ o _ | x _ o _ | x x o _ |
+o _ _ _ | _ _ _ _ | o _ o _ | o _ _ _ |
+x _ o _ | x _ o _ | x _ o _ | x _ o _ |
+x _ o _ | x _ o _ | o _ o _ | o _ _ _ |
 
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
+x _ o _ | x _ o _ | x _ o _ | x _ o _ |
+x _ o x | x _ o _ | x _ o _ | x _ o _ |
+x _ o x | x _ o x | x _ o _ | x _ o _ |
+o _ _ _ | _ _ _ _ | o _ o _ | o _ _ _ |
 
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
+_ _ _ _ | x _ _ _ | x _ _ _ | x _ _ _ |
+x x o o | x x o o | x x o o | o x o x |
+x x o o | x x o o | x x o o | x x o x |
+x x o o | x x o o | x x o o | o x o x |
+x x o o | x x o o | x x o o | o x x o |
+o _ _ _ | _ _ _ _ | o _ o _ | o _ _ _ |
+x _ o _ | x _ o _ | x _ o _ | x _ o _ |
+x _ o _ | x _ o _ | o _ o _ | o _ _ _ |
+'''
 
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   | _ _ _   | _ _ _   | _ _ _
-| _ _ _   | _ _ _   | _ _ _   | _ _ _
-| _ _ _   | _ _ _   | _ _ _   | _ _ _
-| _ _ _   | _ _ _   | _ _ _   | _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-| _ _ _   _ _ _ _   | _ _ _   _ _ _ _
-''')
-sheet += pattern(0, 1/2, '''
-s _ s _   s _ s _   s _ s _   s _ s _
-s _ s _   s _ s _   l _ l _   l _ _ _
+beatmap += r'''
+(beat=-1/4, length=2)
+s('|') _ s('|') _
+s('|') _ s('|') _
 
-s _ l _   s _ l _   s _ l _   s _ l _
-s _ l s   s _ l _   s _ l _   s _ l _
-s _ l s   s _ l s   s _ l _   s _ l _
-l _ _ _   _ _ _ _   l _ l _   l _ _ _
+s('|') _ s('|') _
+s('|') _ s('|') _
+s('|') _ s('|') _
+s('|') _ s('|') _
 
-_ _ _ _   s _ _ _   s _ _ _   s _ _ _
-s _ l _   s _ l _   s _ l _   s s l _
-s _ l _   s _ l _   s _ l _   s s l _
-s _ l _   s _ l _   s _ l _   s s l _
-s _ l _   s _ l _   s _ l _   s s l _
-l _ _ _   _ _ _ _   l _ l _   l _ _ _
-s _ l _   s _ l _   s _ l _   s _ l _
-s _ l _   s _ l _   l _ l _   l _ _ _
+s('|') _ s('|') _
+s('|') _ s('|') _
+s('|') _ s('|') _
+s('|') _ s('|') _
+s('|') _ s('|') _
+s('|') _ s('|') _
+s('|') _ s('|') _
+s('|') _ s('|') _
 
-s _ l _   s _ l _   s _ l _   s _ l _
-s _ l s   s _ l _   s _ l _   s _ l _
-s _ l s   s _ l s   s _ l _   s _ l _
-l _ _ _   _ _ _ _   l _ l _   l _ _ _
+s('|') _ s('|') _
+s('|') _ s('|') _
+s('|') _ s('|') _
+s('|') _ s('|') _
 
-_ _ _ _   s _ _ _   s _ _ _   s _ _ _
-s s l l   s s l l   s s l l   l s l s
-s s l l   s s l l   s s l l   s s l s
-s s l l   s s l l   s s l l   l s l s
-s s l l   s s l l   s s l l   l s s l
-l _ _ _   _ _ _ _   l _ l _   l _ _ _
-s _ l _   s _ l _   s _ l _   s _ l _
-s _ l _   s _ l _   l _ l _   l _ _ _
-''')
+s('|') _ s('|') _
+s('|') s('|') s('|') s('|')
+s('|') s('|') s('|') s('|')
+s('|') s('|') s('|') s('|')
+s('|') s('|') s('|') s('|')
+s('|') _ s('|') _
+s('|') _ s('|') _
+s('|') _ s('|') _
+'''
