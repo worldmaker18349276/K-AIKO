@@ -1,12 +1,10 @@
 import os
 from enum import Enum
-from collections import OrderedDict, namedtuple
-from fractions import Fraction
 import inspect
-import parsy
 import numpy
 import audioread
 import realtime_analysis as ra
+from beatsheet import K_AIKO_STD
 
 
 TOLERANCES = (0.02, 0.06, 0.10, 0.14)
@@ -470,8 +468,6 @@ class ScrollingBar:
                 index += 1
 
 class Beatmap:
-    version = "1.0.0"
-
     prepare_time = PREPARE_TIME
     buffer_length = BUF_LENGTH
     win_length = WIN_LENGTH
@@ -482,11 +478,11 @@ class Beatmap:
     hit_sustain = HIT_SUSTAIN
     target_syms = TARGET_SYMS
 
-    def __init__(self):
-        self.metadata = ""
-        self.audio = None
-        self.offset = 0.0
-        self.tempo = 60.0
+    def __init__(self, info="", audio=None, offset=0.0, tempo=60.0):
+        self.info = info
+        self.audio = audio
+        self.offset = offset
+        self.tempo = tempo
 
         self.definitions = {}
         self.charts = []
@@ -508,7 +504,7 @@ class Beatmap:
         return self.time(beat+length) - self.time(beat)
 
     def __setitem__(self, symbol, builder):
-        if symbol in self.definitions:
+        if symbol == "_" or symbol in self.definitions:
             raise ValueError(f"symbol `{symbol}` is already defined")
         self.definitions[symbol] = NoteType(symbol, builder)
 
@@ -519,39 +515,9 @@ class Beatmap:
         return self.definitions[symbol].builder
 
     def __iadd__(self, chart_str):
-        self.charts.append(NoteChart.read(self.definitions, chart_str))
+        self.charts.append(K_AIKO_STD_FORMAT.read_chart(chart_str, self.definitions))
         return self
 
-    def parser():
-        exprs = dict(
-            number=r"([-+]?(0|[1-9][0-9]*)(\.[0-9]+|/[1-9][0-9]*)?)",
-            str=r"('((?![\\\r\n]|').|\\.|\\\r\n)*')",
-            mstr=r"('''((?!\\|''').|\\.)*''')",
-            nl=r"((\#[^\r\n$]*)?(\r\n?|\n|$))",
-            sp=r"[ ]",
-            )
-
-        header_parser = parsy.regex(r"#K-AIKO-std-1\.0\.0(\r\n?|\n)")
-
-        body = (r"(?msu)"
-                r"({sp}*{nl})*"
-                r"(beatmap \. metadata = {mstr} ({sp}*{nl})+)?"
-                r"(beatmap \. audio = {str} ({sp}*{nl})+)?"
-                r"(beatmap \. offset = {number} ({sp}*{nl})+)?"
-                r"(beatmap \. tempo = {number} ({sp}*{nl})+)?"
-                r"(beatmap \+= r{mstr} ({sp}*{nl})+)*"
-                ).replace(" ", "{sp}*").format(**exprs)
-
-        return header_parser >> parsy.regex(body)
-    parser = parser()
-
-    def read(self, str):
-        try:
-            self.parser.parse(str)
-            exec(str, dict(), dict(beatmap=self))
-
-        except parsy.ParseError:
-            raise ValueError("unsupported format")
 
     def __enter__(self):
         # audio metadata
@@ -738,135 +704,6 @@ class NoteChart:
         self.hide = hide
         self.notes = []
 
-    @staticmethod
-    def read(definitions, chart_str):
-        # make parser
-        sp = parsy.regex(r"[ \t]*((#[^\r\n]*)?(\r\n?|\n)[ \t]*)*").result(" ")
-
-        literal_parser = parsy.alt(parsy.string("None").result(None),
-                                   parsy.string("True").result(True),
-                                   parsy.string("False").result(False),
-                                   parsy.regex(r"[-+]?(0|[1-9][0-9]*)(?!/)").map(int),
-                                   parsy.regex(r"[-+]?(0|[1-9][0-9]*)/[1-9][0-9]*").map(Fraction),
-                                   parsy.regex(r"[-+]?[0-9]+.[0-9]+").map(float),
-                                   parsy.regex(r"'([^\\\r\n']|\\.|\\\n|\\\r\n?)*'").map(eval),
-                                   parsy.regex(r'"([^\\\r\n"]|\\.|\\\n|\\\r\n?)*"').map(eval),
-                                   ).desc("literal")
-        keyword_parser = (parsy.regex(r"[a-zA-Z_][a-zA-Z0-9_]*") << sp << parsy.string("=") << sp).optional()
-        args_parser = (  parsy.string("(") >> sp
-                      >> parsy.seq(keyword_parser, literal_parser << sp).sep_by(parsy.string(",") << sp)
-                      << parsy.string(")") << sp
-                      ).optional().map(lambda r: r or [])
-
-        ChartNode = namedtuple("Chart", "arguments pattern")
-        NoteNode = namedtuple("Note", "symbol arguments")
-        LengthenNode = namedtuple("Lengthen", "symbol")
-        MeasureNode = namedtuple("Measure", "symbol")
-        DivisionNode = namedtuple("Division", "arguments pattern")
-        InstantNode = namedtuple("Instant", "pattern")
-
-        @parsy.generate
-        def pattern_parser():
-            return (yield parsy.alt(note_parser, lengthen_parser, measure_parser,
-                                    division_parser, instant_parser).skip(sp).many())
-
-        symbol_parser = parsy.regex(r"[^\s\(\)\[\]\{\}\'\"\\\|\#]+")
-        note_parser = parsy.seq(symbol_parser, args_parser).combine(NoteNode).desc("`<sym>(...)`")
-        lengthen_parser = (parsy.string("~") << sp).map(LengthenNode).desc("`~`")
-        measure_parser = (parsy.string("|") << sp).map(MeasureNode).desc("`|`")
-        division_parser = (  parsy.string("[") >> sp
-                          >> parsy.seq(args_parser, pattern_parser).combine(DivisionNode)
-                          << parsy.string("]") << sp
-                          ).desc("`[...]`")
-        instant_parser = (  parsy.string("{") >> sp
-                         >> pattern_parser.map(InstantNode)
-                         << parsy.string("}") << sp
-                         ).desc("`{...}`")
-
-        parser = parsy.seq(sp >> args_parser, pattern_parser).combine(ChartNode)
-
-        chart_ast = parser.parse(chart_str)
-
-        # build chart
-        def call(func, arguments, defaults=dict()):
-            posargs = []
-            kwargs = dict()
-
-            for key, value in arguments:
-                if key is None:
-                    if len(kwargs) > 0:
-                        raise ValueError("positional argument follows keyword argument")
-                    posargs.append(value)
-                else:
-                    if key in kwargs:
-                        raise ValueError("keyword argument repeated")
-                    kwargs[key] = value
-
-            kwargs = {**defaults, **kwargs}
-
-            return func(*posargs, **kwargs)
-
-        chart = call(NoteChart, chart_ast.arguments)
-        beat = chart.beat
-        length = chart.length
-        note = None
-
-        def build_pattern(pattern, chart, beat, length, note):
-            for node in pattern:
-                if isinstance(node, NoteNode):
-                    if node.symbol == "_":
-                        call((lambda:None), node.arguments)
-
-                    elif node.symbol in definitions:
-                        defaults = dict()
-                        defaults["beat"] = beat
-                        if "length" in definitions[node.symbol].signature.parameters:
-                            defaults["length"] = length
-
-                        note = call(definitions[node.symbol], node.arguments, defaults)
-                        chart.notes.append(note)
-
-                    else:
-                        raise ValueError(f"undefined symbol {node.symbol}")
-
-                    beat = beat + length
-
-                elif isinstance(node, LengthenNode):
-                    if note is not None and "length" in note.bound.arguments:
-                        note.length = note.length + length
-
-                    beat = beat + length
-
-                elif isinstance(node, MeasureNode):
-                    if beat % length != 0:
-                        raise ValueError("wrong measure")
-
-                elif isinstance(node, DivisionNode):
-                    divisor = call((lambda divisor=2:divisor), node.arguments)
-
-                    old_length = length
-                    length = Fraction(1, 1) * length / divisor
-
-                    chart, beat, length, note = build_pattern(node.pattern, chart, beat, length, note)
-
-                    length = old_length
-
-                elif isinstance(node, InstantNode):
-                    old_length = length
-                    length = 0
-
-                    chart, beat, length, note = build_pattern(node.pattern, chart, beat, length, note)
-
-                    length = old_length
-
-                else:
-                    raise ValueError(f"unknown node {repr(node)}")
-
-            return chart, beat, length, note
-
-        chart, beat, length, note = build_pattern(chart_ast.pattern, chart, beat, length, note)
-
-        return chart
 
     def build_events(self, beatmap):
         events = []
@@ -886,11 +723,11 @@ def NoteType(symbol, builder):
     # builder(beatmap, context, *, beat, **) -> Event | None
     signature = inspect.signature(builder)
     signature = signature.replace(parameters=list(signature.parameters.values())[2:])
-    return type(builder.__name__+"Note", (Note,), dict(symbol=symbol, builder=builder, signature=signature))
+    return type(builder.__name__+"Note", (Note,), dict(symbol=symbol, builder=builder, __signature__=signature))
 
 class Note:
     def __init__(self, *posargs, **kwargs):
-        self.bound = self.signature.bind(*posargs, **kwargs)
+        self.bound = self.__signature__.bind(*posargs, **kwargs)
 
     def __str__(self):
         posargs_str = [repr(value) for value in self.bound.args]
@@ -900,4 +737,7 @@ class Note:
 
     def create(self, beatmap, context):
         return self.builder(beatmap, context, *self.bound.args, **self.bound.kwargs)
+
+
+K_AIKO_STD_FORMAT = K_AIKO_STD(Beatmap, NoteChart)
 

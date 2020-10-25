@@ -8,8 +8,10 @@ if __name__ == "__main__":
     filename = sys.argv[1]
 
     with open(filename) as file:
-        beatmap = Beatmap()
-        beatmap.read(file.read())
+        if filename.endswith((".k-aiko", ".kaiko", ".ka")):
+            beatmap = K_AIKO_STD_FORMAT.read(file.read())
+        else:
+            raise ValueError(f"unknown file extension: {filename}")
         console = KnockConsole()
         console.play(beatmap)
 

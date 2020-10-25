@@ -6,7 +6,7 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
  ⣿⣴⣧⣰⣄ [  384/ 2240] □   □⛶  □   ■       ■   □   □   ■   ■   □   [ 21.8%] 
 ```
 
-- dependencies: python3.6, dataclasses, parsy, numpy, scipy, audioread, pyaudio
+- dependencies: python3.6, dataclasses, lark, numpy, scipy, audioread, pyaudio
 - used characters: ⛶ 🞎 🞏 🞐 🞑 🞒 🞓 ⬚ □ ■ ⬒ ◎ ◴ ◵ ◶ ◷ ☺ ⟪ ⟨ ⟩ ⟫
 - best terminal: GNOME Terminal (set __ambiguous-width characters__ to narrow)
 - best font: Ubuntu Mono Regular, 16pt
@@ -104,7 +104,7 @@ K-AIK▣  is a sound-control one-line terminal-based rhythm game.
       '''
 
     > #K-AIKO-ext-1.0.0
-      module = require('...')
+      import module
       ...
       beatmap['+'] = module.Cross
       ...

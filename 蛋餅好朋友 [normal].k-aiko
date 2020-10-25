@@ -1,7 +1,7 @@
-#K-AIKO-std-1.0.0
+#K-AIKO-std-1.1.0
 
-# metadata:
-beatmap.metadata = '''
+# info:
+beatmap.info = '''
 title: 蛋餅好朋友
 composer: 好和弦
 performer: 艾可
