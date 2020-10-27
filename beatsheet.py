@@ -22,8 +22,9 @@ k_aiko_grammar = r"""
 _NEWLINE: /\r\n?|\n/
 _WHITESPACE: /[ \t]+/
 _COMMENT: /\#[^\r\n]*/
+_MCOMMENT: /\#((?![\r\n]|''').)*/
 _n: (_WHITESPACE? _COMMENT? _NEWLINE)+
-_s: (_WHITESPACE? _COMMENT? _NEWLINE)* _WHITESPACE?
+_s: (_WHITESPACE? _MCOMMENT? _NEWLINE)* _WHITESPACE?
 _e: (_WHITESPACE? _COMMENT? _NEWLINE)* _WHITESPACE? _COMMENT?
 
 none:  /None/
@@ -36,9 +37,9 @@ mstr:  /'''((?!\\|''').|\\.)*'''/s
 
 value: none | bool | float | frac | int | str
 key: /[a-zA-Z_][a-zA-Z0-9_]*/
-arg:               value  ->  pos
-   | key _s "=" _s value  ->  kw
-arguments: ["(" _s [ arg (_s "," _s arg)* _s ] ")"]
+arg:         value  ->  pos
+   | key "=" value  ->  kw
+arguments: ["(" [ arg (", " arg)* ] ")"]
 
 symbol: /[^ \b\t\n\r\f\v()[\]{}\'"\\#|~]+/
 note: symbol arguments
@@ -89,7 +90,7 @@ class K_AIKO_STD_Transformer(Transformer):
         return psargs, kwargs
 
 class K_AIKO_STD:
-    version = "1.1.0"
+    version = "1.1.1"
     k_aiko_std_parser = Lark(k_aiko_grammar, start="k_aiko_std")
     chart_parser = Lark(k_aiko_grammar, start="chart")
     transformer = K_AIKO_STD_Transformer()
@@ -121,8 +122,8 @@ class K_AIKO_STD:
         version, = header.children
         info, audio, offset, tempo, charts = contents.children
 
-        if version != self.version:
-            raise ValueError("wrong version")
+        if version.split(".")[:2] != self.version.split(".")[:2]:
+            raise ValueError("incompatible version")
 
         beatmap = self.Beatmap()
 
