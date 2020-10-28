@@ -1,7 +1,6 @@
 import time
 import itertools
 import contextlib
-import re
 import signal
 import numpy
 import pyaudio
@@ -26,8 +25,8 @@ class KnockConsole:
     output_format: str = 'f4'
 
     # detector
-    detector_time_res: float = 0.0116099773
-    detector_freq_res: float = 21.5332031
+    detector_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
+    detector_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
     detector_pre_max: float = 0.03
     detector_post_max: float = 0.03
     detector_pre_avg: float = 0.03
