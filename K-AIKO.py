@@ -14,9 +14,10 @@ if __name__ == "__main__":
             beatmap = OSU_FORMAT.read(file)
         else:
             raise ValueError(f"unknown file extension: {filename}")
-        console = KnockConsole()
-        console.play(beatmap)
 
-        # print()
-        # for event in beatmap.events:
-        #     print(event)
+    console = KnockConsole()
+    console.run(beatmap)
+
+    # print()
+    # for event in beatmap.events:
+    #     print(event)

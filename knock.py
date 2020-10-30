@@ -52,13 +52,13 @@ class KnockConsole:
         self.close()
 
     @ra.DataNode.from_generator
-    def get_output_node(self, knock_game):
+    def get_output_node(self, knock_program):
         samplerate = self.output_samplerate
         buffer_length = self.output_buffer_length
         channels = self.output_channels
 
         mixer = ra.AudioMixer(samplerate, (buffer_length, channels))
-        sound_handler = knock_game.get_sound_handler(mixer)
+        sound_handler = knock_program.get_sound_handler(mixer)
 
         with contextlib.closing(self), mixer, sound_handler:
             yield
@@ -67,7 +67,7 @@ class KnockConsole:
                 yield mixer.send()
 
     @ra.DataNode.from_generator
-    def get_input_node(self, knock_game):
+    def get_input_node(self, knock_program):
         samplerate = self.input_samplerate
         buffer_length = self.input_buffer_length
         channels = self.input_channels
@@ -93,7 +93,7 @@ class KnockConsole:
         knock_delay = self.knock_delay
         knock_energy = self.knock_energy
 
-        knock_handler = knock_game.get_knock_handler()
+        knock_handler = knock_program.get_knock_handler()
 
         window = ra.get_half_Hann_window(win_length)
         detector = ra.pipe(ra.frame(win_length=win_length, hop_length=hop_length),
@@ -120,8 +120,8 @@ class KnockConsole:
                 detector.send((yield))
 
     @ra.DataNode.from_generator
-    def get_view_node(self, knock_game):
-        view_handler = knock_game.get_view_handler()
+    def get_view_node(self, knock_program):
+        view_handler = knock_program.get_view_handler()
         display_delay = self.display_delay
         display_fps = self.display_fps
         dt = 1/display_fps
@@ -153,7 +153,7 @@ class KnockConsole:
         finally:
             print()
 
-    def play(self, knock_game):
+    def run(self, knock_program):
         input_params = dict(samplerate=self.input_samplerate,
                             buffer_shape=(self.input_buffer_length,
                                           self.input_channels),
@@ -170,10 +170,10 @@ class KnockConsole:
         try:
             manager = pyaudio.PyAudio()
 
-            with contextlib.closing(self), knock_game:
-                output_node = self.get_output_node(knock_game)
-                input_node = self.get_input_node(knock_game)
-                view_node = self.get_view_node(knock_game)
+            with contextlib.closing(self), knock_program:
+                output_node = self.get_output_node(knock_program)
+                input_node = self.get_input_node(knock_program)
+                view_node = self.get_view_node(knock_program)
 
                 with ra.record(manager, input_node, **input_params) as input_stream,\
                      ra.play(manager, output_node, **output_params) as output_stream,\
@@ -189,7 +189,7 @@ class KnockConsole:
             manager.terminate()
 
 
-class KnockGame:
+class KnockProgram:
     # def get_sound_handler(self, mixer): time -> None
     # def get_knock_handler(self): (time, strength, detected) -> None
     # def get_view_handler(self): time -> None
