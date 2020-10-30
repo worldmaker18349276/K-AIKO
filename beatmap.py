@@ -6,7 +6,7 @@ import numpy
 import audioread
 import cfg
 import realtime_analysis as ra
-from beatsheet import K_AIKO_STD
+from beatsheet import K_AIKO_STD, OSU
 
 
 # scripts
@@ -318,6 +318,7 @@ class Roll(Target):
     samplerate = 44100
 
     def __init__(self, beatmap, context, density=2, *, beat, length, speed=1.0, volume=0.0):
+        self.tolerance = beatmap.settings.roll_tolerance
         self.rock_appearance = beatmap.settings.roll_rock_appearance
 
         self.time = beatmap.time(beat)
@@ -334,7 +335,7 @@ class Roll(Target):
 
     @property
     def range(self):
-        return (self.time - self.tolerances[2], self.end - self.tolerances[2])
+        return (self.time - self.tolerance, self.end - self.tolerance)
 
     @property
     def full_score(self):
@@ -380,6 +381,7 @@ class Spin(Target):
     samplerate = 44100
 
     def __init__(self, beatmap, context, density=2, *, beat, length, speed=1.0, volume=0.0):
+        self.tolerance = beatmap.settings.spin_tolerance
         self.disk_appearances = beatmap.settings.spin_disk_appearances
         self.finishing_appearance = beatmap.settings.spin_finishing_appearance
 
@@ -397,7 +399,7 @@ class Spin(Target):
 
     @property
     def range(self):
-        return (self.time - self.tolerances[2], self.end + self.tolerances[2])
+        return (self.time - self.tolerance, self.end + self.tolerance)
 
     @property
     def score(self):
@@ -505,6 +507,8 @@ class BeatmapSettings:
     soft_threshold: float = 0.5
     loud_threshold: float = 0.5
     incr_threshold: float = -0.1
+    roll_tolerance: float = 0.10
+    spin_tolerance: float = 0.10
 
     # Skin:
     ## NoteSkin:
@@ -787,7 +791,6 @@ class NoteChart:
         self.hide = hide
         self.notes = []
 
-
     def build_events(self, beatmap):
         events = []
 
@@ -823,4 +826,5 @@ class Note:
 
 
 K_AIKO_STD_FORMAT = K_AIKO_STD(Beatmap, NoteChart)
+OSU_FORMAT = OSU(Beatmap, NoteChart)
 

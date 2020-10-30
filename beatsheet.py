@@ -1,3 +1,4 @@
+import math
 from collections import OrderedDict, namedtuple
 from fractions import Fraction
 import inspect
@@ -99,11 +100,11 @@ class K_AIKO_STD:
         self.Beatmap = Beatmap
         self.NoteChart = NoteChart
 
-    def read(self, str):
+    def read(self, file):
         # beatmap = self.Beatmap()
-        # exec(str, dict(), dict(beatmap=beatmap))
+        # exec(file.read(), dict(), dict(beatmap=beatmap))
         # return beatmap
-        return self.load_beatmap(self.transformer.transform(self.k_aiko_std_parser.parse(str)))
+        return self.load_beatmap(self.transformer.transform(self.k_aiko_std_parser.parse(file.read())))
 
     def read_chart(self, str, definitions):
         return self.load_chart(self.transformer.transform(self.chart_parser.parse(str)), definitions)
@@ -191,4 +192,133 @@ class K_AIKO_STD:
                 raise ValueError(f"unknown node {str(node)}")
 
         return chart, beat, length, note
+
+
+class OSU:
+    def __init__(self, Beatmap, NoteChart):
+        self.Beatmap = Beatmap
+        self.NoteChart = NoteChart
+
+    def read(self, file):
+        format = file.readline()
+        if format != "osu file format v14\n":
+            raise ValueError(f"invalid file format: {repr(format)}")
+
+        beatmap = self.Beatmap()
+        beatmap.charts.append(self.NoteChart())
+        context = {}
+
+        parse = None
+
+        line = "\n"
+        while line != "":
+            if line == "\n" or line.startswith(r"\\"):
+                pass
+            elif line == "[General]\n":
+                parse = self.parse_general
+            elif line == "[Editor]\n":
+                parse = self.parse_editor
+            elif line == "[Metadata]\n":
+                parse = self.parse_metadata
+            elif line == "[Difficulty]\n":
+                parse = self.parse_difficulty
+            elif line == "[Events]\n":
+                parse = self.parse_events
+            elif line == "[TimingPoints]\n":
+                parse = self.parse_timingpoints
+            elif line == "[Colours]\n":
+                parse = self.parse_colours
+            elif line == "[HitObjects]\n":
+                parse = self.parse_hitobjects
+            else:
+                parse(beatmap, context, line)
+
+            line = file.readline()
+
+        return beatmap
+
+    def parse_general(self, beatmap, context, line):
+        option, value = line.split(": ", maxsplit=1)
+        if option == "AudioFilename":
+            beatmap.audio = value.rstrip("\n")
+
+    def parse_editor(self, beatmap, context, line): pass
+
+    def parse_metadata(self, beatmap, context, line):
+        beatmap.info += line
+
+    def parse_difficulty(self, beatmap, context, line):
+        option, value = line.split(":", maxsplit=1)
+        if option == "SliderMultiplier":
+            context["multiplier0"] = float(value)
+
+    def parse_events(self, beatmap, context, line): pass
+
+    def parse_timingpoints(self, beatmap, context, line):
+        time,beatLength,meter,sampleSet,sampleIndex,volume,uninherited,effects = line.rstrip("\n").split(",")
+        time = int(time)
+        beatLength = float(beatLength)
+        meter = int(meter)
+        volume = int(volume)
+        multiplier = context["multiplier0"]
+
+        if "timings" not in context:
+            context["timings"] = []
+        if "beatLength0" not in context:
+            context["beatLength0"] = beatLength
+            beatmap.offset = time/1000
+            beatmap.tempo = 60 / (beatLength/1000)
+            beatmap.charts[0].meter = meter
+
+        if uninherited == "0":
+            multiplier = multiplier / (-0.01 * beatLength)
+            beatLength = context["timings"][-1][1]
+            meter = context["timings"][-1][2]
+
+        speed = multiplier / 1.4
+        volume = 20 * math.log10(volume / 100)
+        sliderVelocity = (multiplier * 100) / (beatLength/context["beatLength0"])
+        density = (8/meter) / (beatLength/context["beatLength0"]) # 8 per measure
+
+        context["timings"].append((time, beatLength, meter, speed, volume, sliderVelocity, density))
+
+    def parse_colours(self, beatmap, context, line): pass
+
+    def parse_hitobjects(self, beatmap, context, line):
+        x,y,time,type,hitSound,*objectParams,hitSample = line.rstrip("\n").split(",")
+        time = int(time)
+        type = int(type)
+        hitSound = int(hitSound)
+
+        beat = beatmap.beat(time/1000)
+        speed, volume, sliderVelocity, density = next(vs for t, b, m, *vs in context["timings"][::-1] if t <= time)
+
+        # type: [_:_:_:_:Spinner:_:Slider:Circle]
+        # hitSound: [Kat:Large:Kat:Don]
+
+        if type & 1: # circle
+            if hitSound == 0 or hitSound & 1: # don
+                note = beatmap.definitions["x"](beat=beat, speed=speed, volume=volume)
+                beatmap.charts[0].notes.append(note)
+
+            elif hitSound & 10: # kat
+                note = beatmap.definitions["o"](beat=beat, speed=speed, volume=volume)
+                beatmap.charts[0].notes.append(note)
+
+        elif type & 2: # slider
+            curve,slides,sliderLength,edgeSounds,edgeSets = objectParams
+            sliderLength = float(sliderLength)
+            length = sliderLength / sliderVelocity
+
+            note = beatmap.definitions["%"](density=density, beat=beat, length=length, speed=speed, volume=volume)
+            beatmap.charts[0].notes.append(note)
+
+        elif type & 8: # spinner
+            end_time, = objectParams
+            end_time = int(end_time)
+            length = (end_time - time)/context["beatLength0"]
+            # 10
+
+            note = beatmap.definitions["@"](density=density, beat=beat, length=length, speed=speed, volume=volume)
+            beatmap.charts[0].notes.append(note)
 
