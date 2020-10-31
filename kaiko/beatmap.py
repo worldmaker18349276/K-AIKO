@@ -1,7 +1,7 @@
 import os
 from enum import Enum
 import inspect
-from typing import Optional, List, Tuple
+from typing import List, Tuple, Optional, Union
 import numpy
 import audioread
 from . import cfg
@@ -149,6 +149,8 @@ class Performance(Enum):
             Performance.LATE_FAILED_WRONG,
             Performance.EARLY_FAILED_WRONG,
             ).index(self)
+        if field.is_flipped:
+            flipped = not flipped
         j = 0 if not flipped else 1
 
         field.draw_bar(0.0, appearances[i][j])
@@ -226,18 +228,25 @@ class OneshotTarget(Target):
             mixer.play(sound, samplerate=self.samplerate, delay=self.time-time)
 
     def draw(self, field, time):
-        if self.perf in (None, Performance.MISS):
-            # approaching or miss
-            pos = (self.time - time) * 0.5 * self.speed
-            field.draw_bar(pos, self.appearances[0])
+        if self.perf in (None, Performance.MISS): # approaching or miss
+            appearance = self.appearances[0]
+            if isinstance(appearance, tuple):
+                is_flipped = (self.speed < 0) != field.is_flipped
+                appearance = appearance[0] if not is_flipped else appearance[1]
 
-        elif self.perf.is_wrong:
-            # wrong key
             pos = (self.time - time) * 0.5 * self.speed
-            field.draw_bar(pos, self.appearances[1])
+            field.draw_bar(pos, appearance)
 
-        else:
-            # correct key
+        elif self.perf.is_wrong: # wrong key
+            appearance = self.appearances[1]
+            if isinstance(appearance, tuple):
+                is_flipped = (self.speed < 0) != field.is_flipped
+                appearance = appearance[0] if not is_flipped else appearance[1]
+
+            pos = (self.time - time) * 0.5 * self.speed
+            field.draw_bar(pos, appearance)
+
+        else: # correct key
             pass
 
     def draw_hitting(self, field, time):
@@ -386,10 +395,15 @@ class Roll(Target):
                 mixer.play(sound, samplerate=self.samplerate, delay=t-time)
 
     def draw(self, field, time):
+        appearance = self.rock_appearance
+        if isinstance(appearance, tuple):
+            is_flipped = (self.speed < 0) != field.is_flipped
+            appearance = appearance[0] if not is_flipped else appearance[1]
+
         for r, t in enumerate(self.times):
             if r > self.roll-1:
                 pos = (t - time) * 0.5 * self.speed
-                field.draw_bar(pos, self.rock_appearance)
+                field.draw_bar(pos, appearance)
 
 class Spin(Target):
     full_score = 10
@@ -453,23 +467,35 @@ class Spin(Target):
             pos += max(0.0, (self.time - time) * 0.5 * self.speed)
             pos += min(0.0, (self.end - time) * 0.5 * self.speed)
             i = int(self.charge) % len(self.disk_appearances)
-            field.draw_bar(pos, self.disk_appearances[i])
+
+            appearance = self.disk_appearances[i]
+            if isinstance(appearance, tuple):
+                is_flipped = (self.speed < 0) != field.is_flipped
+                appearance = appearance[0] if not is_flipped else appearance[1]
+
+            field.draw_bar(pos, appearance)
 
     def draw_judging(self, field, time):
         return True
 
     def draw_hitting(self, field, time):
         if self.charge == self.capacity:
-            field.draw_bar(0.0, self.finishing_appearance)
+            appearance = self.finishing_appearance
+            if isinstance(appearance, tuple):
+                is_flipped = (self.speed < 0) != field.is_flipped
+                appearance = appearance[0] if not is_flipped else appearance[1]
+
+            field.draw_bar(0.0, appearance)
             return True
 
 
 # beatmap
 class PlayField:
-    def __init__(self, width, shift, spec_width):
+    def __init__(self, width, spec_width, shift, is_flipped):
         self.width = width
-        self.shift = shift
         self.spec_width = spec_width
+        self.shift = shift
+        self.is_flipped = is_flipped
 
         self.chars = [' ']*width
         self.spec_offset = 1
@@ -506,7 +532,10 @@ class PlayField:
         self.addstr(self.progress_offset, "[{:>5.1f}%]".format(progress*100))
 
     def draw_bar(self, pos, str):
-        index = round((pos + self.shift) * (self.bar_width - 1))
+        pos += self.shift
+        if self.is_flipped:
+            pos = 1 - pos
+        index = round(pos * (self.bar_width - 1))
         for ch in str:
             if ch == ' ':
                 index += 1
@@ -533,20 +562,22 @@ class BeatmapSettings:
 
     # Skin:
     ## NoteSkin:
-    soft_approach_appearance: str = "□"
-    soft_wrong_appearance: str = "⬚"
-    loud_approach_appearance: str = "■"
-    loud_wrong_appearance: str = "⬚"
-    incr_approach_appearance: str = "⬒"
-    incr_wrong_appearance: str = "⬚"
-    roll_rock_appearance: str = "◎"
-    spin_disk_appearances: List[str] = ["◴", "◵", "◶", "◷"]
-    spin_finishing_appearance: str = "☺"
+    soft_approach_appearance: Union[str, Tuple[str, str]] = "□"
+    soft_wrong_appearance: Union[str, Tuple[str, str]] = "⬚"
+    loud_approach_appearance: Union[str, Tuple[str, str]] = "■"
+    loud_wrong_appearance: Union[str, Tuple[str, str]] = "⬚"
+    incr_approach_appearance: Union[str, Tuple[str, str]] = "⬒"
+    incr_wrong_appearance: Union[str, Tuple[str, str]] = "⬚"
+    roll_rock_appearance: Union[str, Tuple[str, str]] = "◎"
+    spin_disk_appearances: Union[List[str], List[Tuple[str, str]]] = ["◴", "◵", "◶", "◷"]
+    spin_finishing_appearance: Union[str, Tuple[str, str]] = "☺"
 
     ## SightSkin:
     sight_appearances: List[str] = ["⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
     hit_decay_time: float = 0.4
     hit_sustain_time: float = 0.1
+    sight_shift: float = 0.1
+    sight_flipped: bool = False
 
     ## PerformanceSkin:
     miss_appearance:               Tuple[str, str] = (""   , ""   )
@@ -760,11 +791,10 @@ class Beatmap:
 
     @ra.DataNode.from_generator
     def get_view_handler(self):
-        bar_shift = 0.1
         width = int(os.popen("stty size", "r").read().split()[1])
         if self.settings.field_width is not None:
             width = min(self.settings.field_width, width)
-        field = PlayField(width, bar_shift, self.settings.spec_width)
+        field = PlayField(width, self.settings.spec_width, self.settings.sight_shift, self.settings.sight_flipped)
 
         events_dripper = ra.drip(self.events, lambda e: e.lifespan)
 
