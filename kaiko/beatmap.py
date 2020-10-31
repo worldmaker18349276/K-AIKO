@@ -561,7 +561,8 @@ class BeatmapSettings:
 class Beatmap:
     settings: BeatmapSettings = BeatmapSettings()
 
-    def __init__(self, info="", audio=None, offset=0.0, tempo=60.0):
+    def __init__(self, path=".", info="", audio=None, offset=0.0, tempo=60.0):
+        self.path = path
         self.info = info
         self.audio = audio
         self.offset = offset
@@ -605,7 +606,7 @@ class Beatmap:
     def __enter__(self):
         # audio metadata
         if self.audio is not None:
-            with audioread.audio_open(self.audio) as file:
+            with audioread.audio_open(os.path.join(self.path, self.audio)) as file:
                 duration = self.audio_duration = file.duration
                 self.audio_samplerate = file.samplerate
                 self.audio_channels = file.channels
@@ -707,7 +708,7 @@ class Beatmap:
     def get_sound_handler(self, mixer):
         # generate sound
         if isinstance(self.audio, str):
-            music = ra.load(self.audio)
+            music = ra.load(os.path.join(self.path, self.audio))
 
             # add spec
             music = ra.chunk(music, chunk_shape=(self.audio_buffer_length, self.audio_channels))

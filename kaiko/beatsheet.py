@@ -1,3 +1,4 @@
+import os
 import math
 from collections import OrderedDict, namedtuple
 from fractions import Fraction
@@ -100,11 +101,13 @@ class K_AIKO_STD:
         self.Beatmap = Beatmap
         self.NoteChart = NoteChart
 
-    def read(self, file):
+    def read(self, filename):
         # beatmap = self.Beatmap()
         # exec(file.read(), dict(), dict(beatmap=beatmap))
         # return beatmap
-        return self.load_beatmap(self.transformer.transform(self.k_aiko_std_parser.parse(file.read())))
+        path = os.path.dirname(filename)
+        str = open(filename, newline="").read()
+        return self.load_beatmap(path, self.transformer.transform(self.k_aiko_std_parser.parse(str)))
 
     def read_chart(self, str, definitions):
         return self.load_chart(self.transformer.transform(self.chart_parser.parse(str)), definitions)
@@ -118,7 +121,7 @@ class K_AIKO_STD:
                     kwargs[key] = value
         return func(*psargs, **kwargs)
 
-    def load_beatmap(self, node):
+    def load_beatmap(self, path, node):
         header, contents = node.children
         version, = header.children
         info, audio, offset, tempo, charts = contents.children
@@ -128,6 +131,7 @@ class K_AIKO_STD:
 
         beatmap = self.Beatmap()
 
+        beatmap.path = path
         if info is not None:
             beatmap.info = info
         if audio is not None:
@@ -199,41 +203,45 @@ class OSU:
         self.Beatmap = Beatmap
         self.NoteChart = NoteChart
 
-    def read(self, file):
-        format = file.readline()
-        if format != "osu file format v14\n":
-            raise ValueError(f"invalid file format: {repr(format)}")
+    def read(self, filename):
+        path = os.path.dirname(filename)
 
-        beatmap = self.Beatmap()
-        beatmap.charts.append(self.NoteChart())
-        context = {}
+        with open(filename) as file:
+            format = file.readline()
+            if format != "osu file format v14\n":
+                raise ValueError(f"invalid file format: {repr(format)}")
 
-        parse = None
+            beatmap = self.Beatmap()
+            beatmap.path = path
+            beatmap.charts.append(self.NoteChart())
+            context = {}
 
-        line = "\n"
-        while line != "":
-            if line == "\n" or line.startswith(r"\\"):
-                pass
-            elif line == "[General]\n":
-                parse = self.parse_general
-            elif line == "[Editor]\n":
-                parse = self.parse_editor
-            elif line == "[Metadata]\n":
-                parse = self.parse_metadata
-            elif line == "[Difficulty]\n":
-                parse = self.parse_difficulty
-            elif line == "[Events]\n":
-                parse = self.parse_events
-            elif line == "[TimingPoints]\n":
-                parse = self.parse_timingpoints
-            elif line == "[Colours]\n":
-                parse = self.parse_colours
-            elif line == "[HitObjects]\n":
-                parse = self.parse_hitobjects
-            else:
-                parse(beatmap, context, line)
+            parse = None
 
-            line = file.readline()
+            line = "\n"
+            while line != "":
+                if line == "\n" or line.startswith(r"\\"):
+                    pass
+                elif line == "[General]\n":
+                    parse = self.parse_general
+                elif line == "[Editor]\n":
+                    parse = self.parse_editor
+                elif line == "[Metadata]\n":
+                    parse = self.parse_metadata
+                elif line == "[Difficulty]\n":
+                    parse = self.parse_difficulty
+                elif line == "[Events]\n":
+                    parse = self.parse_events
+                elif line == "[TimingPoints]\n":
+                    parse = self.parse_timingpoints
+                elif line == "[Colours]\n":
+                    parse = self.parse_colours
+                elif line == "[HitObjects]\n":
+                    parse = self.parse_hitobjects
+                else:
+                    parse(beatmap, context, line)
+
+                line = file.readline()
 
         return beatmap
 
