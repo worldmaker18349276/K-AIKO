@@ -4,9 +4,9 @@ import inspect
 from typing import Optional, List, Tuple
 import numpy
 import audioread
-import cfg
-import realtime_analysis as ra
-from beatsheet import K_AIKO_STD, OSU
+from . import cfg
+from . import realtime_analysis as ra
+from .beatsheet import K_AIKO_STD, OSU
 
 
 # scripts

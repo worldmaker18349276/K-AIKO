@@ -4,8 +4,8 @@ import contextlib
 import signal
 import numpy
 import pyaudio
-import cfg
-import realtime_analysis as ra
+from . import cfg
+from . import realtime_analysis as ra
 
 
 @cfg.configurable
@@ -311,4 +311,23 @@ def configure_audio(config_name=None):
 
     finally:
         manager.terminate()
+
+# manager.is_format_supported(rate,
+#     input_device=None, input_channels=None, input_format=None,
+#     output_device=None, output_channels=None, output_format=None)
+
+# devices selector: device, samplerate, channels, format, buffer_length
+# device:
+#     device_index
+# samplerate:
+#     44100, 48000, 88200, 96000, 32000, 22050, 11025, 8000
+# channels:
+#     1, 2
+# formats:
+#     paFloat32, paInt32, paInt16, paInt8, paUInt8
+# buffer_length:
+#     1024, 512, 2048
+
+# delta = noise_power * 20
+# knock_volume = Dt / knock_max_energy
 
