@@ -15,7 +15,6 @@ K-AIK▣  is a voice-controlled terminal-based rhythm game.
 
 ## TODO
 - rewrite cfg by lark
-- simplify K-AIKO-std file format for easier parsing
 - add script
 - add context notes
 - write config system for knock console

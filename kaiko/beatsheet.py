@@ -25,17 +25,17 @@ _NEWLINE: /\r\n?|\n/
 _WHITESPACE: /[ \t]+/
 _COMMENT: /\#[^\r\n]*/
 _MCOMMENT: /\#((?![\r\n]|''').)*/
-_n: (_WHITESPACE? _COMMENT? _NEWLINE)+
-_s: (_WHITESPACE? _MCOMMENT? _NEWLINE)* _WHITESPACE?
-_e: (_WHITESPACE? _COMMENT? _NEWLINE)* _WHITESPACE? _COMMENT?
+_n: (_NEWLINE _COMMENT?)* _NEWLINE
+_e: (_NEWLINE _COMMENT?)*
+_s: (_WHITESPACE | (_NEWLINE _MCOMMENT?)* _NEWLINE)*
 
 none:  /None/
 bool:  /True|False/
 int:   /[-+]?(0|[1-9][0-9]*)/
 frac:  /[-+]?(0|[1-9][0-9]*)\/[1-9][0-9]*/
 float: /[-+]?[0-9]+\.[0-9]+/
-str:   /'((?![\\\r\n]|').|\\.|\\\r\n)*'/s
-mstr:  /'''((?!\\|''').|\\.)*'''/s
+str:   /'([^\r\n\\']|\\[\\'btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*'/
+mstr:  /'''(?=\n)([^\\']|\\[\\'btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*(?<=\n)'''/
 
 value: none | bool | float | frac | int | str
 key: /[a-zA-Z_][a-zA-Z0-9_]*/
@@ -58,7 +58,9 @@ info:   [_n "beatmap.info"   " = " mstr]
 audio:  [_n "beatmap.audio"  " = " str]
 offset: [_n "beatmap.offset" " = " float]
 tempo:  [_n "beatmap.tempo"  " = " float]
-charts: (_n "beatmap += r'''\n" chart "\n'''")*
+charts: (_n "beatmap += r" _MSTR_PREFIX chart _MSTR_POSTFIX)*
+_MSTR_PREFIX: /'''(?=\n)/
+_MSTR_POSTFIX: /(?<=\n)'''/
 
 contents: info audio offset tempo charts _e
 k_aiko_std: header contents
@@ -92,7 +94,7 @@ class K_AIKO_STD_Transformer(Transformer):
         return psargs, kwargs
 
 class K_AIKO_STD:
-    version = "1.1.1"
+    version = "1.1.2"
     k_aiko_std_parser = Lark(k_aiko_grammar, start="k_aiko_std")
     chart_parser = Lark(k_aiko_grammar, start="chart")
     transformer = K_AIKO_STD_Transformer()
