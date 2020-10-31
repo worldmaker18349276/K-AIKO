@@ -45,11 +45,12 @@ arguments: ["(" [ arg (", " arg)* ] ")"]
 
 symbol: /[^ \b\t\n\r\f\v()[\]{}\'"\\#|~]+/
 note: symbol arguments
+text: str arguments
 lengthen: "~"
 measure: "|"
 division: "[" arguments pattern "]"
-instant: "{" pattern "}"
-pattern: _s ((lengthen | measure | note | division | instant) _s)*
+instant: "{" arguments pattern "}"
+pattern: _s ((lengthen | measure | note | text | division | instant) _s)*
 chart: _s arguments pattern
 
 version: /[0-9]+\.[0-9]+\.[0-9]+(?=\r\n?|\n|$)/
@@ -68,7 +69,7 @@ k_aiko_std: header contents
 
 class K_AIKO_STD_Transformer(Transformer):
     # defaults: k_aiko_std, header, contents,
-    #           chart, note, lengthen, measure, division, instant
+    #           chart, note, text, lengthen, measure, division, instant
     charts = pattern = lambda self, args: args
     version = symbol = key = value = lambda self, args: args[0]
     info = audio = offset = tempo = lambda self, args: None if len(args) == 0 else args[0]
@@ -94,7 +95,7 @@ class K_AIKO_STD_Transformer(Transformer):
         return psargs, kwargs
 
 class K_AIKO_STD:
-    version = "1.1.2"
+    version = "1.2.0"
     k_aiko_std_parser = Lark(k_aiko_grammar, start="k_aiko_std")
     chart_parser = Lark(k_aiko_grammar, start="chart")
     transformer = K_AIKO_STD_Transformer()
@@ -174,6 +175,14 @@ class K_AIKO_STD:
 
                 beat = beat + length
 
+            elif node.data == "text":
+                text, arguments = node.children
+                arguments[0].insert(0, text)
+                note = self._call(definitions["text"], arguments, dict(beat=beat, length=length))
+                chart.notes.append(note)
+
+                beat = beat + length
+
             elif node.data == "lengthen":
                 if note is not None and "length" in note.bound.arguments:
                     note.length = note.length + length
@@ -191,7 +200,10 @@ class K_AIKO_STD:
                 chart, beat, _, note = self.load_pattern(pattern, chart, beat, divided_length, note, definitions)
 
             elif node.data == "instant":
-                pattern, = node.children
+                arguments, pattern = node.children
+                if len(arguments[0]) + len(arguments[1]) > 0:
+                    note = self._call(definitions["context"], arguments)
+                    chart.notes.append(note)
                 chart, beat, _, note = self.load_pattern(pattern, chart, beat, 0, note, definitions)
 
             else:

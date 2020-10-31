@@ -17,12 +17,16 @@ class Event:
     # draw(field, time)
     pass
 
-class Sym(Event):
+class Text(Event):
     zindex = -2
 
-    def __init__(self, beatmap, context, symbol=None, sound=None, *, beat, speed=1.0, samplerate=44100):
+    def __init__(self, beatmap, context, text=None, sound=None, *, beat, speed=None, samplerate=44100):
         self.time = beatmap.time(beat)
-        self.symbol = symbol
+        self.text = text
+
+        if speed is None:
+            speed = context.get("speed", 1.0)
+
         self.speed = speed
         self.sound = sound
         self.samplerate = samplerate
@@ -39,10 +43,12 @@ class Sym(Event):
             mixer.play(self.sound, samplerate=self.samplerate, delay=self.time-time)
 
     def draw(self, field, time):
-        if self.symbol is not None:
+        if self.text is not None:
             pos = (self.time - time) * 0.5 * self.speed
-            field.draw_bar(pos, self.symbol)
+            field.draw_bar(pos, self.text)
 
+def set_context(beatmap, context, **kw):
+    context.update(**kw)
 
 # targets
 class Target(Event):
@@ -154,7 +160,7 @@ class OneshotTarget(Target):
 
     full_score = Performance.get_full_score()
 
-    def __init__(self, beatmap, context, *, beat, speed=1.0, volume=0.0):
+    def __init__(self, beatmap, context, *, beat, speed=None, volume=None):
         self.tolerances = (
             beatmap.settings.great_tolerance,
             beatmap.settings.good_tolerance,
@@ -178,6 +184,11 @@ class OneshotTarget(Target):
             beatmap.settings.late_failed_wrong_appearance,
             beatmap.settings.early_failed_wrong_appearance,
             )
+
+        if speed is None:
+            speed = context.get("speed", 1.0)
+        if volume is None:
+            volume = context.get("volume", 0.0)
 
         self.time = beatmap.time(beat)
         self.speed = speed
@@ -236,7 +247,7 @@ class Soft(OneshotTarget):
     sound = [ra.pulse(samplerate=44100, freq=830.61, decay_time=0.03, amplitude=0.5)]
     samplerate = 44100
 
-    def __init__(self, beatmap, context, *, beat, speed=1.0, volume=0.0):
+    def __init__(self, beatmap, context, *, beat, speed=None, volume=None):
         super().__init__(beatmap, context, beat=beat, speed=speed, volume=volume)
         self.appearances = (
             beatmap.settings.soft_approach_appearance,
@@ -251,7 +262,7 @@ class Loud(OneshotTarget):
     sound = [ra.pulse(samplerate=44100, freq=1661.2, decay_time=0.03, amplitude=1.0)]
     samplerate = 44100
 
-    def __init__(self, beatmap, context, *, beat, speed=1.0, volume=0.0):
+    def __init__(self, beatmap, context, *, beat, speed=None, volume=None):
         super().__init__(beatmap, context, beat=beat, speed=speed, volume=volume)
         self.appearances = (
             beatmap.settings.loud_approach_appearance,
@@ -273,7 +284,7 @@ class IncrGroup:
 class Incr(OneshotTarget):
     samplerate = 44100
 
-    def __init__(self, beatmap, context, group=None, *, beat, speed=1.0, volume=0.0):
+    def __init__(self, beatmap, context, group=None, *, beat, speed=None, volume=None):
         super().__init__(beatmap, context, beat=beat, speed=speed, volume=volume)
         self.appearances = (
             beatmap.settings.incr_approach_appearance,
@@ -317,7 +328,7 @@ class Roll(Target):
     sound = [ra.pulse(samplerate=44100, freq=1661.2, decay_time=0.01, amplitude=0.5)]
     samplerate = 44100
 
-    def __init__(self, beatmap, context, density=2, *, beat, length, speed=1.0, volume=0.0):
+    def __init__(self, beatmap, context, density=2, *, beat, length, speed=None, volume=None):
         self.tolerance = beatmap.settings.roll_tolerance
         self.rock_appearance = beatmap.settings.roll_rock_appearance
 
@@ -326,6 +337,11 @@ class Roll(Target):
         self.number = int(length * density)
         self.end = beatmap.time(beat+length)
         self.times = [beatmap.time(beat+i/density) for i in range(self.number)]
+
+        if speed is None:
+            speed = context.get("speed", 1.0)
+        if volume is None:
+            volume = context.get("volume", 0.0)
 
         self.speed = speed
         self.volume = volume
@@ -380,7 +396,7 @@ class Spin(Target):
     sound = [ra.pulse(samplerate=44100, freq=1661.2, decay_time=0.01, amplitude=1.0)]
     samplerate = 44100
 
-    def __init__(self, beatmap, context, density=2, *, beat, length, speed=1.0, volume=0.0):
+    def __init__(self, beatmap, context, density=2, *, beat, length, speed=None, volume=None):
         self.tolerance = beatmap.settings.spin_tolerance
         self.disk_appearances = beatmap.settings.spin_disk_appearances
         self.finishing_appearance = beatmap.settings.spin_finishing_appearance
@@ -390,6 +406,11 @@ class Spin(Target):
         self.capacity = length * density
         self.end = beatmap.time(beat+length)
         self.times = [beatmap.time(beat+i/density) for i in range(int(self.capacity))]
+
+        if speed is None:
+            speed = context.get("speed", 1.0)
+        if volume is None:
+            volume = context.get("volume", 0.0)
 
         self.speed = speed
         self.volume = volume
@@ -576,7 +597,8 @@ class Beatmap:
         self["<"] = Incr
         self["%"] = Roll
         self["@"] = Spin
-        self["s"] = Sym
+        self["text"] = Text
+        self["context"] = set_context
 
     def time(self, beat):
         return self.offset + beat*60/self.tempo
