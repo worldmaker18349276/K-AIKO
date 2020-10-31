@@ -348,44 +348,6 @@ def merge(*nodes):
         while True:
             data = yield (data, node.send())
 
-
-@DataNode.from_generator
-def drip(signals, schedule):
-    """A data node to fetch scheduled signals chronologically.
-
-    Parameters
-    ----------
-    signals : list
-        The signals to fetch.
-
-    schedule : function
-        A function to schedule each signal, which should return start/end time in a tuple.
-
-    Receives
-    --------
-    time : float
-        The current time to fetch signals, which should greater than previous received time.
-
-    Yields
-    ------
-    data : list
-        The signals occurred in the given time.
-    """
-    it = iter(sorted([(schedule(data), data) for data in signals], key=lambda e: e[0]))
-
-    buffer = []
-    waiting = next(it, None)
-
-    time = yield
-    while True:
-        while waiting is not None and waiting[0][0] < time:
-            buffer.append(waiting)
-            waiting = next(it, None)
-
-        buffer = [playing for playing in buffer if playing[0][1] >= time]
-
-        time = yield [data for _, data in buffer]
-
 @DataNode.from_generator
 def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
     """A data node of peak detaction.

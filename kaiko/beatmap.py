@@ -15,7 +15,26 @@ class Event:
     # __init__(beatmap, context, *args, **kwargs)
     # play(mixer, time)
     # draw(field, time)
-    pass
+
+    @staticmethod
+    @ra.DataNode.from_generator
+    def drip(events):
+        it = iter(sorted(events, key=lambda e: e.lifespan))
+        waiting = next(it, None)
+        buffer = []
+
+        time = yield
+
+        while True:
+            for playing in list(buffer):
+                if playing.lifespan[1] < time:
+                    buffer.remove(playing)
+
+            while waiting is not None and waiting.lifespan[0] < time:
+                buffer.append(waiting)
+                waiting = next(it, None)
+
+            time = yield list(buffer)
 
 class Text(Event):
     zindex = -2
@@ -772,7 +791,7 @@ class Beatmap:
         elif self.audio is not None:
             raise ValueError
 
-        events_dripper = ra.drip(self.events, lambda e: e.lifespan)
+        events_dripper = Event.drip(self.events)
 
         with events_dripper:
             time = (yield) + self.start
@@ -796,7 +815,7 @@ class Beatmap:
             width = min(self.settings.field_width, width)
         field = PlayField(width, self.settings.spec_width, self.settings.sight_shift, self.settings.sight_flipped)
 
-        events_dripper = ra.drip(self.events, lambda e: e.lifespan)
+        events_dripper = Event.drip(self.events)
 
         with events_dripper:
             try:
