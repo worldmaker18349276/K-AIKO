@@ -51,6 +51,50 @@ class ContextBuffer:
         self.buffer.remove(cm)
         return cm.__exit__(None, None, None)
 
+@ra.DataNode.from_generator
+def shift(node, offset, nchannel=None):
+    node = ra.DataNode.wrap(node)
+
+    with node:
+        try:
+            if offset < 0:
+                shape = (offset, nchannel) if nchannel is not None else offset
+                data = numpy.zeros(shape, dtype=numpy.float32)
+                node.send(data)
+                offset = 0
+
+        except StopIteration:
+            yield
+
+        else:
+            data = yield
+            while data.shape[0] < offset:
+                offset = offset - data.shape[0]
+                data = yield data
+
+            if offset > 0:
+                res, data = data[:offset], data[offset:]
+                data = yield numpy.concatenate((res, node.send(data)), axis=0)
+
+            while True:
+                data = yield node.send(data)
+
+@ra.DataNode.from_generator
+def attach(node):
+    with node:
+        data = yield
+        index = 0
+        while True:
+            signal = node.send()
+            while signal.shape[0] > 0:
+                length = min(data.shape[0]-index, signal.shape[0])
+                data[index:index+length] += signal[:length]
+                index += length
+                signal = signal[length:]
+                if index == data.shape[0]:
+                    data = yield data
+                    index = 0
+
 class AudioMixer(ra.DataNode):
     def __init__(self, samplerate=44100, buffer_shape=1024):
         super().__init__(self.proxy())
@@ -70,45 +114,38 @@ class AudioMixer(ra.DataNode):
                 while not self.new_nodes.empty():
                     nodes.enter(self.new_nodes.get())
 
-                signals = []
-                for node in list(nodes):
+                buffer[:] = 0.0
+                data = buffer
+                for node in sorted(nodes, key=lambda n: getattr(n, "zindex", 0)):
                     try:
-                        data = node.send()
-                        if data is not 0:
-                            signals.append(data)
+                        data = node.send(data)
                     except StopIteration:
                         nodes.exit(node)
-
-                buffer[:] = 0.0
-                for signal in signals:
-                    buffer += signal
 
                 self.index += 1
                 self.time = self.index * buffer.shape[0] / self.samplerate
 
-                yield numpy.copy(buffer)
+                yield numpy.copy(data)
 
     def play(self, node, samplerate=44100, channels=None, delay=None, start=None, end=None):
         if channels is None: channels = self.buffer_shape[1] if isinstance(self.buffer_shape, tuple) else 0
 
-        node_ = ra.pipe(ra.tslice(node, samplerate, start, end),
-                        ra.rechannel(channels),
-                        ra.resample(ratio=(self.samplerate, samplerate)))
+        node_ = attach(ra.pipe(ra.tslice(node, samplerate, start, end),
+                               ra.rechannel(channels),
+                               ra.resample(ratio=(self.samplerate, samplerate))))
 
-        if delay is None:
-            node_ = ra.chunk(node_, self.buffer_shape)
-        else:
+        self.add_effect(node_, delay)
+
+    def add_effect(self, node, delay=None, zindex=None):
+        if delay is not None:
+            nchannel = self.buffer_shape[1] if isinstance(self.buffer_shape, tuple) else None
             offset = round(delay*self.samplerate)
-            buffer_length = self.buffer_shape[0] if isinstance(self.buffer_shape, tuple) else self.buffer_shape
-            prepend = offset // buffer_length
+            node = shift(node, offset, nchannel)
 
-            node_ = ra.chunk(node_, self.buffer_shape, offset % buffer_length)
-            if prepend < 0:
-                node_ = ra.skip(node_, -prepend)
-            else:
-                node_ = ra.chain(itertools.repeat(0, prepend), node_)
+        if zindex is not None:
+            node.zindex = zindex
 
-        self.new_nodes.put(node_)
+        self.new_nodes.put(node)
 
 class KnockDetector(ra.DataNode):
     def __init__(self, samplerate=44100, buffer_length=1024, channels=1, *,
