@@ -749,14 +749,14 @@ class Beatmap:
                     if hit_target is not None:
                         hit_target.hit(hit_time, hit_strength)
 
-                self.judging_target = target_handler.send(time)
+                self.judging_target = target_handler.send(detector.time + audio_offset)
 
                 # draw/play events
                 field.clear()
                 events = events_dripper.send(time)
                 for event in sorted(events[::-1], key=lambda e: e.zindex):
-                    event.draw(field, time)
-                    event.play(mixer, time)
+                    event.draw(field, screen.time+audio_offset)
+                    event.play(mixer, mixer.time+audio_offset)
 
                 # draw sight
                 stop_drawing = False

@@ -1,3 +1,4 @@
+import sys
 import os
 import time
 import itertools
@@ -11,6 +12,45 @@ from . import cfg
 from . import realtime_analysis as ra
 
 
+class ContextBuffer:
+    def __init__(self):
+        self.buffer = []
+
+    def __iter__(self):
+        return iter(self.buffer)
+
+    def __enter__(self):
+        for cm in self.buffer:
+            cm.__enter__()
+        return self
+
+    def __exit__(self, type=None, value=None, traceback=None):
+        passthrough = True
+        for cm in self.buffer[::-1]:
+            try:
+                if cm.__exit__(type, value, traceback):
+                    passthrough = False
+                    type, value, traceback = None, None, None
+            except:
+                passthrough = False
+                type, value, traceback = sys.exc_info()
+
+        if passthrough:
+            return False
+        elif value is not None:
+            raise value
+        elif type is not None:
+            raise type()
+        return True
+
+    def enter(self, cm):
+        self.buffer.append(cm)
+        return cm.__enter__()
+
+    def exit(self, cm):
+        self.buffer.remove(cm)
+        return cm.__exit__(None, None, None)
+
 class AudioMixer(ra.DataNode):
     def __init__(self, samplerate=44100, buffer_shape=1024):
         super().__init__(self.proxy())
@@ -18,20 +58,17 @@ class AudioMixer(ra.DataNode):
         self.buffer_shape = buffer_shape
         self.index = 0
         self.time = 0.0
-        self.new_nodes = []
+        self.new_nodes = queue.Queue()
 
     def proxy(self):
         buffer = numpy.zeros(self.buffer_shape, dtype=numpy.float32)
 
-        nodes = []
-        with contextlib.ExitStack() as stack:
+        with ContextBuffer() as nodes:
             yield
 
             while True:
-                for node in self.new_nodes:
-                    stack.enter_context(node)
-                    nodes.append(node)
-                self.new_nodes.clear()
+                while not self.new_nodes.empty():
+                    nodes.enter(self.new_nodes.get())
 
                 signals = []
                 for node in list(nodes):
@@ -40,8 +77,7 @@ class AudioMixer(ra.DataNode):
                         if data is not 0:
                             signals.append(data)
                     except StopIteration:
-                        node.__exit__()
-                        nodes.remove(node)
+                        nodes.exit(node)
 
                 buffer[:] = 0.0
                 for signal in signals:
@@ -72,7 +108,7 @@ class AudioMixer(ra.DataNode):
             else:
                 node_ = ra.chain(itertools.repeat(0, prepend), node_)
 
-        self.new_nodes.append(node_)
+        self.new_nodes.put(node_)
 
 class KnockDetector(ra.DataNode):
     def __init__(self, samplerate=44100, buffer_length=1024, channels=1, *,
@@ -96,8 +132,21 @@ class KnockDetector(ra.DataNode):
         self.knock_energy = knock_energy
 
         self.detected = queue.Queue()
+        self.index = 0
+        self.time = 0.0
 
     def proxy(self):
+        node = self._detector()
+        hop_length = round(self.samplerate*self.time_res)
+        if self.buffer_length != hop_length:
+            node = ra.unchunk(node, chunk_shape=(hop_length, self.channels))
+
+        with node:
+            while True:
+                node.send((yield))
+
+    @ra.DataNode.from_generator
+    def _detector(self):
         pre_max = round(self.pre_max / self.time_res)
         post_max = round(self.post_max / self.time_res)
         pre_avg = round(self.pre_avg / self.time_res)
@@ -108,41 +157,40 @@ class KnockDetector(ra.DataNode):
         hop_length = round(self.samplerate*self.time_res)
         win_length = round(self.samplerate/self.freq_res)
 
+        picker = ra.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
         window = ra.get_half_Hann_window(win_length)
-        node = ra.pipe(ra.frame(win_length=win_length, hop_length=hop_length),
-                       ra.power_spectrum(win_length=win_length,
-                                         samplerate=self.samplerate,
-                                         windowing=window,
-                                         weighting=True),
-                       ra.onset_strength(1),
-                       (lambda a: (None, a, a)),
-                       ra.pair(itertools.count(-delay), # generate index
-                               ra.delay([0.0]*delay), # delay signal
-                               ra.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta) # pick peak
-                               ),
-                       (lambda a: (a[0]*self.time_res-self.knock_delay,
-                                   a[1]/self.knock_energy,
-                                   a[2])),
-                       (lambda a: self.detected.put(a[0:2]) if a[2] else None),
-                       )
-
-        if self.buffer_length != hop_length:
-            node = ra.unchunk(node, chunk_shape=(self.hop_length, self.channels))
+        node = ra.pipe(
+            ra.frame(win_length=win_length, hop_length=hop_length),
+            ra.power_spectrum(win_length=win_length, samplerate=self.samplerate, windowing=window, weighting=True),
+            ra.onset_strength(1),
+            (lambda a: (a, a)),
+            ra.pair(ra.delay([0.0]*delay), picker))
 
         with node:
-            data = yield
+            self.index = -delay-1
+
             while True:
-                data = yield node.send(data)
+                data = yield
+                self.index += 1
+                self.time = self.index * self.time_res - self.knock_delay
+
+                strength, res = node.send(data)
+                if res:
+                    self.detected.put((self.time, strength / self.knock_energy))
 
 class TerminalLine(ra.DataNode):
-    def __init__(self):
+    def __init__(self, display_delay):
         super().__init__(self.proxy())
         self.width = int(os.popen("stty size", "r").read().split()[1])
         self.chars = [' ']*self.width
+        self.display_delay = display_delay
+        self.time = 0.0
 
     def proxy(self):
         time = yield
         while True:
+            self.time = time - self.display_delay
+
             time = yield str(self)
 
     def __str__(self):
@@ -164,11 +212,10 @@ class TerminalLine(ra.DataNode):
                 index += 1
 
 class DisplayThread(threading.Thread):
-    def __init__(self, display_handler, display_delay, display_framerate):
+    def __init__(self, display_handler, display_framerate):
         super().__init__()
 
         self.display_handler = display_handler
-        self.display_delay = display_delay
         self.display_framerate = display_framerate
         self.closed = False
 
@@ -190,7 +237,7 @@ class DisplayThread(threading.Thread):
                         time.sleep(t1 - t)
                         continue
 
-                    view = self.display_handler.send(t - self.display_delay)
+                    view = self.display_handler.send(t)
                     print('\r' + view + '\r', end='', flush=True)
 
                     t = time.time() - t0
@@ -272,9 +319,9 @@ class KnockConsole:
                          )
 
     def get_display_thread(self):
-        self.screen = TerminalLine()
+        self.screen = TerminalLine(self.display_delay)
 
-        display_thread = DisplayThread(self.screen, self.display_delay, self.display_framerate)
+        display_thread = DisplayThread(self.screen, self.display_framerate)
         return contextlib.closing(display_thread)
 
     def SIGINT_handler(self, sig, frame):
