@@ -90,13 +90,15 @@ class DataNode:
 
 # basic data nodes
 @DataNode.from_generator
-def rewrap(node):
+def rewrap(node, context=contextlib.suppress()):
     """A data node processing data by another data node.
 
     Parameters
     ----------
     node : DataNode
         The data node.
+    context : contextmanager, optional
+        The context manager wraps the node.
 
     Receives
     --------
@@ -108,7 +110,7 @@ def rewrap(node):
     data : any
         The processed signal.
     """
-    with node:
+    with context, node:
         data = yield
         while True:
             res = node.send(data)
@@ -1016,69 +1018,4 @@ def get_A_weight(samplerate, win_length):
     weight[f>20000] = 0.0
 
     return weight
-
-
-# mixer
-class AudioMixer(DataNode):
-    def __init__(self, samplerate=44100, buffer_shape=1024):
-        super().__init__(self.proxy())
-        self.samplerate = samplerate
-        self.buffer_shape = buffer_shape
-        self.index = 0
-        self.time = 0.0
-        self.new_nodes = []
-
-    def proxy(self):
-        buffer = numpy.zeros(self.buffer_shape, dtype=numpy.float32)
-
-        nodes = []
-        with contextlib.ExitStack() as stack:
-
-            yield
-            while True:
-                for node in self.new_nodes:
-                    stack.enter_context(node)
-                    nodes.append(node)
-                self.new_nodes.clear()
-
-                signals = []
-                for node in list(nodes):
-                    try:
-                        data = node.send()
-                        if data is not 0:
-                            signals.append(data)
-                    except StopIteration:
-                        node.__exit__()
-                        nodes.remove(node)
-
-                buffer[:] = 0.0
-                for signal in signals:
-                    buffer += signal
-
-                self.index += 1
-                self.time = self.index * buffer.shape[0] / self.samplerate
-
-                yield numpy.copy(buffer)
-
-    def play(self, node, samplerate=44100, channels=None, delay=None, start=None, end=None):
-        if channels is None: channels = self.buffer_shape[1] if isinstance(self.buffer_shape, tuple) else 0
-
-        node_ = pipe(tslice(node, samplerate, start, end),
-                     rechannel(channels),
-                     resample(ratio=(self.samplerate, samplerate)))
-
-        if delay is None:
-            node_ = chunk(node_, self.buffer_shape)
-        else:
-            offset = round(delay*self.samplerate)
-            buffer_length = self.buffer_shape[0] if isinstance(self.buffer_shape, tuple) else self.buffer_shape
-            prepend = offset // buffer_length
-
-            node_ = chunk(node_, self.buffer_shape, offset % buffer_length)
-            if prepend < 0:
-                node_ = skip(node_, -prepend)
-            else:
-                node_ = chain(itertools.repeat(0, prepend), node_)
-
-        self.new_nodes.append(node_)
 
