@@ -610,7 +610,6 @@ class BeatmapSettings:
     skip_time: float = 8.0
     tickrate: float = 60.0
 
-@cfg.configurable
 class Beatmap:
     settings: BeatmapSettings = BeatmapSettings()
 

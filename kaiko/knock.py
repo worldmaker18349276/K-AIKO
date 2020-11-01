@@ -249,7 +249,7 @@ class DisplayThread(threading.Thread):
 
 
 @cfg.configurable
-class KnockConsole:
+class KnockConsoleSettings:
     # input
     input_device: int = -1
     input_samplerate: int = 44100
@@ -280,48 +280,73 @@ class KnockConsole:
     knock_delay: float = 0.0
     knock_energy: float = 1.0e-3
 
+class KnockConsole:
+    settings: KnockConsoleSettings = KnockConsoleSettings()
+
     def __init__(self, config=None):
         self.stopped = False
         if config is not None:
-            cfg.config_read(open(config, "r"), main=self)
+            cfg.config_read(open(config, "r"), main=self.settings)
 
     def get_output_stream(self, manager):
-        self.mixer = AudioMixer(self.output_samplerate, (self.output_buffer_length, self.output_channels))
+        samplerate = self.settings.output_samplerate
+        buffer_length = self.settings.output_buffer_length
+        channels = self.settings.output_channels
+        format = self.settings.output_format
+        device = self.settings.output_device
+
+        self.mixer = AudioMixer(samplerate, (buffer_length, channels))
 
         return ra.play(manager, self.mixer,
-                       samplerate=self.output_samplerate,
-                       buffer_shape=(self.output_buffer_length, self.output_channels),
-                       format=self.output_format,
-                       device=self.output_device,
+                       samplerate=samplerate,
+                       buffer_shape=(buffer_length, channels),
+                       format=format,
+                       device=device,
                        )
 
     def get_input_stream(self, manager):
-        self.detector = KnockDetector(self.input_samplerate,
-                                      self.input_buffer_length,
-                                      self.input_channels,
-                                      pre_max=self.detector_pre_max,
-                                      post_max=self.detector_post_max,
-                                      pre_avg=self.detector_pre_avg,
-                                      post_avg=self.detector_post_avg,
-                                      wait=self.detector_wait,
-                                      delta=self.detector_delta,
-                                      time_res=self.detector_time_res,
-                                      freq_res=self.detector_freq_res,
-                                      knock_delay=self.knock_delay,
-                                      knock_energy=self.knock_energy,
+        samplerate = self.settings.input_samplerate
+        buffer_length = self.settings.input_buffer_length
+        channels = self.settings.input_channels
+        format = self.settings.input_format
+        device = self.settings.input_device
+
+        pre_max = self.settings.detector_pre_max
+        post_max = self.settings.detector_post_max
+        pre_avg = self.settings.detector_pre_avg
+        post_avg = self.settings.detector_post_avg
+        wait = self.settings.detector_wait
+        delta = self.settings.detector_delta
+        time_res = self.settings.detector_time_res
+        freq_res = self.settings.detector_freq_res
+
+        knock_delay = self.settings.knock_delay
+        knock_energy = self.settings.knock_energy
+
+        self.detector = KnockDetector(samplerate, buffer_length, channels,
+                                      pre_max=pre_max,
+                                      post_max=post_max,
+                                      pre_avg=pre_avg,
+                                      post_avg=post_avg,
+                                      wait=wait,
+                                      delta=delta,
+                                      time_res=time_res,
+                                      freq_res=freq_res,
+                                      knock_delay=knock_delay,
+                                      knock_energy=knock_energy,
                                       )
 
         return ra.record(manager, self.detector,
-                         samplerate=self.input_samplerate,
-                         buffer_shape=(self.input_buffer_length, self.input_channels),
-                         format=self.input_format,
-                         device=self.input_device,
+                         samplerate=samplerate,
+                         buffer_shape=(buffer_length, channels),
+                         format=format,
+                         device=device,
                          )
 
     def get_display_thread(self):
-        self.screen = TerminalLine(self.display_delay)
+        self.screen = TerminalLine(self.settings.display_delay)
 
-        display_thread = DisplayThread(self.screen, self.display_framerate)
+        display_thread = DisplayThread(self.screen, self.settings.display_framerate)
         return contextlib.closing(display_thread)
 
     def SIGINT_handler(self, sig, frame):
