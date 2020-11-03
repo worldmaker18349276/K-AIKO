@@ -1,7 +1,6 @@
 import sys
 import os
 import time
-import itertools
 import contextlib
 import queue
 import threading
@@ -127,14 +126,19 @@ class AudioMixer(ra.DataNode):
 
                 yield numpy.copy(data)
 
-    def play(self, node, samplerate=44100, channels=None, delay=None, start=None, end=None):
+    def play(self, node, samplerate, channels=None, volume=0.0, start=None, end=None, delay=None):
         if channels is None: channels = self.buffer_shape[1] if isinstance(self.buffer_shape, tuple) else 0
 
-        node_ = attach(ra.pipe(ra.tslice(node, samplerate, start, end),
-                               ra.rechannel(channels),
-                               ra.resample(ratio=(self.samplerate, samplerate))))
+        if start is not None or end is not None:
+            node = ra.tslice(node, samplerate, start, end)
+        node = ra.pipe(node, ra.rechannel(channels))
+        if samplerate != self.samplerate:
+            node = ra.pipe(node, ra.resample(ratio=(self.samplerate, samplerate)))
+        if volume != 0:
+            node = ra.pipe(node, lambda s: s * 10**(volume/20))
+        node = attach(node)
 
-        self.add_effect(node_, delay)
+        self.add_effect(node, delay)
 
     def add_effect(self, node, delay=None, zindex=None):
         if delay is not None:

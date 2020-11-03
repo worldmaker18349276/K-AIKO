@@ -780,15 +780,31 @@ def load(filename):
         The loaded signal.
     """
 
-    with audioread.audio_open(filename) as file:
-        width = 2
-        scale = 2.0 ** (1 - 8*width)
-        fmt = "<i{:d}".format(width)
-        def frombuffer(data):
-            return scale * numpy.frombuffer(data, fmt).astype(numpy.float32).reshape(-1, file.channels)
+    if filename.endswith(".wav"):
+        with wave.open(filename, "rb") as file:
+            nchannels = file.getnchannels()
+            width = file.getsampwidth()
+            scale = 2.0 ** (1 - 8*width)
+            fmt = "<i{:d}".format(width)
+            def frombuffer(data):
+                return scale * numpy.frombuffer(data, fmt).astype(numpy.float32).reshape(-1, nchannels)
 
-        for data in file:
-            yield frombuffer(data)
+            remaining = file.getnframes()
+            while remaining > 0:
+                data = file.readframes(256)
+                remaining -= len(data)//width
+                yield frombuffer(data)
+
+    else:
+        with audioread.audio_open(filename) as file:
+            width = 2
+            scale = 2.0 ** (1 - 8*width)
+            fmt = "<i{:d}".format(width)
+            def frombuffer(data):
+                return scale * numpy.frombuffer(data, fmt).astype(numpy.float32).reshape(-1, file.channels)
+
+            for data in file:
+                yield frombuffer(data)
 
 @DataNode.from_generator
 def save(filename, samplerate=44100, channels=1, width=2):

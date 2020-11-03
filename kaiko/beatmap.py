@@ -1,8 +1,10 @@
 import os
 import time as timer
 from enum import Enum
+import functools
 import inspect
 from typing import List, Tuple, Optional, Union
+from collections import OrderedDict
 import numpy
 import audioread
 from . import cfg
@@ -40,7 +42,7 @@ class Event:
 class Text(Event):
     zindex = -2
 
-    def __init__(self, beatmap, context, text=None, sound=None, *, beat, speed=None, samplerate=44100):
+    def __init__(self, beatmap, context, text=None, sound=None, *, beat, speed=None):
         self.time = beatmap.time(beat)
         self.text = text
 
@@ -48,8 +50,11 @@ class Text(Event):
             speed = context.get("speed", 1.0)
 
         self.speed = speed
-        self.sound = sound
-        self.samplerate = samplerate
+        if sound is not None:
+            self.sound, self.samplerate = beatmap.load_audio(sound, path=beatmap.path)
+        else:
+            self.sound = None
+            self.samplerate = None
         self.is_played = False
 
     @property
@@ -60,7 +65,7 @@ class Text(Event):
     def play(self, mixer, time):
         if self.sound is not None and not self.is_played:
             self.is_played = True
-            mixer.play(self.sound, samplerate=self.samplerate, delay=self.time-time)
+            mixer.play(self.sound, self.samplerate, delay=self.time-time)
 
     def draw(self, field, time):
         if self.text is not None:
@@ -244,8 +249,7 @@ class OneshotTarget(Target):
     def play(self, mixer, time):
         if not self.is_played:
             self.is_played = True
-            sound = [s * 10**(self.volume/20) for s in self.sound]
-            mixer.play(sound, samplerate=self.samplerate, delay=self.time-time)
+            mixer.play(self.sound, self.samplerate, delay=self.time-time, volume=self.volume)
 
     def draw(self, field, time):
         if self.perf in (None, Performance.MISS): # approaching or miss
@@ -273,30 +277,26 @@ class OneshotTarget(Target):
         self.perf.draw(field, self.speed < 0, self.performance_appearances)
 
 class Soft(OneshotTarget):
-    sound = [ra.pulse(samplerate=44100, freq=830.61, decay_time=0.03, amplitude=0.5)]
-    samplerate = 44100
-
     def __init__(self, beatmap, context, *, beat, speed=None, volume=None):
         super().__init__(beatmap, context, beat=beat, speed=speed, volume=volume)
         self.appearances = (
             beatmap.settings.soft_approach_appearance,
             beatmap.settings.soft_wrong_appearance,
             )
+        self.sound, self.samplerate = beatmap.load_audio(beatmap.settings.soft_sound)
         self.threshold = beatmap.settings.soft_threshold
 
     def hit(self, time, strength):
         super().hit(time, strength, strength < self.threshold)
 
 class Loud(OneshotTarget):
-    sound = [ra.pulse(samplerate=44100, freq=1661.2, decay_time=0.03, amplitude=1.0)]
-    samplerate = 44100
-
     def __init__(self, beatmap, context, *, beat, speed=None, volume=None):
         super().__init__(beatmap, context, beat=beat, speed=speed, volume=volume)
         self.appearances = (
             beatmap.settings.loud_approach_appearance,
             beatmap.settings.loud_wrong_appearance,
             )
+        self.sound, self.samplerate = beatmap.load_audio(beatmap.settings.loud_sound)
         self.threshold = beatmap.settings.loud_threshold
 
     def hit(self, time, strength):
@@ -311,14 +311,13 @@ class IncrGroup:
         self.threshold = max(self.threshold, strength)
 
 class Incr(OneshotTarget):
-    samplerate = 44100
-
     def __init__(self, beatmap, context, group=None, *, beat, speed=None, volume=None):
         super().__init__(beatmap, context, beat=beat, speed=speed, volume=volume)
         self.appearances = (
             beatmap.settings.incr_approach_appearance,
             beatmap.settings.incr_wrong_appearance,
             )
+        self.sound, self.samplerate = beatmap.load_audio(beatmap.settings.incr_sound)
         self.incr_threshold = beatmap.settings.incr_threshold
 
         if "incrs" not in context:
@@ -327,7 +326,7 @@ class Incr(OneshotTarget):
         group_key = group
         if group_key is None:
             # determine group of incr note according to the context
-            for key, (_, last_beat) in list(context["incrs"].items()).reverse():
+            for key, (_, last_beat) in reversed(context["incrs"].items()):
                 if beat - 1 <= last_beat <= beat:
                     group_key = key
                     break
@@ -348,18 +347,17 @@ class Incr(OneshotTarget):
         super().hit(time, strength, strength >= self.group.threshold + self.incr_threshold)
         self.group.hit(strength)
 
-    @property
-    def sound(self):
-        amplitude = (0.2 + 0.8 * (self.count-1)/self.group.total) * 10**(self.volume/20)
-        return [ra.pulse(samplerate=44100, freq=1661.2, decay_time=0.03, amplitude=amplitude)]
+    def play(self, mixer, time):
+        if not self.is_played:
+            self.is_played = True
+            volume = self.volume + numpy.log10(0.2 + 0.8 * (self.count-1)/self.group.total) * 20
+            mixer.play(self.sound, self.samplerate, delay=self.time-time, volume=volume)
 
 class Roll(Target):
-    sound = [ra.pulse(samplerate=44100, freq=1661.2, decay_time=0.01, amplitude=0.5)]
-    samplerate = 44100
-
     def __init__(self, beatmap, context, density=2, *, beat, length, speed=None, volume=None):
         self.tolerance = beatmap.settings.roll_tolerance
         self.rock_appearance = beatmap.settings.roll_rock_appearance
+        self.sound, self.samplerate = beatmap.load_audio(beatmap.settings.rock_sound)
 
         self.time = beatmap.time(beat)
 
@@ -410,9 +408,8 @@ class Roll(Target):
         if not self.is_played:
             self.is_played = True
 
-            sound = [s * 10**(self.volume/20) for s in self.sound]
             for t in self.times:
-                mixer.play(sound, samplerate=self.samplerate, delay=t-time)
+                mixer.play(self.sound, self.samplerate, delay=t-time, volume=self.volume)
 
     def draw(self, field, time):
         appearance = self.rock_appearance
@@ -427,13 +424,12 @@ class Roll(Target):
 
 class Spin(Target):
     full_score = 10
-    sound = [ra.pulse(samplerate=44100, freq=1661.2, decay_time=0.01, amplitude=1.0)]
-    samplerate = 44100
 
     def __init__(self, beatmap, context, density=2, *, beat, length, speed=None, volume=None):
         self.tolerance = beatmap.settings.spin_tolerance
         self.disk_appearances = beatmap.settings.spin_disk_appearances
         self.finishing_appearance = beatmap.settings.spin_finishing_appearance
+        self.sound, self.samplerate = beatmap.load_audio(beatmap.settings.disk_sound)
 
         self.time = beatmap.time(beat)
 
@@ -477,9 +473,8 @@ class Spin(Target):
         if not self.is_played:
             self.is_played = True
 
-            sound = [s * 10**(self.volume/20) for s in self.sound]
             for t in self.times:
-                mixer.play(sound, samplerate=44100, delay=t-time)
+                mixer.play(self.sound, self.samplerate, delay=t-time, volume=self.volume)
 
     def draw(self, field, time):
         if self.charge < self.capacity:
@@ -564,13 +559,18 @@ class BeatmapSettings:
     ## NoteSkin:
     soft_approach_appearance: Union[str, Tuple[str, str]] = "□"
     soft_wrong_appearance: Union[str, Tuple[str, str]] = "⬚"
+    soft_sound: str = "samples/soft.wav" # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
     loud_approach_appearance: Union[str, Tuple[str, str]] = "■"
     loud_wrong_appearance: Union[str, Tuple[str, str]] = "⬚"
+    loud_sound: str = "samples/loud.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
     incr_approach_appearance: Union[str, Tuple[str, str]] = "⬒"
     incr_wrong_appearance: Union[str, Tuple[str, str]] = "⬚"
+    incr_sound: str = "samples/incr.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
     roll_rock_appearance: Union[str, Tuple[str, str]] = "◎"
+    rock_sound: str = "samples/rock.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
     spin_disk_appearances: Union[List[str], List[Tuple[str, str]]] = ["◴", "◵", "◶", "◷"]
     spin_finishing_appearance: Union[str, Tuple[str, str]] = "☺"
+    disk_sound: str = "samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
 
     ## SightSkin:
     sight_appearances: List[str] = ["⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
@@ -656,6 +656,15 @@ class Beatmap:
         return self
 
 
+    @functools.lru_cache(maxsize=32)
+    def load_audio(self, filename, path="."):
+        filename = os.path.join(path, filename)
+        with audioread.audio_open(filename) as file:
+            samplerate = file.samplerate
+        with ra.load(filename) as filenode:
+            sound = list(filenode)
+        return sound, samplerate
+
     @property
     def total_score(self):
         return sum(target.full_score for target in self.targets)
@@ -685,28 +694,27 @@ class Beatmap:
             duration = 0.0
 
         else:
-            with audioread.audio_open(os.path.join(self.path, self.audio)) as file:
+            abspath = os.path.join(self.path, self.audio)
+            with audioread.audio_open(abspath) as file:
                 duration = file.duration
-                samplerate = file.samplerate
                 channels = file.channels
-                buffer_length = round(samplerate * self.settings.spec_time_res)
-                win_length = round(samplerate / self.settings.spec_freq_res)
-
-            music = ra.load(os.path.join(self.path, self.audio))
+                samplerate = file.samplerate
+            mixer.play(ra.load(abspath), samplerate, delay=-audio_offset)
 
             # add spectrum show
-            music = ra.chunk(music, chunk_shape=(buffer_length, channels))
-            Dt = buffer_length / samplerate
-            spec = ra.pipe(ra.frame(win_length, buffer_length),
+            hop_length = round(samplerate * self.settings.spec_time_res)
+            win_length = round(samplerate / self.settings.spec_freq_res)
+
+            Dt = hop_length / samplerate
+            spec = ra.pipe(ra.frame(win_length, hop_length),
                            ra.power_spectrum(win_length, samplerate=samplerate),
                            ra.draw_spectrum(self.settings.spec_width,
                                             win_length=win_length,
                                             samplerate=samplerate,
                                             decay=Dt/self.settings.spec_decay_time/4),
                            lambda s: setattr(self, "spectrum", s))
-            music = ra.pipe(music, ra.branch(spec))
-
-            mixer.play(music, samplerate=samplerate, delay=-audio_offset)
+            spec = ra.unchunk(spec, chunk_shape=(hop_length, channels))
+            mixer.add_effect(ra.branch(spec))
 
         # hit state: set virtual hitting initially to simplify coding logic
         self.judging_target = None

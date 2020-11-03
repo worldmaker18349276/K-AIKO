@@ -185,7 +185,7 @@ class K_AIKO_STD:
 
             elif node.data == "lengthen":
                 if note is not None and "length" in note.bound.arguments:
-                    note.length = note.length + length
+                    note.bound.arguments["length"] = note.bound.arguments["length"] + length
 
                 beat = beat + length
 
