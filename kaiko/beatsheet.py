@@ -96,8 +96,8 @@ class K_AIKO_STD_Transformer(Transformer):
 
 class K_AIKO_STD:
     version = "1.2.0"
-    k_aiko_std_parser = Lark(k_aiko_grammar, start="k_aiko_std")
-    chart_parser = Lark(k_aiko_grammar, start="chart")
+    k_aiko_std_parser = Lark(k_aiko_grammar, start='k_aiko_std')
+    chart_parser = Lark(k_aiko_grammar, start='chart')
     transformer = K_AIKO_STD_Transformer()
 
     def __init__(self, Beatmap, NoteChart):
@@ -160,10 +160,10 @@ class K_AIKO_STD:
 
     def load_pattern(self, pattern, chart, beat, length, note, definitions):
         for node in pattern:
-            if node.data == "note":
+            if node.data == 'note':
                 symbol, arguments = node.children
 
-                if symbol == "_":
+                if symbol == '_':
                     note = self._call((lambda:None), arguments)
 
                 elif symbol in definitions:
@@ -175,34 +175,34 @@ class K_AIKO_STD:
 
                 beat = beat + length
 
-            elif node.data == "text":
+            elif node.data == 'text':
                 text, arguments = node.children
                 arguments[0].insert(0, text)
-                note = self._call(definitions["text"], arguments, dict(beat=beat, length=length))
+                note = self._call(definitions['text'], arguments, dict(beat=beat, length=length))
                 chart.notes.append(note)
 
                 beat = beat + length
 
-            elif node.data == "lengthen":
-                if note is not None and "length" in note.bound.arguments:
-                    note.bound.arguments["length"] = note.bound.arguments["length"] + length
+            elif node.data == 'lengthen':
+                if note is not None and 'length' in note.bound.arguments:
+                    note.bound.arguments['length'] = note.bound.arguments['length'] + length
 
                 beat = beat + length
 
-            elif node.data == "measure":
+            elif node.data == 'measure':
                 if (beat - chart.beat) % chart.meter != 0:
                     raise ValueError("wrong measure")
 
-            elif node.data == "division":
+            elif node.data == 'division':
                 arguments, pattern = node.children
                 divisor = self._call((lambda divisor=2:divisor), arguments)
                 divided_length = Fraction(1, 1) * length / divisor
                 chart, beat, _, note = self.load_pattern(pattern, chart, beat, divided_length, note, definitions)
 
-            elif node.data == "instant":
+            elif node.data == 'instant':
                 arguments, pattern = node.children
                 if len(arguments[0]) + len(arguments[1]) > 0:
-                    note = self._call(definitions["context"], arguments)
+                    note = self._call(definitions['context'], arguments)
                     chart.notes.append(note)
                 chart, beat, _, note = self.load_pattern(pattern, chart, beat, 0, note, definitions)
 
@@ -261,7 +261,7 @@ class OSU:
 
     def parse_general(self, beatmap, context, line):
         option, value = line.split(": ", maxsplit=1)
-        if option == "AudioFilename":
+        if option == 'AudioFilename':
             beatmap.audio = value.rstrip("\n")
 
     def parse_editor(self, beatmap, context, line): pass
@@ -271,8 +271,8 @@ class OSU:
 
     def parse_difficulty(self, beatmap, context, line):
         option, value = line.split(":", maxsplit=1)
-        if option == "SliderMultiplier":
-            context["multiplier0"] = float(value)
+        if option == 'SliderMultiplier':
+            context['multiplier0'] = float(value)
 
     def parse_events(self, beatmap, context, line): pass
 
@@ -282,27 +282,27 @@ class OSU:
         beatLength = float(beatLength)
         meter = int(meter)
         volume = int(volume)
-        multiplier = context["multiplier0"]
+        multiplier = context['multiplier0']
 
-        if "timings" not in context:
-            context["timings"] = []
-        if "beatLength0" not in context:
-            context["beatLength0"] = beatLength
+        if 'timings' not in context:
+            context['timings'] = []
+        if 'beatLength0' not in context:
+            context['beatLength0'] = beatLength
             beatmap.offset = time/1000
             beatmap.tempo = 60 / (beatLength/1000)
             beatmap.charts[0].meter = meter
 
         if uninherited == "0":
             multiplier = multiplier / (-0.01 * beatLength)
-            beatLength = context["timings"][-1][1]
-            meter = context["timings"][-1][2]
+            beatLength = context['timings'][-1][1]
+            meter = context['timings'][-1][2]
 
         speed = multiplier / 1.4
         volume = 20 * math.log10(volume / 100)
-        sliderVelocity = (multiplier * 100) / (beatLength/context["beatLength0"])
-        density = (8/meter) / (beatLength/context["beatLength0"]) # 8 per measure
+        sliderVelocity = (multiplier * 100) / (beatLength/context['beatLength0'])
+        density = (8/meter) / (beatLength/context['beatLength0']) # 8 per measure
 
-        context["timings"].append((time, beatLength, meter, speed, volume, sliderVelocity, density))
+        context['timings'].append((time, beatLength, meter, speed, volume, sliderVelocity, density))
 
     def parse_colours(self, beatmap, context, line): pass
 
@@ -313,18 +313,18 @@ class OSU:
         hitSound = int(hitSound)
 
         beat = beatmap.beat(time/1000)
-        speed, volume, sliderVelocity, density = next(vs for t, b, m, *vs in context["timings"][::-1] if t <= time)
+        speed, volume, sliderVelocity, density = next(vs for t, b, m, *vs in context['timings'][::-1] if t <= time)
 
         # type: [_:_:_:_:Spinner:_:Slider:Circle]
         # hitSound: [Kat:Large:Kat:Don]
 
         if type & 1: # circle
             if hitSound == 0 or hitSound & 1: # don
-                note = beatmap.definitions["x"](beat=beat, speed=speed, volume=volume)
+                note = beatmap.definitions['x'](beat=beat, speed=speed, volume=volume)
                 beatmap.charts[0].notes.append(note)
 
             elif hitSound & 10: # kat
-                note = beatmap.definitions["o"](beat=beat, speed=speed, volume=volume)
+                note = beatmap.definitions['o'](beat=beat, speed=speed, volume=volume)
                 beatmap.charts[0].notes.append(note)
 
         elif type & 2: # slider
@@ -332,15 +332,15 @@ class OSU:
             sliderLength = float(sliderLength)
             length = sliderLength / sliderVelocity
 
-            note = beatmap.definitions["%"](density=density, beat=beat, length=length, speed=speed, volume=volume)
+            note = beatmap.definitions['%'](density=density, beat=beat, length=length, speed=speed, volume=volume)
             beatmap.charts[0].notes.append(note)
 
         elif type & 8: # spinner
             end_time, = objectParams
             end_time = int(end_time)
-            length = (end_time - time)/context["beatLength0"]
+            length = (end_time - time)/context['beatLength0']
             # 10
 
-            note = beatmap.definitions["@"](density=density, beat=beat, length=length, speed=speed, volume=volume)
+            note = beatmap.definitions['@'](density=density, beat=beat, length=length, speed=speed, volume=volume)
             beatmap.charts[0].notes.append(note)
 

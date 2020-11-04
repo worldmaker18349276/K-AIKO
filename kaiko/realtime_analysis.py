@@ -73,7 +73,7 @@ class DataNode:
         if isinstance(node_like, DataNode):
             return node_like
 
-        elif hasattr(node_like, "__iter__"):
+        elif hasattr(node_like, '__iter__'):
             def iter(it):
                 yield
                 for data in it:
@@ -781,11 +781,11 @@ def load(filename):
     """
 
     if filename.endswith(".wav"):
-        with wave.open(filename, "rb") as file:
+        with wave.open(filename, 'rb') as file:
             nchannels = file.getnchannels()
             width = file.getsampwidth()
             scale = 2.0 ** (1 - 8*width)
-            fmt = "<i{:d}".format(width)
+            fmt = f'<i{width}'
             def frombuffer(data):
                 return scale * numpy.frombuffer(data, fmt).astype(numpy.float32).reshape(-1, nchannels)
 
@@ -799,7 +799,7 @@ def load(filename):
         with audioread.audio_open(filename) as file:
             width = 2
             scale = 2.0 ** (1 - 8*width)
-            fmt = "<i{:d}".format(width)
+            fmt = f'<i{width}'
             def frombuffer(data):
                 return scale * numpy.frombuffer(data, fmt).astype(numpy.float32).reshape(-1, file.channels)
 
@@ -826,9 +826,9 @@ def save(filename, samplerate=44100, channels=1, width=2):
     data : ndarray
         The signal to save.
     """
-    with wave.open(filename, "wb") as file:
+    with wave.open(filename, 'wb') as file:
         scale = 2.0 ** (8*width - 1)
-        fmt = "<i{:d}".format(width)
+        fmt = f'<i{width}'
         def tobuffer(data):
             return (data * scale).astype(fmt).tobytes()
 
@@ -841,7 +841,7 @@ def save(filename, samplerate=44100, channels=1, width=2):
             file.writeframes(tobuffer((yield)))
 
 @contextlib.contextmanager
-def record(manager, node, samplerate=44100, buffer_shape=1024, format="f4", device=-1):
+def record(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device=-1):
     """A context manager of input stream processing by given node.
 
     Parameters
@@ -855,7 +855,7 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format="f4", devi
     buffer_shape : int or tuple, optional
         The shape of input signal, default is `1024`.
     format : str, optional
-        The sample format of input signal, default is `"f4"`.
+        The sample format of input signal, default is `'f4'`.
     device : int, optional
         The input device index, and `-1` for default input device.
 
@@ -865,19 +865,19 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format="f4", devi
         The stopped input stream to record sound.
     """
     node = DataNode.wrap(node)
-    pa_format = {"f4": pyaudio.paFloat32,
-                 "i4": pyaudio.paInt32,
-                 "i2": pyaudio.paInt16,
-                 "i1": pyaudio.paInt8,
-                 "u1": pyaudio.paUInt8,
+    pa_format = {'f4': pyaudio.paFloat32,
+                 'i4': pyaudio.paInt32,
+                 'i2': pyaudio.paInt16,
+                 'i1': pyaudio.paInt8,
+                 'u1': pyaudio.paUInt8,
                  }[format]
 
     scale = 2.0 ** (8*int(format[1]) - 1)
-    normalize = {"f4": (lambda d: d),
-                 "i4": (lambda d: d / scale),
-                 "i2": (lambda d: d / scale),
-                 "i1": (lambda d: d / scale),
-                 "u1": (lambda d: (d - 64) / 64),
+    normalize = {'f4': (lambda d: d),
+                 'i4': (lambda d: d / scale),
+                 'i2': (lambda d: d / scale),
+                 'i1': (lambda d: d / scale),
+                 'u1': (lambda d: (d - 64) / 64),
                  }[format]
 
     if device == -1:
@@ -890,9 +890,9 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format="f4", devi
             data = normalize(numpy.frombuffer(in_data, dtype=format).reshape(buffer_shape))
             node.send(data)
 
-            return b'', pyaudio.paContinue
+            return b"", pyaudio.paContinue
         except StopIteration:
-            return b'', pyaudio.paComplete
+            return b"", pyaudio.paComplete
 
     input_stream = manager.open(format=pa_format,
                                 channels=channels,
@@ -912,7 +912,7 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format="f4", devi
             input_stream.close()
 
 @contextlib.contextmanager
-def play(manager, node, samplerate=44100, buffer_shape=1024, format="f4", device=-1):
+def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device=-1):
     """A context manager of output stream processing by given node.
 
     Parameters
@@ -926,7 +926,7 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format="f4", device
     buffer_shape : int or tuple, optional
         The length of output signal, default is `1024`.
     format : str, optional
-        The sample format of output signal, default is `"f4"`.
+        The sample format of output signal, default is `'f4'`.
     device : int, optional
         The output device index, and `-1` for default output device.
 
@@ -936,19 +936,19 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format="f4", device
         The stopped output stream to play sound.
     """
     node = DataNode.wrap(node)
-    pa_format = {"f4": pyaudio.paFloat32,
-                 "i4": pyaudio.paInt32,
-                 "i2": pyaudio.paInt16,
-                 "i1": pyaudio.paInt8,
-                 "u1": pyaudio.paUInt8,
+    pa_format = {'f4': pyaudio.paFloat32,
+                 'i4': pyaudio.paInt32,
+                 'i2': pyaudio.paInt16,
+                 'i1': pyaudio.paInt8,
+                 'u1': pyaudio.paUInt8,
                  }[format]
 
     scale = 2.0 ** (8*int(format[1]) - 1)
-    normalize = {"f4": (lambda d: d),
-                 "i4": (lambda d: d * scale),
-                 "i2": (lambda d: d * scale),
-                 "i1": (lambda d: d * scale),
-                 "u1": (lambda d: d * 64 + 64),
+    normalize = {'f4': (lambda d: d),
+                 'i4': (lambda d: d * scale),
+                 'i2': (lambda d: d * scale),
+                 'i1': (lambda d: d * scale),
+                 'u1': (lambda d: d * 64 + 64),
                  }[format]
 
     if device == -1:
@@ -963,7 +963,7 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format="f4", device
 
             return out_data, pyaudio.paContinue
         except StopIteration:
-            return b'', pyaudio.paComplete
+            return b"", pyaudio.paComplete
 
     output_stream = manager.open(format=pa_format,
                                  channels=channels,

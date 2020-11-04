@@ -47,7 +47,7 @@ class Text(Event):
         self.text = text
 
         if speed is None:
-            speed = context.get("speed", 1.0)
+            speed = context.get('speed', 1.0)
 
         self.speed = speed
         if sound is not None:
@@ -120,7 +120,7 @@ class Performance(Enum):
         self.score = score
 
     def __repr__(self):
-        return "Performance." + self.name
+        return f"Performance.{self.name}"
 
     @staticmethod
     def judge(err, is_correct_key, tolerances):
@@ -213,9 +213,9 @@ class OneshotTarget(Target):
             )
 
         if speed is None:
-            speed = context.get("speed", 1.0)
+            speed = context.get('speed', 1.0)
         if volume is None:
-            volume = context.get("volume", 0.0)
+            volume = context.get('volume', 0.0)
 
         self.time = beatmap.time(beat)
         self.speed = speed
@@ -320,24 +320,24 @@ class Incr(OneshotTarget):
         self.sound, self.samplerate = beatmap.load_audio(beatmap.settings.incr_sound)
         self.incr_threshold = beatmap.settings.incr_threshold
 
-        if "incrs" not in context:
-            context["incrs"] = OrderedDict()
+        if 'incrs' not in context:
+            context['incrs'] = OrderedDict()
 
         group_key = group
         if group_key is None:
             # determine group of incr note according to the context
-            for key, (_, last_beat) in reversed(context["incrs"].items()):
+            for key, (_, last_beat) in reversed(context['incrs'].items()):
                 if beat - 1 <= last_beat <= beat:
                     group_key = key
                     break
             else:
                 group_key = 0
-                while group_key in context["incrs"]:
+                while group_key in context['incrs']:
                     group_key += 1
 
-        group, _ = context["incrs"].get(group_key, (IncrGroup(), beat))
-        context["incrs"][group_key] = group, beat
-        context["incrs"].move_to_end(group_key)
+        group, _ = context['incrs'].get(group_key, (IncrGroup(), beat))
+        context['incrs'][group_key] = group, beat
+        context['incrs'].move_to_end(group_key)
 
         group.total += 1
         self.count = group.total
@@ -366,9 +366,9 @@ class Roll(Target):
         self.times = [beatmap.time(beat+i/density) for i in range(self.number)]
 
         if speed is None:
-            speed = context.get("speed", 1.0)
+            speed = context.get('speed', 1.0)
         if volume is None:
-            volume = context.get("volume", 0.0)
+            volume = context.get('volume', 0.0)
 
         self.speed = speed
         self.volume = volume
@@ -438,9 +438,9 @@ class Spin(Target):
         self.times = [beatmap.time(beat+i/density) for i in range(int(self.capacity))]
 
         if speed is None:
-            speed = context.get("speed", 1.0)
+            speed = context.get('speed', 1.0)
         if volume is None:
-            volume = context.get("volume", 0.0)
+            volume = context.get('volume', 0.0)
 
         self.speed = speed
         self.volume = volume
@@ -623,13 +623,13 @@ class Beatmap:
         self.definitions = {}
         self.charts = []
 
-        self["x"] = Soft
-        self["o"] = Loud
-        self["<"] = Incr
-        self["%"] = Roll
-        self["@"] = Spin
-        self["text"] = Text
-        self["context"] = set_context
+        self['x'] = Soft
+        self['o'] = Loud
+        self['<'] = Incr
+        self['%'] = Roll
+        self['@'] = Spin
+        self['text'] = Text
+        self['context'] = set_context
 
     def time(self, beat):
         return self.offset + beat*60/self.tempo
@@ -641,7 +641,7 @@ class Beatmap:
         return self.time(beat+length) - self.time(beat)
 
     def __setitem__(self, symbol, builder):
-        if symbol == "_" or symbol in self.definitions:
+        if symbol == '_' or symbol in self.definitions:
             raise ValueError(f"symbol `{symbol}` is already defined")
         self.definitions[symbol] = NoteType(symbol, builder)
 
@@ -712,7 +712,7 @@ class Beatmap:
                                             win_length=win_length,
                                             samplerate=samplerate,
                                             decay=Dt/self.settings.spec_decay_time/4),
-                           lambda s: setattr(self, "spectrum", s))
+                           lambda s: setattr(self, 'spectrum', s))
             spec = ra.unchunk(spec, chunk_shape=(hop_length, channels))
             mixer.add_effect(ra.branch(spec))
 

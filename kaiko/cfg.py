@@ -218,7 +218,7 @@ def configurable(arg=None, excludes=[]):
 def get_configurable_fields(clz):
     field_hints = {}
     for field_name, field_type in clz.__configurable_fields__.items():
-        if hasattr(field_type, "__configurable_fields__"):
+        if hasattr(field_type, '__configurable_fields__'):
             subfield_hints = get_configurable_fields(field_type)
             for subfield_names, subfield_type in subfield_hints.items():
                 field_hints[(field_name, *subfield_names)] = subfield_type
@@ -228,7 +228,7 @@ def get_configurable_fields(clz):
 
 def config_read(file, strict=True, **targets):
     if isinstance(file, str):
-        file = open(file, "r")
+        file = open(file, 'r')
     config_str = file.read()
 
     if strict:
@@ -250,7 +250,7 @@ def config_read(file, strict=True, **targets):
 
 def config_write(file, **targets):
     if isinstance(file, str):
-        file = open(file, "w")
+        file = open(file, 'w')
 
     for target_name, target in targets.items():
         field_hints = get_configurable_fields(target)

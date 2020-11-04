@@ -115,7 +115,7 @@ class AudioMixer(ra.DataNode):
 
                 buffer[:] = 0.0
                 data = buffer
-                for node in sorted(nodes, key=lambda n: getattr(n, "zindex", 0)):
+                for node in sorted(nodes, key=lambda n: getattr(n, 'zindex', 0)):
                     try:
                         data = node.send(data)
                     except StopIteration:
@@ -222,8 +222,8 @@ class KnockDetector(ra.DataNode):
 class TerminalLine(ra.DataNode):
     def __init__(self, display_delay):
         super().__init__(self.proxy())
-        self.width = int(os.popen("stty size", "r").read().split()[1])
-        self.chars = [' ']*self.width
+        self.width = int(os.popen("stty size", 'r').read().split()[1])
+        self.chars = [" "]*self.width
         self.display_delay = display_delay
         self.time = 0.0
 
@@ -239,13 +239,13 @@ class TerminalLine(ra.DataNode):
 
     def clear(self):
         for i in range(self.width):
-            self.chars[i] = ' '
+            self.chars[i] = " "
 
     def addstr(self, index, str, mask=slice(None, None, None)):
         for ch in str:
-            if ch == ' ':
+            if ch == " ":
                 index += 1
-            elif ch == '\b':
+            elif ch == "\b":
                 index -= 1
             else:
                 if index in range(self.width)[mask]:
@@ -279,7 +279,7 @@ class DisplayThread(threading.Thread):
                         continue
 
                     view = self.display_handler.send(t)
-                    print('\r' + view + '\r', end='', flush=True)
+                    print(f"\r{view}\r", end="", flush=True)
 
                     t = time.time() - t0
                     while t > t1:
@@ -327,7 +327,7 @@ class KnockConsole:
     def __init__(self, config=None):
         self.stopped = False
         if config is not None:
-            cfg.config_read(open(config, "r"), main=self.settings)
+            cfg.config_read(open(config, 'r'), main=self.settings)
 
     def get_output_stream(self, manager):
         samplerate = self.settings.output_samplerate
@@ -427,7 +427,7 @@ class KnockProgram:
     pass
 
 
-def test_speaker(manager, samplerate=44100, buffer_length=1024, channels=1, format="f4", device=-1):
+def test_speaker(manager, samplerate=44100, buffer_length=1024, channels=1, format='f4', device=-1):
     buffer_shape = (buffer_length, channels)
     duration = 2.0+0.5*4*channels
 
@@ -445,7 +445,7 @@ def test_speaker(manager, samplerate=44100, buffer_length=1024, channels=1, form
         time.sleep(duration)
     print("finish!")
 
-def test_mic(manager, samplerate=44100, buffer_length=1024, channels=1, format="f4", device=-1):
+def test_mic(manager, samplerate=44100, buffer_length=1024, channels=1, format='f4', device=-1):
     duration = 8.0
 
     spec_width = 5
@@ -455,7 +455,7 @@ def test_mic(manager, samplerate=44100, buffer_length=1024, channels=1, format="
     spec = ra.pipe(ra.frame(win_length, buffer_length),
                    ra.power_spectrum(win_length, samplerate=samplerate),
                    ra.draw_spectrum(spec_width, win_length=win_length, samplerate=samplerate, decay=Dt/decay_time),
-                   lambda s: print(" "+s+"\r", end="", flush=True))
+                   lambda s: print(f" {s}\r", end="", flush=True))
 
     print("testing...")
     with ra.record(manager, spec, samplerate=samplerate,
@@ -495,30 +495,30 @@ def configure_audio(config_name=None):
         print("  " + pyaudio.get_portaudio_version_text())
 
         print("available devices:")
-        apis_list = [manager.get_host_api_info_by_index(i)["name"] for i in range(manager.get_host_api_count())]
+        apis_list = [manager.get_host_api_info_by_index(i)['name'] for i in range(manager.get_host_api_count())]
         for index in range(manager.get_device_count()):
             info = manager.get_device_info_by_index(index)
 
-            name = info["name"]
-            api = apis_list[info["hostApi"]]
-            freq = info["defaultSampleRate"]/1000
-            ch_in = info["maxInputChannels"]
-            ch_out = info["maxOutputChannels"]
+            name = info['name']
+            api = apis_list[info['hostApi']]
+            freq = info['defaultSampleRate']/1000
+            ch_in = info['maxInputChannels']
+            ch_out = info['maxOutputChannels']
 
-            print("  {}. {} by {} ({} kHz, in: {}, out: {})".format(index, name, api, freq, ch_in, ch_out))
+            print(f"  {index}. {name} by {api} ({freq} kHz, in: {ch_in}, out: {ch_out})")
 
-        default_input_device_index = manager.get_default_input_device_info()["index"]
-        default_output_device_index = manager.get_default_output_device_info()["index"]
-        print("default input device: {}".format(default_input_device_index))
-        print("default output device: {}".format(default_output_device_index))
+        default_input_device_index = manager.get_default_input_device_info()['index']
+        default_output_device_index = manager.get_default_output_device_info()['index']
+        print(f"default input device: {default_input_device_index}")
+        print(f"default output device: {default_output_device_index}")
 
         print()
         print("[output]")
-        samplerate = input_with_default("samplerate = ", config.getint("output", "samplerate"), int)
-        buffer_length = input_with_default("buffer_length = ", config.getint("output", "buffer_length"), int)
-        channels = input_with_default("channels = ", config.getint("output", "channels"), int)
-        format = input_with_default("format = ", config.get("output", "format"))
-        device = input_with_default("device = ", config.getint("output", "device"), int)
+        samplerate = input_with_default("samplerate = ", config.getint('output', 'samplerate'), int)
+        buffer_length = input_with_default("buffer_length = ", config.getint('output', 'buffer_length'), int)
+        channels = input_with_default("channels = ", config.getint('output', 'channels'), int)
+        format = input_with_default("format = ", config.get('output', 'format'))
+        device = input_with_default("device = ", config.getint('output', 'device'), int)
         test_speaker(manager, samplerate=samplerate,
                               buffer_length=buffer_length,
                               channels=channels,
@@ -526,11 +526,11 @@ def configure_audio(config_name=None):
 
         print()
         print("[input]")
-        samplerate = input_with_default("samplerate = ", config.getint("input", "samplerate"), int)
-        buffer_length = input_with_default("buffer_length = ", config.getint("input", "buffer_length"), int)
-        channels = input_with_default("channels = ", config.getint("input", "channels"), int)
-        format = input_with_default("format = ", config.get("input", "format"))
-        device = input_with_default("device = ", config.getint("input", "device"), int)
+        samplerate = input_with_default("samplerate = ", config.getint('input', 'samplerate'), int)
+        buffer_length = input_with_default("buffer_length = ", config.getint('input', 'buffer_length'), int)
+        channels = input_with_default("channels = ", config.getint('input', 'channels'), int)
+        format = input_with_default("format = ", config.get('input', 'format'))
+        device = input_with_default("device = ", config.getint('input', 'device'), int)
         test_mic(manager, samplerate=samplerate,
                           buffer_length=buffer_length,
                           channels=channels,
