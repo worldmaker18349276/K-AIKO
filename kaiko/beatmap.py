@@ -12,6 +12,15 @@ from . import realtime_analysis as ra
 from .beatsheet import K_AIKO_STD, OSU
 
 
+def once(func):
+    key = f"{func.__name__}_executed"
+    @functools.wraps(func)
+    def once_func(self, *args, **kwargs):
+        if not getattr(self, key, False):
+            setattr(self, key, True)
+            return func(self, *args, **kwargs)
+    return once_func
+
 # scripts
 class Event:
     # lifespan, zindex
@@ -55,16 +64,15 @@ class Text(Event):
         else:
             self.sound = None
             self.samplerate = None
-        self.is_played = False
 
     @property
     def lifespan(self):
         cross_time = 1.0 / abs(0.5 * self.speed)
         return (self.time-cross_time, self.time+cross_time)
 
+    @once
     def play(self, mixer, time):
-        if self.sound is not None and not self.is_played:
-            self.is_played = True
+        if self.sound is not None:
             mixer.play(self.sound, self.samplerate, delay=self.time-time)
 
     def draw(self, field, time):
@@ -181,7 +189,7 @@ class Performance(Enum):
         field.draw_bar(0.0, appearances[i][j])
 
 class OneshotTarget(Target):
-    # time, speed, volume, perf, is_played, sound, samplerate
+    # time, speed, volume, perf, sound, samplerate
     # appearances: (approach, wrong)
     # hit(time, strength)
 
@@ -221,7 +229,6 @@ class OneshotTarget(Target):
         self.speed = speed
         self.volume = volume
         self.perf = None
-        self.is_played = False
 
     @property
     def range(self):
@@ -246,10 +253,9 @@ class OneshotTarget(Target):
         cross_time = 1.0 / abs(0.5 * self.speed)
         return (self.time - cross_time, self.time + cross_time)
 
+    @once
     def play(self, mixer, time):
-        if not self.is_played:
-            self.is_played = True
-            mixer.play(self.sound, self.samplerate, delay=self.time-time, volume=self.volume)
+        mixer.play(self.sound, self.samplerate, delay=self.time-time, volume=self.volume)
 
     def draw(self, field, time):
         if self.perf in (None, Performance.MISS): # approaching or miss
@@ -347,11 +353,10 @@ class Incr(OneshotTarget):
         super().hit(time, strength, strength >= self.group.threshold + self.incr_threshold)
         self.group.hit(strength)
 
+    @once
     def play(self, mixer, time):
-        if not self.is_played:
-            self.is_played = True
-            volume = self.volume + numpy.log10(0.2 + 0.8 * (self.count-1)/self.group.total) * 20
-            mixer.play(self.sound, self.samplerate, delay=self.time-time, volume=volume)
+        volume = self.volume + numpy.log10(0.2 + 0.8 * (self.count-1)/self.group.total) * 20
+        mixer.play(self.sound, self.samplerate, delay=self.time-time, volume=volume)
 
 class Roll(Target):
     def __init__(self, beatmap, context, density=2, *, beat, length, speed=None, volume=None):
@@ -374,7 +379,6 @@ class Roll(Target):
         self.volume = volume
         self.roll = 0
         self.is_finished = False
-        self.is_played = False
 
     @property
     def range(self):
@@ -404,12 +408,10 @@ class Roll(Target):
         cross_time = 1.0 / abs(0.5 * self.speed)
         return (self.time - cross_time, self.end + cross_time)
 
+    @once
     def play(self, mixer, time):
-        if not self.is_played:
-            self.is_played = True
-
-            for t in self.times:
-                mixer.play(self.sound, self.samplerate, delay=t-time, volume=self.volume)
+        for t in self.times:
+            mixer.play(self.sound, self.samplerate, delay=t-time, volume=self.volume)
 
     def draw(self, field, time):
         appearance = self.rock_appearance
@@ -446,7 +448,6 @@ class Spin(Target):
         self.volume = volume
         self.charge = 0.0
         self.is_finished = False
-        self.is_played = False
 
     @property
     def range(self):
@@ -469,12 +470,10 @@ class Spin(Target):
         cross_time = 1.0 / abs(0.5 * self.speed)
         return (self.time - cross_time, self.end + cross_time)
 
+    @once
     def play(self, mixer, time):
-        if not self.is_played:
-            self.is_played = True
-
-            for t in self.times:
-                mixer.play(self.sound, self.samplerate, delay=t-time, volume=self.volume)
+        for t in self.times:
+            mixer.play(self.sound, self.samplerate, delay=t-time, volume=self.volume)
 
     def draw(self, field, time):
         if self.charge < self.capacity:
