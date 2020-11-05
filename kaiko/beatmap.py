@@ -73,7 +73,7 @@ class Text(Event):
     @once
     def play(self, mixer, time):
         if self.sound is not None:
-            mixer.play(self.sound, self.samplerate, delay=self.time-time)
+            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, delay=self.time-time)
 
     def draw(self, field, time):
         if self.text is not None:
@@ -255,7 +255,7 @@ class OneshotTarget(Target):
 
     @once
     def play(self, mixer, time):
-        mixer.play(self.sound, self.samplerate, delay=self.time-time, volume=self.volume)
+        mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, delay=self.time-time, volume=self.volume)
 
     def draw(self, field, time):
         if self.perf in (None, Performance.MISS): # approaching or miss
@@ -356,7 +356,7 @@ class Incr(OneshotTarget):
     @once
     def play(self, mixer, time):
         volume = self.volume + numpy.log10(0.2 + 0.8 * (self.count-1)/self.group.total) * 20
-        mixer.play(self.sound, self.samplerate, delay=self.time-time, volume=volume)
+        mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, delay=self.time-time, volume=volume)
 
 class Roll(Target):
     def __init__(self, beatmap, context, density=2, *, beat, length, speed=None, volume=None):
@@ -411,7 +411,7 @@ class Roll(Target):
     @once
     def play(self, mixer, time):
         for t in self.times:
-            mixer.play(self.sound, self.samplerate, delay=t-time, volume=self.volume)
+            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, delay=t-time, volume=self.volume)
 
     def draw(self, field, time):
         appearance = self.rock_appearance
@@ -473,7 +473,7 @@ class Spin(Target):
     @once
     def play(self, mixer, time):
         for t in self.times:
-            mixer.play(self.sound, self.samplerate, delay=t-time, volume=self.volume)
+            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, delay=t-time, volume=self.volume)
 
     def draw(self, field, time):
         if self.charge < self.capacity:

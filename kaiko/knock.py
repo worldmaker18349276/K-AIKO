@@ -2,6 +2,7 @@ import sys
 import os
 import time
 import contextlib
+from collections import OrderedDict
 import queue
 import threading
 import signal
@@ -13,19 +14,25 @@ from . import realtime_analysis as ra
 
 class ContextBuffer:
     def __init__(self):
-        self.buffer = []
+        self.buffer = OrderedDict()
 
-    def __iter__(self):
-        return iter(self.buffer)
+    def keys(self):
+        return self.buffer.keys()
+
+    def values(self):
+        return self.buffer.values()
+
+    def items(self):
+        return self.buffer.items()
 
     def __enter__(self):
-        for cm in self.buffer:
+        for cm in self.buffer.values():
             cm.__enter__()
         return self
 
     def __exit__(self, type=None, value=None, traceback=None):
         passthrough = True
-        for cm in self.buffer[::-1]:
+        for cm in reversed(self.buffer.values()):
             try:
                 if cm.__exit__(type, value, traceback):
                     passthrough = False
@@ -42,13 +49,15 @@ class ContextBuffer:
             raise type()
         return True
 
-    def enter(self, cm):
-        self.buffer.append(cm)
+    def enter(self, key, cm):
+        self.buffer[key] = cm
         return cm.__enter__()
 
-    def exit(self, cm):
-        self.buffer.remove(cm)
-        return cm.__exit__(None, None, None)
+    def exit(self, key):
+        if key in self.buffer:
+            cm = self.buffer[key]
+            del self.buffer[key]
+            return cm.__exit__(None, None, None)
 
 @ra.DataNode.from_generator
 def shift(node, offset, nchannel=None):
@@ -57,7 +66,7 @@ def shift(node, offset, nchannel=None):
     with node:
         try:
             if offset < 0:
-                shape = (offset, nchannel) if nchannel is not None else offset
+                shape = (-offset, nchannel) if nchannel is not None else -offset
                 data = numpy.zeros(shape, dtype=numpy.float32)
                 node.send(data)
                 offset = 0
@@ -101,7 +110,8 @@ class AudioMixer(ra.DataNode):
         self.buffer_shape = buffer_shape
         self.index = 0
         self.time = 0.0
-        self.new_nodes = queue.Queue()
+        self.add_nodes = queue.Queue()
+        self.remove_nodes = queue.Queue()
 
     def proxy(self):
         buffer = numpy.zeros(self.buffer_shape, dtype=numpy.float32)
@@ -110,24 +120,32 @@ class AudioMixer(ra.DataNode):
             yield
 
             while True:
-                while not self.new_nodes.empty():
-                    nodes.enter(self.new_nodes.get())
+                while not self.add_nodes.empty():
+                    key, node = self.add_nodes.get()
+                    nodes.enter(key, node)
+
+                while not self.remove_nodes.empty():
+                    key = self.remove_nodes.get()
+                    nodes.exit(key)
 
                 buffer[:] = 0.0
                 data = buffer
-                for node in sorted(nodes, key=lambda n: getattr(n, 'zindex', 0)):
+                for key, node in sorted(nodes.items(), key=lambda n: getattr(n[1], 'zindex', 0)):
                     try:
                         data = node.send(data)
                     except StopIteration:
-                        nodes.exit(node)
+                        nodes.exit(key)
 
                 self.index += 1
                 self.time = self.index * buffer.shape[0] / self.samplerate
 
                 yield numpy.copy(data)
 
-    def play(self, node, samplerate, channels=None, volume=0.0, start=None, end=None, delay=None):
-        if channels is None: channels = self.buffer_shape[1] if isinstance(self.buffer_shape, tuple) else 0
+    def play(self, node, samplerate, channels=None, volume=0.0, start=None, end=None, delay=None, key=None):
+        if key is None:
+            key = node
+        if channels is None:
+            channels = self.buffer_shape[1] if isinstance(self.buffer_shape, tuple) else 0
 
         if start is not None or end is not None:
             node = ra.tslice(node, samplerate, start, end)
@@ -138,9 +156,11 @@ class AudioMixer(ra.DataNode):
             node = ra.pipe(node, lambda s: s * 10**(volume/20))
         node = attach(node)
 
-        self.add_effect(node, delay)
+        self.add_effect(node, delay, key=key)
 
-    def add_effect(self, node, delay=None, zindex=None):
+    def add_effect(self, node, delay=None, zindex=None, key=None):
+        if key is None:
+            key = node
         if delay is not None:
             nchannel = self.buffer_shape[1] if isinstance(self.buffer_shape, tuple) else None
             offset = round(delay*self.samplerate)
@@ -149,7 +169,10 @@ class AudioMixer(ra.DataNode):
         if zindex is not None:
             node.zindex = zindex
 
-        self.new_nodes.put(node)
+        self.add_nodes.put((key, node))
+
+    def remove_effect(self, key):
+        self.remove_nodes.put(key)
 
 class KnockDetector(ra.DataNode):
     def __init__(self, samplerate=44100, buffer_length=1024, channels=1, *,
