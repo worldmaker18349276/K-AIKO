@@ -4,7 +4,6 @@ import time
 import contextlib
 from collections import OrderedDict
 import queue
-import threading
 import signal
 import numpy
 import pyaudio
@@ -251,11 +250,14 @@ class TerminalLine(ra.DataNode):
         self.time = 0.0
 
     def proxy(self):
-        time = yield
-        while True:
-            self.time = time - self.display_delay
+        try:
+            while True:
+                time = yield
+                self.time = time - self.display_delay
+                print(f"\r{str(self)}\r", end="", flush=True)
 
-            time = yield str(self)
+        finally:
+            print()
 
     def __str__(self):
         return "".join(self.chars)
@@ -265,6 +267,8 @@ class TerminalLine(ra.DataNode):
             self.chars[i] = " "
 
     def addstr(self, index, str, mask=slice(None, None, None)):
+        if isinstance(index, float):
+            index = round(index)
         for ch in str:
             if ch == " ":
                 index += 1
@@ -274,42 +278,6 @@ class TerminalLine(ra.DataNode):
                 if index in range(self.width)[mask]:
                     self.chars[index] = ch
                 index += 1
-
-class DisplayThread(threading.Thread):
-    def __init__(self, display_handler, display_framerate):
-        super().__init__()
-
-        self.display_handler = display_handler
-        self.display_framerate = display_framerate
-        self.closed = False
-
-    def close(self):
-        self.closed = True
-
-    def run(self):
-        dt = 1/self.display_framerate
-
-        try:
-            with self.display_handler:
-                t0 = time.time()
-                t1 = dt
-
-                while not self.closed:
-                    t = time.time() - t0
-
-                    if t < t1 - 0.001:
-                        time.sleep(t1 - t)
-                        continue
-
-                    view = self.display_handler.send(t)
-                    print(f"\r{view}\r", end="", flush=True)
-
-                    t = time.time() - t0
-                    while t > t1:
-                        t1 += dt
-
-        finally:
-            print()
 
 
 @cfg.configurable
@@ -409,9 +377,7 @@ class KnockConsole:
 
     def get_display_thread(self):
         self.screen = TerminalLine(self.settings.display_delay)
-
-        display_thread = DisplayThread(self.screen, self.settings.display_framerate)
-        return contextlib.closing(display_thread)
+        return ra.interval(self.screen, 1/self.settings.display_framerate)
 
     def SIGINT_handler(self, sig, frame):
         self.stopped = True

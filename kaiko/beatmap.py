@@ -537,7 +537,7 @@ class PlayField:
         pos += self.shift
         if self.is_flipped:
             pos = 1 - pos
-        index = self.bar_offset + round(pos * (self.bar_width - 1))
+        index = self.bar_offset + pos * (self.bar_width - 1)
         self.screen.addstr(index, str, slice(self.bar_offset, self.bar_offset+self.bar_width))
 
 
