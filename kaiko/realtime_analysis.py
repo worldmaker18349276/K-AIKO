@@ -1008,7 +1008,7 @@ class IntervalThread(threading.Thread):
                 time.sleep(t1 - t)
                 continue
 
-            self.callback(t)
+            self.callback()
             t1 += self.time_interval
 
 @contextlib.contextmanager

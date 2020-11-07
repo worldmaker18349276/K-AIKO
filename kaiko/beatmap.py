@@ -716,11 +716,11 @@ class Beatmap:
             mixer.add_effect(ra.branch(spec))
 
         # hit state: set virtual hitting initially to simplify coding logic
-        self.judging_target = None
-        self.hit_time = audio_offset - self.settings.hit_sustain_time*2
+        judging_target = None
+        hit_time = audio_offset - self.settings.hit_sustain_time*2
         # time - hit_time > hit_sustain_time => prevent to showing virtual hitting initially
-        self.hit_strength = 0.0
-        self.hit_target = None
+        hit_strength = 0.0
+        hit_target = None
 
         # screen
         self.spectrum = " "*self.settings.spec_width
@@ -748,14 +748,10 @@ class Beatmap:
                     hit_strength = min(1.0, hit_strength)
                     hit_target = target_handler.send(hit_time)
 
-                    self.hit_time = hit_time
-                    self.hit_strength = hit_strength
-                    self.hit_target = hit_target
-
                     if hit_target is not None:
                         hit_target.hit(hit_time, hit_strength)
 
-                self.judging_target = target_handler.send(detector.time + audio_offset)
+                judging_target = target_handler.send(detector.time+audio_offset)
 
                 # draw/play events
                 field.clear()
@@ -766,13 +762,13 @@ class Beatmap:
 
                 # draw sight
                 stop_drawing = False
-                if not stop_drawing and self.judging_target is not None:
-                    stop_drawing = self.judging_target.draw_judging(field, time)
-                if not stop_drawing and self.hit_target is not None:
-                    if abs(time - self.hit_time) < self.settings.hit_sustain_time:
-                        stop_drawing = self.hit_target.draw_hitting(field, time)
+                if not stop_drawing and judging_target is not None:
+                    stop_drawing = judging_target.draw_judging(field, screen.time+audio_offset)
+                if not stop_drawing and hit_target is not None:
+                    if abs(screen.time+audio_offset - hit_time) < self.settings.hit_sustain_time:
+                        stop_drawing = hit_target.draw_hitting(field, screen.time+audio_offset)
                 if not stop_drawing:
-                    self.draw_sight(field, time)
+                    self.draw_sight(field, hit_strength, hit_time, screen.time+audio_offset)
 
                 # draw others
                 field.draw_spectrum(self.spectrum)
@@ -800,11 +796,11 @@ class Beatmap:
 
             time = yield (target if target is not None and time > target.range[0] else None)
 
-    def draw_sight(self, field, time):
-        strength = self.hit_strength - (time - self.hit_time) / self.settings.hit_decay_time
+    def draw_sight(self, field, hit_strength, hit_time, time):
+        strength = hit_strength - (time - hit_time) / self.settings.hit_decay_time
         strength = max(0.0, min(1.0, strength))
         loudness = int(strength * (len(self.settings.sight_appearances) - 1))
-        if abs(time - self.hit_time) < self.settings.hit_sustain_time:
+        if abs(time - hit_time) < self.settings.hit_sustain_time:
             loudness = max(1, loudness)
         field.draw_bar(0.0, self.settings.sight_appearances[loudness])
 

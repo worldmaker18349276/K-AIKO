@@ -242,19 +242,22 @@ class KnockDetector(ra.DataNode):
                     self.detected.put((self.time, strength / self.knock_energy))
 
 class TerminalLine(ra.DataNode):
-    def __init__(self, display_delay):
+    def __init__(self, display_framerate, display_delay):
         super().__init__(self.proxy())
         self.width = int(os.popen("stty size", 'r').read().split()[1])
         self.chars = [" "]*self.width
+        self.display_framerate = display_framerate
         self.display_delay = display_delay
         self.time = 0.0
 
     def proxy(self):
         try:
+            index = 0
             while True:
-                time = yield
-                self.time = time - self.display_delay
+                yield
+                self.time = index/self.display_framerate - self.display_delay
                 print(f"\r{str(self)}\r", end="", flush=True)
+                index += 1
 
         finally:
             print()
@@ -320,6 +323,7 @@ class KnockConsole:
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
 
+    @contextlib.contextmanager
     def get_output_stream(self, manager):
         samplerate = self.settings.output_samplerate
         buffer_length = self.settings.output_buffer_length
@@ -327,15 +331,17 @@ class KnockConsole:
         format = self.settings.output_format
         device = self.settings.output_device
 
-        self.mixer = AudioMixer(samplerate, (buffer_length, channels))
+        mixer = AudioMixer(samplerate, (buffer_length, channels))
+        with ra.play(manager, mixer,
+                     samplerate=samplerate,
+                     buffer_shape=(buffer_length, channels),
+                     format=format,
+                     device=device,
+                     ) as output_stream:
 
-        return ra.play(manager, self.mixer,
-                       samplerate=samplerate,
-                       buffer_shape=(buffer_length, channels),
-                       format=format,
-                       device=device,
-                       )
+            yield output_stream, mixer
 
+    @contextlib.contextmanager
     def get_input_stream(self, manager):
         samplerate = self.settings.input_samplerate
         buffer_length = self.settings.input_buffer_length
@@ -355,29 +361,32 @@ class KnockConsole:
         knock_delay = self.settings.knock_delay
         knock_energy = self.settings.knock_energy
 
-        self.detector = KnockDetector(samplerate, buffer_length, channels,
-                                      pre_max=pre_max,
-                                      post_max=post_max,
-                                      pre_avg=pre_avg,
-                                      post_avg=post_avg,
-                                      wait=wait,
-                                      delta=delta,
-                                      time_res=time_res,
-                                      freq_res=freq_res,
-                                      knock_delay=knock_delay,
-                                      knock_energy=knock_energy,
-                                      )
+        detector = KnockDetector(samplerate, buffer_length, channels,
+                                 pre_max=pre_max,
+                                 post_max=post_max,
+                                 pre_avg=pre_avg,
+                                 post_avg=post_avg,
+                                 wait=wait,
+                                 delta=delta,
+                                 time_res=time_res,
+                                 freq_res=freq_res,
+                                 knock_delay=knock_delay,
+                                 knock_energy=knock_energy,
+                                 )
+        with ra.record(manager, detector,
+                       samplerate=samplerate,
+                       buffer_shape=(buffer_length, channels),
+                       format=format,
+                       device=device,
+                       ) as input_stream:
 
-        return ra.record(manager, self.detector,
-                         samplerate=samplerate,
-                         buffer_shape=(buffer_length, channels),
-                         format=format,
-                         device=device,
-                         )
+            yield input_stream, detector
 
+    @contextlib.contextmanager
     def get_display_thread(self):
-        self.screen = TerminalLine(self.settings.display_delay)
-        return ra.interval(self.screen, 1/self.settings.display_framerate)
+        screen = TerminalLine(self.settings.display_framerate, self.settings.display_delay)
+        with ra.interval(screen, 1/self.settings.display_framerate) as display_thread:
+            yield display_thread, screen
 
     def SIGINT_handler(self, sig, frame):
         self.stopped = True
@@ -386,16 +395,20 @@ class KnockConsole:
         try:
             manager = pyaudio.PyAudio()
 
-            with self.get_output_stream(manager) as output_stream,\
-                 self.get_input_stream(manager) as input_stream,\
-                 self.get_display_thread() as display_thread:
+            # connect audio/video streams and interface
+            with self.get_output_stream(manager) as (output_stream, mixer),\
+                 self.get_input_stream(manager) as (input_stream, detector),\
+                 self.get_display_thread() as (display_thread, screen):
 
-                with knock_program.connect(self.mixer, self.detector, self.screen) as loop:
+                # connect interface and program
+                with knock_program.connect(mixer, detector, screen) as loop:
 
+                    # activate audio/video streams
                     output_stream.start_stream()
                     input_stream.start_stream()
                     display_thread.start()
 
+                    # loop
                     for _ in loop:
                         if (self.stopped or
                             not output_stream.is_active() or
@@ -410,7 +423,7 @@ class KnockConsole:
             manager.terminate()
 
 class KnockProgram:
-    # connect(mixer, detector, screen): loop
+    # connect(mixer, detector, screen) -> DataNode
     # pause(self)
     # resume(self)
     pass
