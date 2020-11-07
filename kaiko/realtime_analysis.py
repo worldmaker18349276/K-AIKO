@@ -548,7 +548,7 @@ def draw_spectrum(length, win_length, samplerate=44100, decay=1/4):
 
 # for variable-width data
 @DataNode.from_generator
-def chunk(node, chunk_shape=1024, offset=0):
+def chunk(node, chunk_shape=1024):
     """Make a data node be able to produce fixed width data.
 
     Parameters
@@ -557,8 +557,6 @@ def chunk(node, chunk_shape=1024, offset=0):
         The data node to chunk.
     chunk_shape : int or tuple, optional
         The shape of chunk, default is `1024`.
-    offset : int, optional
-        The offset of the first data, default is `0`.
 
     Yields
     ------
@@ -566,27 +564,34 @@ def chunk(node, chunk_shape=1024, offset=0):
         The chunked signal with shape `chunk_shape`.
     """
     node = DataNode.wrap(node)
-    chunk = numpy.zeros(chunk_shape, dtype=numpy.float32)
-    index = offset
 
     with node:
-        yield
+        try:
+            yield
+            chunk = numpy.zeros(chunk_shape, dtype=numpy.float32)
+            index = 0
 
-        for data in node:
-            while data.shape[0] > 0:
-                length = min(chunk.shape[0] - index, data.shape[0])
-                chunk[index:index+length] = data[:length]
+            data = node.send()
+            jndex = 0
+
+            while True:
+                length = min(chunk.shape[0]-index, data.shape[0]-jndex)
+                chunk[index:index+length] = data[jndex:jndex+length]
                 index += length
-                data = data[length:]
+                jndex += length
 
                 if index == chunk.shape[0]:
-                    yield numpy.copy(chunk)
+                    yield chunk
+                    chunk = numpy.zeros(chunk_shape, dtype=numpy.float32)
                     index = 0
 
-        else:
+                if jndex == data.shape[0]:
+                    data = node.send()
+                    jndex = 0
+
+        except StopIteration:
             if index > 0:
-                chunk[index:] = 0.0
-                yield numpy.copy(chunk)
+                yield chunk
 
 @DataNode.from_generator
 def unchunk(node, chunk_shape=1024):
@@ -605,64 +610,66 @@ def unchunk(node, chunk_shape=1024):
         The unchunked signal with any length.
     """
     node = DataNode.wrap(node)
-    chunk = numpy.zeros(chunk_shape, dtype=numpy.float32)
-    index = 0
 
     with node:
-        while True:
+        try:
+            chunk = numpy.zeros(chunk_shape, dtype=numpy.float32)
+            index = 0
+
             data = yield
-            while data.shape[0] > 0:
-                length = min(chunk.shape[0] - index, data.shape[0])
-                chunk[index:index+length] = data[:length]
+            jndex = 0
+
+            while True:
+                length = min(chunk.shape[0]-index, data.shape[0]-jndex)
+                chunk[index:index+length] = data[jndex:jndex+length]
                 index += length
-                data = data[length:]
+                jndex += length
 
                 if index == chunk.shape[0]:
-                    node.send(numpy.copy(chunk))
+                    node.send(chunk)
+                    chunk = numpy.zeros(chunk_shape, dtype=numpy.float32)
                     index = 0
 
+                if jndex == data.shape[0]:
+                    data = yield
+                    jndex = 0
+
+        except GeneratorExit:
+            if index > 0:
+                node.send(chunk)
+
 @DataNode.from_generator
-def reader(node):
-    """Make a data node be able to produce data with given length.
-
-    Parameters
-    ----------
-    node : DataNode
-        The data node to read.
-
-    Receives
-    ------
-    length : int
-        The length to read.
-
-    Yields
-    ------
-    data : ndarray
-        The data with given length.
-    """
-    node = DataNode.wrap(node)
-
-    buffer = []
+def attach(node):
     with node:
-        required = length = yield
-        if length == 0: raise ValueError("the first length cannot be 0.")
+        try:
+            data = yield
+            index = 0
 
-        for data in node:
-            buffer.append(data)
-            required -= data.shape[0]
+            signal = node.send()
+            jndex = 0
 
-            while required <= 0:
-                last = buffer.pop()
-                buffer.append(last[:required])
-                length = yield numpy.concatenate(buffer, axis=0)
-                buffer = [last[required:]]
+            while True:
+                length = min(data.shape[0]-index, signal.shape[0]-jndex)
+                data[index:index+length] += signal[jndex:jndex+length]
+                index += length
+                jndex += length
 
-                if length < 0: raise ValueError("the length cannot be less than 0.")
-                required += length
+                if index == data.shape[0]:
+                    data = yield data
+                    index = 0
 
-        else:
-            if len(buffer) > 0:
-                yield numpy.concatenate(buffer, axis=0)
+                if jndex == signal.shape[0]:
+                    signal = node.send()
+                    jndex = 0
+
+        except StopIteration:
+            if index > 0:
+                yield data
+
+# def chunk(node, chunk_shape=1024, offset=0):
+#     nchannels = chunk_shape[1] if isinstance(chunk_shape, tuple) else None
+#     empty = lambda _:numpy.zeros(chunk_shape, dtype=numpy.float32)
+#     return pipe(empty, shift(attach(node), offset, nchannels))
 
 
 def rechannel(channels):

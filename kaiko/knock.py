@@ -11,136 +11,73 @@ from . import cfg
 from . import realtime_analysis as ra
 
 
-class ContextBuffer:
-    def __init__(self):
-        self.buffer = OrderedDict()
-
-    def keys(self):
-        return self.buffer.keys()
-
-    def values(self):
-        return self.buffer.values()
-
-    def items(self):
-        return self.buffer.items()
-
-    def __enter__(self):
-        for cm in self.buffer.values():
-            cm.__enter__()
-        return self
-
-    def __exit__(self, type=None, value=None, traceback=None):
-        passthrough = True
-        for cm in reversed(self.buffer.values()):
-            try:
-                if cm.__exit__(type, value, traceback):
-                    passthrough = False
-                    type, value, traceback = None, None, None
-            except:
-                passthrough = False
-                type, value, traceback = sys.exc_info()
-
-        if passthrough:
-            return False
-        elif value is not None:
-            raise value
-        elif type is not None:
-            raise type()
-        return True
-
-    def enter(self, key, cm):
-        self.buffer[key] = cm
-        return cm.__enter__()
-
-    def exit(self, key):
-        if key in self.buffer:
-            cm = self.buffer[key]
-            del self.buffer[key]
-            return cm.__exit__(None, None, None)
-
-@ra.DataNode.from_generator
-def shift(node, offset, nchannel=None):
-    node = ra.DataNode.wrap(node)
-
-    with node:
-        try:
-            if offset < 0:
-                shape = (-offset, nchannel) if nchannel is not None else -offset
-                data = numpy.zeros(shape, dtype=numpy.float32)
-                node.send(data)
-                offset = 0
-
-        except StopIteration:
-            yield
-
-        else:
-            data = yield
-            while data.shape[0] < offset:
-                offset = offset - data.shape[0]
-                data = yield data
-
-            if offset > 0:
-                res, data = data[:offset], data[offset:]
-                data = yield numpy.concatenate((res, node.send(data)), axis=0)
-
-            while True:
-                data = yield node.send(data)
-
-@ra.DataNode.from_generator
-def attach(node):
-    with node:
-        data = yield
-        index = 0
-        while True:
-            signal = node.send()
-            while signal.shape[0] > 0:
-                length = min(data.shape[0]-index, signal.shape[0])
-                data[index:index+length] += signal[:length]
-                index += length
-                signal = signal[length:]
-                if index == data.shape[0]:
-                    data = yield data
-                    index = 0
-
-class AudioMixer(ra.DataNode):
-    def __init__(self, samplerate=44100, buffer_shape=1024):
+class Scheduler(ra.DataNode):
+    def __init__(self, preprocess, postprocess):
         super().__init__(self.proxy())
+        self.preprocess = ra.DataNode.wrap(preprocess)
+        self.postprocess = ra.DataNode.wrap(postprocess)
+        self.add_nodes = queue.Queue()
+        self.remove_nodes = queue.Queue()
+        self.index = 0
+        self.time = 0.0
+
+    def proxy(self):
+        nodes = [] # [(key, node, zindex), ...]
+        with self.preprocess, self.postprocess:
+            try:
+                data = None
+
+                while True:
+                    data = yield data
+
+                    while not self.add_nodes.empty():
+                        key, node, zindex = self.add_nodes.get()
+                        node.__enter__()
+                        i = next((i for i, item in enumerate(nodes) if item[2] < zindex), len(nodes))
+                        nodes.insert(i, (key, node, zindex))
+
+                    while not self.remove_nodes.empty():
+                        key = self.remove_nodes.get()
+                        i = [key for key, _, _ in nodes].index(key)
+                        _, node, _ = nodes.pop(i)
+                        node.__exit__()
+
+                    data = self.preprocess.send(data)
+                    for item in list(nodes):
+                        try:
+                            data = item[1].send(data)
+                        except StopIteration:
+                            nodes.remove(item)
+                    data = self.postprocess.send(data)
+
+            finally:
+                for _, node, _ in nodes:
+                    node.__exit__()
+
+
+class AudioMixer(Scheduler):
+    def __init__(self, samplerate=44100, buffer_shape=1024):
+        super().__init__(self.get_preprocess(), self.get_postprocess())
         self.samplerate = samplerate
         self.buffer_shape = buffer_shape
         self.index = 0
         self.time = 0.0
-        self.add_nodes = queue.Queue()
-        self.remove_nodes = queue.Queue()
 
-    def proxy(self):
-        buffer = numpy.zeros(self.buffer_shape, dtype=numpy.float32)
+    @ra.DataNode.from_generator
+    def get_preprocess(self):
+        yield
+        while True:
+            yield numpy.zeros(self.buffer_shape, dtype=numpy.float32)
 
-        with ContextBuffer() as nodes:
-            yield
+    @ra.DataNode.from_generator
+    def get_postprocess(self):
+        buffer = yield
+        while True:
+            self.index += 1
+            self.time = self.index * buffer.shape[0] / self.samplerate
+            buffer = yield buffer
 
-            while True:
-                while not self.add_nodes.empty():
-                    key, node = self.add_nodes.get()
-                    nodes.enter(key, node)
-
-                while not self.remove_nodes.empty():
-                    key = self.remove_nodes.get()
-                    nodes.exit(key)
-
-                buffer[:] = 0.0
-                data = buffer
-                for key, node in sorted(nodes.items(), key=lambda n: getattr(n[1], 'zindex', 0)):
-                    try:
-                        data = node.send(data)
-                    except StopIteration:
-                        nodes.exit(key)
-
-                self.index += 1
-                self.time = self.index * buffer.shape[0] / self.samplerate
-
-                yield numpy.copy(data)
-
-    def play(self, node, samplerate, channels=None, volume=0.0, start=None, end=None, delay=None, key=None):
+    def play(self, node, samplerate, channels=None, volume=0.0, start=None, end=None, time=None, zindex=0, key=None):
         if key is None:
             key = node
         if channels is None:
@@ -153,25 +90,50 @@ class AudioMixer(ra.DataNode):
             node = ra.pipe(node, ra.resample(ratio=(self.samplerate, samplerate)))
         if volume != 0:
             node = ra.pipe(node, lambda s: s * 10**(volume/20))
-        node = attach(node)
+        node = ra.attach(node)
 
-        self.add_effect(node, delay, key=key)
+        self.add_effect(node, time=time, zindex=zindex, key=key)
 
-    def add_effect(self, node, delay=None, zindex=None, key=None):
+    def add_effect(self, node, time=None, zindex=0, key=None):
         if key is None:
             key = node
-        if delay is not None:
-            nchannel = self.buffer_shape[1] if isinstance(self.buffer_shape, tuple) else None
-            offset = round(delay*self.samplerate)
-            node = shift(node, offset, nchannel)
-
-        if zindex is not None:
-            node.zindex = zindex
-
-        self.add_nodes.put((key, node))
+        if time is not None:
+            node = self._shift(node, time)
+        self.add_nodes.put((key, node, zindex))
 
     def remove_effect(self, key):
         self.remove_nodes.put(key)
+
+    @ra.DataNode.from_generator
+    def _shift(self, node, time):
+        offset = round((time - self.time) * self.samplerate)
+        node = ra.DataNode.wrap(node)
+
+        with node:
+            try:
+                if offset < 0:
+                    data = numpy.zeros((-offset,) + self.buffer_shape[1:], dtype=numpy.float32)
+                    data = node.send(data)
+                    offset = 0
+
+            except StopIteration:
+                yield
+
+            else:
+                data = yield
+
+                while data.shape[0] < offset:
+                    offset = offset - data.shape[0]
+                    data = yield data
+
+                if offset > 0:
+                    res, data = data[:offset], data[offset:]
+                    data = node.send(data)
+                    data = numpy.concatenate((res, data), axis=0)
+                    data = yield data
+
+                while True:
+                    data = yield node.send(data)
 
 class KnockDetector(ra.DataNode):
     def __init__(self, samplerate=44100, buffer_length=1024, channels=1, *,

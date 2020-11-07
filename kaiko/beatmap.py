@@ -25,7 +25,7 @@ def once(func):
 class Event:
     # lifespan, zindex
     # __init__(beatmap, context, *args, **kwargs)
-    # play(mixer, time)
+    # play(mixer, offset)
     # draw(field, time)
 
     @staticmethod
@@ -71,9 +71,9 @@ class Text(Event):
         return (self.time-cross_time, self.time+cross_time)
 
     @once
-    def play(self, mixer, time):
+    def play(self, mixer, offset):
         if self.sound is not None:
-            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, delay=self.time-time)
+            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=self.time+offset)
 
     def draw(self, field, time):
         if self.text is not None:
@@ -254,8 +254,8 @@ class OneshotTarget(Target):
         return (self.time - cross_time, self.time + cross_time)
 
     @once
-    def play(self, mixer, time):
-        mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, delay=self.time-time, volume=self.volume)
+    def play(self, mixer, offset):
+        mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=self.time+offset, volume=self.volume)
 
     def draw(self, field, time):
         if self.perf in (None, Performance.MISS): # approaching or miss
@@ -354,9 +354,9 @@ class Incr(OneshotTarget):
         self.group.hit(strength)
 
     @once
-    def play(self, mixer, time):
+    def play(self, mixer, offset):
         volume = self.volume + numpy.log10(0.2 + 0.8 * (self.count-1)/self.group.total) * 20
-        mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, delay=self.time-time, volume=volume)
+        mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=self.time+offset, volume=volume)
 
 class Roll(Target):
     def __init__(self, beatmap, context, density=2, *, beat, length, speed=None, volume=None):
@@ -409,9 +409,9 @@ class Roll(Target):
         return (self.time - cross_time, self.end + cross_time)
 
     @once
-    def play(self, mixer, time):
+    def play(self, mixer, offset):
         for t in self.times:
-            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, delay=t-time, volume=self.volume)
+            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=t+offset, volume=self.volume)
 
     def draw(self, field, time):
         appearance = self.rock_appearance
@@ -471,9 +471,9 @@ class Spin(Target):
         return (self.time - cross_time, self.end + cross_time)
 
     @once
-    def play(self, mixer, time):
+    def play(self, mixer, offset):
         for t in self.times:
-            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, delay=t-time, volume=self.volume)
+            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=t+offset, volume=self.volume)
 
     def draw(self, field, time):
         if self.charge < self.capacity:
@@ -698,7 +698,7 @@ class Beatmap:
                 duration = file.duration
                 channels = file.channels
                 samplerate = file.samplerate
-            mixer.play(ra.load(abspath), samplerate, delay=-audio_offset)
+            mixer.play(ra.load(abspath), samplerate, time=-audio_offset)
 
             # add spectrum show
             hop_length = round(samplerate * self.settings.spec_time_res)
@@ -758,7 +758,7 @@ class Beatmap:
                 events = events_dripper.send(time)
                 for event in sorted(events[::-1], key=lambda e: e.zindex):
                     event.draw(field, screen.time+audio_offset)
-                    event.play(mixer, mixer.time+audio_offset)
+                    event.play(mixer, -audio_offset)
 
                 # draw sight
                 stop_drawing = False
