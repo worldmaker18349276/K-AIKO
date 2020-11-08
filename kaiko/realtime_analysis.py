@@ -990,39 +990,40 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
             output_stream.stop_stream()
             output_stream.close()
 
-class IntervalThread(threading.Thread):
-    def __init__(self, callback, time_interval, time_tolerance=0.001):
-        super().__init__()
-
-        self.callback = callback
-        self.time_interval = time_interval
-        self.time_tolerance = time_tolerance
-        self.closed = False
-
-    def close(self):
-        self.closed = True
-
-    def run(self):
-        t0 = time.time()
-        t1 = self.time_interval
-
-        while not self.closed:
-            t = time.time() - t0
-
-            # if t > t1:
-            #     print("underrun")
-            if t < t1 - self.time_tolerance:
-                time.sleep(t1 - t)
-                continue
-
-            self.callback()
-            t1 += self.time_interval
-
 @contextlib.contextmanager
-def interval(node, dt, t_tol=0.001):
-    with node:
-        with contextlib.closing(IntervalThread(node.send, dt, t_tol)) as thread:
-            yield thread
+def interval(task, dt, prepare=lambda _:None, t1=0):
+    task = DataNode.wrap(task)
+    prepare = DataNode.wrap(prepare)
+    stop = threading.Event()
+
+    # t_tol = 0.001
+    # def sleep_to(t):
+    #     while not stop.is_set():
+    #         delta = t - time.time()
+    #         if delta < t_tol:
+    #             return False
+    #         time.sleep(delta)
+    #     else:
+    #         return True
+
+    def run():
+        t0 = t1 + time.time()
+
+        with task, contextlib.suppress(StopIteration):
+            for i, arg in enumerate(prepare):
+                if stop.wait(max(0.0, t0+i*dt - time.time())):
+                    break
+
+                task.send(arg)
+
+                if prepare.finalized:
+                    break
+
+    with prepare:
+        try:
+            yield threading.Thread(target=run)
+        finally:
+            stop.set()
 
 
 # not data nodes

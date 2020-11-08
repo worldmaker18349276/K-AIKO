@@ -11,15 +11,13 @@ from . import cfg
 from . import realtime_analysis as ra
 
 
-class Scheduler(ra.DataNode):
+class NodeScheduler(ra.DataNode):
     def __init__(self, preprocess, postprocess):
         super().__init__(self.proxy())
         self.preprocess = ra.DataNode.wrap(preprocess)
         self.postprocess = ra.DataNode.wrap(postprocess)
         self.add_nodes = queue.Queue()
         self.remove_nodes = queue.Queue()
-        self.index = 0
-        self.time = 0.0
 
     def proxy(self):
         nodes = [] # [(key, node, zindex), ...]
@@ -55,7 +53,7 @@ class Scheduler(ra.DataNode):
                     node.__exit__()
 
 
-class AudioMixer(Scheduler):
+class AudioMixer(NodeScheduler):
     def __init__(self, samplerate=44100, buffer_shape=1024):
         super().__init__(self.get_preprocess(), self.get_postprocess())
         self.samplerate = samplerate
@@ -204,26 +202,28 @@ class KnockDetector(ra.DataNode):
                 if res:
                     self.detected.put((self.time, strength / self.knock_energy))
 
-class TerminalLine(ra.DataNode):
-    def __init__(self, display_framerate, display_delay):
-        super().__init__(self.proxy())
+class TerminalLine(NodeScheduler):
+    def __init__(self, framerate, delay):
+        super().__init__(self.get_preprocess(), self.get_postprocess())
         self.width = int(os.popen("stty size", 'r').read().split()[1])
         self.chars = [" "]*self.width
-        self.display_framerate = display_framerate
-        self.display_delay = display_delay
+        self.framerate = framerate
+        self.delay = delay
         self.time = 0.0
 
-    def proxy(self):
-        try:
-            index = 0
-            while True:
-                yield
-                self.time = index/self.display_framerate - self.display_delay
-                print(f"\r{str(self)}\r", end="", flush=True)
-                index += 1
+    @ra.DataNode.from_generator
+    def get_preprocess(self):
+        index = 0
+        while True:
+            yield
+            self.time = index / self.framerate - self.delay
+            index += 1
 
-        finally:
-            print()
+    @ra.DataNode.from_generator
+    def get_postprocess(self):
+        yield
+        while True:
+            yield f"\r{str(self)}\r"
 
     def __str__(self):
         return "".join(self.chars)
@@ -244,6 +244,15 @@ class TerminalLine(ra.DataNode):
                 if index in range(self.width)[mask]:
                     self.chars[index] = ch
                 index += 1
+
+    def add_callback(self, node, zindex=0, key=None):
+        if key is None:
+            key = node
+        node = ra.DataNode.wrap(node)
+        self.add_nodes.put((key, node, zindex))
+
+    def remove_callback(self, key):
+        self.remove_nodes.put(key)
 
 
 @cfg.configurable
@@ -348,7 +357,17 @@ class KnockConsole:
     @contextlib.contextmanager
     def get_display_thread(self):
         screen = TerminalLine(self.settings.display_framerate, self.settings.display_delay)
-        with ra.interval(screen, 1/self.settings.display_framerate) as display_thread:
+
+        @ra.DataNode.from_generator
+        def show():
+            try:
+                while True:
+                    view = yield
+                    print(view, end="", flush=True)
+            finally:
+                print()
+
+        with ra.interval(show(), 1/self.settings.display_framerate, screen) as display_thread:
             yield display_thread, screen
 
     def SIGINT_handler(self, sig, frame):
