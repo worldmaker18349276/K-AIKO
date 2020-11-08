@@ -583,17 +583,17 @@ class BeatmapSettings:
 
     late_failed_appearance:        Tuple[str, str] = ("\b⟪", "  ⟫")
     late_bad_appearance:           Tuple[str, str] = ("\b⟨", "  ⟩")
-    late_good_appearance:          Tuple[str, str] = ("\b«", "  »")
+    late_good_appearance:          Tuple[str, str] = ("\b‹", "  ›")
     great_appearance:              Tuple[str, str] = (""   , ""   )
-    early_good_appearance:         Tuple[str, str] = ("  »", "\b«")
+    early_good_appearance:         Tuple[str, str] = ("  ›", "\b‹")
     early_bad_appearance:          Tuple[str, str] = ("  ⟩", "\b⟨")
     early_failed_appearance:       Tuple[str, str] = ("  ⟫", "\b⟪")
 
     late_failed_wrong_appearance:  Tuple[str, str] = ("\b⟪", "  ⟫")
     late_bad_wrong_appearance:     Tuple[str, str] = ("\b⟨", "  ⟩")
-    late_good_wrong_appearance:    Tuple[str, str] = ("\b«", "  »")
+    late_good_wrong_appearance:    Tuple[str, str] = ("\b‹", "  ›")
     great_wrong_appearance:        Tuple[str, str] = (""   , ""   )
-    early_good_wrong_appearance:   Tuple[str, str] = ("  »", "\b«")
+    early_good_wrong_appearance:   Tuple[str, str] = ("  ›", "\b‹")
     early_bad_wrong_appearance:    Tuple[str, str] = ("  ⟩", "\b⟨")
     early_failed_wrong_appearance: Tuple[str, str] = ("  ⟫", "\b⟪")
 

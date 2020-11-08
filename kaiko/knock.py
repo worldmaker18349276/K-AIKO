@@ -99,6 +99,7 @@ class AudioMixer(Scheduler):
             key = node
         if time is not None:
             node = self._shift(node, time)
+        node = ra.DataNode.wrap(node)
         self.add_nodes.put((key, node, zindex))
 
     def remove_effect(self, key):
