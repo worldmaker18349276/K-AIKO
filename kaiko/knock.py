@@ -54,25 +54,28 @@ class NodeScheduler(ra.DataNode):
 
 
 class AudioMixer(NodeScheduler):
-    def __init__(self, samplerate=44100, buffer_shape=1024):
+    def __init__(self, samplerate=44100, buffer_shape=1024, delay=0.0):
         super().__init__(self.get_preprocess(), self.get_postprocess())
         self.samplerate = samplerate
         self.buffer_shape = buffer_shape
-        self.index = 0
-        self.time = 0.0
+        self.delay = delay
+        self.time = delay
 
     @ra.DataNode.from_generator
     def get_preprocess(self):
+        index = 0
+        buffer_length = self.buffer_shape[0] if isinstance(self.buffer_shape, tuple) else self.buffer_shape
+        Dt = buffer_length / self.samplerate
         yield
         while True:
+            self.time = index * Dt + self.delay
             yield numpy.zeros(self.buffer_shape, dtype=numpy.float32)
+            index += 1
 
     @ra.DataNode.from_generator
     def get_postprocess(self):
         buffer = yield
         while True:
-            self.index += 1
-            self.time = self.index * buffer.shape[0] / self.samplerate
             buffer = yield buffer
 
     def play(self, node, samplerate, channels=None, volume=0.0, start=None, end=None, time=None, zindex=0, key=None):
@@ -137,7 +140,7 @@ class AudioMixer(NodeScheduler):
 class KnockDetector(ra.DataNode):
     def __init__(self, samplerate=44100, buffer_length=1024, channels=1, *,
                        pre_max, post_max, pre_avg, post_avg, wait, delta,
-                       time_res, freq_res, knock_delay, knock_energy):
+                       time_res, freq_res, delay, energy):
         super().__init__(self.proxy())
         self.samplerate = samplerate
         self.buffer_length = buffer_length
@@ -152,11 +155,10 @@ class KnockDetector(ra.DataNode):
 
         self.time_res = time_res
         self.freq_res = freq_res
-        self.knock_delay = knock_delay
-        self.knock_energy = knock_energy
+        self.delay = delay
+        self.energy = energy
 
         self.detected = queue.Queue()
-        self.index = 0
         self.time = 0.0
 
     def proxy(self):
@@ -191,16 +193,17 @@ class KnockDetector(ra.DataNode):
             ra.pair(ra.delay([0.0]*delay), picker))
 
         with node:
-            self.index = -delay-1
+            index = -delay
 
             while True:
-                data = yield
-                self.index += 1
-                self.time = self.index * self.time_res - self.knock_delay
+                self.time = index * self.time_res + self.delay
 
+                data = yield
                 strength, res = node.send(data)
                 if res:
-                    self.detected.put((self.time, strength / self.knock_energy))
+                    self.detected.put((self.time, strength / self.energy))
+
+                index += 1
 
 class TerminalLine(NodeScheduler):
     def __init__(self, framerate, delay):
@@ -209,14 +212,14 @@ class TerminalLine(NodeScheduler):
         self.chars = [" "]*self.width
         self.framerate = framerate
         self.delay = delay
-        self.time = 0.0
+        self.time = delay
 
     @ra.DataNode.from_generator
     def get_preprocess(self):
         index = 0
         while True:
+            self.time = index / self.framerate + self.delay
             yield
-            self.time = index / self.framerate - self.delay
             index += 1
 
     @ra.DataNode.from_generator
@@ -283,9 +286,10 @@ class KnockConsoleSettings:
 
     # controls
     display_framerate: float = 60.0
-    display_delay: float = 0.03
+    display_delay: float = 0.0
     knock_delay: float = 0.0
     knock_energy: float = 1.0e-3
+    sound_delay: float = 0.0
 
 class KnockConsole:
     settings: KnockConsoleSettings = KnockConsoleSettings()
@@ -299,11 +303,12 @@ class KnockConsole:
     def get_output_stream(self, manager):
         samplerate = self.settings.output_samplerate
         buffer_length = self.settings.output_buffer_length
+        sound_delay = self.settings.sound_delay
         channels = self.settings.output_channels
         format = self.settings.output_format
         device = self.settings.output_device
 
-        mixer = AudioMixer(samplerate, (buffer_length, channels))
+        mixer = AudioMixer(samplerate, (buffer_length, channels), sound_delay)
         with ra.play(manager, mixer,
                      samplerate=samplerate,
                      buffer_shape=(buffer_length, channels),
@@ -342,8 +347,8 @@ class KnockConsole:
                                  delta=delta,
                                  time_res=time_res,
                                  freq_res=freq_res,
-                                 knock_delay=knock_delay,
-                                 knock_energy=knock_energy,
+                                 delay=knock_delay,
+                                 energy=knock_energy,
                                  )
         with ra.record(manager, detector,
                        samplerate=samplerate,
