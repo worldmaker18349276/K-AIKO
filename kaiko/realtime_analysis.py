@@ -990,40 +990,63 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
             output_stream.stop_stream()
             output_stream.close()
 
-@contextlib.contextmanager
-def interval(task, dt, prepare=lambda _:None, t1=0):
-    task = DataNode.wrap(task)
+@DataNode.from_generator
+def interval(dt, prepare=lambda _:None, first=0.0):
     prepare = DataNode.wrap(prepare)
     stop = threading.Event()
 
-    # t_tol = 0.001
-    # def sleep_to(t):
-    #     while not stop.is_set():
-    #         delta = t - time.time()
-    #         if delta < t_tol:
-    #             return False
-    #         time.sleep(delta)
-    #     else:
-    #         return True
+    with prepare:
+        yield
+        t0 = time.time()
+
+        for i, data in enumerate(prepare):
+            if stop.wait(max(0.0, t0+first+i*dt - time.time())):
+                break
+
+            yield (time.time()-t0, data)
+
+@contextlib.contextmanager
+def thread(node):
+    stop = threading.Event()
 
     def run():
-        t0 = t1 + time.time()
-
-        with task, contextlib.suppress(StopIteration):
-            for i, arg in enumerate(prepare):
-                if stop.wait(max(0.0, t0+i*dt - time.time())):
+        with node:
+            for _ in node:
+                if stop.wait(0.0):
                     break
 
-                task.send(arg)
+    node.__enter__()
+    thread = threading.Thread(target=run)
+    try:
+        yield thread
+    finally:
+        stop.set()
+        thread.join()
 
-                if prepare.finalized:
-                    break
-
-    with prepare:
-        try:
-            yield threading.Thread(target=run)
-        finally:
-            stop.set()
+# @contextlib.contextmanager
+# def interval_thread(task, dt, prepare=lambda _:None, first=0.0):
+#     task = DataNode.wrap(task)
+#     prepare = DataNode.wrap(prepare)
+#     stop = threading.Event()
+# 
+#     def run():
+#         t0 = time.time()
+# 
+#         with task, contextlib.suppress(StopIteration):
+#             for i, data in enumerate(prepare):
+#                 if stop.wait(max(0.0, t0+first+i*dt - time.time())):
+#                     break
+# 
+#                 task.send((time.time()-t0, data))
+# 
+#                 if prepare.finalized:
+#                     break
+# 
+#     with prepare:
+#         try:
+#             yield threading.Thread(target=run)
+#         finally:
+#             stop.set()
 
 
 # not data nodes

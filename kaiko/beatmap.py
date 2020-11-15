@@ -1,10 +1,10 @@
 import os
-import time as timer
 from enum import Enum
 import functools
 import inspect
 from typing import List, Tuple, Optional, Union
 from collections import OrderedDict
+import queue
 import numpy
 import audioread
 from . import cfg
@@ -12,73 +12,39 @@ from . import realtime_analysis as ra
 from .beatsheet import K_AIKO_STD, OSU
 
 
-def once(func):
-    key = f"{func.__name__}_executed"
-    @functools.wraps(func)
-    def once_func(self, *args, **kwargs):
-        if not getattr(self, key, False):
-            setattr(self, key, True)
-            return func(self, *args, **kwargs)
-    return once_func
-
 # scripts
 class Event:
-    # lifespan, zindex
+    # lifespan
     # __init__(beatmap, context, *args, **kwargs)
-    # play(mixer, offset)
-    # draw(field, time)
-
-    @staticmethod
-    @ra.DataNode.from_generator
-    def drip(events):
-        it = iter(sorted(events, key=lambda e: e.lifespan))
-        waiting = next(it, None)
-        buffer = []
-
-        time = yield
-
-        while True:
-            for playing in list(buffer):
-                if playing.lifespan[1] < time:
-                    buffer.remove(playing)
-
-            while waiting is not None and waiting.lifespan[0] < time:
-                buffer.append(waiting)
-                waiting = next(it, None)
-
-            time = yield list(buffer)
+    # trigger(mixer, hitter, field)
+    pass
 
 class Text(Event):
-    zindex = -2
-
     def __init__(self, beatmap, context, text=None, sound=None, *, beat, speed=None):
         self.time = beatmap.time(beat)
         self.text = text
 
         if speed is None:
             speed = context.get('speed', 1.0)
-
         self.speed = speed
+
         if sound is not None:
             self.sound, self.samplerate = beatmap.load_audio(sound, path=beatmap.path)
         else:
             self.sound = None
             self.samplerate = None
 
-    @property
-    def lifespan(self):
-        cross_time = 1.0 / abs(0.5 * self.speed)
-        return (self.time-cross_time, self.time+cross_time)
+        travel_time = 1.0 / abs(0.5 * self.speed)
+        self.lifespan = (self.time - travel_time, self.time + travel_time)
 
-    @once
-    def play(self, mixer, offset):
+    def trigger(self, mixer, hitter, field):
         if self.sound is not None:
-            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=self.time+offset)
+            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=self.time)
 
-    def draw(self, field, time):
         if self.text is not None:
-            pos = (self.time - time) * 0.5 * self.speed
-            field.draw_bar(pos, self.text)
+            pos = lambda: (self.time-field.time) * 0.5 * self.speed
+            field.draw_text(pos, self.text, time=self.lifespan[0],
+                              duration=self.lifespan[1]-self.lifespan[0], zindex=(-2, -self.time))
 
 def set_context(beatmap, context, **kw):
     context.update(**kw)
@@ -87,19 +53,27 @@ def set_context(beatmap, context, **kw):
 class Target(Event):
     # lifespan, range, score, full_score, is_finished
     # __init__(beatmap, context, *args, **kwargs)
-    # hit(time, strength)
-    # finish()
-    # play(mixer, time)
-    # draw(field, time)
-    # draw_judging(field, time)
-    # draw_hitting(field, time)
+    # approach(mixer, field)
+    # hit(mixer, field, time, strength)
+    # finish(mixer, field)
 
-    @property
-    def zindex(self):
-        return -1 if self.is_finished else 1
+    def trigger(self, mixer, hitter, field):
+        self.approach(mixer, field)
 
-    def draw_judging(self, field, time): pass
-    def draw_hitting(self, field, time): pass
+        @ra.DataNode.from_generator
+        def target_node():
+            try:
+                while True:
+                    time, strength = yield
+                    self.hit(mixer, field, time, strength)
+                    if self.is_finished:
+                        break
+            except GeneratorExit:
+                if not self.is_finished:
+                    self.finish(mixer, field)
+
+        hitter.add_target(target_node(), time=self.range[0], duration=self.range[1]-self.range[0])
+
 
 class Performance(Enum):
     MISS               = ("Miss"                      , False, 0)
@@ -164,34 +138,18 @@ class Performance(Enum):
 
         return perf
 
-    def draw(self, field, flipped, appearances):
-        i = (
-            Performance.MISS,
-            Performance.GREAT,
-            Performance.LATE_GOOD,
-            Performance.EARLY_GOOD,
-            Performance.LATE_BAD,
-            Performance.EARLY_BAD,
-            Performance.LATE_FAILED,
-            Performance.EARLY_FAILED,
-            Performance.GREAT_WRONG,
-            Performance.LATE_GOOD_WRONG,
-            Performance.EARLY_GOOD_WRONG,
-            Performance.LATE_BAD_WRONG,
-            Performance.EARLY_BAD_WRONG,
-            Performance.LATE_FAILED_WRONG,
-            Performance.EARLY_FAILED_WRONG,
-            ).index(self)
-        if field.is_flipped:
-            flipped = not flipped
-        j = 0 if not flipped else 1
+    def render(self, mixer, field, is_reversed, appearances, sustain_time):
+        i = list(Performance).index(self)
+        appearance = appearances[i]
+        if is_reversed:
+            appearance = appearance[::-1]
 
-        field.draw_bar(0.0, appearances[i][j])
+        field.draw_text(0.0, appearance, duration=sustain_time, zindex=(1,), key="perf_hint")
 
 class OneshotTarget(Target):
     # time, speed, volume, perf, sound, samplerate
-    # appearances: (approach, wrong)
-    # hit(time, strength)
+    # approach_appearance, wrong_appearance
+    # hit(mixer, field, time, strength)
 
     full_score = Performance.get_full_score()
 
@@ -219,6 +177,7 @@ class OneshotTarget(Target):
             beatmap.settings.late_failed_wrong_appearance,
             beatmap.settings.early_failed_wrong_appearance,
             )
+        self.performance_sustain_time = beatmap.settings.performance_sustain_time
 
         if speed is None:
             speed = context.get('speed', 1.0)
@@ -229,6 +188,12 @@ class OneshotTarget(Target):
         self.speed = speed
         self.volume = volume
         self.perf = None
+
+        travel_time = 1.0 / abs(0.5 * self.speed)
+        self.lifespan = (self.time - travel_time, self.time + travel_time)
+
+    def pos(self, field):
+        return lambda: (self.time-field.time) * 0.5 * self.speed
 
     @property
     def range(self):
@@ -242,71 +207,53 @@ class OneshotTarget(Target):
     def is_finished(self):
         return self.perf is not None
 
-    def finish(self):
-        self.perf = Performance.MISS
+    def approach(self, mixer, field):
+        mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=self.time, volume=self.volume)
 
-    def hit(self, time, strength, is_correct_key):
-        self.perf = Performance.judge(time - self.time, is_correct_key, self.tolerances)
+        field.draw_target(self, self.pos(field), self.approach_appearance,
+                          time=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
+        field.reset_sight(time=self.range[0])
 
-    @property
-    def lifespan(self):
-        cross_time = 1.0 / abs(0.5 * self.speed)
-        return (self.time - cross_time, self.time + cross_time)
+    def hit(self, mixer, field, time, strength, is_correct_key=True):
+        perf = Performance.judge(time - self.time, is_correct_key, self.tolerances)
+        if perf is not None:
+            perf.render(mixer, field, self.speed < 0, self.performance_appearances, self.performance_sustain_time)
+            self.finish(mixer, field, perf)
 
-    @once
-    def play(self, mixer, offset):
-        mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=self.time+offset, volume=self.volume)
+    def finish(self, mixer, field, perf=Performance.MISS):
+        self.perf = perf
 
-    def draw(self, field, time):
-        if self.perf in (None, Performance.MISS): # approaching or miss
-            appearance = self.appearances[0]
-            if isinstance(appearance, tuple):
-                is_flipped = (self.speed < 0) != field.is_flipped
-                appearance = appearance[0] if not is_flipped else appearance[1]
-
-            pos = (self.time - time) * 0.5 * self.speed
-            field.draw_bar(pos, appearance)
-
-        elif self.perf.is_wrong: # wrong key
-            appearance = self.appearances[1]
-            if isinstance(appearance, tuple):
-                is_flipped = (self.speed < 0) != field.is_flipped
-                appearance = appearance[0] if not is_flipped else appearance[1]
-
-            pos = (self.time - time) * 0.5 * self.speed
-            field.draw_bar(pos, appearance)
-
-        else: # correct key
+        if self.perf == Performance.MISS:
             pass
 
-    def draw_hitting(self, field, time):
-        self.perf.draw(field, self.speed < 0, self.performance_appearances)
+        elif self.perf.is_wrong: # wrong key
+            field.draw_target(self, self.pos(field), self.wrong_appearance,
+                              time=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
+
+        else: # correct key
+            field.remove_target(key=self)
 
 class Soft(OneshotTarget):
     def __init__(self, beatmap, context, *, beat, speed=None, volume=None):
         super().__init__(beatmap, context, beat=beat, speed=speed, volume=volume)
-        self.appearances = (
-            beatmap.settings.soft_approach_appearance,
-            beatmap.settings.soft_wrong_appearance,
-            )
+        self.approach_appearance = beatmap.settings.soft_approach_appearance
+        self.wrong_appearance = beatmap.settings.soft_wrong_appearance
         self.sound, self.samplerate = beatmap.load_audio(beatmap.settings.soft_sound)
         self.threshold = beatmap.settings.soft_threshold
 
-    def hit(self, time, strength):
-        super().hit(time, strength, strength < self.threshold)
+    def hit(self, mixer, field, time, strength):
+        super().hit(mixer, field, time, strength, strength < self.threshold)
 
 class Loud(OneshotTarget):
     def __init__(self, beatmap, context, *, beat, speed=None, volume=None):
         super().__init__(beatmap, context, beat=beat, speed=speed, volume=volume)
-        self.appearances = (
-            beatmap.settings.loud_approach_appearance,
-            beatmap.settings.loud_wrong_appearance,
-            )
+        self.approach_appearance = beatmap.settings.loud_approach_appearance
+        self.wrong_appearance = beatmap.settings.loud_wrong_appearance
         self.sound, self.samplerate = beatmap.load_audio(beatmap.settings.loud_sound)
         self.threshold = beatmap.settings.loud_threshold
 
-    def hit(self, time, strength):
-        super().hit(time, strength, strength >= self.threshold)
+    def hit(self, mixer, field, time, strength):
+        super().hit(mixer, field, time, strength, strength >= self.threshold)
 
 class IncrGroup:
     def __init__(self, threshold=0.0, total=0):
@@ -319,10 +266,9 @@ class IncrGroup:
 class Incr(OneshotTarget):
     def __init__(self, beatmap, context, group=None, *, beat, speed=None, volume=None):
         super().__init__(beatmap, context, beat=beat, speed=speed, volume=volume)
-        self.appearances = (
-            beatmap.settings.incr_approach_appearance,
-            beatmap.settings.incr_wrong_appearance,
-            )
+
+        self.approach_appearance = beatmap.settings.incr_approach_appearance
+        self.wrong_appearance = beatmap.settings.incr_wrong_appearance
         self.sound, self.samplerate = beatmap.load_audio(beatmap.settings.incr_sound)
         self.incr_threshold = beatmap.settings.incr_threshold
 
@@ -349,14 +295,17 @@ class Incr(OneshotTarget):
         self.count = group.total
         self.group = group
 
-    def hit(self, time, strength):
-        super().hit(time, strength, strength >= self.group.threshold + self.incr_threshold)
-        self.group.hit(strength)
+    @property
+    def volume(self):
+        return self._volume + numpy.log10(0.2 + 0.8 * (self.count-1)/self.group.total) * 20
 
-    @once
-    def play(self, mixer, offset):
-        volume = self.volume + numpy.log10(0.2 + 0.8 * (self.count-1)/self.group.total) * 20
-        mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=self.time+offset, volume=volume)
+    @volume.setter
+    def volume(self, value):
+        self._volume = value
+
+    def hit(self, mixer, field, time, strength):
+        super().hit(mixer, field, time, strength, strength >= min(1.0, self.group.threshold + self.incr_threshold))
+        self.group.hit(strength)
 
 class Roll(Target):
     def __init__(self, beatmap, context, density=2, *, beat, length, speed=None, volume=None):
@@ -380,6 +329,12 @@ class Roll(Target):
         self.roll = 0
         self.is_finished = False
 
+        travel_time = 1.0 / abs(0.5 * self.speed)
+        self.lifespan = (self.time - travel_time, self.end + travel_time)
+
+    def pos(self, field, index):
+        return lambda: (self.times[index]-field.time) * 0.5 * self.speed
+
     @property
     def range(self):
         return (self.time - self.tolerance, self.end - self.tolerance)
@@ -397,32 +352,20 @@ class Roll(Target):
         else:
             return 0
 
-    def hit(self, time, strength):
+    def approach(self, mixer, field):
+        for i, time in enumerate(self.times):
+            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=time, volume=self.volume)
+            field.draw_target(self, self.pos(field, i), self.rock_appearance,
+                              time=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=(self, i))
+        field.reset_sight(time=self.range[0])
+
+    def hit(self, mixer, field, time, strength):
         self.roll += 1
+        if self.roll <= self.number:
+            field.remove_target(key=(self, self.roll-1))
 
-    def finish(self):
+    def finish(self, mixer, field):
         self.is_finished = True
-
-    @property
-    def lifespan(self):
-        cross_time = 1.0 / abs(0.5 * self.speed)
-        return (self.time - cross_time, self.end + cross_time)
-
-    @once
-    def play(self, mixer, offset):
-        for t in self.times:
-            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=t+offset, volume=self.volume)
-
-    def draw(self, field, time):
-        appearance = self.rock_appearance
-        if isinstance(appearance, tuple):
-            is_flipped = (self.speed < 0) != field.is_flipped
-            appearance = appearance[0] if not is_flipped else appearance[1]
-
-        for r, t in enumerate(self.times):
-            if r > self.roll-1:
-                pos = (t - time) * 0.5 * self.speed
-                field.draw_bar(pos, appearance)
 
 class Spin(Target):
     full_score = 10
@@ -431,6 +374,7 @@ class Spin(Target):
         self.tolerance = beatmap.settings.spin_tolerance
         self.disk_appearances = beatmap.settings.spin_disk_appearances
         self.finishing_appearance = beatmap.settings.spin_finishing_appearance
+        self.finish_sustain_time = beatmap.settings.spin_finish_sustain_time
         self.sound, self.samplerate = beatmap.load_audio(beatmap.settings.disk_sound)
 
         self.time = beatmap.time(beat)
@@ -449,6 +393,12 @@ class Spin(Target):
         self.charge = 0.0
         self.is_finished = False
 
+        travel_time = 1.0 / abs(0.5 * self.speed)
+        self.lifespan = (self.time - travel_time, self.end + travel_time)
+
+    def pos(self, field):
+        return lambda: (max(0.0, self.time-field.time) + min(0.0, self.end-field.time)) * 0.5 * self.speed
+
     @property
     def range(self):
         return (self.time - self.tolerance, self.end + self.tolerance)
@@ -457,93 +407,247 @@ class Spin(Target):
     def score(self):
         return self.full_score if self.charge == self.capacity else 0
 
-    def hit(self, time, strength):
+    def approach(self, mixer, field):
+        for time in self.times:
+            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=time, volume=self.volume)
+
+        appearance = lambda: self.disk_appearances[int(self.charge) % len(self.disk_appearances)]
+        field.draw_target(self, self.pos(field), appearance, time=self.lifespan[0],
+                          duration=self.lifespan[1]-self.lifespan[0], key=self)
+        field.draw_sight("", time=self.range[0], duration=self.range[1]-self.range[0])
+
+    def hit(self, mixer, field, time, strength):
         self.charge = min(self.charge + min(1.0, strength), self.capacity)
         if self.charge == self.capacity:
-            self.is_finished = True
+            self.finish(mixer, field)
 
-    def finish(self):
+    def finish(self, mixer, field):
         self.is_finished = True
 
-    @property
-    def lifespan(self):
-        cross_time = 1.0 / abs(0.5 * self.speed)
-        return (self.time - cross_time, self.end + cross_time)
+        if self.charge != self.capacity:
+            return
 
-    @once
-    def play(self, mixer, offset):
-        for t in self.times:
-            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=t+offset, volume=self.volume)
+        field.remove_target(key=self)
 
-    def draw(self, field, time):
-        if self.charge < self.capacity:
-            pos = 0.0
-            pos += max(0.0, (self.time - time) * 0.5 * self.speed)
-            pos += min(0.0, (self.end - time) * 0.5 * self.speed)
-            i = int(self.charge) % len(self.disk_appearances)
-
-            appearance = self.disk_appearances[i]
-            if isinstance(appearance, tuple):
-                is_flipped = (self.speed < 0) != field.is_flipped
-                appearance = appearance[0] if not is_flipped else appearance[1]
-
-            field.draw_bar(pos, appearance)
-
-    def draw_judging(self, field, time):
-        return True
-
-    def draw_hitting(self, field, time):
-        if self.charge == self.capacity:
-            appearance = self.finishing_appearance
-            if isinstance(appearance, tuple):
-                is_flipped = (self.speed < 0) != field.is_flipped
-                appearance = appearance[0] if not is_flipped else appearance[1]
-
-            field.draw_bar(0.0, appearance)
-            return True
+        appearance = self.finishing_appearance
+        if isinstance(appearance, tuple) and self.speed < 0:
+            appearance = appearance[::-1]
+        field.draw_sight(appearance, duration=self.finish_sustain_time)
 
 
 # beatmap
 class PlayField:
-    def __init__(self, screen, width, spec_width, shift, is_flipped):
+    def __init__(self, screen, width, spec_width, bar_shift, bar_flip,
+                 hit_decay_time, hit_sustain_time, sight_appearances):
         self.screen = screen
-        self.width = min(width, self.screen.width)
-        self.spec_width = spec_width
-        self.shift = shift
-        self.is_flipped = is_flipped
 
-        self.spec_offset = 1
-        self.score_offset = self.spec_width + 2
-        self.progress_offset = self.width - 9
-        self.bar_offset = self.spec_width + 15
+        self.width = min(width, self.screen.width)
+        self.spec_index = 1
+        self.spec_width = spec_width
+        self.score_index = self.spec_width + 2
+        self.progress_index = self.width - 9
+        self.bar_index = self.spec_width + 15
         self.bar_width = self.width - 24 - self.spec_width
 
-    def __str__(self):
-        return "".join(self.screen)
+        self.hit_decay_time = hit_decay_time
+        self.hit_sustain_time = hit_sustain_time
+        self.sight_appearances = sight_appearances
 
-    def clear(self):
-        self.screen.clear()
+        self.bar_shift = bar_shift
+        self.bar_flip = bar_flip
+        self.spectrum = "\u2800"*self.spec_width
+        self.total_score = 0
+        self.score = 0
+        self.progress = 0.0
 
-    def draw_spectrum(self, spectrum):
-        self.screen.addstr(self.spec_offset, spectrum)
+        self.hit_queue = queue.Queue()
+        self.sight_queue = queue.Queue()
 
-    def draw_score(self, score, total_score):
-        self.screen.addstr(self.score_offset, "[{:>5d}/{:>5d}]".format(score, total_score))
+        self.screen.add_callback(self.get_status_node(), zindex=(-3,), key="status")
+        self.screen.add_callback(self.get_sight_node(), zindex=(2,), key="sight")
 
-    def draw_progress(self, progress):
-        self.screen.addstr(self.progress_offset, "[{:>5.1f}%]".format(progress*100))
-
-    def draw_bar(self, pos, str):
-        pos += self.shift
-        if self.is_flipped:
+    def bar_draw(self, pos, text):
+        pos = pos + self.bar_shift
+        if self.bar_flip:
             pos = 1 - pos
-        index = self.bar_offset + pos * (self.bar_width - 1)
-        self.screen.addstr(index, str, slice(self.bar_offset, self.bar_offset+self.bar_width))
+        index = self.bar_index + pos * (self.bar_width - 1)
 
+        if isinstance(text, tuple):
+            text = text[self.bar_flip]
+
+        self.screen.addstr(index, text, slice(self.bar_index, self.bar_index+self.bar_width))
+
+    @property
+    def time(self):
+        return self.screen.time
+
+    @ra.DataNode.from_generator
+    def get_status_node(self):
+        while True:
+            yield
+            self.screen.addstr(self.spec_index, self.spectrum)
+            self.screen.addstr(self.score_index, "[{:>5d}/{:>5d}]".format(self.score, self.total_score))
+            self.screen.addstr(self.progress_index, "[{:>5.1f}%]".format(self.progress*100))
+
+    @ra.DataNode.from_generator
+    def get_sight_node(self):
+        hit_strength = None
+        hit_time = None
+        drawer, time, duration = None, None, None
+        waiting_drawers = []
+
+        while True:
+            yield
+
+            while not self.hit_queue.empty():
+                hit_strength = self.hit_queue.get()
+                hit_time = self.time
+
+            if hit_time is not None and self.time - hit_time >= max(self.hit_decay_time, self.hit_sustain_time):
+                hit_strength = None
+                hit_time = None
+
+            while not self.sight_queue.empty():
+                item = self.sight_queue.get()
+                if item[1] is None:
+                    item = (item[0], self.time, item[2])
+                waiting_drawers.append(item)
+            waiting_drawers.sort(key=lambda item: item[1])
+
+            while waiting_drawers and waiting_drawers[0][1] <= self.time:
+                drawer, time, duration = waiting_drawers.pop(0)
+
+            if duration is not None and time + duration <= self.time:
+                drawer, time, duration = None, None, None
+
+            if drawer is not None:
+                text = drawer()
+
+            elif hit_time is not None:
+                strength = hit_strength - (self.time - hit_time) / self.hit_decay_time
+                strength = max(0.0, min(1.0, strength))
+                loudness = int(strength * (len(self.sight_appearances) - 1))
+                if self.time - hit_time < self.hit_sustain_time:
+                    loudness = max(1, loudness)
+                text = self.sight_appearances[loudness]
+
+            else:
+                text = self.sight_appearances[0]
+
+            self.bar_draw(0.0, text)
+
+    @ra.DataNode.from_generator
+    def get_bar_node(self, pos, text, time, duration):
+        pos_func = pos if hasattr(pos, '__call__') else lambda: pos
+        text_func = text if hasattr(text, '__call__') else lambda: text
+
+        if time is None:
+            time = self.time
+
+        while True:
+            yield
+            if self.time < time:
+                continue
+            if duration is not None and time + duration <= self.time:
+                break
+            self.bar_draw(pos_func(), text_func())
+
+    def draw_text(self, pos, text, time=None, duration=None, zindex=(0,), key=None):
+        node = self.get_bar_node(pos, text, time, duration)
+        if key is None:
+            key = node
+        self.screen.add_callback(node, zindex=zindex, key=("text", key))
+
+    def remove_text(self, key):
+        self.screen.remove_callback(key=("text", key))
+
+    def draw_target(self, target, pos, text, time=None, duration=None, key=None):
+        node = self.get_bar_node(pos, text, time, duration)
+        if key is None:
+            key = node
+        zindex = lambda: (0, not target.is_finished, -target.range[0])
+        self.screen.add_callback(node, zindex=zindex, key=("target", key))
+
+    def remove_target(self, key):
+        self.screen.remove_callback(key=("target", key))
+
+    def draw_sight(self, text, time=None, duration=None):
+        text_func = text if hasattr(text, '__call__') else lambda: text
+        self.sight_queue.put((text_func, time, duration))
+
+    def reset_sight(self, time=None):
+        self.sight_queue.put((None, time, None))
+
+class Hitter:
+    def __init__(self, detector, hit_queue):
+        self.detector = detector
+        self.target_queue = queue.Queue()
+
+        self.detector.add_listener(self.get_target_handler(self.target_queue))
+        self.detector.add_listener(self.get_hit_handler(hit_queue))
+
+    @property
+    def time(self):
+        return self.detector.time
+
+    @property
+    def strength(self):
+        return min(1.0, self.detector.strength)
+
+    @property
+    def detected(self):
+        return self.detector.detected
+
+    @ra.DataNode.from_generator
+    def get_hit_handler(self, hit_queue):
+        while True:
+            yield
+            if self.detected:
+                hit_queue.put(self.strength)
+
+    @ra.DataNode.from_generator
+    def get_target_handler(self, target_queue):
+        target, time, duration = None, None, None
+        waiting_targets = []
+
+        yield
+        while True:
+            while not target_queue.empty():
+                item = target_queue.get()
+                if item[1] is None:
+                    item = (item[0], self.time, item[2])
+                waiting_targets.append(item)
+            waiting_targets.sort(key=lambda item: item[1])
+
+            if target is None and waiting_targets and waiting_targets[0][1] <= self.time:
+                target, time, duration = waiting_targets.pop(0)
+                target.__enter__()
+
+            if duration is not None and time + duration <= self.time:
+                target.__exit__()
+                target, time, duration = None, None, None
+                continue
+
+            if target is not None and self.detected:
+                try:
+                    target.send((self.time, self.strength))
+                except StopIteration:
+                    target, time, duration = None, None, None
+
+            yield
+
+    def add_target(self, target, time=None, duration=None):
+        self.target_queue.put((target, time, duration))
 
 @cfg.configurable
 class BeatmapSettings:
-    # Difficulty:
+    # Gameplay:
+    ## Controls:
+    prepare_time: float = 1.0
+    skip_time: float = 8.0
+    tickrate: float = 60.0
+
+    ## Difficulty:
     great_tolerance: float = 0.02
     good_tolerance: float = 0.06
     bad_tolerance: float = 0.10
@@ -555,48 +659,6 @@ class BeatmapSettings:
     spin_tolerance: float = 0.10
 
     # Skin:
-    ## NoteSkin:
-    soft_approach_appearance: Union[str, Tuple[str, str]] = "□"
-    soft_wrong_appearance: Union[str, Tuple[str, str]] = "⬚"
-    soft_sound: str = "samples/soft.wav" # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
-    loud_approach_appearance: Union[str, Tuple[str, str]] = "■"
-    loud_wrong_appearance: Union[str, Tuple[str, str]] = "⬚"
-    loud_sound: str = "samples/loud.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
-    incr_approach_appearance: Union[str, Tuple[str, str]] = "⬒"
-    incr_wrong_appearance: Union[str, Tuple[str, str]] = "⬚"
-    incr_sound: str = "samples/incr.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
-    roll_rock_appearance: Union[str, Tuple[str, str]] = "◎"
-    rock_sound: str = "samples/rock.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
-    spin_disk_appearances: Union[List[str], List[Tuple[str, str]]] = ["◴", "◵", "◶", "◷"]
-    spin_finishing_appearance: Union[str, Tuple[str, str]] = "☺"
-    disk_sound: str = "samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
-
-    ## SightSkin:
-    sight_appearances: List[str] = ["⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
-    hit_decay_time: float = 0.4
-    hit_sustain_time: float = 0.1
-    sight_shift: float = 0.1
-    sight_flipped: bool = False
-
-    ## PerformanceSkin:
-    miss_appearance:               Tuple[str, str] = (""   , ""   )
-
-    late_failed_appearance:        Tuple[str, str] = ("\b⟪", "  ⟫")
-    late_bad_appearance:           Tuple[str, str] = ("\b⟨", "  ⟩")
-    late_good_appearance:          Tuple[str, str] = ("\b‹", "  ›")
-    great_appearance:              Tuple[str, str] = (""   , ""   )
-    early_good_appearance:         Tuple[str, str] = ("  ›", "\b‹")
-    early_bad_appearance:          Tuple[str, str] = ("  ⟩", "\b⟨")
-    early_failed_appearance:       Tuple[str, str] = ("  ⟫", "\b⟪")
-
-    late_failed_wrong_appearance:  Tuple[str, str] = ("\b⟪", "  ⟫")
-    late_bad_wrong_appearance:     Tuple[str, str] = ("\b⟨", "  ⟩")
-    late_good_wrong_appearance:    Tuple[str, str] = ("\b‹", "  ›")
-    great_wrong_appearance:        Tuple[str, str] = (""   , ""   )
-    early_good_wrong_appearance:   Tuple[str, str] = ("  ›", "\b‹")
-    early_bad_wrong_appearance:    Tuple[str, str] = ("  ⟩", "\b⟨")
-    early_failed_wrong_appearance: Tuple[str, str] = ("  ⟫", "\b⟪")
-
     ## PlayFieldSkin:
     field_width: Optional[int] = None
     spec_width: int = 5
@@ -604,10 +666,50 @@ class BeatmapSettings:
     spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
     spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
 
-    # Gameplay:
-    prepare_time: float = 1.0
-    skip_time: float = 8.0
-    tickrate: float = 60.0
+    ## ScrollingBarSkin:
+    sight_appearances: List[str] = ["⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
+    hit_decay_time: float = 0.4
+    hit_sustain_time: float = 0.1
+    bar_shift: float = 0.1
+    bar_flip: bool = False
+
+    ## PerformanceSkin:
+    miss_appearance:               Tuple[str, str] = (""   , ""     )
+
+    late_failed_appearance:        Tuple[str, str] = ("\b⟪", "\t\t⟫")
+    late_bad_appearance:           Tuple[str, str] = ("\b⟨", "\t\t⟩")
+    late_good_appearance:          Tuple[str, str] = ("\b‹", "\t\t›")
+    great_appearance:              Tuple[str, str] = (""   , ""     )
+    early_good_appearance:         Tuple[str, str] = ("\t\t›", "\b‹")
+    early_bad_appearance:          Tuple[str, str] = ("\t\t⟩", "\b⟨")
+    early_failed_appearance:       Tuple[str, str] = ("\t\t⟫", "\b⟪")
+
+    late_failed_wrong_appearance:  Tuple[str, str] = ("\b⟪", "\t\t⟫")
+    late_bad_wrong_appearance:     Tuple[str, str] = ("\b⟨", "\t\t⟩")
+    late_good_wrong_appearance:    Tuple[str, str] = ("\b‹", "\t\t›")
+    great_wrong_appearance:        Tuple[str, str] = (""   , ""     )
+    early_good_wrong_appearance:   Tuple[str, str] = ("\t\t›", "\b‹")
+    early_bad_wrong_appearance:    Tuple[str, str] = ("\t\t⟩", "\b⟨")
+    early_failed_wrong_appearance: Tuple[str, str] = ("\t\t⟫", "\b⟪")
+
+    performance_sustain_time: float = 0.1
+
+    ## NoteSkin:
+    soft_approach_appearance:  Union[str, Tuple[str, str]] = "□"
+    soft_wrong_appearance:     Union[str, Tuple[str, str]] = "⬚"
+    soft_sound: str = "samples/soft.wav" # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
+    loud_approach_appearance:  Union[str, Tuple[str, str]] = "■"
+    loud_wrong_appearance:     Union[str, Tuple[str, str]] = "⬚"
+    loud_sound: str = "samples/loud.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
+    incr_approach_appearance:  Union[str, Tuple[str, str]] = "⬒"
+    incr_wrong_appearance:     Union[str, Tuple[str, str]] = "⬚"
+    incr_sound: str = "samples/incr.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
+    roll_rock_appearance:      Union[str, Tuple[str, str]] = "◎"
+    rock_sound: str = "samples/rock.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
+    spin_disk_appearances:     Union[List[str], List[Tuple[str, str]]] = ["◴", "◵", "◶", "◷"]
+    spin_finishing_appearance: Union[str, Tuple[str, str]] = "☺"
+    spin_finish_sustain_time: float = 0.1
+    disk_sound: str = "samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
 
 class Beatmap:
     settings: BeatmapSettings = BeatmapSettings()
@@ -640,7 +742,9 @@ class Beatmap:
         return self.time(beat+length) - self.time(beat)
 
     def __setitem__(self, symbol, builder):
-        if symbol == '_' or symbol in self.definitions:
+        if any(c in symbol for c in " \b\t\n\r\f\v()[]{}\'\"\\#|~") or symbol == '_':
+            raise ValueError(f"invalid symbol `{symbol}`")
+        if symbol in self.definitions:
             raise ValueError(f"symbol `{symbol}` is already defined")
         self.definitions[symbol] = NoteType(symbol, builder)
 
@@ -657,152 +761,101 @@ class Beatmap:
 
     @functools.lru_cache(maxsize=32)
     def load_audio(self, filename, path="."):
-        filename = os.path.join(path, filename)
-        with audioread.audio_open(filename) as file:
+        filepath = os.path.join(path, filename)
+        with audioread.audio_open(filepath) as file:
             samplerate = file.samplerate
-        with ra.load(filename) as filenode:
+        with ra.load(filepath) as filenode:
             sound = list(filenode)
         return sound, samplerate
 
-    @property
-    def total_score(self):
-        return sum(target.full_score for target in self.targets)
+    def get_total_score(self, events):
+        return sum(getattr(event, 'full_score', 0) for event in events)
 
-    @property
-    def score(self):
-        return sum(target.score for target in self.targets)
+    def get_score(self, events):
+        return sum(getattr(event, 'score', 0) for event in events)
 
-    @property
-    def progress(self):
-        if len(self.targets) == 0:
+    def get_progress(self, events):
+        total = len([event for event in events if hasattr(event, 'is_finished')])
+        if total == 0:
             return 1.0
-        return sum(1 for target in self.targets if target.is_finished) / len(self.targets)
+        return sum(getattr(event, 'is_finished', False) for event in events) / total
 
+    def get_spectrum_show(self, field, samplerate, nchannels):
+        hop_length = round(samplerate * self.settings.spec_time_res)
+        win_length = round(samplerate / self.settings.spec_freq_res)
+        decay = hop_length / samplerate / self.settings.spec_decay_time / 4
+
+        spec = ra.pipe(
+            ra.frame(win_length, hop_length),
+            ra.power_spectrum(win_length, samplerate=samplerate),
+            ra.draw_spectrum(field.spec_width, win_length=win_length, samplerate=samplerate, decay=decay),
+            lambda s: setattr(field, 'spectrum', s))
+        spec = ra.unchunk(spec, chunk_shape=(hop_length, nchannels))
+        return ra.branch(spec)
 
     @ra.DataNode.from_generator
     def connect(self, mixer, detector, screen):
-        # events, targets
-        self.events = [event for chart in self.charts for event in chart.build_events(self)]
-        self.targets = [event for event in self.events if isinstance(event, Target)]
-        self.start = min([event.lifespan[0] - self.settings.prepare_time for event in self.events])
-        self.end = max([event.lifespan[1] + self.settings.prepare_time for event in self.events])
-        audio_offset = min(0.0, self.start)
+        # events
+        events = [event for chart in self.charts for event in chart.build_events(self)]
+        events.sort(key=lambda e: e.lifespan[0])
+        start = min((event.lifespan[0] - self.settings.prepare_time for event in events), default=0.0)
+        end = max((event.lifespan[1] + self.settings.prepare_time for event in events), default=0.0)
+
+        if start < 0:
+            mixer.delay += start
+            detector.delay += start
+            screen.delay += start
+
+        # screen
+        field = PlayField(screen,
+            self.settings.field_width or screen.width,
+            self.settings.spec_width,
+            self.settings.bar_shift,
+            self.settings.bar_flip,
+            self.settings.hit_decay_time,
+            self.settings.hit_sustain_time,
+            self.settings.sight_appearances,
+            )
+        field.total_score = self.get_total_score(events)
+        field.score = self.get_score(events)
+        field.progress = self.get_progress(events)
+
+        # detector
+        hitter = Hitter(detector, field.hit_queue)
 
         # audio
         if self.audio is None:
             duration = 0.0
 
         else:
-            abspath = os.path.join(self.path, self.audio)
-            with audioread.audio_open(abspath) as file:
+            audiopath = os.path.join(self.path, self.audio)
+            with audioread.audio_open(audiopath) as file:
                 duration = file.duration
-                channels = file.channels
+                nchannels = file.channels
                 samplerate = file.samplerate
-            mixer.play(ra.load(abspath), samplerate, time=-audio_offset)
+            mixer.play(ra.load(audiopath), samplerate, time=0.0)
 
-            # add spectrum show
-            hop_length = round(samplerate * self.settings.spec_time_res)
-            win_length = round(samplerate / self.settings.spec_freq_res)
-
-            Dt = hop_length / samplerate
-            spec = ra.pipe(ra.frame(win_length, hop_length),
-                           ra.power_spectrum(win_length, samplerate=samplerate),
-                           ra.draw_spectrum(self.settings.spec_width,
-                                            win_length=win_length,
-                                            samplerate=samplerate,
-                                            decay=Dt/self.settings.spec_decay_time/4),
-                           lambda s: setattr(self, 'spectrum', s))
-            spec = ra.unchunk(spec, chunk_shape=(hop_length, channels))
-            mixer.add_effect(ra.branch(spec))
-
-        # hit state: set virtual hitting initially to simplify coding logic
-        judging_target = None
-        hit_time = audio_offset - self.settings.hit_sustain_time*2
-        # time - hit_time > hit_sustain_time => prevent to showing virtual hitting initially
-        hit_strength = 0.0
-        hit_target = None
-
-        # screen
-        self.spectrum = " "*self.settings.spec_width
-        field = PlayField(screen, self.settings.field_width or screen.width,
-                          self.settings.spec_width,
-                          self.settings.sight_shift,
-                          self.settings.sight_flipped)
+            mixer.add_effect(self.get_spectrum_show(field, samplerate, nchannels))
 
         # loop
-        events_dripper = Event.drip(self.events)
-        target_handler = self.get_target_handler()
-
-        with events_dripper, target_handler:
-            dt = 1/self.settings.tickrate
+        with ra.interval(1/self.settings.tickrate) as timer:
+            events_iter = iter(events)
+            event = next(events_iter, None)
 
             yield
-            t0 = timer.time()
-            time = audio_offset
+            for time, _ in timer:
+                time += min(start, 0.0)
+                if max(end, duration) <= time:
+                    break
 
-            while time < max(duration, self.end):
-                # hit targets
-                while not detector.detected.empty():
-                    hit_time, hit_strength = detector.detected.get()
-                    hit_time += audio_offset
-                    hit_strength = min(1.0, hit_strength)
-                    hit_target = target_handler.send(hit_time)
+                while event is not None and event.lifespan[0] <= time:
+                    event.trigger(mixer, hitter, field)
+                    event = next(events_iter, None)
 
-                    if hit_target is not None:
-                        hit_target.hit(hit_time, hit_strength)
+                field.score = self.get_score(events)
+                field.progress = self.get_progress(events)
 
-                judging_target = target_handler.send(detector.time+audio_offset)
-
-                # draw/play events
-                field.clear()
-                events = events_dripper.send(time)
-                for event in sorted(events[::-1], key=lambda e: e.zindex):
-                    event.draw(field, screen.time+audio_offset)
-                    event.play(mixer, -audio_offset)
-
-                # draw sight
-                stop_drawing = False
-                if not stop_drawing and judging_target is not None:
-                    stop_drawing = judging_target.draw_judging(field, screen.time+audio_offset)
-                if not stop_drawing and hit_target is not None:
-                    if abs(screen.time+audio_offset - hit_time) < self.settings.hit_sustain_time:
-                        stop_drawing = hit_target.draw_hitting(field, screen.time+audio_offset)
-                if not stop_drawing:
-                    self.draw_sight(field, hit_strength, hit_time, screen.time+audio_offset)
-
-                # draw others
-                field.draw_spectrum(self.spectrum)
-                field.draw_score(self.score, self.total_score)
-                field.draw_progress(self.progress)
-
-                snap_time = time + dt - (timer.time() - t0 + audio_offset)
-                if snap_time < 0:
-                    print("underrun")
-                timer.sleep(max(0.0, snap_time))
                 yield
-                time = timer.time() - t0 + audio_offset
-
-    @ra.DataNode.from_generator
-    def get_target_handler(self):
-        targets = iter(sorted(self.targets, key=lambda e: e.range))
-        target = next(targets, None)
-
-        time = yield
-        while True:
-            while target is not None and (target.is_finished or time > target.range[1]):
-                if not target.is_finished:
-                    target.finish()
-                target = next(targets, None)
-
-            time = yield (target if target is not None and time > target.range[0] else None)
-
-    def draw_sight(self, field, hit_strength, hit_time, time):
-        strength = hit_strength - (time - hit_time) / self.settings.hit_decay_time
-        strength = max(0.0, min(1.0, strength))
-        loudness = int(strength * (len(self.settings.sight_appearances) - 1))
-        if abs(time - hit_time) < self.settings.hit_sustain_time:
-            loudness = max(1, loudness)
-        field.draw_bar(0.0, self.settings.sight_appearances[loudness])
 
 
 class NoteChart:

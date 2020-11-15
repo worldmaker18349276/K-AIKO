@@ -13,43 +13,42 @@ from . import realtime_analysis as ra
 
 class NodeScheduler(ra.DataNode):
     def __init__(self, preprocess, postprocess):
-        super().__init__(self.proxy())
-        self.preprocess = ra.DataNode.wrap(preprocess)
-        self.postprocess = ra.DataNode.wrap(postprocess)
-        self.add_nodes = queue.Queue()
-        self.remove_nodes = queue.Queue()
+        super().__init__(self.proxy(preprocess, postprocess))
+        self.mutations = queue.Queue() # == [(key, node, zindex), ...]
 
-    def proxy(self):
-        nodes = [] # [(key, node, zindex), ...]
-        with self.preprocess, self.postprocess:
+    def proxy(self, preprocess, postprocess):
+        preprocess = ra.DataNode.wrap(preprocess)
+        postprocess = ra.DataNode.wrap(postprocess)
+        nodes = OrderedDict()
+
+        with preprocess, postprocess:
             try:
                 data = None
 
                 while True:
                     data = yield data
+                    data = preprocess.send(data)
 
-                    while not self.add_nodes.empty():
-                        key, node, zindex = self.add_nodes.get()
-                        node.__enter__()
-                        i = next((i for i, item in enumerate(nodes) if item[2] < zindex), len(nodes))
-                        nodes.insert(i, (key, node, zindex))
+                    while not self.mutations.empty():
+                        key, node, zindex = self.mutations.get()
+                        if key in nodes:
+                            nodes[key][0].__exit__()
+                            del nodes[key]
+                        if node is not None:
+                            node.__enter__()
+                            zindex_func = zindex if hasattr(zindex, '__call__') else lambda z=zindex: z
+                            nodes[key] = (node, zindex_func)
 
-                    while not self.remove_nodes.empty():
-                        key = self.remove_nodes.get()
-                        i = [key for key, _, _ in nodes].index(key)
-                        _, node, _ = nodes.pop(i)
-                        node.__exit__()
-
-                    data = self.preprocess.send(data)
-                    for item in list(nodes):
+                    for key, (node, _) in sorted(nodes.items(), key=lambda item: item[1][1]()):
                         try:
-                            data = item[1].send(data)
+                            data = node.send(data)
                         except StopIteration:
-                            nodes.remove(item)
-                    data = self.postprocess.send(data)
+                            del nodes[key]
+
+                    data = postprocess.send(data)
 
             finally:
-                for _, node, _ in nodes:
+                for node, _ in nodes.values():
                     node.__exit__()
 
 
@@ -65,10 +64,9 @@ class AudioMixer(NodeScheduler):
     def get_preprocess(self):
         index = 0
         buffer_length = self.buffer_shape[0] if isinstance(self.buffer_shape, tuple) else self.buffer_shape
-        Dt = buffer_length / self.samplerate
         yield
         while True:
-            self.time = index * Dt + self.delay
+            self.time = index * buffer_length / self.samplerate + self.delay
             yield numpy.zeros(self.buffer_shape, dtype=numpy.float32)
             index += 1
 
@@ -101,10 +99,10 @@ class AudioMixer(NodeScheduler):
         if time is not None:
             node = self._shift(node, time)
         node = ra.DataNode.wrap(node)
-        self.add_nodes.put((key, node, zindex))
+        self.mutations.put((key, node, zindex))
 
     def remove_effect(self, key):
-        self.remove_nodes.put(key)
+        self.mutations.put((key, None, 0))
 
     @ra.DataNode.from_generator
     def _shift(self, node, time):
@@ -137,11 +135,11 @@ class AudioMixer(NodeScheduler):
                 while True:
                     data = yield node.send(data)
 
-class KnockDetector(ra.DataNode):
+class KnockDetector(NodeScheduler):
     def __init__(self, samplerate=44100, buffer_length=1024, channels=1, *,
                        pre_max, post_max, pre_avg, post_avg, wait, delta,
                        time_res, freq_res, delay, energy):
-        super().__init__(self.proxy())
+        super().__init__(self.get_preprocess(), self.get_postprocess())
         self.samplerate = samplerate
         self.buffer_length = buffer_length
         self.channels = channels
@@ -158,18 +156,20 @@ class KnockDetector(ra.DataNode):
         self.delay = delay
         self.energy = energy
 
-        self.detected = queue.Queue()
-        self.time = 0.0
-
-    def proxy(self):
-        node = self._detector()
+    @ra.DataNode.from_generator
+    def get_preprocess(self):
+        detector = self._detector()
         hop_length = round(self.samplerate*self.time_res)
         if self.buffer_length != hop_length:
-            node = ra.unchunk(node, chunk_shape=(hop_length, self.channels))
-
-        with node:
+            detector = ra.unchunk(detector, chunk_shape=(hop_length, self.channels))
+        with detector:
             while True:
-                node.send((yield))
+                detector.send((yield))
+
+    @ra.DataNode.from_generator
+    def get_postprocess(self):
+        while True:
+            yield
 
     @ra.DataNode.from_generator
     def _detector(self):
@@ -179,31 +179,83 @@ class KnockDetector(ra.DataNode):
         post_avg = round(self.post_avg / self.time_res)
         wait = round(self.wait / self.time_res)
         delta = self.delta
-        delay = max(post_max, post_avg)
+        prepare = max(post_max, post_avg)
         hop_length = round(self.samplerate*self.time_res)
         win_length = round(self.samplerate/self.freq_res)
 
-        picker = ra.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
         window = ra.get_half_Hann_window(win_length)
-        node = ra.pipe(
+        onset = ra.pipe(
             ra.frame(win_length=win_length, hop_length=hop_length),
             ra.power_spectrum(win_length=win_length, samplerate=self.samplerate, windowing=window, weighting=True),
-            ra.onset_strength(1),
-            (lambda a: (a, a)),
-            ra.pair(ra.delay([0.0]*delay), picker))
+            ra.onset_strength(1))
+        picker = ra.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
 
-        with node:
-            index = -delay
-
+        with onset, picker:
+            buffer = [0.0]*prepare
+            index = -prepare
+            data = yield
             while True:
-                self.time = index * self.time_res + self.delay
+                strength = onset.send(data)
+                detected = picker.send(strength)
+                buffer.append(strength)
+                strength = buffer.pop(0)
+
+                self.time = index * hop_length / self.samplerate + self.delay
+                self.strength = strength / self.energy
+                self.detected = detected
 
                 data = yield
-                strength, res = node.send(data)
-                if res:
-                    self.detected.put((self.time, strength / self.energy))
 
                 index += 1
+
+    def on_hit(self, func, time=None, duration=None, key=None):
+        if key is None:
+            key = func
+
+        @ra.DataNode.from_generator
+        def _listener():
+            if time is None:
+                time = self.time
+            while True:
+                yield
+                if self.time < time:
+                    continue
+                if duration is not None and time + duration <= self.time:
+                    return
+
+                if self.detected:
+                    finished = func(self.strength)
+                    if finished:
+                        return
+        node = _listener()
+
+        self.mutations.put((key, node, 0))
+
+    def on_time(self, func, time=None, key=None):
+        if key is None:
+            key = func
+
+        @ra.DataNode.from_generator
+        def _timed():
+            if time is None:
+                time = self.time
+            while True:
+                yield
+                if time <= self.time:
+                    func()
+                    return
+        node = _timed()
+
+        self.mutations.put((key, node, 0))
+
+    def add_listener(self, node, key=None):
+        if key is None:
+            key = node
+        node = ra.DataNode.wrap(node)
+        self.mutations.put((key, node, 0))
+
+    def remove_listener(self, key):
+        self.mutations.put((key, None, 0))
 
 class TerminalLine(NodeScheduler):
     def __init__(self, framerate, delay):
@@ -219,6 +271,7 @@ class TerminalLine(NodeScheduler):
         index = 0
         while True:
             self.time = index / self.framerate + self.delay
+            self.clear()
             yield
             index += 1
 
@@ -239,7 +292,7 @@ class TerminalLine(NodeScheduler):
         if isinstance(index, float):
             index = round(index)
         for ch in str:
-            if ch == " ":
+            if ch == "\t":
                 index += 1
             elif ch == "\b":
                 index -= 1
@@ -252,10 +305,10 @@ class TerminalLine(NodeScheduler):
         if key is None:
             key = node
         node = ra.DataNode.wrap(node)
-        self.add_nodes.put((key, node, zindex))
+        self.mutations.put((key, node, zindex))
 
     def remove_callback(self, key):
-        self.remove_nodes.put(key)
+        self.mutations.put((key, None, 0))
 
 
 @cfg.configurable
@@ -367,12 +420,14 @@ class KnockConsole:
         def show():
             try:
                 while True:
-                    view = yield
+                    t, view = yield
                     print(view, end="", flush=True)
             finally:
                 print()
 
-        with ra.interval(show(), 1/self.settings.display_framerate, screen) as display_thread:
+        node = ra.pipe(ra.interval(1/self.settings.display_framerate, screen), show())
+
+        with ra.thread(node) as display_thread:
             yield display_thread, screen
 
     def SIGINT_handler(self, sig, frame):
