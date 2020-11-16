@@ -396,6 +396,35 @@ def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
         buffer[:-1] = buffer[1:]
         buffer[-1] = yield detected
 
+@DataNode.from_generator
+def timeit(node, name=None):
+    import bisect
+
+    if name is None:
+        name = repr(node)
+
+    total = 0.0
+    count = 0
+    worst = [0.0]*5
+    best = [numpy.inf]*5
+
+    try:
+        with node:
+            data = None
+            while True:
+                data = yield data
+                t0 = time.perf_counter()
+                data = node.send(data)
+                t = time.perf_counter() - t0
+                total += t
+                count += 1
+                bisect.insort(worst, t)
+                worst.pop(0)
+                bisect.insort_left(best, t)
+                best.pop()
+    finally:
+        print(f"{name}: count={count}, avg={total/count}, worst={sum(worst)/5}, best={sum(best)/5}")
+
 
 # for fixed-width data
 @DataNode.from_generator

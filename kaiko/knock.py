@@ -338,11 +338,14 @@ class KnockConsoleSettings:
     detector_delta: float = 5.48e-6
 
     # controls
-    display_framerate: float = 60.0
+    display_framerate: float = 160.0 # ~ 2 / detector_time_res
     display_delay: float = 0.0
     knock_delay: float = 0.0
     knock_energy: float = 1.0e-3
     sound_delay: float = 0.0
+
+    # debug
+    debug_timeit: bool = False
 
 class KnockConsole:
     settings: KnockConsoleSettings = KnockConsoleSettings()
@@ -362,7 +365,8 @@ class KnockConsole:
         device = self.settings.output_device
 
         mixer = AudioMixer(samplerate, (buffer_length, channels), sound_delay)
-        with ra.play(manager, mixer,
+        node = ra.timeit(mixer, "mixer") if self.settings.debug_timeit else mixer
+        with ra.play(manager, node,
                      samplerate=samplerate,
                      buffer_shape=(buffer_length, channels),
                      format=format,
@@ -403,7 +407,8 @@ class KnockConsole:
                                  delay=knock_delay,
                                  energy=knock_energy,
                                  )
-        with ra.record(manager, detector,
+        node = ra.timeit(detector, "detector") if self.settings.debug_timeit else detector
+        with ra.record(manager, node,
                        samplerate=samplerate,
                        buffer_shape=(buffer_length, channels),
                        format=format,
@@ -425,7 +430,8 @@ class KnockConsole:
             finally:
                 print()
 
-        node = ra.pipe(ra.interval(1/self.settings.display_framerate, screen), show())
+        node = ra.timeit(screen, "screen") if self.settings.debug_timeit else screen
+        node = ra.pipe(ra.interval(1/self.settings.display_framerate, node), show())
 
         with ra.thread(node) as display_thread:
             yield display_thread, screen
