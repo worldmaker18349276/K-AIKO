@@ -423,7 +423,10 @@ def timeit(node, name=None):
                 bisect.insort_left(best, t)
                 best.pop()
     finally:
-        print(f"{name}: count={count}, avg={total/count}, worst={sum(worst)/5}, best={sum(best)/5}")
+        if count < 5:
+            print("less than 5 times")
+        else:
+            print(f"{name}: count={count}, avg={total/count}, worst={sum(worst)/5}, best={sum(best)/5}")
 
 
 # for fixed-width data

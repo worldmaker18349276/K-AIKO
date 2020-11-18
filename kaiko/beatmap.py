@@ -12,11 +12,10 @@ from . import realtime_analysis as ra
 from .beatsheet import K_AIKO_STD, OSU
 
 
-# scripts
 class Event:
     # lifespan
     # __init__(beatmap, context, *args, **kwargs)
-    # trigger(mixer, hitter, field)
+    # register(mixer, hitter, field)
     pass
 
 class Text(Event):
@@ -37,14 +36,95 @@ class Text(Event):
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.time + travel_time)
 
-    def trigger(self, mixer, hitter, field):
+    def register(self, mixer, hitter, field):
         if self.sound is not None:
             mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=self.time)
 
         if self.text is not None:
             pos = lambda: (self.time-field.time) * 0.5 * self.speed
             field.draw_text(pos, self.text, time=self.lifespan[0],
-                              duration=self.lifespan[1]-self.lifespan[0], zindex=(-2, -self.time))
+                            duration=self.lifespan[1]-self.lifespan[0], zindex=(-2, -self.time))
+
+# scripts
+class Flip(Event):
+    def __init__(self, beatmap, context, flip=None, *, beat):
+        self.time = beatmap.time(beat)
+        self.flip = flip
+        self.lifespan = (self.time, self.time)
+
+    def register(self, mixer, hitter, field):
+        field.screen.add_callback(self._node(field), zindex=())
+
+    @ra.DataNode.from_generator
+    def _node(self, field):
+        yield
+
+        while field.time < self.time:
+            yield
+
+        if self.flip is None:
+            field.bar_flip = not field.bar_flip
+        else:
+            field.bar_flip = self.flip
+
+        yield
+
+class Shift(Event):
+    def __init__(self, beatmap, context, shift, *, beat, length):
+        self.time = beatmap.time(beat)
+        self.end = beatmap.time(beat+length)
+        self.shift = shift
+        self.lifespan = (self.time, self.end)
+
+    def register(self, mixer, hitter, field):
+        field.screen.add_callback(self._node(field), zindex=())
+
+    @ra.DataNode.from_generator
+    def _node(self, field):
+        yield
+
+        while field.time < self.time:
+            yield
+
+        shift0 = field.bar_shift
+        speed = (self.shift - shift0) / (self.end - self.time) if self.end != self.time else 0
+
+        while field.time < self.end:
+            field.bar_shift = shift0 + speed * (field.time - self.time)
+            yield
+
+        field.bar_shift = self.shift
+
+        yield
+
+class Jiggle(Event):
+    def __init__(self, beatmap, context, frequency=10.0, *, beat, length):
+        self.time = beatmap.time(beat)
+        self.end = beatmap.time(beat+length)
+        self.frequency = frequency
+        self.lifespan = (self.time, self.end)
+
+    def register(self, mixer, hitter, field):
+        field.screen.add_callback(self._node(field), zindex=())
+
+    @ra.DataNode.from_generator
+    def _node(self, field):
+        yield
+
+        while field.time < self.time:
+            yield
+
+        shift0 = field.sight_shift
+        period = 1/self.frequency
+
+        while field.time < self.end:
+            n = (field.time - self.time) / period
+            field.sight_shift = shift0 + 1/field.bar_width * (round(n * 2) % 2 * 2 - 1)
+            yield
+
+        field.sight_shift = shift0
+
+        yield
 
 def set_context(beatmap, context, **kw):
     context.update(**kw)
@@ -57,22 +137,22 @@ class Target(Event):
     # hit(mixer, field, time, strength)
     # finish(mixer, field)
 
-    def trigger(self, mixer, hitter, field):
+    def register(self, mixer, hitter, field):
         self.approach(mixer, field)
 
-        @ra.DataNode.from_generator
-        def target_node():
-            try:
-                while True:
-                    time, strength = yield
-                    self.hit(mixer, field, time, strength)
-                    if self.is_finished:
-                        break
-            except GeneratorExit:
-                if not self.is_finished:
-                    self.finish(mixer, field)
+        hitter.add_target(self._node(mixer, field), time=self.range[0], duration=self.range[1]-self.range[0])
 
-        hitter.add_target(target_node(), time=self.range[0], duration=self.range[1]-self.range[0])
+    @ra.DataNode.from_generator
+    def _node(self, mixer, field):
+        try:
+            while True:
+                time, strength = yield
+                self.hit(mixer, field, time, strength)
+                if self.is_finished:
+                    break
+        except GeneratorExit:
+            if not self.is_finished:
+                self.finish(mixer, field)
 
 
 class Performance(Enum):
@@ -144,7 +224,7 @@ class Performance(Enum):
         if is_reversed:
             appearance = appearance[::-1]
 
-        field.draw_text(0.0, appearance, duration=sustain_time, zindex=(1,), key="perf_hint")
+        field.draw_text(field.sight_shift, appearance, duration=sustain_time, zindex=(1,), key="perf_hint")
 
 class OneshotTarget(Target):
     # time, speed, volume, perf, sound, samplerate
@@ -437,7 +517,7 @@ class Spin(Target):
 
 # beatmap
 class PlayField:
-    def __init__(self, screen, width, spec_width, bar_shift, bar_flip,
+    def __init__(self, screen, width, spec_width, bar_shift, sight_shift, bar_flip,
                  hit_decay_time, hit_sustain_time, sight_appearances):
         self.screen = screen
 
@@ -454,6 +534,7 @@ class PlayField:
         self.sight_appearances = sight_appearances
 
         self.bar_shift = bar_shift
+        self.sight_shift = sight_shift
         self.bar_flip = bar_flip
         self.spectrum = "\u2800"*self.spec_width
         self.total_score = 0
@@ -534,7 +615,7 @@ class PlayField:
             else:
                 text = self.sight_appearances[0]
 
-            self.bar_draw(0.0, text)
+            self.bar_draw(self.sight_shift, text)
 
     @ra.DataNode.from_generator
     def get_bar_node(self, pos, text, time, duration):
@@ -643,9 +724,10 @@ class Hitter:
 class BeatmapSettings:
     # Gameplay:
     ## Controls:
-    prepare_time: float = 1.0
+    leadin_time: float = 1.0
     skip_time: float = 8.0
     tickrate: float = 60.0
+    prepare_time: float = 0.1
 
     ## Difficulty:
     great_tolerance: float = 0.02
@@ -667,10 +749,11 @@ class BeatmapSettings:
     spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
 
     ## ScrollingBarSkin:
-    sight_appearances: List[str] = ["⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
+    sight_appearances: Union[List[str], List[Tuple[str, str]]] = ["⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
     hit_decay_time: float = 0.4
     hit_sustain_time: float = 0.1
     bar_shift: float = 0.1
+    sight_shift: float = 0.0
     bar_flip: bool = False
 
     ## PerformanceSkin:
@@ -731,6 +814,9 @@ class Beatmap:
         self['@'] = Spin
         self['text'] = Text
         self['context'] = set_context
+        self['FLIP'] = Flip
+        self['SHIFT'] = Shift
+        self['JIGGLE'] = Jiggle
 
     def time(self, beat):
         return self.offset + beat*60/self.tempo
@@ -798,8 +884,8 @@ class Beatmap:
         # events
         events = [event for chart in self.charts for event in chart.build_events(self)]
         events.sort(key=lambda e: e.lifespan[0])
-        start = min((event.lifespan[0] - self.settings.prepare_time for event in events), default=0.0)
-        end = max((event.lifespan[1] + self.settings.prepare_time for event in events), default=0.0)
+        start = min((event.lifespan[0] - self.settings.leadin_time for event in events), default=0.0)
+        end = max((event.lifespan[1] + self.settings.leadin_time for event in events), default=0.0)
 
         if start < 0:
             mixer.delay += start
@@ -811,6 +897,7 @@ class Beatmap:
             self.settings.field_width or screen.width,
             self.settings.spec_width,
             self.settings.bar_shift,
+            self.settings.sight_shift,
             self.settings.bar_flip,
             self.settings.hit_decay_time,
             self.settings.hit_sustain_time,
@@ -848,8 +935,8 @@ class Beatmap:
                 if max(end, duration) <= time:
                     break
 
-                while event is not None and event.lifespan[0] <= time:
-                    event.trigger(mixer, hitter, field)
+                while event is not None and event.lifespan[0] <= time + self.settings.prepare_time:
+                    event.register(mixer, hitter, field)
                     event = next(events_iter, None)
 
                 field.score = self.get_score(events)

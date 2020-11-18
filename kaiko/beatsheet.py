@@ -171,7 +171,7 @@ class K_AIKO_STD:
                     chart.notes.append(note)
 
                 else:
-                    raise ValueError(f"undefined symbol {node.symbol}")
+                    raise ValueError(f"undefined symbol {symbol}")
 
                 beat = beat + length
 

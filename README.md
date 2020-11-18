@@ -19,3 +19,5 @@ K-AIK▣  is a voice-controlled terminal-based rhythm game.
 - write config system for knock console
 - make knock programs mergeable
 - add beatmap editor
+- add `detector_device_mapping`
+
