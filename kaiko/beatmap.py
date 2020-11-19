@@ -812,8 +812,8 @@ class Beatmap:
         self['<'] = Incr
         self['%'] = Roll
         self['@'] = Spin
-        self['text'] = Text
-        self['context'] = set_context
+        self['TEXT'] = Text
+        self['CONTEXT'] = set_context
         self['FLIP'] = Flip
         self['SHIFT'] = Shift
         self['JIGGLE'] = Jiggle

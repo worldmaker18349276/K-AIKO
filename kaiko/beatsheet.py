@@ -178,7 +178,7 @@ class K_AIKO_STD:
             elif node.data == 'text':
                 text, arguments = node.children
                 arguments[0].insert(0, text)
-                note = self._call(definitions['text'], arguments, dict(beat=beat, length=length))
+                note = self._call(definitions['TEXT'], arguments, dict(beat=beat, length=length))
                 chart.notes.append(note)
 
                 beat = beat + length
@@ -202,7 +202,7 @@ class K_AIKO_STD:
             elif node.data == 'instant':
                 arguments, pattern = node.children
                 if len(arguments[0]) + len(arguments[1]) > 0:
-                    note = self._call(definitions['context'], arguments)
+                    note = self._call(definitions['CONTEXT'], arguments)
                     chart.notes.append(note)
                 chart, beat, _, note = self.load_pattern(pattern, chart, beat, 0, note, definitions)
 
