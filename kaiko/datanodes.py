@@ -1052,7 +1052,8 @@ def thread(node):
         yield thread
     finally:
         stop.set()
-        thread.join()
+        if thread.is_alive():
+            thread.join()
 
 
 # not data nodes

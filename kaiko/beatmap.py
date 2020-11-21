@@ -1,6 +1,5 @@
 import os
 from enum import Enum
-import functools
 import inspect
 from typing import List, Tuple, Optional, Union
 from collections import OrderedDict
@@ -28,17 +27,16 @@ class Text(Event):
         self.speed = speed
 
         if sound is not None:
-            self.sound, self.samplerate = beatmap.load_audio(sound, path=beatmap.path)
+            self.sound = os.path.join(beatmap.path, sound)
         else:
             self.sound = None
-            self.samplerate = None
 
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.time + travel_time)
 
     def register(self, mixer, hitter, field):
         if self.sound is not None:
-            mixer.play(dn.DataNode.wrap(self.sound), self.samplerate, time=self.time)
+            mixer.play(self.sound, time=self.time)
 
         if self.text is not None:
             pos = lambda: (self.time-field.time) * 0.5 * self.speed
@@ -227,7 +225,7 @@ class Performance(Enum):
         field.draw_text(field.sight_shift, appearance, duration=sustain_time, zindex=(1,), key="perf_hint")
 
 class OneshotTarget(Target):
-    # time, speed, volume, perf, sound, samplerate
+    # time, speed, volume, perf, sound
     # approach_appearance, wrong_appearance
     # hit(mixer, field, time, strength)
 
@@ -288,7 +286,7 @@ class OneshotTarget(Target):
         return self.perf is not None
 
     def approach(self, mixer, field):
-        mixer.play(dn.DataNode.wrap(self.sound), self.samplerate, time=self.time, volume=self.volume)
+        mixer.play(self.sound, time=self.time, volume=self.volume)
 
         field.draw_target(self, self.pos(field), self.approach_appearance,
                           time=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
@@ -318,7 +316,7 @@ class Soft(OneshotTarget):
         super().__init__(beatmap, context, beat=beat, speed=speed, volume=volume)
         self.approach_appearance = beatmap.settings.soft_approach_appearance
         self.wrong_appearance = beatmap.settings.soft_wrong_appearance
-        self.sound, self.samplerate = beatmap.load_audio(beatmap.settings.soft_sound)
+        self.sound = beatmap.settings.soft_sound
         self.threshold = beatmap.settings.soft_threshold
 
     def hit(self, mixer, field, time, strength):
@@ -329,7 +327,7 @@ class Loud(OneshotTarget):
         super().__init__(beatmap, context, beat=beat, speed=speed, volume=volume)
         self.approach_appearance = beatmap.settings.loud_approach_appearance
         self.wrong_appearance = beatmap.settings.loud_wrong_appearance
-        self.sound, self.samplerate = beatmap.load_audio(beatmap.settings.loud_sound)
+        self.sound = beatmap.settings.loud_sound
         self.threshold = beatmap.settings.loud_threshold
 
     def hit(self, mixer, field, time, strength):
@@ -349,7 +347,7 @@ class Incr(OneshotTarget):
 
         self.approach_appearance = beatmap.settings.incr_approach_appearance
         self.wrong_appearance = beatmap.settings.incr_wrong_appearance
-        self.sound, self.samplerate = beatmap.load_audio(beatmap.settings.incr_sound)
+        self.sound = beatmap.settings.incr_sound
         self.incr_threshold = beatmap.settings.incr_threshold
 
         if 'incrs' not in context:
@@ -391,7 +389,7 @@ class Roll(Target):
     def __init__(self, beatmap, context, density=2, *, beat, length, speed=None, volume=None):
         self.tolerance = beatmap.settings.roll_tolerance
         self.rock_appearance = beatmap.settings.roll_rock_appearance
-        self.sound, self.samplerate = beatmap.load_audio(beatmap.settings.rock_sound)
+        self.sound = beatmap.settings.rock_sound
 
         self.time = beatmap.time(beat)
 
@@ -434,7 +432,7 @@ class Roll(Target):
 
     def approach(self, mixer, field):
         for i, time in enumerate(self.times):
-            mixer.play(dn.DataNode.wrap(self.sound), self.samplerate, time=time, volume=self.volume)
+            mixer.play(self.sound, time=time, volume=self.volume)
             field.draw_target(self, self.pos(field, i), self.rock_appearance,
                               time=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=(self, i))
         field.reset_sight(time=self.range[0])
@@ -455,7 +453,7 @@ class Spin(Target):
         self.disk_appearances = beatmap.settings.spin_disk_appearances
         self.finishing_appearance = beatmap.settings.spin_finishing_appearance
         self.finish_sustain_time = beatmap.settings.spin_finish_sustain_time
-        self.sound, self.samplerate = beatmap.load_audio(beatmap.settings.disk_sound)
+        self.sound = beatmap.settings.disk_sound
 
         self.time = beatmap.time(beat)
 
@@ -489,7 +487,7 @@ class Spin(Target):
 
     def approach(self, mixer, field):
         for time in self.times:
-            mixer.play(dn.DataNode.wrap(self.sound), self.samplerate, time=time, volume=self.volume)
+            mixer.play(self.sound, time=time, volume=self.volume)
 
         appearance = lambda: self.disk_appearances[int(self.charge) % len(self.disk_appearances)]
         field.draw_target(self, self.pos(field), appearance, time=self.lifespan[0],
@@ -845,15 +843,6 @@ class Beatmap:
         return self
 
 
-    @functools.lru_cache(maxsize=32)
-    def load_audio(self, filename, path="."):
-        filepath = os.path.join(path, filename)
-        with audioread.audio_open(filepath) as file:
-            samplerate = file.samplerate
-        with dn.load(filepath) as filenode:
-            sound = list(filenode)
-        return sound, samplerate
-
     def get_total_score(self, events):
         return sum(getattr(event, 'full_score', 0) for event in events)
 
@@ -920,7 +909,7 @@ class Beatmap:
                 duration = file.duration
                 nchannels = file.channels
                 samplerate = file.samplerate
-            mixer.play(dn.load(audiopath), samplerate, time=0.0)
+            mixer.play(audiopath, time=0.0)
 
             mixer.add_effect(self.get_spectrum_show(field, samplerate, nchannels))
 

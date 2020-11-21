@@ -1,12 +1,14 @@
 import sys
 import os
 import time
+import functools
 import contextlib
 from collections import OrderedDict
 import queue
 import signal
 import numpy
 import pyaudio
+import audioread
 from . import cfg
 from . import datanodes as dn
 
@@ -76,16 +78,30 @@ class AudioMixer(NodeScheduler):
         while True:
             buffer = yield buffer
 
-    def play(self, node, samplerate, channels=None, volume=0.0, start=None, end=None, time=None, zindex=0, key=None):
+    @functools.lru_cache(maxsize=32)
+    def load(self, filepath):
+        with audioread.audio_open(filepath) as file:
+            samplerate = file.samplerate
+        node = dn.load(filepath)
+        if samplerate != self.samplerate:
+            node = dn.pipe(node, dn.resample(ratio=(self.samplerate, samplerate)))
+        with node as filenode:
+            sound = list(filenode)
+        return sound
+
+    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=0, key=None):
         if key is None:
-            key = node
+            key = object()
         if channels is None:
             channels = self.buffer_shape[1] if isinstance(self.buffer_shape, tuple) else 0
+        if isinstance(node, str):
+            node = dn.DataNode.wrap(self.load(node))
+            samplerate = None
 
         if start is not None or end is not None:
             node = dn.tslice(node, samplerate, start, end)
         node = dn.pipe(node, dn.rechannel(channels))
-        if samplerate != self.samplerate:
+        if samplerate is not None and samplerate != self.samplerate:
             node = dn.pipe(node, dn.resample(ratio=(self.samplerate, samplerate)))
         if volume != 0:
             node = dn.pipe(node, lambda s: s * 10**(volume/20))
@@ -95,7 +111,7 @@ class AudioMixer(NodeScheduler):
 
     def add_effect(self, node, time=None, zindex=0, key=None):
         if key is None:
-            key = node
+            key = object()
         if time is not None:
             node = self._shift(node, time)
         node = dn.DataNode.wrap(node)
@@ -210,7 +226,7 @@ class KnockDetector(NodeScheduler):
 
     def on_hit(self, func, time=None, duration=None, key=None):
         if key is None:
-            key = func
+            key = object()
 
         @dn.datanode
         def _listener():
@@ -233,7 +249,7 @@ class KnockDetector(NodeScheduler):
 
     def on_time(self, func, time=None, key=None):
         if key is None:
-            key = func
+            key = object()
 
         @dn.datanode
         def _timed():
@@ -250,7 +266,7 @@ class KnockDetector(NodeScheduler):
 
     def add_listener(self, node, key=None):
         if key is None:
-            key = node
+            key = object()
         node = dn.DataNode.wrap(node)
         self.mutations.put((key, node, 0))
 
@@ -303,7 +319,7 @@ class TerminalLine(NodeScheduler):
 
     def add_callback(self, node, zindex=0, key=None):
         if key is None:
-            key = node
+            key = object()
         node = dn.DataNode.wrap(node)
         self.mutations.put((key, node, zindex))
 
@@ -426,7 +442,8 @@ class KnockConsole:
             try:
                 while True:
                     t, view = yield
-                    print(view, end="", flush=True)
+                    if view:
+                        print(view, end="", flush=True)
             finally:
                 print()
 
@@ -469,12 +486,6 @@ class KnockConsole:
 
         finally:
             manager.terminate()
-
-class KnockProgram:
-    # connect(mixer, detector, screen) -> DataNode
-    # pause(self)
-    # resume(self)
-    pass
 
 
 def test_speaker(manager, samplerate=44100, buffer_length=1024, channels=1, format='f4', device=-1):
