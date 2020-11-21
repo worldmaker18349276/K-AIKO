@@ -8,17 +8,17 @@ import signal
 import numpy
 import pyaudio
 from . import cfg
-from . import realtime_analysis as ra
+from . import datanodes as dn
 
 
-class NodeScheduler(ra.DataNode):
+class NodeScheduler(dn.DataNode):
     def __init__(self, preprocess, postprocess):
         super().__init__(self.proxy(preprocess, postprocess))
         self.mutations = queue.Queue() # == [(key, node, zindex), ...]
 
     def proxy(self, preprocess, postprocess):
-        preprocess = ra.DataNode.wrap(preprocess)
-        postprocess = ra.DataNode.wrap(postprocess)
+        preprocess = dn.DataNode.wrap(preprocess)
+        postprocess = dn.DataNode.wrap(postprocess)
         nodes = OrderedDict()
 
         with preprocess, postprocess:
@@ -60,7 +60,7 @@ class AudioMixer(NodeScheduler):
         self.delay = delay
         self.time = delay
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def get_preprocess(self):
         index = 0
         buffer_length = self.buffer_shape[0] if isinstance(self.buffer_shape, tuple) else self.buffer_shape
@@ -70,7 +70,7 @@ class AudioMixer(NodeScheduler):
             yield numpy.zeros(self.buffer_shape, dtype=numpy.float32)
             index += 1
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def get_postprocess(self):
         buffer = yield
         while True:
@@ -83,13 +83,13 @@ class AudioMixer(NodeScheduler):
             channels = self.buffer_shape[1] if isinstance(self.buffer_shape, tuple) else 0
 
         if start is not None or end is not None:
-            node = ra.tslice(node, samplerate, start, end)
-        node = ra.pipe(node, ra.rechannel(channels))
+            node = dn.tslice(node, samplerate, start, end)
+        node = dn.pipe(node, dn.rechannel(channels))
         if samplerate != self.samplerate:
-            node = ra.pipe(node, ra.resample(ratio=(self.samplerate, samplerate)))
+            node = dn.pipe(node, dn.resample(ratio=(self.samplerate, samplerate)))
         if volume != 0:
-            node = ra.pipe(node, lambda s: s * 10**(volume/20))
-        node = ra.attach(node)
+            node = dn.pipe(node, lambda s: s * 10**(volume/20))
+        node = dn.attach(node)
 
         self.add_effect(node, time=time, zindex=zindex, key=key)
 
@@ -98,16 +98,16 @@ class AudioMixer(NodeScheduler):
             key = node
         if time is not None:
             node = self._shift(node, time)
-        node = ra.DataNode.wrap(node)
+        node = dn.DataNode.wrap(node)
         self.mutations.put((key, node, zindex))
 
     def remove_effect(self, key):
         self.mutations.put((key, None, 0))
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def _shift(self, node, time):
         offset = round((time - self.time) * self.samplerate)
-        node = ra.DataNode.wrap(node)
+        node = dn.DataNode.wrap(node)
 
         with node:
             try:
@@ -156,22 +156,22 @@ class KnockDetector(NodeScheduler):
         self.delay = delay
         self.energy = energy
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def get_preprocess(self):
         detector = self._detector()
         hop_length = round(self.samplerate*self.time_res)
         if self.buffer_length != hop_length:
-            detector = ra.unchunk(detector, chunk_shape=(hop_length, self.channels))
+            detector = dn.unchunk(detector, chunk_shape=(hop_length, self.channels))
         with detector:
             while True:
                 detector.send((yield))
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def get_postprocess(self):
         while True:
             yield
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def _detector(self):
         pre_max = round(self.pre_max / self.time_res)
         post_max = round(self.post_max / self.time_res)
@@ -183,12 +183,12 @@ class KnockDetector(NodeScheduler):
         hop_length = round(self.samplerate*self.time_res)
         win_length = round(self.samplerate/self.freq_res)
 
-        window = ra.get_half_Hann_window(win_length)
-        onset = ra.pipe(
-            ra.frame(win_length=win_length, hop_length=hop_length),
-            ra.power_spectrum(win_length=win_length, samplerate=self.samplerate, windowing=window, weighting=True),
-            ra.onset_strength(1))
-        picker = ra.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
+        window = dn.get_half_Hann_window(win_length)
+        onset = dn.pipe(
+            dn.frame(win_length=win_length, hop_length=hop_length),
+            dn.power_spectrum(win_length=win_length, samplerate=self.samplerate, windowing=window, weighting=True),
+            dn.onset_strength(1))
+        picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
 
         with onset, picker:
             buffer = [0.0]*prepare
@@ -212,7 +212,7 @@ class KnockDetector(NodeScheduler):
         if key is None:
             key = func
 
-        @ra.DataNode.from_generator
+        @dn.datanode
         def _listener():
             if time is None:
                 time = self.time
@@ -235,7 +235,7 @@ class KnockDetector(NodeScheduler):
         if key is None:
             key = func
 
-        @ra.DataNode.from_generator
+        @dn.datanode
         def _timed():
             if time is None:
                 time = self.time
@@ -251,7 +251,7 @@ class KnockDetector(NodeScheduler):
     def add_listener(self, node, key=None):
         if key is None:
             key = node
-        node = ra.DataNode.wrap(node)
+        node = dn.DataNode.wrap(node)
         self.mutations.put((key, node, 0))
 
     def remove_listener(self, key):
@@ -266,7 +266,7 @@ class TerminalLine(NodeScheduler):
         self.delay = delay
         self.time = delay
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def get_preprocess(self):
         index = 0
         while True:
@@ -275,7 +275,7 @@ class TerminalLine(NodeScheduler):
             yield
             index += 1
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def get_postprocess(self):
         yield
         while True:
@@ -304,7 +304,7 @@ class TerminalLine(NodeScheduler):
     def add_callback(self, node, zindex=0, key=None):
         if key is None:
             key = node
-        node = ra.DataNode.wrap(node)
+        node = dn.DataNode.wrap(node)
         self.mutations.put((key, node, zindex))
 
     def remove_callback(self, key):
@@ -365,8 +365,8 @@ class KnockConsole:
         device = self.settings.output_device
 
         mixer = AudioMixer(samplerate, (buffer_length, channels), sound_delay)
-        node = ra.timeit(mixer, "mixer") if self.settings.debug_timeit else mixer
-        with ra.play(manager, node,
+        node = dn.timeit(mixer, "mixer") if self.settings.debug_timeit else mixer
+        with dn.play(manager, node,
                      samplerate=samplerate,
                      buffer_shape=(buffer_length, channels),
                      format=format,
@@ -407,8 +407,8 @@ class KnockConsole:
                                  delay=knock_delay,
                                  energy=knock_energy,
                                  )
-        node = ra.timeit(detector, "detector") if self.settings.debug_timeit else detector
-        with ra.record(manager, node,
+        node = dn.timeit(detector, "detector") if self.settings.debug_timeit else detector
+        with dn.record(manager, node,
                        samplerate=samplerate,
                        buffer_shape=(buffer_length, channels),
                        format=format,
@@ -421,7 +421,7 @@ class KnockConsole:
     def get_display_thread(self):
         screen = TerminalLine(self.settings.display_framerate, self.settings.display_delay)
 
-        @ra.DataNode.from_generator
+        @dn.datanode
         def show():
             try:
                 while True:
@@ -430,10 +430,10 @@ class KnockConsole:
             finally:
                 print()
 
-        node = ra.timeit(screen, "screen") if self.settings.debug_timeit else screen
-        node = ra.pipe(ra.interval(1/self.settings.display_framerate, node), show())
+        node = dn.timeit(screen, "screen") if self.settings.debug_timeit else screen
+        node = dn.pipe(dn.interval(1/self.settings.display_framerate, node), show())
 
-        with ra.thread(node) as display_thread:
+        with dn.thread(node) as display_thread:
             yield display_thread, screen
 
     def SIGINT_handler(self, sig, frame):
@@ -482,13 +482,13 @@ def test_speaker(manager, samplerate=44100, buffer_length=1024, channels=1, form
     duration = 2.0+0.5*4*channels
 
     mixer = AudioMixer(samplerate=samplerate, buffer_shape=buffer_shape)
-    click = ra.pulse(samplerate=samplerate)
+    click = dn.pulse(samplerate=samplerate)
     for n in range(channels):
         for m in range(4):
             mixer.play([click], samplerate=samplerate, delay=1.0+0.5*(4*n+m))
 
     print("testing...")
-    with ra.play(manager, mixer, samplerate=samplerate,
+    with dn.play(manager, mixer, samplerate=samplerate,
                                  buffer_shape=buffer_shape,
                                  format=format, device=device) as output_stream:
         output_stream.start_stream()
@@ -502,13 +502,13 @@ def test_mic(manager, samplerate=44100, buffer_length=1024, channels=1, format='
     win_length = 512*4
     decay_time = 0.01
     Dt = buffer_length / samplerate
-    spec = ra.pipe(ra.frame(win_length, buffer_length),
-                   ra.power_spectrum(win_length, samplerate=samplerate),
-                   ra.draw_spectrum(spec_width, win_length=win_length, samplerate=samplerate, decay=Dt/decay_time),
+    spec = dn.pipe(dn.frame(win_length, buffer_length),
+                   dn.power_spectrum(win_length, samplerate=samplerate),
+                   dn.draw_spectrum(spec_width, win_length=win_length, samplerate=samplerate, decay=Dt/decay_time),
                    lambda s: print(f" {s}\r", end="", flush=True))
 
     print("testing...")
-    with ra.record(manager, spec, samplerate=samplerate,
+    with dn.record(manager, spec, samplerate=samplerate,
                                   buffer_shape=(buffer_length, channels),
                                   format=format, device=device) as input_stream:
         input_stream.start_stream()

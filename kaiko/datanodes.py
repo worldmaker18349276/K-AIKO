@@ -63,13 +63,6 @@ class DataNode:
         return False
 
     @staticmethod
-    def from_generator(gen):
-        @functools.wraps(gen)
-        def node_builder(*args, **kwargs):
-            return DataNode(gen(*args, **kwargs))
-        return node_builder
-
-    @staticmethod
     def wrap(node_like):
         if isinstance(node_like, DataNode):
             return node_like
@@ -88,9 +81,15 @@ class DataNode:
                     data = yield func(data)
             return DataNode(pure(node_like))
 
+def datanode(gen):
+    @functools.wraps(gen)
+    def node_builder(*args, **kwargs):
+        return DataNode(gen(*args, **kwargs))
+    return node_builder
+
 
 # basic data nodes
-@DataNode.from_generator
+@datanode
 def rewrap(node, context=contextlib.suppress()):
     """A data node processing data by another data node.
 
@@ -117,7 +116,7 @@ def rewrap(node, context=contextlib.suppress()):
             res = node.send(data)
             data = yield res
 
-@DataNode.from_generator
+@datanode
 def delay(prepend):
     """A data node delays signals and prepends given values.
 
@@ -142,7 +141,7 @@ def delay(prepend):
         buffer.append(data)
         data = yield buffer.pop(0)
 
-@DataNode.from_generator
+@datanode
 def skip(node, prefeed):
     """A data node skips signals and prefeed given values.
 
@@ -177,7 +176,7 @@ def skip(node, prefeed):
             while True:
                 data = yield node.send(data)
 
-@DataNode.from_generator
+@datanode
 def take(number):
     """A data node takes finite signals.
 
@@ -200,7 +199,7 @@ def take(number):
     for _ in range(number):
         data = yield data
 
-@DataNode.from_generator
+@datanode
 def pipe(*nodes):
     """A data node processes data sequentially.
 
@@ -231,7 +230,7 @@ def pipe(*nodes):
                 res = node.send(res)
             data = yield res
 
-@DataNode.from_generator
+@datanode
 def pair(*nodes):
     """A data node processes data parallelly.
 
@@ -259,7 +258,7 @@ def pair(*nodes):
         while True:
             data = yield tuple(node.send(subdata) for node, subdata in zip(nodes, data))
 
-@DataNode.from_generator
+@datanode
 def chain(*nodes):
     """A data node processes data with chaining nodes.
 
@@ -292,7 +291,7 @@ def chain(*nodes):
                     break
                 data = yield res
 
-@DataNode.from_generator
+@datanode
 def branch(*nodes):
     """A data node processes data additionally.
 
@@ -326,7 +325,7 @@ def branch(*nodes):
     while True:
         data = yield data
 
-@DataNode.from_generator
+@datanode
 def merge(*nodes):
     """A data node processes additional data.
 
@@ -351,7 +350,7 @@ def merge(*nodes):
         while True:
             data = yield (data, node.send())
 
-@DataNode.from_generator
+@datanode
 def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
     """A data node of peak detaction.
 
@@ -396,7 +395,7 @@ def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
         buffer[:-1] = buffer[1:]
         buffer[-1] = yield detected
 
-@DataNode.from_generator
+@datanode
 def timeit(node, name=None):
     import bisect
 
@@ -430,7 +429,7 @@ def timeit(node, name=None):
 
 
 # for fixed-width data
-@DataNode.from_generator
+@datanode
 def frame(win_length, hop_length):
     """A data node to frame signal, prepend by zero.
 
@@ -466,7 +465,7 @@ def frame(win_length, hop_length):
         data[:-hop_length] = data[hop_length:]
         data[-hop_length:] = data_last
 
-@DataNode.from_generator
+@datanode
 def power_spectrum(win_length, samplerate=44100, windowing=True, weighting=True):
     """A data node maps signal `x` to power spectrum `J`.
 
@@ -511,7 +510,7 @@ def power_spectrum(win_length, samplerate=44100, windowing=True, weighting=True)
     while True:
         x = yield weighting * numpy.abs(numpy.fft.rfft(x*windowing, axis=0))**2
 
-@DataNode.from_generator
+@datanode
 def onset_strength(df):
     """A data node maps spectrum `J` to onset strength `st`.
 
@@ -535,7 +534,7 @@ def onset_strength(df):
     while True:
         prev, curr = curr, (yield numpy.mean(numpy.maximum(0.0, curr - prev).sum(axis=0)) * df)
 
-@DataNode.from_generator
+@datanode
 def draw_spectrum(length, win_length, samplerate=44100, decay=1/4):
     """A data node to show given spectrum by braille patterns.
 
@@ -579,7 +578,7 @@ def draw_spectrum(length, win_length, samplerate=44100, decay=1/4):
 
 
 # for variable-width data
-@DataNode.from_generator
+@datanode
 def chunk(node, chunk_shape=1024):
     """Make a data node be able to produce fixed width data.
 
@@ -625,7 +624,7 @@ def chunk(node, chunk_shape=1024):
             if index > 0:
                 yield chunk
 
-@DataNode.from_generator
+@datanode
 def unchunk(node, chunk_shape=1024):
     """Make a data node be able to receive data with any length.
 
@@ -670,7 +669,7 @@ def unchunk(node, chunk_shape=1024):
             if index > 0:
                 node.send(chunk)
 
-@DataNode.from_generator
+@datanode
 def attach(node):
     with node:
         try:
@@ -698,11 +697,6 @@ def attach(node):
             if index > 0:
                 yield data
 
-# def chunk(node, chunk_shape=1024, offset=0):
-#     nchannels = chunk_shape[1] if isinstance(chunk_shape, tuple) else None
-#     empty = lambda _:numpy.zeros(chunk_shape, dtype=numpy.float32)
-#     return pipe(empty, shift(attach(node), offset, nchannels))
-
 
 def rechannel(channels):
     """A data node to rechannel data.
@@ -729,7 +723,7 @@ def rechannel(channels):
     else:
         return lambda data: (data[:, None] if data.ndim == 1 else data)[:, channels]
 
-@DataNode.from_generator
+@datanode
 def resample(ratio):
     """A data node to resample data.
 
@@ -759,7 +753,7 @@ def resample(ratio):
         index = next_index % 1.0
         data = yield data_
 
-@DataNode.from_generator
+@datanode
 def tslice(node, samplerate=44100, start=None, end=None):
     """A data node sliced by given timespan.
 
@@ -805,7 +799,7 @@ def tslice(node, samplerate=44100, start=None, end=None):
 
 
 # IO data nodes
-@DataNode.from_generator
+@datanode
 def load(filename):
     """A data node to load sound file.
 
@@ -846,7 +840,7 @@ def load(filename):
             for data in file:
                 yield frombuffer(data)
 
-@DataNode.from_generator
+@datanode
 def save(filename, samplerate=44100, channels=1, width=2):
     """A data node to save as .wav file.
 
@@ -1022,7 +1016,7 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
             output_stream.stop_stream()
             output_stream.close()
 
-@DataNode.from_generator
+@datanode
 def interval(dt, prepare=lambda _:None, first=0.0):
     prepare = DataNode.wrap(prepare)
     stop = threading.Event()
@@ -1054,31 +1048,6 @@ def thread(node):
     finally:
         stop.set()
         thread.join()
-
-# @contextlib.contextmanager
-# def interval_thread(task, dt, prepare=lambda _:None, first=0.0):
-#     task = DataNode.wrap(task)
-#     prepare = DataNode.wrap(prepare)
-#     stop = threading.Event()
-# 
-#     def run():
-#         t0 = time.time()
-# 
-#         with task, contextlib.suppress(StopIteration):
-#             for i, data in enumerate(prepare):
-#                 if stop.wait(max(0.0, t0+first+i*dt - time.time())):
-#                     break
-# 
-#                 task.send((time.time()-t0, data))
-# 
-#                 if prepare.finalized:
-#                     break
-# 
-#     with prepare:
-#         try:
-#             yield threading.Thread(target=run)
-#         finally:
-#             stop.set()
 
 
 # not data nodes

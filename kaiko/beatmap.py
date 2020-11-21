@@ -8,7 +8,7 @@ import queue
 import numpy
 import audioread
 from . import cfg
-from . import realtime_analysis as ra
+from . import datanodes as dn
 from .beatsheet import K_AIKO_STD, OSU
 
 
@@ -38,7 +38,7 @@ class Text(Event):
 
     def register(self, mixer, hitter, field):
         if self.sound is not None:
-            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=self.time)
+            mixer.play(dn.DataNode.wrap(self.sound), self.samplerate, time=self.time)
 
         if self.text is not None:
             pos = lambda: (self.time-field.time) * 0.5 * self.speed
@@ -55,7 +55,7 @@ class Flip(Event):
     def register(self, mixer, hitter, field):
         field.screen.add_callback(self._node(field), zindex=())
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def _node(self, field):
         yield
 
@@ -79,7 +79,7 @@ class Shift(Event):
     def register(self, mixer, hitter, field):
         field.screen.add_callback(self._node(field), zindex=())
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def _node(self, field):
         yield
 
@@ -107,7 +107,7 @@ class Jiggle(Event):
     def register(self, mixer, hitter, field):
         field.screen.add_callback(self._node(field), zindex=())
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def _node(self, field):
         yield
 
@@ -142,7 +142,7 @@ class Target(Event):
 
         hitter.add_target(self._node(mixer, field), time=self.range[0], duration=self.range[1]-self.range[0])
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def _node(self, mixer, field):
         try:
             while True:
@@ -288,7 +288,7 @@ class OneshotTarget(Target):
         return self.perf is not None
 
     def approach(self, mixer, field):
-        mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=self.time, volume=self.volume)
+        mixer.play(dn.DataNode.wrap(self.sound), self.samplerate, time=self.time, volume=self.volume)
 
         field.draw_target(self, self.pos(field), self.approach_appearance,
                           time=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
@@ -434,7 +434,7 @@ class Roll(Target):
 
     def approach(self, mixer, field):
         for i, time in enumerate(self.times):
-            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=time, volume=self.volume)
+            mixer.play(dn.DataNode.wrap(self.sound), self.samplerate, time=time, volume=self.volume)
             field.draw_target(self, self.pos(field, i), self.rock_appearance,
                               time=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=(self, i))
         field.reset_sight(time=self.range[0])
@@ -489,7 +489,7 @@ class Spin(Target):
 
     def approach(self, mixer, field):
         for time in self.times:
-            mixer.play(ra.DataNode.wrap(self.sound), self.samplerate, time=time, volume=self.volume)
+            mixer.play(dn.DataNode.wrap(self.sound), self.samplerate, time=time, volume=self.volume)
 
         appearance = lambda: self.disk_appearances[int(self.charge) % len(self.disk_appearances)]
         field.draw_target(self, self.pos(field), appearance, time=self.lifespan[0],
@@ -562,7 +562,7 @@ class PlayField:
     def time(self):
         return self.screen.time
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def get_status_node(self):
         while True:
             yield
@@ -570,7 +570,7 @@ class PlayField:
             self.screen.addstr(self.score_index, "[{:>5d}/{:>5d}]".format(self.score, self.total_score))
             self.screen.addstr(self.progress_index, "[{:>5.1f}%]".format(self.progress*100))
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def get_sight_node(self):
         hit_strength = None
         hit_time = None
@@ -617,7 +617,7 @@ class PlayField:
 
             self.bar_draw(self.sight_shift, text)
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def get_bar_node(self, pos, text, time, duration):
         pos_func = pos if hasattr(pos, '__call__') else lambda: pos
         text_func = text if hasattr(text, '__call__') else lambda: text
@@ -679,14 +679,14 @@ class Hitter:
     def detected(self):
         return self.detector.detected
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def get_hit_handler(self, hit_queue):
         while True:
             yield
             if self.detected:
                 hit_queue.put(self.strength)
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def get_target_handler(self, target_queue):
         target, time, duration = None, None, None
         waiting_targets = []
@@ -850,7 +850,7 @@ class Beatmap:
         filepath = os.path.join(path, filename)
         with audioread.audio_open(filepath) as file:
             samplerate = file.samplerate
-        with ra.load(filepath) as filenode:
+        with dn.load(filepath) as filenode:
             sound = list(filenode)
         return sound, samplerate
 
@@ -871,15 +871,15 @@ class Beatmap:
         win_length = round(samplerate / self.settings.spec_freq_res)
         decay = hop_length / samplerate / self.settings.spec_decay_time / 4
 
-        spec = ra.pipe(
-            ra.frame(win_length, hop_length),
-            ra.power_spectrum(win_length, samplerate=samplerate),
-            ra.draw_spectrum(field.spec_width, win_length=win_length, samplerate=samplerate, decay=decay),
+        spec = dn.pipe(
+            dn.frame(win_length, hop_length),
+            dn.power_spectrum(win_length, samplerate=samplerate),
+            dn.draw_spectrum(field.spec_width, win_length=win_length, samplerate=samplerate, decay=decay),
             lambda s: setattr(field, 'spectrum', s))
-        spec = ra.unchunk(spec, chunk_shape=(hop_length, nchannels))
-        return ra.branch(spec)
+        spec = dn.unchunk(spec, chunk_shape=(hop_length, nchannels))
+        return dn.branch(spec)
 
-    @ra.DataNode.from_generator
+    @dn.datanode
     def connect(self, mixer, detector, screen):
         # events
         events = [event for chart in self.charts for event in chart.build_events(self)]
@@ -920,12 +920,12 @@ class Beatmap:
                 duration = file.duration
                 nchannels = file.channels
                 samplerate = file.samplerate
-            mixer.play(ra.load(audiopath), samplerate, time=0.0)
+            mixer.play(dn.load(audiopath), samplerate, time=0.0)
 
             mixer.add_effect(self.get_spectrum_show(field, samplerate, nchannels))
 
         # loop
-        with ra.interval(1/self.settings.tickrate) as timer:
+        with dn.interval(1/self.settings.tickrate) as timer:
             events_iter = iter(events)
             event = next(events_iter, None)
 
