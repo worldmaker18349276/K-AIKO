@@ -402,10 +402,12 @@ def timeit(node, name=None):
     if name is None:
         name = repr(node)
 
+    N = 10
     total = 0.0
+    total2 = 0.0
     count = 0
-    worst = [0.0]*5
-    best = [numpy.inf]*5
+    worst = [0.0]*N
+    best = [numpy.inf]*N
 
     try:
         with node:
@@ -416,16 +418,19 @@ def timeit(node, name=None):
                 data = node.send(data)
                 t = time.perf_counter() - t0
                 total += t
+                total2 += t**2
                 count += 1
                 bisect.insort(worst, t)
                 worst.pop(0)
                 bisect.insort_left(best, t)
                 best.pop()
     finally:
-        if count < 5:
-            print("less than 5 times")
+        if count < N:
+            print(f"less than {N} times")
         else:
-            print(f"{name}: count={count}, avg={total/count}, worst={sum(worst)/5}, best={sum(best)/5}")
+            avg = total/count
+            std = (total2/count - avg**2)**0.5
+            print(f"{name}: count={count}, avg={avg}±{std} ({sum(best)/N} ~ {sum(worst)/N})")
 
 
 # for fixed-width data

@@ -365,7 +365,7 @@ class KnockConsole:
         device = self.settings.output_device
 
         mixer = AudioMixer(samplerate, (buffer_length, channels), sound_delay)
-        node = dn.timeit(mixer, "mixer") if self.settings.debug_timeit else mixer
+        node = dn.timeit(mixer, "   mixer") if self.settings.debug_timeit else mixer
         with dn.play(manager, node,
                      samplerate=samplerate,
                      buffer_shape=(buffer_length, channels),
@@ -430,7 +430,7 @@ class KnockConsole:
             finally:
                 print()
 
-        node = dn.timeit(screen, "screen") if self.settings.debug_timeit else screen
+        node = dn.timeit(screen, "  screen") if self.settings.debug_timeit else screen
         node = dn.pipe(dn.interval(1/self.settings.display_framerate, node), show())
 
         with dn.thread(node) as display_thread:
