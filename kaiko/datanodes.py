@@ -32,6 +32,13 @@ class DataNode:
         else:
             return res
 
+    def join(self, value=None):
+        try:
+            while True:
+                value = yield self.send(value)
+        except StopIteration:
+            return value
+
     def __next__(self):
         return self.send(None)
 
@@ -50,7 +57,7 @@ class DataNode:
             return self
 
         except StopIteration:
-            raise RuntimeError("generator didn't yield") from None
+            self.finalized = True
 
     def __exit__(self, type=None, value=None, traceback=None):
         if not self.initialized:
@@ -111,10 +118,7 @@ def rewrap(node, context=contextlib.suppress()):
         The processed signal.
     """
     with context, node:
-        data = yield
-        while True:
-            res = node.send(data)
-            data = yield res
+        yield from node.join((yield))
 
 @datanode
 def delay(prepend):
@@ -122,8 +126,8 @@ def delay(prepend):
 
     Parameters
     ----------
-    prepend : list or int
-        The list of prepended values or number of delay with prepending `None`.
+    prepend : int or DataNode
+        The number of delay with prepending `None`, or data node of prepended values.
 
     Receives
     --------
@@ -135,7 +139,13 @@ def delay(prepend):
     data : any
         The delayed signal.
     """
-    buffer = [None]*prepend if isinstance(prepend, int) else list(prepend)
+    if isinstance(prepend, int):
+        prepend = itertools.repeat(None, prepend)
+    prepend = DataNode.wrap(prepend)
+
+    with prepend:
+        buffer = list(prepend)
+
     data = yield
     while True:
         buffer.append(data)
@@ -143,12 +153,12 @@ def delay(prepend):
 
 @datanode
 def skip(node, prefeed):
-    """A data node skips signals and prefeed given values.
+    """A data node skips signals by feeding given values when initializing.
 
     Parameters
     ----------
-    prefeed : list or int
-        The list of prefeeded values or number of skips with prefeeding `None`.
+    prefeed : int or DataNode
+        The number of skips with prefeeding `None`, or data node of prefeeded values.
 
     Receives
     --------
@@ -161,29 +171,27 @@ def skip(node, prefeed):
         The advance signal.
     """
     node = DataNode.wrap(node)
-    buffer = itertools.repeat(None, prefeed) if isinstance(prefeed, int) else prefeed
+    if isinstance(prefeed, int):
+        prefeed = itertools.repeat(None, prefeed)
+    prefeed = DataNode.wrap(prefeed)
+
+    with prefeed:
+        buffer = list(prefeed)
 
     with node:
-        try:
-            for data in buffer:
-                node.send(data)
+        for dummy in buffer:
+            node.send(dummpy)
 
-        except StopIteration:
-            yield
-
-        else:
-            data = yield
-            while True:
-                data = yield node.send(data)
+        yield from node.join((yield))
 
 @datanode
-def take(number):
+def take(predicate):
     """A data node takes finite signals.
 
     Parameters
     ----------
-    number : int
-        The number of period to take.
+    predicate : int or DataNode
+        The number of period to take, or data node of predicate.
 
     Receives
     --------
@@ -195,9 +203,14 @@ def take(number):
     data : any
         The output signal.
     """
-    data = yield
-    for _ in range(number):
-        data = yield data
+    if isinstance(predicate, int):
+        predicate = itertools.repeat(True, predicate)
+    predicate = DataNode.wrap(predicate)
+
+    with predicate:
+        data = yield
+        while predicate.send(data):
+            data = yield data
 
 @datanode
 def pipe(*nodes):
@@ -284,12 +297,7 @@ def chain(*nodes):
 
         data = yield
         for node in nodes:
-            while True:
-                try:
-                    res = node.send(data)
-                except StopIteration:
-                    break
-                data = yield res
+            data = yield from node.join(data)
 
 @datanode
 def branch(*nodes):
@@ -321,9 +329,6 @@ def branch(*nodes):
             except StopIteration:
                 break
             data = yield data
-
-    while True:
-        data = yield data
 
 @datanode
 def merge(*nodes):

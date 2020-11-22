@@ -14,7 +14,7 @@ from .beatsheet import K_AIKO_STD, OSU
 class Event:
     # lifespan
     # __init__(beatmap, context, *args, **kwargs)
-    # register(mixer, hitter, field)
+    # register(field)
     pass
 
 class Text(Event):
@@ -34,13 +34,13 @@ class Text(Event):
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.time + travel_time)
 
-    def register(self, mixer, hitter, field):
+    def register(self, field):
         if self.sound is not None:
-            mixer.play(self.sound, time=self.time)
+            field.mixer.play(self.sound, time=self.time)
 
         if self.text is not None:
-            pos = lambda: (self.time-field.time) * 0.5 * self.speed
-            field.draw_text(pos, self.text, time=self.lifespan[0],
+            pos = lambda time, width: (self.time-time) * 0.5 * self.speed
+            field.draw_text(pos, self.text, start=self.lifespan[0],
                             duration=self.lifespan[1]-self.lifespan[0], zindex=(-2, -self.time))
 
 # scripts
@@ -50,22 +50,22 @@ class Flip(Event):
         self.flip = flip
         self.lifespan = (self.time, self.time)
 
-    def register(self, mixer, hitter, field):
-        field.screen.add_callback(self._node(field), zindex=())
+    def register(self, field):
+        field.renderer.add_callback(self._node(field), zindex=())
 
     @dn.datanode
     def _node(self, field):
-        yield
+        time, screen = yield
 
-        while field.time < self.time:
-            yield
+        while time < self.time:
+            time, screen = yield
 
         if self.flip is None:
             field.bar_flip = not field.bar_flip
         else:
             field.bar_flip = self.flip
 
-        yield
+        time, screen = yield
 
 class Shift(Event):
     def __init__(self, beatmap, context, shift, *, beat, length):
@@ -74,26 +74,26 @@ class Shift(Event):
         self.shift = shift
         self.lifespan = (self.time, self.end)
 
-    def register(self, mixer, hitter, field):
-        field.screen.add_callback(self._node(field), zindex=())
+    def register(self, field):
+        field.renderer.add_callback(self._node(field), zindex=())
 
     @dn.datanode
     def _node(self, field):
-        yield
+        time, screen = yield
 
-        while field.time < self.time:
-            yield
+        while time < self.time:
+            time, screen = yield
 
         shift0 = field.bar_shift
         speed = (self.shift - shift0) / (self.end - self.time) if self.end != self.time else 0
 
-        while field.time < self.end:
-            field.bar_shift = shift0 + speed * (field.time - self.time)
-            yield
+        while time < self.end:
+            field.bar_shift = shift0 + speed * (time - self.time)
+            time, screen = yield
 
         field.bar_shift = self.shift
 
-        yield
+        time, screen = yield
 
 class Jiggle(Event):
     def __init__(self, beatmap, context, frequency=10.0, *, beat, length):
@@ -102,27 +102,27 @@ class Jiggle(Event):
         self.frequency = frequency
         self.lifespan = (self.time, self.end)
 
-    def register(self, mixer, hitter, field):
-        field.screen.add_callback(self._node(field), zindex=())
+    def register(self, field):
+        field.renderer.add_callback(self._node(field), zindex=())
 
     @dn.datanode
     def _node(self, field):
-        yield
+        time, screen = yield
 
-        while field.time < self.time:
-            yield
+        while time < self.time:
+            time, screen = yield
 
         shift0 = field.sight_shift
-        period = 1/self.frequency
 
-        while field.time < self.end:
-            n = (field.time - self.time) / period
-            field.sight_shift = shift0 + 1/field.bar_width * (round(n * 2) % 2 * 2 - 1)
-            yield
+        while time < self.end:
+            turn = (time - self.time) * self.frequency
+            bar_start, bar_end, _ = field.bar_mask.indices(screen.width)
+            field.sight_shift = shift0 + 1/(bar_end - bar_start) * (turn // 0.5 % 2 * 2 - 1)
+            time, screen = yield
 
         field.sight_shift = shift0
 
-        yield
+        time, screen = yield
 
 def set_context(beatmap, context, **kw):
     context.update(**kw)
@@ -131,26 +131,25 @@ def set_context(beatmap, context, **kw):
 class Target(Event):
     # lifespan, range, score, full_score, is_finished
     # __init__(beatmap, context, *args, **kwargs)
-    # approach(mixer, field)
-    # hit(mixer, field, time, strength)
-    # finish(mixer, field)
+    # approach(field)
+    # hit(field, time, strength)
+    # finish(field)
 
-    def register(self, mixer, hitter, field):
-        self.approach(mixer, field)
-
-        hitter.add_target(self._node(mixer, field), time=self.range[0], duration=self.range[1]-self.range[0])
+    def register(self, field):
+        self.approach(field)
+        field.add_target(self._node(field), start=self.range[0], duration=self.range[1]-self.range[0])
 
     @dn.datanode
-    def _node(self, mixer, field):
+    def _node(self, field):
         try:
             while True:
                 time, strength = yield
-                self.hit(mixer, field, time, strength)
+                self.hit(field, time, strength)
                 if self.is_finished:
                     break
         except GeneratorExit:
             if not self.is_finished:
-                self.finish(mixer, field)
+                self.finish(field)
 
 
 class Performance(Enum):
@@ -216,7 +215,7 @@ class Performance(Enum):
 
         return perf
 
-    def render(self, mixer, field, is_reversed, appearances, sustain_time):
+    def render(self, field, is_reversed, appearances, sustain_time):
         i = list(Performance).index(self)
         appearance = appearances[i]
         if is_reversed:
@@ -227,7 +226,7 @@ class Performance(Enum):
 class OneshotTarget(Target):
     # time, speed, volume, perf, sound
     # approach_appearance, wrong_appearance
-    # hit(mixer, field, time, strength)
+    # hit(field, time, strength)
 
     full_score = Performance.get_full_score()
 
@@ -270,8 +269,9 @@ class OneshotTarget(Target):
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.time + travel_time)
 
-    def pos(self, field):
-        return lambda: (self.time-field.time) * 0.5 * self.speed
+    @property
+    def pos(self):
+        return lambda time, width: (self.time-time) * 0.5 * self.speed
 
     @property
     def range(self):
@@ -285,28 +285,28 @@ class OneshotTarget(Target):
     def is_finished(self):
         return self.perf is not None
 
-    def approach(self, mixer, field):
-        mixer.play(self.sound, time=self.time, volume=self.volume)
+    def approach(self, field):
+        field.mixer.play(self.sound, time=self.time, volume=self.volume)
 
-        field.draw_target(self, self.pos(field), self.approach_appearance,
-                          time=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
-        field.reset_sight(time=self.range[0])
+        field.draw_target(self, self.pos, self.approach_appearance,
+                          start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
+        field.reset_sight(start=self.range[0])
 
-    def hit(self, mixer, field, time, strength, is_correct_key=True):
+    def hit(self, field, time, strength, is_correct_key=True):
         perf = Performance.judge(time - self.time, is_correct_key, self.tolerances)
         if perf is not None:
-            perf.render(mixer, field, self.speed < 0, self.performance_appearances, self.performance_sustain_time)
-            self.finish(mixer, field, perf)
+            perf.render(field, self.speed < 0, self.performance_appearances, self.performance_sustain_time)
+            self.finish(field, perf)
 
-    def finish(self, mixer, field, perf=Performance.MISS):
+    def finish(self, field, perf=Performance.MISS):
         self.perf = perf
 
         if self.perf == Performance.MISS:
             pass
 
         elif self.perf.is_wrong: # wrong key
-            field.draw_target(self, self.pos(field), self.wrong_appearance,
-                              time=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
+            field.draw_target(self, self.pos, self.wrong_appearance,
+                              start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
 
         else: # correct key
             field.remove_target(key=self)
@@ -319,8 +319,8 @@ class Soft(OneshotTarget):
         self.sound = beatmap.settings.soft_sound
         self.threshold = beatmap.settings.soft_threshold
 
-    def hit(self, mixer, field, time, strength):
-        super().hit(mixer, field, time, strength, strength < self.threshold)
+    def hit(self, field, time, strength):
+        super().hit(field, time, strength, strength < self.threshold)
 
 class Loud(OneshotTarget):
     def __init__(self, beatmap, context, *, beat, speed=None, volume=None):
@@ -330,8 +330,8 @@ class Loud(OneshotTarget):
         self.sound = beatmap.settings.loud_sound
         self.threshold = beatmap.settings.loud_threshold
 
-    def hit(self, mixer, field, time, strength):
-        super().hit(mixer, field, time, strength, strength >= self.threshold)
+    def hit(self, field, time, strength):
+        super().hit(field, time, strength, strength >= self.threshold)
 
 class IncrGroup:
     def __init__(self, threshold=0.0, total=0):
@@ -381,8 +381,8 @@ class Incr(OneshotTarget):
     def volume(self, value):
         self._volume = value
 
-    def hit(self, mixer, field, time, strength):
-        super().hit(mixer, field, time, strength, strength >= min(1.0, self.group.threshold + self.incr_threshold))
+    def hit(self, field, time, strength):
+        super().hit(field, time, strength, strength >= min(1.0, self.group.threshold + self.incr_threshold))
         self.group.hit(strength)
 
 class Roll(Target):
@@ -410,8 +410,8 @@ class Roll(Target):
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.end + travel_time)
 
-    def pos(self, field, index):
-        return lambda: (self.times[index]-field.time) * 0.5 * self.speed
+    def pos(self, index):
+        return lambda time, width: (self.times[index]-time) * 0.5 * self.speed
 
     @property
     def range(self):
@@ -430,19 +430,19 @@ class Roll(Target):
         else:
             return 0
 
-    def approach(self, mixer, field):
+    def approach(self, field):
         for i, time in enumerate(self.times):
-            mixer.play(self.sound, time=time, volume=self.volume)
-            field.draw_target(self, self.pos(field, i), self.rock_appearance,
-                              time=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=(self, i))
-        field.reset_sight(time=self.range[0])
+            field.mixer.play(self.sound, time=time, volume=self.volume)
+            field.draw_target(self, self.pos(i), self.rock_appearance,
+                              start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=(self, i))
+        field.reset_sight(start=self.range[0])
 
-    def hit(self, mixer, field, time, strength):
+    def hit(self, field, time, strength):
         self.roll += 1
         if self.roll <= self.number:
             field.remove_target(key=(self, self.roll-1))
 
-    def finish(self, mixer, field):
+    def finish(self, field):
         self.is_finished = True
 
 class Spin(Target):
@@ -474,8 +474,9 @@ class Spin(Target):
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.end + travel_time)
 
-    def pos(self, field):
-        return lambda: (max(0.0, self.time-field.time) + min(0.0, self.end-field.time)) * 0.5 * self.speed
+    @property
+    def pos(self):
+        return lambda time, width: (max(0.0, self.time-time) + min(0.0, self.end-time)) * 0.5 * self.speed
 
     @property
     def range(self):
@@ -485,21 +486,21 @@ class Spin(Target):
     def score(self):
         return self.full_score if self.charge == self.capacity else 0
 
-    def approach(self, mixer, field):
+    def approach(self, field):
         for time in self.times:
-            mixer.play(self.sound, time=time, volume=self.volume)
+            field.mixer.play(self.sound, time=time, volume=self.volume)
 
         appearance = lambda: self.disk_appearances[int(self.charge) % len(self.disk_appearances)]
-        field.draw_target(self, self.pos(field), appearance, time=self.lifespan[0],
-                          duration=self.lifespan[1]-self.lifespan[0], key=self)
-        field.draw_sight("", time=self.range[0], duration=self.range[1]-self.range[0])
+        field.draw_target(self, self.pos, appearance,
+                          start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
+        field.draw_sight("", start=self.range[0], duration=self.range[1]-self.range[0])
 
-    def hit(self, mixer, field, time, strength):
+    def hit(self, field, time, strength):
         self.charge = min(self.charge + min(1.0, strength), self.capacity)
         if self.charge == self.capacity:
-            self.finish(mixer, field)
+            self.finish(field)
 
-    def finish(self, mixer, field):
+    def finish(self, field):
         self.is_finished = True
 
         if self.charge != self.capacity:
@@ -514,209 +515,254 @@ class Spin(Target):
 
 
 # beatmap
-class PlayField:
-    def __init__(self, screen, width, spec_width, bar_shift, sight_shift, bar_flip,
-                 hit_decay_time, hit_sustain_time, sight_appearances):
-        self.screen = screen
+def to_slices(segments):
+    middle = segments.index(...)
+    pre  = segments[:middle:+1]
+    post = segments[:middle:-1]
 
-        self.width = min(width, self.screen.width)
-        self.spec_index = 1
+    pre_index  = [sum(pre[:i+1])  for i in range(len(pre))]
+    post_index = [sum(post[:i+1]) for i in range(len(post))]
+
+    first_slice  = slice(None, pre_index[0], None)
+    last_slice   = slice(-post_index[0], None, None)
+    middle_slice = slice(pre_index[-1], -post_index[-1], None)
+
+    pre_slices  = [slice(+a, +b, None) for a, b in zip(pre_index[:-1],  pre_index[1:])]
+    post_slices = [slice(-b, -a, None) for a, b in zip(post_index[:-1], post_index[1:])]
+
+    return [first_slice, *pre_slices, middle_slice, *post_slices[::-1], last_slice]
+
+class PlayField:
+    def __init__(self, mixer, detector, renderer,
+                 bar_shift, sight_shift, bar_flip,
+                 spec_width, score_width, progress_width,
+                 hit_decay_time, hit_sustain_time, sight_appearances,
+                 spec_time_res, spec_freq_res, spec_decay_time,
+                 ):
+        self.mixer = mixer
+        self.detector = detector
+        self.renderer = renderer
+
+        self.bar_shift = bar_shift
+        self.sight_shift = sight_shift
+        self.bar_flip = bar_flip
+
         self.spec_width = spec_width
-        self.score_index = self.spec_width + 2
-        self.progress_index = self.width - 9
-        self.bar_index = self.spec_width + 15
-        self.bar_width = self.width - 24 - self.spec_width
+        self.score_width = score_width
+        self.progress_width = progress_width
 
         self.hit_decay_time = hit_decay_time
         self.hit_sustain_time = hit_sustain_time
         self.sight_appearances = sight_appearances
 
-        self.bar_shift = bar_shift
-        self.sight_shift = sight_shift
-        self.bar_flip = bar_flip
-        self.spectrum = "\u2800"*self.spec_width
+        self.spec_time_res = spec_time_res
+        self.spec_freq_res = spec_freq_res
+        self.spec_decay_time = spec_decay_time
+
+        layout = to_slices((1, spec_width, 1, score_width, ..., progress_width, 1))
+        _, self.spec_mask, _, self.score_mask, self.bar_mask, self.progress_mask, _ = layout
+
+        self.spectrum = "\u2800"*spec_width
         self.total_score = 0
         self.score = 0
         self.progress = 0.0
+        score_width_ = max(0, score_width-3)
+        self.score_format = "[{score:>%dd}/{total_score:>%dd}]" % (score_width_-score_width_//2, score_width_//2)
+        self.progress_format = "[{progress_pc:>%d.%df}%%]" % (max(0, progress_width-3), max(0, progress_width-7))
 
         self.hit_queue = queue.Queue()
         self.sight_queue = queue.Queue()
+        self.target_queue = queue.Queue()
 
-        self.screen.add_callback(self.get_status_node(), zindex=(-3,), key="status")
-        self.screen.add_callback(self.get_sight_node(), zindex=(2,), key="sight")
-
-    def bar_draw(self, pos, text):
-        pos = pos + self.bar_shift
-        if self.bar_flip:
-            pos = 1 - pos
-        index = self.bar_index + pos * (self.bar_width - 1)
-
-        if isinstance(text, tuple):
-            text = text[self.bar_flip]
-
-        self.screen.addstr(index, text, slice(self.bar_index, self.bar_index+self.bar_width))
-
-    @property
-    def time(self):
-        return self.screen.time
+        self.mixer.add_effect(self._spec_handler(), zindex=-3)
+        self.detector.add_listener(self._target_handler())
+        self.detector.add_listener(self._hit_handler())
+        self.renderer.add_callback(self._status_handler(), zindex=(-3,), key="status")
+        self.renderer.add_callback(self._sight_handler(), zindex=(2,), key="sight")
 
     @dn.datanode
-    def get_status_node(self):
+    def _spec_handler(self):
+        samplerate = self.mixer.samplerate
+        hop_length = round(samplerate * self.spec_time_res)
+        win_length = round(samplerate / self.spec_freq_res)
+        decay = hop_length / samplerate / self.spec_decay_time / 4
+
+        spec = dn.pipe(
+            dn.frame(win_length, hop_length),
+            dn.power_spectrum(win_length, samplerate=samplerate),
+            dn.draw_spectrum(self.spec_width, win_length=win_length, samplerate=samplerate, decay=decay),
+            lambda s: setattr(self, 'spectrum', s))
+        spec = dn.unchunk(spec, (hop_length,) + self.mixer.buffer_shape[1:])
+
+        with spec:
+            time, data = yield
+            while True:
+                spec.send(data)
+                time, data = yield time, data
+
+    @dn.datanode
+    def _hit_handler(self):
         while True:
-            yield
-            self.screen.addstr(self.spec_index, self.spectrum)
-            self.screen.addstr(self.score_index, "[{:>5d}/{:>5d}]".format(self.score, self.total_score))
-            self.screen.addstr(self.progress_index, "[{:>5.1f}%]".format(self.progress*100))
+            time, strength, detected = yield
+            if detected:
+                self.hit_queue.put(min(1.0, strength))
 
     @dn.datanode
-    def get_sight_node(self):
+    def _target_handler(self):
+        target, start, duration = None, None, None
+        waiting_targets = []
+
+        time, strength, detected = yield
+        while True:
+            while not self.target_queue.empty():
+                item = self.target_queue.get()
+                if item[1] is None:
+                    item = (item[0], time, item[2])
+                waiting_targets.append(item)
+            waiting_targets.sort(key=lambda item: item[1])
+
+            if target is None and waiting_targets and waiting_targets[0][1] <= time:
+                target, start, duration = waiting_targets.pop(0)
+                target.__enter__()
+
+            if duration is not None and start + duration <= time:
+                target.__exit__()
+                target, start, duration = None, None, None
+                continue
+
+            if target is not None and detected:
+                try:
+                    target.send((time, min(1.0, strength)))
+                except StopIteration:
+                    target, start, duration = None, None, None
+
+            time, strength, detected = yield
+
+    @dn.datanode
+    def _status_handler(self):
+        while True:
+            time, screen = yield
+
+            spec_text = self.spectrum
+            spec_start, _, _ = self.spec_mask.indices(screen.width)
+            screen.addstr(spec_start, spec_text, self.spec_mask)
+
+            score_text = self.score_format.format(score=self.score, total_score=self.total_score)
+            score_start, _, _ = self.score_mask.indices(screen.width)
+            screen.addstr(score_start, score_text, self.score_mask)
+
+            progress_text = self.progress_format.format(progress=self.progress, progress_pc=self.progress*100)
+            progress_start, _, _ = self.progress_mask.indices(screen.width)
+            screen.addstr(progress_start, progress_text, self.progress_mask)
+
+    @dn.datanode
+    def _sight_handler(self):
         hit_strength = None
         hit_time = None
-        drawer, time, duration = None, None, None
+        drawer, start, duration = None, None, None
         waiting_drawers = []
 
         while True:
-            yield
+            time, screen = yield
 
             while not self.hit_queue.empty():
                 hit_strength = self.hit_queue.get()
-                hit_time = self.time
+                hit_time = time
 
-            if hit_time is not None and self.time - hit_time >= max(self.hit_decay_time, self.hit_sustain_time):
+            if hit_time is not None and time - hit_time >= max(self.hit_decay_time, self.hit_sustain_time):
                 hit_strength = None
                 hit_time = None
 
             while not self.sight_queue.empty():
                 item = self.sight_queue.get()
                 if item[1] is None:
-                    item = (item[0], self.time, item[2])
+                    item = (item[0], time, item[2])
                 waiting_drawers.append(item)
             waiting_drawers.sort(key=lambda item: item[1])
 
-            while waiting_drawers and waiting_drawers[0][1] <= self.time:
-                drawer, time, duration = waiting_drawers.pop(0)
+            while waiting_drawers and waiting_drawers[0][1] <= time:
+                drawer, start, duration = waiting_drawers.pop(0)
 
-            if duration is not None and time + duration <= self.time:
-                drawer, time, duration = None, None, None
+            if duration is not None and start + duration <= self.time:
+                drawer, start, duration = None, None, None
 
             if drawer is not None:
-                text = drawer()
+                text = drawer(time, screen.width)
 
             elif hit_time is not None:
-                strength = hit_strength - (self.time - hit_time) / self.hit_decay_time
+                strength = hit_strength - (time - hit_time) / self.hit_decay_time
                 strength = max(0.0, min(1.0, strength))
                 loudness = int(strength * (len(self.sight_appearances) - 1))
-                if self.time - hit_time < self.hit_sustain_time:
+                if time - hit_time < self.hit_sustain_time:
                     loudness = max(1, loudness)
                 text = self.sight_appearances[loudness]
 
             else:
                 text = self.sight_appearances[0]
 
-            self.bar_draw(self.sight_shift, text)
+            self._bar_draw(screen, self.sight_shift, text)
+
+    def _bar_draw(self, screen, pos, text):
+        pos = pos + self.bar_shift
+        if self.bar_flip:
+            pos = 1 - pos
+
+        bar_start, bar_end, _ = self.bar_mask.indices(screen.width)
+        index = bar_start + pos * max(0, bar_end - bar_start - 1)
+
+        if isinstance(text, tuple):
+            text = text[self.bar_flip]
+
+        screen.addstr(index, text, self.bar_mask)
 
     @dn.datanode
-    def get_bar_node(self, pos, text, time, duration):
-        pos_func = pos if hasattr(pos, '__call__') else lambda: pos
-        text_func = text if hasattr(text, '__call__') else lambda: text
+    def _bar_node(self, pos, text, start, duration):
+        pos_func = pos if hasattr(pos, '__call__') else lambda time, width: pos
+        text_func = text if hasattr(text, '__call__') else lambda time, width: text
 
-        if time is None:
-            time = self.time
+        time, screen = yield
 
-        while True:
-            yield
-            if self.time < time:
-                continue
-            if duration is not None and time + duration <= self.time:
-                break
-            self.bar_draw(pos_func(), text_func())
+        if start is None:
+            start = time
 
-    def draw_text(self, pos, text, time=None, duration=None, zindex=(0,), key=None):
-        node = self.get_bar_node(pos, text, time, duration)
+        while time < start:
+            time, screen = yield
+
+        while duration is None or time < start + duration:
+            self._bar_draw(screen, pos_func(time, screen.width), text_func(time, screen.width))
+            time, screen = yield
+
+
+    def add_target(self, target, start=None, duration=None):
+        self.target_queue.put((target, start, duration))
+
+    def draw_sight(self, text, start=None, duration=None):
+        text_func = text if hasattr(text, '__call__') else lambda time, width: text
+        self.sight_queue.put((text_func, start, duration))
+
+    def reset_sight(self, start=None):
+        self.sight_queue.put((None, start, None))
+
+    def draw_text(self, pos, text, start=None, duration=None, zindex=(0,), key=None):
         if key is None:
-            key = node
-        self.screen.add_callback(node, zindex=zindex, key=("text", key))
+            key = object()
+        node = self._bar_node(pos, text, start, duration)
+        self.renderer.add_callback(node, zindex=zindex, key=("text", key))
+        return key
 
     def remove_text(self, key):
-        self.screen.remove_callback(key=("text", key))
+        self.renderer.remove_callback(key=("text", key))
 
-    def draw_target(self, target, pos, text, time=None, duration=None, key=None):
-        node = self.get_bar_node(pos, text, time, duration)
+    def draw_target(self, target, pos, text, start=None, duration=None, key=None):
         if key is None:
-            key = node
+            key = object()
+        node = self._bar_node(pos, text, start, duration)
         zindex = lambda: (0, not target.is_finished, -target.range[0])
-        self.screen.add_callback(node, zindex=zindex, key=("target", key))
+        self.renderer.add_callback(node, zindex=zindex, key=("target", key))
+        return key
 
     def remove_target(self, key):
-        self.screen.remove_callback(key=("target", key))
-
-    def draw_sight(self, text, time=None, duration=None):
-        text_func = text if hasattr(text, '__call__') else lambda: text
-        self.sight_queue.put((text_func, time, duration))
-
-    def reset_sight(self, time=None):
-        self.sight_queue.put((None, time, None))
-
-class Hitter:
-    def __init__(self, detector, hit_queue):
-        self.detector = detector
-        self.target_queue = queue.Queue()
-
-        self.detector.add_listener(self.get_target_handler(self.target_queue))
-        self.detector.add_listener(self.get_hit_handler(hit_queue))
-
-    @property
-    def time(self):
-        return self.detector.time
-
-    @property
-    def strength(self):
-        return min(1.0, self.detector.strength)
-
-    @property
-    def detected(self):
-        return self.detector.detected
-
-    @dn.datanode
-    def get_hit_handler(self, hit_queue):
-        while True:
-            yield
-            if self.detected:
-                hit_queue.put(self.strength)
-
-    @dn.datanode
-    def get_target_handler(self, target_queue):
-        target, time, duration = None, None, None
-        waiting_targets = []
-
-        yield
-        while True:
-            while not target_queue.empty():
-                item = target_queue.get()
-                if item[1] is None:
-                    item = (item[0], self.time, item[2])
-                waiting_targets.append(item)
-            waiting_targets.sort(key=lambda item: item[1])
-
-            if target is None and waiting_targets and waiting_targets[0][1] <= self.time:
-                target, time, duration = waiting_targets.pop(0)
-                target.__enter__()
-
-            if duration is not None and time + duration <= self.time:
-                target.__exit__()
-                target, time, duration = None, None, None
-                continue
-
-            if target is not None and self.detected:
-                try:
-                    target.send((self.time, self.strength))
-                except StopIteration:
-                    target, time, duration = None, None, None
-
-            yield
-
-    def add_target(self, target, time=None, duration=None):
-        self.target_queue.put((target, time, duration))
+        self.renderer.remove_callback(key=("target", key))
 
 @cfg.configurable
 class BeatmapSettings:
@@ -740,8 +786,9 @@ class BeatmapSettings:
 
     # Skin:
     ## PlayFieldSkin:
-    field_width: Optional[int] = None
     spec_width: int = 5
+    score_width: int = 13
+    progress_width: int = 8
     spec_decay_time: float = 0.01
     spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
     spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
@@ -855,63 +902,39 @@ class Beatmap:
             return 1.0
         return sum(getattr(event, 'is_finished', False) for event in events) / total
 
-    def get_spectrum_show(self, field, samplerate, nchannels):
-        hop_length = round(samplerate * self.settings.spec_time_res)
-        win_length = round(samplerate / self.settings.spec_freq_res)
-        decay = hop_length / samplerate / self.settings.spec_decay_time / 4
-
-        spec = dn.pipe(
-            dn.frame(win_length, hop_length),
-            dn.power_spectrum(win_length, samplerate=samplerate),
-            dn.draw_spectrum(field.spec_width, win_length=win_length, samplerate=samplerate, decay=decay),
-            lambda s: setattr(field, 'spectrum', s))
-        spec = dn.unchunk(spec, chunk_shape=(hop_length, nchannels))
-        return dn.branch(spec)
-
     @dn.datanode
-    def connect(self, mixer, detector, screen):
+    def connect(self, mixer, detector, renderer):
         # events
         events = [event for chart in self.charts for event in chart.build_events(self)]
         events.sort(key=lambda e: e.lifespan[0])
         start = min((event.lifespan[0] - self.settings.leadin_time for event in events), default=0.0)
-        end = max((event.lifespan[1] + self.settings.leadin_time for event in events), default=0.0)
+        end   = max((event.lifespan[1] + self.settings.leadin_time for event in events), default=0.0)
 
         if start < 0:
             mixer.delay += start
             detector.delay += start
-            screen.delay += start
-
-        # screen
-        field = PlayField(screen,
-            self.settings.field_width or screen.width,
-            self.settings.spec_width,
-            self.settings.bar_shift,
-            self.settings.sight_shift,
-            self.settings.bar_flip,
-            self.settings.hit_decay_time,
-            self.settings.hit_sustain_time,
-            self.settings.sight_appearances,
-            )
-        field.total_score = self.get_total_score(events)
-        field.score = self.get_score(events)
-        field.progress = self.get_progress(events)
-
-        # detector
-        hitter = Hitter(detector, field.hit_queue)
+            renderer.delay += start
 
         # audio
         if self.audio is None:
             duration = 0.0
-
         else:
             audiopath = os.path.join(self.path, self.audio)
             with audioread.audio_open(audiopath) as file:
                 duration = file.duration
-                nchannels = file.channels
                 samplerate = file.samplerate
-            mixer.play(audiopath, time=0.0)
+            mixer.play(audiopath, time=0.0, zindex=-3)
 
-            mixer.add_effect(self.get_spectrum_show(field, samplerate, nchannels))
+        # play field
+        field = PlayField(mixer, detector, renderer,
+                          self.settings.bar_shift, self.settings.sight_shift, self.settings.bar_flip,
+                          self.settings.spec_width, self.settings.score_width, self.settings.progress_width,
+                          self.settings.hit_decay_time, self.settings.hit_sustain_time, self.settings.sight_appearances,
+                          self.settings.spec_time_res, self.settings.spec_freq_res, self.settings.spec_decay_time,
+                          )
+        field.total_score = self.get_total_score(events)
+        field.score = self.get_score(events)
+        field.progress = self.get_progress(events)
 
         # loop
         with dn.interval(1/self.settings.tickrate) as timer:
@@ -925,7 +948,7 @@ class Beatmap:
                     break
 
                 while event is not None and event.lifespan[0] <= time + self.settings.prepare_time:
-                    event.register(mixer, hitter, field)
+                    event.register(field)
                     event = next(events_iter, None)
 
                 field.score = self.get_score(events)

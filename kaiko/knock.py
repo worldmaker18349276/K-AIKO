@@ -14,69 +14,53 @@ from . import datanodes as dn
 
 
 class NodeScheduler(dn.DataNode):
-    def __init__(self, preprocess, postprocess):
-        super().__init__(self.proxy(preprocess, postprocess))
+    def __init__(self):
         self.mutations = queue.Queue() # == [(key, node, zindex), ...]
+        super().__init__(self.proxy())
 
-    def proxy(self, preprocess, postprocess):
-        preprocess = dn.DataNode.wrap(preprocess)
-        postprocess = dn.DataNode.wrap(postprocess)
+    def proxy(self):
         nodes = OrderedDict()
 
-        with preprocess, postprocess:
-            try:
-                data = None
+        try:
+            data = None
 
-                while True:
-                    data = yield data
-                    data = preprocess.send(data)
+            while True:
+                data = yield data
 
-                    while not self.mutations.empty():
-                        key, node, zindex = self.mutations.get()
-                        if key in nodes:
-                            nodes[key][0].__exit__()
-                            del nodes[key]
-                        if node is not None:
-                            node.__enter__()
-                            zindex_func = zindex if hasattr(zindex, '__call__') else lambda z=zindex: z
-                            nodes[key] = (node, zindex_func)
+                while not self.mutations.empty():
+                    key, node, zindex = self.mutations.get()
+                    if key in nodes:
+                        nodes[key][0].__exit__()
+                        del nodes[key]
+                    if node is not None:
+                        node.__enter__()
+                        zindex_func = zindex if hasattr(zindex, '__call__') else lambda z=zindex: z
+                        nodes[key] = (node, zindex_func)
 
-                    for key, (node, _) in sorted(nodes.items(), key=lambda item: item[1][1]()):
-                        try:
-                            data = node.send(data)
-                        except StopIteration:
-                            del nodes[key]
+                for key, (node, _) in sorted(nodes.items(), key=lambda item: item[1][1]()):
+                    try:
+                        data = node.send(data)
+                    except StopIteration:
+                        del nodes[key]
 
-                    data = postprocess.send(data)
-
-            finally:
-                for node, _ in nodes.values():
-                    node.__exit__()
-
+        finally:
+            for node, _ in nodes.values():
+                node.__exit__()
 
 class AudioMixer(NodeScheduler):
-    def __init__(self, samplerate=44100, buffer_shape=1024, delay=0.0):
-        super().__init__(self.get_preprocess(), self.get_postprocess())
+    def __init__(self, samplerate, buffer_shape, delay=0.0):
         self.samplerate = samplerate
         self.buffer_shape = buffer_shape
         self.delay = delay
-        self.time = delay
+        super().__init__()
 
-    @dn.datanode
-    def get_preprocess(self):
-        index = 0
-        buffer_length = self.buffer_shape[0] if isinstance(self.buffer_shape, tuple) else self.buffer_shape
-        yield
-        while True:
-            self.time = index * buffer_length / self.samplerate + self.delay
-            yield numpy.zeros(self.buffer_shape, dtype=numpy.float32)
-            index += 1
-
-    @dn.datanode
-    def get_postprocess(self):
-        buffer = yield
-        while True:
-            buffer = yield buffer
+    def proxy(self):
+        proxy = dn.DataNode(super().proxy())
+        with proxy:
+            time, data = yield
+            while True:
+                _, data = proxy.send((time + self.delay, data))
+                time, data = yield time, data
 
     @functools.lru_cache(maxsize=32)
     def load(self, filepath):
@@ -108,6 +92,7 @@ class AudioMixer(NodeScheduler):
         node = dn.attach(node)
 
         self.add_effect(node, time=time, zindex=zindex, key=key)
+        return key
 
     def add_effect(self, node, time=None, zindex=0, key=None):
         if key is None:
@@ -116,189 +101,123 @@ class AudioMixer(NodeScheduler):
             node = self._shift(node, time)
         node = dn.DataNode.wrap(node)
         self.mutations.put((key, node, zindex))
+        return key
 
     def remove_effect(self, key):
         self.mutations.put((key, None, 0))
 
     @dn.datanode
-    def _shift(self, node, time):
-        offset = round((time - self.time) * self.samplerate)
+    def _shift(self, node, start_time):
         node = dn.DataNode.wrap(node)
 
         with node:
-            try:
-                if offset < 0:
-                    data = numpy.zeros((-offset,) + self.buffer_shape[1:], dtype=numpy.float32)
-                    data = node.send(data)
+            time, data = yield
+            offset = round((start_time - time) * self.samplerate)
+
+            while offset < 0:
+                length = min(-offset, self.buffer_shape[0])
+                dummy = numpy.zeros((length,) + self.buffer_shape[1:], dtype=numpy.float32)
+                node.send(dummy)
+                offset -= length
+
+            while 0 < offset:
+                if data.shape[0] < offset:
+                    offset -= data.shape[0]
+                else:
+                    data1, data2 = data[:offset], data[offset:]
+                    data2 = node.send(data2)
+                    data = numpy.concatenate((data1, data2), axis=0)
                     offset = 0
 
-            except StopIteration:
-                yield
+                time, data = yield time, data
 
-            else:
-                data = yield
-
-                while data.shape[0] < offset:
-                    offset = offset - data.shape[0]
-                    data = yield data
-
-                if offset > 0:
-                    res, data = data[:offset], data[offset:]
-                    data = node.send(data)
-                    data = numpy.concatenate((res, data), axis=0)
-                    data = yield data
-
-                while True:
-                    data = yield node.send(data)
+            while True:
+                time, data = yield time, node.send(data)
 
 class KnockDetector(NodeScheduler):
-    def __init__(self, samplerate=44100, buffer_length=1024, channels=1, *,
-                       pre_max, post_max, pre_avg, post_avg, wait, delta,
-                       time_res, freq_res, delay, energy):
-        super().__init__(self.get_preprocess(), self.get_postprocess())
-        self.samplerate = samplerate
-        self.buffer_length = buffer_length
-        self.channels = channels
-
-        self.pre_max = pre_max
-        self.post_max = post_max
-        self.pre_avg = pre_avg
-        self.post_avg = post_avg
-        self.wait = wait
-        self.delta = delta
-
+    def __init__(self, time_res, freq_res, delay=0.0, energy=1.0):
         self.time_res = time_res
         self.freq_res = freq_res
         self.delay = delay
         self.energy = energy
+        super().__init__()
 
-    @dn.datanode
-    def get_preprocess(self):
-        detector = self._detector()
-        hop_length = round(self.samplerate*self.time_res)
-        if self.buffer_length != hop_length:
-            detector = dn.unchunk(detector, chunk_shape=(hop_length, self.channels))
-        with detector:
+    def proxy(self):
+        proxy = dn.DataNode(super().proxy())
+        with proxy:
+            time, strength, detected = yield
             while True:
-                detector.send((yield))
-
-    @dn.datanode
-    def get_postprocess(self):
-        while True:
-            yield
-
-    @dn.datanode
-    def _detector(self):
-        pre_max = round(self.pre_max / self.time_res)
-        post_max = round(self.post_max / self.time_res)
-        pre_avg = round(self.pre_avg / self.time_res)
-        post_avg = round(self.post_avg / self.time_res)
-        wait = round(self.wait / self.time_res)
-        delta = self.delta
-        prepare = max(post_max, post_avg)
-        hop_length = round(self.samplerate*self.time_res)
-        win_length = round(self.samplerate/self.freq_res)
-
-        window = dn.get_half_Hann_window(win_length)
-        onset = dn.pipe(
-            dn.frame(win_length=win_length, hop_length=hop_length),
-            dn.power_spectrum(win_length=win_length, samplerate=self.samplerate, windowing=window, weighting=True),
-            dn.onset_strength(1))
-        picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
-
-        with onset, picker:
-            buffer = [0.0]*prepare
-            index = -prepare
-            data = yield
-            while True:
-                strength = onset.send(data)
-                detected = picker.send(strength)
-                buffer.append(strength)
-                strength = buffer.pop(0)
-
-                self.time = index * hop_length / self.samplerate + self.delay
-                self.strength = strength / self.energy
-                self.detected = detected
-
-                data = yield
-
-                index += 1
+                proxy.send((time + self.delay, strength / self.energy, detected))
+                time, strength, detected = yield time, strength, detected
 
     def on_hit(self, func, time=None, duration=None, key=None):
         if key is None:
             key = object()
+        node = dn.branch(self._hit_listener(func, time, duration))
+        self.mutations.put((key, node, 0))
+        return key
 
-        @dn.datanode
-        def _listener():
-            if time is None:
-                time = self.time
-            while True:
-                yield
-                if self.time < time:
-                    continue
-                if duration is not None and time + duration <= self.time:
+    @dn.datanode
+    def _hit_listener(self, func, start_time, duration):
+        time, strength, detected = yield
+        if start_time is None:
+            start_time = time
+
+        while time < start_time:
+            time, strength, detected = yield
+
+        while True:
+            if duration is not None and start_time + duration <= time:
+                return
+
+            if detected:
+                finished = func(strength)
+                if finished:
                     return
 
-                if self.detected:
-                    finished = func(self.strength)
-                    if finished:
-                        return
-        node = _listener()
-
-        self.mutations.put((key, node, 0))
-
-    def on_time(self, func, time=None, key=None):
-        if key is None:
-            key = object()
-
-        @dn.datanode
-        def _timed():
-            if time is None:
-                time = self.time
-            while True:
-                yield
-                if time <= self.time:
-                    func()
-                    return
-        node = _timed()
-
-        self.mutations.put((key, node, 0))
+            time, strength, detected = yield
 
     def add_listener(self, node, key=None):
         if key is None:
             key = object()
-        node = dn.DataNode.wrap(node)
+        node = dn.branch(node)
         self.mutations.put((key, node, 0))
+        return key
 
     def remove_listener(self, key):
         self.mutations.put((key, None, 0))
 
-class TerminalLine(NodeScheduler):
-    def __init__(self, framerate, delay):
-        super().__init__(self.get_preprocess(), self.get_postprocess())
-        self.width = int(os.popen("stty size", 'r').read().split()[1])
-        self.chars = [" "]*self.width
+class ScreenRenderer(NodeScheduler):
+    def __init__(self, framerate, delay=0.0):
         self.framerate = framerate
         self.delay = delay
-        self.time = delay
+        super().__init__()
 
-    @dn.datanode
-    def get_preprocess(self):
-        index = 0
-        while True:
-            self.time = index / self.framerate + self.delay
-            self.clear()
-            yield
-            index += 1
+    def proxy(self):
+        proxy = dn.DataNode(super().proxy())
+        with proxy:
+            time, screen = yield
+            while True:
+                proxy.send((time + self.delay, screen))
+                time, screen = yield time, screen
 
-    @dn.datanode
-    def get_postprocess(self):
-        yield
-        while True:
-            yield f"\r{str(self)}\r"
+    def add_callback(self, node, zindex=0, key=None):
+        if key is None:
+            key = object()
+        node = dn.branch(node)
+        self.mutations.put((key, node, zindex))
+        return key
 
-    def __str__(self):
-        return "".join(self.chars)
+    def remove_callback(self, key):
+        self.mutations.put((key, None, 0))
+
+class TerminalLine:
+    def __init__(self):
+        self.width = int(os.popen("stty size", 'r').read().split()[1])
+        self.chars = [" "]*self.width
+
+    def display(self):
+        return "\r" + "".join(self.chars) + "\r"
 
     def clear(self):
         for i in range(self.width):
@@ -316,15 +235,6 @@ class TerminalLine(NodeScheduler):
                 if index in range(self.width)[mask]:
                     self.chars[index] = ch
                 index += 1
-
-    def add_callback(self, node, zindex=0, key=None):
-        if key is None:
-            key = object()
-        node = dn.DataNode.wrap(node)
-        self.mutations.put((key, node, zindex))
-
-    def remove_callback(self, key):
-        self.mutations.put((key, None, 0))
 
 
 @cfg.configurable
@@ -371,87 +281,156 @@ class KnockConsole:
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
 
+    def _play(self, manager, node):
+        samplerate = self.settings.output_samplerate
+        buffer_length = self.settings.output_buffer_length
+        nchannels = self.settings.output_channels
+        format = self.settings.output_format
+        device = self.settings.output_device
+
+        @dn.datanode
+        def output_node():
+            index = 0
+            with node:
+                yield
+                while True:
+                    time = index * buffer_length / samplerate
+                    data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
+                    time, data = node.send((time, data))
+                    yield data
+                    index += 1
+
+        stream = dn.play(manager, output_node(),
+                         samplerate=samplerate,
+                         buffer_shape=(buffer_length, nchannels),
+                         format=format,
+                         device=device,
+                         )
+
+        return stream
+
     @contextlib.contextmanager
     def get_output_stream(self, manager):
         samplerate = self.settings.output_samplerate
         buffer_length = self.settings.output_buffer_length
+        nchannels = self.settings.output_channels
         sound_delay = self.settings.sound_delay
-        channels = self.settings.output_channels
-        format = self.settings.output_format
-        device = self.settings.output_device
 
-        mixer = AudioMixer(samplerate, (buffer_length, channels), sound_delay)
+        mixer = AudioMixer(samplerate, (buffer_length, nchannels), sound_delay)
         node = dn.timeit(mixer, "   mixer") if self.settings.debug_timeit else mixer
-        with dn.play(manager, node,
-                     samplerate=samplerate,
-                     buffer_shape=(buffer_length, channels),
-                     format=format,
-                     device=device,
-                     ) as output_stream:
-
+        with self._play(manager, node) as output_stream:
             yield output_stream, mixer
 
-    @contextlib.contextmanager
-    def get_input_stream(self, manager):
+    def _record(self, manager, node):
         samplerate = self.settings.input_samplerate
         buffer_length = self.settings.input_buffer_length
-        channels = self.settings.input_channels
+        nchannels = self.settings.input_channels
         format = self.settings.input_format
         device = self.settings.input_device
 
-        pre_max = self.settings.detector_pre_max
-        post_max = self.settings.detector_post_max
-        pre_avg = self.settings.detector_pre_avg
-        post_avg = self.settings.detector_post_avg
-        wait = self.settings.detector_wait
-        delta = self.settings.detector_delta
         time_res = self.settings.detector_time_res
         freq_res = self.settings.detector_freq_res
+        hop_length = round(samplerate*time_res)
+        win_length = round(samplerate/freq_res)
 
+        pre_max = round(self.settings.detector_pre_max / time_res)
+        post_max = round(self.settings.detector_post_max / time_res)
+        pre_avg = round(self.settings.detector_pre_avg / time_res)
+        post_avg = round(self.settings.detector_post_avg / time_res)
+        wait = round(self.settings.detector_wait / time_res)
+        delta = self.settings.detector_delta
+        prepare = max(post_max, post_avg)
+
+        window = dn.get_half_Hann_window(win_length)
+        onset = dn.pipe(
+            dn.frame(win_length=win_length, hop_length=hop_length),
+            dn.power_spectrum(win_length=win_length, samplerate=samplerate, windowing=window, weighting=True),
+            dn.onset_strength(1))
+        picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
+
+        @dn.datanode
+        def detect():
+            with onset, picker, node:
+                buffer = [0.0]*prepare
+                index = -prepare
+                data = yield
+                while True:
+                    strength = onset.send(data)
+                    detected = picker.send(strength)
+                    buffer.append(strength)
+                    strength = buffer.pop(0)
+
+                    time = index * hop_length / samplerate
+                    node.send((time, strength, detected))
+                    data = yield
+
+                    index += 1
+
+        input_node = detect()
+
+        if buffer_length != hop_length:
+            input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
+
+        stream = dn.record(manager, input_node,
+                           samplerate=samplerate,
+                           buffer_shape=(buffer_length, nchannels),
+                           format=format,
+                           device=device,
+                           )
+
+        return stream
+
+    @contextlib.contextmanager
+    def get_input_stream(self, manager):
+        time_res = self.settings.detector_time_res
+        freq_res = self.settings.detector_freq_res
         knock_delay = self.settings.knock_delay
         knock_energy = self.settings.knock_energy
 
-        detector = KnockDetector(samplerate, buffer_length, channels,
-                                 pre_max=pre_max,
-                                 post_max=post_max,
-                                 pre_avg=pre_avg,
-                                 post_avg=post_avg,
-                                 wait=wait,
-                                 delta=delta,
-                                 time_res=time_res,
-                                 freq_res=freq_res,
-                                 delay=knock_delay,
-                                 energy=knock_energy,
-                                 )
+        detector = KnockDetector(time_res, freq_res, knock_delay, knock_energy)
         node = dn.timeit(detector, "detector") if self.settings.debug_timeit else detector
-        with dn.record(manager, node,
-                       samplerate=samplerate,
-                       buffer_shape=(buffer_length, channels),
-                       format=format,
-                       device=device,
-                       ) as input_stream:
-
+        with self._record(manager, node) as input_stream:
             yield input_stream, detector
 
-    @contextlib.contextmanager
-    def get_display_thread(self):
-        screen = TerminalLine(self.settings.display_framerate, self.settings.display_delay)
+    def _display(self, builder, node):
+        framerate = self.settings.display_framerate
+
+        @dn.datanode
+        def display():
+            index = 0
+            screen = builder()
+            with node:
+                yield
+                while True:
+                    time = index / framerate
+                    screen.clear()
+                    time, screen = node.send((time, screen))
+                    yield screen.display()
+                    index += 1
 
         @dn.datanode
         def show():
             try:
                 while True:
-                    t, view = yield
+                    time, view = yield
                     if view:
                         print(view, end="", flush=True)
             finally:
                 print()
 
-        node = dn.timeit(screen, "  screen") if self.settings.debug_timeit else screen
-        node = dn.pipe(dn.interval(1/self.settings.display_framerate, node), show())
+        thread = dn.thread(dn.pipe(dn.interval(1/framerate, display()), show()))
 
-        with dn.thread(node) as display_thread:
-            yield display_thread, screen
+        return thread
+
+    @contextlib.contextmanager
+    def get_display_thread(self):
+        framerate = self.settings.display_framerate
+        delay = self.settings.display_delay
+
+        renderer = ScreenRenderer(framerate, delay)
+        node = dn.timeit(renderer, "renderer") if self.settings.debug_timeit else renderer
+        with self._display(TerminalLine, node) as display_thread:
+            yield display_thread, renderer
 
     def SIGINT_handler(self, sig, frame):
         self.stopped = True
@@ -463,10 +442,10 @@ class KnockConsole:
             # connect audio/video streams and interface
             with self.get_output_stream(manager) as (output_stream, mixer),\
                  self.get_input_stream(manager) as (input_stream, detector),\
-                 self.get_display_thread() as (display_thread, screen):
+                 self.get_display_thread() as (display_thread, renderer):
 
                 # connect interface and program
-                with knock_program.connect(mixer, detector, screen) as loop:
+                with knock_program.connect(mixer, detector, renderer) as loop:
 
                     # activate audio/video streams
                     output_stream.start_stream()
