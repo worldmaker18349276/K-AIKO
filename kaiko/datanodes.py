@@ -400,43 +400,6 @@ def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
         buffer[:-1] = buffer[1:]
         buffer[-1] = yield detected
 
-@datanode
-def timeit(node, name=None):
-    import bisect
-
-    if name is None:
-        name = repr(node)
-
-    N = 10
-    total = 0.0
-    total2 = 0.0
-    count = 0
-    worst = [0.0]*N
-    best = [numpy.inf]*N
-
-    try:
-        with node:
-            data = None
-            while True:
-                data = yield data
-                t0 = time.perf_counter()
-                data = node.send(data)
-                t = time.perf_counter() - t0
-                total += t
-                total2 += t**2
-                count += 1
-                bisect.insort(worst, t)
-                worst.pop(0)
-                bisect.insort_left(best, t)
-                best.pop()
-    finally:
-        if count < N:
-            print(f"less than {N} times")
-        else:
-            avg = total/count
-            std = (total2/count - avg**2)**0.5
-            print(f"{name}: count={count}, avg={avg}±{std} ({sum(best)/N} ~ {sum(worst)/N})")
-
 
 # for fixed-width data
 @datanode
@@ -1059,6 +1022,56 @@ def thread(node):
         stop.set()
         if thread.is_alive():
             thread.join()
+
+@contextlib.contextmanager
+def timeit(name="timeit", timeit=True):
+    if not timeit:
+        yield lambda node: node
+        return
+
+    import bisect
+
+    N = 10
+    count = 0
+    total = 0.0
+    total2 = 0.0
+    worst = [0.0]*N
+    best = [numpy.inf]*N
+
+    @datanode
+    def timeit_wrapper(node):
+        nonlocal count, total, total2, worst, best
+
+        with node:
+            data = None
+            while True:
+                data = yield data
+                t0 = time.perf_counter()
+                data = node.send(data)
+                t = time.perf_counter() - t0
+                count += 1
+                total += t
+                total2 += t**2
+                bisect.insort(worst, t)
+                worst.pop(0)
+                bisect.insort_left(best, t)
+                best.pop()
+
+    try:
+        yield timeit_wrapper
+
+    finally:
+        if count == 0:
+            print(f"{name}: count=0")
+            return
+
+        avg = total/count
+        std = (total2/count - avg**2)**0.5
+
+        if count < N:
+            print(f"{name}: count={count}, avg={avg}±{std}")
+        else:
+            print(f"{name}: count={count}, avg={avg}±{std} ({sum(best)/N} ~ {sum(worst)/N})")
 
 
 # not data nodes

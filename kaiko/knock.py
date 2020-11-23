@@ -317,9 +317,9 @@ class KnockConsole:
         sound_delay = self.settings.sound_delay
 
         mixer = AudioMixer(samplerate, (buffer_length, nchannels), sound_delay)
-        node = dn.timeit(mixer, "   mixer") if self.settings.debug_timeit else mixer
-        with self._play(manager, node) as output_stream:
-            yield output_stream, mixer
+        with dn.timeit("   mixer", self.settings.debug_timeit) as wrapper:
+            with self._play(manager, wrapper(mixer)) as output_stream:
+                yield output_stream, mixer
 
     def _record(self, manager, node):
         samplerate = self.settings.input_samplerate
@@ -388,9 +388,9 @@ class KnockConsole:
         knock_energy = self.settings.knock_energy
 
         detector = KnockDetector(time_res, freq_res, knock_delay, knock_energy)
-        node = dn.timeit(detector, "detector") if self.settings.debug_timeit else detector
-        with self._record(manager, node) as input_stream:
-            yield input_stream, detector
+        with dn.timeit("detector", self.settings.debug_timeit) as wrapper:
+            with self._record(manager, wrapper(detector)) as input_stream:
+                yield input_stream, detector
 
     def _display(self, builder, node):
         framerate = self.settings.display_framerate
@@ -428,9 +428,9 @@ class KnockConsole:
         delay = self.settings.display_delay
 
         renderer = ScreenRenderer(framerate, delay)
-        node = dn.timeit(renderer, "renderer") if self.settings.debug_timeit else renderer
-        with self._display(TerminalLine, node) as display_thread:
-            yield display_thread, renderer
+        with dn.timeit("renderer", self.settings.debug_timeit) as wrapper:
+            with self._display(TerminalLine, wrapper(renderer)) as display_thread:
+                yield display_thread, renderer
 
     def SIGINT_handler(self, sig, frame):
         self.stopped = True
