@@ -983,11 +983,15 @@ def NoteType(symbol, builder):
     # builder(beatmap, context, *, beat, **) -> Event | None
     signature = inspect.signature(builder)
     signature = signature.replace(parameters=list(signature.parameters.values())[2:])
-    return type(builder.__name__+"Note", (Note,), dict(symbol=symbol, builder=builder, __signature__=signature))
+    return type(builder.__name__+"Note", (Note,),
+                dict(symbol=symbol, builder=staticmethod(builder), __signature__=signature))
 
 class Note:
     def __init__(self, *psargs, **kwargs):
         self.bound = self.__signature__.bind(*psargs, **kwargs)
+
+    def __repr__(self):
+        return self.__str__()
 
     def __str__(self):
         psargs_str = [repr(value) for value in self.bound.args]
