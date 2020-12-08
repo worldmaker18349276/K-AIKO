@@ -3,6 +3,7 @@ import functools
 import itertools
 import contextlib
 import threading
+import bisect
 import numpy
 import scipy
 import scipy.fftpack
@@ -1024,12 +1025,10 @@ def thread(node):
             thread.join()
 
 @contextlib.contextmanager
-def timeit(name="timeit", timeit=True):
+def timeit(node, name="timeit", timeit=True):
     if not timeit:
-        yield lambda node: node
+        yield node
         return
-
-    import bisect
 
     N = 10
     count = 0
@@ -1039,8 +1038,8 @@ def timeit(name="timeit", timeit=True):
     best = [numpy.inf]*N
 
     @datanode
-    def timeit_wrapper(node):
-        nonlocal count, total, total2, worst, best
+    def timed_node():
+        nonlocal node, count, total, total2, worst, best
 
         with node:
             data = None
@@ -1058,20 +1057,20 @@ def timeit(name="timeit", timeit=True):
                 best.pop()
 
     try:
-        yield timeit_wrapper
+        yield timed_node()
 
     finally:
         if count == 0:
             print(f"{name}: count=0")
-            return
 
-        avg = total/count
-        std = (total2/count - avg**2)**0.5
-
-        if count < N:
-            print(f"{name}: count={count}, avg={avg}±{std}")
         else:
-            print(f"{name}: count={count}, avg={avg}±{std} ({sum(best)/N} ~ {sum(worst)/N})")
+            avg = total/count
+            std = (total2/count - avg**2)**0.5
+
+            if count < N:
+                print(f"{name}: count={count}, avg={avg}±{std}")
+            else:
+                print(f"{name}: count={count}, avg={avg}±{std} ({sum(best)/N} ~ {sum(worst)/N})")
 
 
 # not data nodes
