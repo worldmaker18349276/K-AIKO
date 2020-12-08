@@ -334,18 +334,6 @@ class KnockConsole:
 
         return stream
 
-    @contextlib.contextmanager
-    def get_output_stream(self, manager):
-        samplerate = self.settings.output_samplerate
-        buffer_length = self.settings.output_buffer_length
-        nchannels = self.settings.output_channels
-        sound_delay = self.settings.sound_delay
-
-        mixer = AudioMixer(samplerate, (buffer_length, nchannels), sound_delay)
-        with dn.timeit(mixer, "   mixer", self.settings.debug_timeit) as node:
-            with self._play(manager, node) as output_stream:
-                yield output_stream, mixer
-
     def _record(self, manager, node):
         samplerate = self.settings.input_samplerate
         buffer_length = self.settings.input_buffer_length
@@ -379,18 +367,6 @@ class KnockConsole:
 
         return stream
 
-    @contextlib.contextmanager
-    def get_input_stream(self, manager):
-        time_res = self.settings.detector_time_res
-        freq_res = self.settings.detector_freq_res
-        knock_delay = self.settings.knock_delay
-        knock_energy = self.settings.knock_energy
-
-        detector = KnockDetector(time_res, freq_res, knock_delay, knock_energy)
-        with dn.timeit(detector, "detector", self.settings.debug_timeit) as node:
-            with self._record(manager, node) as input_stream:
-                yield input_stream, detector
-
     def _display(self, builder, node):
         framerate = self.settings.display_framerate
 
@@ -421,46 +397,73 @@ class KnockConsole:
 
         return thread
 
-    @contextlib.contextmanager
-    def get_display_thread(self):
+    def get_mixer(self):
+        samplerate = self.settings.output_samplerate
+        buffer_length = self.settings.output_buffer_length
+        nchannels = self.settings.output_channels
+        sound_delay = self.settings.sound_delay
+
+        mixer = AudioMixer(samplerate, (buffer_length, nchannels), sound_delay)
+        return mixer
+
+    def get_detector(self):
+        time_res = self.settings.detector_time_res
+        freq_res = self.settings.detector_freq_res
+        knock_delay = self.settings.knock_delay
+        knock_energy = self.settings.knock_energy
+
+        detector = KnockDetector(time_res, freq_res, knock_delay, knock_energy)
+        return detector
+
+    def get_renderer(self):
         framerate = self.settings.display_framerate
         delay = self.settings.display_delay
 
         renderer = ScreenRenderer(framerate, delay)
-        with dn.timeit(renderer, "renderer", self.settings.debug_timeit) as node:
-            with self._display(TerminalLine, node) as display_thread:
-                yield display_thread, renderer
+        return renderer
 
     def SIGINT_handler(self, sig, frame):
         self.stopped = True
 
     def run(self, knock_program):
+        debug_timeit = self.settings.debug_timeit
+
         try:
             manager = pyaudio.PyAudio()
 
-            # connect audio/video streams and interface
-            with self.get_output_stream(manager) as (output_stream, mixer),\
-                 self.get_input_stream(manager) as (input_stream, detector),\
-                 self.get_display_thread() as (display_thread, renderer):
+            # make interfaces
+            mixer = self.get_mixer()
+            detector = self.get_detector()
+            renderer = self.get_renderer()
 
-                # connect interface and program
-                with knock_program.connect(mixer, detector, renderer) as loop:
+            # wrap interfaces with debuger
+            with dn.timeit(   mixer, "   mixer", debug_timeit) as output_node,\
+                 dn.timeit(detector, "detector", debug_timeit) as input_node,\
+                 dn.timeit(renderer, "renderer", debug_timeit) as display_node:
 
-                    # activate audio/video streams
-                    output_stream.start_stream()
-                    input_stream.start_stream()
-                    display_thread.start()
+                # connect audio/video streams and interfaces
+                with self._play(manager, output_node) as output_stream,\
+                     self._record(manager, input_node) as input_stream,\
+                     self._display(TerminalLine, display_node) as display_thread:
 
-                    # loop
-                    for _ in loop:
-                        if (self.stopped or
-                            not output_stream.is_active() or
-                            not input_stream.is_active() or
-                            not display_thread.is_alive()):
+                    # connect interfaces and program
+                    with knock_program.connect(mixer, detector, renderer) as loop:
 
-                            break
+                        # activate audio/video streams
+                        output_stream.start_stream()
+                        input_stream.start_stream()
+                        display_thread.start()
 
-                        signal.signal(signal.SIGINT, self.SIGINT_handler)
+                        # loop
+                        for _ in loop:
+                            if (self.stopped or
+                                not output_stream.is_active() or
+                                not input_stream.is_active() or
+                                not display_thread.is_alive()):
+
+                                break
+
+                            signal.signal(signal.SIGINT, self.SIGINT_handler)
 
         finally:
             manager.terminate()
