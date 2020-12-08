@@ -36,7 +36,7 @@ class Text(Event):
 
     def register(self, field):
         if self.sound is not None:
-            field.mixer.play(self.sound, time=self.time)
+            field.console.play(self.sound, time=self.time)
 
         if self.text is not None:
             pos = lambda time, width: (self.time-time) * 0.5 * self.speed
@@ -51,7 +51,7 @@ class Flip(Event):
         self.lifespan = (self.time, self.time)
 
     def register(self, field):
-        field.renderer.add_renderer(self._node(field), zindex=())
+        field.console.add_renderer(self._node(field), zindex=())
 
     @dn.datanode
     def _node(self, field):
@@ -75,7 +75,7 @@ class Shift(Event):
         self.lifespan = (self.time, self.end)
 
     def register(self, field):
-        field.renderer.add_renderer(self._node(field), zindex=())
+        field.console.add_renderer(self._node(field), zindex=())
 
     @dn.datanode
     def _node(self, field):
@@ -103,7 +103,7 @@ class Jiggle(Event):
         self.lifespan = (self.time, self.end)
 
     def register(self, field):
-        field.renderer.add_renderer(self._node(field), zindex=())
+        field.console.add_renderer(self._node(field), zindex=())
 
     @dn.datanode
     def _node(self, field):
@@ -286,7 +286,7 @@ class OneshotTarget(Target):
         return self.perf is not None
 
     def approach(self, field):
-        field.mixer.play(self.sound, time=self.time, volume=self.volume)
+        field.console.play(self.sound, time=self.time, volume=self.volume)
 
         field.draw_target(self, self.pos, self.approach_appearance,
                           start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
@@ -432,7 +432,7 @@ class Roll(Target):
 
     def approach(self, field):
         for i, time in enumerate(self.times):
-            field.mixer.play(self.sound, time=time, volume=self.volume)
+            field.console.play(self.sound, time=time, volume=self.volume)
             field.draw_target(self, self.pos(i), self.rock_appearance,
                               start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=(self, i))
         field.reset_sight(start=self.range[0])
@@ -488,7 +488,7 @@ class Spin(Target):
 
     def approach(self, field):
         for time in self.times:
-            field.mixer.play(self.sound, time=time, volume=self.volume)
+            field.console.play(self.sound, time=time, volume=self.volume)
 
         appearance = lambda: self.disk_appearances[int(self.charge) % len(self.disk_appearances)]
         field.draw_target(self, self.pos, appearance,
@@ -533,15 +533,13 @@ def to_slices(segments):
     return [first_slice, *pre_slices, middle_slice, *post_slices[::-1], last_slice]
 
 class PlayField:
-    def __init__(self, mixer, detector, renderer,
+    def __init__(self, console,
                  bar_shift, sight_shift, bar_flip,
                  spec_width, score_width, progress_width,
                  hit_decay_time, hit_sustain_time, sight_appearances,
                  spec_time_res, spec_freq_res, spec_decay_time,
                  ):
-        self.mixer = mixer
-        self.detector = detector
-        self.renderer = renderer
+        self.console = console
 
         self.bar_shift = bar_shift
         self.sight_shift = sight_shift
@@ -574,15 +572,16 @@ class PlayField:
         self.sight_queue = queue.Queue()
         self.target_queue = queue.Queue()
 
-        self.mixer.add_effect(self._spec_handler(), zindex=-3)
-        self.detector.add_listener(self._target_handler())
-        self.detector.add_listener(self._hit_handler())
-        self.renderer.add_renderer(self._status_handler(), zindex=(-3,), key="status")
-        self.renderer.add_renderer(self._sight_handler(), zindex=(2,), key="sight")
+        self.console.add_effect(self._spec_handler(), zindex=-3)
+        self.console.add_listener(self._target_handler())
+        self.console.add_listener(self._hit_handler())
+        self.console.add_renderer(self._status_handler(), zindex=(-3,), key="status")
+        self.console.add_renderer(self._sight_handler(), zindex=(2,), key="sight")
 
     @dn.datanode
     def _spec_handler(self):
-        samplerate = self.mixer.samplerate
+        samplerate = self.console.settings.output_samplerate
+        nchannels = self.console.settings.output_channels
         hop_length = round(samplerate * self.spec_time_res)
         win_length = round(samplerate / self.spec_freq_res)
         decay = hop_length / samplerate / self.spec_decay_time / 4
@@ -592,7 +591,7 @@ class PlayField:
             dn.power_spectrum(win_length, samplerate=samplerate),
             dn.draw_spectrum(self.spec_width, win_length=win_length, samplerate=samplerate, decay=decay),
             lambda s: setattr(self, 'spectrum', s))
-        spec = dn.unchunk(spec, (hop_length,) + self.mixer.buffer_shape[1:])
+        spec = dn.unchunk(spec, (hop_length, nchannels))
 
         with spec:
             time, data = yield
@@ -747,22 +746,22 @@ class PlayField:
         if key is None:
             key = object()
         node = self._bar_node(pos, text, start, duration)
-        self.renderer.add_renderer(node, zindex=zindex, key=("text", key))
+        self.console.add_renderer(node, zindex=zindex, key=("text", key))
         return key
 
     def remove_text(self, key):
-        self.renderer.remove_renderer(key=("text", key))
+        self.console.remove_renderer(key=("text", key))
 
     def draw_target(self, target, pos, text, start=None, duration=None, key=None):
         if key is None:
             key = object()
         node = self._bar_node(pos, text, start, duration)
         zindex = lambda: (0, not target.is_finished, -target.range[0])
-        self.renderer.add_renderer(node, zindex=zindex, key=("target", key))
+        self.console.add_renderer(node, zindex=zindex, key=("target", key))
         return key
 
     def remove_target(self, key):
-        self.renderer.remove_renderer(key=("target", key))
+        self.console.remove_renderer(key=("target", key))
 
 @cfg.configurable
 class BeatmapSettings:
@@ -903,7 +902,7 @@ class Beatmap:
         return sum(getattr(event, 'is_finished', False) for event in events) / total
 
     @dn.datanode
-    def connect(self, mixer, detector, renderer):
+    def connect(self, console):
         # events
         events = [event for chart in self.charts for event in chart.build_events(self)]
         events.sort(key=lambda e: e.lifespan[0])
@@ -911,9 +910,9 @@ class Beatmap:
         end   = max((event.lifespan[1] + self.settings.leadin_time for event in events), default=0.0)
 
         if start < 0:
-            mixer.delay += start
-            detector.delay += start
-            renderer.delay += start
+            console.sound_delay += start
+            console.knock_delay += start
+            console.display_delay += start
 
         # audio
         if self.audio is None:
@@ -923,10 +922,10 @@ class Beatmap:
             with audioread.audio_open(audiopath) as file:
                 duration = file.duration
                 samplerate = file.samplerate
-            mixer.play(audiopath, time=0.0, zindex=-3)
+            console.play(audiopath, time=0.0, zindex=-3)
 
         # play field
-        field = PlayField(mixer, detector, renderer,
+        field = PlayField(console,
                           self.settings.bar_shift, self.settings.sight_shift, self.settings.bar_flip,
                           self.settings.spec_width, self.settings.score_width, self.settings.progress_width,
                           self.settings.hit_decay_time, self.settings.hit_sustain_time, self.settings.sight_appearances,

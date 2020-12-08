@@ -13,225 +13,6 @@ from . import cfg
 from . import datanodes as dn
 
 
-class AudioMixer:
-    def __init__(self, samplerate, buffer_shape, delay=0.0):
-        self.samplerate = samplerate
-        self.buffer_shape = buffer_shape
-        self.delay = delay
-
-        self.mutations = queue.Queue()
-        self.node = self._node()
-
-    @dn.datanode
-    def _node(self):
-        sched = dn.schedule(self.mutations)
-        index = 0
-        buffer_length = self.buffer_shape[0] if isinstance(self.buffer_shape, tuple) else self.buffer_shape
-        with sched:
-            yield
-            while True:
-                time = index * buffer_length / self.samplerate + self.delay
-                data = numpy.zeros(self.buffer_shape, dtype=numpy.float32)
-                time, data = sched.send((time, data))
-                yield data
-                index += 1
-
-    def add_effect(self, node, time=None, zindex=0, key=None):
-        if key is None:
-            key = object()
-        if time is not None:
-            node = self._shift(node, time)
-        node = dn.DataNode.wrap(node)
-        self.mutations.put((key, node, zindex))
-        return key
-
-    def remove_effect(self, key):
-        self.mutations.put((key, None, 0))
-
-    @dn.datanode
-    def _shift(self, node, start_time):
-        node = dn.DataNode.wrap(node)
-
-        with node:
-            time, data = yield
-            offset = round((start_time - time) * self.samplerate)
-
-            while offset < 0:
-                length = min(-offset, self.buffer_shape[0])
-                dummy = numpy.zeros((length,) + self.buffer_shape[1:], dtype=numpy.float32)
-                node.send(dummy)
-                offset -= length
-
-            while 0 < offset:
-                if data.shape[0] < offset:
-                    offset -= data.shape[0]
-                else:
-                    data1, data2 = data[:offset], data[offset:]
-                    data2 = node.send(data2)
-                    data = numpy.concatenate((data1, data2), axis=0)
-                    offset = 0
-
-                time, data = yield time, data
-
-            while True:
-                time, data = yield time, node.send(data)
-
-    @functools.lru_cache(maxsize=32)
-    def load(self, filepath):
-        with audioread.audio_open(filepath) as file:
-            samplerate = file.samplerate
-        node = dn.load(filepath)
-        if samplerate != self.samplerate:
-            node = dn.pipe(node, dn.resample(ratio=(self.samplerate, samplerate)))
-        with node as filenode:
-            sound = list(filenode)
-        return sound
-
-    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=0, key=None):
-        if channels is None:
-            channels = self.buffer_shape[1] if isinstance(self.buffer_shape, tuple) else 0
-        if isinstance(node, str):
-            node = dn.DataNode.wrap(self.load(node))
-            samplerate = None
-
-        if start is not None or end is not None:
-            node = dn.tslice(node, samplerate, start, end)
-        node = dn.pipe(node, dn.rechannel(channels))
-        if samplerate is not None and samplerate != self.samplerate:
-            node = dn.pipe(node, dn.resample(ratio=(self.samplerate, samplerate)))
-        if volume != 0:
-            node = dn.pipe(node, lambda s: s * 10**(volume/20))
-        node = dn.attach(node)
-
-        return self.add_effect(node, time=time, zindex=zindex, key=key)
-
-class KnockDetector:
-    def __init__(self, samplerate, buffer_shape, time_res, freq_res,
-                       pre_max, post_max, pre_avg, post_avg, wait, delta,
-                       delay=0.0, energy=1.0):
-        self.samplerate = samplerate
-        self.buffer_shape = buffer_shape
-        self.time_res = time_res
-        self.freq_res = freq_res
-        self.hop_length = round(samplerate*time_res)
-        self.win_length = round(samplerate/freq_res)
-
-        self.pre_max = pre_max
-        self.post_max = post_max
-        self.pre_avg = pre_avg
-        self.post_avg = post_avg
-        self.wait = wait
-        self.delta = delta
-
-        self.delay = delay
-        self.energy = energy
-
-        self.mutations = queue.Queue()
-        self.node = self._node()
-
-        buffer_length, *nchannels = self.buffer_shape if isinstance(self.buffer_shape, tuple) else (self.buffer_shape,)
-        if buffer_length != self.hop_length:
-            self.node = dn.unchunk(self.node, chunk_shape=(self.hop_length, *nchannels))
-
-    @dn.datanode
-    def _node(self):
-        sched = dn.schedule(self.mutations)
-
-        pre_max = round(self.pre_max / self.time_res)
-        post_max = round(self.post_max / self.time_res)
-        pre_avg = round(self.pre_avg / self.time_res)
-        post_avg = round(self.post_avg / self.time_res)
-        wait = round(self.wait / self.time_res)
-        delta = self.delta
-        prepare = max(post_max, post_avg)
-
-        window = dn.get_half_Hann_window(self.win_length)
-        onset = dn.pipe(
-            dn.frame(win_length=self.win_length, hop_length=self.hop_length),
-            dn.power_spectrum(win_length=self.win_length,
-                              samplerate=self.samplerate,
-                              windowing=window,
-                              weighting=True),
-            dn.onset_strength(1))
-        picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
-
-        with sched, onset, picker:
-            buffer = [(self.delay, 0.0, False)]*prepare
-            index = 0
-            data = yield
-            while True:
-                strength = onset.send(data)
-                detected = picker.send(strength)
-                time = index * self.hop_length / self.samplerate + self.delay
-                strength = strength / self.energy
-
-                buffer.append((time, strength, detected))
-                data = yield sched.send(buffer.pop(0))
-
-                index += 1
-
-    def add_listener(self, node, key=None):
-        if key is None:
-            key = object()
-        node = dn.branch(node)
-        self.mutations.put((key, node, 0))
-        return key
-
-    def remove_listener(self, key):
-        self.mutations.put((key, None, 0))
-
-    def on_hit(self, func, time=None, duration=None, key=None):
-        return self.add_listener(self._hit_listener(func, time, duration))
-
-    @dn.datanode
-    def _hit_listener(self, func, start_time, duration):
-        time, strength, detected = yield
-        if start_time is None:
-            start_time = time
-
-        while time < start_time:
-            time, strength, detected = yield
-
-        while duration is None or time < start_time + duration:
-            if detected:
-                finished = func(strength)
-                if finished:
-                    return
-
-            time, strength, detected = yield
-
-class ScreenRenderer:
-    def __init__(self, screen, framerate, delay=0.0):
-        self.screen = screen
-        self.framerate = framerate
-        self.delay = delay
-
-        self.mutations = queue.Queue()
-        self.node = self._node()
-
-    @dn.datanode
-    def _node(self):
-        sched = dn.schedule(self.mutations)
-        index = 0
-        with sched:
-            yield
-            while True:
-                time = index / self.framerate + self.delay
-                self.screen.clear()
-                sched.send((time, self.screen))
-                yield self.screen.display()
-                index += 1
-
-    def add_renderer(self, node, zindex=0, key=None):
-        if key is None:
-            key = object()
-        node = dn.branch(node)
-        self.mutations.put((key, node, zindex))
-        return key
-
-    def remove_renderer(self, key):
-        self.mutations.put((key, None, 0))
-
 class TerminalLine:
     def __init__(self):
         self.width = int(os.popen("stty size", 'r').read().split()[1])
@@ -302,6 +83,11 @@ class KnockConsole:
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
 
+        self.sound_delay = self.settings.sound_delay
+        self.knock_delay = self.settings.knock_delay
+        self.knock_energy = self.settings.knock_energy
+        self.display_delay = self.settings.display_delay
+
     def _play(self, manager, node):
         samplerate = self.settings.output_samplerate
         buffer_length = self.settings.output_buffer_length
@@ -351,44 +137,205 @@ class KnockConsole:
 
         return thread
 
-    def get_mixer(self):
+    @dn.datanode
+    def _output_node(self):
         samplerate = self.settings.output_samplerate
         buffer_length = self.settings.output_buffer_length
         nchannels = self.settings.output_channels
-        sound_delay = self.settings.sound_delay
 
-        mixer = AudioMixer(samplerate, (buffer_length, nchannels), sound_delay)
-        return mixer
+        sched = dn.schedule(self.output_queue)
+        index = 0
+        with sched:
+            yield
+            while True:
+                time = index * buffer_length / samplerate + self.sound_delay
+                data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
+                time, data = sched.send((time, data))
+                yield data
+                index += 1
 
-    def get_detector(self):
+    def _input_node(self):
         samplerate = self.settings.input_samplerate
         buffer_length = self.settings.input_buffer_length
         nchannels = self.settings.input_channels
 
         time_res = self.settings.detector_time_res
         freq_res = self.settings.detector_freq_res
+        hop_length = round(samplerate*time_res)
+        win_length = round(samplerate/freq_res)
 
-        pre_max = self.settings.detector_pre_max
-        post_max = self.settings.detector_post_max
-        pre_avg = self.settings.detector_pre_avg
-        post_avg = self.settings.detector_post_avg
-        wait = self.settings.detector_wait
-        delta = self.settings.detector_delta
+        pre_max  = round(self.settings.detector_pre_max  / time_res)
+        post_max = round(self.settings.detector_post_max / time_res)
+        pre_avg  = round(self.settings.detector_pre_avg  / time_res)
+        post_avg = round(self.settings.detector_post_avg / time_res)
+        wait     = round(self.settings.detector_wait     / time_res)
+        delta    =       self.settings.detector_delta
+        prepare = max(post_max, post_avg)
 
-        knock_delay = self.settings.knock_delay
-        knock_energy = self.settings.knock_energy
+        sched = dn.schedule(self.input_queue)
 
-        detector = KnockDetector(samplerate, (buffer_length, nchannels), time_res, freq_res,
-                                 pre_max, post_max, pre_avg, post_avg, wait, delta,
-                                 knock_delay, knock_energy)
-        return detector
+        window = dn.get_half_Hann_window(win_length)
+        onset = dn.pipe(
+            dn.frame(win_length=win_length, hop_length=hop_length),
+            dn.power_spectrum(win_length=win_length,
+                              samplerate=samplerate,
+                              windowing=window,
+                              weighting=True),
+            dn.onset_strength(1))
+        picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
 
-    def get_renderer(self):
+        @dn.datanode
+        def input_node():
+            with sched, onset, picker:
+                data = yield
+                buffer = [(self.knock_delay, 0.0, False)]*prepare
+                index = 0
+                while True:
+                    strength = onset.send(data)
+                    detected = picker.send(strength)
+                    time = index * hop_length / samplerate + self.knock_delay
+                    strength = strength / self.knock_energy
+
+                    buffer.append((time, strength, detected))
+                    sched.send(buffer.pop(0))
+                    data = yield
+
+                    index += 1
+
+        input_node = input_node()
+        if buffer_length != hop_length:
+            input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
+
+        return input_node
+
+    @dn.datanode
+    def _display_node(self):
         framerate = self.settings.display_framerate
-        delay = self.settings.display_delay
 
-        renderer = ScreenRenderer(TerminalLine(), framerate, delay)
-        return renderer
+        sched = dn.schedule(self.display_queue)
+        index = 0
+        screen = TerminalLine()
+        with sched:
+            yield
+            while True:
+                time = index / framerate + self.display_delay
+                screen.clear()
+                sched.send((time, screen))
+                yield screen.display()
+                index += 1
+
+    def add_effect(self, node, time=None, zindex=0, key=None):
+        if key is None:
+            key = object()
+        if time is not None:
+            node = self._shift(node, time)
+        node = dn.DataNode.wrap(node)
+        self.output_queue.put((key, node, zindex))
+        return key
+
+    def remove_effect(self, key):
+        self.output_queue.put((key, None, 0))
+
+    @dn.datanode
+    def _shift(self, node, start_time):
+        node = dn.DataNode.wrap(node)
+
+        samplerate = self.settings.output_samplerate
+        buffer_length = self.settings.output_buffer_length
+        nchannels = self.settings.output_channels
+
+        with node:
+            time, data = yield
+            offset = round((start_time - time) * samplerate)
+
+            while offset < 0:
+                length = min(-offset, buffer_length)
+                dummy = numpy.zeros((length, nchannels), dtype=numpy.float32)
+                node.send(dummy)
+                offset -= length
+
+            while 0 < offset:
+                if data.shape[0] < offset:
+                    offset -= data.shape[0]
+                else:
+                    data1, data2 = data[:offset], data[offset:]
+                    data2 = node.send(data2)
+                    data = numpy.concatenate((data1, data2), axis=0)
+                    offset = 0
+
+                time, data = yield time, data
+
+            while True:
+                time, data = yield time, node.send(data)
+
+    @functools.lru_cache(maxsize=32)
+    def load(self, filepath):
+        with audioread.audio_open(filepath) as file:
+            samplerate = file.samplerate
+        node = dn.load(filepath)
+        if samplerate != self.settings.output_samplerate:
+            node = dn.pipe(node, dn.resample(ratio=(self.settings.output_samplerate, samplerate)))
+        with node as filenode:
+            sound = list(filenode)
+        return sound
+
+    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=0, key=None):
+        if channels is None:
+            channels = self.settings.output_channels
+        if isinstance(node, str):
+            node = dn.DataNode.wrap(self.load(node))
+            samplerate = None
+
+        if start is not None or end is not None:
+            node = dn.tslice(node, samplerate, start, end)
+        node = dn.pipe(node, dn.rechannel(channels))
+        if samplerate is not None and samplerate != self.settings.output_samplerate:
+            node = dn.pipe(node, dn.resample(ratio=(self.settings.output_samplerate, samplerate)))
+        if volume != 0:
+            node = dn.pipe(node, lambda s: s * 10**(volume/20))
+        node = dn.attach(node)
+
+        return self.add_effect(node, time=time, zindex=zindex, key=key)
+
+    def add_listener(self, node, key=None):
+        if key is None:
+            key = object()
+        node = dn.branch(node)
+        self.input_queue.put((key, node, 0))
+        return key
+
+    def remove_listener(self, key):
+        self.input_queue.put((key, None, 0))
+
+    def on_hit(self, func, time=None, duration=None, key=None):
+        return self.add_listener(self._hit_listener(func, time, duration))
+
+    @dn.datanode
+    def _hit_listener(self, func, start_time, duration):
+        time, strength, detected = yield
+        if start_time is None:
+            start_time = time
+
+        while time < start_time:
+            time, strength, detected = yield
+
+        while duration is None or time < start_time + duration:
+            if detected:
+                finished = func(strength)
+                if finished:
+                    return
+
+            time, strength, detected = yield
+
+    def add_renderer(self, node, zindex=0, key=None):
+        if key is None:
+            key = object()
+        node = dn.branch(node)
+        self.display_queue.put((key, node, zindex))
+        return key
+
+    def remove_renderer(self, key):
+        self.display_queue.put((key, None, 0))
 
     def SIGINT_handler(self, sig, frame):
         self.stopped = True
@@ -400,14 +347,18 @@ class KnockConsole:
             manager = pyaudio.PyAudio()
 
             # make interfaces
-            mixer = self.get_mixer()
-            detector = self.get_detector()
-            renderer = self.get_renderer()
+            self.output_queue = queue.Queue()
+            self.input_queue = queue.Queue()
+            self.display_queue = queue.Queue()
+
+            output_node = self._output_node()
+            input_node = self._input_node()
+            display_node = self._display_node()
 
             # wrap interfaces with debuger
-            with dn.timeit(   mixer.node, "   mixer", debug_timeit) as output_node,\
-                 dn.timeit(detector.node, "detector", debug_timeit) as input_node,\
-                 dn.timeit(renderer.node, "renderer", debug_timeit) as display_node:
+            with dn.timeit(output_node , "   mixer", debug_timeit) as output_node,\
+                 dn.timeit(input_node  , "detector", debug_timeit) as input_node,\
+                 dn.timeit(display_node, "renderer", debug_timeit) as display_node:
 
                 # connect audio/video streams and interfaces
                 with self._play(manager, output_node) as output_stream,\
@@ -415,7 +366,7 @@ class KnockConsole:
                      self._display(display_node) as display_thread:
 
                     # connect interfaces and program
-                    with knock_program.connect(mixer, detector, renderer) as loop:
+                    with knock_program.connect(self) as loop:
 
                         # activate audio/video streams
                         output_stream.start_stream()
