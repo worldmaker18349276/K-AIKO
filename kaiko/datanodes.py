@@ -1,6 +1,7 @@
 import time
 import functools
 import itertools
+from collections import OrderedDict
 import contextlib
 import threading
 import bisect
@@ -400,6 +401,55 @@ def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
             prev_index = index
         buffer[:-1] = buffer[1:]
         buffer[-1] = yield detected
+
+@datanode
+def schedule(queue):
+    """A data node schedule given data nodes dynamically.
+
+    Parameters
+    ----------
+    queue : queue of DataNode
+        The sequence of data nodes to schedule.  The entry are tuple of
+        `(key, node, zindex)`, where `key` is a hashable object, `node` is the
+        data node to schedule, and `zindex` is the priority of scheduled node.
+
+    Receives
+    --------
+    data : any
+        The input signal.
+
+    Yields
+    ------
+    data : any
+        The output signal.
+    """
+    nodes = OrderedDict()
+
+    try:
+        data = None
+
+        while True:
+            data = yield data
+
+            while not queue.empty():
+                key, node, zindex = queue.get()
+                if key in nodes:
+                    nodes[key][0].__exit__()
+                    del nodes[key]
+                if node is not None:
+                    node.__enter__()
+                    zindex_func = zindex if hasattr(zindex, '__call__') else lambda z=zindex: z
+                    nodes[key] = (node, zindex_func)
+
+            for key, (node, _) in sorted(nodes.items(), key=lambda item: item[1][1]()):
+                try:
+                    data = node.send(data)
+                except StopIteration:
+                    del nodes[key]
+
+    finally:
+        for node, _ in nodes.values():
+            node.__exit__()
 
 
 # for fixed-width data

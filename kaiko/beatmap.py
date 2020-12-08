@@ -51,7 +51,7 @@ class Flip(Event):
         self.lifespan = (self.time, self.time)
 
     def register(self, field):
-        field.renderer.add_callback(self._node(field), zindex=())
+        field.renderer.add_renderer(self._node(field), zindex=())
 
     @dn.datanode
     def _node(self, field):
@@ -75,7 +75,7 @@ class Shift(Event):
         self.lifespan = (self.time, self.end)
 
     def register(self, field):
-        field.renderer.add_callback(self._node(field), zindex=())
+        field.renderer.add_renderer(self._node(field), zindex=())
 
     @dn.datanode
     def _node(self, field):
@@ -103,7 +103,7 @@ class Jiggle(Event):
         self.lifespan = (self.time, self.end)
 
     def register(self, field):
-        field.renderer.add_callback(self._node(field), zindex=())
+        field.renderer.add_renderer(self._node(field), zindex=())
 
     @dn.datanode
     def _node(self, field):
@@ -577,8 +577,8 @@ class PlayField:
         self.mixer.add_effect(self._spec_handler(), zindex=-3)
         self.detector.add_listener(self._target_handler())
         self.detector.add_listener(self._hit_handler())
-        self.renderer.add_callback(self._status_handler(), zindex=(-3,), key="status")
-        self.renderer.add_callback(self._sight_handler(), zindex=(2,), key="sight")
+        self.renderer.add_renderer(self._status_handler(), zindex=(-3,), key="status")
+        self.renderer.add_renderer(self._sight_handler(), zindex=(2,), key="sight")
 
     @dn.datanode
     def _spec_handler(self):
@@ -747,22 +747,22 @@ class PlayField:
         if key is None:
             key = object()
         node = self._bar_node(pos, text, start, duration)
-        self.renderer.add_callback(node, zindex=zindex, key=("text", key))
+        self.renderer.add_renderer(node, zindex=zindex, key=("text", key))
         return key
 
     def remove_text(self, key):
-        self.renderer.remove_callback(key=("text", key))
+        self.renderer.remove_renderer(key=("text", key))
 
     def draw_target(self, target, pos, text, start=None, duration=None, key=None):
         if key is None:
             key = object()
         node = self._bar_node(pos, text, start, duration)
         zindex = lambda: (0, not target.is_finished, -target.range[0])
-        self.renderer.add_callback(node, zindex=zindex, key=("target", key))
+        self.renderer.add_renderer(node, zindex=zindex, key=("target", key))
         return key
 
     def remove_target(self, key):
-        self.renderer.remove_callback(key=("target", key))
+        self.renderer.remove_renderer(key=("target", key))
 
 @cfg.configurable
 class BeatmapSettings:
