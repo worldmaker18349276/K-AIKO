@@ -156,18 +156,17 @@ class KnockDetector:
         picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
 
         with sched, onset, picker:
-            buffer = [0.0]*prepare
-            index = -prepare
+            buffer = [(self.delay, 0.0, False)]*prepare
+            index = 0
             data = yield
             while True:
                 strength = onset.send(data)
                 detected = picker.send(strength)
-                buffer.append(strength)
-                strength = buffer.pop(0)
-
                 time = index * self.hop_length / self.samplerate + self.delay
                 strength = strength / self.energy
-                data = yield sched.send((time, strength, detected))
+
+                buffer.append((time, strength, detected))
+                data = yield sched.send(buffer.pop(0))
 
                 index += 1
 
