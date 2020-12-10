@@ -82,11 +82,6 @@ class KnockConsole:
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
 
-        self.sound_delay = self.settings.sound_delay
-        self.knock_delay = self.settings.knock_delay
-        self.knock_energy = self.settings.knock_energy
-        self.display_delay = self.settings.display_delay
-
         self._SIGINT = False
 
     def _play(self, manager, node):
@@ -255,6 +250,11 @@ class KnockConsole:
         self._SIGINT = True
 
     def run(self, knock_program):
+        self.sound_delay = self.settings.sound_delay
+        self.knock_delay = self.settings.knock_delay
+        self.knock_energy = self.settings.knock_energy
+        self.display_delay = self.settings.display_delay
+
         try:
             manager = pyaudio.PyAudio()
 

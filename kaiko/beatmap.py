@@ -221,7 +221,7 @@ class Performance(Enum):
         if is_reversed:
             appearance = appearance[::-1]
 
-        field.draw_text(field.sight_shift, appearance, duration=sustain_time, zindex=(1,), key="perf_hint")
+        field.draw_text(field.sight_shift, appearance, duration=sustain_time, zindex=(1,), key='perf_hint')
 
 class OneshotTarget(Target):
     # time, speed, volume, perf, sound
@@ -514,7 +514,7 @@ class Spin(Target):
         field.draw_sight(appearance, duration=self.finish_sustain_time)
 
 
-# beatmap
+# K-AIKO
 def to_slices(segments):
     middle = segments.index(...)
     pre  = segments[:middle:+1]
@@ -532,42 +532,75 @@ def to_slices(segments):
 
     return [first_slice, *pre_slices, middle_slice, *post_slices[::-1], last_slice]
 
-class PlayField:
-    def __init__(self, console,
-                 bar_shift, sight_shift, bar_flip,
-                 spec_width, score_width, progress_width,
-                 hit_decay_time, hit_sustain_time, sight_appearances,
-                 spec_time_res, spec_freq_res, spec_decay_time,
-                 ):
+@cfg.configurable
+class KAIKOSettings:
+    ## Controls:
+    leadin_time: float = 1.0
+    skip_time: float = 8.0
+    tickrate: float = 60.0
+    prepare_time: float = 0.1
+
+    ## PlayFieldSkin:
+    spec_width: int = 5
+    score_width: int = 13
+    progress_width: int = 8
+    spec_decay_time: float = 0.01
+    spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
+    spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
+
+    ## ScrollingBarSkin:
+    sight_appearances: Union[List[str], List[Tuple[str, str]]] = ["⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
+    hit_decay_time: float = 0.4
+    hit_sustain_time: float = 0.1
+    bar_shift: float = 0.1
+    sight_shift: float = 0.0
+    bar_flip: bool = False
+
+class KAIKO:
+    settings: KAIKOSettings = KAIKOSettings()
+
+    def __init__(self, beatmap, config=None):
+        self.beatmap = beatmap
+
+        if config is not None:
+            cfg.config_read(open(config, 'r'), main=self.settings)
+
+    def get_total_score(self):
+        return sum(getattr(event, 'full_score', 0) for event in self.events)
+
+    def get_score(self):
+        return sum(getattr(event, 'score', 0) for event in self.events)
+
+    def get_progress(self):
+        total = len([event for event in self.events if hasattr(event, 'is_finished')])
+        if total == 0:
+            return 1.0
+        return sum(getattr(event, 'is_finished', False) for event in self.events) / total
+
+    @dn.datanode
+    def connect(self, console):
         self.console = console
 
-        self.bar_shift = bar_shift
-        self.sight_shift = sight_shift
-        self.bar_flip = bar_flip
+        self.bar_shift = self.settings.bar_shift
+        self.sight_shift = self.settings.sight_shift
+        self.bar_flip = self.settings.bar_flip
+        self.total_score = 0
+        self.score = 0
+        self.progress = 0.0
 
-        self.spec_width = spec_width
-        self.score_width = score_width
-        self.progress_width = progress_width
-
-        self.hit_decay_time = hit_decay_time
-        self.hit_sustain_time = hit_sustain_time
-        self.sight_appearances = sight_appearances
-
-        self.spec_time_res = spec_time_res
-        self.spec_freq_res = spec_freq_res
-        self.spec_decay_time = spec_decay_time
-
+        # playfield
+        spec_width = self.settings.spec_width
+        score_width = self.settings.score_width
+        progress_width = self.settings.progress_width
         layout = to_slices((1, spec_width, 1, score_width, ..., progress_width, 1))
         _, self.spec_mask, _, self.score_mask, self.bar_mask, self.progress_mask, _ = layout
 
         self.spectrum = "\u2800"*spec_width
-        self.total_score = 0
-        self.score = 0
-        self.progress = 0.0
         score_width_ = max(0, score_width-3)
         self.score_format = "[{score:>%dd}/{total_score:>%dd}]" % (score_width_-score_width_//2, score_width_//2)
         self.progress_format = "[{progress_pc:>%d.%df}%%]" % (max(0, progress_width-3), max(0, progress_width-7))
 
+        # controllers
         self.hit_queue = queue.Queue()
         self.sight_queue = queue.Queue()
         self.target_queue = queue.Queue()
@@ -575,29 +608,73 @@ class PlayField:
         self.console.add_effect(self._spec_handler(), zindex=-3)
         self.console.add_listener(self._target_handler())
         self.console.add_listener(self._hit_handler())
-        self.console.add_renderer(self._status_handler(), zindex=(-3,), key="status")
-        self.console.add_renderer(self._sight_handler(), zindex=(2,), key="sight")
+        self.console.add_renderer(self._status_handler(), zindex=(-3,), key='status')
+        self.console.add_renderer(self._sight_handler(), zindex=(2,), key='sight')
 
-    @dn.datanode
+        # events
+        leadin_time = self.settings.leadin_time
+        self.events = [event for chart in self.beatmap.charts for event in chart.build_events(self.beatmap)]
+        self.events.sort(key=lambda e: e.lifespan[0])
+        start = min((event.lifespan[0] - leadin_time for event in self.events), default=0.0)
+        end   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
+
+        if start < 0:
+            self.console.sound_delay += start
+            self.console.knock_delay += start
+            self.console.display_delay += start
+
+        # audio
+        if self.beatmap.audio is None:
+            duration = 0.0
+        else:
+            audiopath = os.path.join(self.beatmap.path, self.beatmap.audio)
+            with audioread.audio_open(audiopath) as file:
+                duration = file.duration
+                samplerate = file.samplerate
+            self.console.play(audiopath, time=0.0, zindex=-3)
+
+        # loop
+        tickrate = self.settings.tickrate
+        prepare_time = self.settings.prepare_time
+
+        with dn.interval(1/tickrate) as timer:
+            events_iter = iter(self.events)
+            event = next(events_iter, None)
+
+            self.total_score = self.get_total_score()
+            self.score = self.get_score()
+            self.progress = self.get_progress()
+
+            yield
+            for time, _ in timer:
+                time += min(start, 0.0)
+                if max(end, duration) <= time:
+                    break
+
+                while event is not None and event.lifespan[0] <= time + prepare_time:
+                    event.register(self)
+                    event = next(events_iter, None)
+
+                self.score = self.get_score()
+                self.progress = self.get_progress()
+
+                yield
+
     def _spec_handler(self):
         samplerate = self.console.settings.output_samplerate
         nchannels = self.console.settings.output_channels
-        hop_length = round(samplerate * self.spec_time_res)
-        win_length = round(samplerate / self.spec_freq_res)
-        decay = hop_length / samplerate / self.spec_decay_time / 4
+        hop_length = round(samplerate * self.settings.spec_time_res)
+        win_length = round(samplerate / self.settings.spec_freq_res)
+        decay = hop_length / samplerate / self.settings.spec_decay_time / 4
 
         spec = dn.pipe(
             dn.frame(win_length, hop_length),
             dn.power_spectrum(win_length, samplerate=samplerate),
-            dn.draw_spectrum(self.spec_width, win_length=win_length, samplerate=samplerate, decay=decay),
+            dn.draw_spectrum(self.settings.spec_width, win_length=win_length, samplerate=samplerate, decay=decay),
             lambda s: setattr(self, 'spectrum', s))
-        spec = dn.unchunk(spec, (hop_length, nchannels))
+        spec = dn.branch(dn.unchunk(spec, (hop_length, nchannels)))
 
-        with spec:
-            data = yield
-            while True:
-                spec.send(data)
-                data = yield data
+        return spec
 
     @dn.datanode
     def _hit_handler(self):
@@ -656,6 +733,10 @@ class PlayField:
 
     @dn.datanode
     def _sight_handler(self):
+        hit_decay_time = self.settings.hit_decay_time
+        hit_sustain_time = self.settings.hit_sustain_time
+        sight_appearances = self.settings.sight_appearances
+
         hit_strength = None
         hit_time = None
         drawer, start, duration = None, None, None
@@ -668,7 +749,7 @@ class PlayField:
                 hit_strength = self.hit_queue.get()
                 hit_time = time
 
-            if hit_time is not None and time - hit_time >= max(self.hit_decay_time, self.hit_sustain_time):
+            if hit_time is not None and time - hit_time >= max(hit_decay_time, hit_sustain_time):
                 hit_strength = None
                 hit_time = None
 
@@ -682,22 +763,22 @@ class PlayField:
             while waiting_drawers and waiting_drawers[0][1] <= time:
                 drawer, start, duration = waiting_drawers.pop(0)
 
-            if duration is not None and start + duration <= self.time:
+            if duration is not None and start + duration <= time:
                 drawer, start, duration = None, None, None
 
             if drawer is not None:
                 text = drawer(time, screen.width)
 
             elif hit_time is not None:
-                strength = hit_strength - (time - hit_time) / self.hit_decay_time
+                strength = hit_strength - (time - hit_time) / hit_decay_time
                 strength = max(0.0, min(1.0, strength))
-                loudness = int(strength * (len(self.sight_appearances) - 1))
-                if time - hit_time < self.hit_sustain_time:
+                loudness = int(strength * (len(sight_appearances) - 1))
+                if time - hit_time < hit_sustain_time:
                     loudness = max(1, loudness)
-                text = self.sight_appearances[loudness]
+                text = sight_appearances[loudness]
 
             else:
-                text = self.sight_appearances[0]
+                text = sight_appearances[0]
 
             self._bar_draw(screen, self.sight_shift, text)
 
@@ -746,32 +827,27 @@ class PlayField:
         if key is None:
             key = object()
         node = self._bar_node(pos, text, start, duration)
-        self.console.add_renderer(node, zindex=zindex, key=("text", key))
+        self.console.add_renderer(node, zindex=zindex, key=('text', key))
         return key
 
     def remove_text(self, key):
-        self.console.remove_renderer(key=("text", key))
+        self.console.remove_renderer(key=('text', key))
 
     def draw_target(self, target, pos, text, start=None, duration=None, key=None):
         if key is None:
             key = object()
         node = self._bar_node(pos, text, start, duration)
         zindex = lambda: (0, not target.is_finished, -target.range[0])
-        self.console.add_renderer(node, zindex=zindex, key=("target", key))
+        self.console.add_renderer(node, zindex=zindex, key=('target', key))
         return key
 
     def remove_target(self, key):
-        self.console.remove_renderer(key=("target", key))
+        self.console.remove_renderer(key=('target', key))
 
+
+# Beatmap
 @cfg.configurable
 class BeatmapSettings:
-    # Gameplay:
-    ## Controls:
-    leadin_time: float = 1.0
-    skip_time: float = 8.0
-    tickrate: float = 60.0
-    prepare_time: float = 0.1
-
     ## Difficulty:
     great_tolerance: float = 0.02
     good_tolerance: float = 0.06
@@ -782,23 +858,6 @@ class BeatmapSettings:
     incr_threshold: float = -0.1
     roll_tolerance: float = 0.10
     spin_tolerance: float = 0.10
-
-    # Skin:
-    ## PlayFieldSkin:
-    spec_width: int = 5
-    score_width: int = 13
-    progress_width: int = 8
-    spec_decay_time: float = 0.01
-    spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
-    spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
-
-    ## ScrollingBarSkin:
-    sight_appearances: Union[List[str], List[Tuple[str, str]]] = ["⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
-    hit_decay_time: float = 0.4
-    hit_sustain_time: float = 0.1
-    bar_shift: float = 0.1
-    sight_shift: float = 0.0
-    bar_flip: bool = False
 
     ## PerformanceSkin:
     miss_appearance:               Tuple[str, str] = (""   , ""     )
@@ -887,74 +946,6 @@ class Beatmap:
     def __iadd__(self, chart_str):
         self.charts.append(K_AIKO_STD_FORMAT.read_chart(chart_str, self.definitions))
         return self
-
-
-    def get_total_score(self, events):
-        return sum(getattr(event, 'full_score', 0) for event in events)
-
-    def get_score(self, events):
-        return sum(getattr(event, 'score', 0) for event in events)
-
-    def get_progress(self, events):
-        total = len([event for event in events if hasattr(event, 'is_finished')])
-        if total == 0:
-            return 1.0
-        return sum(getattr(event, 'is_finished', False) for event in events) / total
-
-    @dn.datanode
-    def connect(self, console):
-        # events
-        events = [event for chart in self.charts for event in chart.build_events(self)]
-        events.sort(key=lambda e: e.lifespan[0])
-        start = min((event.lifespan[0] - self.settings.leadin_time for event in events), default=0.0)
-        end   = max((event.lifespan[1] + self.settings.leadin_time for event in events), default=0.0)
-
-        if start < 0:
-            console.sound_delay += start
-            console.knock_delay += start
-            console.display_delay += start
-
-        # audio
-        if self.audio is None:
-            duration = 0.0
-        else:
-            audiopath = os.path.join(self.path, self.audio)
-            with audioread.audio_open(audiopath) as file:
-                duration = file.duration
-                samplerate = file.samplerate
-            console.play(audiopath, time=0.0, zindex=-3)
-
-        # play field
-        field = PlayField(console,
-                          self.settings.bar_shift, self.settings.sight_shift, self.settings.bar_flip,
-                          self.settings.spec_width, self.settings.score_width, self.settings.progress_width,
-                          self.settings.hit_decay_time, self.settings.hit_sustain_time, self.settings.sight_appearances,
-                          self.settings.spec_time_res, self.settings.spec_freq_res, self.settings.spec_decay_time,
-                          )
-        field.total_score = self.get_total_score(events)
-        field.score = self.get_score(events)
-        field.progress = self.get_progress(events)
-
-        # loop
-        with dn.interval(1/self.settings.tickrate) as timer:
-            events_iter = iter(events)
-            event = next(events_iter, None)
-
-            yield
-            for time, _ in timer:
-                time += min(start, 0.0)
-                if max(end, duration) <= time:
-                    break
-
-                while event is not None and event.lifespan[0] <= time + self.settings.prepare_time:
-                    event.register(field)
-                    event = next(events_iter, None)
-
-                field.score = self.get_score(events)
-                field.progress = self.get_progress(events)
-
-                yield
-
 
 class NoteChart:
     def __init__(self, *, beat=0, length=1, meter=4, hide=False):

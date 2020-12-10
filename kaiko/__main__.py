@@ -11,8 +11,9 @@ elif filename.endswith(".osu"):
 else:
     raise ValueError(f"unknown file extension: {filename}")
 
+program = KAIKO(beatmap)
 console = KnockConsole()
-console.run(beatmap)
+console.run(program)
 
 # print()
 # for event in beatmap.events:
