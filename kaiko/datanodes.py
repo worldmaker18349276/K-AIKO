@@ -1075,11 +1075,7 @@ def thread(node):
             thread.join()
 
 @contextlib.contextmanager
-def timeit(node, name="timeit", timeit=True):
-    if not timeit:
-        yield node
-        return
-
+def timeit(node, name="timeit"):
     N = 10
     count = 0
     total = 0.0

@@ -79,7 +79,6 @@ class KnockConsole:
     settings: KnockConsoleSettings = KnockConsoleSettings()
 
     def __init__(self, config=None):
-        self.stopped = False
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
 
@@ -87,6 +86,8 @@ class KnockConsole:
         self.knock_delay = self.settings.knock_delay
         self.knock_energy = self.settings.knock_energy
         self.display_delay = self.settings.display_delay
+
+        self._SIGINT = False
 
     def _play(self, manager, node):
         samplerate = self.settings.output_samplerate
@@ -137,24 +138,34 @@ class KnockConsole:
 
         return thread
 
-    @dn.datanode
-    def _output_node(self):
+    def _get_output_node(self):
         samplerate = self.settings.output_samplerate
         buffer_length = self.settings.output_buffer_length
         nchannels = self.settings.output_channels
 
-        sched = dn.schedule(self.output_queue)
-        index = 0
-        with sched:
-            yield
-            while True:
-                time = index * buffer_length / samplerate + self.sound_delay
-                data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
-                time, data = sched.send((time, data))
-                yield data
-                index += 1
+        self.effect_queue = queue.Queue()
+        effect_node = dn.schedule(self.effect_queue)
 
-    def _input_node(self):
+        @dn.datanode
+        def output_node():
+            index = 0
+            with effect_node:
+                yield
+                while True:
+                    time = index * buffer_length / samplerate + self.sound_delay
+                    data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
+                    time, data = effect_node.send((time, data))
+                    yield data
+                    index += 1
+
+        output_node = output_node()
+
+        if self.settings.debug_timeit:
+            return dn.timeit(output_node, " output")
+        else:
+            return contextlib.nullcontext(output_node)
+
+    def _get_input_node(self):
         samplerate = self.settings.input_samplerate
         buffer_length = self.settings.input_buffer_length
         nchannels = self.settings.input_channels
@@ -172,7 +183,8 @@ class KnockConsole:
         delta    =       self.settings.detector_delta
         prepare = max(post_max, post_avg)
 
-        sched = dn.schedule(self.input_queue)
+        self.listener_queue = queue.Queue()
+        listener_node = dn.schedule(self.listener_queue)
 
         window = dn.get_half_Hann_window(win_length)
         onset = dn.pipe(
@@ -186,9 +198,9 @@ class KnockConsole:
 
         @dn.datanode
         def input_node():
-            with sched, onset, picker:
+            with listener_node, onset, picker:
                 data = yield
-                buffer = [(self.knock_delay, 0.0, False)]*prepare
+                buffer = [(self.knock_delay, 0.0)]*prepare
                 index = 0
                 while True:
                     strength = onset.send(data)
@@ -196,8 +208,10 @@ class KnockConsole:
                     time = index * hop_length / samplerate + self.knock_delay
                     strength = strength / self.knock_energy
 
-                    buffer.append((time, strength, detected))
-                    sched.send(buffer.pop(0))
+                    buffer.append((time, strength))
+                    time, strength = buffer.pop(0)
+
+                    listener_node.send((time, strength, detected))
                     data = yield
 
                     index += 1
@@ -206,38 +220,91 @@ class KnockConsole:
         if buffer_length != hop_length:
             input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
 
-        return input_node
+        if self.settings.debug_timeit:
+            return dn.timeit(input_node, "  input")
+        else:
+            return contextlib.nullcontext(input_node)
 
-    @dn.datanode
-    def _display_node(self):
+    def _get_display_node(self):
         framerate = self.settings.display_framerate
 
-        sched = dn.schedule(self.display_queue)
-        index = 0
-        screen = TerminalLine()
-        with sched:
-            yield
-            while True:
-                time = index / framerate + self.display_delay
-                screen.clear()
-                sched.send((time, screen))
-                yield screen.display()
-                index += 1
+        self.renderer_queue = queue.Queue()
+        renderer_node = dn.schedule(self.renderer_queue)
+
+        @dn.datanode
+        def display_node():
+            index = 0
+            screen = TerminalLine()
+            with renderer_node:
+                yield
+                while True:
+                    time = index / framerate + self.display_delay
+                    screen.clear()
+                    renderer_node.send((time, screen))
+                    yield screen.display()
+                    index += 1
+
+        display_node = display_node()
+
+        if self.settings.debug_timeit:
+            return dn.timeit(display_node, "display")
+        else:
+            return contextlib.nullcontext(display_node)
+
+    def _SIGINT_handler(self, sig, frame):
+        self._SIGINT = True
+
+    def run(self, knock_program):
+        try:
+            manager = pyaudio.PyAudio()
+
+            # initialize interfaces
+            with self._get_output_node() as output_node,\
+                 self._get_input_node() as input_node,\
+                 self._get_display_node() as display_node:
+
+                # connect audio/video streams and interfaces
+                with self._play(manager, output_node) as output_stream,\
+                     self._record(manager, input_node) as input_stream,\
+                     self._display(display_node) as display_thread:
+
+                    # connect to program
+                    with knock_program.connect(self) as loop:
+
+                        # activate audio/video streams
+                        output_stream.start_stream()
+                        input_stream.start_stream()
+                        display_thread.start()
+
+                        # loop
+                        for _ in loop:
+                            if self._SIGINT:
+                                break
+
+                            if not output_stream.is_active():
+                                raise RuntimeError("output stream is down")
+                            if not input_stream.is_active():
+                                raise RuntimeError("input stream is down")
+                            if not display_thread.is_alive():
+                                raise RuntimeError("display thread is down")
+
+                            signal.signal(signal.SIGINT, self._SIGINT_handler)
+
+        finally:
+            manager.terminate()
 
     def add_effect(self, node, time=None, zindex=0, key=None):
         if key is None:
             key = object()
-        if time is not None:
-            node = self._shift(node, time)
-        node = dn.DataNode.wrap(node)
-        self.output_queue.put((key, node, zindex))
+        node = self._timed_effect(node, time)
+        self.effect_queue.put((key, node, zindex))
         return key
 
     def remove_effect(self, key):
-        self.output_queue.put((key, None, 0))
+        self.effect_queue.put((key, None, 0))
 
     @dn.datanode
-    def _shift(self, node, start_time):
+    def _timed_effect(self, node, start_time):
         node = dn.DataNode.wrap(node)
 
         samplerate = self.settings.output_samplerate
@@ -246,13 +313,13 @@ class KnockConsole:
 
         with node:
             time, data = yield
-            offset = round((start_time - time) * samplerate)
+            offset = round((start_time - time) * samplerate) if start_time is not None else 0
 
             while offset < 0:
                 length = min(-offset, buffer_length)
                 dummy = numpy.zeros((length, nchannels), dtype=numpy.float32)
                 node.send(dummy)
-                offset -= length
+                offset += length
 
             while 0 < offset:
                 if data.shape[0] < offset:
@@ -269,7 +336,7 @@ class KnockConsole:
                 time, data = yield time, node.send(data)
 
     @functools.lru_cache(maxsize=32)
-    def load(self, filepath):
+    def load_sound(self, filepath):
         with audioread.audio_open(filepath) as file:
             samplerate = file.samplerate
         node = dn.load(filepath)
@@ -283,7 +350,7 @@ class KnockConsole:
         if channels is None:
             channels = self.settings.output_channels
         if isinstance(node, str):
-            node = dn.DataNode.wrap(self.load(node))
+            node = dn.DataNode.wrap(self.load_sound(node))
             samplerate = None
 
         if start is not None or end is not None:
@@ -301,11 +368,11 @@ class KnockConsole:
         if key is None:
             key = object()
         node = dn.branch(node)
-        self.input_queue.put((key, node, 0))
+        self.listener_queue.put((key, node, 0))
         return key
 
     def remove_listener(self, key):
-        self.input_queue.put((key, None, 0))
+        self.listener_queue.put((key, None, 0))
 
     def on_hit(self, func, time=None, duration=None, key=None):
         return self.add_listener(self._hit_listener(func, time, duration))
@@ -331,191 +398,9 @@ class KnockConsole:
         if key is None:
             key = object()
         node = dn.branch(node)
-        self.display_queue.put((key, node, zindex))
+        self.renderer_queue.put((key, node, zindex))
         return key
 
     def remove_renderer(self, key):
-        self.display_queue.put((key, None, 0))
-
-    def SIGINT_handler(self, sig, frame):
-        self.stopped = True
-
-    def run(self, knock_program):
-        debug_timeit = self.settings.debug_timeit
-
-        try:
-            manager = pyaudio.PyAudio()
-
-            # make interfaces
-            self.output_queue = queue.Queue()
-            self.input_queue = queue.Queue()
-            self.display_queue = queue.Queue()
-
-            output_node = self._output_node()
-            input_node = self._input_node()
-            display_node = self._display_node()
-
-            # wrap interfaces with debuger
-            with dn.timeit(output_node , "   mixer", debug_timeit) as output_node,\
-                 dn.timeit(input_node  , "detector", debug_timeit) as input_node,\
-                 dn.timeit(display_node, "renderer", debug_timeit) as display_node:
-
-                # connect audio/video streams and interfaces
-                with self._play(manager, output_node) as output_stream,\
-                     self._record(manager, input_node) as input_stream,\
-                     self._display(display_node) as display_thread:
-
-                    # connect interfaces and program
-                    with knock_program.connect(self) as loop:
-
-                        # activate audio/video streams
-                        output_stream.start_stream()
-                        input_stream.start_stream()
-                        display_thread.start()
-
-                        # loop
-                        for _ in loop:
-                            if (self.stopped or
-                                not output_stream.is_active() or
-                                not input_stream.is_active() or
-                                not display_thread.is_alive()):
-
-                                break
-
-                            signal.signal(signal.SIGINT, self.SIGINT_handler)
-
-        finally:
-            manager.terminate()
-
-
-def test_speaker(manager, samplerate=44100, buffer_length=1024, channels=1, format='f4', device=-1):
-    buffer_shape = (buffer_length, channels)
-    duration = 2.0+0.5*4*channels
-
-    mixer = AudioMixer(samplerate=samplerate, buffer_shape=buffer_shape)
-    click = dn.pulse(samplerate=samplerate)
-    for n in range(channels):
-        for m in range(4):
-            mixer.play([click], samplerate=samplerate, delay=1.0+0.5*(4*n+m))
-
-    print("testing...")
-    with dn.play(manager, mixer, samplerate=samplerate,
-                                 buffer_shape=buffer_shape,
-                                 format=format, device=device) as output_stream:
-        output_stream.start_stream()
-        time.sleep(duration)
-    print("finish!")
-
-def test_mic(manager, samplerate=44100, buffer_length=1024, channels=1, format='f4', device=-1):
-    duration = 8.0
-
-    spec_width = 5
-    win_length = 512*4
-    decay_time = 0.01
-    Dt = buffer_length / samplerate
-    spec = dn.pipe(dn.frame(win_length, buffer_length),
-                   dn.power_spectrum(win_length, samplerate=samplerate),
-                   dn.draw_spectrum(spec_width, win_length=win_length, samplerate=samplerate, decay=Dt/decay_time),
-                   lambda s: print(f" {s}\r", end="", flush=True))
-
-    print("testing...")
-    with dn.record(manager, spec, samplerate=samplerate,
-                                  buffer_shape=(buffer_length, channels),
-                                  format=format, device=device) as input_stream:
-        input_stream.start_stream()
-        time.sleep(duration)
-    print()
-    print("finish!")
-
-def input_with_default(hint, default, type=None):
-    default_str = str(default)
-    value = input(hint + default_str + "\b"*len(default_str))
-    if value:
-        return type(value) if type is not None else value
-    else:
-        return default
-
-def configure_audio(config_name=None):
-    config = configparser.ConfigParser()
-    config.read("default.kconfig")
-    if isinstance(config_name, str):
-        config.read(config_name)
-    elif isinstance(config_name, (dict, configparser.ConfigParser)):
-        config.read_dict(config_name)
-    elif config_name is None:
-        pass
-    else:
-        raise ValueError("invalid configuration", config_name)
-
-    try:
-        manager = pyaudio.PyAudio()
-
-        print()
-
-        print("portaudio version:")
-        print("  " + pyaudio.get_portaudio_version_text())
-
-        print("available devices:")
-        apis_list = [manager.get_host_api_info_by_index(i)['name'] for i in range(manager.get_host_api_count())]
-        for index in range(manager.get_device_count()):
-            info = manager.get_device_info_by_index(index)
-
-            name = info['name']
-            api = apis_list[info['hostApi']]
-            freq = info['defaultSampleRate']/1000
-            ch_in = info['maxInputChannels']
-            ch_out = info['maxOutputChannels']
-
-            print(f"  {index}. {name} by {api} ({freq} kHz, in: {ch_in}, out: {ch_out})")
-
-        default_input_device_index = manager.get_default_input_device_info()['index']
-        default_output_device_index = manager.get_default_output_device_info()['index']
-        print(f"default input device: {default_input_device_index}")
-        print(f"default output device: {default_output_device_index}")
-
-        print()
-        print("[output]")
-        samplerate = input_with_default("samplerate = ", config.getint('output', 'samplerate'), int)
-        buffer_length = input_with_default("buffer_length = ", config.getint('output', 'buffer_length'), int)
-        channels = input_with_default("channels = ", config.getint('output', 'channels'), int)
-        format = input_with_default("format = ", config.get('output', 'format'))
-        device = input_with_default("device = ", config.getint('output', 'device'), int)
-        test_speaker(manager, samplerate=samplerate,
-                              buffer_length=buffer_length,
-                              channels=channels,
-                              format=format, device=device)
-
-        print()
-        print("[input]")
-        samplerate = input_with_default("samplerate = ", config.getint('input', 'samplerate'), int)
-        buffer_length = input_with_default("buffer_length = ", config.getint('input', 'buffer_length'), int)
-        channels = input_with_default("channels = ", config.getint('input', 'channels'), int)
-        format = input_with_default("format = ", config.get('input', 'format'))
-        device = input_with_default("device = ", config.getint('input', 'device'), int)
-        test_mic(manager, samplerate=samplerate,
-                          buffer_length=buffer_length,
-                          channels=channels,
-                          format=format, device=device)
-
-    finally:
-        manager.terminate()
-
-# manager.is_format_supported(rate,
-#     input_device=None, input_channels=None, input_format=None,
-#     output_device=None, output_channels=None, output_format=None)
-
-# devices selector: device, samplerate, channels, format, buffer_length
-# device:
-#     device_index
-# samplerate:
-#     44100, 48000, 88200, 96000, 32000, 22050, 11025, 8000
-# channels:
-#     1, 2
-# formats:
-#     paFloat32, paInt32, paInt16, paInt8, paUInt8
-# buffer_length:
-#     1024, 512, 2048
-
-# delta = noise_power * 20
-# knock_volume = Dt / knock_max_energy
+        self.renderer_queue.put((key, None, 0))
 

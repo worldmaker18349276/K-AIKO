@@ -594,10 +594,10 @@ class PlayField:
         spec = dn.unchunk(spec, (hop_length, nchannels))
 
         with spec:
-            time, data = yield
+            data = yield
             while True:
                 spec.send(data)
-                time, data = yield time, data
+                data = yield data
 
     @dn.datanode
     def _hit_handler(self):
