@@ -297,7 +297,8 @@ class OneshotTarget(Target):
         return self.perf is not None
 
     def approach(self, field):
-        field.play(self.sound, time=self.time, volume=self.volume)
+        if self.sound is not None:
+            field.play(self.sound, time=self.time, volume=self.volume)
 
         field.draw_target(self, self.pos, self.approach_appearance,
                           start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
@@ -443,7 +444,8 @@ class Roll(Target):
 
     def approach(self, field):
         for i, time in enumerate(self.times):
-            field.play(self.sound, time=time, volume=self.volume)
+            if self.sound is not None:
+                field.play(self.sound, time=time, volume=self.volume)
             field.draw_target(self, self.pos(i), self.rock_appearance,
                               start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=(self, i))
         field.reset_sight(start=self.range[0])
@@ -499,7 +501,8 @@ class Spin(Target):
 
     def approach(self, field):
         for time in self.times:
-            field.play(self.sound, time=time, volume=self.volume)
+            if self.sound is not None:
+                field.play(self.sound, time=time, volume=self.volume)
 
         appearance = lambda: self.disk_appearances[int(self.charge) % len(self.disk_appearances)]
         field.draw_target(self, self.pos, appearance,
@@ -608,12 +611,13 @@ class KAIKO:
         self.progress = self.get_progress()
 
         if self.beatmap.audio is None:
-            audiopath = None
+            audionode = None
             duration = 0.0
         else:
             audiopath = os.path.join(self.beatmap.path, self.beatmap.audio)
             with audioread.audio_open(audiopath) as file:
                 duration = file.duration
+            audionode = dn.DataNode.wrap(self.console.load_sound(audiopath))
 
         # playfield
         spec_width = self.settings.spec_width
@@ -630,14 +634,16 @@ class KAIKO:
         # game loop
         tickrate = self.settings.tickrate
         prepare_time = self.settings.prepare_time
+        time_shift = prepare_time + max(-events_start_time, 0.0)
 
         with dn.interval(1/tickrate, first=prepare_time) as timer:
-            self.start_time = self.console.time + max(-events_start_time, 0.0) + prepare_time
+            self.start_time = self.console.time + time_shift
+
+            # music
+            if audionode is not None:
+                self.console.play(audionode, time=self.start_time, zindex=-3)
 
             # handlers
-            if audiopath is not None:
-                self.console.play(audiopath, time=self.start_time, zindex=-3)
-
             self.hit_queue = queue.Queue()
             self.sight_queue = queue.Queue()
             self.target_queue = queue.Queue()
@@ -654,7 +660,7 @@ class KAIKO:
 
             yield
             for time, _ in timer:
-                time += min(events_start_time, 0.0) - prepare_time
+                time -= time_shift
                 if max(events_end_time, duration) <= time:
                     break
 
