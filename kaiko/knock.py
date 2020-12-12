@@ -249,6 +249,10 @@ class KnockConsole:
     def _SIGINT_handler(self, sig, frame):
         self._SIGINT = True
 
+    @property
+    def time(self):
+        return time.time() - self._start_time
+
     def run(self, knock_program):
         self.sound_delay = self.settings.sound_delay
         self.knock_delay = self.settings.knock_delay
@@ -268,13 +272,14 @@ class KnockConsole:
                      self._record(manager, input_node) as input_stream,\
                      self._display(display_node) as display_thread:
 
+                    # activate audio/video streams
+                    self._start_time = time.time()
+                    output_stream.start_stream()
+                    input_stream.start_stream()
+                    display_thread.start()
+
                     # connect to program
                     with knock_program.connect(self) as loop:
-
-                        # activate audio/video streams
-                        output_stream.start_stream()
-                        input_stream.start_stream()
-                        display_thread.start()
 
                         # loop
                         for _ in loop:

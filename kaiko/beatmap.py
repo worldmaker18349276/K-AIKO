@@ -36,7 +36,7 @@ class Text(Event):
 
     def register(self, field):
         if self.sound is not None:
-            field.console.play(self.sound, time=self.time)
+            field.play(self.sound, time=self.time)
 
         if self.text is not None:
             pos = lambda time, width: (self.time-time) * 0.5 * self.speed
@@ -56,9 +56,11 @@ class Flip(Event):
     @dn.datanode
     def _node(self, field):
         time, screen = yield
+        time -= field.start_time
 
         while time < self.time:
             time, screen = yield
+            time -= field.start_time
 
         if self.flip is None:
             field.bar_flip = not field.bar_flip
@@ -66,6 +68,7 @@ class Flip(Event):
             field.bar_flip = self.flip
 
         time, screen = yield
+        time -= field.start_time
 
 class Shift(Event):
     def __init__(self, beatmap, context, shift, *, beat, length):
@@ -80,9 +83,11 @@ class Shift(Event):
     @dn.datanode
     def _node(self, field):
         time, screen = yield
+        time -= field.start_time
 
         while time < self.time:
             time, screen = yield
+            time -= field.start_time
 
         shift0 = field.bar_shift
         speed = (self.shift - shift0) / (self.end - self.time) if self.end != self.time else 0
@@ -90,10 +95,12 @@ class Shift(Event):
         while time < self.end:
             field.bar_shift = shift0 + speed * (time - self.time)
             time, screen = yield
+            time -= field.start_time
 
         field.bar_shift = self.shift
 
         time, screen = yield
+        time -= field.start_time
 
 class Jiggle(Event):
     def __init__(self, beatmap, context, frequency=10.0, *, beat, length):
@@ -108,9 +115,11 @@ class Jiggle(Event):
     @dn.datanode
     def _node(self, field):
         time, screen = yield
+        time -= field.start_time
 
         while time < self.time:
             time, screen = yield
+            time -= field.start_time
 
         shift0 = field.sight_shift
 
@@ -119,10 +128,12 @@ class Jiggle(Event):
             bar_start, bar_end, _ = field.bar_mask.indices(screen.width)
             field.sight_shift = shift0 + 1/(bar_end - bar_start) * (turn // 0.5 % 2 * 2 - 1)
             time, screen = yield
+            time -= field.start_time
 
         field.sight_shift = shift0
 
         time, screen = yield
+        time -= field.start_time
 
 def set_context(beatmap, context, **kw):
     context.update(**kw)
@@ -286,7 +297,7 @@ class OneshotTarget(Target):
         return self.perf is not None
 
     def approach(self, field):
-        field.console.play(self.sound, time=self.time, volume=self.volume)
+        field.play(self.sound, time=self.time, volume=self.volume)
 
         field.draw_target(self, self.pos, self.approach_appearance,
                           start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
@@ -432,7 +443,7 @@ class Roll(Target):
 
     def approach(self, field):
         for i, time in enumerate(self.times):
-            field.console.play(self.sound, time=time, volume=self.volume)
+            field.play(self.sound, time=time, volume=self.volume)
             field.draw_target(self, self.pos(i), self.rock_appearance,
                               start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=(self, i))
         field.reset_sight(start=self.range[0])
@@ -488,7 +499,7 @@ class Spin(Target):
 
     def approach(self, field):
         for time in self.times:
-            field.console.play(self.sound, time=time, volume=self.volume)
+            field.play(self.sound, time=time, volume=self.volume)
 
         appearance = lambda: self.disk_appearances[int(self.charge) % len(self.disk_appearances)]
         field.draw_target(self, self.pos, appearance,
@@ -584,9 +595,25 @@ class KAIKO:
         self.bar_shift = self.settings.bar_shift
         self.sight_shift = self.settings.sight_shift
         self.bar_flip = self.settings.bar_flip
-        self.total_score = 0
-        self.score = 0
-        self.progress = 0.0
+
+        # events
+        leadin_time = self.settings.leadin_time
+        self.events = [event for chart in self.beatmap.charts for event in chart.build_events(self.beatmap)]
+        self.events.sort(key=lambda e: e.lifespan[0])
+        start = min((event.lifespan[0] - leadin_time for event in self.events), default=0.0)
+        end   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
+
+        self.total_score = self.get_total_score()
+        self.score = self.get_score()
+        self.progress = self.get_progress()
+
+        if self.beatmap.audio is None:
+            audiopath = None
+            duration = 0.0
+        else:
+            audiopath = os.path.join(self.beatmap.path, self.beatmap.audio)
+            with audioread.audio_open(audiopath) as file:
+                duration = file.duration
 
         # playfield
         spec_width = self.settings.spec_width
@@ -600,50 +627,29 @@ class KAIKO:
         self.score_format = "[{score:>%dd}/{total_score:>%dd}]" % (score_width_-score_width_//2, score_width_//2)
         self.progress_format = "[{progress_pc:>%d.%df}%%]" % (max(0, progress_width-3), max(0, progress_width-7))
 
-        # controllers
-        self.hit_queue = queue.Queue()
-        self.sight_queue = queue.Queue()
-        self.target_queue = queue.Queue()
-
-        self.console.add_effect(self._spec_handler(), zindex=-3)
-        self.console.add_listener(self._target_handler())
-        self.console.add_listener(self._hit_handler())
-        self.console.add_renderer(self._status_handler(), zindex=(-3,), key='status')
-        self.console.add_renderer(self._sight_handler(), zindex=(2,), key='sight')
-
-        # events
-        leadin_time = self.settings.leadin_time
-        self.events = [event for chart in self.beatmap.charts for event in chart.build_events(self.beatmap)]
-        self.events.sort(key=lambda e: e.lifespan[0])
-        start = min((event.lifespan[0] - leadin_time for event in self.events), default=0.0)
-        end   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
-
-        if start < 0:
-            self.console.sound_delay += start
-            self.console.knock_delay += start
-            self.console.display_delay += start
-
-        # audio
-        if self.beatmap.audio is None:
-            duration = 0.0
-        else:
-            audiopath = os.path.join(self.beatmap.path, self.beatmap.audio)
-            with audioread.audio_open(audiopath) as file:
-                duration = file.duration
-                samplerate = file.samplerate
-            self.console.play(audiopath, time=0.0, zindex=-3)
-
-        # loop
         tickrate = self.settings.tickrate
         prepare_time = self.settings.prepare_time
 
         with dn.interval(1/tickrate) as timer:
+            self.start_time = self.console.time + max(-start, 0.0)
+
+            # handlers
+            self.hit_queue = queue.Queue()
+            self.sight_queue = queue.Queue()
+            self.target_queue = queue.Queue()
+
+            if audiopath is not None:
+                self.console.play(audiopath, time=self.start_time, zindex=-3)
+
+            self.console.add_effect(self._spec_handler(), zindex=-1)
+            self.console.add_listener(self._target_handler())
+            self.console.add_listener(self._hit_handler())
+            self.console.add_renderer(self._status_handler(), zindex=(-3,), key='status')
+            self.console.add_renderer(self._sight_handler(), zindex=(2,), key='sight')
+
+            # loop
             events_iter = iter(self.events)
             event = next(events_iter, None)
-
-            self.total_score = self.get_total_score()
-            self.score = self.get_score()
-            self.progress = self.get_progress()
 
             yield
             for time, _ in timer:
@@ -659,6 +665,7 @@ class KAIKO:
                 self.progress = self.get_progress()
 
                 yield
+
 
     def _spec_handler(self):
         samplerate = self.console.settings.output_samplerate
@@ -689,6 +696,7 @@ class KAIKO:
         waiting_targets = []
 
         time, strength, detected = yield
+        time -= self.start_time
         while True:
             while not self.target_queue.empty():
                 item = self.target_queue.get()
@@ -713,11 +721,12 @@ class KAIKO:
                     target, start, duration = None, None, None
 
             time, strength, detected = yield
+            time -= self.start_time
 
     @dn.datanode
     def _status_handler(self):
         while True:
-            time, screen = yield
+            _, screen = yield
 
             spec_text = self.spectrum
             spec_start, _, _ = self.spec_mask.indices(screen.width)
@@ -744,6 +753,7 @@ class KAIKO:
 
         while True:
             time, screen = yield
+            time -= self.start_time
 
             while not self.hit_queue.empty():
                 hit_strength = self.hit_queue.get()
@@ -801,17 +811,27 @@ class KAIKO:
         text_func = text if hasattr(text, '__call__') else lambda time, width: text
 
         time, screen = yield
+        time -= self.start_time
 
         if start is None:
             start = time
 
         while time < start:
             time, screen = yield
+            time -= self.start_time
 
         while duration is None or time < start + duration:
             self._bar_draw(screen, pos_func(time, screen.width), text_func(time, screen.width))
             time, screen = yield
+            time -= self.start_time
 
+
+    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=0, key=None):
+        if time is not None:
+            time += self.start_time
+        return self.console.play(node, samplerate=samplerate, channels=channels,
+                                       volume=volume, start=start, end=end,
+                                       time=time, zindex=zindex, key=key)
 
     def add_target(self, target, start=None, duration=None):
         self.target_queue.put((target, start, duration))

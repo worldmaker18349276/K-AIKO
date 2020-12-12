@@ -1046,9 +1046,9 @@ def interval(dt, prepare=lambda _:None, first=0.0):
     stop = threading.Event()
 
     with prepare:
-        yield
         t0 = time.time()
 
+        yield
         for i, data in enumerate(prepare):
             if stop.wait(max(0.0, t0+first+i*dt - time.time())):
                 break
@@ -1065,7 +1065,6 @@ def thread(node):
                 if stop.wait(0.0):
                     break
 
-    node.__enter__()
     thread = threading.Thread(target=run)
     try:
         yield thread
