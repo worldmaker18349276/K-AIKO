@@ -5,6 +5,7 @@ import functools
 import contextlib
 from collections import OrderedDict
 import queue
+import threading
 import signal
 import numpy
 import pyaudio
@@ -81,8 +82,6 @@ class KnockConsole:
     def __init__(self, config=None):
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
-
-        self._SIGINT = False
 
     def _play(self, manager, node):
         samplerate = self.settings.output_samplerate
@@ -246,9 +245,6 @@ class KnockConsole:
         else:
             return contextlib.nullcontext(display_node)
 
-    def _SIGINT_handler(self, sig, frame):
-        self._SIGINT = True
-
     @property
     def time(self):
         return time.time() - self._start_time
@@ -280,10 +276,13 @@ class KnockConsole:
 
                     # connect to program
                     with knock_program.connect(self) as loop:
+                        SIGINT_event = threading.Event()
+                        def SIGINT_handler(sig, frame):
+                            SIGINT_event.set()
+                        signal.signal(signal.SIGINT, SIGINT_handler)
 
-                        # loop
                         for _ in loop:
-                            if self._SIGINT:
+                            if SIGINT_event.is_set():
                                 break
 
                             if not output_stream.is_active():
@@ -293,7 +292,7 @@ class KnockConsole:
                             if not display_thread.is_alive():
                                 raise RuntimeError("display thread is down")
 
-                            signal.signal(signal.SIGINT, self._SIGINT_handler)
+                            signal.signal(signal.SIGINT, SIGINT_handler)
 
         finally:
             manager.terminate()

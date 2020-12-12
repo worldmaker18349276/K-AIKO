@@ -600,8 +600,8 @@ class KAIKO:
         leadin_time = self.settings.leadin_time
         self.events = [event for chart in self.beatmap.charts for event in chart.build_events(self.beatmap)]
         self.events.sort(key=lambda e: e.lifespan[0])
-        start = min((event.lifespan[0] - leadin_time for event in self.events), default=0.0)
-        end   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
+        events_start_time = min((event.lifespan[0] - leadin_time for event in self.events), default=0.0)
+        events_end_time   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
 
         self.total_score = self.get_total_score()
         self.score = self.get_score()
@@ -627,19 +627,20 @@ class KAIKO:
         self.score_format = "[{score:>%dd}/{total_score:>%dd}]" % (score_width_-score_width_//2, score_width_//2)
         self.progress_format = "[{progress_pc:>%d.%df}%%]" % (max(0, progress_width-3), max(0, progress_width-7))
 
+        # game loop
         tickrate = self.settings.tickrate
         prepare_time = self.settings.prepare_time
 
-        with dn.interval(1/tickrate) as timer:
-            self.start_time = self.console.time + max(-start, 0.0)
+        with dn.interval(1/tickrate, first=prepare_time) as timer:
+            self.start_time = self.console.time + max(-events_start_time, 0.0) + prepare_time
 
             # handlers
+            if audiopath is not None:
+                self.console.play(audiopath, time=self.start_time, zindex=-3)
+
             self.hit_queue = queue.Queue()
             self.sight_queue = queue.Queue()
             self.target_queue = queue.Queue()
-
-            if audiopath is not None:
-                self.console.play(audiopath, time=self.start_time, zindex=-3)
 
             self.console.add_effect(self._spec_handler(), zindex=-1)
             self.console.add_listener(self._target_handler())
@@ -647,14 +648,14 @@ class KAIKO:
             self.console.add_renderer(self._status_handler(), zindex=(-3,), key='status')
             self.console.add_renderer(self._sight_handler(), zindex=(2,), key='sight')
 
-            # loop
+            # register events
             events_iter = iter(self.events)
             event = next(events_iter, None)
 
             yield
             for time, _ in timer:
-                time += min(start, 0.0)
-                if max(end, duration) <= time:
+                time += min(events_start_time, 0.0) - prepare_time
+                if max(events_end_time, duration) <= time:
                     break
 
                 while event is not None and event.lifespan[0] <= time + prepare_time:
