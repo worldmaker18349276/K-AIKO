@@ -558,48 +558,6 @@ def onset_strength(df):
     while True:
         prev, curr = curr, (yield numpy.mean(numpy.maximum(0.0, curr - prev).sum(axis=0)) * df)
 
-@datanode
-def draw_spectrum(length, win_length, samplerate=44100, decay=1/4):
-    """A data node to show given spectrum by braille patterns.
-
-    Parameters
-    ----------
-    length : int
-        The length of string.
-    win_length : int
-        The length of input signal before fourier transform.
-    samplerate : int, optional
-        The sample rate of input signal, default is `44100`.
-    decay : float, optional
-        The decay volume per period, default is `1/4`.
-
-    Receives
-    --------
-    J : ndarray
-        The power spectrum to draw.
-
-    Yields
-    ------
-    spec : str
-        The string representation of spectrum.
-    """
-    A = numpy.cumsum([0, 2**6, 2**2, 2**1, 2**0])
-    B = numpy.cumsum([0, 2**7, 2**5, 2**4, 2**3])
-
-    df = samplerate/win_length
-    n_fft = win_length//2+1
-    n = numpy.linspace(1, 88, length*2+1)
-    f = 440 * 2**((n-49)/12)
-    sec = numpy.minimum(n_fft-1, (f/df).round().astype(int))
-    slices = [slice(start, stop) for start, stop in zip(sec[:-1], (sec+1)[1:])]
-
-    volume_of = lambda J: power2db(J.mean() * samplerate / 2, scale=(1e-5, 1e6)) / 60.0
-    vols = [0.0]*(length*2)
-    J = yield
-    while True:
-        vols = [max(0.0, prev-decay, min(1.0, volume_of(J[slic]))) for slic, prev in zip(slices, vols)]
-        J = yield "".join(chr(0x2800 + A[int(a*4)] + B[int(b*4)]) for a, b in zip(vols[0::2], vols[1::2]))
-
 
 # for variable-width data
 @datanode

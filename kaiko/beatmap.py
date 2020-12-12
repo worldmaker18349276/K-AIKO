@@ -675,20 +675,48 @@ class KAIKO:
 
 
     def _spec_handler(self):
+        spec_width = self.settings.spec_width
         samplerate = self.console.settings.output_samplerate
         nchannels = self.console.settings.output_channels
         hop_length = round(samplerate * self.settings.spec_time_res)
         win_length = round(samplerate / self.settings.spec_freq_res)
+
+        df = samplerate/win_length
+        n_fft = win_length//2+1
+        n = numpy.linspace(1, 88, spec_width*2+1)
+        f = 440 * 2**((n-49)/12) # frequency of n-th piano key
+        sec = numpy.minimum(n_fft-1, (f/df).round().astype(int))
+        slices = [slice(start, stop) for start, stop in zip(sec[:-1], (sec+1)[1:])]
+
         decay = hop_length / samplerate / self.settings.spec_decay_time / 4
+        volume_of = lambda J: dn.power2db(J.mean() * samplerate / 2, scale=(1e-5, 1e6)) / 60.0
 
-        spec = dn.pipe(
-            dn.frame(win_length, hop_length),
-            dn.power_spectrum(win_length, samplerate=samplerate),
-            dn.draw_spectrum(self.settings.spec_width, win_length=win_length, samplerate=samplerate, decay=decay),
-            lambda s: setattr(self, 'spectrum', s))
-        spec = dn.branch(dn.unchunk(spec, (hop_length, nchannels)))
+        # braille patterns encoding:
+        #   [0] [3]
+        #   [1] [4]
+        #   [2] [5]
+        #   [6] [7]
 
-        return spec
+        A = numpy.cumsum([0, 2**6, 2**2, 2**1, 2**0])
+        B = numpy.cumsum([0, 2**7, 2**5, 2**4, 2**3])
+        draw_bar = lambda a, b: chr(0x2800 + A[int(a*4)] + B[int(b*4)])
+
+        node = dn.pipe(dn.frame(win_length, hop_length), dn.power_spectrum(win_length, samplerate=samplerate))
+
+        @dn.datanode
+        def draw_spectrum():
+            with node:
+                vols = [0.0]*(spec_width*2)
+
+                while True:
+                    data = yield
+                    J = node.send(data)
+
+                    vols = [max(0.0, prev-decay, min(1.0, volume_of(J[slic])))
+                            for slic, prev in zip(slices, vols)]
+                    self.spectrum = "".join(map(draw_bar, vols[0::2], vols[1::2]))
+
+        return dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels)))
 
     @dn.datanode
     def _hit_handler(self):
