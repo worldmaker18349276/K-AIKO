@@ -571,7 +571,7 @@ class Spin(Target):
         field.draw_sight(appearance, duration=self.finish_sustain_time)
 
 
-# K-AIKO
+# Play Field
 def to_slices(segments):
     middle = segments.index(...)
     pre  = segments[:middle:+1]
@@ -590,7 +590,7 @@ def to_slices(segments):
     return [first_slice, *pre_slices, middle_slice, *post_slices[::-1], last_slice]
 
 @cfg.configurable
-class KAIKOSettings:
+class PlayFieldSettings:
     ## Controls:
     leadin_time: float = 1.0
     skip_time: float = 8.0
@@ -613,8 +613,8 @@ class KAIKOSettings:
     sight_shift: float = 0.0
     bar_flip: bool = False
 
-class KAIKO:
-    settings: KAIKOSettings = KAIKOSettings()
+class PlayField:
+    settings: PlayFieldSettings = PlayFieldSettings()
 
     def __init__(self, beatmap, config=None):
         self.beatmap = beatmap
@@ -1113,3 +1113,65 @@ class Note:
 K_AIKO_STD_FORMAT = K_AIKO_STD(Beatmap, NoteChart)
 OSU_FORMAT = OSU(Beatmap, NoteChart)
 
+
+def braille_scatter(width, height, xy, xlim, ylim):
+    dx = (xlim[1] - xlim[0])/(width*2-1)
+    dy = (ylim[1] - ylim[0])/(height*4-1)
+
+    graph = numpy.zeros((height*4, width*2), dtype=bool)
+    for x, y in xy:
+        if xlim[0] <= x <= xlim[1] and ylim[0] <= y <= ylim[1]:
+            i = max(0, min(height*4-1, round((y-ylim[0])/dy)))
+            j = max(0, min(width*2-1, round((x-xlim[0])/dx)))
+            graph[i,j] = True
+
+    graph = graph.reshape(height, 4, width, 2)
+    block = 2**numpy.array([0, 3, 1, 4, 2, 5, 6, 7]).reshape(1, 4, 1, 2)
+    code = 0x2800 + (graph * block).sum(axis=(1, 3))
+    strs = numpy.concatenate((code, [[ord("\n")]]*height), axis=1).astype('i2').tostring().decode('utf-16')
+
+    return strs
+
+def perf_report(width, kaiko):
+    perfs = [perf for event in kaiko.events for perf in getattr(event, 'perfs', ())]
+
+    miss_count = sum(perf.is_miss for perf in perfs)
+    failed_count =   sum(not perf.is_wrong and abs(perf.shift) == 3 for perf in perfs if not perf.is_miss)
+    bad_count    =   sum(not perf.is_wrong and abs(perf.shift) == 2 for perf in perfs if not perf.is_miss)
+    good_count   =   sum(not perf.is_wrong and abs(perf.shift) == 1 for perf in perfs if not perf.is_miss)
+    great_count  =   sum(not perf.is_wrong and abs(perf.shift) == 0 for perf in perfs if not perf.is_miss)
+    failed_wrong_count = sum(perf.is_wrong and abs(perf.shift) == 3 for perf in perfs if not perf.is_miss)
+    bad_wrong_count    = sum(perf.is_wrong and abs(perf.shift) == 2 for perf in perfs if not perf.is_miss)
+    good_wrong_count   = sum(perf.is_wrong and abs(perf.shift) == 1 for perf in perfs if not perf.is_miss)
+    great_wrong_count  = sum(perf.is_wrong and abs(perf.shift) == 0 for perf in perfs if not perf.is_miss)
+
+    count = sum(1 for perf in perfs if not perf.is_miss)
+    avg = sum(perf.err for perf in perfs if not perf.is_miss)/count
+    std = (sum((perf.err-avg)**2 for perf in perfs if not perf.is_miss)/count)**0.5
+
+    emax = kaiko.beatmap.settings.failed_tolerance
+    start = min((perf.time for perf in perfs), default=0.0)
+    end   = max((perf.time for perf in perfs), default=0.0)
+    xy = [(perf.time, perf.err) for perf in perfs if not perf.is_miss]
+    EF, EB, EG, X, LG, LB, LF, _ = braille_scatter(width-1, 7, xy, [start, end], [-emax, emax]).split("\n")
+
+    print(f"  miss: {   miss_count}")
+    print(f"failed: { failed_count}+{ failed_wrong_count}")
+    print(f"   bad: {    bad_count}+{    bad_wrong_count}")
+    print(f"  good: {   good_count}+{   good_wrong_count}")
+    print(f" great: {  great_count}+{  great_wrong_count}")
+    print()
+
+    print(f"progress: {kaiko.get_progress()*100}%")
+    print(f"score: {kaiko.get_score()} / {kaiko.get_total_score()}")
+    print(f"error: {avg}±{std}")
+
+    print("\u28c0"*width)
+    print("F"+EF)
+    print("B"+EB)
+    print("G"+EG)
+    print("X"+ X)
+    print("G"+LG)
+    print("B"+LB)
+    print("F"+LF)
+    print("\u2809"*width)

@@ -11,10 +11,11 @@ elif filename.endswith(".osu"):
 else:
     raise ValueError(f"unknown file extension: {filename}")
 
-program = KAIKO(beatmap)
+program = PlayField(beatmap)
 console = KnockConsole()
 console.run(program)
 
-# print()
-# for event in beatmap.events:
-#     print(event)
+print()
+import os
+width = int(os.popen("stty size", 'r').read().split()[1])
+perf_report(width, program)
