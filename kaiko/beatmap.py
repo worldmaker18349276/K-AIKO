@@ -163,72 +163,92 @@ class Target(Event):
                 self.finish(field)
 
 
-class Performance(Enum):
-    MISS               = ("Miss"                      , False, 0)
-    GREAT              = ("Great"                     , False, 10)
-    LATE_GOOD          = ("Late Good"                 , False, 5)
-    EARLY_GOOD         = ("Early Good"                , False, 5)
-    LATE_BAD           = ("Late Bad"                  , False, 3)
-    EARLY_BAD          = ("Early Bad"                 , False, 3)
-    LATE_FAILED        = ("Late Failed"               , False, 0)
-    EARLY_FAILED       = ("Early Failed"              , False, 0)
-    GREAT_WRONG        = ("Great but Wrong Key"       , True,  5)
-    LATE_GOOD_WRONG    = ("Late Good but Wrong Key"   , True,  3)
-    EARLY_GOOD_WRONG   = ("Early Good but Wrong Key"  , True,  3)
-    LATE_BAD_WRONG     = ("Late Bad but Wrong Key"    , True,  1)
-    EARLY_BAD_WRONG    = ("Early Bad but Wrong Key"   , True,  1)
-    LATE_FAILED_WRONG  = ("Late Failed but Wrong Key" , True,  0)
-    EARLY_FAILED_WRONG = ("Early Failed but Wrong Key", True,  0)
+class PerformanceType(Enum):
+    MISS               = (None, None)
+    GREAT              = ( 0, False)
+    LATE_GOOD          = (+1, False)
+    EARLY_GOOD         = (-1, False)
+    LATE_BAD           = (+2, False)
+    EARLY_BAD          = (-2, False)
+    LATE_FAILED        = (+3, False)
+    EARLY_FAILED       = (-3, False)
+    GREAT_WRONG        = ( 0,  True)
+    LATE_GOOD_WRONG    = (+1,  True)
+    EARLY_GOOD_WRONG   = (-1,  True)
+    LATE_BAD_WRONG     = (+2,  True)
+    EARLY_BAD_WRONG    = (-2,  True)
+    LATE_FAILED_WRONG  = (+3,  True)
+    EARLY_FAILED_WRONG = (-3,  True)
 
-    @classmethod
-    def get_full_score(clz):
-        return max(perf.score for perf in clz)
-
-    def __init__(self, description, is_wrong, score):
-        self.description = description
+    def __init__(self, shift, is_wrong):
+        self.shift = shift
         self.is_wrong = is_wrong
-        self.score = score
 
     def __repr__(self):
-        return f"Performance.{self.name}"
+        return f"PerformanceType.{self.name}"
+
+class Performance:
+    def __init__(self, type, time, err):
+        self.type = type
+        self.time = time
+        self.err = err
+
+    @property
+    def shift(self):
+        return self.type.shift
+
+    @property
+    def is_wrong(self):
+        return self.type.is_wrong
+
+    @property
+    def is_miss(self):
+        return self.type == PerformanceType.MISS
+
+    discriptions = {
+        PerformanceType.MISS               : "Miss"                      ,
+        PerformanceType.GREAT              : "Great"                     ,
+        PerformanceType.LATE_GOOD          : "Late Good"                 ,
+        PerformanceType.EARLY_GOOD         : "Early Good"                ,
+        PerformanceType.LATE_BAD           : "Late Bad"                  ,
+        PerformanceType.EARLY_BAD          : "Early Bad"                 ,
+        PerformanceType.LATE_FAILED        : "Late Failed"               ,
+        PerformanceType.EARLY_FAILED       : "Early Failed"              ,
+        PerformanceType.GREAT_WRONG        : "Great but Wrong Key"       ,
+        PerformanceType.LATE_GOOD_WRONG    : "Late Good but Wrong Key"   ,
+        PerformanceType.EARLY_GOOD_WRONG   : "Early Good but Wrong Key"  ,
+        PerformanceType.LATE_BAD_WRONG     : "Late Bad but Wrong Key"    ,
+        PerformanceType.EARLY_BAD_WRONG    : "Early Bad but Wrong Key"   ,
+        PerformanceType.LATE_FAILED_WRONG  : "Late Failed but Wrong Key" ,
+        PerformanceType.EARLY_FAILED_WRONG : "Early Failed but Wrong Key",
+    }
+
+    @property
+    def description(self):
+        return self.discriptions[self.type]
 
     @staticmethod
-    def judge(err, is_correct_key, tolerances):
+    def judge(time, err, is_correct_key, tolerances):
         abs_err = abs(err)
-        too_late = err > 0
 
         if abs_err < tolerances[0]: # great
-            if is_correct_key:
-                perf = Performance.GREAT
-            else:
-                perf = Performance.GREAT_WRONG
-
+            shift = 0
         elif abs_err < tolerances[1]: # good
-            if is_correct_key:
-                perf = Performance.LATE_GOOD         if too_late else Performance.EARLY_GOOD
-            else:
-                perf = Performance.LATE_GOOD_WRONG   if too_late else Performance.EARLY_GOOD_WRONG
-
+            shift = 1
         elif abs_err < tolerances[2]: # bad
-            if is_correct_key:
-                perf = Performance.LATE_BAD          if too_late else Performance.EARLY_BAD
-            else:
-                perf = Performance.LATE_BAD_WRONG    if too_late else Performance.EARLY_BAD_WRONG
-
+            shift = 2
         elif abs_err < tolerances[3]: # failed
-            if is_correct_key:
-                perf = Performance.LATE_FAILED       if too_late else Performance.EARLY_FAILED
-            else:
-                perf = Performance.LATE_FAILED_WRONG if too_late else Performance.EARLY_FAILED_WRONG
-
+            shift = 3
         else: # miss
-            perf = None
+            return None
 
-        return perf
+        if err < 0:
+            shift = -shift
+
+        return Performance(PerformanceType((shift, not is_correct_key)), time, err)
 
     def render(self, field, is_reversed, appearances, sustain_time):
-        i = list(Performance).index(self)
-        appearance = appearances[i]
+        appearance = appearances[self.type]
         if is_reversed:
             appearance = appearance[::-1]
 
@@ -239,8 +259,6 @@ class OneshotTarget(Target):
     # approach_appearance, wrong_appearance
     # hit(field, time, strength)
 
-    full_score = Performance.get_full_score()
-
     def __init__(self, beatmap, context, *, beat, speed=None, volume=None):
         self.tolerances = (
             beatmap.settings.great_tolerance,
@@ -248,24 +266,43 @@ class OneshotTarget(Target):
             beatmap.settings.bad_tolerance,
             beatmap.settings.failed_tolerance,
             )
-        self.performance_appearances = (
-            beatmap.settings.miss_appearance,
-            beatmap.settings.great_appearance,
-            beatmap.settings.late_good_appearance,
-            beatmap.settings.early_good_appearance,
-            beatmap.settings.late_bad_appearance,
-            beatmap.settings.early_bad_appearance,
-            beatmap.settings.late_failed_appearance,
-            beatmap.settings.early_failed_appearance,
-            beatmap.settings.great_wrong_appearance,
-            beatmap.settings.late_good_wrong_appearance,
-            beatmap.settings.early_good_wrong_appearance,
-            beatmap.settings.late_bad_wrong_appearance,
-            beatmap.settings.early_bad_wrong_appearance,
-            beatmap.settings.late_failed_wrong_appearance,
-            beatmap.settings.early_failed_wrong_appearance,
-            )
+        self.performance_appearances = {
+            PerformanceType.MISS               : beatmap.settings.miss_appearance,
+            PerformanceType.GREAT              : beatmap.settings.great_appearance,
+            PerformanceType.LATE_GOOD          : beatmap.settings.late_good_appearance,
+            PerformanceType.EARLY_GOOD         : beatmap.settings.early_good_appearance,
+            PerformanceType.LATE_BAD           : beatmap.settings.late_bad_appearance,
+            PerformanceType.EARLY_BAD          : beatmap.settings.early_bad_appearance,
+            PerformanceType.LATE_FAILED        : beatmap.settings.late_failed_appearance,
+            PerformanceType.EARLY_FAILED       : beatmap.settings.early_failed_appearance,
+            PerformanceType.GREAT_WRONG        : beatmap.settings.great_wrong_appearance,
+            PerformanceType.LATE_GOOD_WRONG    : beatmap.settings.late_good_wrong_appearance,
+            PerformanceType.EARLY_GOOD_WRONG   : beatmap.settings.early_good_wrong_appearance,
+            PerformanceType.LATE_BAD_WRONG     : beatmap.settings.late_bad_wrong_appearance,
+            PerformanceType.EARLY_BAD_WRONG    : beatmap.settings.early_bad_wrong_appearance,
+            PerformanceType.LATE_FAILED_WRONG  : beatmap.settings.late_failed_wrong_appearance,
+            PerformanceType.EARLY_FAILED_WRONG : beatmap.settings.early_failed_wrong_appearance,
+            }
+        self.performance_scores = {
+            PerformanceType.MISS               : beatmap.settings.miss_score,
+            PerformanceType.GREAT              : beatmap.settings.great_score,
+            PerformanceType.LATE_GOOD          : beatmap.settings.late_good_score,
+            PerformanceType.EARLY_GOOD         : beatmap.settings.early_good_score,
+            PerformanceType.LATE_BAD           : beatmap.settings.late_bad_score,
+            PerformanceType.EARLY_BAD          : beatmap.settings.early_bad_score,
+            PerformanceType.LATE_FAILED        : beatmap.settings.late_failed_score,
+            PerformanceType.EARLY_FAILED       : beatmap.settings.early_failed_score,
+            PerformanceType.GREAT_WRONG        : beatmap.settings.great_wrong_score,
+            PerformanceType.LATE_GOOD_WRONG    : beatmap.settings.late_good_wrong_score,
+            PerformanceType.EARLY_GOOD_WRONG   : beatmap.settings.early_good_wrong_score,
+            PerformanceType.LATE_BAD_WRONG     : beatmap.settings.late_bad_wrong_score,
+            PerformanceType.EARLY_BAD_WRONG    : beatmap.settings.early_bad_wrong_score,
+            PerformanceType.LATE_FAILED_WRONG  : beatmap.settings.late_failed_wrong_score,
+            PerformanceType.EARLY_FAILED_WRONG : beatmap.settings.early_failed_wrong_score,
+            }
         self.performance_sustain_time = beatmap.settings.performance_sustain_time
+
+        self.full_score = max(self.performance_scores.values())
 
         if speed is None:
             speed = context.get('speed', 1.0)
@@ -290,11 +327,15 @@ class OneshotTarget(Target):
 
     @property
     def score(self):
-        return self.perf.score if self.perf is not None else 0
+        return self.performance_scores[self.perf.type] if self.perf is not None else 0
 
     @property
     def is_finished(self):
         return self.perf is not None
+
+    @property
+    def perfs(self):
+        return (self.perf,) if self.perf is not None else ()
 
     def approach(self, field):
         if self.sound is not None:
@@ -305,15 +346,17 @@ class OneshotTarget(Target):
         field.reset_sight(start=self.range[0])
 
     def hit(self, field, time, strength, is_correct_key=True):
-        perf = Performance.judge(time - self.time, is_correct_key, self.tolerances)
+        perf = Performance.judge(self.time, time - self.time, is_correct_key, self.tolerances)
         if perf is not None:
             perf.render(field, self.speed < 0, self.performance_appearances, self.performance_sustain_time)
             self.finish(field, perf)
 
-    def finish(self, field, perf=Performance.MISS):
+    def finish(self, field, perf=None):
+        if perf is None:
+            perf = Performance(PerformanceType.MISS, self.time, None)
         self.perf = perf
 
-        if self.perf == Performance.MISS:
+        if self.perf.type == PerformanceType.MISS:
             pass
 
         elif self.perf.is_wrong: # wrong key
@@ -904,15 +947,34 @@ class KAIKO:
 @cfg.configurable
 class BeatmapSettings:
     ## Difficulty:
-    great_tolerance: float = 0.02
-    good_tolerance: float = 0.06
-    bad_tolerance: float = 0.10
+    great_tolerance:  float = 0.02
+    good_tolerance:   float = 0.06
+    bad_tolerance:    float = 0.10
     failed_tolerance: float = 0.14
     soft_threshold: float = 0.5
     loud_threshold: float = 0.5
     incr_threshold: float = -0.1
     roll_tolerance: float = 0.10
     spin_tolerance: float = 0.10
+
+    ## Scores:
+    miss_score:               int = 0
+
+    late_failed_score:        int = 0
+    late_bad_score:           int = 3
+    late_good_score:          int = 5
+    great_score:              int = 10
+    early_good_score:         int = 5
+    early_bad_score:          int = 3
+    early_failed_score:       int = 0
+
+    late_failed_wrong_score:  int = 0
+    late_bad_wrong_score:     int = 1
+    late_good_wrong_score:    int = 3
+    great_wrong_score:        int = 5
+    early_good_wrong_score:   int = 3
+    early_bad_wrong_score:    int = 1
+    early_failed_wrong_score: int = 0
 
     ## PerformanceSkin:
     miss_appearance:               Tuple[str, str] = (""   , ""     )
