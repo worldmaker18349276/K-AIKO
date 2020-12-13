@@ -11,11 +11,9 @@ elif filename.endswith(".osu"):
 else:
     raise ValueError(f"unknown file extension: {filename}")
 
-program = PlayField(beatmap)
+field = PlayField(beatmap)
 console = KnockConsole()
-console.run(program)
+console.run(field)
 
 print()
-import os
-width = int(os.popen("stty size", 'r').read().split()[1])
-perf_report(width, program)
+beatmap.judger.report(field.events)
