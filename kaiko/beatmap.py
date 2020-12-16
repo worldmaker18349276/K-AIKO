@@ -871,11 +871,12 @@ class Performance:
 
 class PerformanceJudger:
     def __init__(self, settings):
+        perf_tolerance = settings.perf_tolerance
         self.tolerances = (
-            settings.perfect_tolerance,
-            settings.good_tolerance,
-            settings.bad_tolerance,
-            settings.failed_tolerance,
+            perf_tolerance*1,
+            perf_tolerance*3,
+            perf_tolerance*5,
+            perf_tolerance*7,
             )
         self.appearances = {
             PerformanceGrade.MISS               : settings.miss_appearance,
@@ -1001,10 +1002,7 @@ class PerformanceJudger:
 @cfg.configurable
 class BeatmapSettings:
     ## Difficulty:
-    perfect_tolerance: float = 0.02
-    good_tolerance:    float = 0.06
-    bad_tolerance:     float = 0.10
-    failed_tolerance:  float = 0.14
+    perf_tolerance: float = 0.02
     soft_threshold: float = 0.5
     loud_threshold: float = 0.5
     incr_threshold: float = -0.1
