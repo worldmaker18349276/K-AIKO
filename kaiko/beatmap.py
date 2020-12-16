@@ -355,6 +355,9 @@ class Roll(Target):
 
     def finish(self, field):
         self.is_finished = True
+        for time in self.times[self.roll:]:
+            perf = field.judger.judge(time)
+            self.perfs.append(perf)
 
 class Spin(Target):
     full_score = 10
