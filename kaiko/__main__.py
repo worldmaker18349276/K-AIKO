@@ -16,4 +16,4 @@ console = KnockConsole()
 console.run(field)
 
 print()
-beatmap.judger.report(field.events)
+field.judger.report(field.events)

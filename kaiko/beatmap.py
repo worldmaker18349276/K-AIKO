@@ -1,7 +1,7 @@
 import os
 from enum import Enum
 import inspect
-from typing import List, Tuple, Optional, Union
+from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
 import queue
 import numpy
@@ -181,13 +181,14 @@ class OneshotTarget(Target):
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.time + travel_time)
         self.pos = lambda time, width: (self.time-time) * 0.5 * self.speed
-        self.judger = beatmap.judger
-        self.range = self.judger.get_range(self.time)
-        self.full_score = self.judger.full_score
+        tol = beatmap.settings.failed_tolerance
+        self.range = (self.time-tol, self.time+tol)
+        self._scores = beatmap.settings.performances_scores
+        self.full_score = beatmap.settings.performances_max_score
 
     @property
     def score(self):
-        return self.judger.get_score(self.perf)
+        return self._scores[self.perf.grade] if self.perf is not None else 0
 
     @property
     def is_finished(self):
@@ -206,13 +207,13 @@ class OneshotTarget(Target):
         field.reset_sight(start=self.range[0])
 
     def hit(self, field, time, strength, is_correct_key=True):
-        perf = self.judger.judge(self.time, time, is_correct_key)
-        self.judger.render(perf, field, self.speed < 0)
+        perf = field.judger.judge(self.time, time, is_correct_key)
+        field.judger.render(perf, field, self.speed < 0)
         self.finish(field, perf)
 
     def finish(self, field, perf=None):
         if perf is None:
-            perf = self.judger.judge(self.time)
+            perf = field.judger.judge(self.time)
         self.perf = perf
 
         if self.perf.is_miss:
@@ -321,6 +322,7 @@ class Roll(Target):
         self.times = [beatmap.time(beat+i/density) for i in range(self.number)]
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.end + travel_time)
+        self.perfs = []
         self.range = (self.time - self.tolerance, self.end - self.tolerance)
         self.full_score = self.number * 2
 
@@ -347,6 +349,8 @@ class Roll(Target):
     def hit(self, field, time, strength):
         self.roll += 1
         if self.roll <= self.number:
+            perf = field.judger.judge(self.times[self.roll-1], time, True)
+            self.perfs.append(perf)
             field.remove_target(key=(self, self.roll-1))
 
     def finish(self, field):
@@ -461,6 +465,7 @@ class PlayField:
 
     def __init__(self, beatmap, config=None):
         self.beatmap = beatmap
+        self.judger = PerformanceJudger(beatmap.settings)
 
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
@@ -871,60 +876,12 @@ class Performance:
 
 class PerformanceJudger:
     def __init__(self, settings):
-        perf_tolerance = settings.perf_tolerance
-        self.tolerances = (
-            perf_tolerance*1,
-            perf_tolerance*3,
-            perf_tolerance*5,
-            perf_tolerance*7,
-            )
-        self.appearances = {
-            PerformanceGrade.MISS               : settings.miss_appearance,
-            PerformanceGrade.PERFECT            : settings.perfect_appearance,
-            PerformanceGrade.LATE_GOOD          : settings.late_good_appearance,
-            PerformanceGrade.EARLY_GOOD         : settings.early_good_appearance,
-            PerformanceGrade.LATE_BAD           : settings.late_bad_appearance,
-            PerformanceGrade.EARLY_BAD          : settings.early_bad_appearance,
-            PerformanceGrade.LATE_FAILED        : settings.late_failed_appearance,
-            PerformanceGrade.EARLY_FAILED       : settings.early_failed_appearance,
-            PerformanceGrade.PERFECT_WRONG      : settings.perfect_wrong_appearance,
-            PerformanceGrade.LATE_GOOD_WRONG    : settings.late_good_wrong_appearance,
-            PerformanceGrade.EARLY_GOOD_WRONG   : settings.early_good_wrong_appearance,
-            PerformanceGrade.LATE_BAD_WRONG     : settings.late_bad_wrong_appearance,
-            PerformanceGrade.EARLY_BAD_WRONG    : settings.early_bad_wrong_appearance,
-            PerformanceGrade.LATE_FAILED_WRONG  : settings.late_failed_wrong_appearance,
-            PerformanceGrade.EARLY_FAILED_WRONG : settings.early_failed_wrong_appearance,
-            }
-        self.scores = {
-            PerformanceGrade.MISS               : settings.miss_score,
-            PerformanceGrade.PERFECT            : settings.perfect_score,
-            PerformanceGrade.LATE_GOOD          : settings.late_good_score,
-            PerformanceGrade.EARLY_GOOD         : settings.early_good_score,
-            PerformanceGrade.LATE_BAD           : settings.late_bad_score,
-            PerformanceGrade.EARLY_BAD          : settings.early_bad_score,
-            PerformanceGrade.LATE_FAILED        : settings.late_failed_score,
-            PerformanceGrade.EARLY_FAILED       : settings.early_failed_score,
-            PerformanceGrade.PERFECT_WRONG      : settings.perfect_wrong_score,
-            PerformanceGrade.LATE_GOOD_WRONG    : settings.late_good_wrong_score,
-            PerformanceGrade.EARLY_GOOD_WRONG   : settings.early_good_wrong_score,
-            PerformanceGrade.LATE_BAD_WRONG     : settings.late_bad_wrong_score,
-            PerformanceGrade.EARLY_BAD_WRONG    : settings.early_bad_wrong_score,
-            PerformanceGrade.LATE_FAILED_WRONG  : settings.late_failed_wrong_score,
-            PerformanceGrade.EARLY_FAILED_WRONG : settings.early_failed_wrong_score,
-            }
+        self.perfect_tolerance = settings.perfect_tolerance
+        self.good_tolerance    = settings.good_tolerance
+        self.bad_tolerance     = settings.bad_tolerance
+        self.failed_tolerance  = settings.failed_tolerance
+        self.appearances = settings.performances_appearances
         self.sustain_time = settings.performance_sustain_time
-
-    @property
-    def full_score(self):
-        return max(self.scores.values())
-
-    def get_score(self, perf):
-        return self.scores[perf.grade] if perf is not None else 0
-
-    def get_range(self, time, tolerance=None):
-        if tolerance is None:
-            tolerance = self.tolerances[-1]
-        return (time - tolerance, time + tolerance)
 
     def judge(self, time, hit_time=None, is_correct_key=True):
         if hit_time is None:
@@ -934,11 +891,11 @@ class PerformanceJudger:
         abs_err = abs(err)
         is_wrong = not is_correct_key
 
-        if abs_err < self.tolerances[0]: # perfect
+        if abs_err < self.perfect_tolerance:
             shift = 0
-        elif abs_err < self.tolerances[1]: # good
+        elif abs_err < self.good_tolerance:
             shift = 1
-        elif abs_err < self.tolerances[2]: # bad
+        elif abs_err < self.bad_tolerance:
             shift = 2
         else: # failed
             shift = 3
@@ -969,7 +926,7 @@ class PerformanceJudger:
         good_wrong_count    = sum(grade.is_wrong and abs(grade.shift) == 1 for grade in grades)
         perfect_wrong_count = sum(grade.is_wrong and abs(grade.shift) == 0 for grade in grades)
 
-        emax = self.tolerances[-1]
+        emax = self.failed_tolerance
         start = min((perf.time for perf in perfs), default=0.0)
         end   = max((perf.time for perf in perfs), default=0.0)
 
@@ -1002,50 +959,66 @@ class PerformanceJudger:
 @cfg.configurable
 class BeatmapSettings:
     ## Difficulty:
-    perf_tolerance: float = 0.02
+    performance_tolerance: float = 0.02
     soft_threshold: float = 0.5
     loud_threshold: float = 0.5
     incr_threshold: float = -0.1
     roll_tolerance: float = 0.10
     spin_tolerance: float = 0.10
 
+    @property
+    def perfect_tolerance(self): return self.performance_tolerance*1
+    @property
+    def good_tolerance(self): return self.performance_tolerance*3
+    @property
+    def bad_tolerance(self): return self.performance_tolerance*5
+    @property
+    def failed_tolerance(self): return self.performance_tolerance*7
+
     ## Scores:
-    miss_score:               int = 0
+    performances_scores: Dict[PerformanceGrade, int] = {
+        PerformanceGrade.MISS               : 0,
 
-    late_failed_score:        int = 0
-    late_bad_score:           int = 3
-    late_good_score:          int = 5
-    perfect_score:            int = 10
-    early_good_score:         int = 5
-    early_bad_score:          int = 3
-    early_failed_score:       int = 0
+        PerformanceGrade.LATE_FAILED        : 0,
+        PerformanceGrade.LATE_BAD           : 3,
+        PerformanceGrade.LATE_GOOD          : 5,
+        PerformanceGrade.PERFECT            : 10,
+        PerformanceGrade.EARLY_GOOD         : 5,
+        PerformanceGrade.EARLY_BAD          : 3,
+        PerformanceGrade.EARLY_FAILED       : 0,
 
-    late_failed_wrong_score:  int = 0
-    late_bad_wrong_score:     int = 1
-    late_good_wrong_score:    int = 3
-    perfect_wrong_score:      int = 5
-    early_good_wrong_score:   int = 3
-    early_bad_wrong_score:    int = 1
-    early_failed_wrong_score: int = 0
+        PerformanceGrade.LATE_FAILED_WRONG  : 0,
+        PerformanceGrade.LATE_BAD_WRONG     : 1,
+        PerformanceGrade.LATE_GOOD_WRONG    : 3,
+        PerformanceGrade.PERFECT_WRONG      : 5,
+        PerformanceGrade.EARLY_GOOD_WRONG   : 3,
+        PerformanceGrade.EARLY_BAD_WRONG    : 1,
+        PerformanceGrade.EARLY_FAILED_WRONG : 0,
+        }
+
+    @property
+    def performances_max_score(self): return max(self.performances_scores.values())
 
     ## PerformanceSkin:
-    miss_appearance:               Tuple[str, str] = (""   , ""     )
+    performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
+        PerformanceGrade.MISS               : (""   , ""     ),
 
-    late_failed_appearance:        Tuple[str, str] = ("\b⟪", "\t\t⟫")
-    late_bad_appearance:           Tuple[str, str] = ("\b⟨", "\t\t⟩")
-    late_good_appearance:          Tuple[str, str] = ("\b‹", "\t\t›")
-    perfect_appearance:            Tuple[str, str] = (""   , ""     )
-    early_good_appearance:         Tuple[str, str] = ("\t\t›", "\b‹")
-    early_bad_appearance:          Tuple[str, str] = ("\t\t⟩", "\b⟨")
-    early_failed_appearance:       Tuple[str, str] = ("\t\t⟫", "\b⟪")
+        PerformanceGrade.LATE_FAILED        : ("\b⟪", "\t\t⟫"),
+        PerformanceGrade.LATE_BAD           : ("\b⟨", "\t\t⟩"),
+        PerformanceGrade.LATE_GOOD          : ("\b‹", "\t\t›"),
+        PerformanceGrade.PERFECT            : (""   , ""     ),
+        PerformanceGrade.EARLY_GOOD         : ("\t\t›", "\b‹"),
+        PerformanceGrade.EARLY_BAD          : ("\t\t⟩", "\b⟨"),
+        PerformanceGrade.EARLY_FAILED       : ("\t\t⟫", "\b⟪"),
 
-    late_failed_wrong_appearance:  Tuple[str, str] = ("\b⟪", "\t\t⟫")
-    late_bad_wrong_appearance:     Tuple[str, str] = ("\b⟨", "\t\t⟩")
-    late_good_wrong_appearance:    Tuple[str, str] = ("\b‹", "\t\t›")
-    perfect_wrong_appearance:      Tuple[str, str] = (""   , ""     )
-    early_good_wrong_appearance:   Tuple[str, str] = ("\t\t›", "\b‹")
-    early_bad_wrong_appearance:    Tuple[str, str] = ("\t\t⟩", "\b⟨")
-    early_failed_wrong_appearance: Tuple[str, str] = ("\t\t⟫", "\b⟪")
+        PerformanceGrade.LATE_FAILED_WRONG  : ("\b⟪", "\t\t⟫"),
+        PerformanceGrade.LATE_BAD_WRONG     : ("\b⟨", "\t\t⟩"),
+        PerformanceGrade.LATE_GOOD_WRONG    : ("\b‹", "\t\t›"),
+        PerformanceGrade.PERFECT_WRONG      : (""   , ""     ),
+        PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t›", "\b‹"),
+        PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t⟩", "\b⟨"),
+        PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t⟫", "\b⟪"),
+        }
 
     performance_sustain_time: float = 0.1
 
@@ -1070,8 +1043,6 @@ class Beatmap:
     settings: BeatmapSettings = BeatmapSettings()
 
     def __init__(self, path=".", info="", audio=None, offset=0.0, tempo=60.0):
-        self.judger = PerformanceJudger(self.settings)
-
         self.path = path
         self.info = info
         self.audio = audio
