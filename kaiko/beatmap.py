@@ -207,9 +207,8 @@ class OneshotTarget(Target):
 
     def hit(self, field, time, strength, is_correct_key=True):
         perf = self.judger.judge(self.time, time, is_correct_key)
-        if not perf.is_miss:
-            self.judger.render(perf, field, self.speed < 0)
-            self.finish(field, perf)
+        self.judger.render(perf, field, self.speed < 0)
+        self.finish(field, perf)
 
     def finish(self, field, perf=None):
         if perf is None:
@@ -391,7 +390,7 @@ class Spin(Target):
             if self.sound is not None:
                 field.play(self.sound, time=time, volume=self.volume)
 
-        appearance = lambda: self.disk_appearances[int(self.charge) % len(self.disk_appearances)]
+        appearance = lambda time, width: self.disk_appearances[int(self.charge) % len(self.disk_appearances)]
         field.draw_target(self, self.pos, appearance,
                           start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
         field.draw_sight("", start=self.range[0], duration=self.range[1]-self.range[0])
@@ -794,9 +793,9 @@ def braille_scatter(width, height, xy, xlim, ylim):
 
     graph = numpy.zeros((height*4, width*2), dtype=bool)
     for x, y in xy:
-        if xlim[0] <= x <= xlim[1] and ylim[0] <= y <= ylim[1]:
-            i = max(0, min(height*4-1, round((y-ylim[0])/dy)))
-            j = max(0, min(width*2-1, round((x-xlim[0])/dx)))
+        i = round((y-ylim[0])/dy)
+        j = round((x-xlim[0])/dx)
+        if i in range(height*4) and j in range(width*2):
             graph[i,j] = True
 
     graph = graph.reshape(height, 4, width, 2)
@@ -806,16 +805,16 @@ def braille_scatter(width, height, xy, xlim, ylim):
 
     return strs
 
-class PerformanceType(Enum):
+class PerformanceGrade(Enum):
     MISS               = (None, None)
-    GREAT              = ( 0, False)
+    PERFECT            = ( 0, False)
     LATE_GOOD          = (+1, False)
     EARLY_GOOD         = (-1, False)
     LATE_BAD           = (+2, False)
     EARLY_BAD          = (-2, False)
     LATE_FAILED        = (+3, False)
     EARLY_FAILED       = (-3, False)
-    GREAT_WRONG        = ( 0,  True)
+    PERFECT_WRONG      = ( 0,  True)
     LATE_GOOD_WRONG    = (+1,  True)
     EARLY_GOOD_WRONG   = (-1,  True)
     LATE_BAD_WRONG     = (+2,  True)
@@ -828,89 +827,89 @@ class PerformanceType(Enum):
         self.is_wrong = is_wrong
 
     def __repr__(self):
-        return f"PerformanceType.{self.name}"
+        return f"PerformanceGrade.{self.name}"
 
 class Performance:
-    def __init__(self, type, time, err):
-        self.type = type
+    def __init__(self, grade, time, err):
+        self.grade = grade
         self.time = time
         self.err = err
 
     @property
     def shift(self):
-        return self.type.shift
+        return self.grade.shift
 
     @property
     def is_wrong(self):
-        return self.type.is_wrong
+        return self.grade.is_wrong
 
     @property
     def is_miss(self):
-        return self.type == PerformanceType.MISS
+        return self.grade == PerformanceGrade.MISS
 
     discriptions = {
-        PerformanceType.MISS               : "Miss"                      ,
-        PerformanceType.GREAT              : "Great"                     ,
-        PerformanceType.LATE_GOOD          : "Late Good"                 ,
-        PerformanceType.EARLY_GOOD         : "Early Good"                ,
-        PerformanceType.LATE_BAD           : "Late Bad"                  ,
-        PerformanceType.EARLY_BAD          : "Early Bad"                 ,
-        PerformanceType.LATE_FAILED        : "Late Failed"               ,
-        PerformanceType.EARLY_FAILED       : "Early Failed"              ,
-        PerformanceType.GREAT_WRONG        : "Great but Wrong Key"       ,
-        PerformanceType.LATE_GOOD_WRONG    : "Late Good but Wrong Key"   ,
-        PerformanceType.EARLY_GOOD_WRONG   : "Early Good but Wrong Key"  ,
-        PerformanceType.LATE_BAD_WRONG     : "Late Bad but Wrong Key"    ,
-        PerformanceType.EARLY_BAD_WRONG    : "Early Bad but Wrong Key"   ,
-        PerformanceType.LATE_FAILED_WRONG  : "Late Failed but Wrong Key" ,
-        PerformanceType.EARLY_FAILED_WRONG : "Early Failed but Wrong Key",
+        PerformanceGrade.MISS               : "Miss"                      ,
+        PerformanceGrade.PERFECT            : "Perfect"                   ,
+        PerformanceGrade.LATE_GOOD          : "Late Good"                 ,
+        PerformanceGrade.EARLY_GOOD         : "Early Good"                ,
+        PerformanceGrade.LATE_BAD           : "Late Bad"                  ,
+        PerformanceGrade.EARLY_BAD          : "Early Bad"                 ,
+        PerformanceGrade.LATE_FAILED        : "Late Failed"               ,
+        PerformanceGrade.EARLY_FAILED       : "Early Failed"              ,
+        PerformanceGrade.PERFECT_WRONG      : "Perfect but Wrong Key"     ,
+        PerformanceGrade.LATE_GOOD_WRONG    : "Late Good but Wrong Key"   ,
+        PerformanceGrade.EARLY_GOOD_WRONG   : "Early Good but Wrong Key"  ,
+        PerformanceGrade.LATE_BAD_WRONG     : "Late Bad but Wrong Key"    ,
+        PerformanceGrade.EARLY_BAD_WRONG    : "Early Bad but Wrong Key"   ,
+        PerformanceGrade.LATE_FAILED_WRONG  : "Late Failed but Wrong Key" ,
+        PerformanceGrade.EARLY_FAILED_WRONG : "Early Failed but Wrong Key",
     }
 
     @property
     def description(self):
-        return self.discriptions[self.type]
+        return self.discriptions[self.grade]
 
-class Judger:
+class PerformanceJudger:
     def __init__(self, settings):
         self.tolerances = (
-            settings.great_tolerance,
+            settings.perfect_tolerance,
             settings.good_tolerance,
             settings.bad_tolerance,
             settings.failed_tolerance,
             )
         self.appearances = {
-            PerformanceType.MISS               : settings.miss_appearance,
-            PerformanceType.GREAT              : settings.great_appearance,
-            PerformanceType.LATE_GOOD          : settings.late_good_appearance,
-            PerformanceType.EARLY_GOOD         : settings.early_good_appearance,
-            PerformanceType.LATE_BAD           : settings.late_bad_appearance,
-            PerformanceType.EARLY_BAD          : settings.early_bad_appearance,
-            PerformanceType.LATE_FAILED        : settings.late_failed_appearance,
-            PerformanceType.EARLY_FAILED       : settings.early_failed_appearance,
-            PerformanceType.GREAT_WRONG        : settings.great_wrong_appearance,
-            PerformanceType.LATE_GOOD_WRONG    : settings.late_good_wrong_appearance,
-            PerformanceType.EARLY_GOOD_WRONG   : settings.early_good_wrong_appearance,
-            PerformanceType.LATE_BAD_WRONG     : settings.late_bad_wrong_appearance,
-            PerformanceType.EARLY_BAD_WRONG    : settings.early_bad_wrong_appearance,
-            PerformanceType.LATE_FAILED_WRONG  : settings.late_failed_wrong_appearance,
-            PerformanceType.EARLY_FAILED_WRONG : settings.early_failed_wrong_appearance,
+            PerformanceGrade.MISS               : settings.miss_appearance,
+            PerformanceGrade.PERFECT            : settings.perfect_appearance,
+            PerformanceGrade.LATE_GOOD          : settings.late_good_appearance,
+            PerformanceGrade.EARLY_GOOD         : settings.early_good_appearance,
+            PerformanceGrade.LATE_BAD           : settings.late_bad_appearance,
+            PerformanceGrade.EARLY_BAD          : settings.early_bad_appearance,
+            PerformanceGrade.LATE_FAILED        : settings.late_failed_appearance,
+            PerformanceGrade.EARLY_FAILED       : settings.early_failed_appearance,
+            PerformanceGrade.PERFECT_WRONG      : settings.perfect_wrong_appearance,
+            PerformanceGrade.LATE_GOOD_WRONG    : settings.late_good_wrong_appearance,
+            PerformanceGrade.EARLY_GOOD_WRONG   : settings.early_good_wrong_appearance,
+            PerformanceGrade.LATE_BAD_WRONG     : settings.late_bad_wrong_appearance,
+            PerformanceGrade.EARLY_BAD_WRONG    : settings.early_bad_wrong_appearance,
+            PerformanceGrade.LATE_FAILED_WRONG  : settings.late_failed_wrong_appearance,
+            PerformanceGrade.EARLY_FAILED_WRONG : settings.early_failed_wrong_appearance,
             }
         self.scores = {
-            PerformanceType.MISS               : settings.miss_score,
-            PerformanceType.GREAT              : settings.great_score,
-            PerformanceType.LATE_GOOD          : settings.late_good_score,
-            PerformanceType.EARLY_GOOD         : settings.early_good_score,
-            PerformanceType.LATE_BAD           : settings.late_bad_score,
-            PerformanceType.EARLY_BAD          : settings.early_bad_score,
-            PerformanceType.LATE_FAILED        : settings.late_failed_score,
-            PerformanceType.EARLY_FAILED       : settings.early_failed_score,
-            PerformanceType.GREAT_WRONG        : settings.great_wrong_score,
-            PerformanceType.LATE_GOOD_WRONG    : settings.late_good_wrong_score,
-            PerformanceType.EARLY_GOOD_WRONG   : settings.early_good_wrong_score,
-            PerformanceType.LATE_BAD_WRONG     : settings.late_bad_wrong_score,
-            PerformanceType.EARLY_BAD_WRONG    : settings.early_bad_wrong_score,
-            PerformanceType.LATE_FAILED_WRONG  : settings.late_failed_wrong_score,
-            PerformanceType.EARLY_FAILED_WRONG : settings.early_failed_wrong_score,
+            PerformanceGrade.MISS               : settings.miss_score,
+            PerformanceGrade.PERFECT            : settings.perfect_score,
+            PerformanceGrade.LATE_GOOD          : settings.late_good_score,
+            PerformanceGrade.EARLY_GOOD         : settings.early_good_score,
+            PerformanceGrade.LATE_BAD           : settings.late_bad_score,
+            PerformanceGrade.EARLY_BAD          : settings.early_bad_score,
+            PerformanceGrade.LATE_FAILED        : settings.late_failed_score,
+            PerformanceGrade.EARLY_FAILED       : settings.early_failed_score,
+            PerformanceGrade.PERFECT_WRONG      : settings.perfect_wrong_score,
+            PerformanceGrade.LATE_GOOD_WRONG    : settings.late_good_wrong_score,
+            PerformanceGrade.EARLY_GOOD_WRONG   : settings.early_good_wrong_score,
+            PerformanceGrade.LATE_BAD_WRONG     : settings.late_bad_wrong_score,
+            PerformanceGrade.EARLY_BAD_WRONG    : settings.early_bad_wrong_score,
+            PerformanceGrade.LATE_FAILED_WRONG  : settings.late_failed_wrong_score,
+            PerformanceGrade.EARLY_FAILED_WRONG : settings.early_failed_wrong_score,
             }
         self.sustain_time = settings.performance_sustain_time
 
@@ -919,7 +918,7 @@ class Judger:
         return max(self.scores.values())
 
     def get_score(self, perf):
-        return self.scores[perf.type] if perf is not None else 0
+        return self.scores[perf.grade] if perf is not None else 0
 
     def get_range(self, time, tolerance=None):
         if tolerance is None:
@@ -928,31 +927,28 @@ class Judger:
 
     def judge(self, time, hit_time=None, is_correct_key=True):
         if hit_time is None:
-            return Performance(PerformanceType((None, None)), time, None)
+            return Performance(PerformanceGrade((None, None)), time, None)
 
         err = hit_time - time
         abs_err = abs(err)
         is_wrong = not is_correct_key
 
-        if abs_err < self.tolerances[0]: # great
+        if abs_err < self.tolerances[0]: # perfect
             shift = 0
         elif abs_err < self.tolerances[1]: # good
             shift = 1
         elif abs_err < self.tolerances[2]: # bad
             shift = 2
-        elif abs_err < self.tolerances[3]: # failed
+        else: # failed
             shift = 3
-        else: # miss
-            shift = None
-            is_wrong = None
 
-        if shift is not None and err < 0:
+        if err < 0:
             shift = -shift
 
-        return Performance(PerformanceType((shift, is_wrong)), time, err)
+        return Performance(PerformanceGrade((shift, is_wrong)), time, err)
 
     def render(self, perf, field, is_reversed):
-        appearance = self.appearances[perf.type]
+        appearance = self.appearances[perf.grade]
         if is_reversed:
             appearance = appearance[::-1]
         field.draw_text(field.sight_shift, appearance, duration=self.sustain_time, zindex=(1,), key='perf_hint')
@@ -961,53 +957,54 @@ class Judger:
         width = int(os.popen("stty size", 'r').read().split()[1])
         perfs = [perf for event in events for perf in getattr(event, 'perfs', ())]
 
+        grades = [perf.grade for perf in perfs if not perf.is_miss]
         miss_count = sum(perf.is_miss for perf in perfs)
-        failed_count =   sum(not perf.is_wrong and abs(perf.shift) == 3 for perf in perfs if not perf.is_miss)
-        bad_count    =   sum(not perf.is_wrong and abs(perf.shift) == 2 for perf in perfs if not perf.is_miss)
-        good_count   =   sum(not perf.is_wrong and abs(perf.shift) == 1 for perf in perfs if not perf.is_miss)
-        great_count  =   sum(not perf.is_wrong and abs(perf.shift) == 0 for perf in perfs if not perf.is_miss)
-        failed_wrong_count = sum(perf.is_wrong and abs(perf.shift) == 3 for perf in perfs if not perf.is_miss)
-        bad_wrong_count    = sum(perf.is_wrong and abs(perf.shift) == 2 for perf in perfs if not perf.is_miss)
-        good_wrong_count   = sum(perf.is_wrong and abs(perf.shift) == 1 for perf in perfs if not perf.is_miss)
-        great_wrong_count  = sum(perf.is_wrong and abs(perf.shift) == 0 for perf in perfs if not perf.is_miss)
-
-        count = sum(1 for perf in perfs if not perf.is_miss)
-        avg = sum(perf.err for perf in perfs if not perf.is_miss)/count
-        std = (sum((perf.err-avg)**2 for perf in perfs if not perf.is_miss)/count)**0.5
+        failed_count    = sum(not grade.is_wrong and abs(grade.shift) == 3 for grade in grades)
+        bad_count       = sum(not grade.is_wrong and abs(grade.shift) == 2 for grade in grades)
+        good_count      = sum(not grade.is_wrong and abs(grade.shift) == 1 for grade in grades)
+        perfect_count   = sum(not grade.is_wrong and abs(grade.shift) == 0 for grade in grades)
+        failed_wrong_count  = sum(grade.is_wrong and abs(grade.shift) == 3 for grade in grades)
+        bad_wrong_count     = sum(grade.is_wrong and abs(grade.shift) == 2 for grade in grades)
+        good_wrong_count    = sum(grade.is_wrong and abs(grade.shift) == 1 for grade in grades)
+        perfect_wrong_count = sum(grade.is_wrong and abs(grade.shift) == 0 for grade in grades)
 
         emax = self.tolerances[-1]
         start = min((perf.time for perf in perfs), default=0.0)
         end   = max((perf.time for perf in perfs), default=0.0)
+
         xy = [(perf.time, perf.err) for perf in perfs if not perf.is_miss]
-        EF, EB, EG, X, LG, LB, LF, _ = braille_scatter(width-1, 7, xy, [start, end], [-emax, emax]).split("\n")
+        avg = sum(y for _, y in xy) / len(xy)
+        std = (sum((y-avg)**2 for _, y in xy) / len(xy))**0.5
+        EF, EB, EG, P, LG, LB, LF, _ = braille_scatter(width-2, 7, xy, [start, end], [-emax, emax]).split("\n")
 
-        print(f"  miss: {   miss_count}")
-        print(f"failed: { failed_count}+{ failed_wrong_count}")
-        print(f"   bad: {    bad_count}+{    bad_wrong_count}")
-        print(f"  good: {   good_count}+{   good_wrong_count}")
-        print(f" great: {  great_count}+{  great_wrong_count}")
+        print(f"   miss: {   miss_count}")
+        print(f" failed: { failed_count}+{ failed_wrong_count}")
+        print(f"    bad: {    bad_count}+{    bad_wrong_count}")
+        print(f"   good: {   good_count}+{   good_wrong_count}")
+        print(f"perfect: {perfect_count}+{perfect_wrong_count}")
         print()
-        print(f"error: {avg}±{std}")
+        print("avg={:.3f} ms".format(avg*1000))
+        print("dev={:.3f} ms".format(std*1000))
 
-        print("\u28c0"*width)
-        print("F"+EF)
-        print("B"+EB)
-        print("G"+EG)
-        print("X"+ X)
-        print("G"+LG)
-        print("B"+LB)
-        print("F"+LF)
-        print("\u2809"*width)
+        print("╒" + "═"*(width-2) + "╕")
+        print("F" + EF            + "│")
+        print("B" + EB            + "│")
+        print("G" + EG            + "│")
+        print("P" +  P            + "│")
+        print("G" + LG            + "│")
+        print("B" + LB            + "│")
+        print("F" + LF            + "│")
+        print("╘" + "═"*(width-2) + "╛")
 
 
 # Beatmap
 @cfg.configurable
 class BeatmapSettings:
     ## Difficulty:
-    great_tolerance:  float = 0.02
-    good_tolerance:   float = 0.06
-    bad_tolerance:    float = 0.10
-    failed_tolerance: float = 0.14
+    perfect_tolerance: float = 0.02
+    good_tolerance:    float = 0.06
+    bad_tolerance:     float = 0.10
+    failed_tolerance:  float = 0.14
     soft_threshold: float = 0.5
     loud_threshold: float = 0.5
     incr_threshold: float = -0.1
@@ -1020,7 +1017,7 @@ class BeatmapSettings:
     late_failed_score:        int = 0
     late_bad_score:           int = 3
     late_good_score:          int = 5
-    great_score:              int = 10
+    perfect_score:            int = 10
     early_good_score:         int = 5
     early_bad_score:          int = 3
     early_failed_score:       int = 0
@@ -1028,7 +1025,7 @@ class BeatmapSettings:
     late_failed_wrong_score:  int = 0
     late_bad_wrong_score:     int = 1
     late_good_wrong_score:    int = 3
-    great_wrong_score:        int = 5
+    perfect_wrong_score:      int = 5
     early_good_wrong_score:   int = 3
     early_bad_wrong_score:    int = 1
     early_failed_wrong_score: int = 0
@@ -1039,7 +1036,7 @@ class BeatmapSettings:
     late_failed_appearance:        Tuple[str, str] = ("\b⟪", "\t\t⟫")
     late_bad_appearance:           Tuple[str, str] = ("\b⟨", "\t\t⟩")
     late_good_appearance:          Tuple[str, str] = ("\b‹", "\t\t›")
-    great_appearance:              Tuple[str, str] = (""   , ""     )
+    perfect_appearance:            Tuple[str, str] = (""   , ""     )
     early_good_appearance:         Tuple[str, str] = ("\t\t›", "\b‹")
     early_bad_appearance:          Tuple[str, str] = ("\t\t⟩", "\b⟨")
     early_failed_appearance:       Tuple[str, str] = ("\t\t⟫", "\b⟪")
@@ -1047,7 +1044,7 @@ class BeatmapSettings:
     late_failed_wrong_appearance:  Tuple[str, str] = ("\b⟪", "\t\t⟫")
     late_bad_wrong_appearance:     Tuple[str, str] = ("\b⟨", "\t\t⟩")
     late_good_wrong_appearance:    Tuple[str, str] = ("\b‹", "\t\t›")
-    great_wrong_appearance:        Tuple[str, str] = (""   , ""     )
+    perfect_wrong_appearance:      Tuple[str, str] = (""   , ""     )
     early_good_wrong_appearance:   Tuple[str, str] = ("\t\t›", "\b‹")
     early_bad_wrong_appearance:    Tuple[str, str] = ("\t\t⟩", "\b⟨")
     early_failed_wrong_appearance: Tuple[str, str] = ("\t\t⟫", "\b⟪")
@@ -1075,7 +1072,7 @@ class Beatmap:
     settings: BeatmapSettings = BeatmapSettings()
 
     def __init__(self, path=".", info="", audio=None, offset=0.0, tempo=60.0):
-        self.judger = Judger(self.settings)
+        self.judger = PerformanceJudger(self.settings)
 
         self.path = path
         self.info = info
