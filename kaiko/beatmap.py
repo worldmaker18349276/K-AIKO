@@ -252,13 +252,14 @@ class IncrGroup:
     def __init__(self, threshold=0.0, total=0):
         self.threshold = threshold
         self.total = total
+        self.volume = 0.0
 
     def hit(self, strength):
         self.threshold = max(self.threshold, strength)
 
 class Incr(OneshotTarget):
     def __init__(self, beatmap, context, group=None, *, beat, speed=None, volume=None):
-        super().__init__(beatmap, context, beat=beat, speed=speed, volume=volume)
+        super().__init__(beatmap, context, beat=beat, speed=speed)
 
         self.approach_appearance = beatmap.settings.incr_approach_appearance
         self.wrong_appearance = beatmap.settings.incr_wrong_appearance
@@ -285,19 +286,22 @@ class Incr(OneshotTarget):
         context['incrs'].move_to_end(group_key)
 
         group.total += 1
+        if volume is not None:
+            group.volume = volume
         self.count = group.total
         self.group = group
 
     @property
     def volume(self):
-        return self._volume + numpy.log10(0.2 + 0.8 * (self.count-1)/self.group.total) * 20
+        return self.group.volume + numpy.log10(0.2 + 0.8 * (self.count-1)/self.group.total) * 20
 
     @volume.setter
     def volume(self, value):
-        self._volume = value
+        pass
 
     def hit(self, field, time, strength):
-        super().hit(field, time, strength, strength >= min(1.0, self.group.threshold + self.incr_threshold))
+        threshold = max(0.0, min(1.0, self.group.threshold + self.incr_threshold))
+        super().hit(field, time, strength, strength >= threshold)
         self.group.hit(strength)
 
 class Roll(Target):
