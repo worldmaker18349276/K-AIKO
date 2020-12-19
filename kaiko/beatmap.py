@@ -314,7 +314,8 @@ class Roll(Target):
 
         self.tolerance = beatmap.settings.roll_tolerance
         self.rock_appearance = beatmap.settings.roll_rock_appearance
-        self.sound = beatmap.settings.rock_sound
+        self.sound = beatmap.settings.roll_rock_sound
+        self.rock_score = beatmap.settings.roll_rock_score
 
         self.time = beatmap.time(beat)
         self.end = beatmap.time(beat+length)
@@ -329,7 +330,7 @@ class Roll(Target):
         self.lifespan = (self.time - travel_time, self.end + travel_time)
         self.perfs = []
         self.range = (self.time - self.tolerance, self.end - self.tolerance)
-        self.full_score = self.number * 2
+        self.full_score = self.number * self.rock_score
 
     def get_pos(self, index):
         return lambda time, width: (self.times[index]-time) * 0.5 * self.speed
@@ -337,9 +338,9 @@ class Roll(Target):
     @property
     def score(self):
         if self.roll < self.number:
-            return self.roll * 2
+            return self.roll * self.rock_score
         elif self.roll < 2*self.number:
-            return (2*self.number - self.roll) * 2
+            return (2*self.number - self.roll) * self.rock_score
         else:
             return 0
 
@@ -365,8 +366,6 @@ class Roll(Target):
             self.perfs.append(perf)
 
 class Spin(Target):
-    full_score = 10
-
     def __init__(self, beatmap, context, density=2, *, beat, length, speed=None, volume=None):
         if speed is None:
             speed = context.get('speed', 1.0)
@@ -377,7 +376,8 @@ class Spin(Target):
         self.disk_appearances = beatmap.settings.spin_disk_appearances
         self.finishing_appearance = beatmap.settings.spin_finishing_appearance
         self.finish_sustain_time = beatmap.settings.spin_finish_sustain_time
-        self.sound = beatmap.settings.disk_sound
+        self.sound = beatmap.settings.spin_disk_sound
+        self.full_score = beatmap.settings.spin_score
 
         self.time = beatmap.time(beat)
         self.end = beatmap.time(beat+length)
@@ -395,7 +395,10 @@ class Spin(Target):
 
     @property
     def score(self):
-        return self.full_score if self.charge == self.capacity else 0
+        if not self.is_finished:
+            return int(self.full_score * self.charge / self.capacity)
+        else:
+            return self.full_score if self.charge == self.capacity else 0
 
     def approach(self, field):
         for time in self.times:
@@ -478,11 +481,12 @@ class PlayField:
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
 
-    def get_total_score(self):
-        return sum(getattr(event, 'full_score', 0) for event in self.events)
+    def get_full_score(self):
+        return sum(getattr(event, 'full_score', 0) for event in self.events
+                   if getattr(event, 'is_finished', True)) * self.score_scale
 
     def get_score(self):
-        return sum(getattr(event, 'score', 0) for event in self.events)
+        return sum(getattr(event, 'score', 0) for event in self.events) * self.score_scale
 
     def get_progress(self):
         total = len([event for event in self.events if hasattr(event, 'is_finished')])
@@ -505,7 +509,9 @@ class PlayField:
         events_start_time = min((event.lifespan[0] - leadin_time for event in self.events), default=0.0)
         events_end_time   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
 
-        self.total_score = self.get_total_score()
+        total_score = sum(getattr(event, 'full_score', 0) for event in self.events)
+        self.score_scale = 65536 / total_score
+        self.full_score = self.get_full_score()
         self.score = self.get_score()
         self.progress = self.get_progress()
         self.time = datetime.time(0, 0, 0)
@@ -528,8 +534,8 @@ class PlayField:
 
         self.spectrum = "\u2800"*spec_width
         score_width_ = max(0, score_width-3)
-        self.score_format = "{score:0%dd}" % (score_width_-score_width_//2)
-        self.total_score_format = "{total_score:0%dd}" % (score_width_//2)
+        self.score_format = "{score:0%d.0f}" % (score_width_-score_width_//2)
+        self.full_score_format = "{full_score:0%d.0f}" % (score_width_//2)
         self.progress_format = "{progress:>%d.%d%%}" % (max(0, progress_width-8), max(0, progress_width-13))
         self.time_format = "{time:%M:%S}"
 
@@ -570,6 +576,7 @@ class PlayField:
                     event.register(self)
                     event = next(events_iter, None)
 
+                self.full_score = self.get_full_score()
                 self.score = self.get_score()
                 self.progress = self.get_progress()
                 time = int(max(0.0, time))
@@ -672,9 +679,9 @@ class PlayField:
             screen.addstr(spec_start, spec_text, self.spec_mask)
 
             score_text = self.score_format.format(score=self.score)
-            total_score_text = self.total_score_format.format(total_score=self.total_score)
+            full_score_text = self.full_score_format.format(full_score=self.full_score)
             score_start, _, _ = self.score_mask.indices(screen.width)
-            screen.addstr(score_start, f"[{score_text}/{total_score_text}]", self.score_mask)
+            screen.addstr(score_start, f"[{score_text}/{full_score_text}]", self.score_mask)
 
             progress_text = self.progress_format.format(progress=self.progress)
             time_text = self.time_format.format(time=self.time)
@@ -1099,6 +1106,9 @@ class BeatmapSettings:
     @property
     def performances_max_score(self): return max(self.performances_scores.values())
 
+    roll_rock_score: int = 2
+    spin_score: int = 16
+
     ## PerformanceSkin:
     performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
         PerformanceGrade.MISS               : (""   , ""     ),
@@ -1133,11 +1143,11 @@ class BeatmapSettings:
     incr_wrong_appearance:     Union[str, Tuple[str, str]] = "⬚"
     incr_sound: str = "samples/incr.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
     roll_rock_appearance:      Union[str, Tuple[str, str]] = "◎"
-    rock_sound: str = "samples/rock.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
+    roll_rock_sound: str = "samples/rock.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
     spin_disk_appearances:     Union[List[str], List[Tuple[str, str]]] = ["◴", "◵", "◶", "◷"]
     spin_finishing_appearance: Union[str, Tuple[str, str]] = "☺"
     spin_finish_sustain_time: float = 0.1
-    disk_sound: str = "samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
+    spin_disk_sound: str = "samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
 
 class Beatmap:
     settings: BeatmapSettings = BeatmapSettings()
