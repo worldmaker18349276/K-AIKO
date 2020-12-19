@@ -926,7 +926,7 @@ class PerformanceJudger:
             appearance = appearance[::-1]
         field.draw_text(field.sight_shift, appearance, duration=self.sustain_time, zindex=(1,), key='perf_hint')
 
-    def report(self, events):
+    def show_analyze(self, events):
         width = int(os.popen("stty size", 'r').read().split()[1])
         perfs = [perf for event in events for perf in getattr(event, 'perfs', ())]
         emax = self.failed_tolerance

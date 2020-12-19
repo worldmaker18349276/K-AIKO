@@ -16,4 +16,4 @@ console = KnockConsole()
 console.run(field)
 
 print()
-field.judger.report(field.events)
+field.judger.show_analyze(field.events)
