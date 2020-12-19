@@ -1,4 +1,5 @@
 import os
+import datetime
 from enum import Enum
 import inspect
 from typing import List, Tuple, Dict, Optional, Union
@@ -454,7 +455,7 @@ class PlayFieldSettings:
     ## PlayFieldSkin:
     spec_width: int = 5
     score_width: int = 13
-    progress_width: int = 8
+    progress_width: int = 14
     spec_decay_time: float = 0.01
     spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
     spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
@@ -507,6 +508,7 @@ class PlayField:
         self.total_score = self.get_total_score()
         self.score = self.get_score()
         self.progress = self.get_progress()
+        self.time = datetime.time(0, 0, 0)
 
         if self.beatmap.audio is None:
             audionode = None
@@ -526,8 +528,10 @@ class PlayField:
 
         self.spectrum = "\u2800"*spec_width
         score_width_ = max(0, score_width-3)
-        self.score_format = "[{score:>%dd}/{total_score:>%dd}]" % (score_width_-score_width_//2, score_width_//2)
-        self.progress_format = "[{progress_pc:>%d.%df}%%]" % (max(0, progress_width-3), max(0, progress_width-7))
+        self.score_format = "{score:0%dd}" % (score_width_-score_width_//2)
+        self.total_score_format = "{total_score:0%dd}" % (score_width_//2)
+        self.progress_format = "{progress:>%d.%d%%}" % (max(0, progress_width-8), max(0, progress_width-13))
+        self.time_format = "{time:%M:%S}"
 
         # game loop
         tickrate = self.settings.tickrate
@@ -568,6 +572,8 @@ class PlayField:
 
                 self.score = self.get_score()
                 self.progress = self.get_progress()
+                time = int(max(0.0, time))
+                self.time = datetime.time(time//3600, time%3600//60, time%60)
 
                 yield
 
@@ -665,13 +671,15 @@ class PlayField:
             spec_start, _, _ = self.spec_mask.indices(screen.width)
             screen.addstr(spec_start, spec_text, self.spec_mask)
 
-            score_text = self.score_format.format(score=self.score, total_score=self.total_score)
+            score_text = self.score_format.format(score=self.score)
+            total_score_text = self.total_score_format.format(total_score=self.total_score)
             score_start, _, _ = self.score_mask.indices(screen.width)
-            screen.addstr(score_start, score_text, self.score_mask)
+            screen.addstr(score_start, f"[{score_text}/{total_score_text}]", self.score_mask)
 
-            progress_text = self.progress_format.format(progress=self.progress, progress_pc=self.progress*100)
+            progress_text = self.progress_format.format(progress=self.progress)
+            time_text = self.time_format.format(time=self.time)
             progress_start, _, _ = self.progress_mask.indices(screen.width)
-            screen.addstr(progress_start, progress_text, self.progress_mask)
+            screen.addstr(progress_start, f"[{progress_text}|{time_text}]", self.progress_mask)
 
     @dn.datanode
     def _sight_handler(self):
@@ -799,13 +807,6 @@ class PlayField:
 
 
 # Judger
-def minsec(sec):
-    sec = round(sec)
-    sgn = +1 if sec >= 0 else -1
-    min, sec = divmod(abs(sec), 60)
-    min *= sgn
-    return f"{min}:{sec:02d}"
-
 def braille_scatter(width, height, xy, xlim, ylim):
     dx = (xlim[1] - xlim[0])/(width*2-1)
     dy = (ylim[1] - ylim[0])/(height*4-1)
@@ -978,6 +979,13 @@ class PerformanceJudger:
             ]
 
         # timespan
+        def minsec(sec):
+            sec = round(sec)
+            sgn = +1 if sec >= 0 else -1
+            min, sec = divmod(abs(sec), 60)
+            min *= sgn
+            return f"{min}:{sec:02d}"
+
         timespan = f"╡{minsec(start)} ~ {minsec(end)}╞"
 
         # layout
