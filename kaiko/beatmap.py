@@ -52,7 +52,7 @@ class Flip(Event):
         self.lifespan = (self.time, self.time)
 
     def register(self, field):
-        field.console.add_renderer(self._node(field), zindex=())
+        field.console.add_drawer(self._node(field), zindex=())
 
     @dn.datanode
     def _node(self, field):
@@ -79,7 +79,7 @@ class Shift(Event):
         self.lifespan = (self.time, self.end)
 
     def register(self, field):
-        field.console.add_renderer(self._node(field), zindex=())
+        field.console.add_drawer(self._node(field), zindex=())
 
     @dn.datanode
     def _node(self, field):
@@ -111,7 +111,7 @@ class Jiggle(Event):
         self.lifespan = (self.time, self.end)
 
     def register(self, field):
-        field.console.add_renderer(self._node(field), zindex=())
+        field.console.add_drawer(self._node(field), zindex=())
 
     @dn.datanode
     def _node(self, field):
@@ -559,8 +559,8 @@ class PlayField:
             self.console.add_effect(self._spec_handler(), zindex=-1)
             self.console.add_listener(self._target_handler())
             self.console.add_listener(self._hit_handler())
-            self.console.add_renderer(self._status_handler(), zindex=(-3,), key='status')
-            self.console.add_renderer(self._sight_handler(), zindex=(2,), key='sight')
+            self.console.add_drawer(self._status_handler(), zindex=(-3,), key='status')
+            self.console.add_drawer(self._sight_handler(), zindex=(2,), key='sight')
 
             # register events
             events_iter = iter(self.events)
@@ -795,22 +795,22 @@ class PlayField:
         if key is None:
             key = object()
         node = self._bar_node(pos, text, start, duration)
-        self.console.add_renderer(node, zindex=zindex, key=('text', key))
+        self.console.add_drawer(node, zindex=zindex, key=('text', key))
         return key
 
     def remove_text(self, key):
-        self.console.remove_renderer(key=('text', key))
+        self.console.remove_drawer(key=('text', key))
 
     def draw_target(self, target, pos, text, start=None, duration=None, key=None):
         if key is None:
             key = object()
         node = self._bar_node(pos, text, start, duration)
         zindex = lambda: (0, not target.is_finished, -target.range[0])
-        self.console.add_renderer(node, zindex=zindex, key=('target', key))
+        self.console.add_drawer(node, zindex=zindex, key=('target', key))
         return key
 
     def remove_target(self, key):
-        self.console.remove_renderer(key=('target', key))
+        self.console.remove_drawer(key=('target', key))
 
 
 # Judger
