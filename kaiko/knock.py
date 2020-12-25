@@ -83,66 +83,20 @@ class KnockConsole:
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
 
-    def _play(self, manager, node):
+    @contextlib.contextmanager
+    def get_output_stream(self, manager):
         samplerate = self.settings.output_samplerate
         buffer_length = self.settings.output_buffer_length
         nchannels = self.settings.output_channels
         format = self.settings.output_format
         device = self.settings.output_device
 
-        stream = dn.play(manager, node,
-                         samplerate=samplerate,
-                         buffer_shape=(buffer_length, nchannels),
-                         format=format,
-                         device=device,
-                         )
-
-        return stream
-
-    def _record(self, manager, node):
-        samplerate = self.settings.input_samplerate
-        buffer_length = self.settings.input_buffer_length
-        nchannels = self.settings.input_channels
-        format = self.settings.input_format
-        device = self.settings.input_device
-
-        stream = dn.record(manager, node,
-                           samplerate=samplerate,
-                           buffer_shape=(buffer_length, nchannels),
-                           format=format,
-                           device=device,
-                           )
-
-        return stream
-
-    def _display(self, node):
-        framerate = self.settings.display_framerate
-
-        @dn.datanode
-        def show():
-            try:
-                while True:
-                    time, view = yield
-                    if view:
-                        print(view, end="", flush=True)
-            finally:
-                print()
-
-        thread = dn.thread(dn.pipe(dn.interval(1/framerate, node), show()))
-
-        return thread
-
-    def _get_output_node(self):
-        samplerate = self.settings.output_samplerate
-        buffer_length = self.settings.output_buffer_length
-        nchannels = self.settings.output_channels
-
         self.effect_queue = queue.Queue()
-        effect_node = dn.schedule(self.effect_queue)
 
         @dn.datanode
         def output_node():
             index = 0
+            effect_node = dn.schedule(self.effect_queue)
             with effect_node:
                 yield
                 while True:
@@ -151,18 +105,31 @@ class KnockConsole:
                     time, data = effect_node.send((time, data))
                     yield data
                     index += 1
-
         output_node = output_node()
 
         if self.settings.debug_timeit:
-            return dn.timeit(output_node, " output")
+            output_ctxt = dn.timeit(output_node, " output")
         else:
-            return contextlib.nullcontext(output_node)
+            output_ctxt = contextlib.nullcontext(output_node)
 
-    def _get_input_node(self):
+        with output_ctxt as output_node:
+            stream_ctxt = dn.play(manager, output_node,
+                                  samplerate=samplerate,
+                                  buffer_shape=(buffer_length, nchannels),
+                                  format=format,
+                                  device=device,
+                                  )
+
+            with stream_ctxt as stream:
+                yield stream
+
+    @contextlib.contextmanager
+    def get_input_stream(self, manager):
         samplerate = self.settings.input_samplerate
         buffer_length = self.settings.input_buffer_length
         nchannels = self.settings.input_channels
+        format = self.settings.input_format
+        device = self.settings.input_device
 
         time_res = self.settings.detector_time_res
         freq_res = self.settings.detector_freq_res
@@ -178,20 +145,20 @@ class KnockConsole:
         prepare = max(post_max, post_avg)
 
         self.listener_queue = queue.Queue()
-        listener_node = dn.schedule(self.listener_queue)
-
-        window = dn.get_half_Hann_window(win_length)
-        onset = dn.pipe(
-            dn.frame(win_length=win_length, hop_length=hop_length),
-            dn.power_spectrum(win_length=win_length,
-                              samplerate=samplerate,
-                              windowing=window,
-                              weighting=True),
-            dn.onset_strength(1))
-        picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
 
         @dn.datanode
         def input_node():
+            window = dn.get_half_Hann_window(win_length)
+            onset = dn.pipe(
+                dn.frame(win_length=win_length, hop_length=hop_length),
+                dn.power_spectrum(win_length=win_length,
+                                  samplerate=samplerate,
+                                  windowing=window,
+                                  weighting=True),
+                dn.onset_strength(1))
+            picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
+
+            listener_node = dn.schedule(self.listener_queue)
             with listener_node, onset, picker:
                 data = yield
                 buffer = [(self.knock_delay, 0.0)]*prepare
@@ -215,20 +182,32 @@ class KnockConsole:
             input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
 
         if self.settings.debug_timeit:
-            return dn.timeit(input_node, "  input")
+            input_ctxt = dn.timeit(input_node, "  input")
         else:
-            return contextlib.nullcontext(input_node)
+            input_ctxt = contextlib.nullcontext(input_node)
 
-    def _get_display_node(self):
+        with input_ctxt as input_node:
+            stream_ctxt = dn.record(manager, input_node,
+                                    samplerate=samplerate,
+                                    buffer_shape=(buffer_length, nchannels),
+                                    format=format,
+                                    device=device,
+                                    )
+
+            with stream_ctxt as stream:
+                yield stream
+
+    @contextlib.contextmanager
+    def get_display_thread(self):
         framerate = self.settings.display_framerate
 
         self.renderer_queue = queue.Queue()
-        renderer_node = dn.schedule(self.renderer_queue)
 
         @dn.datanode
         def display_node():
             index = 0
             screen = TerminalLine()
+            renderer_node = dn.schedule(self.renderer_queue)
             with renderer_node:
                 yield
                 while True:
@@ -238,16 +217,32 @@ class KnockConsole:
                     yield screen.display()
                     index += 1
 
+        @dn.datanode
+        def show():
+            try:
+                while True:
+                    time, view = yield
+                    if view:
+                        print(view, end="", flush=True)
+            finally:
+                print()
+
         display_node = display_node()
 
         if self.settings.debug_timeit:
-            return dn.timeit(display_node, "display")
+            display_ctxt = dn.timeit(display_node, "display")
         else:
-            return contextlib.nullcontext(display_node)
+            display_ctxt = contextlib.nullcontext(display_node)
+
+        with display_ctxt as display_node:
+            thread_ctxt = dn.thread(dn.pipe(dn.interval(1/framerate, display_node), show()))
+
+            with thread_ctxt as thread:
+                yield thread
 
     @property
     def time(self):
-        return time.time() - self._start_time
+        return time.time() - self._ref_time
 
     def run(self, knock_program):
         self.sound_delay = self.settings.sound_delay
@@ -258,41 +253,36 @@ class KnockConsole:
         try:
             manager = pyaudio.PyAudio()
 
-            # initialize interfaces
-            with self._get_output_node() as output_node,\
-                 self._get_input_node() as input_node,\
-                 self._get_display_node() as display_node:
+            # initialize audio/video streams
+            with self.get_output_stream(manager) as output_stream,\
+                 self.get_input_stream(manager) as input_stream,\
+                 self.get_display_thread() as display_thread:
 
-                # connect audio/video streams and interfaces
-                with self._play(manager, output_node) as output_stream,\
-                     self._record(manager, input_node) as input_stream,\
-                     self._display(display_node) as display_thread:
+                # activate audio/video streams
+                self._ref_time = time.time()
+                output_stream.start_stream()
+                input_stream.start_stream()
+                display_thread.start()
 
-                    # activate audio/video streams
-                    self._start_time = time.time()
-                    output_stream.start_stream()
-                    input_stream.start_stream()
-                    display_thread.start()
+                # connect to program
+                with knock_program.connect(self) as loop:
+                    SIGINT_event = threading.Event()
+                    def SIGINT_handler(sig, frame):
+                        SIGINT_event.set()
+                    signal.signal(signal.SIGINT, SIGINT_handler)
 
-                    # connect to program
-                    with knock_program.connect(self) as loop:
-                        SIGINT_event = threading.Event()
-                        def SIGINT_handler(sig, frame):
-                            SIGINT_event.set()
+                    for _ in loop:
+                        if SIGINT_event.is_set():
+                            break
+
+                        if not output_stream.is_active():
+                            raise RuntimeError("output stream is down")
+                        if not input_stream.is_active():
+                            raise RuntimeError("input stream is down")
+                        if not display_thread.is_alive():
+                            raise RuntimeError("display thread is down")
+
                         signal.signal(signal.SIGINT, SIGINT_handler)
-
-                        for _ in loop:
-                            if SIGINT_event.is_set():
-                                break
-
-                            if not output_stream.is_active():
-                                raise RuntimeError("output stream is down")
-                            if not input_stream.is_active():
-                                raise RuntimeError("input stream is down")
-                            if not display_thread.is_alive():
-                                raise RuntimeError("display thread is down")
-
-                            signal.signal(signal.SIGINT, SIGINT_handler)
 
         finally:
             manager.terminate()
