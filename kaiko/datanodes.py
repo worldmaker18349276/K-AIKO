@@ -1035,17 +1035,10 @@ def tick(dt, t0=0.0, shift=0.0):
 
 @contextlib.contextmanager
 def timeit(node, name="timeit"):
-    N = 10
-    count = 0
-    total = 0.0
-    total2 = 0.0
-    worst = [0.0]*N
-    best = [numpy.inf]*N
+    times = []
 
     @datanode
     def timed_node():
-        nonlocal node, count, total, total2, worst, best
-
         with node:
             data = None
             while True:
@@ -1053,29 +1046,31 @@ def timeit(node, name="timeit"):
                 t0 = time.perf_counter()
                 data = node.send(data)
                 t = time.perf_counter() - t0
-                count += 1
-                total += t
-                total2 += t**2
-                bisect.insort(worst, t)
-                worst.pop(0)
-                bisect.insort_left(best, t)
-                best.pop()
+                times.append(t)
 
     try:
         yield timed_node()
 
     finally:
+        N = 10
+        count = len(times)
+
         if count == 0:
             print(f"{name}: count=0")
 
         else:
-            avg = total/count
-            std = (total2/count - avg**2)**0.5
+            avg = sum(times) / count
+            dev = (sum((t-avg)**2 for t in times) / count)**0.5
 
             if count < N:
-                print(f"{name}: count={count}, avg={avg}±{std}")
+                print(f"{name}: count={count}, avg={avg}±{dev}")
+
             else:
-                print(f"{name}: count={count}, avg={avg}±{std} ({sum(best)/N} ~ {sum(worst)/N})")
+                times = sorted(times)
+                best = sum(times[:N])/N
+                worst = sum(times[-N:])/N
+
+                print(f"{name}: count={count}, avg={avg}±{dev} ({best} ~ {worst})")
 
 
 # not data nodes
