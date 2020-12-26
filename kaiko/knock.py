@@ -276,7 +276,7 @@ class TerminalRenderer:
             display_ctxt = contextlib.nullcontext(display_node)
 
         with display_ctxt as display_node:
-            thread_ctxt = dn.thread(dn.pipe(dn.interval(1/framerate, display_node), show()))
+            thread_ctxt = dn.interval(display_node, show(), 1/framerate)
 
             with thread_ctxt as thread:
                 yield thread

@@ -544,7 +544,7 @@ class PlayField:
         prepare_time = self.settings.prepare_time
         time_shift = prepare_time + max(-events_start_time, 0.0)
 
-        with dn.interval(1/tickrate, first=prepare_time) as timer:
+        with dn.tick(1/tickrate, prepare_time, -time_shift) as timer:
             self.start_time = self.console.time + time_shift
 
             # music
@@ -567,8 +567,7 @@ class PlayField:
             event = next(events_iter, None)
 
             yield
-            for time, _ in timer:
-                time -= time_shift
+            for time in timer:
                 if max(events_end_time, duration) <= time:
                     break
 

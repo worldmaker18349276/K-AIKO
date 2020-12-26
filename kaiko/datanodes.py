@@ -998,38 +998,40 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
             output_stream.stop_stream()
             output_stream.close()
 
-@datanode
-def interval(dt, prepare=lambda _:None, first=0.0):
-    prepare = DataNode.wrap(prepare)
-    stop = threading.Event()
-
-    with prepare:
-        t0 = time.time()
-
-        yield
-        for i, data in enumerate(prepare):
-            if stop.wait(max(0.0, t0+first+i*dt - time.time())):
-                break
-
-            yield (time.time()-t0, data)
-
 @contextlib.contextmanager
-def thread(node):
+def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
+    producer = DataNode.wrap(producer)
+    consumer = DataNode.wrap(consumer)
     stop = threading.Event()
 
     def run():
-        with node:
-            for _ in node:
-                if stop.wait(0.0):
-                    break
+        ref_time = time.time()
 
-    thread = threading.Thread(target=run)
-    try:
-        yield thread
-    finally:
-        stop.set()
-        if thread.is_alive():
+        for i, data in enumerate(producer):
+            if stop.wait(max(0.0, ref_time+t0+i*dt - time.time())):
+                break
+
+            consumer.send((time.time()-ref_time, data))
+
+    with producer, consumer:
+        thread = threading.Thread(target=run)
+        try:
+            yield thread
+        finally:
+            stop.set()
             thread.join()
+
+@datanode
+def tick(dt, t0=0.0, shift=0.0):
+    stop = threading.Event()
+    ref_time = time.time()
+
+    yield
+    for i in itertools.count():
+        if stop.wait(max(0.0, ref_time+t0+i*dt - time.time())):
+            break
+
+        yield time.time()-ref_time+shift
 
 @contextlib.contextmanager
 def timeit(node, name="timeit"):
