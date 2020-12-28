@@ -12,6 +12,7 @@ from lark import Lark, Transformer
 # ...
 # '''
 # beatmap.audio = '...'
+# beatmap.volume = -20.0
 # beatmap.offset = 2.44
 # beatmap.tempo = 140.0
 # beatmap += r'''
@@ -57,13 +58,14 @@ version: /[0-9]+\.[0-9]+\.[0-9]+(?=\r\n?|\n|$)/
 header: "#K-AIKO-std-" version
 info:   [_n "beatmap.info"   " = " mstr]
 audio:  [_n "beatmap.audio"  " = " str]
+volume: [_n "beatmap.volume" " = " float]
 offset: [_n "beatmap.offset" " = " float]
 tempo:  [_n "beatmap.tempo"  " = " float]
 charts: (_n "beatmap += r" _MSTR_PREFIX chart _MSTR_POSTFIX)*
 _MSTR_PREFIX: /'''(?=\n)/
 _MSTR_POSTFIX: /(?<=\n)'''/
 
-contents: info audio offset tempo charts _e
+contents: info audio volume offset tempo charts _e
 k_aiko_std: header contents
 """
 
@@ -72,7 +74,7 @@ class K_AIKO_STD_Transformer(Transformer):
     #           chart, note, text, lengthen, measure, division, instant
     charts = pattern = lambda self, args: args
     version = symbol = key = value = lambda self, args: args[0]
-    info = audio = offset = tempo = lambda self, args: None if len(args) == 0 else args[0]
+    info = audio = volume = offset = tempo = lambda self, args: None if len(args) == 0 else args[0]
     none = bool = int = float = str = mstr = lambda self, args: literal_eval(args[0])
     frac = lambda self, args: Fraction(args[0])
     pos = lambda self, args: (None, args[0])
@@ -127,7 +129,7 @@ class K_AIKO_STD:
     def load_beatmap(self, path, node):
         header, contents = node.children
         version, = header.children
-        info, audio, offset, tempo, charts = contents.children
+        info, audio, volume, offset, tempo, charts = contents.children
 
         if version.split(".")[:2] != self.version.split(".")[:2]:
             raise ValueError("incompatible version")
@@ -139,6 +141,8 @@ class K_AIKO_STD:
             beatmap.info = info
         if audio is not None:
             beatmap.audio = audio
+        if volume is not None:
+            beatmap.volume = volume
         if offset is not None:
             beatmap.offset = offset
         if tempo is not None:

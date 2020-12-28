@@ -524,6 +524,7 @@ class PlayField:
             with audioread.audio_open(audiopath) as file:
                 duration = file.duration
             audionode = dn.DataNode.wrap(self.console.load_sound(audiopath))
+            volume = self.beatmap.volume
 
         # playfield
         spec_width = self.settings.spec_width
@@ -549,7 +550,7 @@ class PlayField:
 
             # music
             if audionode is not None:
-                self.console.play(audionode, time=self.start_time, zindex=-3)
+                self.console.play(audionode, volume=volume, time=self.start_time, zindex=-3)
 
             # handlers
             self.hit_queue = queue.Queue()
@@ -1151,10 +1152,11 @@ class BeatmapSettings:
 class Beatmap:
     settings: BeatmapSettings = BeatmapSettings()
 
-    def __init__(self, path=".", info="", audio=None, offset=0.0, tempo=60.0):
+    def __init__(self, path=".", info="", audio=None, volume=0.0, offset=0.0, tempo=60.0):
         self.path = path
         self.info = info
         self.audio = audio
+        self.volume = volume
         self.offset = offset
         self.tempo = tempo
 
