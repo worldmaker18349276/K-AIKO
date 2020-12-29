@@ -14,16 +14,14 @@ from .beatsheet import K_AIKO_STD, OSU
 
 class Event:
     # lifespan
-    # __init__(beatmap, context, *args, **kwargs)
+    # __init__(beatmap, *args, **kwargs)
     # register(field)
     # # selected properties:
     # full_score, score, is_finished, perfs
     pass
 
 class Text(Event):
-    def __init__(self, beatmap, context, text=None, sound=None, *, beat, speed=None):
-        if speed is None:
-            speed = context.get('speed', 1.0)
+    def __init__(self, beatmap, text=None, sound=None, beat=None, *, speed=1.0):
         if sound is not None:
             sound = os.path.join(beatmap.path, sound)
 
@@ -46,7 +44,7 @@ class Text(Event):
 
 # scripts
 class Flip(Event):
-    def __init__(self, beatmap, context, flip=None, *, beat):
+    def __init__(self, beatmap, flip=None, beat=None):
         self.time = beatmap.time(beat)
         self.flip = flip
         self.lifespan = (self.time, self.time)
@@ -72,7 +70,7 @@ class Flip(Event):
         time -= field.start_time
 
 class Shift(Event):
-    def __init__(self, beatmap, context, shift, *, beat, length):
+    def __init__(self, beatmap, shift, beat=None, length=None):
         self.time = beatmap.time(beat)
         self.end = beatmap.time(beat+length)
         self.shift = shift
@@ -104,7 +102,7 @@ class Shift(Event):
         time -= field.start_time
 
 class Jiggle(Event):
-    def __init__(self, beatmap, context, frequency=10.0, *, beat, length):
+    def __init__(self, beatmap, frequency=10.0, beat=None, length=None):
         self.time = beatmap.time(beat)
         self.end = beatmap.time(beat+length)
         self.frequency = frequency
@@ -136,13 +134,13 @@ class Jiggle(Event):
         time, screen = yield
         time -= field.start_time
 
-def set_context(beatmap, context, **kw):
+def set_context(beatmap, *, context, **kw):
     context.update(**kw)
 
 # targets
 class Target(Event):
     # lifespan, range, score, full_score, is_finished
-    # __init__(beatmap, context, *args, **kwargs)
+    # __init__(beatmap, *args, **kwargs)
     # approach(field)
     # hit(field, time, strength)
     # finish(field)
@@ -168,12 +166,7 @@ class OneshotTarget(Target):
     # approach_appearance, wrong_appearance
     # hit(field, time, strength)
 
-    def __init__(self, beatmap, context, *, beat, speed=None, volume=None):
-        if speed is None:
-            speed = context.get('speed', 1.0)
-        if volume is None:
-            volume = context.get('volume', 0.0)
-
+    def __init__(self, beatmap, beat=None, *, speed=1.0, volume=0.0):
         self.time = beatmap.time(beat)
         self.speed = speed
         self.volume = volume
@@ -228,8 +221,8 @@ class OneshotTarget(Target):
             field.remove_target(key=self)
 
 class Soft(OneshotTarget):
-    def __init__(self, beatmap, context, *, beat, speed=None, volume=None):
-        super().__init__(beatmap, context, beat=beat, speed=speed, volume=volume)
+    def __init__(self, beatmap, beat=None, *, speed=1.0, volume=0.0):
+        super().__init__(beatmap, beat=beat, speed=speed, volume=volume)
         self.approach_appearance = beatmap.settings.soft_approach_appearance
         self.wrong_appearance = beatmap.settings.soft_wrong_appearance
         self.sound = beatmap.settings.soft_sound
@@ -239,8 +232,8 @@ class Soft(OneshotTarget):
         super().hit(field, time, strength, strength < self.threshold)
 
 class Loud(OneshotTarget):
-    def __init__(self, beatmap, context, *, beat, speed=None, volume=None):
-        super().__init__(beatmap, context, beat=beat, speed=speed, volume=volume)
+    def __init__(self, beatmap, beat=None, *, speed=1.0, volume=0.0):
+        super().__init__(beatmap, beat=beat, speed=speed, volume=volume)
         self.approach_appearance = beatmap.settings.loud_approach_appearance
         self.wrong_appearance = beatmap.settings.loud_wrong_appearance
         self.sound = beatmap.settings.loud_sound
@@ -259,36 +252,37 @@ class IncrGroup:
         self.threshold = max(self.threshold, strength)
 
 class Incr(OneshotTarget):
-    def __init__(self, beatmap, context, group=None, *, beat, speed=None, volume=None):
-        super().__init__(beatmap, context, beat=beat, speed=speed)
+    def __init__(self, beatmap, group=None, beat=None, *, context, speed=1.0, volume=0.0):
+        super().__init__(beatmap, beat=beat, speed=speed)
 
         self.approach_appearance = beatmap.settings.incr_approach_appearance
         self.wrong_appearance = beatmap.settings.incr_wrong_appearance
         self.sound = beatmap.settings.incr_sound
         self.incr_threshold = beatmap.settings.incr_threshold
 
-        if 'incrs' not in context:
-            context['incrs'] = OrderedDict()
+        if '_incrs' not in context:
+            context['_incrs'] = OrderedDict()
+        incrs = context['_incrs']
 
         group_key = group
         if group_key is None:
             # determine group of incr note according to the context
-            for key, (_, last_beat) in reversed(context['incrs'].items()):
+            for key, (_, last_beat) in reversed(incrs.items()):
                 if beat - 1 <= last_beat <= beat:
                     group_key = key
                     break
             else:
                 group_key = 0
-                while group_key in context['incrs']:
+                while group_key in incrs:
                     group_key += 1
 
-        group, _ = context['incrs'].get(group_key, (IncrGroup(), beat))
-        context['incrs'][group_key] = group, beat
-        context['incrs'].move_to_end(group_key)
+        group, _ = incrs.get(group_key, (IncrGroup(), beat))
+        if group_key not in incrs:
+            group.volume = volume
+        incrs[group_key] = group, beat
+        incrs.move_to_end(group_key)
 
         group.total += 1
-        if volume is not None:
-            group.volume = volume
         self.count = group.total
         self.group = group
 
@@ -306,12 +300,7 @@ class Incr(OneshotTarget):
         self.group.hit(strength)
 
 class Roll(Target):
-    def __init__(self, beatmap, context, density=2, *, beat, length, speed=None, volume=None):
-        if speed is None:
-            speed = context.get('speed', 1.0)
-        if volume is None:
-            volume = context.get('volume', 0.0)
-
+    def __init__(self, beatmap, density=2, beat=None, length=None, *, speed=1.0, volume=0.0):
         self.tolerance = beatmap.settings.roll_tolerance
         self.rock_appearance = beatmap.settings.roll_rock_appearance
         self.sound = beatmap.settings.roll_rock_sound
@@ -366,12 +355,7 @@ class Roll(Target):
             self.perfs.append(perf)
 
 class Spin(Target):
-    def __init__(self, beatmap, context, density=2, *, beat, length, speed=None, volume=None):
-        if speed is None:
-            speed = context.get('speed', 1.0)
-        if volume is None:
-            volume = context.get('volume', 0.0)
-
+    def __init__(self, beatmap, density=2, beat=None, length=None, *, speed=1.0, volume=0.0):
         self.tolerance = beatmap.settings.spin_tolerance
         self.disk_appearances = beatmap.settings.spin_disk_appearances
         self.finishing_appearance = beatmap.settings.spin_finishing_appearance
@@ -1223,15 +1207,20 @@ class NoteChart:
         return events
 
 def NoteType(symbol, builder):
-    # builder(beatmap, context, *, beat, **) -> Event | None
+    # builder(beatmap, *args, context, **kwargs) -> Event | None
+    # => Note(*args, **kwargs)
     signature = inspect.signature(builder)
-    signature = signature.replace(parameters=list(signature.parameters.values())[2:])
-    return type(builder.__name__+"Note", (Note,),
-                dict(symbol=symbol, builder=staticmethod(builder), __signature__=signature))
+    parameters = list(signature.parameters.values())[1:]
+    contextual = [param.name for param in parameters if param.kind == inspect.Parameter.KEYWORD_ONLY]
+    if 'context' in contextual:
+        parameters.remove(signature.parameters['context'])
+    signature = signature.replace(parameters=parameters)
+    attrs = dict(symbol=symbol, builder=staticmethod(builder), __signature__=signature, __contextual__=contextual)
+    return type(builder.__name__+"Note", (Note,), attrs)
 
 class Note:
     def __init__(self, *psargs, **kwargs):
-        self.bound = self.__signature__.bind(*psargs, **kwargs)
+        self.bound = self.__signature__.bind_partial(*psargs, **kwargs)
 
     def __repr__(self):
         return self.__str__()
@@ -1243,7 +1232,14 @@ class Note:
         return f"{self.symbol}({args_str})"
 
     def create(self, beatmap, context):
-        return self.builder(beatmap, context, *self.bound.args, **self.bound.kwargs)
+        args = self.bound.args
+        kwargs = dict(self.bound.kwargs)
+        for key in self.__contextual__:
+            if key == 'context':
+                kwargs[key] = context
+            elif key not in kwargs and key in context:
+                kwargs[key] = context[key]
+        return self.builder(beatmap, *args, **kwargs)
 
 
 K_AIKO_STD_FORMAT = K_AIKO_STD(Beatmap, NoteChart)

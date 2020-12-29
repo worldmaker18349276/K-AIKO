@@ -121,9 +121,8 @@ class K_AIKO_STD:
         psargs, kwargs = arguments
         parameters = inspect.signature(func).parameters
         for key, value in defaults.items():
-            if key not in kwargs:
-                if key in parameters and parameters[key].kind == inspect.Parameter.KEYWORD_ONLY:
-                    kwargs[key] = value
+            if key not in kwargs and key in parameters:
+                kwargs[key] = value
         return func(*psargs, **kwargs)
 
     def load_beatmap(self, path, node):
