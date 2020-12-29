@@ -156,6 +156,33 @@ class K_AIKO_STD:
 
         return chart
 
+    def _make_note(self, notetype, args, kwargs, beat, length):
+        # modify beat and length if needed
+        modifiers = notetype.modifiers
+        for mod in modifiers.keys():
+            if 'beat'+mod in kwargs:
+                if 'beat' in kwargs:
+                    raise ValueError("keyword argument repeated")
+                kwargs['beat'] = modifiers[mod](beat, kwargs['beat'+mod])
+                del kwargs['beat'+mod]
+
+            if 'length'+mod in kwargs:
+                if 'length' in kwargs:
+                    raise ValueError("keyword argument repeated")
+                kwargs['length'] = modifiers[mod](length, kwargs['length'+mod])
+                del kwargs['length'+mod]
+
+        # make note
+        note = notetype(*args, **kwargs)
+
+        # assign missing beat/length
+        if 'beat' not in note.bound.arguments:
+            note.bound.arguments['beat'] = beat
+        if 'length' not in note.bound.arguments:
+            note.bound.arguments['length'] = length
+
+        return note
+
     def load_pattern(self, pattern, chart, beat, length, note, definitions):
         Rest = lambda: None
         Divisor = lambda divisor=2: divisor
@@ -168,11 +195,7 @@ class K_AIKO_STD:
                     note = Rest(*args, **kwargs)
 
                 elif symbol in definitions:
-                    note = definitions[symbol](*args, **kwargs)
-                    if 'beat' not in note.bound.arguments:
-                        note.bound.arguments['beat'] = beat
-                    if 'length' not in note.bound.arguments:
-                        note.bound.arguments['length'] = length
+                    note = self._make_note(definitions[symbol], args, kwargs, beat, length)
                     chart.notes.append(note)
 
                 else:
@@ -184,11 +207,7 @@ class K_AIKO_STD:
                 text, (args, kwargs) = node.children
                 args.insert(0, text)
 
-                note = definitions['TEXT'](*args, **kwargs)
-                if 'beat' not in note.bound.arguments:
-                    note.bound.arguments['beat'] = beat
-                if 'length' not in note.bound.arguments:
-                    note.bound.arguments['length'] = length
+                note = self._make_note(definitions['TEXT'], args, kwargs, beat, length)
                 chart.notes.append(note)
 
                 beat = beat + length
