@@ -1,7 +1,8 @@
 import os
 import datetime
-from enum import Enum
 import inspect
+import operator
+from enum import Enum
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
 import queue
@@ -1215,30 +1216,90 @@ def NoteType(symbol, builder):
     if 'context' in contextual:
         parameters.remove(signature.parameters['context'])
     signature = signature.replace(parameters=parameters)
-    attrs = dict(symbol=symbol, builder=staticmethod(builder), __signature__=signature, __contextual__=contextual)
+    attrs = dict(symbol=symbol, builder=staticmethod(builder), signature=signature, contextual=contextual)
     return type(builder.__name__+"Note", (Note,), attrs)
 
 class Note:
+    modifiers = {
+        '+': operator.add,
+        '-': operator.sub,
+        '*': operator.mul,
+        '/': operator.truediv,
+        '&': operator.and_,
+        '|': operator.or_,
+        '^': operator.xor,
+        }
+
     def __init__(self, *psargs, **kwargs):
-        self.bound = self.__signature__.bind_partial(*psargs, **kwargs)
+        self.mods = dict()
+
+        # find modified assignments: pretend `f(key+=value)` by `f(**{'key+': value})`
+        for key, value in list(kwargs.items()):
+            for mod in self.modifiers.keys():
+                if key.endswith(mod):
+                    # get original key
+                    key_ = key[:-len(mod)]
+                    if key_ in kwargs:
+                        raise ValueError("keyword argument repeated")
+                    if key_ not in self.contextual:
+                        raise ValueError("unable to modify non-contextual argument")
+
+                    # extract out modifier
+                    self.mods[key_] = mod
+                    del kwargs[key]
+                    kwargs[key_] = value
+
+                    break
+
+        # bind arguments, it allows missing contextual arguments until obtaining context
+        self.bound = self.signature.bind_partial(*psargs, **kwargs)
+
+        # check non-contextual arguments
+        for key, param in self.signature.parameters.items():
+            if key not in self.contextual:
+                if key not in self.bound.arguments and param.default == inspect.Parameter.empty:
+                    raise ValueError("missing required arguments")
 
     def __repr__(self):
         return self.__str__()
 
     def __str__(self):
         psargs_str = [repr(value) for value in self.bound.args]
-        kwargs_str = [key+"="+repr(value) for key, value in self.bound.kwargs.items()]
+        kwargs_str = [key+self.mods.get(key, "")+"="+repr(value) for key, value in self.bound.kwargs.items()]
         args_str = ", ".join([*psargs_str, *kwargs_str])
         return f"{self.symbol}({args_str})"
 
     def create(self, beatmap, context):
         args = self.bound.args
         kwargs = dict(self.bound.kwargs)
-        for key in self.__contextual__:
-            if key == 'context':
-                kwargs[key] = context
-            elif key not in kwargs and key in context:
+        ikwargs = dict()
+
+        # separate modified contextual arguments
+        for key in self.contextual:
+            if key in kwargs and key in self.mods:
+                ikwargs[key] = kwargs[key]
+                del kwargs[key]
+
+        # fill in missing contextual arguments by context
+        for key in self.contextual:
+            if key != 'context' and key not in kwargs and key in context:
                 kwargs[key] = context[key]
+
+        # bind unmodified arguments. it will raise error for missing contextual arguments
+        bound = self.signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        args = bound.args
+        kwargs = dict(bound.kwargs)
+
+        # modify contextual arguments if needed
+        for key in self.contextual:
+            if key in self.mods:
+                mod = self.mods[key]
+                kwargs[key] = self.modifiers[mod](kwargs[key], ikwargs[key])
+
+        # build
+        if 'context' in self.contextual:
+            kwargs['context'] = context
         return self.builder(beatmap, *args, **kwargs)
 
 

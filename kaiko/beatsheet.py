@@ -40,8 +40,10 @@ mstr:  /'''(?=\n)([^\\']|\\[\\'btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0
 
 value: none | bool | float | frac | int | str
 key: /[a-zA-Z_][a-zA-Z0-9_]*/
-arg:         value  ->  pos
-   | key "=" value  ->  kw
+mod: /[-+*\/&|^]/
+arg:             value  ->  pos
+   | key     "=" value  ->  kw
+   | key mod "=" value  ->  ikw
 arguments: ["(" [ arg (", " arg)* ] ")"]
 
 symbol: /[^ \b\t\n\r\f\v()[\]{}\'"\\#|~]+/
@@ -73,12 +75,13 @@ class K_AIKO_STD_Transformer(Transformer):
     # defaults: k_aiko_std, header, contents,
     #           chart, note, text, lengthen, measure, division, instant
     charts = pattern = lambda self, args: args
-    version = symbol = key = value = lambda self, args: args[0]
+    version = symbol = key = value = mod = lambda self, args: args[0]
     info = audio = volume = offset = tempo = lambda self, args: None if len(args) == 0 else args[0]
     none = bool = int = float = str = mstr = lambda self, args: literal_eval(args[0])
     frac = lambda self, args: Fraction(args[0])
     pos = lambda self, args: (None, args[0])
     kw = lambda self, args: (args[0], args[1])
+    ikw = lambda self, args: (args[0]+args[1], args[2])
 
     def arguments(self, args):
         psargs = []
@@ -117,14 +120,6 @@ class K_AIKO_STD:
     def read_chart(self, str, definitions):
         return self.load_chart(self.transformer.transform(self.chart_parser.parse(str)), definitions)
 
-    def _call(self, func, arguments, defaults=dict()):
-        psargs, kwargs = arguments
-        parameters = inspect.signature(func).parameters
-        for key, value in defaults.items():
-            if key not in kwargs and key in parameters:
-                kwargs[key] = value
-        return func(*psargs, **kwargs)
-
     def load_beatmap(self, path, node):
         header, contents = node.children
         version, = header.children
@@ -154,23 +149,30 @@ class K_AIKO_STD:
         return beatmap
 
     def load_chart(self, node, definitions):
-        arguments, pattern = node.children
+        (args, kwargs), pattern = node.children
 
-        chart = self._call(self.NoteChart, arguments)
+        chart = self.NoteChart(*args, **kwargs)
         self.load_pattern(pattern, chart, chart.beat, chart.length, None, definitions)
 
         return chart
 
     def load_pattern(self, pattern, chart, beat, length, note, definitions):
+        Rest = lambda: None
+        Divisor = lambda divisor=2: divisor
+
         for node in pattern:
             if node.data == 'note':
-                symbol, arguments = node.children
+                symbol, (args, kwargs) = node.children
 
                 if symbol == '_':
-                    note = self._call((lambda:None), arguments)
+                    note = Rest(*args, **kwargs)
 
                 elif symbol in definitions:
-                    note = self._call(definitions[symbol], arguments, dict(beat=beat, length=length))
+                    note = definitions[symbol](*args, **kwargs)
+                    if 'beat' not in note.bound.arguments:
+                        note.bound.arguments['beat'] = beat
+                    if 'length' not in note.bound.arguments:
+                        note.bound.arguments['length'] = length
                     chart.notes.append(note)
 
                 else:
@@ -179,9 +181,14 @@ class K_AIKO_STD:
                 beat = beat + length
 
             elif node.data == 'text':
-                text, arguments = node.children
-                arguments[0].insert(0, text)
-                note = self._call(definitions['TEXT'], arguments, dict(beat=beat, length=length))
+                text, (args, kwargs) = node.children
+                args.insert(0, text)
+
+                note = definitions['TEXT'](*args, **kwargs)
+                if 'beat' not in note.bound.arguments:
+                    note.bound.arguments['beat'] = beat
+                if 'length' not in note.bound.arguments:
+                    note.bound.arguments['length'] = length
                 chart.notes.append(note)
 
                 beat = beat + length
@@ -197,16 +204,20 @@ class K_AIKO_STD:
                     raise ValueError("wrong measure")
 
             elif node.data == 'division':
-                arguments, pattern = node.children
-                divisor = self._call((lambda divisor=2:divisor), arguments)
+                (args, kwargs), pattern = node.children
+
+                divisor = Divisor(*args, **kwargs)
                 divided_length = Fraction(1, 1) * length / divisor
+
                 chart, beat, _, note = self.load_pattern(pattern, chart, beat, divided_length, note, definitions)
 
             elif node.data == 'instant':
-                arguments, pattern = node.children
-                if len(arguments[0]) + len(arguments[1]) > 0:
-                    note = self._call(definitions['CONTEXT'], arguments)
+                (args, kwargs), pattern = node.children
+
+                if len(args) + len(kwargs) > 0:
+                    note = definitions['CONTEXT'](*args, **kwargs)
                     chart.notes.append(note)
+
                 chart, beat, _, note = self.load_pattern(pattern, chart, beat, 0, note, definitions)
 
             else:
