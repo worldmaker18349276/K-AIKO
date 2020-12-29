@@ -100,7 +100,7 @@ class K_AIKO_STD_Transformer(Transformer):
         return psargs, kwargs
 
 class K_AIKO_STD:
-    version = "1.2.0"
+    version = "0.1.0"
     k_aiko_std_parser = Lark(k_aiko_grammar, start='k_aiko_std')
     chart_parser = Lark(k_aiko_grammar, start='chart')
     transformer = K_AIKO_STD_Transformer()
@@ -125,7 +125,9 @@ class K_AIKO_STD:
         version, = header.children
         info, audio, volume, offset, tempo, charts = contents.children
 
-        if version.split(".")[:2] != self.version.split(".")[:2]:
+        vernum = version.split(".")
+        vernum0 = self.version.split(".")
+        if vernum[0] != vernum0[0] or vernum[1:] > vernum0[1:]:
             raise ValueError("incompatible version")
 
         beatmap = self.Beatmap()

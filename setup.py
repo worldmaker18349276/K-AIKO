@@ -4,7 +4,7 @@ long_description = open("README.md", "r").read()
 
 setup(
     name="K-AIKO",
-    version="1.1.0",
+    version="0.1.0",
     description="A voice-controlled terminal-based rhythm game",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -12,7 +12,7 @@ setup(
     author="worldmaker18349276",
     author_email="worldmaker18349276@gmail.com",
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 2 - Pre-Alpha",
         "Intended Audience :: End Users/Desktop",
         "Topic :: Games/Entertainment",
         "License :: OSI Approved :: MIT License",
