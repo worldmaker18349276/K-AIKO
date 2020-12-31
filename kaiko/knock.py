@@ -6,6 +6,7 @@ import contextlib
 from collections import OrderedDict
 import queue
 import threading
+import shutil
 import signal
 import numpy
 import pyaudio
@@ -293,7 +294,7 @@ class TerminalRenderer:
 
 class TerminalLine:
     def __init__(self):
-        self.width = int(os.popen("stty size", 'r').read().split()[1])
+        self.width = shutil.get_terminal_size().columns
         self.chars = [" "]*self.width
 
     def display(self):

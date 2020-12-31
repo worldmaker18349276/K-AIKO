@@ -1,6 +1,7 @@
 import sys
 from .knock import *
 from .beatmap import *
+from .beatanalyzer import *
 
 filename = sys.argv[1]
 
