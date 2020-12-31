@@ -1,0 +1,11 @@
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - scipy
+  - python=3.6
+  - audioread
+  - numpy
+  - dataclasses
+  - pyaudio
+  - lark-parser
