@@ -51,7 +51,7 @@ class Flip(Event):
         self.lifespan = (self.time, self.time)
 
     def register(self, field):
-        field.console.add_drawer(self._node(field), zindex=())
+        field.on_before_render(self._node(field))
 
     @dn.datanode
     def _node(self, field):
@@ -78,7 +78,7 @@ class Shift(Event):
         self.lifespan = (self.time, self.end)
 
     def register(self, field):
-        field.console.add_drawer(self._node(field), zindex=())
+        field.on_before_render(self._node(field))
 
     @dn.datanode
     def _node(self, field):
@@ -110,7 +110,7 @@ class Jiggle(Event):
         self.lifespan = (self.time, self.end)
 
     def register(self, field):
-        field.console.add_drawer(self._node(field), zindex=())
+        field.on_before_render(self._node(field))
 
     @dn.datanode
     def _node(self, field):
@@ -162,12 +162,91 @@ class Target(Event):
             if not self.is_finished:
                 self.finish(field)
 
+class PerformanceGrade(Enum):
+    MISS               = (None, None)
+    PERFECT            = ( 0, False)
+    LATE_GOOD          = (+1, False)
+    EARLY_GOOD         = (-1, False)
+    LATE_BAD           = (+2, False)
+    EARLY_BAD          = (-2, False)
+    LATE_FAILED        = (+3, False)
+    EARLY_FAILED       = (-3, False)
+    PERFECT_WRONG      = ( 0,  True)
+    LATE_GOOD_WRONG    = (+1,  True)
+    EARLY_GOOD_WRONG   = (-1,  True)
+    LATE_BAD_WRONG     = (+2,  True)
+    EARLY_BAD_WRONG    = (-2,  True)
+    LATE_FAILED_WRONG  = (+3,  True)
+    EARLY_FAILED_WRONG = (-3,  True)
+
+    def __init__(self, shift, is_wrong):
+        self.shift = shift
+        self.is_wrong = is_wrong
+
+    def __repr__(self):
+        return f"PerformanceGrade.{self.name}"
+
+class Performance:
+    def __init__(self, grade, time, err):
+        self.grade = grade
+        self.time = time
+        self.err = err
+
+    @staticmethod
+    def judge(tol, time, hit_time=None, is_correct_key=True):
+        if hit_time is None:
+            return Performance(PerformanceGrade((None, None)), time, None)
+
+        is_wrong = not is_correct_key
+        err = hit_time - time
+        shift = next((i for i in range(3) if abs(err) < tol*(2*i+1)), 3)
+        if err < 0:
+            shift = -shift
+
+        return Performance(PerformanceGrade((shift, is_wrong)), time, err)
+
+    @property
+    def shift(self):
+        return self.grade.shift
+
+    @property
+    def is_wrong(self):
+        return self.grade.is_wrong
+
+    @property
+    def is_miss(self):
+        return self.grade == PerformanceGrade.MISS
+
+    discriptions = {
+        PerformanceGrade.MISS               : "Miss"                      ,
+        PerformanceGrade.PERFECT            : "Perfect"                   ,
+        PerformanceGrade.LATE_GOOD          : "Late Good"                 ,
+        PerformanceGrade.EARLY_GOOD         : "Early Good"                ,
+        PerformanceGrade.LATE_BAD           : "Late Bad"                  ,
+        PerformanceGrade.EARLY_BAD          : "Early Bad"                 ,
+        PerformanceGrade.LATE_FAILED        : "Late Failed"               ,
+        PerformanceGrade.EARLY_FAILED       : "Early Failed"              ,
+        PerformanceGrade.PERFECT_WRONG      : "Perfect but Wrong Key"     ,
+        PerformanceGrade.LATE_GOOD_WRONG    : "Late Good but Wrong Key"   ,
+        PerformanceGrade.EARLY_GOOD_WRONG   : "Early Good but Wrong Key"  ,
+        PerformanceGrade.LATE_BAD_WRONG     : "Late Bad but Wrong Key"    ,
+        PerformanceGrade.EARLY_BAD_WRONG    : "Early Bad but Wrong Key"   ,
+        PerformanceGrade.LATE_FAILED_WRONG  : "Late Failed but Wrong Key" ,
+        PerformanceGrade.EARLY_FAILED_WRONG : "Early Failed but Wrong Key",
+    }
+
+    @property
+    def description(self):
+        return self.discriptions[self.grade]
+
 class OneshotTarget(Target):
     # time, speed, volume, perf, sound
     # approach_appearance, wrong_appearance
     # hit(field, time, strength)
 
     def __init__(self, beatmap, beat=None, *, speed=1.0, volume=0.0):
+        self.performance_tolerance = beatmap.settings.performance_tolerance
+
         self.time = beatmap.time(beat)
         self.speed = speed
         self.volume = volume
@@ -202,13 +281,13 @@ class OneshotTarget(Target):
         field.reset_sight(start=self.range[0])
 
     def hit(self, field, time, strength, is_correct_key=True):
-        perf = field.judger.judge(self.time, time, is_correct_key)
-        field.judger.render(perf, field, self.speed < 0)
+        perf = Performance.judge(self.performance_tolerance, self.time, time, is_correct_key)
+        field.set_perf_hint(perf, field, self.speed < 0)
         self.finish(field, perf)
 
     def finish(self, field, perf=None):
         if perf is None:
-            perf = field.judger.judge(self.time)
+            perf = Performance.judge(self.performance_tolerance, self.time)
         self.perf = perf
 
         if self.perf.is_miss:
@@ -302,6 +381,7 @@ class Incr(OneshotTarget):
 
 class Roll(Target):
     def __init__(self, beatmap, density=2, beat=None, length=None, *, speed=1.0, volume=0.0):
+        self.performance_tolerance = beatmap.settings.performance_tolerance
         self.tolerance = beatmap.settings.roll_tolerance
         self.rock_appearance = beatmap.settings.roll_rock_appearance
         self.sound = beatmap.settings.roll_rock_sound
@@ -345,14 +425,14 @@ class Roll(Target):
     def hit(self, field, time, strength):
         self.roll += 1
         if self.roll <= self.number:
-            perf = field.judger.judge(self.times[self.roll-1], time, True)
+            perf = Performance.judge(self.performance_tolerance, self.times[self.roll-1], time, True)
             self.perfs.append(perf)
             field.remove_target(key=(self, self.roll-1))
 
     def finish(self, field):
         self.is_finished = True
         for time in self.times[self.roll:]:
-            perf = field.judger.judge(time)
+            perf = Performance.judge(self.performance_tolerance, time)
             self.perfs.append(perf)
 
 class Spin(Target):
@@ -448,6 +528,29 @@ class PlayFieldSettings:
     spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
     spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
 
+    ## PerformanceSkin:
+    performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
+        PerformanceGrade.MISS               : (""   , ""     ),
+
+        PerformanceGrade.LATE_FAILED        : ("\b⟪", "\t\t⟫"),
+        PerformanceGrade.LATE_BAD           : ("\b⟨", "\t\t⟩"),
+        PerformanceGrade.LATE_GOOD          : ("\b‹", "\t\t›"),
+        PerformanceGrade.PERFECT            : (""   , ""     ),
+        PerformanceGrade.EARLY_GOOD         : ("\t\t›", "\b‹"),
+        PerformanceGrade.EARLY_BAD          : ("\t\t⟩", "\b⟨"),
+        PerformanceGrade.EARLY_FAILED       : ("\t\t⟫", "\b⟪"),
+
+        PerformanceGrade.LATE_FAILED_WRONG  : ("\b⟪", "\t\t⟫"),
+        PerformanceGrade.LATE_BAD_WRONG     : ("\b⟨", "\t\t⟩"),
+        PerformanceGrade.LATE_GOOD_WRONG    : ("\b‹", "\t\t›"),
+        PerformanceGrade.PERFECT_WRONG      : (""   , ""     ),
+        PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t›", "\b‹"),
+        PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t⟩", "\b⟨"),
+        PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t⟫", "\b⟪"),
+        }
+
+    performance_sustain_time: float = 0.1
+
     ## ScrollingBarSkin:
     sight_appearances: Union[List[str], List[Tuple[str, str]]] = ["⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
     hit_decay_time: float = 0.4
@@ -461,7 +564,6 @@ class PlayField:
 
     def __init__(self, beatmap, config=None):
         self.beatmap = beatmap
-        self.judger = PerformanceJudger(beatmap.settings)
 
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
@@ -786,6 +888,13 @@ class PlayField:
     def remove_text(self, key):
         self.console.remove_drawer(key=('text', key))
 
+    def set_perf_hint(self, perf, field, is_reversed):
+        appearance = self.settings.performances_appearances[perf.grade]
+        if is_reversed:
+            appearance = appearance[::-1]
+        duration = self.settings.performance_sustain_time
+        self.draw_text(self.sight_shift, appearance, duration=duration, zindex=(1,), key='perf_hint')
+
     def draw_target(self, target, pos, text, start=None, duration=None, key=None):
         if key is None:
             key = object()
@@ -797,254 +906,21 @@ class PlayField:
     def remove_target(self, key):
         self.console.remove_drawer(key=('target', key))
 
+    def on_before_render(self, node, key=None):
+        if key is None:
+            key = object()
+        return self.console.add_drawer(node, zindex=(), key=('before_renderer', key))
 
-# Judger
-def braille_scatter(width, height, xy, xlim, ylim):
-    dx = (xlim[1] - xlim[0])/(width*2-1)
-    dy = (ylim[1] - ylim[0])/(height*4-1)
+    def on_after_render(self, node, key=None):
+        if key is None:
+            key = object()
+        return self.console.add_drawer(node, zindex=(numpy.inf,), key=('before_renderer', key))
 
-    graph = numpy.zeros((height*4, width*2), dtype=bool)
-    for x, y in xy:
-        i = round((y-ylim[0])/dy)
-        j = round((x-xlim[0])/dx)
-        if i in range(height*4) and j in range(width*2):
-            graph[i,j] = True
+    def remove_before_render_callback(self, key):
+        self.console.remove_drawer(node, ('before_renderer', key))
 
-    graph = graph.reshape(height, 4, width, 2)
-    block = 2**numpy.array([0, 3, 1, 4, 2, 5, 6, 7]).reshape(1, 4, 1, 2)
-    code = 0x2800 + (graph * block).sum(axis=(1, 3))
-    strs = numpy.concatenate((code, [[ord("\n")]]*height), axis=1).astype('i2').tostring().decode('utf-16')
-
-    return strs
-
-class PerformanceGrade(Enum):
-    MISS               = (None, None)
-    PERFECT            = ( 0, False)
-    LATE_GOOD          = (+1, False)
-    EARLY_GOOD         = (-1, False)
-    LATE_BAD           = (+2, False)
-    EARLY_BAD          = (-2, False)
-    LATE_FAILED        = (+3, False)
-    EARLY_FAILED       = (-3, False)
-    PERFECT_WRONG      = ( 0,  True)
-    LATE_GOOD_WRONG    = (+1,  True)
-    EARLY_GOOD_WRONG   = (-1,  True)
-    LATE_BAD_WRONG     = (+2,  True)
-    EARLY_BAD_WRONG    = (-2,  True)
-    LATE_FAILED_WRONG  = (+3,  True)
-    EARLY_FAILED_WRONG = (-3,  True)
-
-    def __init__(self, shift, is_wrong):
-        self.shift = shift
-        self.is_wrong = is_wrong
-
-    def __repr__(self):
-        return f"PerformanceGrade.{self.name}"
-
-class Performance:
-    def __init__(self, grade, time, err):
-        self.grade = grade
-        self.time = time
-        self.err = err
-
-    @property
-    def shift(self):
-        return self.grade.shift
-
-    @property
-    def is_wrong(self):
-        return self.grade.is_wrong
-
-    @property
-    def is_miss(self):
-        return self.grade == PerformanceGrade.MISS
-
-    discriptions = {
-        PerformanceGrade.MISS               : "Miss"                      ,
-        PerformanceGrade.PERFECT            : "Perfect"                   ,
-        PerformanceGrade.LATE_GOOD          : "Late Good"                 ,
-        PerformanceGrade.EARLY_GOOD         : "Early Good"                ,
-        PerformanceGrade.LATE_BAD           : "Late Bad"                  ,
-        PerformanceGrade.EARLY_BAD          : "Early Bad"                 ,
-        PerformanceGrade.LATE_FAILED        : "Late Failed"               ,
-        PerformanceGrade.EARLY_FAILED       : "Early Failed"              ,
-        PerformanceGrade.PERFECT_WRONG      : "Perfect but Wrong Key"     ,
-        PerformanceGrade.LATE_GOOD_WRONG    : "Late Good but Wrong Key"   ,
-        PerformanceGrade.EARLY_GOOD_WRONG   : "Early Good but Wrong Key"  ,
-        PerformanceGrade.LATE_BAD_WRONG     : "Late Bad but Wrong Key"    ,
-        PerformanceGrade.EARLY_BAD_WRONG    : "Early Bad but Wrong Key"   ,
-        PerformanceGrade.LATE_FAILED_WRONG  : "Late Failed but Wrong Key" ,
-        PerformanceGrade.EARLY_FAILED_WRONG : "Early Failed but Wrong Key",
-    }
-
-    @property
-    def description(self):
-        return self.discriptions[self.grade]
-
-class PerformanceJudger:
-    def __init__(self, settings):
-        self.perfect_tolerance = settings.perfect_tolerance
-        self.good_tolerance    = settings.good_tolerance
-        self.bad_tolerance     = settings.bad_tolerance
-        self.failed_tolerance  = settings.failed_tolerance
-        self.appearances = settings.performances_appearances
-        self.sustain_time = settings.performance_sustain_time
-
-    def judge(self, time, hit_time=None, is_correct_key=True):
-        if hit_time is None:
-            return Performance(PerformanceGrade((None, None)), time, None)
-
-        err = hit_time - time
-        abs_err = abs(err)
-        is_wrong = not is_correct_key
-
-        if abs_err < self.perfect_tolerance:
-            shift = 0
-        elif abs_err < self.good_tolerance:
-            shift = 1
-        elif abs_err < self.bad_tolerance:
-            shift = 2
-        else: # failed
-            shift = 3
-
-        if err < 0:
-            shift = -shift
-
-        return Performance(PerformanceGrade((shift, is_wrong)), time, err)
-
-    def render(self, perf, field, is_reversed):
-        appearance = self.appearances[perf.grade]
-        if is_reversed:
-            appearance = appearance[::-1]
-        field.draw_text(field.sight_shift, appearance, duration=self.sustain_time, zindex=(1,), key='perf_hint')
-
-    def show_analyze(self, events):
-        width = int(os.popen("stty size", 'r').read().split()[1])
-        perfs = [perf for event in events for perf in getattr(event, 'perfs', ())]
-        emax = self.failed_tolerance
-        start = min((perf.time for perf in perfs), default=0.0)
-        end   = max((perf.time for perf in perfs), default=0.0)
-
-        grad_minwidth = 15
-        stat_minwidth = 15
-        scat_height = 7
-        acc_height = 2
-
-        # grades infos
-        grades = [perf.grade for perf in perfs if not perf.is_miss]
-        miss_count = sum(perf.is_miss for perf in perfs)
-        failed_count    = sum(not grade.is_wrong and abs(grade.shift) == 3 for grade in grades)
-        bad_count       = sum(not grade.is_wrong and abs(grade.shift) == 2 for grade in grades)
-        good_count      = sum(not grade.is_wrong and abs(grade.shift) == 1 for grade in grades)
-        perfect_count   = sum(not grade.is_wrong and abs(grade.shift) == 0 for grade in grades)
-        failed_wrong_count  = sum(grade.is_wrong and abs(grade.shift) == 3 for grade in grades)
-        bad_wrong_count     = sum(grade.is_wrong and abs(grade.shift) == 2 for grade in grades)
-        good_wrong_count    = sum(grade.is_wrong and abs(grade.shift) == 1 for grade in grades)
-        perfect_wrong_count = sum(grade.is_wrong and abs(grade.shift) == 0 for grade in grades)
-        accuracy = sum(2.0**(-abs(grade.shift)) for grade in grades) / len(perfs)
-        mistakes = sum(grade.is_wrong for grade in grades) / len(grades)
-
-        grad_infos = [
-            f"   miss: {   miss_count}",
-            f" failed: { failed_count}+{ failed_wrong_count}",
-            f"    bad: {    bad_count}+{    bad_wrong_count}",
-            f"   good: {   good_count}+{   good_wrong_count}",
-            f"perfect: {perfect_count}+{perfect_wrong_count}",
-            "",
-            "",
-            f"accuracy: {accuracy*100:.1f}%",
-            f"mistakes: {mistakes*100:.2f}%",
-            "",
-            ]
-
-        # statistics infos
-        errors = [(perf.time, perf.err) for perf in perfs if not perf.is_miss]
-        misses = [perf.time for perf in perfs if perf.is_miss]
-        err = sum(abs(err) for _, err in errors) / len(errors)
-        ofs = sum(err for _, err in errors) / len(errors)
-        dev = (sum((err-ofs)**2 for _, err in errors) / len(errors))**0.5
-
-        stat_infos = [
-            f"err={err*1000:.3f} ms",
-            f"ofs={ofs*1000:+.3f} ms",
-            f"dev={dev*1000:.3f} ms",
-            ]
-
-        # timespan
-        def minsec(sec):
-            sec = round(sec)
-            sgn = +1 if sec >= 0 else -1
-            min, sec = divmod(abs(sec), 60)
-            min *= sgn
-            return f"{min}:{sec:02d}"
-
-        timespan = f"╡{minsec(start)} ~ {minsec(end)}╞"
-
-        # layout
-        grad_width = max(grad_minwidth, len(timespan), max(len(info_str) for info_str in grad_infos))
-        stat_width = max(stat_minwidth, max(len(info_str) for info_str in stat_infos))
-        scat_width = width - grad_width - stat_width - 4
-
-        grad_top = "═"*grad_width
-        grad_bot = timespan.center(grad_width, "═")
-        scat_top = scat_bot = "═"*scat_width
-        stat_top = stat_bot = "═"*stat_width
-        grad_infos = [info_str.ljust(grad_width) for info_str in grad_infos]
-        stat_infos = [info_str.ljust(stat_width) for info_str in stat_infos]
-
-        # discretize data
-        dx = (end - start)/(scat_width*2-1)
-        dy = 2*emax/(scat_height*4-1)
-        data = numpy.zeros((scat_height*4+1, scat_width*2), dtype=int)
-        for time, err in errors:
-            i = round((err+emax)/dy)
-            j = round((time-start)/dx)
-            if i in range(scat_height*4) and j in range(scat_width*2):
-                data[i,j] += 1
-        for time in misses:
-            j = round((time-start)/dx)
-            if j in range(scat_width*2):
-                data[-1,j] += 1
-
-        braille_block = 2**numpy.array([0, 3, 1, 4, 2, 5, 6, 7]).reshape(1, 4, 1, 2)
-
-        # plot scatter
-        scat_data = (data[:-1,:] > 0).reshape(scat_height, 4, scat_width, 2)
-        scat_code = 0x2800 + (scat_data * braille_block).sum(axis=(1, 3)).astype('i2')
-        scat_graph = [line.tostring().decode('utf-16') for line in scat_code]
-        miss_data = (data[-1,:] > 0).reshape(scat_width, 2)
-        miss_code = (miss_data * [1, 2]).sum(axis=-1)
-        miss_graph = "".join("─╾╼━"[code] for code in miss_code)
-
-        # plot statistics
-        stat_data = data[:-1,:].sum(axis=1)
-        stat_level = numpy.linspace(0, numpy.max(stat_data), stat_width*2, endpoint=False)
-        stat_data = (stat_level[None,:] < stat_data[:,None]).reshape(scat_height, 4, stat_width, 2)
-        stat_code = 0x2800 + (stat_data * braille_block).sum(axis=(1, 3)).astype('i2')
-        stat_graph = [line.tostring().decode('utf-16') for line in stat_code]
-
-        # plot accuracies
-        acc_weight = 2.0**numpy.array([-3, -2, -1, 0, -1, -2, -3])
-        acc_data = (data[:-1,:].reshape(scat_height, 4, scat_width, 2).sum(axis=(1,3)) * acc_weight[:,None]).sum(axis=0)
-        acc_data /= numpy.maximum(1, data.sum(axis=0).reshape(scat_width, 2).sum(axis=1))
-        acc_level = numpy.arange(acc_height)*8
-        acc_code = 0x2580 + numpy.clip(acc_data[None,:]*acc_height*8 - acc_level[::-1,None], 0, 8).astype('i2')
-        acc_code[acc_code==0x2580] = ord(" ")
-        acc_graph = [line.tostring().decode('utf-16') for line in acc_code]
-
-        # print
-        print("╒" + grad_top      + "╤" + scat_top      + "╤" + stat_top      + "╕")
-        print("│" + grad_infos[0] + "│" + scat_graph[0] + "│" + stat_graph[0] + "│")
-        print("│" + grad_infos[1] + "│" + scat_graph[1] + "│" + stat_graph[1] + "│")
-        print("│" + grad_infos[2] + "│" + scat_graph[2] + "│" + stat_graph[2] + "│")
-        print("│" + grad_infos[3] + "│" + scat_graph[3] + "│" + stat_graph[3] + "│")
-        print("│" + grad_infos[4] + "│" + scat_graph[4] + "│" + stat_graph[4] + "│")
-        print("│" + grad_infos[5] + "│" + scat_graph[5] + "│" + stat_graph[5] + "│")
-        print("│" + grad_infos[6] + "│" + scat_graph[6] + "│" + stat_graph[6] + "│")
-        print("│" + grad_infos[7] + "├" + miss_graph    + "┤" + stat_infos[0] + "│")
-        print("│" + grad_infos[8] + "│" + acc_graph[0]  + "│" + stat_infos[1] + "│")
-        print("│" + grad_infos[9] + "│" + acc_graph[1]  + "│" + stat_infos[2] + "│")
-        print("╘" + grad_bot      + "╧" + scat_bot      + "╧" + stat_bot      + "╛")
+    def remove_after_render_callback(self, key):
+        self.console.remove_drawer(node, ('after_renderer', key))
 
 
 # Beatmap
@@ -1093,29 +969,6 @@ class BeatmapSettings:
 
     roll_rock_score: int = 2
     spin_score: int = 16
-
-    ## PerformanceSkin:
-    performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
-        PerformanceGrade.MISS               : (""   , ""     ),
-
-        PerformanceGrade.LATE_FAILED        : ("\b⟪", "\t\t⟫"),
-        PerformanceGrade.LATE_BAD           : ("\b⟨", "\t\t⟩"),
-        PerformanceGrade.LATE_GOOD          : ("\b‹", "\t\t›"),
-        PerformanceGrade.PERFECT            : (""   , ""     ),
-        PerformanceGrade.EARLY_GOOD         : ("\t\t›", "\b‹"),
-        PerformanceGrade.EARLY_BAD          : ("\t\t⟩", "\b⟨"),
-        PerformanceGrade.EARLY_FAILED       : ("\t\t⟫", "\b⟪"),
-
-        PerformanceGrade.LATE_FAILED_WRONG  : ("\b⟪", "\t\t⟫"),
-        PerformanceGrade.LATE_BAD_WRONG     : ("\b⟨", "\t\t⟩"),
-        PerformanceGrade.LATE_GOOD_WRONG    : ("\b‹", "\t\t›"),
-        PerformanceGrade.PERFECT_WRONG      : (""   , ""     ),
-        PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t›", "\b‹"),
-        PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t⟩", "\b⟨"),
-        PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t⟫", "\b⟪"),
-        }
-
-    performance_sustain_time: float = 0.1
 
     ## NoteSkin:
     soft_approach_appearance:  Union[str, Tuple[str, str]] = "□"
@@ -1306,3 +1159,149 @@ class Note:
 K_AIKO_STD_FORMAT = K_AIKO_STD(Beatmap, NoteChart)
 OSU_FORMAT = OSU(Beatmap, NoteChart)
 
+
+def braille_scatter(width, height, xy, xlim, ylim):
+    dx = (xlim[1] - xlim[0])/(width*2-1)
+    dy = (ylim[1] - ylim[0])/(height*4-1)
+
+    graph = numpy.zeros((height*4, width*2), dtype=bool)
+    for x, y in xy:
+        i = round((y-ylim[0])/dy)
+        j = round((x-xlim[0])/dx)
+        if i in range(height*4) and j in range(width*2):
+            graph[i,j] = True
+
+    graph = graph.reshape(height, 4, width, 2)
+    block = 2**numpy.array([0, 3, 1, 4, 2, 5, 6, 7]).reshape(1, 4, 1, 2)
+    code = 0x2800 + (graph * block).sum(axis=(1, 3))
+    strs = numpy.concatenate((code, [[ord("\n")]]*height), axis=1).astype('i2').tostring().decode('utf-16')
+
+    return strs
+
+def show_analyze(tol, events):
+    width = int(os.popen("stty size", 'r').read().split()[1])
+    perfs = [perf for event in events for perf in getattr(event, 'perfs', ())]
+    emax = tol*7
+    start = min((perf.time for perf in perfs), default=0.0)
+    end   = max((perf.time for perf in perfs), default=0.0)
+
+    grad_minwidth = 15
+    stat_minwidth = 15
+    scat_height = 7
+    acc_height = 2
+
+    # grades infos
+    grades = [perf.grade for perf in perfs if not perf.is_miss]
+    miss_count = sum(perf.is_miss for perf in perfs)
+    failed_count    = sum(not grade.is_wrong and abs(grade.shift) == 3 for grade in grades)
+    bad_count       = sum(not grade.is_wrong and abs(grade.shift) == 2 for grade in grades)
+    good_count      = sum(not grade.is_wrong and abs(grade.shift) == 1 for grade in grades)
+    perfect_count   = sum(not grade.is_wrong and abs(grade.shift) == 0 for grade in grades)
+    failed_wrong_count  = sum(grade.is_wrong and abs(grade.shift) == 3 for grade in grades)
+    bad_wrong_count     = sum(grade.is_wrong and abs(grade.shift) == 2 for grade in grades)
+    good_wrong_count    = sum(grade.is_wrong and abs(grade.shift) == 1 for grade in grades)
+    perfect_wrong_count = sum(grade.is_wrong and abs(grade.shift) == 0 for grade in grades)
+    accuracy = sum(2.0**(-abs(grade.shift)) for grade in grades) / len(perfs)
+    mistakes = sum(grade.is_wrong for grade in grades) / len(grades)
+
+    grad_infos = [
+        f"   miss: {   miss_count}",
+        f" failed: { failed_count}+{ failed_wrong_count}",
+        f"    bad: {    bad_count}+{    bad_wrong_count}",
+        f"   good: {   good_count}+{   good_wrong_count}",
+        f"perfect: {perfect_count}+{perfect_wrong_count}",
+        "",
+        "",
+        f"accuracy: {accuracy*100:.1f}%",
+        f"mistakes: {mistakes*100:.2f}%",
+        "",
+        ]
+
+    # statistics infos
+    errors = [(perf.time, perf.err) for perf in perfs if not perf.is_miss]
+    misses = [perf.time for perf in perfs if perf.is_miss]
+    err = sum(abs(err) for _, err in errors) / len(errors)
+    ofs = sum(err for _, err in errors) / len(errors)
+    dev = (sum((err-ofs)**2 for _, err in errors) / len(errors))**0.5
+
+    stat_infos = [
+        f"err={err*1000:.3f} ms",
+        f"ofs={ofs*1000:+.3f} ms",
+        f"dev={dev*1000:.3f} ms",
+        ]
+
+    # timespan
+    def minsec(sec):
+        sec = round(sec)
+        sgn = +1 if sec >= 0 else -1
+        min, sec = divmod(abs(sec), 60)
+        min *= sgn
+        return f"{min}:{sec:02d}"
+
+    timespan = f"╡{minsec(start)} ~ {minsec(end)}╞"
+
+    # layout
+    grad_width = max(grad_minwidth, len(timespan), max(len(info_str) for info_str in grad_infos))
+    stat_width = max(stat_minwidth, max(len(info_str) for info_str in stat_infos))
+    scat_width = width - grad_width - stat_width - 4
+
+    grad_top = "═"*grad_width
+    grad_bot = timespan.center(grad_width, "═")
+    scat_top = scat_bot = "═"*scat_width
+    stat_top = stat_bot = "═"*stat_width
+    grad_infos = [info_str.ljust(grad_width) for info_str in grad_infos]
+    stat_infos = [info_str.ljust(stat_width) for info_str in stat_infos]
+
+    # discretize data
+    dx = (end - start)/(scat_width*2-1)
+    dy = 2*emax/(scat_height*4-1)
+    data = numpy.zeros((scat_height*4+1, scat_width*2), dtype=int)
+    for time, err in errors:
+        i = round((err+emax)/dy)
+        j = round((time-start)/dx)
+        if i in range(scat_height*4) and j in range(scat_width*2):
+            data[i,j] += 1
+    for time in misses:
+        j = round((time-start)/dx)
+        if j in range(scat_width*2):
+            data[-1,j] += 1
+
+    braille_block = 2**numpy.array([0, 3, 1, 4, 2, 5, 6, 7]).reshape(1, 4, 1, 2)
+
+    # plot scatter
+    scat_data = (data[:-1,:] > 0).reshape(scat_height, 4, scat_width, 2)
+    scat_code = 0x2800 + (scat_data * braille_block).sum(axis=(1, 3)).astype('i2')
+    scat_graph = [line.tostring().decode('utf-16') for line in scat_code]
+    miss_data = (data[-1,:] > 0).reshape(scat_width, 2)
+    miss_code = (miss_data * [1, 2]).sum(axis=-1)
+    miss_graph = "".join("─╾╼━"[code] for code in miss_code)
+
+    # plot statistics
+    stat_data = data[:-1,:].sum(axis=1)
+    stat_level = numpy.linspace(0, numpy.max(stat_data), stat_width*2, endpoint=False)
+    stat_data = (stat_level[None,:] < stat_data[:,None]).reshape(scat_height, 4, stat_width, 2)
+    stat_code = 0x2800 + (stat_data * braille_block).sum(axis=(1, 3)).astype('i2')
+    stat_graph = [line.tostring().decode('utf-16') for line in stat_code]
+
+    # plot accuracies
+    acc_weight = 2.0**numpy.array([-3, -2, -1, 0, -1, -2, -3])
+    acc_data = (data[:-1,:].reshape(scat_height, 4, scat_width, 2).sum(axis=(1,3)) * acc_weight[:,None]).sum(axis=0)
+    acc_data /= numpy.maximum(1, data.sum(axis=0).reshape(scat_width, 2).sum(axis=1))
+    acc_level = numpy.arange(acc_height)*8
+    acc_code = 0x2580 + numpy.clip(acc_data[None,:]*acc_height*8 - acc_level[::-1,None], 0, 8).astype('i2')
+    acc_code[acc_code==0x2580] = ord(" ")
+    acc_graph = [line.tostring().decode('utf-16') for line in acc_code]
+
+    # print
+    print("╒" + grad_top      + "╤" + scat_top      + "╤" + stat_top      + "╕")
+    print("│" + grad_infos[0] + "│" + scat_graph[0] + "│" + stat_graph[0] + "│")
+    print("│" + grad_infos[1] + "│" + scat_graph[1] + "│" + stat_graph[1] + "│")
+    print("│" + grad_infos[2] + "│" + scat_graph[2] + "│" + stat_graph[2] + "│")
+    print("│" + grad_infos[3] + "│" + scat_graph[3] + "│" + stat_graph[3] + "│")
+    print("│" + grad_infos[4] + "│" + scat_graph[4] + "│" + stat_graph[4] + "│")
+    print("│" + grad_infos[5] + "│" + scat_graph[5] + "│" + stat_graph[5] + "│")
+    print("│" + grad_infos[6] + "│" + scat_graph[6] + "│" + stat_graph[6] + "│")
+    print("│" + grad_infos[7] + "├" + miss_graph    + "┤" + stat_infos[0] + "│")
+    print("│" + grad_infos[8] + "│" + acc_graph[0]  + "│" + stat_infos[1] + "│")
+    print("│" + grad_infos[9] + "│" + acc_graph[1]  + "│" + stat_infos[2] + "│")
+    print("╘" + grad_bot      + "╧" + scat_bot      + "╧" + stat_bot      + "╛")

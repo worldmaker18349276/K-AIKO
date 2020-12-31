@@ -13,7 +13,8 @@ else:
 
 field = PlayField(beatmap)
 console = KnockConsole()
+console.settings.debug_timeit = True
 console.run(field)
 
 print()
-field.judger.show_analyze(field.events)
+show_analyze(beatmap.settings.performance_tolerance, field.events)
