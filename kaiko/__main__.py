@@ -12,10 +12,10 @@ elif filename.endswith(".osu"):
 else:
     raise ValueError(f"unknown file extension: {filename}")
 
-field = PlayField(beatmap)
+game = KAIKOGame(beatmap)
 console = KnockConsole()
 console.settings.debug_timeit = True
-console.run(field)
+console.run(game)
 
 print()
-show_analyze(beatmap.settings.performance_tolerance, field.events)
+show_analyze(beatmap.settings.performance_tolerance, game.events)

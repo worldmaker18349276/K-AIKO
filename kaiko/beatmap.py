@@ -512,108 +512,21 @@ def to_slices(segments):
 
     return [first_slice, *pre_slices, middle_slice, *post_slices[::-1], last_slice]
 
-@cfg.configurable
-class PlayFieldSettings:
-    ## Controls:
-    leadin_time: float = 1.0
-    skip_time: float = 8.0
-    tickrate: float = 60.0
-    prepare_time: float = 0.1
-
-    ## PlayFieldSkin:
-    spec_width: int = 5
-    score_width: int = 13
-    progress_width: int = 14
-    spec_decay_time: float = 0.01
-    spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
-    spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
-
-    ## PerformanceSkin:
-    performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
-        PerformanceGrade.MISS               : (""   , ""     ),
-
-        PerformanceGrade.LATE_FAILED        : ("\b⟪", "\t\t⟫"),
-        PerformanceGrade.LATE_BAD           : ("\b⟨", "\t\t⟩"),
-        PerformanceGrade.LATE_GOOD          : ("\b‹", "\t\t›"),
-        PerformanceGrade.PERFECT            : (""   , ""     ),
-        PerformanceGrade.EARLY_GOOD         : ("\t\t›", "\b‹"),
-        PerformanceGrade.EARLY_BAD          : ("\t\t⟩", "\b⟨"),
-        PerformanceGrade.EARLY_FAILED       : ("\t\t⟫", "\b⟪"),
-
-        PerformanceGrade.LATE_FAILED_WRONG  : ("\b⟪", "\t\t⟫"),
-        PerformanceGrade.LATE_BAD_WRONG     : ("\b⟨", "\t\t⟩"),
-        PerformanceGrade.LATE_GOOD_WRONG    : ("\b‹", "\t\t›"),
-        PerformanceGrade.PERFECT_WRONG      : (""   , ""     ),
-        PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t›", "\b‹"),
-        PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t⟩", "\b⟨"),
-        PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t⟫", "\b⟪"),
-        }
-
-    performance_sustain_time: float = 0.1
-
-    ## ScrollingBarSkin:
-    sight_appearances: Union[List[str], List[Tuple[str, str]]] = ["⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
-    hit_decay_time: float = 0.4
-    hit_sustain_time: float = 0.1
-    bar_shift: float = 0.1
-    sight_shift: float = 0.0
-    bar_flip: bool = False
-
 class PlayField:
-    settings: PlayFieldSettings = PlayFieldSettings()
+    def __init__(self, settings):
+        self.settings = settings
 
-    def __init__(self, beatmap, config=None):
-        self.beatmap = beatmap
-
-        if config is not None:
-            cfg.config_read(open(config, 'r'), main=self.settings)
-
-    def get_full_score(self):
-        return sum(getattr(event, 'full_score', 0) for event in self.events
-                   if getattr(event, 'is_finished', True)) * self.score_scale
-
-    def get_score(self):
-        return sum(getattr(event, 'score', 0) for event in self.events) * self.score_scale
-
-    def get_progress(self):
-        total = len([event for event in self.events if hasattr(event, 'is_finished')])
-        if total == 0:
-            return 1.0
-        return sum(getattr(event, 'is_finished', False) for event in self.events) / total
-
-    @dn.datanode
-    def connect(self, console):
-        self.console = console
-
+        # state
         self.bar_shift = self.settings.bar_shift
         self.sight_shift = self.settings.sight_shift
         self.bar_flip = self.settings.bar_flip
 
-        # events
-        leadin_time = self.settings.leadin_time
-        self.events = [event for chart in self.beatmap.charts for event in chart.build_events(self.beatmap)]
-        self.events.sort(key=lambda e: e.lifespan[0])
-        events_start_time = min((event.lifespan[0] - leadin_time for event in self.events), default=0.0)
-        events_end_time   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
-
-        total_score = sum(getattr(event, 'full_score', 0) for event in self.events)
-        self.score_scale = 65536 / total_score
-        self.full_score = self.get_full_score()
-        self.score = self.get_score()
-        self.progress = self.get_progress()
+        self.full_score = 0
+        self.score = 0
+        self.progress = 0.0
         self.time = datetime.time(0, 0, 0)
 
-        if self.beatmap.audio is None:
-            audionode = None
-            duration = 0.0
-        else:
-            audiopath = os.path.join(self.beatmap.path, self.beatmap.audio)
-            with audioread.audio_open(audiopath) as file:
-                duration = file.duration
-            audionode = dn.DataNode.wrap(self.console.load_sound(audiopath))
-            volume = self.beatmap.volume
-
-        # playfield
+        # layout
         spec_width = self.settings.spec_width
         score_width = self.settings.score_width
         progress_width = self.settings.progress_width
@@ -627,50 +540,21 @@ class PlayField:
         self.progress_format = "{progress:>%d.%d%%}" % (max(0, progress_width-8), max(0, progress_width-13))
         self.time_format = "{time:%M:%S}"
 
-        # game loop
-        tickrate = self.settings.tickrate
-        prepare_time = self.settings.prepare_time
-        time_shift = prepare_time + max(-events_start_time, 0.0)
+    def register_handlers(self, console, start_time):
+        self.console = console
+        self.start_time = start_time
 
-        with dn.tick(1/tickrate, prepare_time, -time_shift) as timer:
-            self.start_time = self.console.time + time_shift
+        # event queue
+        self.hit_queue = queue.Queue()
+        self.sight_queue = queue.Queue()
+        self.target_queue = queue.Queue()
 
-            # music
-            if audionode is not None:
-                self.console.play(audionode, volume=volume, time=self.start_time, zindex=-3)
-
-            # handlers
-            self.hit_queue = queue.Queue()
-            self.sight_queue = queue.Queue()
-            self.target_queue = queue.Queue()
-
-            self.console.add_effect(self._spec_handler(), zindex=-1)
-            self.console.add_listener(self._target_handler())
-            self.console.add_listener(self._hit_handler())
-            self.console.add_drawer(self._status_handler(), zindex=(-3,), key='status')
-            self.console.add_drawer(self._sight_handler(), zindex=(2,), key='sight')
-
-            # register events
-            events_iter = iter(self.events)
-            event = next(events_iter, None)
-
-            yield
-            for time in timer:
-                if max(events_end_time, duration) <= time:
-                    break
-
-                while event is not None and event.lifespan[0] <= time + prepare_time:
-                    event.register(self)
-                    event = next(events_iter, None)
-
-                self.full_score = self.get_full_score()
-                self.score = self.get_score()
-                self.progress = self.get_progress()
-                time = int(max(0.0, time))
-                self.time = datetime.time(time//3600, time%3600//60, time%60)
-
-                yield
-
+        # register
+        self.console.add_effect(self._spec_handler(), zindex=-1)
+        self.console.add_listener(self._target_handler())
+        self.console.add_listener(self._hit_handler())
+        self.console.add_drawer(self._status_handler(), zindex=(-3,), key='status')
+        self.console.add_drawer(self._sight_handler(), zindex=(2,), key='sight')
 
     def _spec_handler(self):
         spec_width = self.settings.spec_width
@@ -1154,6 +1038,142 @@ class Note:
         if 'context' in self.contextual:
             kwargs['context'] = context
         return self.builder(beatmap, *args, **kwargs)
+
+
+# Game
+@cfg.configurable
+class GameplaySettings:
+    ## Controls:
+    leadin_time: float = 1.0
+    skip_time: float = 8.0
+    tickrate: float = 60.0
+    prepare_time: float = 0.1
+
+    ## PlayFieldSkin:
+    spec_width: int = 5
+    score_width: int = 13
+    progress_width: int = 14
+    spec_decay_time: float = 0.01
+    spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
+    spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
+
+    ## PerformanceSkin:
+    performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
+        PerformanceGrade.MISS               : (""   , ""     ),
+
+        PerformanceGrade.LATE_FAILED        : ("\b⟪", "\t\t⟫"),
+        PerformanceGrade.LATE_BAD           : ("\b⟨", "\t\t⟩"),
+        PerformanceGrade.LATE_GOOD          : ("\b‹", "\t\t›"),
+        PerformanceGrade.PERFECT            : (""   , ""     ),
+        PerformanceGrade.EARLY_GOOD         : ("\t\t›", "\b‹"),
+        PerformanceGrade.EARLY_BAD          : ("\t\t⟩", "\b⟨"),
+        PerformanceGrade.EARLY_FAILED       : ("\t\t⟫", "\b⟪"),
+
+        PerformanceGrade.LATE_FAILED_WRONG  : ("\b⟪", "\t\t⟫"),
+        PerformanceGrade.LATE_BAD_WRONG     : ("\b⟨", "\t\t⟩"),
+        PerformanceGrade.LATE_GOOD_WRONG    : ("\b‹", "\t\t›"),
+        PerformanceGrade.PERFECT_WRONG      : (""   , ""     ),
+        PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t›", "\b‹"),
+        PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t⟩", "\b⟨"),
+        PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t⟫", "\b⟪"),
+        }
+
+    performance_sustain_time: float = 0.1
+
+    ## ScrollingBarSkin:
+    sight_appearances: Union[List[str], List[Tuple[str, str]]] = ["⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
+    hit_decay_time: float = 0.4
+    hit_sustain_time: float = 0.1
+    bar_shift: float = 0.1
+    sight_shift: float = 0.0
+    bar_flip: bool = False
+
+class KAIKOGame:
+    settings: GameplaySettings = GameplaySettings()
+
+    def __init__(self, beatmap, config=None):
+        self.beatmap = beatmap
+
+        if config is not None:
+            cfg.config_read(open(config, 'r'), main=self.settings)
+
+    def get_full_score(self):
+        return sum(getattr(event, 'full_score', 0) for event in self.events
+                   if getattr(event, 'is_finished', True)) * self.score_scale
+
+    def get_score(self):
+        return sum(getattr(event, 'score', 0) for event in self.events) * self.score_scale
+
+    def get_progress(self):
+        total = len([event for event in self.events if hasattr(event, 'is_finished')])
+        if total == 0:
+            return 1.0
+        return sum(getattr(event, 'is_finished', False) for event in self.events) / total
+
+    @dn.datanode
+    def connect(self, console):
+        self.console = console
+        self.playfield = PlayField(self.settings)
+
+        # events
+        leadin_time = self.settings.leadin_time
+        self.events = [event for chart in self.beatmap.charts for event in chart.build_events(self.beatmap)]
+        self.events.sort(key=lambda e: e.lifespan[0])
+        events_start_time = min((event.lifespan[0] - leadin_time for event in self.events), default=0.0)
+        events_end_time   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
+
+        total_score = sum(getattr(event, 'full_score', 0) for event in self.events)
+        self.score_scale = 65536 / total_score
+        self.playfield.full_score = self.get_full_score()
+        self.playfield.score = self.get_score()
+        self.playfield.progress = self.get_progress()
+
+        if self.beatmap.audio is None:
+            audionode = None
+            duration = 0.0
+            volume = 0.0
+        else:
+            audiopath = os.path.join(self.beatmap.path, self.beatmap.audio)
+            with audioread.audio_open(audiopath) as file:
+                duration = file.duration
+            audionode = dn.DataNode.wrap(self.console.load_sound(audiopath))
+            volume = self.beatmap.volume
+
+        # game loop
+        tickrate = self.settings.tickrate
+        prepare_time = self.settings.prepare_time
+        time_shift = prepare_time + max(-events_start_time, 0.0)
+
+        with dn.tick(1/tickrate, prepare_time, -time_shift) as timer:
+            start_time = self.console.time + time_shift
+
+            # music
+            if audionode is not None:
+                self.console.play(audionode, volume=volume, time=start_time, zindex=-3)
+
+            # handlers
+            self.playfield.register_handlers(self.console, start_time)
+
+            # register events
+            events_iter = iter(self.events)
+            event = next(events_iter, None)
+
+            yield
+            for time in timer:
+                if max(events_end_time, duration) <= time:
+                    break
+
+                while event is not None and event.lifespan[0] <= time + prepare_time:
+                    event.register(self.playfield)
+                    event = next(events_iter, None)
+
+                self.playfield.full_score = self.get_full_score()
+                self.playfield.score = self.get_score()
+                self.playfield.progress = self.get_progress()
+                time = int(max(0.0, time))
+                self.playfield.time = datetime.time(time//3600, time%3600//60, time%60)
+
+                yield
 
 
 K_AIKO_STD_FORMAT = K_AIKO_STD(Beatmap, NoteChart)
