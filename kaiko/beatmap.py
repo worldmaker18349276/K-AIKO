@@ -509,10 +509,50 @@ def to_slices(segments):
 
     return [first_slice, *pre_slices, middle_slice, *post_slices[::-1], last_slice]
 
-class PlayField:
-    def __init__(self, settings):
-        self.settings = settings
+@cfg.configurable
+class PlayFieldSettings:
+    # PlayFieldSkin:
+    spec_width: int = 5
+    score_width: int = 13
+    progress_width: int = 14
+    spec_decay_time: float = 0.01
+    spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
+    spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
 
+    # PerformanceSkin:
+    performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
+    PerformanceGrade.MISS               : (""   , ""     ),
+
+    PerformanceGrade.LATE_FAILED        : ("\b⟪", "\t\t⟫"),
+    PerformanceGrade.LATE_BAD           : ("\b⟨", "\t\t⟩"),
+    PerformanceGrade.LATE_GOOD          : ("\b‹", "\t\t›"),
+    PerformanceGrade.PERFECT            : (""   , ""     ),
+    PerformanceGrade.EARLY_GOOD         : ("\t\t›", "\b‹"),
+    PerformanceGrade.EARLY_BAD          : ("\t\t⟩", "\b⟨"),
+    PerformanceGrade.EARLY_FAILED       : ("\t\t⟫", "\b⟪"),
+
+    PerformanceGrade.LATE_FAILED_WRONG  : ("\b⟪", "\t\t⟫"),
+    PerformanceGrade.LATE_BAD_WRONG     : ("\b⟨", "\t\t⟩"),
+    PerformanceGrade.LATE_GOOD_WRONG    : ("\b‹", "\t\t›"),
+    PerformanceGrade.PERFECT_WRONG      : (""   , ""     ),
+    PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t›", "\b‹"),
+    PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t⟩", "\b⟨"),
+    PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t⟫", "\b⟪"),
+    }
+
+    performance_sustain_time: float = 0.1
+
+    # ScrollingBarSkin:
+    sight_appearances: Union[List[str], List[Tuple[str, str]]] = ["⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
+    hit_decay_time: float = 0.4
+    hit_sustain_time: float = 0.1
+    bar_shift: float = 0.1
+    sight_shift: float = 0.0
+    bar_flip: bool = False
+
+class PlayField:
+    settings : PlayFieldSettings = PlayFieldSettings()
+    def __init__(self):
         # state
         self.bar_shift = self.settings.bar_shift
         self.sight_shift = self.settings.sight_shift
@@ -815,14 +855,10 @@ class BeatmapSettings:
     roll_tolerance: float = 0.10
     spin_tolerance: float = 0.10
 
-    @property
-    def perfect_tolerance(self): return self.performance_tolerance*1
-    @property
-    def good_tolerance(self): return self.performance_tolerance*3
-    @property
-    def bad_tolerance(self): return self.performance_tolerance*5
-    @property
-    def failed_tolerance(self): return self.performance_tolerance*7
+    perfect_tolerance = property(lambda self: self.performance_tolerance*1)
+    good_tolerance    = property(lambda self: self.performance_tolerance*3)
+    bad_tolerance     = property(lambda self: self.performance_tolerance*5)
+    failed_tolerance  = property(lambda self: self.performance_tolerance*7)
 
     ## Scores:
     performances_scores: Dict[PerformanceGrade, int] = {
@@ -845,8 +881,7 @@ class BeatmapSettings:
         PerformanceGrade.EARLY_FAILED_WRONG : 0,
         }
 
-    @property
-    def performances_max_score(self): return max(self.performances_scores.values())
+    performances_max_score = property(lambda self: max(self.performances_scores.values()))
 
     roll_rock_score: int = 2
     spin_score: int = 16
@@ -899,45 +934,6 @@ class GameplaySettings:
     tickrate: float = 60.0
     prepare_time: float = 0.1
 
-    ## PlayFieldSkin:
-    spec_width: int = 5
-    score_width: int = 13
-    progress_width: int = 14
-    spec_decay_time: float = 0.01
-    spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
-    spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
-
-    ## PerformanceSkin:
-    performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
-        PerformanceGrade.MISS               : (""   , ""     ),
-
-        PerformanceGrade.LATE_FAILED        : ("\b⟪", "\t\t⟫"),
-        PerformanceGrade.LATE_BAD           : ("\b⟨", "\t\t⟩"),
-        PerformanceGrade.LATE_GOOD          : ("\b‹", "\t\t›"),
-        PerformanceGrade.PERFECT            : (""   , ""     ),
-        PerformanceGrade.EARLY_GOOD         : ("\t\t›", "\b‹"),
-        PerformanceGrade.EARLY_BAD          : ("\t\t⟩", "\b⟨"),
-        PerformanceGrade.EARLY_FAILED       : ("\t\t⟫", "\b⟪"),
-
-        PerformanceGrade.LATE_FAILED_WRONG  : ("\b⟪", "\t\t⟫"),
-        PerformanceGrade.LATE_BAD_WRONG     : ("\b⟨", "\t\t⟩"),
-        PerformanceGrade.LATE_GOOD_WRONG    : ("\b‹", "\t\t›"),
-        PerformanceGrade.PERFECT_WRONG      : (""   , ""     ),
-        PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t›", "\b‹"),
-        PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t⟩", "\b⟨"),
-        PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t⟫", "\b⟪"),
-        }
-
-    performance_sustain_time: float = 0.1
-
-    ## ScrollingBarSkin:
-    sight_appearances: Union[List[str], List[Tuple[str, str]]] = ["⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
-    hit_decay_time: float = 0.4
-    hit_sustain_time: float = 0.1
-    bar_shift: float = 0.1
-    sight_shift: float = 0.0
-    bar_flip: bool = False
-
 class KAIKOGame:
     settings: GameplaySettings = GameplaySettings()
 
@@ -962,7 +958,7 @@ class KAIKOGame:
     @dn.datanode
     def connect(self, console):
         self.console = console
-        self.playfield = PlayField(self.settings)
+        self.playfield = PlayField()
 
         # events
         self.events = self.beatmap.build_events()
