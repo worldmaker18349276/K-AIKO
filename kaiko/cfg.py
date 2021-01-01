@@ -1,6 +1,7 @@
 import re
 import typing
 import dataclasses
+import enum
 
 
 sp = r"( [ \t\f]   |  \\ (\r\n | \r(?!\n) | \n | $) )"
@@ -102,22 +103,28 @@ def make_basic_parser_full():
         def format(self, *args):
             return "( " + " | ".join(args) + " )"
 
-    def dataclass_parser(name, **kwargs):
-        if len(kwargs) == 0:
+    def Enum_parser(clz, parser):
+        return "( " + " | ".join(clz.__name__ + "\." + e.name for e in clz) + " )"
+
+    def dataclass_parser(clz, parser):
+        name = clz.__name__
+        fields = {field.name : parser(field.type) for field in clz.__dataclass_fields__.values()}
+        if len(fields) == 0:
             return fr"( {name} {sp}* \( {msp} \) )"
 
         else:
-            args = [fr"{key} {msp} = {msp} {value}" for key, value in kwargs.items()]
+            args = [fr"{key} {msp} = {msp} {value}" for key, value in fields.items()]
             list = fr" {msp} , {msp} ".join(args)
             return fr"( {name} {sp}* \( {msp} {list} {msp} ( , {msp} )? \) )"
 
-    atomic_types = dict(NoneType=none_parser, bool=bool_parser,
+    atomic_types = dict(nonetype=none_parser, bool=bool_parser,
                         int=int_parser, float=float_parser, complex=complex_parser,
                         str=str_parser, bytes=bytes_parser)
-    composite_types = dict(List=list_parser, Set=set_parser, Dict=dict_parser,
-                           Tuple=TupleParser(), Union=UnionParser())
+    composite_types = dict(list=list_parser, set=set_parser, dict=dict_parser,
+                           tuple=TupleParser(), union=UnionParser())
+    custom_types = dict(enum=Enum_parser, dataclass=dataclass_parser)
 
-    return atomic_types, composite_types, dataclass_parser
+    return atomic_types, composite_types, custom_types
 
 def make_basic_parser_simple():
     # only parse the form of repr()
@@ -131,8 +138,12 @@ def make_basic_parser_simple():
     _number_parser = r"( 0 | [1-9][0-9]* | [0-9]+\.[0-9]+ ( e[-+]?[0-9]+ )? | [0-9]+e[-+]?[0-9]+ )"
     complex_parser = fr"( [-+]? {_number_parser} j | \( [-+]? {_number_parser} [-+] {_number_parser} j \) )"
 
-    str_parser = r"""( ' ( [^\\\n'] | \\. )* ' | " ( [^\\\n"] | \\. )* " )"""
-    bytes_parser = r"""( b' ( (?!\\\n') [\x00-\x7f] | \\[\x00-\x7f] )* ' | b" ( (?!\\\n") [\x00-\x7f] | \\[\x00-\x7f] )* " )"""
+    str_parser = r"""( ' ( [^\\\n'] | \\. )* '
+                     | " ( [^\\\n"] | \\. )* "
+                     )"""
+    bytes_parser = r"""( b' ( (?!\\\n') [\x00-\x7f] | \\[\x00-\x7f] )* '
+                       | b" ( (?!\\\n") [\x00-\x7f] | \\[\x00-\x7f] )* "
+                       )"""
     list_parser = r"( \[\] | \[ ({0} , [ ])* {0} \] )"
     set_parser = r"( set\(\) | \x7b ({0} , [ ])* {0} \x7d )"
     dict_parser = r"( \x7b\x7d | \x7b ({0} : [ ] {1} , [ ])* {0} : [ ] {1} \x7d )"
@@ -153,34 +164,40 @@ def make_basic_parser_simple():
         def format(self, *args):
             return "( " + " | ".join(args) + " )"
 
-    def dataclass_parser(name, **kwargs):
-        if len(kwargs) == 0:
+    def Enum_parser(clz, parser):
+        return "( " + " | ".join(clz.__name__ + "\." + e.name for e in clz) + " )"
+
+    def dataclass_parser(clz, parser):
+        name = clz.__name__
+        fields = {field.name : parser(field.type) for field in clz.__dataclass_fields__.values()}
+        if len(fields) == 0:
             return fr"( {name}\(\) )"
 
         else:
-            args = [fr"{key} = {value}" for key, value in kwargs.items()]
+            args = [fr"{key} = {value}" for key, value in fields.items()]
             list = fr" , [ ]".join(args)
-            return fr"( {name}\( {list} \) )"
+            return fr"( {name} \( {list} \) )"
 
-    atomic_types = dict(NoneType=none_parser, bool=bool_parser,
+    atomic_types = dict(nonetype=none_parser, bool=bool_parser,
                         int=int_parser, float=float_parser,
                         str=str_parser, bytes=bytes_parser)
-    composite_types = dict(List=list_parser, Set=set_parser, Dict=dict_parser,
-                           Tuple=TupleParser(), Union=UnionParser())
+    composite_types = dict(list=list_parser, set=set_parser, dict=dict_parser,
+                           tuple=TupleParser(), union=UnionParser())
+    custom_types = dict(enum=Enum_parser, dataclass=dataclass_parser)
 
-    return atomic_types, composite_types, dataclass_parser
+    return atomic_types, composite_types, custom_types
 
-atomic_types, composite_types, dataclass_parser = make_basic_parser_full()
+atomic_types, composite_types, custom_types = make_basic_parser_full()
 
 
 def parser(clz):
     if clz is None:
         clz = type(None)
 
-    if not isinstance(clz, type):
+    if not isinstance(clz, (type, typing._Union)):
         raise ValueError(repr(clz) + " is not a type")
 
-    name = clz.__name__
+    name = (clz.__name__ if not isinstance(clz, typing._Union) else 'union').lower()
 
     if name in atomic_types:
         return atomic_types[name]
@@ -189,9 +206,11 @@ def parser(clz):
         args = [parser(arg) for arg in clz.__args__]
         return composite_types[name].format(*args)
 
+    elif issubclass(clz, enum.Enum):
+        return custom_types['enum'](clz, parser)
+
     elif dataclasses.is_dataclass(clz):
-        fields = {field.name : parser(field.type) for field in dataclasses.fields(clz)}
-        return dataclass_parser(name, **fields)
+        return custom_types['dataclass'](clz, parser)
 
     else:
         raise ValueError("Unable to unrepr type " + clz.__name__)
@@ -218,15 +237,15 @@ def configurable(arg=None, excludes=[]):
 def get_configurable_fields(clz):
     field_hints = {}
     for field_name, field_type in clz.__configurable_fields__.items():
-        if hasattr(field_type, '__configurable_fields__'):
+        if not hasattr(field_type, '__configurable_fields__'):
+            field_hints[(field_name,)] = field_type
+        else:
             subfield_hints = get_configurable_fields(field_type)
             for subfield_names, subfield_type in subfield_hints.items():
                 field_hints[(field_name, *subfield_names)] = subfield_type
-        else:
-            field_hints[(field_name,)] = field_type
     return field_hints
 
-def config_read(file, strict=True, **targets):
+def config_read(file, strict=True, globals=None, **targets):
     if isinstance(file, str):
         file = open(file, 'r')
     config_str = file.read()
@@ -246,7 +265,9 @@ def config_read(file, strict=True, **targets):
         if not re.fullmatch(regex, config_str, re.X|re.A|re.M|re.S):
             raise SyntaxError
 
-    exec(config_str, globals(), **targets)
+    if globals is None:
+        globals = globals()
+    exec(config_str, globals, targets)
 
 def config_write(file, **targets):
     if isinstance(file, str):
