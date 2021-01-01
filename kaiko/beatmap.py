@@ -122,8 +122,8 @@ class Jiggle(Event):
 
         while time < self.end:
             turn = (time - self.time) * self.frequency
-            bar_start, bar_end, _ = field.bar_mask.indices(screen.width)
-            field.sight_shift = shift0 + 1/(bar_end - bar_start) * (turn // 0.5 % 2 * 2 - 1)
+            content_start, content_end, _ = field.content_mask.indices(screen.width)
+            field.sight_shift = shift0 + 1/(content_end - content_start) * (turn // 0.5 % 2 * 2 - 1)
             time, screen = yield
             time -= field.start_time
 
@@ -512,9 +512,11 @@ def to_slices(segments):
 @cfg.configurable
 class PlayFieldSettings:
     # PlayFieldSkin:
-    spec_width: int = 5
-    score_width: int = 13
-    progress_width: int = 14
+    icon_width: int = 8
+    header_width: int = 11
+    footer_width: int = 12
+
+    spec_width: int = 7
     spec_decay_time: float = 0.01
     spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
     spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
@@ -564,17 +566,18 @@ class PlayField:
         self.time = datetime.time(0, 0, 0)
 
         # layout
-        spec_width = self.settings.spec_width
-        score_width = self.settings.score_width
-        progress_width = self.settings.progress_width
-        layout = to_slices((1, spec_width, 1, score_width, ..., progress_width, 1))
-        _, self.spec_mask, _, self.score_mask, self.bar_mask, self.progress_mask, _ = layout
+        icon_width = self.settings.icon_width
+        header_width = self.settings.header_width
+        footer_width = self.settings.footer_width
+        layout = to_slices((icon_width, 1, header_width, 1, ..., 1, footer_width, 1))
+        self.icon_mask, _, self.header_mask, _, self.content_mask, _, self.footer_mask, _ = layout
 
+        spec_width = self.settings.spec_width
         self.spectrum = "\u2800"*spec_width
-        score_width_ = max(0, score_width-3)
-        self.score_format = "{score:0%d.0f}" % (score_width_-score_width_//2)
-        self.full_score_format = "{full_score:0%d.0f}" % (score_width_//2)
-        self.progress_format = "{progress:>%d.%d%%}" % (max(0, progress_width-8), max(0, progress_width-13))
+        score_width = max(0, header_width-1)
+        self.score_format = "{score:0%d.0f}" % (score_width-score_width//2)
+        self.full_score_format = "{full_score:0%d.0f}" % (score_width//2)
+        self.progress_format = "{progress:>%d.%d%%}" % (max(0, footer_width-6), max(0, footer_width-11))
         self.time_format = "{time:%M:%S}"
 
     def register_handlers(self, console, start_time):
@@ -609,12 +612,6 @@ class PlayField:
 
         decay = hop_length / samplerate / self.settings.spec_decay_time / 4
         volume_of = lambda J: dn.power2db(J.mean() * samplerate / 2, scale=(1e-5, 1e6)) / 60.0
-
-        # braille patterns encoding:
-        #   [0] [3]
-        #   [1] [4]
-        #   [2] [5]
-        #   [6] [7]
 
         A = numpy.cumsum([0, 2**6, 2**2, 2**1, 2**0])
         B = numpy.cumsum([0, 2**7, 2**5, 2**4, 2**3])
@@ -683,18 +680,22 @@ class PlayField:
             _, screen = yield
 
             spec_text = self.spectrum
-            spec_start, _, _ = self.spec_mask.indices(screen.width)
-            screen.addstr(spec_start, spec_text, self.spec_mask)
+            icon_start, icon_end, _ = self.icon_mask.indices(screen.width)
+            screen.addstr(icon_start, f"{spec_text:^{icon_end-icon_start}s}", self.icon_mask)
 
             score_text = self.score_format.format(score=self.score)
             full_score_text = self.full_score_format.format(full_score=self.full_score)
-            score_start, _, _ = self.score_mask.indices(screen.width)
-            screen.addstr(score_start, f"[{score_text}/{full_score_text}]", self.score_mask)
+            header_start, header_end, _ = self.header_mask.indices(screen.width)
+            screen.addstr(header_start-1, "[")
+            screen.addstr(header_end, "]")
+            screen.addstr(header_start, f"{score_text}/{full_score_text}", self.header_mask)
 
             progress_text = self.progress_format.format(progress=self.progress)
             time_text = self.time_format.format(time=self.time)
-            progress_start, _, _ = self.progress_mask.indices(screen.width)
-            screen.addstr(progress_start, f"[{progress_text}|{time_text}]", self.progress_mask)
+            footer_start, footer_end, _ = self.footer_mask.indices(screen.width)
+            screen.addstr(footer_start-1, "[")
+            screen.addstr(footer_end, "]")
+            screen.addstr(footer_start, f"{progress_text}|{time_text}", self.footer_mask)
 
     @dn.datanode
     def _sight_handler(self):
@@ -753,13 +754,13 @@ class PlayField:
         if self.bar_flip:
             pos = 1 - pos
 
-        bar_start, bar_end, _ = self.bar_mask.indices(screen.width)
-        index = bar_start + pos * max(0, bar_end - bar_start - 1)
+        content_start, content_end, _ = self.content_mask.indices(screen.width)
+        index = content_start + pos * max(0, content_end - content_start - 1)
 
         if isinstance(text, tuple):
             text = text[self.bar_flip]
 
-        screen.addstr(index, text, self.bar_mask)
+        screen.addstr(index, text, self.content_mask)
 
     @dn.datanode
     def _bar_node(self, pos, text, start, duration):
