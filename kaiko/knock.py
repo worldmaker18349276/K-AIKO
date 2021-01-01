@@ -2,6 +2,7 @@ import sys
 import os
 import time
 import functools
+import unicodedata
 import contextlib
 from collections import OrderedDict
 import queue
@@ -307,13 +308,45 @@ class TerminalLine:
     def addstr(self, index, str, mask=slice(None, None, None)):
         if isinstance(index, float):
             index = round(index)
+        ran = range(self.width)[mask]
+
         for ch in str:
             if ch == "\t":
                 index += 1
+
             elif ch == "\b":
                 index -= 1
+
+            elif ch in ("\n", "\r"):
+                index = 0
+
+            elif ch in ("\0", "\v", "\f"):
+                pass
+
+            elif unicodedata.combining(ch) != 0:
+                index_ = index - 1
+                if index_ in range(len(self.chars)) and self.chars[index_] == "":
+                    index_ -= 1
+                if index_ in ran:
+                    self.chars[index_] += ch
+
+            elif unicodedata.east_asian_width(ch) in ('F', 'W'):
+                index_ = index + 1
+                if index in ran and index_ in ran:
+                    if index-1 in range(len(self.chars)) and self.chars[index] == "":
+                        self.chars[index-1] = " "
+                    if index_+1 in range(len(self.chars)) and self.chars[index_+1] == "":
+                        self.chars[index_+1] = " "
+                    self.chars[index] = ch
+                    self.chars[index_] = ""
+                index += 2
+
             else:
-                if index in range(self.width)[mask]:
+                if index in ran:
+                    if index-1 in range(len(self.chars)) and self.chars[index] == "":
+                        self.chars[index-1] = " "
+                    if index+1 in range(len(self.chars)) and self.chars[index+1] == "":
+                        self.chars[index+1] = " "
                     self.chars[index] = ch
                 index += 1
 
