@@ -6,13 +6,7 @@ from .beatanalyzer import *
 
 filename = sys.argv[1]
 
-if filename.endswith((".k-aiko", ".kaiko", ".ka")):
-    beatmap = K_AIKO_STD_FORMAT.read(filename)
-elif filename.endswith(".osu"):
-    beatmap = OSU_FORMAT.read(filename)
-else:
-    raise ValueError(f"unknown file extension: {filename}")
-
+beatmap = BeatmapDraft.read(filename)
 game = KAIKOGame(beatmap)
 console = KnockConsole()
 console.settings.debug_timeit = True

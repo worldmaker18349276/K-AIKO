@@ -59,6 +59,15 @@ class BeatmapDraft(Beatmap):
 
         return events
 
+    @staticmethod
+    def read(filename):
+        if filename.endswith((".k-aiko", ".kaiko", ".ka")):
+            return K_AIKO_STD_FORMAT.read(filename)
+        elif filename.endswith(".osu"):
+            return OSU_FORMAT.read(filename)
+        else:
+            raise ValueError(f"unknown file extension: {filename}")
+
 class NoteChart:
     def __init__(self, *, beat=0, length=1, meter=4, hide=False):
         self.beat = beat
