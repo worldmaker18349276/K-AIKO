@@ -1,7 +1,5 @@
 import os
 import datetime
-import inspect
-import operator
 from enum import Enum
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
@@ -10,7 +8,6 @@ import numpy
 import audioread
 from . import cfg
 from . import datanodes as dn
-from .beatsheet import K_AIKO_STD, OSU
 
 
 class Event:
@@ -807,7 +804,7 @@ class PlayField:
         self.console.remove_drawer(node, ('after_renderer', key))
 
 
-# Beatmap
+# Game
 @cfg.configurable
 class BeatmapSettings:
     ## Difficulty:
@@ -882,20 +879,6 @@ class Beatmap:
         self.offset = offset
         self.tempo = tempo
 
-        self.definitions = {}
-        self.charts = []
-
-        self['x'] = Soft
-        self['o'] = Loud
-        self['<'] = Incr
-        self['%'] = Roll
-        self['@'] = Spin
-        self['TEXT'] = Text
-        self['CONTEXT'] = set_context
-        self['FLIP'] = Flip
-        self['SHIFT'] = Shift
-        self['JIGGLE'] = Jiggle
-
     def time(self, beat):
         return self.offset + beat*60/self.tempo
 
@@ -905,142 +888,9 @@ class Beatmap:
     def dtime(self, beat, length):
         return self.time(beat+length) - self.time(beat)
 
-    def __setitem__(self, symbol, builder):
-        if any(c in symbol for c in " \b\t\n\r\f\v()[]{}\'\"\\#|~") or symbol == '_':
-            raise ValueError(f"invalid symbol `{symbol}`")
-        if symbol in self.definitions:
-            raise ValueError(f"symbol `{symbol}` is already defined")
-        self.definitions[symbol] = NoteType(symbol, builder)
+    def build_events(self):
+        raise NotImplementedError
 
-    def __delitem__(self, symbol):
-        del self.definitions[symbol]
-
-    def __getitem__(self, symbol):
-        return self.definitions[symbol].builder
-
-    def __iadd__(self, chart_str):
-        self.charts.append(K_AIKO_STD_FORMAT.read_chart(chart_str, self.definitions))
-        return self
-
-class NoteChart:
-    def __init__(self, *, beat=0, length=1, meter=4, hide=False):
-        self.beat = beat
-        self.length = length
-        self.meter = meter
-        self.hide = hide
-        self.notes = []
-
-    def build_events(self, beatmap):
-        events = []
-
-        if self.hide:
-            return events
-
-        context = dict()
-        for note in self.notes:
-            event = note.create(beatmap, context)
-            if event is not None:
-                events.append(event)
-
-        return events
-
-def NoteType(symbol, builder):
-    # builder(beatmap, *args, context, **kwargs) -> Event | None
-    # => Note(*args, **kwargs)
-    signature = inspect.signature(builder)
-    parameters = list(signature.parameters.values())[1:]
-    contextual = [param.name for param in parameters if param.kind == inspect.Parameter.KEYWORD_ONLY]
-    if 'context' in contextual:
-        parameters.remove(signature.parameters['context'])
-    signature = signature.replace(parameters=parameters)
-    attrs = dict(symbol=symbol, builder=staticmethod(builder), signature=signature, contextual=contextual)
-    return type(builder.__name__+"Note", (Note,), attrs)
-
-class Note:
-    modifiers = {
-        '+': operator.add,
-        '-': operator.sub,
-        '*': operator.mul,
-        '/': operator.truediv,
-        '&': operator.and_,
-        '|': operator.or_,
-        '^': operator.xor,
-        }
-
-    def __init__(self, *psargs, **kwargs):
-        self.mods = dict()
-
-        # find modified assignments: pretend `f(key+=value)` by `f(**{'key+': value})`
-        for key, value in list(kwargs.items()):
-            for mod in self.modifiers.keys():
-                if key.endswith(mod):
-                    # get original key
-                    key_ = key[:-len(mod)]
-                    if key_ in kwargs:
-                        raise ValueError("keyword argument repeated")
-                    if key_ not in self.contextual:
-                        raise ValueError("unable to modify non-contextual argument")
-
-                    # extract out modifier
-                    self.mods[key_] = mod
-                    del kwargs[key]
-                    kwargs[key_] = value
-
-                    break
-
-        # bind arguments, it allows missing contextual arguments until obtaining context
-        self.bound = self.signature.bind_partial(*psargs, **kwargs)
-
-        # check non-contextual arguments
-        for key, param in self.signature.parameters.items():
-            if key not in self.contextual:
-                if key not in self.bound.arguments and param.default == inspect.Parameter.empty:
-                    raise ValueError("missing required arguments")
-
-    def __repr__(self):
-        return self.__str__()
-
-    def __str__(self):
-        psargs_str = [repr(value) for value in self.bound.args]
-        kwargs_str = [key+self.mods.get(key, "")+"="+repr(value) for key, value in self.bound.kwargs.items()]
-        args_str = ", ".join([*psargs_str, *kwargs_str])
-        return f"{self.symbol}({args_str})"
-
-    def create(self, beatmap, context):
-        args = self.bound.args
-        kwargs = dict(self.bound.kwargs)
-        ikwargs = dict()
-
-        # separate modified contextual arguments
-        for key in self.contextual:
-            if key in kwargs and key in self.mods:
-                ikwargs[key] = kwargs[key]
-                del kwargs[key]
-
-        # fill in missing contextual arguments by context
-        for key in self.contextual:
-            if key != 'context' and key not in kwargs and key in context:
-                kwargs[key] = context[key]
-
-        # bind unmodified arguments. it will raise error for missing contextual arguments
-        bound = self.signature.bind(*args, **kwargs)
-        bound.apply_defaults()
-        args = bound.args
-        kwargs = dict(bound.kwargs)
-
-        # modify contextual arguments if needed
-        for key in self.contextual:
-            if key in self.mods:
-                mod = self.mods[key]
-                kwargs[key] = self.modifiers[mod](kwargs[key], ikwargs[key])
-
-        # build
-        if 'context' in self.contextual:
-            kwargs['context'] = context
-        return self.builder(beatmap, *args, **kwargs)
-
-
-# Game
 @cfg.configurable
 class GameplaySettings:
     ## Controls:
@@ -1105,10 +955,9 @@ class KAIKOGame:
         return sum(getattr(event, 'score', 0) for event in self.events) * self.score_scale
 
     def get_progress(self):
-        total = len([event for event in self.events if hasattr(event, 'is_finished')])
-        if total == 0:
+        if self.total_subjects == 0:
             return 1.0
-        return sum(getattr(event, 'is_finished', False) for event in self.events) / total
+        return sum(getattr(event, 'is_finished', False) for event in self.events) / self.total_subjects
 
     @dn.datanode
     def connect(self, console):
@@ -1116,14 +965,16 @@ class KAIKOGame:
         self.playfield = PlayField(self.settings)
 
         # events
-        leadin_time = self.settings.leadin_time
-        self.events = [event for chart in self.beatmap.charts for event in chart.build_events(self.beatmap)]
+        self.events = self.beatmap.build_events()
         self.events.sort(key=lambda e: e.lifespan[0])
+
+        leadin_time = self.settings.leadin_time
         events_start_time = min((event.lifespan[0] - leadin_time for event in self.events), default=0.0)
         events_end_time   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
 
         total_score = sum(getattr(event, 'full_score', 0) for event in self.events)
         self.score_scale = 65536 / total_score
+        self.total_subjects = len([event for event in self.events if hasattr(event, 'is_finished')])
         self.playfield.full_score = self.get_full_score()
         self.playfield.score = self.get_score()
         self.playfield.progress = self.get_progress()
@@ -1174,7 +1025,3 @@ class KAIKOGame:
                 self.playfield.time = datetime.time(time//3600, time%3600//60, time%60)
 
                 yield
-
-
-K_AIKO_STD_FORMAT = K_AIKO_STD(Beatmap, NoteChart)
-OSU_FORMAT = OSU(Beatmap, NoteChart)

@@ -2,9 +2,169 @@ import os
 import math
 from collections import OrderedDict, namedtuple
 from fractions import Fraction
+import operator
 import inspect
 from ast import literal_eval
 from lark import Lark, Transformer
+from .beatmap import (
+    Beatmap,
+    Text, Flip, Shift, Jiggle, set_context,
+    Soft, Loud, Incr, Roll, Spin,
+    )
+
+
+class BeatmapDraft(Beatmap):
+    def __init__(self, path=".", info="", audio=None, volume=0.0, offset=0.0, tempo=60.0):
+        super().__init__(path, info, audio, volume, offset, tempo)
+        self.charts = []
+
+        self.definitions = {}
+        self['x'] = Soft
+        self['o'] = Loud
+        self['<'] = Incr
+        self['%'] = Roll
+        self['@'] = Spin
+        self['TEXT'] = Text
+        self['CONTEXT'] = set_context
+        self['FLIP'] = Flip
+        self['SHIFT'] = Shift
+        self['JIGGLE'] = Jiggle
+
+    def __setitem__(self, symbol, builder):
+        if any(c in symbol for c in " \b\t\n\r\f\v()[]{}\'\"\\#|~") or symbol == '_':
+            raise ValueError(f"invalid symbol `{symbol}`")
+        if symbol in self.definitions:
+            raise ValueError(f"symbol `{symbol}` is already defined")
+        self.definitions[symbol] = NoteType(symbol, builder)
+
+    def __delitem__(self, symbol):
+        del self.definitions[symbol]
+
+    def __getitem__(self, symbol):
+        return self.definitions[symbol].builder
+
+    def __iadd__(self, chart_str):
+        self.charts.append(K_AIKO_STD_FORMAT.read_chart(chart_str, self.definitions))
+        return self
+
+    def build_events(self):
+        events = []
+
+        for chart in self.charts:
+            context = dict()
+            for note in chart.notes:
+                event = note.create(self, context)
+                if event is not None:
+                    events.append(event)
+
+        return events
+
+class NoteChart:
+    def __init__(self, *, beat=0, length=1, meter=4, hide=False):
+        self.beat = beat
+        self.length = length
+        self.meter = meter
+        self.hide = hide
+        self._notes = []
+
+    @property
+    def notes(self):
+        return [] if self.hide else self._notes
+
+def NoteType(symbol, builder):
+    # builder(beatmap, *args, context, **kwargs) -> Event | None
+    # => Note(*args, **kwargs)
+    signature = inspect.signature(builder)
+    parameters = list(signature.parameters.values())[1:]
+    contextual = [param.name for param in parameters if param.kind == inspect.Parameter.KEYWORD_ONLY]
+    if 'context' in contextual:
+        parameters.remove(signature.parameters['context'])
+    signature = signature.replace(parameters=parameters)
+    attrs = dict(symbol=symbol, builder=staticmethod(builder), signature=signature, contextual=contextual)
+    return type(builder.__name__+"Note", (Note,), attrs)
+
+class Note:
+    modifiers = {
+        '+': operator.add,
+        '-': operator.sub,
+        '*': operator.mul,
+        '/': operator.truediv,
+        '&': operator.and_,
+        '|': operator.or_,
+        '^': operator.xor,
+        }
+
+    def __init__(self, *psargs, **kwargs):
+        self.mods = dict()
+
+        # find modified assignments: pretend `f(key+=value)` by `f(**{'key+': value})`
+        for key, value in list(kwargs.items()):
+            for mod in self.modifiers.keys():
+                if key.endswith(mod):
+                    # get original key
+                    key_ = key[:-len(mod)]
+                    if key_ in kwargs:
+                        raise ValueError("keyword argument repeated")
+                    if key_ not in self.contextual:
+                        raise ValueError("unable to modify non-contextual argument")
+
+                    # extract out modifier
+                    self.mods[key_] = mod
+                    del kwargs[key]
+                    kwargs[key_] = value
+
+                    break
+
+        # bind arguments, it allows missing contextual arguments until obtaining context
+        self.bound = self.signature.bind_partial(*psargs, **kwargs)
+
+        # check non-contextual arguments
+        for key, param in self.signature.parameters.items():
+            if key not in self.contextual:
+                if key not in self.bound.arguments and param.default == inspect.Parameter.empty:
+                    raise ValueError("missing required arguments")
+
+    def __repr__(self):
+        return self.__str__()
+
+    def __str__(self):
+        psargs_str = [repr(value) for value in self.bound.args]
+        kwargs_str = [key+self.mods.get(key, "")+"="+repr(value) for key, value in self.bound.kwargs.items()]
+        args_str = ", ".join([*psargs_str, *kwargs_str])
+        return f"{self.symbol}({args_str})"
+
+    def create(self, beatmap, context):
+        args = self.bound.args
+        kwargs = dict(self.bound.kwargs)
+        ikwargs = dict()
+
+        # separate modified contextual arguments
+        for key in self.contextual:
+            if key in kwargs and key in self.mods:
+                ikwargs[key] = kwargs[key]
+                del kwargs[key]
+
+        # fill in missing contextual arguments by context
+        for key in self.contextual:
+            if key != 'context' and key not in kwargs and key in context:
+                kwargs[key] = context[key]
+
+        # bind unmodified arguments. it will raise error for missing contextual arguments
+        bound = self.signature.bind(*args, **kwargs)
+        bound.apply_defaults()
+        args = bound.args
+        kwargs = dict(bound.kwargs)
+
+        # modify contextual arguments if needed
+        for key in self.contextual:
+            if key in self.mods:
+                mod = self.mods[key]
+                kwargs[key] = self.modifiers[mod](kwargs[key], ikwargs[key])
+
+        # build
+        if 'context' in self.contextual:
+            kwargs['context'] = context
+        return self.builder(beatmap, *args, **kwargs)
 
 
 # #K-AIKO-std-1.1.0
@@ -105,12 +265,8 @@ class K_AIKO_STD:
     chart_parser = Lark(k_aiko_grammar, start='chart')
     transformer = K_AIKO_STD_Transformer()
 
-    def __init__(self, Beatmap, NoteChart):
-        self.Beatmap = Beatmap
-        self.NoteChart = NoteChart
-
     def read(self, filename):
-        # beatmap = self.Beatmap()
+        # beatmap = BeatmapDraft()
         # exec(file.read(), dict(), dict(beatmap=beatmap))
         # return beatmap
         path = os.path.dirname(filename)
@@ -130,7 +286,7 @@ class K_AIKO_STD:
         if vernum[0] != vernum0[0] or vernum[1:] > vernum0[1:]:
             raise ValueError("incompatible version")
 
-        beatmap = self.Beatmap()
+        beatmap = BeatmapDraft()
 
         beatmap.path = path
         if info is not None:
@@ -153,7 +309,7 @@ class K_AIKO_STD:
     def load_chart(self, node, definitions):
         (args, kwargs), pattern = node.children
 
-        chart = self.NoteChart(*args, **kwargs)
+        chart = NoteChart(*args, **kwargs)
         self.load_pattern(pattern, chart, chart.beat, chart.length, None, definitions)
 
         return chart
@@ -246,12 +402,9 @@ class K_AIKO_STD:
 
         return chart, beat, length, note
 
+K_AIKO_STD_FORMAT = K_AIKO_STD()
 
 class OSU:
-    def __init__(self, Beatmap, NoteChart):
-        self.Beatmap = Beatmap
-        self.NoteChart = NoteChart
-
     def read(self, filename):
         path = os.path.dirname(filename)
 
@@ -260,9 +413,9 @@ class OSU:
             if format != "osu file format v14\n":
                 raise ValueError(f"invalid file format: {repr(format)}")
 
-            beatmap = self.Beatmap()
+            beatmap = BeatmapDraft()
             beatmap.path = path
-            beatmap.charts.append(self.NoteChart())
+            beatmap.charts.append(NoteChart())
             context = {}
 
             parse = None
@@ -379,3 +532,4 @@ class OSU:
             note = beatmap.definitions['@'](density=density, beat=beat, length=length, speed=speed, volume=volume)
             beatmap.charts[0].notes.append(note)
 
+OSU_FORMAT = OSU()
