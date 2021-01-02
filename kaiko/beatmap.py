@@ -112,19 +112,7 @@ class Target(Event):
 
     def register(self, field):
         self.approach(field)
-        field.add_target(self._node(field), start=self.range[0], duration=self.range[1]-self.range[0])
-
-    @dn.datanode
-    def _node(self, field):
-        try:
-            while True:
-                time, strength = yield
-                self.hit(field, time, strength)
-                if self.is_finished:
-                    break
-        except GeneratorExit:
-            if not self.is_finished:
-                self.finish(field)
+        field.listen_target(self, start=self.range[0], duration=self.range[1]-self.range[0])
 
 class PerformanceGrade(Enum):
     MISS               = (None, None)
@@ -262,7 +250,7 @@ class OneshotTarget(Target):
                               start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
 
         else: # correct key
-            field.remove_target(key=self)
+            field.cancel_draw_target(key=self)
 
 class Soft(OneshotTarget):
     def __init__(self, beatmap, beat=None, *, speed=1.0, volume=0.0):
@@ -391,7 +379,7 @@ class Roll(Target):
         if self.roll <= self.number:
             perf = Performance.judge(self.performance_tolerance, self.times[self.roll-1], time, True)
             self.perfs.append(perf)
-            field.remove_target(key=(self, self.roll-1))
+            field.cancel_draw_target(key=(self, self.roll-1))
 
     def finish(self, field):
         self.is_finished = True
@@ -450,7 +438,7 @@ class Spin(Target):
         if self.charge != self.capacity:
             return
 
-        field.remove_target(key=self)
+        field.cancel_draw_target(key=self)
 
         appearance = self.finishing_appearance
         if isinstance(appearance, tuple) and self.speed < 0:
@@ -751,6 +739,18 @@ class PlayField(Beatbar):
 
             self._bar_draw(screen, 0, text)
 
+    @dn.datanode
+    def _target_node(self, target):
+        try:
+            while True:
+                time, strength = yield
+                target.hit(self, time, strength)
+                if target.is_finished:
+                    break
+        except GeneratorExit:
+            if not target.is_finished:
+                target.finish(self)
+
     def _bar_draw(self, screen, pos, text):
         pos = pos + self.bar_shift
         if self.bar_flip:
@@ -792,8 +792,8 @@ class PlayField(Beatbar):
                                        volume=volume, start=start, end=end,
                                        time=time, zindex=zindex, key=key)
 
-    def add_target(self, target, start=None, duration=None):
-        self.target_queue.put((target, start, duration))
+    def listen_target(self, target, start=None, duration=None):
+        self.target_queue.put((self._target_node(target), start, duration))
 
     def draw_sight(self, text, start=None, duration=None):
         text_func = text if hasattr(text, '__call__') else lambda time, width: text
@@ -827,7 +827,7 @@ class PlayField(Beatbar):
         self.console.add_drawer(node, zindex=zindex, key=('target', key))
         return key
 
-    def remove_target(self, key):
+    def cancel_draw_target(self, key):
         self.console.remove_drawer(key=('target', key))
 
     def on_before_render(self, node, key=None):
