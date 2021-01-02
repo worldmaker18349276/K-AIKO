@@ -713,7 +713,7 @@ class PlayField(Beatbar):
         sight_appearances = self.settings.sight_appearances
 
         hit_strength, hit_time = None, None
-        perf, perf_time, perf_text = None, None, None
+        perf, perf_is_reversed, perf_time = None, None, None
         drawer, start, duration = None, None, None
         waiting_drawers = []
 
@@ -721,7 +721,7 @@ class PlayField(Beatbar):
             time, screen = yield
             time -= self.start_time
 
-            # update hit
+            # update hit hint
             while not self.hit_queue.empty():
                 hit_strength = self.hit_queue.get()
                 hit_time = time
@@ -740,7 +740,7 @@ class PlayField(Beatbar):
                 perf_is_reversed = None
                 perf_time = None
 
-            # update sight drawer
+            # update sight drawers
             while not self.sight_queue.empty():
                 item = self.sight_queue.get()
                 if item[1] is None:
