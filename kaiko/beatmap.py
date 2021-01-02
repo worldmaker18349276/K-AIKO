@@ -510,7 +510,78 @@ def to_slices(segments):
     return [first_slice, *pre_slices, middle_slice, *post_slices[::-1], last_slice]
 
 @cfg.configurable
-class PlayFieldSettings:
+class BeatbarSettings:
+    # BeatbarSkin:
+    icon_width: int = 8
+    header_width: int = 11
+    footer_width: int = 12
+
+    icon_formats: List[str] = [""]
+    header_formats: List[str] = [""]
+    footer_formats: List[str] = [""]
+
+class Beatbar:
+    settings : BeatbarSettings = BeatbarSettings()
+
+    def __init__(self):
+        self.status = {}
+
+        # layout
+        icon_width = self.settings.icon_width
+        header_width = self.settings.header_width
+        footer_width = self.settings.footer_width
+        layout = to_slices((icon_width, 1, header_width, 1, ..., 1, footer_width, 1))
+        self.icon_mask, _, self.header_mask, _, self.content_mask, _, self.footer_mask, _ = layout
+
+    def register_handlers(self, console):
+        self.console = console
+
+        # register
+        self.console.add_drawer(self._status_handler(), zindex=(-3,), key='status')
+
+    @dn.datanode
+    def _status_handler(self):
+        icon_formats = self.settings.icon_formats
+        header_formats = self.settings.header_formats
+        footer_formats = self.settings.footer_formats
+
+        icon_mask = self.icon_mask
+        header_mask = self.header_mask
+        footer_mask = self.footer_mask
+
+        while True:
+            _, screen = yield
+
+            icon_start, icon_stop, _ = self.icon_mask.indices(screen.width)
+            for icon_format in icon_formats:
+                icon_text = icon_format.format(**self.status)
+                ran = screen.range(icon_start, icon_text)
+                if ran.start >= icon_start and ran.stop <= icon_stop:
+                    break
+            screen.addstr(icon_start, icon_text, self.icon_mask)
+
+            header_start, header_stop, _ = self.header_mask.indices(screen.width)
+            for header_format in header_formats:
+                header_text = header_format.format(**self.status)
+                ran = screen.range(header_start, header_text)
+                if ran.start >= header_start and ran.stop <= header_stop:
+                    break
+            screen.addstr(header_start, header_text, self.header_mask)
+            screen.addstr(header_start-1, "[")
+            screen.addstr(header_stop, "]")
+
+            footer_start, footer_stop, _ = self.footer_mask.indices(screen.width)
+            for footer_format in footer_formats:
+                footer_text = footer_format.format(**self.status)
+                ran = screen.range(footer_start, footer_text)
+                if ran.start >= footer_start and ran.stop <= footer_stop:
+                    break
+            screen.addstr(footer_start, footer_text, self.footer_mask)
+            screen.addstr(footer_start-1, "[")
+            screen.addstr(footer_stop, "]")
+
+@cfg.configurable
+class PlayFieldSettings(BeatbarSettings):
     # PlayFieldSkin:
     icon_width: int = 8
     header_width: int = 11
@@ -556,30 +627,26 @@ class PlayFieldSettings:
     sight_shift: float = 0.0
     bar_flip: bool = False
 
-class PlayField:
+class PlayField(Beatbar):
     settings : PlayFieldSettings = PlayFieldSettings()
 
     def __init__(self):
+        super().__init__()
+
         # state
         self.bar_shift = self.settings.bar_shift
         self.sight_shift = self.settings.sight_shift
         self.bar_flip = self.settings.bar_flip
 
-        self.full_score = 0
-        self.score = 0
-        self.progress = 0.0
-        self.time = datetime.time(0, 0, 0)
-        self.spectrum = "\u2800"*self.settings.spec_width
-
-        # layout
-        icon_width = self.settings.icon_width
-        header_width = self.settings.header_width
-        footer_width = self.settings.footer_width
-        layout = to_slices((icon_width, 1, header_width, 1, ..., 1, footer_width, 1))
-        self.icon_mask, _, self.header_mask, _, self.content_mask, _, self.footer_mask, _ = layout
+        self.status['full_score'] = 0
+        self.status['score'] = 0
+        self.status['progress'] = 0.0
+        self.status['time'] = datetime.time(0, 0, 0)
+        self.status['spectrum'] = "\u2800"*self.settings.spec_width
 
     def register_handlers(self, console, start_time):
-        self.console = console
+        super().register_handlers(console)
+
         self.start_time = start_time
 
         # event queue
@@ -591,7 +658,6 @@ class PlayField:
         self.console.add_effect(self._spec_handler(), zindex=-1)
         self.console.add_listener(self._target_handler())
         self.console.add_listener(self._hit_handler())
-        self.console.add_drawer(self._status_handler(), zindex=(-3,), key='status')
         self.console.add_drawer(self._sight_handler(), zindex=(2,), key='sight')
 
     def _spec_handler(self):
@@ -628,7 +694,7 @@ class PlayField:
 
                     vols = [max(0.0, prev-decay, min(1.0, volume_of(J[slic])))
                             for slic, prev in zip(slices, vols)]
-                    self.spectrum = "".join(map(draw_bar, vols[0::2], vols[1::2]))
+                    self.status['spectrum'] = "".join(map(draw_bar, vols[0::2], vols[1::2]))
 
         return dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels)))
 
@@ -671,55 +737,6 @@ class PlayField:
 
             time, strength, detected = yield
             time -= self.start_time
-
-    @dn.datanode
-    def _status_handler(self):
-        icon_formats = self.settings.icon_formats
-        header_formats = self.settings.header_formats
-        footer_formats = self.settings.footer_formats
-
-        icon_mask = self.icon_mask
-        header_mask = self.header_mask
-        footer_mask = self.footer_mask
-
-        while True:
-            _, screen = yield
-
-            params = dict(
-                spectrum=self.spectrum,
-                score=self.score,
-                full_score=self.full_score,
-                progress=self.progress,
-                time=self.time,
-                )
-
-            icon_start, icon_stop, _ = self.icon_mask.indices(screen.width)
-            for icon_format in icon_formats:
-                icon_text = icon_format.format(**params)
-                ran = screen.range(icon_start, icon_text)
-                if ran.start >= icon_start and ran.stop <= icon_stop:
-                    break
-            screen.addstr(icon_start, icon_text, self.icon_mask)
-
-            header_start, header_stop, _ = self.header_mask.indices(screen.width)
-            for header_format in header_formats:
-                header_text = header_format.format(**params)
-                ran = screen.range(header_start, header_text)
-                if ran.start >= header_start and ran.stop <= header_stop:
-                    break
-            screen.addstr(header_start, header_text, self.header_mask)
-            screen.addstr(header_start-1, "[")
-            screen.addstr(header_stop, "]")
-
-            footer_start, footer_stop, _ = self.footer_mask.indices(screen.width)
-            for footer_format in footer_formats:
-                footer_text = footer_format.format(**params)
-                ran = screen.range(footer_start, footer_text)
-                if ran.start >= footer_start and ran.stop <= footer_stop:
-                    break
-            screen.addstr(footer_start, footer_text, self.footer_mask)
-            screen.addstr(footer_start-1, "[")
-            screen.addstr(footer_stop, "]")
 
     @dn.datanode
     def _sight_handler(self):
@@ -996,9 +1013,9 @@ class KAIKOGame:
         total_score = sum(getattr(event, 'full_score', 0) for event in self.events)
         self.score_scale = 65536 / total_score
         self.total_subjects = len([event for event in self.events if hasattr(event, 'is_finished')])
-        self.playfield.full_score = self.get_full_score()
-        self.playfield.score = self.get_score()
-        self.playfield.progress = self.get_progress()
+        self.playfield.status['full_score'] = self.get_full_score()
+        self.playfield.status['score'] = self.get_score()
+        self.playfield.status['progress'] = self.get_progress()
 
         if self.beatmap.audio is None:
             audionode = None
@@ -1039,10 +1056,10 @@ class KAIKOGame:
                     event.register(self.playfield)
                     event = next(events_iter, None)
 
-                self.playfield.full_score = self.get_full_score()
-                self.playfield.score = self.get_score()
-                self.playfield.progress = self.get_progress()
+                self.playfield.status['full_score'] = self.get_full_score()
+                self.playfield.status['score'] = self.get_score()
+                self.playfield.status['progress'] = self.get_progress()
                 time = int(max(0.0, time))
-                self.playfield.time = datetime.time(time//3600, time%3600//60, time%60)
+                self.playfield.status['time'] = datetime.time(time//3600, time%3600//60, time%60)
 
                 yield
