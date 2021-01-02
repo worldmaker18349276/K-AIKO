@@ -30,6 +30,7 @@ class Text(Event):
 
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.time + travel_time)
+        self.zindex = (-2, -self.time)
 
     def pos(self, time, width):
         return (self.time-time) * 0.5 * self.speed
@@ -39,8 +40,8 @@ class Text(Event):
             field.play(self.sound, time=self.time)
 
         if self.text is not None:
-            field.draw_text(self.pos, self.text, start=self.lifespan[0],
-                            duration=self.lifespan[1]-self.lifespan[0], zindex=(-2, -self.time))
+            field.draw_content(self.pos, self.text, zindex=self.zindex,
+                               start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
 
 # scripts
 class Flip(Event):
@@ -112,9 +113,24 @@ class Target(Event):
     # hit(field, time, strength)
     # finish(field)
 
+    @dn.datanode
+    def listen(self, field):
+        try:
+            while True:
+                time, strength = yield
+                self.hit(field, time, strength)
+                if self.is_finished:
+                    break
+        except GeneratorExit:
+            if not self.is_finished:
+                self.finish(field)
+
+    def zindex(self):
+        return (0, not self.is_finished, -self.range[0])
+
     def register(self, field):
         self.approach(field)
-        field.listen_target(self, start=self.range[0], duration=self.range[1]-self.range[0])
+        field.listen(self.listen(field), start=self.range[0], duration=self.range[1]-self.range[0])
 
 class PerformanceGrade(Enum):
     MISS               = (None, None)
@@ -242,8 +258,8 @@ class OneshotTarget(Target):
         if self.sound is not None:
             field.play(self.sound, time=self.time, volume=self.volume)
 
-        field.draw_target(self, self.pos, self.appearance,
-                          start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
+        field.draw_content(self.pos, self.appearance, zindex=self.zindex,
+                           start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
         field.reset_sight(start=self.range[0])
 
     def hit(self, field, time, strength, is_correct_key=True):
@@ -377,8 +393,8 @@ class Roll(Target):
         for i, time in enumerate(self.times):
             if self.sound is not None:
                 field.play(self.sound, time=time, volume=self.volume)
-            field.draw_target(self, self.pos_of(i), self.appearance_of(i),
-                              start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
+            field.draw_content(self.pos_of(i), self.appearance_of(i), zindex=self.zindex,
+                               start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
         field.reset_sight(start=self.range[0])
 
     def hit(self, field, time, strength):
@@ -433,8 +449,8 @@ class Spin(Target):
             if self.sound is not None:
                 field.play(self.sound, time=time, volume=self.volume)
 
-        field.draw_target(self, self.pos, self.appearance,
-                          start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
+        field.draw_content(self.pos, self.appearance, zindex=self.zindex,
+                           start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
         field.draw_sight("", start=self.range[0], duration=self.range[1]-self.range[0])
 
     def hit(self, field, time, strength):
@@ -760,7 +776,7 @@ class PlayField(Beatbar):
                 if perf_is_reversed:
                     perf_text = perf_text[::-1]
 
-                self._bar_draw(screen, 0, perf_text)
+                self._draw_content(screen, 0, perf_text)
 
             # draw sight
             if drawer is not None:
@@ -777,21 +793,9 @@ class PlayField(Beatbar):
             else:
                 sight_text = sight_appearances[0]
 
-            self._bar_draw(screen, 0, sight_text)
+            self._draw_content(screen, 0, sight_text)
 
-    @dn.datanode
-    def _target_node(self, target):
-        try:
-            while True:
-                time, strength = yield
-                target.hit(self, time, strength)
-                if target.is_finished:
-                    break
-        except GeneratorExit:
-            if not target.is_finished:
-                target.finish(self)
-
-    def _bar_draw(self, screen, pos, text):
+    def _draw_content(self, screen, pos, text):
         pos = pos + self.bar_shift
         if self.bar_flip:
             pos = 1 - pos
@@ -805,7 +809,7 @@ class PlayField(Beatbar):
         screen.addstr(index, text, self.content_mask)
 
     @dn.datanode
-    def _bar_node(self, pos, text, start, duration):
+    def _content_node(self, pos, text, start, duration):
         pos_func = pos if hasattr(pos, '__call__') else lambda time, width: pos
         text_func = text if hasattr(text, '__call__') else lambda time, width: text
 
@@ -820,7 +824,7 @@ class PlayField(Beatbar):
             time -= self.start_time
 
         while duration is None or time < start + duration:
-            self._bar_draw(screen, pos_func(time, screen.width), text_func(time, screen.width))
+            self._draw_content(screen, pos_func(time, screen.width), text_func(time, screen.width))
             time, screen = yield
             time -= self.start_time
 
@@ -832,8 +836,8 @@ class PlayField(Beatbar):
                                        volume=volume, start=start, end=end,
                                        time=time, zindex=zindex)
 
-    def listen_target(self, target, start=None, duration=None):
-        self.target_queue.put((self._target_node(target), start, duration))
+    def listen(self, node, start=None, duration=None):
+        self.target_queue.put((node, start, duration))
 
     def draw_sight(self, text, start=None, duration=None):
         text_func = text if hasattr(text, '__call__') else lambda time, width: text
@@ -842,17 +846,12 @@ class PlayField(Beatbar):
     def reset_sight(self, start=None):
         self.sight_queue.put((None, start, None))
 
-    def draw_text(self, pos, text, start=None, duration=None, zindex=(0,)):
-        node = self._bar_node(pos, text, start, duration)
+    def draw_content(self, pos, text, start=None, duration=None, zindex=(0,)):
+        node = self._content_node(pos, text, start, duration)
         return self.console.add_drawer(node, zindex=zindex)
 
     def set_perf_hint(self, perf, is_reversed):
         self.perf_queue.put((perf, is_reversed))
-
-    def draw_target(self, target, pos, text, start=None, duration=None):
-        node = self._bar_node(pos, text, start, duration)
-        zindex = lambda: (0, not target.is_finished, -target.range[0])
-        return self.console.add_drawer(node, zindex=zindex)
 
     def on_before_render(self, node):
         return self.console.add_drawer(node, zindex=())
