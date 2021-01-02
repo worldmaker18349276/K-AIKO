@@ -32,7 +32,7 @@ class Text(Event):
         self.lifespan = (self.time - travel_time, self.time + travel_time)
         self.zindex = (-2, -self.time)
 
-    def pos(self, time, width):
+    def pos(self, time):
         return (self.time-time) * 0.5 * self.speed
 
     def register(self, field):
@@ -229,10 +229,10 @@ class OneshotTarget(Target):
         self._scores = beatmap.settings.performances_scores
         self.full_score = beatmap.settings.performances_max_score
 
-    def pos(self, time, width):
+    def pos(self, time):
         return (self.time-time) * 0.5 * self.speed
 
-    def appearance(self, time, width):
+    def appearance(self, time):
         if not self.is_finished:
             return self.approach_appearance
         elif self.perf.is_miss:
@@ -375,10 +375,10 @@ class Roll(Target):
         self.full_score = self.number * self.rock_score
 
     def pos_of(self, index):
-        return lambda time, width: (self.times[index]-time) * 0.5 * self.speed
+        return lambda time: (self.times[index]-time) * 0.5 * self.speed
 
     def appearance_of(self, index):
-        return lambda time, width: self.rock_appearance if self.roll <= index else ""
+        return lambda time: self.rock_appearance if self.roll <= index else ""
 
     @property
     def score(self):
@@ -431,10 +431,10 @@ class Spin(Target):
         self.lifespan = (self.time - travel_time, self.end + travel_time)
         self.range = (self.time - self.tolerance, self.end + self.tolerance)
 
-    def pos(self, time, width):
+    def pos(self, time):
         return (max(0.0, self.time-time) + min(0.0, self.end-time)) * 0.5 * self.speed
 
-    def appearance(self, time, width):
+    def appearance(self, time):
         return self.disk_appearances[int(self.charge) % len(self.disk_appearances)] if not self.is_finished else ""
 
     @property
@@ -780,7 +780,7 @@ class PlayField(Beatbar):
 
             # draw sight
             if drawer is not None:
-                sight_text = drawer(time, screen.width)
+                sight_text = drawer(time)
 
             elif hit_time is not None:
                 strength = hit_strength - (time - hit_time) / hit_decay_time
@@ -810,8 +810,8 @@ class PlayField(Beatbar):
 
     @dn.datanode
     def _content_node(self, pos, text, start, duration):
-        pos_func = pos if hasattr(pos, '__call__') else lambda time, width: pos
-        text_func = text if hasattr(text, '__call__') else lambda time, width: text
+        pos_func = pos if hasattr(pos, '__call__') else lambda time: pos
+        text_func = text if hasattr(text, '__call__') else lambda time: text
 
         time, screen = yield
         time -= self.start_time
@@ -824,7 +824,7 @@ class PlayField(Beatbar):
             time -= self.start_time
 
         while duration is None or time < start + duration:
-            self._draw_content(screen, pos_func(time, screen.width), text_func(time, screen.width))
+            self._draw_content(screen, pos_func(time), text_func(time))
             time, screen = yield
             time -= self.start_time
 
@@ -840,7 +840,7 @@ class PlayField(Beatbar):
         self.target_queue.put((node, start, duration))
 
     def draw_sight(self, text, start=None, duration=None):
-        text_func = text if hasattr(text, '__call__') else lambda time, width: text
+        text_func = text if hasattr(text, '__call__') else lambda time: text
         self.sight_queue.put((text_func, start, duration))
 
     def reset_sight(self, start=None):
