@@ -99,39 +99,6 @@ class Shift(Event):
         time, screen = yield
         time -= field.start_time
 
-class Jiggle(Event):
-    def __init__(self, beatmap, frequency=10.0, beat=None, length=None):
-        self.time = beatmap.time(beat)
-        self.end = beatmap.time(beat+length)
-        self.frequency = frequency
-        self.lifespan = (self.time, self.end)
-
-    def register(self, field):
-        field.on_before_render(self._node(field))
-
-    @dn.datanode
-    def _node(self, field):
-        time, screen = yield
-        time -= field.start_time
-
-        while time < self.time:
-            time, screen = yield
-            time -= field.start_time
-
-        shift0 = field.sight_shift
-
-        while time < self.end:
-            turn = (time - self.time) * self.frequency
-            content_start, content_end, _ = field.content_mask.indices(screen.width)
-            field.sight_shift = shift0 + 1/(content_end - content_start) * (turn // 0.5 % 2 * 2 - 1)
-            time, screen = yield
-            time -= field.start_time
-
-        field.sight_shift = shift0
-
-        time, screen = yield
-        time -= field.start_time
-
 def set_context(beatmap, *, context, **kw):
     context.update(**kw)
 
@@ -545,10 +512,6 @@ class Beatbar:
         header_formats = self.settings.header_formats
         footer_formats = self.settings.footer_formats
 
-        icon_mask = self.icon_mask
-        header_mask = self.header_mask
-        footer_mask = self.footer_mask
-
         while True:
             _, screen = yield
 
@@ -624,7 +587,6 @@ class PlayFieldSettings(BeatbarSettings):
     hit_decay_time: float = 0.4
     hit_sustain_time: float = 0.1
     bar_shift: float = 0.1
-    sight_shift: float = 0.0
     bar_flip: bool = False
 
 class PlayField(Beatbar):
@@ -635,7 +597,6 @@ class PlayField(Beatbar):
 
         # state
         self.bar_shift = self.settings.bar_shift
-        self.sight_shift = self.settings.sight_shift
         self.bar_flip = self.settings.bar_flip
 
         self.status['full_score'] = 0
@@ -788,7 +749,7 @@ class PlayField(Beatbar):
             else:
                 text = sight_appearances[0]
 
-            self._bar_draw(screen, self.sight_shift, text)
+            self._bar_draw(screen, 0, text)
 
     def _bar_draw(self, screen, pos, text):
         pos = pos + self.bar_shift
@@ -856,7 +817,7 @@ class PlayField(Beatbar):
         if is_reversed:
             appearance = appearance[::-1]
         duration = self.settings.performance_sustain_time
-        self.draw_text(self.sight_shift, appearance, duration=duration, zindex=(1,), key='perf_hint')
+        self.draw_text(0, appearance, duration=duration, zindex=(1,), key='perf_hint')
 
     def draw_target(self, target, pos, text, start=None, duration=None, key=None):
         if key is None:

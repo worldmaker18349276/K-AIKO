@@ -8,7 +8,7 @@ from ast import literal_eval
 from lark import Lark, Transformer
 from .beatmap import (
     Beatmap,
-    Text, Flip, Shift, Jiggle, set_context,
+    Text, Flip, Shift, set_context,
     Soft, Loud, Incr, Roll, Spin,
     )
 
@@ -33,7 +33,6 @@ class BeatmapDraft(Beatmap):
         self.notations['CONTEXT'] = set_context
         self.notations['FLIP'] = Flip
         self.notations['SHIFT'] = Shift
-        self.notations['JIGGLE'] = Jiggle
 
     def build_events(self):
         events = []
