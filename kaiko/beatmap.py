@@ -248,7 +248,7 @@ class OneshotTarget(Target):
 
     def hit(self, field, time, strength, is_correct_key=True):
         perf = Performance.judge(self.performance_tolerance, self.time, time, is_correct_key)
-        field.set_perf_hint(perf, field, self.speed < 0)
+        field.set_perf_hint(perf, self.speed < 0)
         self.finish(field, perf)
 
     def finish(self, field, perf=None):
@@ -610,6 +610,7 @@ class PlayField(Beatbar):
         self.hit_queue = queue.Queue()
         self.sight_queue = queue.Queue()
         self.target_queue = queue.Queue()
+        self.perf_queue = queue.Queue()
 
         # register
         self.console.add_effect(self._spec_handler(), zindex=-1)
@@ -699,10 +700,12 @@ class PlayField(Beatbar):
     def _sight_handler(self):
         hit_decay_time = self.settings.hit_decay_time
         hit_sustain_time = self.settings.hit_sustain_time
+        perf_sustain_time = self.settings.performance_sustain_time
+        perf_appearances = self.settings.performances_appearances
         sight_appearances = self.settings.sight_appearances
 
-        hit_strength = None
-        hit_time = None
+        hit_strength, hit_time = None, None
+        perf, perf_time, perf_text = None, None, None
         drawer, start, duration = None, None, None
         waiting_drawers = []
 
@@ -710,6 +713,7 @@ class PlayField(Beatbar):
             time, screen = yield
             time -= self.start_time
 
+            # update hit
             while not self.hit_queue.empty():
                 hit_strength = self.hit_queue.get()
                 hit_time = time
@@ -718,6 +722,17 @@ class PlayField(Beatbar):
                 hit_strength = None
                 hit_time = None
 
+            # update perf hint
+            while not self.perf_queue.empty():
+                perf, perf_is_reversed = self.perf_queue.get()
+                perf_time = time
+
+            if perf is not None and time - perf_time >= perf_sustain_time:
+                perf = None
+                perf_is_reversed = None
+                perf_time = None
+
+            # update sight drawer
             while not self.sight_queue.empty():
                 item = self.sight_queue.get()
                 if item[1] is None:
@@ -731,8 +746,17 @@ class PlayField(Beatbar):
             if duration is not None and start + duration <= time:
                 drawer, start, duration = None, None, None
 
+            # draw perf hint
+            if perf is not None:
+                perf_text = perf_appearances[perf.grade]
+                if perf_is_reversed:
+                    perf_text = perf_text[::-1]
+
+                self._bar_draw(screen, 0, perf_text)
+
+            # draw sight
             if drawer is not None:
-                text = drawer(time, screen.width)
+                sight_text = drawer(time, screen.width)
 
             elif hit_time is not None:
                 strength = hit_strength - (time - hit_time) / hit_decay_time
@@ -740,12 +764,12 @@ class PlayField(Beatbar):
                 loudness = int(strength * (len(sight_appearances) - 1))
                 if time - hit_time < hit_sustain_time:
                     loudness = max(1, loudness)
-                text = sight_appearances[loudness]
+                sight_text = sight_appearances[loudness]
 
             else:
-                text = sight_appearances[0]
+                sight_text = sight_appearances[0]
 
-            self._bar_draw(screen, 0, text)
+            self._bar_draw(screen, 0, sight_text)
 
     @dn.datanode
     def _target_node(self, target):
@@ -820,12 +844,8 @@ class PlayField(Beatbar):
     def remove_text(self, key):
         self.console.remove_drawer(key=('text', key))
 
-    def set_perf_hint(self, perf, field, is_reversed):
-        appearance = self.settings.performances_appearances[perf.grade]
-        if is_reversed:
-            appearance = appearance[::-1]
-        duration = self.settings.performance_sustain_time
-        self.draw_text(0, appearance, duration=duration, zindex=(1,), key='perf_hint')
+    def set_perf_hint(self, perf, is_reversed):
+        self.perf_queue.put((perf, is_reversed))
 
     def draw_target(self, target, pos, text, start=None, duration=None, key=None):
         if key is None:
