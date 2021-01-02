@@ -30,7 +30,9 @@ class Text(Event):
 
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.time + travel_time)
-        self.pos = lambda time, width: (self.time-time) * 0.5 * self.speed
+
+    def pos(self, time, width):
+        return (self.time-time) * 0.5 * self.speed
 
     def register(self, field):
         if self.sound is not None:
@@ -206,11 +208,23 @@ class OneshotTarget(Target):
 
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.time + travel_time)
-        self.pos = lambda time, width: (self.time-time) * 0.5 * self.speed
         tol = beatmap.settings.failed_tolerance
         self.range = (self.time-tol, self.time+tol)
         self._scores = beatmap.settings.performances_scores
         self.full_score = beatmap.settings.performances_max_score
+
+    def pos(self, time, width):
+        return (self.time-time) * 0.5 * self.speed
+
+    def appearance(self, time, width):
+        if not self.is_finished:
+            return self.approach_appearance
+        elif self.perf.is_miss:
+            return self.approach_appearance
+        elif self.perf.is_wrong:
+            return self.wrong_appearance
+        else:
+            return ""
 
     @property
     def score(self):
@@ -228,8 +242,8 @@ class OneshotTarget(Target):
         if self.sound is not None:
             field.play(self.sound, time=self.time, volume=self.volume)
 
-        field.draw_target(self, self.pos, self.approach_appearance,
-                          start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
+        field.draw_target(self, self.pos, self.appearance,
+                          start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
         field.reset_sight(start=self.range[0])
 
     def hit(self, field, time, strength, is_correct_key=True):
@@ -241,16 +255,6 @@ class OneshotTarget(Target):
         if perf is None:
             perf = Performance.judge(self.performance_tolerance, self.time)
         self.perf = perf
-
-        if self.perf.is_miss:
-            pass
-
-        elif self.perf.is_wrong: # wrong key
-            field.draw_target(self, self.pos, self.wrong_appearance,
-                              start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
-
-        else: # correct key
-            field.cancel_draw_target(key=self)
 
 class Soft(OneshotTarget):
     def __init__(self, beatmap, beat=None, *, speed=1.0, volume=0.0):
@@ -354,8 +358,11 @@ class Roll(Target):
         self.range = (self.time - self.tolerance, self.end - self.tolerance)
         self.full_score = self.number * self.rock_score
 
-    def get_pos(self, index):
+    def pos_of(self, index):
         return lambda time, width: (self.times[index]-time) * 0.5 * self.speed
+
+    def appearance_of(self, index):
+        return lambda time, width: self.rock_appearance if self.roll <= index else ""
 
     @property
     def score(self):
@@ -370,8 +377,8 @@ class Roll(Target):
         for i, time in enumerate(self.times):
             if self.sound is not None:
                 field.play(self.sound, time=time, volume=self.volume)
-            field.draw_target(self, self.get_pos(i), self.rock_appearance,
-                              start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=(self, i))
+            field.draw_target(self, self.pos_of(i), self.appearance_of(i),
+                              start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
         field.reset_sight(start=self.range[0])
 
     def hit(self, field, time, strength):
@@ -379,7 +386,6 @@ class Roll(Target):
         if self.roll <= self.number:
             perf = Performance.judge(self.performance_tolerance, self.times[self.roll-1], time, True)
             self.perfs.append(perf)
-            field.cancel_draw_target(key=(self, self.roll-1))
 
     def finish(self, field):
         self.is_finished = True
@@ -407,8 +413,13 @@ class Spin(Target):
         self.times = [beatmap.time(beat+i/density) for i in range(int(self.capacity))]
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.end + travel_time)
-        self.pos = lambda time, width: (max(0.0, self.time-time) + min(0.0, self.end-time)) * 0.5 * self.speed
         self.range = (self.time - self.tolerance, self.end + self.tolerance)
+
+    def pos(self, time, width):
+        return (max(0.0, self.time-time) + min(0.0, self.end-time)) * 0.5 * self.speed
+
+    def appearance(self, time, width):
+        return self.disk_appearances[int(self.charge) % len(self.disk_appearances)] if not self.is_finished else ""
 
     @property
     def score(self):
@@ -422,9 +433,8 @@ class Spin(Target):
             if self.sound is not None:
                 field.play(self.sound, time=time, volume=self.volume)
 
-        appearance = lambda time, width: self.disk_appearances[int(self.charge) % len(self.disk_appearances)]
-        field.draw_target(self, self.pos, appearance,
-                          start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0], key=self)
+        field.draw_target(self, self.pos, self.appearance,
+                          start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
         field.draw_sight("", start=self.range[0], duration=self.range[1]-self.range[0])
 
     def hit(self, field, time, strength):
@@ -437,8 +447,6 @@ class Spin(Target):
 
         if self.charge != self.capacity:
             return
-
-        field.cancel_draw_target(key=self)
 
         appearance = self.finishing_appearance
         if isinstance(appearance, tuple) and self.speed < 0:
