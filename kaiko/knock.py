@@ -306,8 +306,6 @@ class TerminalLine:
             self.chars[i] = " "
 
     def addstr(self, index, str, mask=slice(None, None, None)):
-        if isinstance(index, float):
-            index = round(index)
         ran = range(self.width)[mask]
 
         for ch in str:

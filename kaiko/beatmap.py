@@ -757,7 +757,7 @@ class PlayField(Beatbar):
             pos = 1 - pos
 
         content_start, content_end, _ = self.content_mask.indices(screen.width)
-        index = content_start + pos * max(0, content_end - content_start - 1)
+        index = round(content_start + pos * max(0, content_end - content_start - 1))
 
         if isinstance(text, tuple):
             text = text[self.bar_flip]
