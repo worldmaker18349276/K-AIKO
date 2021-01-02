@@ -65,7 +65,7 @@ class AudioMixer:
             with stream_ctxt as stream:
                 yield stream
 
-    def add_effect(self, node, time=None, zindex=0):
+    def add_effect(self, node, time=None, zindex=(0,)):
         key = object()
         node = self._timed_effect(node, time)
         self.effect_queue.put((key, node, zindex))
@@ -106,7 +106,7 @@ class AudioMixer:
             while True:
                 time, data = yield time, node.send(data)
 
-    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=0):
+    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
         if channels is None:
             channels = self.settings.output_channels
 
@@ -281,7 +281,7 @@ class TerminalRenderer:
             with thread_ctxt as thread:
                 yield thread
 
-    def add_drawer(self, node, zindex=0):
+    def add_drawer(self, node, zindex=(0,)):
         key = object()
         node = dn.branch(node)
         self.drawer_queue.put((key, node, zindex))
@@ -470,7 +470,7 @@ class KnockConsole:
         finally:
             manager.terminate()
 
-    def add_effect(self, node, time=None, zindex=0):
+    def add_effect(self, node, time=None, zindex=(0,)):
         return self.mixer.add_effect(node, time, zindex)
 
     def remove_effect(self, key):
@@ -487,7 +487,7 @@ class KnockConsole:
             sound = list(filenode)
         return sound
 
-    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=0):
+    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
         if isinstance(node, str):
             node = dn.DataNode.wrap(self.load_sound(node))
             samplerate = None

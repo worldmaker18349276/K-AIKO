@@ -629,7 +629,7 @@ class PlayField(Beatbar):
         self.perf_queue = queue.Queue()
 
         # register
-        self.console.add_effect(self._spec_handler(), zindex=-1)
+        self.console.add_effect(self._spec_handler(), zindex=(-1,))
         self.console.add_listener(self._hit_handler())
         self.console.add_drawer(self._sight_handler(), zindex=(2,))
 
@@ -829,7 +829,7 @@ class PlayField(Beatbar):
             time -= self.start_time
 
 
-    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=0):
+    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
         if time is not None:
             time += self.start_time
         return self.console.play(node, samplerate=samplerate, channels=channels,
@@ -1012,7 +1012,7 @@ class KAIKOGame:
 
             # music
             if audionode is not None:
-                self.console.play(audionode, volume=volume, time=start_time, zindex=-3)
+                self.console.play(audionode, volume=volume, time=start_time, zindex=(-3,))
 
             # handlers
             self.playfield.register_handlers(self.console, start_time)
