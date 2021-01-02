@@ -1035,42 +1035,57 @@ def tick(dt, t0=0.0, shift=0.0):
 
 @contextlib.contextmanager
 def timeit(node, name="timeit"):
-    times = []
+    if hasattr(time, 'thread_time'):
+        get_time = time.thread_time
+    elif hasattr(time, 'clock_gettime'):
+        get_time = lambda: time.clock_gettime(time.CLOCK_THREAD_CPUTIME_ID)
+    else:
+        get_time = time.perf_counter
+
+    N = 10
+    count = 0
+    total = 0.0
+    total2 = 0.0
+    worst = [0.0]*N
+    best = [numpy.inf]*N
 
     @datanode
     def timed_node():
+        nonlocal node, count, total, total2, worst, best
         with node:
             data = None
             while True:
                 data = yield data
-                t0 = time.perf_counter()
+
+                t0 = get_time()
                 data = node.send(data)
-                t = time.perf_counter() - t0
-                times.append(t)
+                t = get_time() - t0
+
+                count += 1
+                total += t
+                total2 += t**2
+                bisect.insort(worst, t)
+                worst.pop(0)
+                bisect.insort_left(best, t)
+                best.pop()
 
     try:
         yield timed_node()
 
     finally:
-        N = 10
-        count = len(times)
-
         if count == 0:
             print(f"{name}: count=0")
 
         else:
-            avg = sum(times) / count
-            dev = (sum((t-avg)**2 for t in times) / count)**0.5
+            avg = total/count
+            dev = (total2/count - avg**2)**0.5
 
             if count < N:
-                print(f"{name}: count={count}, avg={avg}±{dev}")
+                print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms")
 
             else:
-                times = sorted(times)
-                best = sum(times[:N])/N
-                worst = sum(times[-N:])/N
-
-                print(f"{name}: count={count}, avg={avg}±{dev} ({best} ~ {worst})")
+                print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms"
+                      f" ({sum(best)/N*1000:5.3f}ms ~ {sum(worst)/N*1000:5.3f}ms)")
 
 
 # not data nodes
