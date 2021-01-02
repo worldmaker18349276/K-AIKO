@@ -614,7 +614,6 @@ class PlayField(Beatbar):
 
         # register
         self.console.add_effect(self._spec_handler(), zindex=-1)
-        self.console.add_listener(self._target_handler())
         self.console.add_listener(self._hit_handler())
         self.console.add_drawer(self._sight_handler(), zindex=(2,), key='sight')
 
@@ -658,19 +657,17 @@ class PlayField(Beatbar):
 
     @dn.datanode
     def _hit_handler(self):
-        while True:
-            time, strength, detected = yield
-            if detected:
-                self.hit_queue.put(min(1.0, strength))
-
-    @dn.datanode
-    def _target_handler(self):
         target, start, duration = None, None, None
         waiting_targets = []
 
         time, strength, detected = yield
         time -= self.start_time
+        strength = min(1.0, strength)
+        if detected:
+            self.hit_queue.put(strength)
+
         while True:
+            # update waiting targets
             while not self.target_queue.empty():
                 item = self.target_queue.get()
                 if item[1] is None:
@@ -678,23 +675,34 @@ class PlayField(Beatbar):
                 waiting_targets.append(item)
             waiting_targets.sort(key=lambda item: item[1])
 
-            if target is None and waiting_targets and waiting_targets[0][1] <= time:
-                target, start, duration = waiting_targets.pop(0)
-                target.__enter__()
+            while True:
+                # find the next target if absent
+                if target is None and waiting_targets and waiting_targets[0][1] <= time:
+                    target, start, duration = waiting_targets.pop(0)
+                    target.__enter__()
 
-            if duration is not None and start + duration <= time:
-                target.__exit__()
-                target, start, duration = None, None, None
-                continue
+                # end listen if expired
+                if duration is not None and start + duration <= time:
+                    target.__exit__()
+                    target, start, duration = None, None, None
 
+                else:
+                    # stop the loop for unexpired target or no target
+                    break
+
+            # send message to listening target
             if target is not None and detected:
                 try:
-                    target.send((time, min(1.0, strength)))
+                    target.send((time, strength))
                 except StopIteration:
                     target, start, duration = None, None, None
 
+            # update hit signal
             time, strength, detected = yield
             time -= self.start_time
+            strength = min(1.0, strength)
+            if detected:
+                self.hit_queue.put(strength)
 
     @dn.datanode
     def _sight_handler(self):
