@@ -516,6 +516,10 @@ class PlayFieldSettings:
     header_width: int = 11
     footer_width: int = 12
 
+    icon_formats: List[str] = ["{spectrum:^8s}"]
+    header_formats: List[str] = ["{score:05.0f}/{full_score:05.0f}"]
+    footer_formats: List[str] = ["{progress:>6.1%}|{time:%M:%S}"]
+
     spec_width: int = 7
     spec_decay_time: float = 0.01
     spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
@@ -523,24 +527,24 @@ class PlayFieldSettings:
 
     # PerformanceSkin:
     performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
-    PerformanceGrade.MISS               : (""   , ""     ),
+        PerformanceGrade.MISS               : (""   , ""     ),
 
-    PerformanceGrade.LATE_FAILED        : ("\b⟪", "\t\t⟫"),
-    PerformanceGrade.LATE_BAD           : ("\b⟨", "\t\t⟩"),
-    PerformanceGrade.LATE_GOOD          : ("\b‹", "\t\t›"),
-    PerformanceGrade.PERFECT            : (""   , ""     ),
-    PerformanceGrade.EARLY_GOOD         : ("\t\t›", "\b‹"),
-    PerformanceGrade.EARLY_BAD          : ("\t\t⟩", "\b⟨"),
-    PerformanceGrade.EARLY_FAILED       : ("\t\t⟫", "\b⟪"),
+        PerformanceGrade.LATE_FAILED        : ("\b⟪", "\t\t⟫"),
+        PerformanceGrade.LATE_BAD           : ("\b⟨", "\t\t⟩"),
+        PerformanceGrade.LATE_GOOD          : ("\b‹", "\t\t›"),
+        PerformanceGrade.PERFECT            : (""   , ""     ),
+        PerformanceGrade.EARLY_GOOD         : ("\t\t›", "\b‹"),
+        PerformanceGrade.EARLY_BAD          : ("\t\t⟩", "\b⟨"),
+        PerformanceGrade.EARLY_FAILED       : ("\t\t⟫", "\b⟪"),
 
-    PerformanceGrade.LATE_FAILED_WRONG  : ("\b⟪", "\t\t⟫"),
-    PerformanceGrade.LATE_BAD_WRONG     : ("\b⟨", "\t\t⟩"),
-    PerformanceGrade.LATE_GOOD_WRONG    : ("\b‹", "\t\t›"),
-    PerformanceGrade.PERFECT_WRONG      : (""   , ""     ),
-    PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t›", "\b‹"),
-    PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t⟩", "\b⟨"),
-    PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t⟫", "\b⟪"),
-    }
+        PerformanceGrade.LATE_FAILED_WRONG  : ("\b⟪", "\t\t⟫"),
+        PerformanceGrade.LATE_BAD_WRONG     : ("\b⟨", "\t\t⟩"),
+        PerformanceGrade.LATE_GOOD_WRONG    : ("\b‹", "\t\t›"),
+        PerformanceGrade.PERFECT_WRONG      : (""   , ""     ),
+        PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t›", "\b‹"),
+        PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t⟩", "\b⟨"),
+        PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t⟫", "\b⟪"),
+        }
 
     performance_sustain_time: float = 0.1
 
@@ -554,6 +558,7 @@ class PlayFieldSettings:
 
 class PlayField:
     settings : PlayFieldSettings = PlayFieldSettings()
+
     def __init__(self):
         # state
         self.bar_shift = self.settings.bar_shift
@@ -564,6 +569,7 @@ class PlayField:
         self.score = 0
         self.progress = 0.0
         self.time = datetime.time(0, 0, 0)
+        self.spectrum = "\u2800"*self.settings.spec_width
 
         # layout
         icon_width = self.settings.icon_width
@@ -571,14 +577,6 @@ class PlayField:
         footer_width = self.settings.footer_width
         layout = to_slices((icon_width, 1, header_width, 1, ..., 1, footer_width, 1))
         self.icon_mask, _, self.header_mask, _, self.content_mask, _, self.footer_mask, _ = layout
-
-        spec_width = self.settings.spec_width
-        self.spectrum = "\u2800"*spec_width
-        score_width = max(0, header_width-1)
-        self.score_format = "{score:0%d.0f}" % (score_width-score_width//2)
-        self.full_score_format = "{full_score:0%d.0f}" % (score_width//2)
-        self.progress_format = "{progress:>%d.%d%%}" % (max(0, footer_width-6), max(0, footer_width-11))
-        self.time_format = "{time:%M:%S}"
 
     def register_handlers(self, console, start_time):
         self.console = console
@@ -676,26 +674,52 @@ class PlayField:
 
     @dn.datanode
     def _status_handler(self):
+        icon_formats = self.settings.icon_formats
+        header_formats = self.settings.header_formats
+        footer_formats = self.settings.footer_formats
+
+        icon_mask = self.icon_mask
+        header_mask = self.header_mask
+        footer_mask = self.footer_mask
+
         while True:
             _, screen = yield
 
-            spec_text = self.spectrum
-            icon_start, icon_end, _ = self.icon_mask.indices(screen.width)
-            screen.addstr(icon_start, f"{spec_text:^{icon_end-icon_start}s}", self.icon_mask)
+            params = dict(
+                spectrum=self.spectrum,
+                score=self.score,
+                full_score=self.full_score,
+                progress=self.progress,
+                time=self.time,
+                )
 
-            score_text = self.score_format.format(score=self.score)
-            full_score_text = self.full_score_format.format(full_score=self.full_score)
-            header_start, header_end, _ = self.header_mask.indices(screen.width)
+            icon_start, icon_stop, _ = self.icon_mask.indices(screen.width)
+            for icon_format in icon_formats:
+                icon_text = icon_format.format(**params)
+                ran = screen.range(icon_start, icon_text)
+                if ran.start >= icon_start and ran.stop <= icon_stop:
+                    break
+            screen.addstr(icon_start, icon_text, self.icon_mask)
+
+            header_start, header_stop, _ = self.header_mask.indices(screen.width)
+            for header_format in header_formats:
+                header_text = header_format.format(**params)
+                ran = screen.range(header_start, header_text)
+                if ran.start >= header_start and ran.stop <= header_stop:
+                    break
+            screen.addstr(header_start, header_text, self.header_mask)
             screen.addstr(header_start-1, "[")
-            screen.addstr(header_end, "]")
-            screen.addstr(header_start, f"{score_text}/{full_score_text}", self.header_mask)
+            screen.addstr(header_stop, "]")
 
-            progress_text = self.progress_format.format(progress=self.progress)
-            time_text = self.time_format.format(time=self.time)
-            footer_start, footer_end, _ = self.footer_mask.indices(screen.width)
+            footer_start, footer_stop, _ = self.footer_mask.indices(screen.width)
+            for footer_format in footer_formats:
+                footer_text = footer_format.format(**params)
+                ran = screen.range(footer_start, footer_text)
+                if ran.start >= footer_start and ran.stop <= footer_stop:
+                    break
+            screen.addstr(footer_start, footer_text, self.footer_mask)
             screen.addstr(footer_start-1, "[")
-            screen.addstr(footer_end, "]")
-            screen.addstr(footer_start, f"{progress_text}|{time_text}", self.footer_mask)
+            screen.addstr(footer_stop, "]")
 
     @dn.datanode
     def _sight_handler(self):

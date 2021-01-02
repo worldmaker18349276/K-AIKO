@@ -350,6 +350,41 @@ class TerminalLine:
                     self.chars[index] = ch
                 index += 1
 
+    def range(self, index, str):
+        if isinstance(index, float):
+            index = round(index)
+
+        start = index
+        stop = index
+
+        for ch in str:
+            if ch == "\t":
+                index += 1
+
+            elif ch == "\b":
+                index -= 1
+
+            elif ch in ("\n", "\r"):
+                index = 0
+
+            elif ch in ("\0", "\v", "\f"):
+                pass
+
+            elif unicodedata.combining(ch) != 0:
+                pass
+
+            elif unicodedata.east_asian_width(ch) in ('F', 'W'):
+                start = min(start, index)
+                stop = max(stop, index+2)
+                index += 2
+
+            else:
+                start = min(start, index)
+                stop = max(stop, index+1)
+                index += 1
+
+        return range(start, stop)
+
 
 @cfg.configurable
 class KnockConsoleSettings:
