@@ -65,9 +65,8 @@ class AudioMixer:
             with stream_ctxt as stream:
                 yield stream
 
-    def add_effect(self, node, time=None, zindex=0, key=None):
-        if key is None:
-            key = object()
+    def add_effect(self, node, time=None, zindex=0):
+        key = object()
         node = self._timed_effect(node, time)
         self.effect_queue.put((key, node, zindex))
         return key
@@ -107,7 +106,7 @@ class AudioMixer:
             while True:
                 time, data = yield time, node.send(data)
 
-    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=0, key=None):
+    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=0):
         if channels is None:
             channels = self.settings.output_channels
 
@@ -120,7 +119,7 @@ class AudioMixer:
             node = dn.pipe(node, lambda s: s * 10**(volume/20))
         node = dn.attach(node)
 
-        return self.add_effect(node, time=time, zindex=zindex, key=key)
+        return self.add_effect(node, time=time, zindex=zindex)
 
 class KnockDetector:
     def __init__(self, settings, knock_delay, knock_energy):
@@ -204,9 +203,8 @@ class KnockDetector:
             with stream_ctxt as stream:
                 yield stream
 
-    def add_listener(self, node, key=None):
-        if key is None:
-            key = object()
+    def add_listener(self, node):
+        key = object()
         node = dn.branch(node)
         self.listener_queue.put((key, node, 0))
         return key
@@ -214,7 +212,7 @@ class KnockDetector:
     def remove_listener(self, key):
         self.listener_queue.put((key, None, 0))
 
-    def on_hit(self, func, time=None, duration=None, key=None):
+    def on_hit(self, func, time=None, duration=None):
         return self.add_listener(self._hit_listener(func, time, duration))
 
     @dn.datanode
@@ -283,9 +281,8 @@ class TerminalRenderer:
             with thread_ctxt as thread:
                 yield thread
 
-    def add_drawer(self, node, zindex=0, key=None):
-        if key is None:
-            key = object()
+    def add_drawer(self, node, zindex=0):
+        key = object()
         node = dn.branch(node)
         self.drawer_queue.put((key, node, zindex))
         return key
@@ -473,8 +470,8 @@ class KnockConsole:
         finally:
             manager.terminate()
 
-    def add_effect(self, node, time=None, zindex=0, key=None):
-        return self.mixer.add_effect(node, time, zindex, key)
+    def add_effect(self, node, time=None, zindex=0):
+        return self.mixer.add_effect(node, time, zindex)
 
     def remove_effect(self, key):
         self.mixer.remove_effect(key)
@@ -490,23 +487,23 @@ class KnockConsole:
             sound = list(filenode)
         return sound
 
-    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=0, key=None):
+    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=0):
         if isinstance(node, str):
             node = dn.DataNode.wrap(self.load_sound(node))
             samplerate = None
-        return self.mixer.play(node, samplerate, channels, volume, start, end, time, zindex, key)
+        return self.mixer.play(node, samplerate, channels, volume, start, end, time, zindex)
 
-    def add_listener(self, node, key=None):
-        return self.detector.add_listener(node, key)
+    def add_listener(self, node):
+        return self.detector.add_listener(node)
 
     def remove_listener(self, key):
         self.detector.remove_listener(key)
 
-    def on_hit(self, func, time=None, duration=None, key=None):
-        return self.detector.on_hit(func, time, duration, key)
+    def on_hit(self, func, time=None, duration=None):
+        return self.detector.on_hit(func, time, duration)
 
-    def add_drawer(self, node, zindex=0, key=None):
-        return self.drawer.add_drawer(node, zindex, key)
+    def add_drawer(self, node, zindex=0):
+        return self.drawer.add_drawer(node, zindex)
 
     def remove_drawer(self, key):
         self.drawer.remove_drawer(key)

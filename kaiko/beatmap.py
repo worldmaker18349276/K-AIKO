@@ -500,7 +500,7 @@ class Beatbar:
         self.console = console
 
         # register
-        self.console.add_drawer(self._status_handler(), zindex=(-3,), key='status')
+        self.console.add_drawer(self._status_handler(), zindex=(-3,))
 
     @dn.datanode
     def _status_handler(self):
@@ -615,7 +615,7 @@ class PlayField(Beatbar):
         # register
         self.console.add_effect(self._spec_handler(), zindex=-1)
         self.console.add_listener(self._hit_handler())
-        self.console.add_drawer(self._sight_handler(), zindex=(2,), key='sight')
+        self.console.add_drawer(self._sight_handler(), zindex=(2,))
 
     def _spec_handler(self):
         spec_width = self.settings.spec_width
@@ -825,12 +825,12 @@ class PlayField(Beatbar):
             time -= self.start_time
 
 
-    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=0, key=None):
+    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=0):
         if time is not None:
             time += self.start_time
         return self.console.play(node, samplerate=samplerate, channels=channels,
                                        volume=volume, start=start, end=end,
-                                       time=time, zindex=zindex, key=key)
+                                       time=time, zindex=zindex)
 
     def listen_target(self, target, start=None, duration=None):
         self.target_queue.put((self._target_node(target), start, duration))
@@ -842,45 +842,23 @@ class PlayField(Beatbar):
     def reset_sight(self, start=None):
         self.sight_queue.put((None, start, None))
 
-    def draw_text(self, pos, text, start=None, duration=None, zindex=(0,), key=None):
-        if key is None:
-            key = object()
+    def draw_text(self, pos, text, start=None, duration=None, zindex=(0,)):
         node = self._bar_node(pos, text, start, duration)
-        self.console.add_drawer(node, zindex=zindex, key=('text', key))
-        return key
-
-    def remove_text(self, key):
-        self.console.remove_drawer(key=('text', key))
+        return self.console.add_drawer(node, zindex=zindex)
 
     def set_perf_hint(self, perf, is_reversed):
         self.perf_queue.put((perf, is_reversed))
 
-    def draw_target(self, target, pos, text, start=None, duration=None, key=None):
-        if key is None:
-            key = object()
+    def draw_target(self, target, pos, text, start=None, duration=None):
         node = self._bar_node(pos, text, start, duration)
         zindex = lambda: (0, not target.is_finished, -target.range[0])
-        self.console.add_drawer(node, zindex=zindex, key=('target', key))
-        return key
+        return self.console.add_drawer(node, zindex=zindex)
 
-    def cancel_draw_target(self, key):
-        self.console.remove_drawer(key=('target', key))
+    def on_before_render(self, node):
+        return self.console.add_drawer(node, zindex=())
 
-    def on_before_render(self, node, key=None):
-        if key is None:
-            key = object()
-        return self.console.add_drawer(node, zindex=(), key=('before_renderer', key))
-
-    def on_after_render(self, node, key=None):
-        if key is None:
-            key = object()
-        return self.console.add_drawer(node, zindex=(numpy.inf,), key=('before_renderer', key))
-
-    def remove_before_render_callback(self, key):
-        self.console.remove_drawer(node, ('before_renderer', key))
-
-    def remove_after_render_callback(self, key):
-        self.console.remove_drawer(node, ('after_renderer', key))
+    def on_after_render(self, node):
+        return self.console.add_drawer(node, zindex=(numpy.inf,))
 
 
 # Game
