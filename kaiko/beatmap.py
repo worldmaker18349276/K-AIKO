@@ -15,8 +15,9 @@ class Event:
     # __init__(beatmap, *args, **kwargs)
     # register(field)
     # # selected properties:
-    # full_score, score, is_finished, perfs
-    pass
+    # score, is_finished, perfs
+    is_subject = False
+    full_score = 0
 
 class Text(Event):
     def __init__(self, beatmap, text=None, sound=None, beat=None, *, speed=1.0):
@@ -112,6 +113,7 @@ class Target(Event):
     # approach(field)
     # hit(field, time, strength)
     # finish(field)
+    is_subject = True
 
     @dn.datanode
     def listen(self, field):
@@ -611,8 +613,8 @@ class PlayField(Beatbar):
         self.bar_shift = self.settings.bar_shift
         self.bar_flip = self.settings.bar_flip
 
-        self.status['full_score'] = 0
-        self.status['score'] = 0
+        self.status['full_score'] = 0.0
+        self.status['score'] = 0.0
         self.status['progress'] = 0.0
         self.status['time'] = datetime.time(0, 0, 0)
         self.status['spectrum'] = "\u2800"*self.settings.spec_width
@@ -984,9 +986,9 @@ class KAIKOGame:
         events_start_time = min((event.lifespan[0] - leadin_time for event in self.events), default=0.0)
         events_end_time   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
 
-        total_score = sum(getattr(event, 'full_score', 0) for event in self.events)
+        total_score = sum(event.full_score for event in self.events)
         self.score_scale = 65536 / total_score
-        self.total_subjects = len([event for event in self.events if hasattr(event, 'is_finished')])
+        self.total_subjects = sum(event.is_subject for event in self.events)
         self.playfield.status['full_score'] = self.get_full_score()
         self.playfield.status['score'] = self.get_score()
         self.playfield.status['progress'] = self.get_progress()
