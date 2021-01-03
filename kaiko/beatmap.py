@@ -494,74 +494,7 @@ def to_slices(segments):
     return [first_slice, *pre_slices, middle_slice, *post_slices[::-1], last_slice]
 
 @cfg.configurable
-class BeatbarSettings:
-    # BeatbarSkin:
-    icon_width: int = 8
-    header_width: int = 11
-    footer_width: int = 12
-
-    icon_formats: List[str] = [""]
-    header_formats: List[str] = [""]
-    footer_formats: List[str] = [""]
-
-class Beatbar:
-    settings : BeatbarSettings = BeatbarSettings()
-
-    def __init__(self):
-        self.status = {}
-
-        # layout
-        icon_width = self.settings.icon_width
-        header_width = self.settings.header_width
-        footer_width = self.settings.footer_width
-        layout = to_slices((icon_width, 1, header_width, 1, ..., 1, footer_width, 1))
-        self.icon_mask, _, self.header_mask, _, self.content_mask, _, self.footer_mask, _ = layout
-
-    def register_handlers(self, console):
-        self.console = console
-
-        # register
-        self.console.add_drawer(self._status_handler(), zindex=(-3,))
-
-    @dn.datanode
-    def _status_handler(self):
-        icon_formats = self.settings.icon_formats
-        header_formats = self.settings.header_formats
-        footer_formats = self.settings.footer_formats
-
-        while True:
-            _, screen = yield
-
-            icon_start, icon_stop, _ = self.icon_mask.indices(screen.width)
-            for icon_format in icon_formats:
-                icon_text = icon_format.format(**self.status)
-                ran = screen.range(icon_start, icon_text)
-                if ran.start >= icon_start and ran.stop <= icon_stop:
-                    break
-            screen.addstr(icon_start, icon_text, self.icon_mask)
-
-            header_start, header_stop, _ = self.header_mask.indices(screen.width)
-            for header_format in header_formats:
-                header_text = header_format.format(**self.status)
-                ran = screen.range(header_start, header_text)
-                if ran.start >= header_start and ran.stop <= header_stop:
-                    break
-            screen.addstr(header_start, header_text, self.header_mask)
-            screen.addstr(header_start-1, "[")
-            screen.addstr(header_stop, "]")
-
-            footer_start, footer_stop, _ = self.footer_mask.indices(screen.width)
-            for footer_format in footer_formats:
-                footer_text = footer_format.format(**self.status)
-                ran = screen.range(footer_start, footer_text)
-                if ran.start >= footer_start and ran.stop <= footer_stop:
-                    break
-            screen.addstr(footer_start, footer_text, self.footer_mask)
-            screen.addstr(footer_start-1, "[")
-            screen.addstr(footer_stop, "]")
-
-@cfg.configurable
-class PlayFieldSettings(BeatbarSettings):
+class PlayFieldSettings:
     # PlayFieldSkin:
     icon_width: int = 8
     header_width: int = 11
@@ -606,11 +539,16 @@ class PlayFieldSettings(BeatbarSettings):
     bar_shift: float = 0.1
     bar_flip: bool = False
 
-class PlayField(Beatbar):
+class PlayField:
     settings : PlayFieldSettings = PlayFieldSettings()
 
     def __init__(self):
-        super().__init__()
+        # layout
+        icon_width = self.settings.icon_width
+        header_width = self.settings.header_width
+        footer_width = self.settings.footer_width
+        layout = to_slices((icon_width, 1, header_width, 1, ..., 1, footer_width, 1))
+        self.icon_mask, _, self.header_mask, _, self.content_mask, _, self.footer_mask, _ = layout
 
         # state
         self.bar_shift = self.settings.bar_shift
@@ -625,19 +563,8 @@ class PlayField(Beatbar):
         self.time = datetime.time(0, 0, 0)
         self.spectrum = "\u2800"*self.settings.spec_width
 
-    @dn.datanode
-    def _update_status(self):
-        while True:
-            yield
-            self.status['full_score'] = self.full_score
-            self.status['score'] = self.score
-            self.status['progress'] = self.finished_subjects/self.total_subjects if self.total_subjects>0 else 1.0
-            self.status['time'] = self.time
-            self.status['spectrum'] = self.spectrum
-
     def register_handlers(self, console, start_time):
-        super().register_handlers(console)
-
+        self.console = console
         self.start_time = start_time
 
         # event queue
@@ -649,8 +576,53 @@ class PlayField(Beatbar):
         # register
         self.console.add_effect(self._spec_handler(), zindex=(-1,))
         self.console.add_listener(self._hit_handler())
-        self.console.add_drawer(self._update_status(), zindex=())
+        self.console.add_drawer(self._status_handler(), zindex=(-3,))
         self.console.add_drawer(self._sight_handler(), zindex=(2,))
+
+    @dn.datanode
+    def _status_handler(self):
+        icon_formats = self.settings.icon_formats
+        header_formats = self.settings.header_formats
+        footer_formats = self.settings.footer_formats
+
+        while True:
+            _, screen = yield
+
+            status = dict(
+                full_score=self.full_score,
+                score=self.score,
+                progress=self.finished_subjects/self.total_subjects if self.total_subjects>0 else 1.0,
+                time=self.time,
+                spectrum=self.spectrum,
+                )
+
+            icon_start, icon_stop, _ = self.icon_mask.indices(screen.width)
+            for icon_format in icon_formats:
+                icon_text = icon_format.format(**status)
+                ran = screen.range(icon_start, icon_text)
+                if ran.start >= icon_start and ran.stop <= icon_stop:
+                    break
+            screen.addstr(icon_start, icon_text, self.icon_mask)
+
+            header_start, header_stop, _ = self.header_mask.indices(screen.width)
+            for header_format in header_formats:
+                header_text = header_format.format(**status)
+                ran = screen.range(header_start, header_text)
+                if ran.start >= header_start and ran.stop <= header_stop:
+                    break
+            screen.addstr(header_start, header_text, self.header_mask)
+            screen.addstr(header_start-1, "[")
+            screen.addstr(header_stop, "]")
+
+            footer_start, footer_stop, _ = self.footer_mask.indices(screen.width)
+            for footer_format in footer_formats:
+                footer_text = footer_format.format(**status)
+                ran = screen.range(footer_start, footer_text)
+                if ran.start >= footer_start and ran.stop <= footer_stop:
+                    break
+            screen.addstr(footer_start, footer_text, self.footer_mask)
+            screen.addstr(footer_start-1, "[")
+            screen.addstr(footer_stop, "]")
 
     def _spec_handler(self):
         spec_width = self.settings.spec_width
