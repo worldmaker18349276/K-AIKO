@@ -252,10 +252,6 @@ class OneshotTarget(Target):
     def is_finished(self):
         return self.perf is not None
 
-    @property
-    def perfs(self):
-        return (self.perf,) if self.perf is not None else ()
-
     def approach(self, field):
         if self.sound is not None:
             field.play(self.sound, time=self.time, volume=self.volume)
@@ -266,7 +262,7 @@ class OneshotTarget(Target):
 
     def hit(self, field, time, strength, is_correct_key=True):
         perf = Performance.judge(self.performance_tolerance, self.time, time, is_correct_key)
-        field.set_perf_hint(perf, self.speed < 0)
+        field.add_perf(perf, True, self.speed < 0)
         self.finish(field, perf)
 
     def finish(self, field, perf=None):
@@ -375,7 +371,6 @@ class Roll(Target):
         self.times = [beatmap.time(beat+i/density) for i in range(self.number)]
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.end + travel_time)
-        self.perfs = []
         self.range = (self.time - self.tolerance, self.end - self.tolerance)
         self.full_score = self.number * self.rock_score
 
@@ -398,7 +393,7 @@ class Roll(Target):
 
         if self.roll <= self.number:
             perf = Performance.judge(self.performance_tolerance, self.times[self.roll-1], time, True)
-            self.perfs.append(perf)
+            field.add_perf(perf, False)
 
             field.add_score(self.rock_score)
             self.score += self.rock_score
@@ -413,7 +408,7 @@ class Roll(Target):
 
         for time in self.times[self.roll:]:
             perf = Performance.judge(self.performance_tolerance, time)
-            self.perfs.append(perf)
+            field.add_perf(perf, False)
 
 class Spin(Target):
     def __init__(self, beatmap, density=2, beat=None, length=None, *, speed=1.0, volume=0.0):
@@ -625,6 +620,8 @@ class PlayField(Beatbar):
         self.score = 0
         self.total_subjects = 0
         self.finished_subjects = 0
+
+        self.perfs = []
         self.time = datetime.time(0, 0, 0)
         self.spectrum = "\u2800"*self.settings.spec_width
 
@@ -860,6 +857,11 @@ class PlayField(Beatbar):
     def add_finished(self, finished=1):
         self.finished_subjects += finished
 
+    def add_perf(self, perf, show=True, is_reversed=False):
+        self.perfs.append(perf)
+        if show:
+            self.perf_queue.put((perf, is_reversed))
+
 
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
         if time is not None:
@@ -881,9 +883,6 @@ class PlayField(Beatbar):
     def draw_content(self, pos, text, start=None, duration=None, zindex=(0,)):
         node = self._content_node(pos, text, start, duration)
         return self.console.add_drawer(node, zindex=zindex)
-
-    def set_perf_hint(self, perf, is_reversed):
-        self.perf_queue.put((perf, is_reversed))
 
     def on_before_render(self, node):
         return self.console.add_drawer(node, zindex=())

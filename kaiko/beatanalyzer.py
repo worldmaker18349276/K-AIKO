@@ -26,9 +26,8 @@ def braille_scatter(width, height, xy, xlim, ylim):
 
     return strs
 
-def show_analyze(tol, events):
+def show_analyze(tol, perfs):
     width = shutil.get_terminal_size().columns
-    perfs = [perf for event in events for perf in getattr(event, 'perfs', ())]
     emax = tol*7
     start = min((perf.time for perf in perfs), default=0.0)
     end   = max((perf.time for perf in perfs), default=0.0)
