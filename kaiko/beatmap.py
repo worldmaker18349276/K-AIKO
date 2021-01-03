@@ -565,7 +565,7 @@ class PlayFieldSettings(BeatbarSettings):
     footer_width: int = 12
 
     icon_formats: List[str] = ["{spectrum:^8s}"]
-    header_formats: List[str] = ["{score:05.0f}/{full_score:05.0f}"]
+    header_formats: List[str] = ["{score:05d}/{full_score:05d}"]
     footer_formats: List[str] = ["{progress:>6.1%}|{time:%M:%S}"]
 
     spec_width: int = 7
@@ -962,11 +962,10 @@ class KAIKOGame:
             cfg.config_read(open(config, 'r'), main=self.settings)
 
     def get_full_score(self):
-        return sum(getattr(event, 'full_score', 0) for event in self.events
-                   if getattr(event, 'is_finished', True)) * self.score_scale
+        return sum(getattr(event, 'full_score', 0) for event in self.events if getattr(event, 'is_finished', True))
 
     def get_score(self):
-        return sum(getattr(event, 'score', 0) for event in self.events) * self.score_scale
+        return sum(getattr(event, 'score', 0) for event in self.events)
 
     def get_progress(self):
         if self.total_subjects == 0:
@@ -986,8 +985,6 @@ class KAIKOGame:
         events_start_time = min((event.lifespan[0] - leadin_time for event in self.events), default=0.0)
         events_end_time   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
 
-        total_score = sum(event.full_score for event in self.events)
-        self.score_scale = 65536 / total_score
         self.total_subjects = sum(event.is_subject for event in self.events)
         self.playfield.status['full_score'] = self.get_full_score()
         self.playfield.status['score'] = self.get_score()
