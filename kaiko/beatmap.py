@@ -603,6 +603,10 @@ class PlayField:
                 if ran.start >= icon_start and ran.stop <= icon_stop:
                     break
             screen.addstr(icon_start, icon_text, self.icon_mask)
+            if ran.start < icon_start:
+                screen.addstr(icon_start, "…")
+            if ran.stop > icon_stop:
+                screen.addstr(icon_stop-1, "…")
 
             header_start, header_stop, _ = self.header_mask.indices(screen.width)
             for header_format in header_formats:
@@ -613,6 +617,10 @@ class PlayField:
             screen.addstr(header_start, header_text, self.header_mask)
             screen.addstr(header_start-1, "[")
             screen.addstr(header_stop, "]")
+            if ran.start < header_start:
+                screen.addstr(header_start, "…")
+            if ran.stop > header_stop:
+                screen.addstr(header_stop-1, "…")
 
             footer_start, footer_stop, _ = self.footer_mask.indices(screen.width)
             for footer_format in footer_formats:
@@ -623,6 +631,10 @@ class PlayField:
             screen.addstr(footer_start, footer_text, self.footer_mask)
             screen.addstr(footer_start-1, "[")
             screen.addstr(footer_stop, "]")
+            if ran.start < footer_start:
+                screen.addstr(footer_start, "…")
+            if ran.stop > footer_stop:
+                screen.addstr(footer_stop-1, "…")
 
     def _spec_handler(self):
         spec_width = self.settings.spec_width
