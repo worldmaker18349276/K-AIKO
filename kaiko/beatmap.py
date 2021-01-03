@@ -613,11 +613,22 @@ class PlayField(Beatbar):
         self.bar_shift = self.settings.bar_shift
         self.bar_flip = self.settings.bar_flip
 
-        self.status['full_score'] = 0.0
-        self.status['score'] = 0.0
-        self.status['progress'] = 0.0
-        self.status['time'] = datetime.time(0, 0, 0)
-        self.status['spectrum'] = "\u2800"*self.settings.spec_width
+        self.full_score = 0
+        self.score = 0
+        self.total_subjects = 0
+        self.finished_subjects = 0
+        self.time = datetime.time(0, 0, 0)
+        self.spectrum = "\u2800"*self.settings.spec_width
+
+    @dn.datanode
+    def _update_status(self):
+        while True:
+            yield
+            self.status['full_score'] = self.full_score
+            self.status['score'] = self.score
+            self.status['progress'] = self.finished_subjects/self.total_subjects if self.total_subjects>0 else 1.0
+            self.status['time'] = self.time
+            self.status['spectrum'] = self.spectrum
 
     def register_handlers(self, console, start_time):
         super().register_handlers(console)
@@ -633,6 +644,7 @@ class PlayField(Beatbar):
         # register
         self.console.add_effect(self._spec_handler(), zindex=(-1,))
         self.console.add_listener(self._hit_handler())
+        self.console.add_drawer(self._update_status(), zindex=())
         self.console.add_drawer(self._sight_handler(), zindex=(2,))
 
     def _spec_handler(self):
@@ -669,7 +681,7 @@ class PlayField(Beatbar):
 
                     vols = [max(0.0, prev-decay, min(1.0, volume_of(J[slic])))
                             for slic, prev in zip(slices, vols)]
-                    self.status['spectrum'] = "".join(map(draw_bar, vols[0::2], vols[1::2]))
+                    self.spectrum = "".join(map(draw_bar, vols[0::2], vols[1::2]))
 
         return dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels)))
 
@@ -967,10 +979,11 @@ class KAIKOGame:
     def get_score(self):
         return sum(getattr(event, 'score', 0) for event in self.events)
 
+    def get_finished_subjects(self):
+        return sum(getattr(event, 'is_finished', False) for event in self.events if event.is_subject)
+
     def get_progress(self):
-        if self.total_subjects == 0:
-            return 1.0
-        return sum(getattr(event, 'is_finished', False) for event in self.events) / self.total_subjects
+        return self.get_finished_subjects() / self.total_subjects if self.total_subjects > 0 else 1.0
 
     @dn.datanode
     def connect(self, console):
@@ -985,10 +998,10 @@ class KAIKOGame:
         events_start_time = min((event.lifespan[0] - leadin_time for event in self.events), default=0.0)
         events_end_time   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
 
-        self.total_subjects = sum(event.is_subject for event in self.events)
-        self.playfield.status['full_score'] = self.get_full_score()
-        self.playfield.status['score'] = self.get_score()
-        self.playfield.status['progress'] = self.get_progress()
+        self.playfield.total_subjects = sum(event.is_subject for event in self.events)
+        self.playfield.finished_subjects = self.get_finished_subjects()
+        self.playfield.full_score = self.get_full_score()
+        self.playfield.score = self.get_score()
 
         if self.beatmap.audio is None:
             audionode = None
@@ -1029,10 +1042,10 @@ class KAIKOGame:
                     event.register(self.playfield)
                     event = next(events_iter, None)
 
-                self.playfield.status['full_score'] = self.get_full_score()
-                self.playfield.status['score'] = self.get_score()
-                self.playfield.status['progress'] = self.get_progress()
+                self.playfield.finished_subjects = self.get_finished_subjects()
+                self.playfield.full_score = self.get_full_score()
+                self.playfield.score = self.get_score()
                 time = int(max(0.0, time))
-                self.playfield.status['time'] = datetime.time(time//3600, time%3600//60, time%60)
+                self.playfield.time = datetime.time(time//3600, time%3600//60, time%60)
 
                 yield
