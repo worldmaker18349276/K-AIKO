@@ -13,4 +13,4 @@ console.settings.debug_timeit = True
 console.run(game)
 
 print()
-show_analyze(beatmap.settings.performance_tolerance, game.playfield.perfs)
+show_analyze(beatmap.settings.performance_tolerance, game.perfs)

@@ -475,26 +475,96 @@ class Spin(Target):
         field.draw_sight(appearance, duration=self.finish_sustain_time)
 
 
-# Play Field
-def to_slices(segments):
-    middle = segments.index(...)
-    pre  = segments[:middle:+1]
-    post = segments[:middle:-1]
+# Game
+@cfg.configurable
+class BeatmapSettings:
+    ## Difficulty:
+    performance_tolerance: float = 0.02
+    soft_threshold: float = 0.5
+    loud_threshold: float = 0.5
+    incr_threshold: float = -0.1
+    roll_tolerance: float = 0.10
+    spin_tolerance: float = 0.10
 
-    pre_index  = [sum(pre[:i+1])  for i in range(len(pre))]
-    post_index = [sum(post[:i+1]) for i in range(len(post))]
+    perfect_tolerance = property(lambda self: self.performance_tolerance*1)
+    good_tolerance    = property(lambda self: self.performance_tolerance*3)
+    bad_tolerance     = property(lambda self: self.performance_tolerance*5)
+    failed_tolerance  = property(lambda self: self.performance_tolerance*7)
 
-    first_slice  = slice(None, pre_index[0], None)
-    last_slice   = slice(-post_index[0], None, None)
-    middle_slice = slice(pre_index[-1], -post_index[-1], None)
+    ## Scores:
+    performances_scores: Dict[PerformanceGrade, int] = {
+        PerformanceGrade.MISS               : 0,
 
-    pre_slices  = [slice(+a, +b, None) for a, b in zip(pre_index[:-1],  pre_index[1:])]
-    post_slices = [slice(-b, -a, None) for a, b in zip(post_index[:-1], post_index[1:])]
+        PerformanceGrade.LATE_FAILED        : 0,
+        PerformanceGrade.LATE_BAD           : 2,
+        PerformanceGrade.LATE_GOOD          : 8,
+        PerformanceGrade.PERFECT            : 16,
+        PerformanceGrade.EARLY_GOOD         : 8,
+        PerformanceGrade.EARLY_BAD          : 2,
+        PerformanceGrade.EARLY_FAILED       : 0,
 
-    return [first_slice, *pre_slices, middle_slice, *post_slices[::-1], last_slice]
+        PerformanceGrade.LATE_FAILED_WRONG  : 0,
+        PerformanceGrade.LATE_BAD_WRONG     : 1,
+        PerformanceGrade.LATE_GOOD_WRONG    : 4,
+        PerformanceGrade.PERFECT_WRONG      : 8,
+        PerformanceGrade.EARLY_GOOD_WRONG   : 4,
+        PerformanceGrade.EARLY_BAD_WRONG    : 1,
+        PerformanceGrade.EARLY_FAILED_WRONG : 0,
+        }
+
+    performances_max_score = property(lambda self: max(self.performances_scores.values()))
+
+    roll_rock_score: int = 2
+    spin_score: int = 16
+
+    ## NoteSkin:
+    soft_approach_appearance:  Union[str, Tuple[str, str]] = "□"
+    soft_wrong_appearance:     Union[str, Tuple[str, str]] = "⬚"
+    soft_sound: str = "samples/soft.wav" # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
+    loud_approach_appearance:  Union[str, Tuple[str, str]] = "■"
+    loud_wrong_appearance:     Union[str, Tuple[str, str]] = "⬚"
+    loud_sound: str = "samples/loud.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
+    incr_approach_appearance:  Union[str, Tuple[str, str]] = "⬒"
+    incr_wrong_appearance:     Union[str, Tuple[str, str]] = "⬚"
+    incr_sound: str = "samples/incr.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
+    roll_rock_appearance:      Union[str, Tuple[str, str]] = "◎"
+    roll_rock_sound: str = "samples/rock.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
+    spin_disk_appearances:     Union[List[str], List[Tuple[str, str]]] = ["◴", "◵", "◶", "◷"]
+    spin_finishing_appearance: Union[str, Tuple[str, str]] = "☺"
+    spin_finish_sustain_time: float = 0.1
+    spin_disk_sound: str = "samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
+
+class Beatmap:
+    settings: BeatmapSettings = BeatmapSettings()
+
+    def __init__(self, path=".", info="", audio=None, volume=0.0, offset=0.0, tempo=60.0):
+        self.path = path
+        self.info = info
+        self.audio = audio
+        self.volume = volume
+        self.offset = offset
+        self.tempo = tempo
+
+    def time(self, beat):
+        return self.offset + beat*60/self.tempo
+
+    def beat(self, time):
+        return (time - self.offset)*self.tempo/60
+
+    def dtime(self, beat, length):
+        return self.time(beat+length) - self.time(beat)
+
+    def build_events(self):
+        raise NotImplementedError
 
 @cfg.configurable
-class PlayFieldSettings:
+class GameplaySettings:
+    ## Controls:
+    leadin_time: float = 1.0
+    skip_time: float = 8.0
+    tickrate: float = 60.0
+    prepare_time: float = 0.1
+
     # PlayFieldSkin:
     icon_width: int = 8
     header_width: int = 11
@@ -539,10 +609,39 @@ class PlayFieldSettings:
     bar_shift: float = 0.1
     bar_flip: bool = False
 
-class PlayField:
-    settings : PlayFieldSettings = PlayFieldSettings()
+class KAIKOGame:
+    settings: GameplaySettings = GameplaySettings()
 
-    def __init__(self):
+    def __init__(self, beatmap, config=None):
+        self.beatmap = beatmap
+
+        if config is not None:
+            cfg.config_read(open(config, 'r'), main=self.settings)
+
+    @dn.datanode
+    def connect(self, console):
+        self.console = console
+
+        # prepare events
+        self.events = self.beatmap.build_events()
+        self.events.sort(key=lambda e: e.lifespan[0])
+
+        leadin_time = self.settings.leadin_time
+        events_start_time = min((event.lifespan[0] - leadin_time for event in self.events), default=0.0)
+        events_end_time   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
+
+        # prepare music
+        if self.beatmap.audio is None:
+            audionode = None
+            duration = 0.0
+            volume = 0.0
+        else:
+            audiopath = os.path.join(self.beatmap.path, self.beatmap.audio)
+            with audioread.audio_open(audiopath) as file:
+                duration = file.duration
+            audionode = dn.DataNode.wrap(self.console.load_sound(audiopath))
+            volume = self.beatmap.volume
+
         # layout
         icon_width = self.settings.icon_width
         header_width = self.settings.header_width
@@ -550,34 +649,60 @@ class PlayField:
         layout = to_slices((icon_width, 1, header_width, 1, ..., 1, footer_width, 1))
         self.icon_mask, _, self.header_mask, _, self.content_mask, _, self.footer_mask, _ = layout
 
-        # state
+        # initialize game state
         self.bar_shift = self.settings.bar_shift
         self.bar_flip = self.settings.bar_flip
 
+        self.total_subjects = sum(event.is_subject for event in self.events)
+        self.finished_subjects = 0
         self.full_score = 0
         self.score = 0
-        self.total_subjects = 0
-        self.finished_subjects = 0
 
         self.perfs = []
         self.time = datetime.time(0, 0, 0)
         self.spectrum = "\u2800"*self.settings.spec_width
 
-    def register_handlers(self, console, start_time):
-        self.console = console
-        self.start_time = start_time
+        # game loop
+        tickrate = self.settings.tickrate
+        prepare_time = self.settings.prepare_time
+        time_shift = prepare_time + max(-events_start_time, 0.0)
 
-        # event queue
-        self.hit_queue = queue.Queue()
-        self.sight_queue = queue.Queue()
-        self.target_queue = queue.Queue()
-        self.perf_queue = queue.Queue()
+        with dn.tick(1/tickrate, prepare_time, -time_shift) as timer:
+            self.start_time = self.console.time + time_shift
 
-        # register
-        self.console.add_effect(self._spec_handler(), zindex=(-1,))
-        self.console.add_listener(self._hit_handler())
-        self.console.add_drawer(self._status_handler(), zindex=(-3,))
-        self.console.add_drawer(self._sight_handler(), zindex=(2,))
+            # play music
+            if audionode is not None:
+                self.console.play(audionode, volume=volume, time=self.start_time, zindex=(-3,))
+
+            # register handlers
+            self.hit_queue = queue.Queue()
+            self.sight_queue = queue.Queue()
+            self.target_queue = queue.Queue()
+            self.perf_queue = queue.Queue()
+
+            self.console.add_effect(self._spec_handler(), zindex=(-1,))
+            self.console.add_drawer(self._status_handler(), zindex=(-3,))
+            self.console.add_drawer(self._sight_handler(), zindex=(2,))
+            self.console.add_listener(self._hit_handler())
+
+            # register events
+            events_iter = iter(self.events)
+            event = next(events_iter, None)
+
+            yield
+            for time in timer:
+                if max(events_end_time, duration) <= time:
+                    break
+
+                while event is not None and event.lifespan[0] <= time + prepare_time:
+                    event.register(self)
+                    event = next(events_iter, None)
+
+                time = int(max(0.0, time))
+                self.time = datetime.time(time//3600, time%3600//60, time%60)
+
+                yield
+
 
     @dn.datanode
     def _status_handler(self):
@@ -874,161 +999,20 @@ class PlayField:
     def on_after_render(self, node):
         return self.console.add_drawer(node, zindex=(numpy.inf,))
 
+def to_slices(segments):
+    middle = segments.index(...)
+    pre  = segments[:middle:+1]
+    post = segments[:middle:-1]
 
-# Game
-@cfg.configurable
-class BeatmapSettings:
-    ## Difficulty:
-    performance_tolerance: float = 0.02
-    soft_threshold: float = 0.5
-    loud_threshold: float = 0.5
-    incr_threshold: float = -0.1
-    roll_tolerance: float = 0.10
-    spin_tolerance: float = 0.10
+    pre_index  = [sum(pre[:i+1])  for i in range(len(pre))]
+    post_index = [sum(post[:i+1]) for i in range(len(post))]
 
-    perfect_tolerance = property(lambda self: self.performance_tolerance*1)
-    good_tolerance    = property(lambda self: self.performance_tolerance*3)
-    bad_tolerance     = property(lambda self: self.performance_tolerance*5)
-    failed_tolerance  = property(lambda self: self.performance_tolerance*7)
+    first_slice  = slice(None, pre_index[0], None)
+    last_slice   = slice(-post_index[0], None, None)
+    middle_slice = slice(pre_index[-1], -post_index[-1], None)
 
-    ## Scores:
-    performances_scores: Dict[PerformanceGrade, int] = {
-        PerformanceGrade.MISS               : 0,
+    pre_slices  = [slice(+a, +b, None) for a, b in zip(pre_index[:-1],  pre_index[1:])]
+    post_slices = [slice(-b, -a, None) for a, b in zip(post_index[:-1], post_index[1:])]
 
-        PerformanceGrade.LATE_FAILED        : 0,
-        PerformanceGrade.LATE_BAD           : 2,
-        PerformanceGrade.LATE_GOOD          : 8,
-        PerformanceGrade.PERFECT            : 16,
-        PerformanceGrade.EARLY_GOOD         : 8,
-        PerformanceGrade.EARLY_BAD          : 2,
-        PerformanceGrade.EARLY_FAILED       : 0,
+    return [first_slice, *pre_slices, middle_slice, *post_slices[::-1], last_slice]
 
-        PerformanceGrade.LATE_FAILED_WRONG  : 0,
-        PerformanceGrade.LATE_BAD_WRONG     : 1,
-        PerformanceGrade.LATE_GOOD_WRONG    : 4,
-        PerformanceGrade.PERFECT_WRONG      : 8,
-        PerformanceGrade.EARLY_GOOD_WRONG   : 4,
-        PerformanceGrade.EARLY_BAD_WRONG    : 1,
-        PerformanceGrade.EARLY_FAILED_WRONG : 0,
-        }
-
-    performances_max_score = property(lambda self: max(self.performances_scores.values()))
-
-    roll_rock_score: int = 2
-    spin_score: int = 16
-
-    ## NoteSkin:
-    soft_approach_appearance:  Union[str, Tuple[str, str]] = "□"
-    soft_wrong_appearance:     Union[str, Tuple[str, str]] = "⬚"
-    soft_sound: str = "samples/soft.wav" # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
-    loud_approach_appearance:  Union[str, Tuple[str, str]] = "■"
-    loud_wrong_appearance:     Union[str, Tuple[str, str]] = "⬚"
-    loud_sound: str = "samples/loud.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
-    incr_approach_appearance:  Union[str, Tuple[str, str]] = "⬒"
-    incr_wrong_appearance:     Union[str, Tuple[str, str]] = "⬚"
-    incr_sound: str = "samples/incr.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
-    roll_rock_appearance:      Union[str, Tuple[str, str]] = "◎"
-    roll_rock_sound: str = "samples/rock.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
-    spin_disk_appearances:     Union[List[str], List[Tuple[str, str]]] = ["◴", "◵", "◶", "◷"]
-    spin_finishing_appearance: Union[str, Tuple[str, str]] = "☺"
-    spin_finish_sustain_time: float = 0.1
-    spin_disk_sound: str = "samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
-
-class Beatmap:
-    settings: BeatmapSettings = BeatmapSettings()
-
-    def __init__(self, path=".", info="", audio=None, volume=0.0, offset=0.0, tempo=60.0):
-        self.path = path
-        self.info = info
-        self.audio = audio
-        self.volume = volume
-        self.offset = offset
-        self.tempo = tempo
-
-    def time(self, beat):
-        return self.offset + beat*60/self.tempo
-
-    def beat(self, time):
-        return (time - self.offset)*self.tempo/60
-
-    def dtime(self, beat, length):
-        return self.time(beat+length) - self.time(beat)
-
-    def build_events(self):
-        raise NotImplementedError
-
-@cfg.configurable
-class GameplaySettings:
-    ## Controls:
-    leadin_time: float = 1.0
-    skip_time: float = 8.0
-    tickrate: float = 60.0
-    prepare_time: float = 0.1
-
-class KAIKOGame:
-    settings: GameplaySettings = GameplaySettings()
-
-    def __init__(self, beatmap, config=None):
-        self.beatmap = beatmap
-
-        if config is not None:
-            cfg.config_read(open(config, 'r'), main=self.settings)
-
-    @dn.datanode
-    def connect(self, console):
-        self.console = console
-        self.playfield = PlayField()
-
-        # events
-        self.events = self.beatmap.build_events()
-        self.events.sort(key=lambda e: e.lifespan[0])
-
-        leadin_time = self.settings.leadin_time
-        events_start_time = min((event.lifespan[0] - leadin_time for event in self.events), default=0.0)
-        events_end_time   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
-
-        self.playfield.total_subjects = sum(event.is_subject for event in self.events)
-
-        if self.beatmap.audio is None:
-            audionode = None
-            duration = 0.0
-            volume = 0.0
-        else:
-            audiopath = os.path.join(self.beatmap.path, self.beatmap.audio)
-            with audioread.audio_open(audiopath) as file:
-                duration = file.duration
-            audionode = dn.DataNode.wrap(self.console.load_sound(audiopath))
-            volume = self.beatmap.volume
-
-        # game loop
-        tickrate = self.settings.tickrate
-        prepare_time = self.settings.prepare_time
-        time_shift = prepare_time + max(-events_start_time, 0.0)
-
-        with dn.tick(1/tickrate, prepare_time, -time_shift) as timer:
-            start_time = self.console.time + time_shift
-
-            # music
-            if audionode is not None:
-                self.console.play(audionode, volume=volume, time=start_time, zindex=(-3,))
-
-            # handlers
-            self.playfield.register_handlers(self.console, start_time)
-
-            # register events
-            events_iter = iter(self.events)
-            event = next(events_iter, None)
-
-            yield
-            for time in timer:
-                if max(events_end_time, duration) <= time:
-                    break
-
-                while event is not None and event.lifespan[0] <= time + prepare_time:
-                    event.register(self.playfield)
-                    event = next(events_iter, None)
-
-                time = int(max(0.0, time))
-                self.playfield.time = datetime.time(time//3600, time%3600//60, time%60)
-
-                yield
