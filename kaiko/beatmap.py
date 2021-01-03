@@ -14,8 +14,6 @@ class Event:
     # lifespan
     # __init__(beatmap, *args, **kwargs)
     # register(field)
-    # # selected properties:
-    # score, is_finished, perfs
     is_subject = False
     full_score = 0
 
@@ -108,7 +106,7 @@ def set_context(beatmap, *, context, **kw):
 
 # targets
 class Target(Event):
-    # lifespan, range, score, full_score, is_finished
+    # lifespan, range, is_finished
     # __init__(beatmap, *args, **kwargs)
     # approach(field)
     # hit(field, time, strength)
@@ -126,6 +124,8 @@ class Target(Event):
         except GeneratorExit:
             if not self.is_finished:
                 self.finish(field)
+        finally:
+            field.add_finished()
 
     def zindex(self):
         return (0, not self.is_finished, -self.range[0])
@@ -273,6 +273,8 @@ class OneshotTarget(Target):
         if perf is None:
             perf = Performance.judge(self.performance_tolerance, self.time)
         self.perf = perf
+        field.add_full_score(self.full_score)
+        field.add_score(self.score)
 
 class Soft(OneshotTarget):
     def __init__(self, beatmap, beat=None, *, speed=1.0, volume=0.0):
@@ -368,6 +370,7 @@ class Roll(Target):
         self.roll = 0
         self.number = int(length * density)
         self.is_finished = False
+        self.score = 0
 
         self.times = [beatmap.time(beat+i/density) for i in range(self.number)]
         travel_time = 1.0 / abs(0.5 * self.speed)
@@ -382,15 +385,6 @@ class Roll(Target):
     def appearance_of(self, index):
         return lambda time: self.rock_appearance if self.roll <= index else ""
 
-    @property
-    def score(self):
-        if self.roll < self.number:
-            return self.roll * self.rock_score
-        elif self.roll < 2*self.number:
-            return (2*self.number - self.roll) * self.rock_score
-        else:
-            return 0
-
     def approach(self, field):
         for i, time in enumerate(self.times):
             if self.sound is not None:
@@ -401,12 +395,22 @@ class Roll(Target):
 
     def hit(self, field, time, strength):
         self.roll += 1
+
         if self.roll <= self.number:
             perf = Performance.judge(self.performance_tolerance, self.times[self.roll-1], time, True)
             self.perfs.append(perf)
 
+            field.add_score(self.rock_score)
+            self.score += self.rock_score
+
+        elif self.roll <= 2*self.number:
+            field.add_score(-self.rock_score)
+            self.score -= self.rock_score
+
     def finish(self, field):
         self.is_finished = True
+        field.add_full_score(self.full_score)
+
         for time in self.times[self.roll:]:
             perf = Performance.judge(self.performance_tolerance, time)
             self.perfs.append(perf)
@@ -427,6 +431,7 @@ class Spin(Target):
         self.charge = 0.0
         self.capacity = length * density
         self.is_finished = False
+        self.score = 0
 
         self.times = [beatmap.time(beat+i/density) for i in range(int(self.capacity))]
         travel_time = 1.0 / abs(0.5 * self.speed)
@@ -439,13 +444,6 @@ class Spin(Target):
     def appearance(self, time):
         return self.disk_appearances[int(self.charge) % len(self.disk_appearances)] if not self.is_finished else ""
 
-    @property
-    def score(self):
-        if not self.is_finished:
-            return int(self.full_score * self.charge / self.capacity)
-        else:
-            return self.full_score if self.charge == self.capacity else 0
-
     def approach(self, field):
         for time in self.times:
             if self.sound is not None:
@@ -457,11 +455,21 @@ class Spin(Target):
 
     def hit(self, field, time, strength):
         self.charge = min(self.charge + min(1.0, strength), self.capacity)
+
+        current_score = int(self.full_score * self.charge / self.capacity)
+        field.add_score(current_score - self.score)
+        self.score = current_score
+
         if self.charge == self.capacity:
             self.finish(field)
 
     def finish(self, field):
         self.is_finished = True
+        field.add_full_score(self.full_score)
+
+        if self.charge != self.capacity:
+            field.add_score(-self.score)
+            self.score = 0
 
         if self.charge != self.capacity:
             return
@@ -843,6 +851,16 @@ class PlayField(Beatbar):
             time -= self.start_time
 
 
+    def add_score(self, score):
+        self.score += score
+
+    def add_full_score(self, full_score):
+        self.full_score += full_score
+
+    def add_finished(self, finished=1):
+        self.finished_subjects += finished
+
+
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
         if time is not None:
             time += self.start_time
@@ -973,18 +991,6 @@ class KAIKOGame:
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
 
-    def get_full_score(self):
-        return sum(getattr(event, 'full_score', 0) for event in self.events if getattr(event, 'is_finished', True))
-
-    def get_score(self):
-        return sum(getattr(event, 'score', 0) for event in self.events)
-
-    def get_finished_subjects(self):
-        return sum(getattr(event, 'is_finished', False) for event in self.events if event.is_subject)
-
-    def get_progress(self):
-        return self.get_finished_subjects() / self.total_subjects if self.total_subjects > 0 else 1.0
-
     @dn.datanode
     def connect(self, console):
         self.console = console
@@ -999,9 +1005,6 @@ class KAIKOGame:
         events_end_time   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
 
         self.playfield.total_subjects = sum(event.is_subject for event in self.events)
-        self.playfield.finished_subjects = self.get_finished_subjects()
-        self.playfield.full_score = self.get_full_score()
-        self.playfield.score = self.get_score()
 
         if self.beatmap.audio is None:
             audionode = None
@@ -1042,9 +1045,6 @@ class KAIKOGame:
                     event.register(self.playfield)
                     event = next(events_iter, None)
 
-                self.playfield.finished_subjects = self.get_finished_subjects()
-                self.playfield.full_score = self.get_full_score()
-                self.playfield.score = self.get_score()
                 time = int(max(0.0, time))
                 self.playfield.time = datetime.time(time//3600, time%3600//60, time%60)
 
