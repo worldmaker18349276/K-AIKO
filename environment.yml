@@ -9,3 +9,4 @@ dependencies:
   - dataclasses
   - pyaudio
   - lark-parser
+  - wcwidth
