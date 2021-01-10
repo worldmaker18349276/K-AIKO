@@ -1,5 +1,7 @@
 import os
 import datetime
+import wcwidth
+import shutil
 from enum import Enum
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
@@ -54,20 +56,17 @@ class Flip(Event):
 
     @dn.datanode
     def _node(self, field):
-        time, screen = yield
-        time -= field.start_time
+        time = yield
 
         while time < self.time:
-            time, screen = yield
-            time -= field.start_time
+            time = yield
 
         if self.flip is None:
             field.bar_flip = not field.bar_flip
         else:
             field.bar_flip = self.flip
 
-        time, screen = yield
-        time -= field.start_time
+        time = yield
 
 class Shift(Event):
     def __init__(self, beatmap, shift, beat=None, length=None):
@@ -81,25 +80,21 @@ class Shift(Event):
 
     @dn.datanode
     def _node(self, field):
-        time, screen = yield
-        time -= field.start_time
+        time = yield
 
         while time < self.time:
-            time, screen = yield
-            time -= field.start_time
+            time = yield
 
         shift0 = field.bar_shift
         speed = (self.shift - shift0) / (self.end - self.time) if self.end != self.time else 0
 
         while time < self.end:
             field.bar_shift = shift0 + speed * (time - self.time)
-            time, screen = yield
-            time -= field.start_time
+            time = yield
 
         field.bar_shift = self.shift
 
-        time, screen = yield
-        time -= field.start_time
+        time = yield
 
 def set_context(beatmap, *, context, **kw):
     context.update(**kw)
@@ -669,6 +664,7 @@ class KAIKOGame:
 
         with dn.tick(1/tickrate, prepare_time, -time_shift) as timer:
             self.start_time = self.console.time + time_shift
+            self.width = shutil.get_terminal_size().columns
 
             # play music
             if audionode is not None:
@@ -679,10 +675,10 @@ class KAIKOGame:
             self.sight_queue = queue.Queue()
             self.target_queue = queue.Queue()
             self.perf_queue = queue.Queue()
+            self.content_queue = queue.Queue()
 
             self.console.add_effect(self._spec_handler(), zindex=(-1,))
-            self.console.add_drawer(self._status_handler(), zindex=(-3,))
-            self.console.add_drawer(self._sight_handler(), zindex=(2,))
+            self.console.add_drawer(self._layout_handler(), zindex=(0,))
             self.console.add_listener(self._hit_handler())
 
             # register events
@@ -705,14 +701,30 @@ class KAIKOGame:
 
 
     @dn.datanode
+    def _layout_handler(self):
+        content_node = dn.schedule(self.content_queue)
+        status_node = self._status_handler()
+        sight_node = self._sight_handler()
+        with content_node, sight_node, status_node:
+            time, _ = yield
+            while True:
+                time_ = time - self.start_time
+                view = [" "]*self.width
+
+                time_, view = content_node.send((time_, view))
+                time_, view = sight_node.send((time_, view))
+                time_, view = status_node.send((time_, view))
+
+                time, _ = yield time, "\r"+"".join(view)+"\r"
+
+    @dn.datanode
     def _status_handler(self):
         icon_formats = self.settings.icon_formats
         header_formats = self.settings.header_formats
         footer_formats = self.settings.footer_formats
 
+        time, view = yield
         while True:
-            _, screen = yield
-
             status = dict(
                 full_score=self.full_score,
                 score=self.score,
@@ -721,45 +733,19 @@ class KAIKOGame:
                 spectrum=self.spectrum,
                 )
 
-            icon_start, icon_stop, _ = self.icon_mask.indices(screen.width)
-            for icon_format in icon_formats:
-                icon_text = icon_format.format(**status)
-                ran = screen.range(icon_start, icon_text)
-                if ran.start >= icon_start and ran.stop <= icon_stop:
-                    break
-            screen.addstr(icon_start, icon_text, self.icon_mask)
-            if ran.start < icon_start:
-                screen.addstr(icon_start, "…")
-            if ran.stop > icon_stop:
-                screen.addstr(icon_stop-1, "…")
+            view = self._draw_masked(view, self.icon_mask, (format.format(**status) for format in icon_formats))
+            view = self._draw_masked(view, self.header_mask, (format.format(**status) for format in header_formats))
+            view = self._draw_masked(view, self.footer_mask, (format.format(**status) for format in footer_formats))
 
-            header_start, header_stop, _ = self.header_mask.indices(screen.width)
-            for header_format in header_formats:
-                header_text = header_format.format(**status)
-                ran = screen.range(header_start, header_text)
-                if ran.start >= header_start and ran.stop <= header_stop:
-                    break
-            screen.addstr(header_start, header_text, self.header_mask)
-            screen.addstr(header_start-1, "[")
-            screen.addstr(header_stop, "]")
-            if ran.start < header_start:
-                screen.addstr(header_start, "…")
-            if ran.stop > header_stop:
-                screen.addstr(header_stop-1, "…")
+            header_start, header_stop, _ = self.header_mask.indices(self.width)
+            view = addtext(view, header_start-1, "[")
+            view = addtext(view, header_stop, "]")
 
-            footer_start, footer_stop, _ = self.footer_mask.indices(screen.width)
-            for footer_format in footer_formats:
-                footer_text = footer_format.format(**status)
-                ran = screen.range(footer_start, footer_text)
-                if ran.start >= footer_start and ran.stop <= footer_stop:
-                    break
-            screen.addstr(footer_start, footer_text, self.footer_mask)
-            screen.addstr(footer_start-1, "[")
-            screen.addstr(footer_stop, "]")
-            if ran.start < footer_start:
-                screen.addstr(footer_start, "…")
-            if ran.stop > footer_stop:
-                screen.addstr(footer_stop-1, "…")
+            footer_start, footer_stop, _ = self.footer_mask.indices(self.width)
+            view = addtext(view, footer_start-1, "[")
+            view = addtext(view, footer_stop, "]")
+
+            time, view = yield time, view
 
     def _spec_handler(self):
         spec_width = self.settings.spec_width
@@ -861,10 +847,8 @@ class KAIKOGame:
         drawer, start, duration = None, None, None
         waiting_drawers = []
 
+        time, view = yield
         while True:
-            time, screen = yield
-            time -= self.start_time
-
             # update hit hint
             while not self.hit_queue.empty():
                 hit_strength = self.hit_queue.get()
@@ -904,7 +888,7 @@ class KAIKOGame:
                 if perf_is_reversed:
                     perf_text = perf_text[::-1]
 
-                self._draw_content(screen, 0, perf_text)
+                view = self._draw_content(view, 0, perf_text)
 
             # draw sight
             if drawer is not None:
@@ -921,40 +905,57 @@ class KAIKOGame:
             else:
                 sight_text = sight_appearances[0]
 
-            self._draw_content(screen, 0, sight_text)
+            view = self._draw_content(view, 0, sight_text)
 
-    def _draw_content(self, screen, pos, text):
+            time, view = yield time, view
+
+    def _draw_masked(self, view, mask, text_gen):
+        start, stop, _ = mask.indices(self.width)
+        mask_ran = range(start, stop)
+        for text in text_gen:
+            text_ran = textrange(start, text)
+            if text_ran.start in mask_ran and text_ran.stop-1 in mask_ran:
+                break
+
+        view = addtext(view, start, text, mask=mask)
+
+        if text_ran.start < mask_ran.start:
+            view = addtext(view, start, "…")
+
+        if text_ran.stop > mask_ran.stop:
+            view = addtext(view, stop-1, "…")
+
+        return view
+
+    def _draw_content(self, view, pos, text):
         pos = pos + self.bar_shift
         if self.bar_flip:
             pos = 1 - pos
 
-        content_start, content_end, _ = self.content_mask.indices(screen.width)
+        content_start, content_end, _ = self.content_mask.indices(self.width)
         index = round(content_start + pos * max(0, content_end - content_start - 1))
 
         if isinstance(text, tuple):
             text = text[self.bar_flip]
 
-        screen.addstr(index, text, self.content_mask)
+        return addtext(view, index, text, mask=self.content_mask)
 
     @dn.datanode
     def _content_node(self, pos, text, start, duration):
         pos_func = pos if hasattr(pos, '__call__') else lambda time: pos
         text_func = text if hasattr(text, '__call__') else lambda time: text
 
-        time, screen = yield
-        time -= self.start_time
+        time, view = yield
 
         if start is None:
             start = time
 
         while time < start:
-            time, screen = yield
-            time -= self.start_time
+            time, view = yield time, view
 
         while duration is None or time < start + duration:
-            self._draw_content(screen, pos_func(time), text_func(time))
-            time, screen = yield
-            time -= self.start_time
+            view = self._draw_content(view, pos_func(time), text_func(time))
+            time, view = yield time, view
 
 
     def add_score(self, score):
@@ -990,14 +991,14 @@ class KAIKOGame:
         self.sight_queue.put((None, start, None))
 
     def draw_content(self, pos, text, start=None, duration=None, zindex=(0,)):
+        key = object()
         node = self._content_node(pos, text, start, duration)
-        return self.console.add_drawer(node, zindex=zindex)
+        self.content_queue.put((key, node, zindex))
+        return key
 
     def on_before_render(self, node):
+        node = dn.branch(dn.pair(dn.pipe(lambda t: t-self.start_time, node), lambda v: v))
         return self.console.add_drawer(node, zindex=())
-
-    def on_after_render(self, node):
-        return self.console.add_drawer(node, zindex=(numpy.inf,))
 
 def to_slices(segments):
     middle = segments.index(...)
@@ -1016,3 +1017,74 @@ def to_slices(segments):
 
     return [first_slice, *pre_slices, middle_slice, *post_slices[::-1], last_slice]
 
+def addtext(cells, index, text, mask=slice(None, None, None)):
+    ran = range(len(cells))
+
+    for ch in text:
+        width = wcwidth.wcwidth(ch)
+
+        if ch == "\t":
+            index += 1
+
+        elif ch == "\b":
+            index -= 1
+
+        elif width == 0:
+            index_ = index - 1
+            if index_ in ran and cells[index_] == "":
+                index_ -= 1
+            if index in ran[mask] and index_ in ran[mask]:
+                cells[index_] += ch
+
+        elif width == 2:
+            index_ = index + 1
+            if index in ran[mask] and index_ in ran[mask]:
+                if index-1 in ran and cells[index] == "":
+                    cells[index-1] = " "
+                if index_+1 in ran and cells[index_+1] == "":
+                    cells[index_+1] = " "
+                cells[index] = ch
+                cells[index_] = ""
+            index += 2
+
+        elif width == 1:
+            if index in ran[mask]:
+                if index-1 in ran and cells[index] == "":
+                    cells[index-1] = " "
+                if index+1 in ran and cells[index+1] == "":
+                    cells[index+1] = " "
+                cells[index] = ch
+            index += 1
+
+        else:
+            raise ValueError
+
+    return cells
+
+def textrange(index, text):
+    start = index
+    stop = index
+
+    for ch in text:
+        width = wcwidth.wcwidth(ch)
+
+        if ch == "\t":
+            index += 1
+
+        elif ch == "\b":
+            index -= 1
+
+        elif width == 0:
+            pass
+
+        elif width == 2:
+            start = min(start, index)
+            stop = max(stop, index+2)
+            index += 2
+
+        elif width == 1:
+            start = min(start, index)
+            stop = max(stop, index+1)
+            index += 1
+
+    return range(start, stop)

@@ -243,15 +243,14 @@ class TerminalRenderer:
         framerate = self.settings.display_framerate
 
         index = 0
-        screen = TerminalLine()
         drawer_node = dn.schedule(self.drawer_queue)
         with drawer_node:
             yield
             while True:
                 time = index / framerate + self.display_delay
-                screen.clear()
-                drawer_node.send((time, screen))
-                yield screen.display()
+                view = ""
+                _, view = drawer_node.send((time, view))
+                yield view
                 index += 1
 
     @contextlib.contextmanager
@@ -283,102 +282,11 @@ class TerminalRenderer:
 
     def add_drawer(self, node, zindex=(0,)):
         key = object()
-        node = dn.branch(node)
         self.drawer_queue.put((key, node, zindex))
         return key
 
     def remove_drawer(self, key):
         self.drawer_queue.put((key, None, 0))
-
-class TerminalLine:
-    def __init__(self):
-        self.width = shutil.get_terminal_size().columns
-        self.chars = [" "]*self.width
-
-    def display(self):
-        return "\r" + "".join(self.chars) + "\r"
-
-    def clear(self):
-        for i in range(self.width):
-            self.chars[i] = " "
-
-    def addstr(self, index, str, mask=slice(None, None, None)):
-        ran = range(self.width)[mask]
-
-        for ch in str:
-            if ch == "\t":
-                index += 1
-
-            elif ch == "\b":
-                index -= 1
-
-            elif ch in ("\n", "\r"):
-                index = 0
-
-            elif ch in ("\0", "\v", "\f"):
-                pass
-
-            elif unicodedata.combining(ch) != 0:
-                index_ = index - 1
-                if index_ in range(len(self.chars)) and self.chars[index_] == "":
-                    index_ -= 1
-                if index_ in ran:
-                    self.chars[index_] += ch
-
-            elif unicodedata.east_asian_width(ch) in ('F', 'W'):
-                index_ = index + 1
-                if index in ran and index_ in ran:
-                    if index-1 in range(len(self.chars)) and self.chars[index] == "":
-                        self.chars[index-1] = " "
-                    if index_+1 in range(len(self.chars)) and self.chars[index_+1] == "":
-                        self.chars[index_+1] = " "
-                    self.chars[index] = ch
-                    self.chars[index_] = ""
-                index += 2
-
-            else:
-                if index in ran:
-                    if index-1 in range(len(self.chars)) and self.chars[index] == "":
-                        self.chars[index-1] = " "
-                    if index+1 in range(len(self.chars)) and self.chars[index+1] == "":
-                        self.chars[index+1] = " "
-                    self.chars[index] = ch
-                index += 1
-
-    def range(self, index, str):
-        if isinstance(index, float):
-            index = round(index)
-
-        start = index
-        stop = index
-
-        for ch in str:
-            if ch == "\t":
-                index += 1
-
-            elif ch == "\b":
-                index -= 1
-
-            elif ch in ("\n", "\r"):
-                index = 0
-
-            elif ch in ("\0", "\v", "\f"):
-                pass
-
-            elif unicodedata.combining(ch) != 0:
-                pass
-
-            elif unicodedata.east_asian_width(ch) in ('F', 'W'):
-                start = min(start, index)
-                stop = max(stop, index+2)
-                index += 2
-
-            else:
-                start = min(start, index)
-                stop = max(stop, index+1)
-                index += 1
-
-        return range(start, stop)
 
 
 @cfg.configurable
