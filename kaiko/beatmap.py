@@ -5,6 +5,7 @@ import shutil
 from enum import Enum
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
+import threading
 import queue
 import numpy
 import audioread
@@ -678,10 +679,13 @@ class KAIKOGame:
                 self.console.play(audionode, volume=volume, time=self.start_time, zindex=(-3,))
 
             # register handlers
-            self.hit_queue = queue.Queue()
-            self.sight_queue = queue.Queue()
+            hit_hint_duration = max(self.settings.hit_decay_time, self.settings.hit_sustain_time)
+            self.current_hit_hint = TimedVariable(value=None, duration=hit_hint_duration)
+            self.current_perf_hint = TimedVariable(value=(None, None), duration=self.settings.performance_sustain_time)
+            self.current_sight = TimedVariable(value=None)
+
             self.target_queue = queue.Queue()
-            self.perf_queue = queue.Queue()
+
             self.content_queue = queue.Queue()
 
             sight_node = self._sight_handler()
@@ -788,7 +792,7 @@ class KAIKOGame:
         time -= self.start_time
         strength = min(1.0, strength)
         if detected:
-            self.hit_queue.put(strength)
+            self.current_hit_hint.set(strength)
 
         while True:
             # update waiting targets
@@ -826,55 +830,21 @@ class KAIKOGame:
             time -= self.start_time
             strength = min(1.0, strength)
             if detected:
-                self.hit_queue.put(strength)
+                self.current_hit_hint.set(strength)
 
     @dn.datanode
     def _sight_handler(self):
         hit_decay_time = self.settings.hit_decay_time
         hit_sustain_time = self.settings.hit_sustain_time
-        perf_sustain_time = self.settings.performance_sustain_time
         perf_appearances = self.settings.performances_appearances
         sight_appearances = self.settings.sight_appearances
 
-        hit_strength, hit_time = None, None
-        perf, perf_is_reversed, perf_time = None, None, None
-        drawer, start, duration = None, None, None
-        waiting_drawers = []
-
         time, view = yield
         while True:
-            # update hit hint
-            while not self.hit_queue.empty():
-                hit_strength = self.hit_queue.get()
-                hit_time = time
-
-            if hit_time is not None and time - hit_time >= max(hit_decay_time, hit_sustain_time):
-                hit_strength = None
-                hit_time = None
-
-            # update perf hint
-            while not self.perf_queue.empty():
-                perf, perf_is_reversed = self.perf_queue.get()
-                perf_time = time
-
-            if perf is not None and time - perf_time >= perf_sustain_time:
-                perf = None
-                perf_is_reversed = None
-                perf_time = None
-
-            # update sight drawers
-            while not self.sight_queue.empty():
-                item = self.sight_queue.get()
-                if item[1] is None:
-                    item = (item[0], time, item[2])
-                waiting_drawers.append(item)
-            waiting_drawers.sort(key=lambda item: item[1])
-
-            while waiting_drawers and waiting_drawers[0][1] <= time:
-                drawer, start, duration = waiting_drawers.pop(0)
-
-            if duration is not None and start + duration <= time:
-                drawer, start, duration = None, None, None
+            # update hit hint, perf hint, sight drawers
+            hit_strength, hit_time, _ = self.current_hit_hint.get(time, ret_sched=True)
+            (perf, perf_is_reversed), perf_time, _ = self.current_perf_hint.get(time, ret_sched=True)
+            sight = self.current_sight.get(time)
 
             # draw perf hint
             if perf is not None:
@@ -885,10 +855,10 @@ class KAIKOGame:
                 view = self._draw_content(view, 0, perf_text)
 
             # draw sight
-            if drawer is not None:
-                sight_text = drawer(time)
+            if sight is not None:
+                sight_text = sight(time)
 
-            elif hit_time is not None:
+            elif hit_strength is not None:
                 strength = hit_strength - (time - hit_time) / hit_decay_time
                 strength = max(0.0, min(1.0, strength))
                 loudness = int(strength * (len(sight_appearances) - 1))
@@ -953,7 +923,7 @@ class KAIKOGame:
     def add_perf(self, perf, show=True, is_reversed=False):
         self.perfs.append(perf)
         if show:
-            self.perf_queue.put((perf, is_reversed))
+            self.current_perf_hint.set((perf, is_reversed))
 
 
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
@@ -968,10 +938,10 @@ class KAIKOGame:
 
     def draw_sight(self, text, start=None, duration=None):
         text_func = text if hasattr(text, '__call__') else lambda time: text
-        self.sight_queue.put((text_func, start, duration))
+        self.current_sight.set(text_func, start, duration)
 
     def reset_sight(self, start=None):
-        self.sight_queue.put((None, start, None))
+        self.current_sight.reset(start)
 
     def draw_content(self, pos, text, start=None, duration=None, zindex=(0,)):
         pos_func = pos if hasattr(pos, '__call__') else lambda time: pos
@@ -1088,3 +1058,44 @@ def textrange(index, text):
             index += 1
 
     return range(start, stop)
+
+
+class TimedVariable:
+    def __init__(self, value=None, duration=numpy.inf):
+        self._queue = queue.Queue()
+        self._lock = threading.Lock()
+        self._scheduled = []
+        self._default_value = value
+        self._default_duration = duration
+        self._item = (value, None, numpy.inf)
+
+    def get(self, time, ret_sched=False):
+        with self._lock:
+            value, start, duration = self._item
+            if start is None:
+                start = time
+
+            while not self._queue.empty():
+                item = self._queue.get()
+                if item[1] is None:
+                    item = (item[0], time, item[2])
+                self._scheduled.append(item)
+            self._scheduled.sort(key=lambda item: item[1])
+
+            while self._scheduled and self._scheduled[0][1] <= time:
+                value, start, duration = self._scheduled.pop(0)
+
+            if start + duration <= time:
+                value, start, duration = self._default_value, None, numpy.inf
+
+            self._item = (value, start, duration)
+            return value if not ret_sched else self._item
+
+    def set(self, value, start=None, duration=None):
+        if duration is None:
+            duration = self._default_duration
+        self._queue.put((value, start, duration))
+
+    def reset(self, start=None):
+        self._queue.put((self._default_value, start, numpy.inf))
+
