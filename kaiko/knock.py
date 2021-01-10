@@ -286,7 +286,7 @@ class TerminalRenderer:
         return key
 
     def remove_drawer(self, key):
-        self.drawer_queue.put((key, None, 0))
+        self.drawer_queue.put((key, None, (0,)))
 
 
 @cfg.configurable

@@ -1,16 +1,14 @@
 import os
 import datetime
-import wcwidth
-import shutil
 from enum import Enum
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
-import threading
 import queue
 import numpy
 import audioread
 from . import cfg
 from . import datanodes as dn
+from . import beatbar
 
 
 class Event:
@@ -562,10 +560,6 @@ class GameplaySettings:
     prepare_time: float = 0.1
 
     # PlayFieldSkin:
-    icon_width: int = 8
-    header_width: int = 11
-    footer_width: int = 12
-
     icon_templates: List[str] = ["{spectrum:^8s}"]
     header_templates: List[str] = ["{score:05d}/{full_score:05d}"]
     footer_templates: List[str] = ["{progress:>6.1%}|{time:%M:%S}"]
@@ -638,13 +632,6 @@ class KAIKOGame:
             audionode = dn.DataNode.wrap(self.console.load_sound(audiopath))
             volume = self.beatmap.volume
 
-        # layout
-        icon_width = self.settings.icon_width
-        header_width = self.settings.header_width
-        footer_width = self.settings.footer_width
-        layout = to_slices((icon_width, 1, header_width, 1, ..., 1, footer_width, 1))
-        self.icon_mask, _, self.header_mask, _, self.content_mask, _, self.footer_mask, _ = layout
-
         # initialize game state
         self.bar_shift = self.settings.bar_shift
         self.bar_flip = self.settings.bar_flip
@@ -654,16 +641,37 @@ class KAIKOGame:
         self.full_score = 0
         self.score = 0
 
-        icon_templates = self.settings.icon_templates
-        header_templates = self.settings.header_templates
-        footer_templates = self.settings.footer_templates
-        self.icon = lambda time: (template.format(**self.get_status()) for template in icon_templates)
-        self.header = lambda time: (template.format(**self.get_status()) for template in header_templates)
-        self.footer = lambda time: (template.format(**self.get_status()) for template in footer_templates)
-
         self.perfs = []
         self.time = datetime.time(0, 0, 0)
         self.spectrum = "\u2800"*self.settings.spec_width
+
+        # beatbar
+        self.beatbar = beatbar.Beatbar()
+
+        icon_templates = self.settings.icon_templates
+        header_templates = self.settings.header_templates
+        footer_templates = self.settings.footer_templates
+
+        def fit(templates, ran):
+            for template in templates:
+                text = template.format(**self.get_status())
+                text_ran = beatbar.textrange(ran.start, text)
+                if text_ran.start in ran and text_ran.stop-1 in ran:
+                    break
+            return text
+
+        self.beatbar.current_icon.set(lambda time, ran: fit(icon_templates, ran))
+        self.beatbar.current_header.set(lambda time, ran: fit(header_templates, ran))
+        self.beatbar.current_footer.set(lambda time, ran: fit(footer_templates, ran))
+
+        hit_hint_duration = max(self.settings.hit_decay_time, self.settings.hit_sustain_time)
+        self.current_hit_hint = beatbar.TimedVariable(value=None, duration=hit_hint_duration)
+        self.current_perf_hint = beatbar.TimedVariable(value=(None, None), duration=self.settings.performance_sustain_time)
+        self.current_sight = beatbar.TimedVariable(value=None)
+
+        self.beatbar.add_content_drawer(self._sight_handler(), zindex=(2,))
+
+        self.target_queue = queue.Queue()
 
         # game loop
         tickrate = self.settings.tickrate
@@ -672,27 +680,14 @@ class KAIKOGame:
 
         with dn.tick(1/tickrate, prepare_time, -time_shift) as timer:
             self.start_time = self.console.time + time_shift
-            self.width = shutil.get_terminal_size().columns
 
             # play music
             if audionode is not None:
                 self.console.play(audionode, volume=volume, time=self.start_time, zindex=(-3,))
 
             # register handlers
-            hit_hint_duration = max(self.settings.hit_decay_time, self.settings.hit_sustain_time)
-            self.current_hit_hint = TimedVariable(value=None, duration=hit_hint_duration)
-            self.current_perf_hint = TimedVariable(value=(None, None), duration=self.settings.performance_sustain_time)
-            self.current_sight = TimedVariable(value=None)
-
-            self.target_queue = queue.Queue()
-
-            self.content_queue = queue.Queue()
-
-            sight_node = self._sight_handler()
-            self.content_queue.put((object(), sight_node, (2,)))
-
             self.console.add_effect(self._spec_handler(), zindex=(-1,))
-            self.console.add_drawer(self._layout_handler(), zindex=(0,))
+            self.console.add_drawer(self.beatbar.node(self.start_time), zindex=(0,))
             self.console.add_listener(self._hit_handler())
 
             # register events
@@ -713,28 +708,6 @@ class KAIKOGame:
 
                 yield
 
-
-    @dn.datanode
-    def _layout_handler(self):
-        content_node = dn.schedule(self.content_queue)
-        with content_node:
-            time, _ = yield
-            while True:
-                time_ = time - self.start_time
-                view = [" "]*self.width
-
-                time_, view = content_node.send((time_, view))
-
-                icon_text = self.icon(time) if hasattr(self.icon, '__call__') else self.icon
-                view = self._draw_masked(view, self.icon_mask, icon_text)
-
-                header_text = self.header(time) if hasattr(self.header, '__call__') else self.header
-                view = self._draw_masked(view, self.header_mask, header_text, ("[", "]"))
-
-                footer_text = self.footer(time) if hasattr(self.footer, '__call__') else self.footer
-                view = self._draw_masked(view, self.footer_mask, footer_text, ("[", "]"))
-
-                time, _ = yield time, "\r"+"".join(view)+"\r"
 
     def get_status(self):
         return dict(
@@ -788,13 +761,14 @@ class KAIKOGame:
         target, start, duration = None, None, None
         waiting_targets = []
 
-        time, strength, detected = yield
-        time -= self.start_time
-        strength = min(1.0, strength)
-        if detected:
-            self.current_hit_hint.set(strength)
-
         while True:
+            # update hit signal
+            time, strength, detected = yield
+            time -= self.start_time
+            strength = min(1.0, strength)
+            if detected:
+                self.current_hit_hint.set(strength)
+
             # update waiting targets
             while not self.target_queue.empty():
                 item = self.target_queue.get()
@@ -824,13 +798,6 @@ class KAIKOGame:
                     target.send((time, strength))
                 except StopIteration:
                     target, start, duration = None, None, None
-
-            # update hit signal
-            time, strength, detected = yield
-            time -= self.start_time
-            strength = min(1.0, strength)
-            if detected:
-                self.current_hit_hint.set(strength)
 
     @dn.datanode
     def _sight_handler(self):
@@ -873,42 +840,18 @@ class KAIKOGame:
 
             time, view = yield time, view
 
-    def _draw_masked(self, view, mask, text_gen, enclosed_by=None):
-        if isinstance(text_gen, str):
-            text_gen = [text_gen]
-        start, stop, _ = mask.indices(self.width)
-        mask_ran = range(start, stop)
-        for text in text_gen:
-            text_ran = textrange(start, text)
-            if text_ran.start in mask_ran and text_ran.stop-1 in mask_ran:
-                break
-
-        view = addtext(view, start, text, mask=mask)
-
-        if text_ran.start < mask_ran.start:
-            view = addtext(view, start, "…")
-
-        if text_ran.stop > mask_ran.stop:
-            view = addtext(view, stop-1, "…")
-
-        if enclosed_by is not None:
-            view = addtext(view, start-len(enclosed_by[0]), enclosed_by[0])
-            view = addtext(view, stop-1+len(enclosed_by[1]), enclosed_by[1])
-
-        return view
-
     def _draw_content(self, view, pos, text):
         pos = pos + self.bar_shift
         if self.bar_flip:
             pos = 1 - pos
 
-        content_start, content_end, _ = self.content_mask.indices(self.width)
+        content_start, content_end, _ = self.beatbar.content_mask.indices(self.beatbar.width)
         index = round(content_start + pos * max(0, content_end - content_start - 1))
 
         if isinstance(text, tuple):
             text = text[self.bar_flip]
 
-        return addtext(view, index, text, mask=self.content_mask)
+        return beatbar.addtext(view, index, text, mask=self.beatbar.content_mask)
 
 
     def add_score(self, score):
@@ -961,141 +904,10 @@ class KAIKOGame:
                 view = self._draw_content(view, pos_func(time), text_func(time))
                 time, view = yield time, view
 
-        key = object()
         node = _content_node(pos, text, start, duration)
-        self.content_queue.put((key, node, zindex))
-        return key
+        return self.beatbar.add_content_drawer(node, zindex=zindex)
 
     def on_before_render(self, node):
         node = dn.branch(dn.pair(dn.pipe(lambda t: t-self.start_time, node), lambda v: v))
         return self.console.add_drawer(node, zindex=())
-
-def to_slices(segments):
-    middle = segments.index(...)
-    pre  = segments[:middle:+1]
-    post = segments[:middle:-1]
-
-    pre_index  = [sum(pre[:i+1])  for i in range(len(pre))]
-    post_index = [sum(post[:i+1]) for i in range(len(post))]
-
-    first_slice  = slice(None, pre_index[0], None)
-    last_slice   = slice(-post_index[0], None, None)
-    middle_slice = slice(pre_index[-1], -post_index[-1], None)
-
-    pre_slices  = [slice(+a, +b, None) for a, b in zip(pre_index[:-1],  pre_index[1:])]
-    post_slices = [slice(-b, -a, None) for a, b in zip(post_index[:-1], post_index[1:])]
-
-    return [first_slice, *pre_slices, middle_slice, *post_slices[::-1], last_slice]
-
-def addtext(cells, index, text, mask=slice(None, None, None)):
-    ran = range(len(cells))
-
-    for ch in text:
-        width = wcwidth.wcwidth(ch)
-
-        if ch == "\t":
-            index += 1
-
-        elif ch == "\b":
-            index -= 1
-
-        elif width == 0:
-            index_ = index - 1
-            if index_ in ran and cells[index_] == "":
-                index_ -= 1
-            if index in ran[mask] and index_ in ran[mask]:
-                cells[index_] += ch
-
-        elif width == 2:
-            index_ = index + 1
-            if index in ran[mask] and index_ in ran[mask]:
-                if index-1 in ran and cells[index] == "":
-                    cells[index-1] = " "
-                if index_+1 in ran and cells[index_+1] == "":
-                    cells[index_+1] = " "
-                cells[index] = ch
-                cells[index_] = ""
-            index += 2
-
-        elif width == 1:
-            if index in ran[mask]:
-                if index-1 in ran and cells[index] == "":
-                    cells[index-1] = " "
-                if index+1 in ran and cells[index+1] == "":
-                    cells[index+1] = " "
-                cells[index] = ch
-            index += 1
-
-        else:
-            raise ValueError
-
-    return cells
-
-def textrange(index, text):
-    start = index
-    stop = index
-
-    for ch in text:
-        width = wcwidth.wcwidth(ch)
-
-        if ch == "\t":
-            index += 1
-
-        elif ch == "\b":
-            index -= 1
-
-        elif width == 0:
-            pass
-
-        elif width == 2:
-            start = min(start, index)
-            stop = max(stop, index+2)
-            index += 2
-
-        elif width == 1:
-            start = min(start, index)
-            stop = max(stop, index+1)
-            index += 1
-
-    return range(start, stop)
-
-
-class TimedVariable:
-    def __init__(self, value=None, duration=numpy.inf):
-        self._queue = queue.Queue()
-        self._lock = threading.Lock()
-        self._scheduled = []
-        self._default_value = value
-        self._default_duration = duration
-        self._item = (value, None, numpy.inf)
-
-    def get(self, time, ret_sched=False):
-        with self._lock:
-            value, start, duration = self._item
-            if start is None:
-                start = time
-
-            while not self._queue.empty():
-                item = self._queue.get()
-                if item[1] is None:
-                    item = (item[0], time, item[2])
-                self._scheduled.append(item)
-            self._scheduled.sort(key=lambda item: item[1])
-
-            while self._scheduled and self._scheduled[0][1] <= time:
-                value, start, duration = self._scheduled.pop(0)
-
-            if start + duration <= time:
-                value, start, duration = self._default_value, None, numpy.inf
-
-            self._item = (value, start, duration)
-            return value if not ret_sched else self._item
-
-    def set(self, value, start=None, duration=None):
-        if duration is None:
-            duration = self._default_duration
-        self._queue.put((value, start, duration))
-
-    def reset(self, start=None):
-        self._queue.put((self._default_value, start, numpy.inf))
 
