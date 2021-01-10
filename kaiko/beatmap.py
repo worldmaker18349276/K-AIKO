@@ -565,9 +565,9 @@ class GameplaySettings:
     header_width: int = 11
     footer_width: int = 12
 
-    icon_formats: List[str] = ["{spectrum:^8s}"]
-    header_formats: List[str] = ["{score:05d}/{full_score:05d}"]
-    footer_formats: List[str] = ["{progress:>6.1%}|{time:%M:%S}"]
+    icon_templates: List[str] = ["{spectrum:^8s}"]
+    header_templates: List[str] = ["{score:05d}/{full_score:05d}"]
+    footer_templates: List[str] = ["{progress:>6.1%}|{time:%M:%S}"]
 
     spec_width: int = 7
     spec_decay_time: float = 0.01
@@ -720,9 +720,9 @@ class KAIKOGame:
 
     @dn.datanode
     def _status_handler(self):
-        icon_formats = self.settings.icon_formats
-        header_formats = self.settings.header_formats
-        footer_formats = self.settings.footer_formats
+        icon_templates = self.settings.icon_templates
+        header_templates = self.settings.header_templates
+        footer_templates = self.settings.footer_templates
 
         time, view = yield
         while True:
@@ -734,17 +734,12 @@ class KAIKOGame:
                 spectrum=self.spectrum,
                 )
 
-            view = self._draw_masked(view, self.icon_mask, (format.format(**status) for format in icon_formats))
-            view = self._draw_masked(view, self.header_mask, (format.format(**status) for format in header_formats))
-            view = self._draw_masked(view, self.footer_mask, (format.format(**status) for format in footer_formats))
-
-            header_start, header_stop, _ = self.header_mask.indices(self.width)
-            view = addtext(view, header_start-1, "[")
-            view = addtext(view, header_stop, "]")
-
-            footer_start, footer_stop, _ = self.footer_mask.indices(self.width)
-            view = addtext(view, footer_start-1, "[")
-            view = addtext(view, footer_stop, "]")
+            icon_gen = (template.format(**status) for template in icon_templates)
+            header_gen = (template.format(**status) for template in header_templates)
+            footer_gen = (template.format(**status) for template in footer_templates)
+            view = self._draw_masked(view, self.icon_mask, icon_gen)
+            view = self._draw_masked(view, self.header_mask, header_gen, ("[", "]"))
+            view = self._draw_masked(view, self.footer_mask, footer_gen, ("[", "]"))
 
             time, view = yield time, view
 
@@ -910,7 +905,7 @@ class KAIKOGame:
 
             time, view = yield time, view
 
-    def _draw_masked(self, view, mask, text_gen):
+    def _draw_masked(self, view, mask, text_gen, enclosed_by=None):
         start, stop, _ = mask.indices(self.width)
         mask_ran = range(start, stop)
         for text in text_gen:
@@ -925,6 +920,10 @@ class KAIKOGame:
 
         if text_ran.stop > mask_ran.stop:
             view = addtext(view, stop-1, "…")
+
+        if enclosed_by is not None:
+            view = addtext(view, start-len(enclosed_by[0]), enclosed_by[0])
+            view = addtext(view, stop-1+len(enclosed_by[1]), enclosed_by[1])
 
         return view
 
