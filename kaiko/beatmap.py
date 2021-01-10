@@ -940,23 +940,6 @@ class KAIKOGame:
 
         return addtext(view, index, text, mask=self.content_mask)
 
-    @dn.datanode
-    def _content_node(self, pos, text, start, duration):
-        pos_func = pos if hasattr(pos, '__call__') else lambda time: pos
-        text_func = text if hasattr(text, '__call__') else lambda time: text
-
-        time, view = yield
-
-        if start is None:
-            start = time
-
-        while time < start:
-            time, view = yield time, view
-
-        while duration is None or time < start + duration:
-            view = self._draw_content(view, pos_func(time), text_func(time))
-            time, view = yield time, view
-
 
     def add_score(self, score):
         self.score += score
@@ -991,8 +974,25 @@ class KAIKOGame:
         self.sight_queue.put((None, start, None))
 
     def draw_content(self, pos, text, start=None, duration=None, zindex=(0,)):
+        pos_func = pos if hasattr(pos, '__call__') else lambda time: pos
+        text_func = text if hasattr(text, '__call__') else lambda time: text
+
+        @dn.datanode
+        def _content_node():
+            time, view = yield
+
+            if start is None:
+                start = time
+
+            while time < start:
+                time, view = yield time, view
+
+            while duration is None or time < start + duration:
+                view = self._draw_content(view, pos_func(time), text_func(time))
+                time, view = yield time, view
+
         key = object()
-        node = self._content_node(pos, text, start, duration)
+        node = _content_node()
         self.content_queue.put((key, node, zindex))
         return key
 
