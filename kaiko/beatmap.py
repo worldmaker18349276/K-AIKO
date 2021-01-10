@@ -677,6 +677,9 @@ class KAIKOGame:
             self.perf_queue = queue.Queue()
             self.content_queue = queue.Queue()
 
+            sight_node = self._sight_handler()
+            self.content_queue.put((object(), sight_node, (2,)))
+
             self.console.add_effect(self._spec_handler(), zindex=(-1,))
             self.console.add_drawer(self._layout_handler(), zindex=(0,))
             self.console.add_listener(self._hit_handler())
@@ -704,15 +707,13 @@ class KAIKOGame:
     def _layout_handler(self):
         content_node = dn.schedule(self.content_queue)
         status_node = self._status_handler()
-        sight_node = self._sight_handler()
-        with content_node, sight_node, status_node:
+        with content_node, status_node:
             time, _ = yield
             while True:
                 time_ = time - self.start_time
                 view = [" "]*self.width
 
                 time_, view = content_node.send((time_, view))
-                time_, view = sight_node.send((time_, view))
                 time_, view = status_node.send((time_, view))
 
                 time, _ = yield time, "\r"+"".join(view)+"\r"
