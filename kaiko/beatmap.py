@@ -653,6 +653,13 @@ class KAIKOGame:
         self.full_score = 0
         self.score = 0
 
+        icon_templates = self.settings.icon_templates
+        header_templates = self.settings.header_templates
+        footer_templates = self.settings.footer_templates
+        self.icon = lambda time: (template.format(**self.get_status()) for template in icon_templates)
+        self.header = lambda time: (template.format(**self.get_status()) for template in header_templates)
+        self.footer = lambda time: (template.format(**self.get_status()) for template in footer_templates)
+
         self.perfs = []
         self.time = datetime.time(0, 0, 0)
         self.spectrum = "\u2800"*self.settings.spec_width
@@ -706,42 +713,33 @@ class KAIKOGame:
     @dn.datanode
     def _layout_handler(self):
         content_node = dn.schedule(self.content_queue)
-        status_node = self._status_handler()
-        with content_node, status_node:
+        with content_node:
             time, _ = yield
             while True:
                 time_ = time - self.start_time
                 view = [" "]*self.width
 
                 time_, view = content_node.send((time_, view))
-                time_, view = status_node.send((time_, view))
+
+                icon_text = self.icon(time) if hasattr(self.icon, '__call__') else self.icon
+                view = self._draw_masked(view, self.icon_mask, icon_text)
+
+                header_text = self.header(time) if hasattr(self.header, '__call__') else self.header
+                view = self._draw_masked(view, self.header_mask, header_text, ("[", "]"))
+
+                footer_text = self.footer(time) if hasattr(self.footer, '__call__') else self.footer
+                view = self._draw_masked(view, self.footer_mask, footer_text, ("[", "]"))
 
                 time, _ = yield time, "\r"+"".join(view)+"\r"
 
-    @dn.datanode
-    def _status_handler(self):
-        icon_templates = self.settings.icon_templates
-        header_templates = self.settings.header_templates
-        footer_templates = self.settings.footer_templates
-
-        time, view = yield
-        while True:
-            status = dict(
-                full_score=self.full_score,
-                score=self.score,
-                progress=self.finished_subjects/self.total_subjects if self.total_subjects>0 else 1.0,
-                time=self.time,
-                spectrum=self.spectrum,
-                )
-
-            icon_gen = (template.format(**status) for template in icon_templates)
-            header_gen = (template.format(**status) for template in header_templates)
-            footer_gen = (template.format(**status) for template in footer_templates)
-            view = self._draw_masked(view, self.icon_mask, icon_gen)
-            view = self._draw_masked(view, self.header_mask, header_gen, ("[", "]"))
-            view = self._draw_masked(view, self.footer_mask, footer_gen, ("[", "]"))
-
-            time, view = yield time, view
+    def get_status(self):
+        return dict(
+            full_score=self.full_score,
+            score=self.score,
+            progress=self.finished_subjects/self.total_subjects if self.total_subjects>0 else 1.0,
+            time=self.time,
+            spectrum=self.spectrum,
+            )
 
     def _spec_handler(self):
         spec_width = self.settings.spec_width
@@ -906,6 +904,8 @@ class KAIKOGame:
             time, view = yield time, view
 
     def _draw_masked(self, view, mask, text_gen, enclosed_by=None):
+        if isinstance(text_gen, str):
+            text_gen = [text_gen]
         start, stop, _ = mask.indices(self.width)
         mask_ran = range(start, stop)
         for text in text_gen:
@@ -978,7 +978,7 @@ class KAIKOGame:
         text_func = text if hasattr(text, '__call__') else lambda time: text
 
         @dn.datanode
-        def _content_node():
+        def _content_node(pos, text, start, duration):
             time, view = yield
 
             if start is None:
@@ -992,7 +992,7 @@ class KAIKOGame:
                 time, view = yield time, view
 
         key = object()
-        node = _content_node()
+        node = _content_node(pos, text, start, duration)
         self.content_queue.put((key, node, zindex))
         return key
 
