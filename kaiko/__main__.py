@@ -8,8 +8,7 @@ filename = sys.argv[1]
 
 beatmap = BeatmapDraft.read(filename)
 game = KAIKOGame(beatmap)
-console = KnockConsole()
-console.settings.debug_timeit = True
+console = KnockConsole("debug_config")
 console.run(game)
 
 print()

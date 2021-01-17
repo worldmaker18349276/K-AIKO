@@ -245,7 +245,7 @@ def get_configurable_fields(clz):
                 field_hints[(field_name, *subfield_names)] = subfield_type
     return field_hints
 
-def config_read(file, strict=True, globals=None, **targets):
+def config_read(file, strict=True, globals=globals(), **targets):
     if isinstance(file, str):
         file = open(file, 'r')
     config_str = file.read()
@@ -265,8 +265,6 @@ def config_read(file, strict=True, globals=None, **targets):
         if not re.fullmatch(regex, config_str, re.X|re.A|re.M|re.S):
             raise SyntaxError
 
-    if globals is None:
-        globals = globals()
     exec(config_str, globals, targets)
 
 def config_write(file, **targets):

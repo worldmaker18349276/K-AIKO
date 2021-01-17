@@ -16,6 +16,11 @@ from . import cfg
 from . import datanodes as dn
 
 
+@contextlib.contextmanager
+def nullcontext(contextmanager):
+    with contextmanager as context:
+        yield context
+
 class AudioMixer:
     def __init__(self, settings, sound_delay):
         self.settings = settings
@@ -52,7 +57,7 @@ class AudioMixer:
         if self.settings.debug_timeit:
             output_ctxt = dn.timeit(output_node, " output")
         else:
-            output_ctxt = contextlib.nullcontext(output_node)
+            output_ctxt = nullcontext(output_node)
 
         with output_ctxt as output_node:
             stream_ctxt = dn.play(manager, output_node,
@@ -190,7 +195,7 @@ class KnockDetector:
         if self.settings.debug_timeit:
             input_ctxt = dn.timeit(input_node, "  input")
         else:
-            input_ctxt = contextlib.nullcontext(input_node)
+            input_ctxt = nullcontext(input_node)
 
         with input_ctxt as input_node:
             stream_ctxt = dn.record(manager, input_node,
@@ -272,7 +277,7 @@ class TerminalRenderer:
         if self.settings.debug_timeit:
             display_ctxt = dn.timeit(display_node, "display")
         else:
-            display_ctxt = contextlib.nullcontext(display_node)
+            display_ctxt = nullcontext(display_node)
 
         with display_ctxt as display_node:
             thread_ctxt = dn.interval(display_node, show(), 1/framerate)
@@ -328,19 +333,19 @@ class KnockConsoleSettings:
 class KnockConsole:
     settings: KnockConsoleSettings = KnockConsoleSettings()
 
-    def __init__(self, config=None):
-        if config is not None:
-            cfg.config_read(open(config, 'r'), main=self.settings)
-
-        self.mixer = AudioMixer(self.settings, self.settings.sound_delay)
-        self.detector = KnockDetector(self.settings, self.settings.knock_delay, self.settings.knock_energy)
-        self.drawer = TerminalRenderer(self.settings, self.settings.display_delay)
+    def __init__(self, settings=None):
+        if isinstance(settings, str):
+            cfg.config_read(open(settings, 'r'), main=self.settings)
 
     @property
     def time(self):
         return time.time() - self._ref_time
 
     def run(self, knock_program):
+        self.mixer = AudioMixer(self.settings, self.settings.sound_delay)
+        self.detector = KnockDetector(self.settings, self.settings.knock_delay, self.settings.knock_energy)
+        self.drawer = TerminalRenderer(self.settings, self.settings.display_delay)
+
         try:
             manager = pyaudio.PyAudio()
 
