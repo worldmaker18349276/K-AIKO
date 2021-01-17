@@ -366,12 +366,10 @@ class KnockConsole:
                         if SIGINT_event.is_set():
                             break
 
-                        if not output_stream.is_active():
-                            raise RuntimeError("output stream is down")
-                        if not input_stream.is_active():
-                            raise RuntimeError("input stream is down")
-                        if not display_thread.is_alive():
-                            raise RuntimeError("display thread is down")
+                        if (not output_stream.is_active()
+                            or not input_stream.is_active()
+                            or not display_thread.is_alive()):
+                            break
 
                         signal.signal(signal.SIGINT, SIGINT_handler)
 
