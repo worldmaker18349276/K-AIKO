@@ -754,7 +754,7 @@ class KAIKOGame:
                             for slic, prev in zip(slices, vols)]
                     self.spectrum = "".join(map(draw_bar, vols[0::2], vols[1::2]))
 
-        return dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels)))
+        return dn.pair(lambda t:t, dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels))))
 
     @dn.datanode
     def _hit_handler(self):

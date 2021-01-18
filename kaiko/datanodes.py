@@ -271,7 +271,10 @@ def pair(*nodes):
 
         data = yield
         while True:
-            data = yield tuple(node.send(subdata) for node, subdata in zip(nodes, data))
+            data_ = []
+            for node, subdata in zip(nodes, data):
+                data_.append(node.send(subdata))
+            data = yield tuple(data_)
 
 @datanode
 def chain(*nodes):

@@ -70,61 +70,13 @@ class AudioMixer:
             with stream_ctxt as stream:
                 yield stream
 
-    def add_effect(self, node, time=None, zindex=(0,)):
+    def add_effect(self, node, zindex=(0,)):
         key = object()
-        node = self._timed_effect(node, time)
         self.effect_queue.put((key, node, zindex))
         return key
 
     def remove_effect(self, key):
         self.effect_queue.put((key, None, 0))
-
-    @dn.datanode
-    def _timed_effect(self, node, start_time):
-        node = dn.DataNode.wrap(node)
-
-        samplerate = self.settings.output_samplerate
-        buffer_length = self.settings.output_buffer_length
-        nchannels = self.settings.output_channels
-
-        with node:
-            time, data = yield
-            offset = round((start_time - time) * samplerate) if start_time is not None else 0
-
-            while offset < 0:
-                length = min(-offset, buffer_length)
-                dummy = numpy.zeros((length, nchannels), dtype=numpy.float32)
-                node.send(dummy)
-                offset += length
-
-            while 0 < offset:
-                if data.shape[0] < offset:
-                    offset -= data.shape[0]
-                else:
-                    data1, data2 = data[:offset], data[offset:]
-                    data2 = node.send(data2)
-                    data = numpy.concatenate((data1, data2), axis=0)
-                    offset = 0
-
-                time, data = yield time, data
-
-            while True:
-                time, data = yield time, node.send(data)
-
-    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
-        if channels is None:
-            channels = self.settings.output_channels
-
-        if start is not None or end is not None:
-            node = dn.tslice(node, samplerate, start, end)
-        node = dn.pipe(node, dn.rechannel(channels))
-        if samplerate is not None and samplerate != self.settings.output_samplerate:
-            node = dn.pipe(node, dn.resample(ratio=(self.settings.output_samplerate, samplerate)))
-        if volume != 0:
-            node = dn.pipe(node, lambda s: s * 10**(volume/20))
-        node = dn.attach(node)
-
-        return self.add_effect(node, time=time, zindex=zindex)
 
 class KnockDetector:
     def __init__(self, settings, knock_delay, knock_energy):
@@ -382,7 +334,9 @@ class KnockConsole:
             manager.terminate()
 
     def add_effect(self, node, time=None, zindex=(0,)):
-        return self.mixer.add_effect(node, time, zindex)
+        if time is not None:
+            node = self._timed_effect(node, time)
+        return self.mixer.add_effect(node, zindex)
 
     def remove_effect(self, key):
         self.mixer.remove_effect(key)
@@ -398,11 +352,55 @@ class KnockConsole:
             sound = list(filenode)
         return sound
 
+    @dn.datanode
+    def _timed_effect(self, node, start_time):
+        node = dn.DataNode.wrap(node)
+
+        samplerate = self.settings.output_samplerate
+        buffer_length = self.settings.output_buffer_length
+        nchannels = self.settings.output_channels
+
+        with node:
+            time, data = yield
+            offset = round((start_time - time) * samplerate) if start_time is not None else 0
+
+            while offset < 0:
+                length = min(-offset, buffer_length)
+                dummy = numpy.zeros((length, nchannels), dtype=numpy.float32)
+                node.send((time+offset/samplerate, dummy))
+                offset += length
+
+            while 0 < offset:
+                if data.shape[0] < offset:
+                    offset -= data.shape[0]
+                else:
+                    data1, data2 = data[:offset], data[offset:]
+                    _, data2 = node.send((time+offset/samplerate, data2))
+                    data = numpy.concatenate((data1, data2), axis=0)
+                    offset = 0
+
+                time, data = yield time, data
+
+            while True:
+                time, data = yield node.send((time, data))
+
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
         if isinstance(node, str):
             node = dn.DataNode.wrap(self.load_sound(node))
             samplerate = None
-        return self.mixer.play(node, samplerate, channels, volume, start, end, time, zindex)
+        if channels is None:
+            channels = self.settings.output_channels
+
+        if start is not None or end is not None:
+            node = dn.tslice(node, samplerate, start, end)
+        node = dn.pipe(node, dn.rechannel(channels))
+        if samplerate is not None and samplerate != self.settings.output_samplerate:
+            node = dn.pipe(node, dn.resample(ratio=(self.settings.output_samplerate, samplerate)))
+        if volume != 0:
+            node = dn.pipe(node, lambda s: s * 10**(volume/20))
+        node = dn.pair(lambda t:t, dn.attach(node))
+
+        return self.add_effect(node, time=time, zindex=zindex)
 
     def add_listener(self, node):
         return self.detector.add_listener(node)
