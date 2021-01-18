@@ -908,6 +908,6 @@ class KAIKOGame:
         return self.beatbar.add_content_drawer(node, zindex=zindex)
 
     def on_before_render(self, node):
-        node = dn.branch(dn.pair(dn.pipe(lambda t: t-self.start_time, node), lambda v: v))
+        node = dn.branch(dn.pair(dn.pipe(lambda t: t-self.start_time, node), lambda s: s, lambda v: v))
         return self.console.add_drawer(node, zindex=())
 

@@ -1,5 +1,4 @@
 import wcwidth
-import shutil
 from enum import Enum
 from typing import List, Tuple, Dict, Optional, Union
 import threading
@@ -163,12 +162,13 @@ class Beatbar:
     @dn.datanode
     def node(self, start_time):
         self.start_time = start_time
-        self.width = shutil.get_terminal_size().columns
-        cells_range = range(self.width)
 
         content_node = dn.schedule(self.content_queue)
         with content_node:
-            time, _ = yield
+            time, size, orig_view = yield
+            self.width = size.columns
+            cells_range = range(self.width)
+
             while True:
                 time_ = time - self.start_time
                 view = [" "]*self.width
@@ -190,7 +190,10 @@ class Beatbar:
                 footer_start = cells_range[self.footer_mask].start
                 view = self._draw_masked(view, footer_start, footer_text, self.footer_mask, ("[", "]"))
 
-                time, _ = yield time, "\r"+"".join(view)+"\r"
+                time, size, _ = yield time, size, [*orig_view, "\r", *view, "\r"]
+                if self.width != size.columns:
+                    self.width = size.columns
+                    cells_range = range(self.width)
 
     def _draw_masked(self, view, start, text, mask, enclosed_by=None):
         mask_ran = range(self.width)[mask]

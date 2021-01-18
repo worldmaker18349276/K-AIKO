@@ -174,20 +174,29 @@ class TerminalRenderer:
         self.settings = settings
         self.display_delay = display_delay
         self.drawer_queue = queue.Queue()
+        self.SIGWINCH_event = threading.Event()
 
     @dn.datanode
     def get_display_node(self):
         framerate = self.settings.display_framerate
+        def SIGWINCH_handler(sig, frame):
+            self.SIGWINCH_event.set()
+        signal.signal(signal.SIGWINCH, SIGWINCH_handler)
+        self.SIGWINCH_event.set()
 
         index = 0
         drawer_node = dn.schedule(self.drawer_queue)
         with drawer_node:
             yield
             while True:
+                if self.SIGWINCH_event.is_set():
+                    self.SIGWINCH_event.clear()
+                    size = shutil.get_terminal_size()
+
                 time = index / framerate + self.display_delay
-                view = ""
-                _, view = drawer_node.send((time, view))
-                yield view
+                view = []
+                _, _, view = drawer_node.send((time, size, view))
+                yield "".join(view)
                 index += 1
 
     @contextlib.contextmanager
@@ -198,23 +207,16 @@ class TerminalRenderer:
         def show():
             try:
                 while True:
-                    time, view = yield
-                    if view:
+                    current_time, view = yield
+                    if view and not self.SIGWINCH_event.is_set():
                         print(view, end="", flush=True)
             finally:
                 print()
 
         display_node = self.get_display_node()
-
-        if self.settings.debug_timeit:
-            display_ctxt = dn.timeit(display_node, "display")
-        else:
-            display_ctxt = nullcontext(display_node)
-
+        display_ctxt = dn.timeit(display_node, "display") if self.settings.debug_timeit else nullcontext(display_node)
         with display_ctxt as display_node:
-            thread_ctxt = dn.interval(display_node, show(), 1/framerate)
-
-            with thread_ctxt as thread:
+            with dn.interval(display_node, show(), 1/framerate) as thread:
                 yield thread
 
     def add_drawer(self, node, zindex=(0,)):
@@ -413,3 +415,12 @@ class KnockConsole:
 
     def remove_drawer(self, key):
         self.drawer.remove_drawer(key)
+
+    def print(self, text, zindex=0):
+        return self.drawer.add_drawer(self._print_drawer(text), zindex)
+
+    @dn.datanode
+    def _print_drawer(self, text):
+        time, size, str = yield
+        yield time, size, str+text
+
