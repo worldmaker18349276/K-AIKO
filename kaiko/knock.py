@@ -169,26 +169,6 @@ class KnockDetector:
     def remove_listener(self, key):
         self.listener_queue.put((key, None, 0))
 
-    def on_hit(self, func, time=None, duration=None):
-        return self.add_listener(self._hit_listener(func, time, duration))
-
-    @dn.datanode
-    def _hit_listener(self, func, start_time, duration):
-        time, strength, detected = yield
-        if start_time is None:
-            start_time = time
-
-        while time < start_time:
-            time, strength, detected = yield
-
-        while duration is None or time < start_time + duration:
-            if detected:
-                finished = func(strength)
-                if finished:
-                    return
-
-            time, strength, detected = yield
-
 class TerminalRenderer:
     def __init__(self, settings, display_delay):
         self.settings = settings
@@ -409,7 +389,24 @@ class KnockConsole:
         self.detector.remove_listener(key)
 
     def on_hit(self, func, time=None, duration=None):
-        return self.detector.on_hit(func, time, duration)
+        return self.add_listener(self._hit_listener(func, time, duration))
+
+    @dn.datanode
+    def _hit_listener(self, func, start_time, duration):
+        time, strength, detected = yield
+        if start_time is None:
+            start_time = time
+
+        while time < start_time:
+            time, strength, detected = yield
+
+        while duration is None or time < start_time + duration:
+            if detected:
+                finished = func(strength)
+                if finished:
+                    return
+
+            time, strength, detected = yield
 
     def add_drawer(self, node, zindex=0):
         return self.drawer.add_drawer(node, zindex)
