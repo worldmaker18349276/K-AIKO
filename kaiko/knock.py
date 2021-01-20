@@ -278,7 +278,7 @@ class KnockConsole:
     def run(self, knock_program):
         self.mixer = AudioMixer(self.settings, self.settings.sound_delay)
         self.detector = KnockDetector(self.settings, self.settings.knock_delay, self.settings.knock_energy)
-        self.drawer = TerminalRenderer(self.settings, self.settings.display_delay)
+        self.renderer = TerminalRenderer(self.settings, self.settings.display_delay)
 
         try:
             manager = pyaudio.PyAudio()
@@ -286,7 +286,7 @@ class KnockConsole:
             # initialize audio/video streams
             with self.mixer.get_output_stream(manager) as output_stream,\
                  self.detector.get_input_stream(manager) as input_stream,\
-                 self.drawer.get_display_thread() as display_thread:
+                 self.renderer.get_display_thread() as display_thread:
 
                 # activate audio/video streams
                 self._ref_time = time.time()
@@ -411,13 +411,13 @@ class KnockConsole:
             time, strength, detected = yield
 
     def add_drawer(self, node, zindex=0):
-        return self.drawer.add_drawer(node, zindex)
+        return self.renderer.add_drawer(node, zindex)
 
     def remove_drawer(self, key):
-        self.drawer.remove_drawer(key)
+        self.renderer.remove_drawer(key)
 
     def print(self, text, zindex=0):
-        return self.drawer.add_drawer(self._print_drawer(text), zindex)
+        return self.renderer.add_drawer(self._print_drawer(text), zindex)
 
     @dn.datanode
     def _print_drawer(self, text):
