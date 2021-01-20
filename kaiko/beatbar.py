@@ -165,13 +165,12 @@ class Beatbar:
 
         content_node = dn.schedule(self.content_queue)
         with content_node:
-            time, size, orig_view = yield
-            self.width = size.columns
-            cells_range = range(self.width)
+            time, view = yield
 
             while True:
                 time_ = time - self.start_time
-                view = [" "]*self.width
+                self.width = len(view)
+                cells_range = range(self.width)
 
                 time_, view = content_node.send((time_, view))
 
@@ -190,10 +189,7 @@ class Beatbar:
                 footer_start = cells_range[self.footer_mask].start
                 view = self._draw_masked(view, footer_start, footer_text, self.footer_mask, ("[", "]"))
 
-                time, size, _ = yield time, size, [*orig_view, "\r", *view, "\r"]
-                if self.width != size.columns:
-                    self.width = size.columns
-                    cells_range = range(self.width)
+                time, view = yield time, view
 
     def _draw_masked(self, view, start, text, mask, enclosed_by=None):
         mask_ran = range(self.width)[mask]

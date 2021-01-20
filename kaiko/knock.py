@@ -179,6 +179,13 @@ class TerminalRenderer:
     @dn.datanode
     def get_display_node(self):
         framerate = self.settings.display_framerate
+        rows = self.settings.display_rows
+        columns = self.settings.display_columns
+        width = 0
+
+        if rows != 1:
+            raise ValueError("Does not support multiple lines")
+
         def SIGWINCH_handler(sig, frame):
             self.SIGWINCH_event.set()
         signal.signal(signal.SIGWINCH, SIGWINCH_handler)
@@ -192,11 +199,12 @@ class TerminalRenderer:
                 if self.SIGWINCH_event.is_set():
                     self.SIGWINCH_event.clear()
                     size = shutil.get_terminal_size()
+                    width = size.columns if columns == -1 else min(columns, size.columns)
 
                 time = index / framerate + self.display_delay
-                view = []
-                _, _, view = drawer_node.send((time, size, view))
-                yield "".join(view)
+                view = [" "]*width
+                _, view = drawer_node.send((time, view))
+                yield "\r" + "".join(view) + "\r"
                 index += 1
 
     @contextlib.contextmanager
@@ -257,6 +265,8 @@ class KnockConsoleSettings:
     # controls
     display_framerate: float = 160.0 # ~ 2 / detector_time_res
     display_delay: float = 0.0
+    display_rows: int = 1
+    display_columns: int = -1
     knock_delay: float = 0.0
     knock_energy: float = 1.0e-3
     sound_delay: float = 0.0
@@ -410,17 +420,8 @@ class KnockConsole:
 
             time, strength, detected = yield
 
-    def add_drawer(self, node, zindex=0):
+    def add_drawer(self, node, zindex=(0,)):
         return self.renderer.add_drawer(node, zindex)
 
     def remove_drawer(self, key):
         self.renderer.remove_drawer(key)
-
-    def print(self, text, zindex=0):
-        return self.renderer.add_drawer(self._print_drawer(text), zindex)
-
-    @dn.datanode
-    def _print_drawer(self, text):
-        time, size, str = yield
-        yield time, size, str+text
-
