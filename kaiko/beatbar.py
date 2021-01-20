@@ -169,25 +169,26 @@ class Beatbar:
 
             while True:
                 time_ = time - self.start_time
-                self.width = len(view)
+                view0 = view[0]
+                self.width = len(view0)
                 cells_range = range(self.width)
 
-                time_, view = content_node.send((time_, view))
+                time_, view0 = content_node.send((time_, view0))
 
                 icon = self.current_icon.get(time_)
                 icon_text = icon(time_, cells_range[self.icon_mask])
                 icon_start = cells_range[self.icon_mask].start
-                view = self._draw_masked(view, icon_start, icon_text, self.icon_mask)
+                view0 = self._draw_masked(view0, icon_start, icon_text, self.icon_mask)
 
                 header = self.current_header.get(time_)
                 header_text = header(time_, cells_range[self.header_mask])
                 header_start = cells_range[self.header_mask].start
-                view = self._draw_masked(view, header_start, header_text, self.header_mask, ("[", "]"))
+                view0 = self._draw_masked(view0, header_start, header_text, self.header_mask, ("[", "]"))
 
                 footer = self.current_footer.get(time_)
                 footer_text = footer(time_, cells_range[self.footer_mask])
                 footer_start = cells_range[self.footer_mask].start
-                view = self._draw_masked(view, footer_start, footer_text, self.footer_mask, ("[", "]"))
+                view0 = self._draw_masked(view0, footer_start, footer_text, self.footer_mask, ("[", "]"))
 
                 time, view = yield time, view
 

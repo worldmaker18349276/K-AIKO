@@ -182,9 +182,7 @@ class TerminalRenderer:
         rows = self.settings.display_rows
         columns = self.settings.display_columns
         width = 0
-
-        if rows != 1:
-            raise ValueError("Does not support multiple lines")
+        height = 0
 
         def SIGWINCH_handler(sig, frame):
             self.SIGWINCH_event.set()
@@ -200,11 +198,12 @@ class TerminalRenderer:
                     self.SIGWINCH_event.clear()
                     size = shutil.get_terminal_size()
                     width = size.columns if columns == -1 else min(columns, size.columns)
+                    height = size.lines if rows == -1 else min(rows, size.lines)
 
                 time = index / framerate + self.display_delay
-                view = [" "]*width
+                view = [[" "]*width for _ in range(height)]
                 _, view = drawer_node.send((time, view))
-                yield "\r" + "".join(view) + "\r"
+                yield "\r" + "\n".join(map("".join, view)) + "\r" + (f"\033[{height-1}A" if height > 1 else "")
                 index += 1
 
     @contextlib.contextmanager
