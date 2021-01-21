@@ -655,7 +655,7 @@ class KAIKOGame:
         def fit(templates, ran):
             for template in templates:
                 text = template.format(**self.get_status())
-                text_ran = beatbar.textrange(ran.start, text)
+                _, text_ran = beatbar.textrange(ran.start, text)
                 if text_ran.start in ran and text_ran.stop-1 in ran:
                     break
             return text

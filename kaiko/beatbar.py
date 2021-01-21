@@ -25,6 +25,16 @@ def to_slices(segments):
 
     return [first_slice, *pre_slices, middle_slice, *post_slices[::-1], last_slice]
 
+def cover(*rans):
+    start = min(ran.start for ran in rans)
+    stop = max(ran.stop for ran in rans)
+    return range(start, stop)
+
+def clamp(ran, ran_):
+    start = min(max(ran.start, ran_.start), ran.stop)
+    stop = max(min(ran.stop, ran_.stop), ran.start)
+    return range(start, stop)
+
 def addtext(cells, index, text, mask=slice(None, None, None)):
     ran = range(len(cells))
 
@@ -41,7 +51,7 @@ def addtext(cells, index, text, mask=slice(None, None, None)):
             index_ = index - 1
             if index_ in ran and cells[index_] == "":
                 index_ -= 1
-            if index in ran[mask] and index_ in ran[mask]:
+            if index_ in ran[mask]:
                 cells[index_] += ch
 
         elif width == 2:
@@ -66,6 +76,33 @@ def addtext(cells, index, text, mask=slice(None, None, None)):
 
         else:
             raise ValueError
+
+    return cells
+
+def addpad(cells, index, pad, mask=slice(None, None, None)):
+    ran = range(len(cells))
+    indices = clamp(range(index, index+len(pad)), ran[mask])
+
+    if indices:
+        if indices[0]-1 in ran and cells[indices[0]] == "":
+            cells[indices[0]-1] = " "
+        if indices[-1] in ran and cells[indices[-1]] == "":
+            cells[indices[-1]] = " "
+        for i in indices:
+            cells[i] = pad[i]
+
+    return cells
+
+def clear(cells, mask=slice(None, None, None)):
+    ran = range(len(cells))
+    start, stop, _ = mask.indices(len(cells))
+
+    if start-1 in ran and cells[start] == "":
+        cells[start-1] = " "
+    if stop in ran and cells[stop] == "":
+        cells[stop] = " "
+    for i in ran[mask]:
+        cells[i] = " "
 
     return cells
 
@@ -95,7 +132,7 @@ def textrange(index, text):
             stop = max(stop, index+1)
             index += 1
 
-    return range(start, stop)
+    return index, range(start, stop)
 
 
 class TimedVariable:
@@ -194,7 +231,7 @@ class Beatbar:
 
     def _draw_masked(self, view, start, text, mask, enclosed_by=None):
         mask_ran = range(self.width)[mask]
-        text_ran = textrange(start, text)
+        _, text_ran = textrange(start, text)
 
         view = addtext(view, start, text, mask=mask)
 
