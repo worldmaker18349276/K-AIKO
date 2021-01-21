@@ -35,104 +35,137 @@ def clamp(ran, ran_):
     stop = max(min(ran.stop, ran_.stop), ran.start)
     return range(start, stop)
 
-def addtext(cells, index, text, mask=slice(None, None, None)):
-    ran = range(len(cells))
+def addtext(view, y, x, text, ymask=slice(None,None), xmask=slice(None,None)):
+    yran = range(len(view))
+    xran = range(len(view[0]) if view else 0)
 
     for ch in text:
         width = wcwidth.wcwidth(ch)
 
         if ch == "\t":
-            index += 1
+            x += 1
 
         elif ch == "\b":
-            index -= 1
+            x -= 1
+
+        elif ch == "\v":
+            y += 1
+
+        elif ch == "\f":
+            y -= 1
+
+        elif ch == "\000":
+            pass
 
         elif width == 0:
-            index_ = index - 1
-            if index_ in ran and cells[index_] == "":
-                index_ -= 1
-            if index_ in ran[mask]:
-                cells[index_] += ch
+            x_ = x - 1
+            if y in yran and x_ in xran and view[y][x_] == "":
+                x_ -= 1
+            if y in yran[ymask] and x_ in xran[xmask]:
+                view[y][x_] += ch
 
         elif width == 2:
-            index_ = index + 1
-            if index in ran[mask] and index_ in ran[mask]:
-                if index-1 in ran and cells[index] == "":
-                    cells[index-1] = " "
-                if index_+1 in ran and cells[index_+1] == "":
-                    cells[index_+1] = " "
-                cells[index] = ch
-                cells[index_] = ""
-            index += 2
+            x_ = x + 1
+            if y in yran[ymask] and x in xran[xmask] and x_ in xran[xmask]:
+                if x-1 in xran and view[y][x] == "":
+                    view[y][x-1] = " "
+                if x_+1 in xran and view[y][x_+1] == "":
+                    view[y][x_+1] = " "
+                view[y][x] = ch
+                view[y][x_] = ""
+            x += 2
 
         elif width == 1:
-            if index in ran[mask]:
-                if index-1 in ran and cells[index] == "":
-                    cells[index-1] = " "
-                if index+1 in ran and cells[index+1] == "":
-                    cells[index+1] = " "
-                cells[index] = ch
-            index += 1
+            if y in yran[ymask] and x in xran[xmask]:
+                if x-1 in xran and view[y][x] == "":
+                    view[y][x-1] = " "
+                if x+1 in xran and view[y][x+1] == "":
+                    view[y][x+1] = " "
+                view[y][x] = ch
+            x += 1
 
         else:
             raise ValueError
 
-    return cells
+    return view
 
-def addpad(cells, index, pad, mask=slice(None, None, None)):
-    ran = range(len(cells))
-    indices = clamp(range(index, index+len(pad)), ran[mask])
-
-    if indices:
-        if indices[0]-1 in ran and cells[indices[0]] == "":
-            cells[indices[0]-1] = " "
-        if indices[-1] in ran and cells[indices[-1]] == "":
-            cells[indices[-1]] = " "
-        for i in indices:
-            cells[i] = pad[i]
-
-    return cells
-
-def clear(cells, mask=slice(None, None, None)):
-    ran = range(len(cells))
-    start, stop, _ = mask.indices(len(cells))
-
-    if start-1 in ran and cells[start] == "":
-        cells[start-1] = " "
-    if stop in ran and cells[stop] == "":
-        cells[stop] = " "
-    for i in ran[mask]:
-        cells[i] = " "
-
-    return cells
-
-def textrange(index, text):
-    start = index
-    stop = index
+def textrange(y, x, text):
+    ystart = ystop = y
+    xstart = xstop = x
 
     for ch in text:
         width = wcwidth.wcwidth(ch)
 
         if ch == "\t":
-            index += 1
+            x += 1
 
         elif ch == "\b":
-            index -= 1
+            x -= 1
 
-        elif width == 0:
+        elif ch == "\v":
+            y += 1
+
+        elif ch == "\f":
+            y -= 1
+
+        elif ch == "\000":
             pass
 
+        elif width == 0:
+            ystart = min(ystart, y)
+            ystop = max(ystop, y+1)
+            xstart = min(xstart, x-1)
+            xstop = max(xstop, x)
+
         elif width == 2:
-            start = min(start, index)
-            stop = max(stop, index+2)
-            index += 2
+            ystart = min(ystart, y)
+            ystop = max(ystop, y+1)
+            xstart = min(xstart, x)
+            xstop = max(xstop, x+2)
+            x += 2
 
         elif width == 1:
-            start = min(start, index)
-            stop = max(stop, index+1)
-            index += 1
+            ystart = min(ystart, y)
+            ystop = max(ystop, y+1)
+            xstart = min(xstart, x)
+            xstop = max(xstop, x+1)
+            x += 1
 
-    return index, range(start, stop)
+    return range(ystart, ystop), range(xstart, xstop)
+
+def addpad(view, y, x, pad, ymask=slice(None,None), xmask=slice(None,None)):
+    yran = range(len(view))
+    xran = range(len(view[0]) if view else 0)
+    ys = clamp(range(y, y+len(pad)), yran[ymask])
+    xs = clamp(range(x, x+len(pad[0] if pad else [])), xran[xmask])
+
+    if ys and xs:
+        for y_ in ys:
+            if xs[0]-1 in xran and view[y_][xs[0]] == "":
+                view[y_][xs[0]-1] = " "
+            if xs[-1]+1 in xran and view[y_][xs[-1]+1] == "":
+                view[y_][xs[-1]+1] = " "
+            for x_ in xs:
+                view[y_][x_] = pad[y_-y][x_-x]
+
+    return view
+
+def clear(view, ymask=slice(None,None), xmask=slice(None,None)):
+    yran = range(len(view))
+    xran = range(len(view[0]) if view else 0)
+
+    for y in yran[ymask]:
+        start = xran[xmask].start
+        stop = xran[xmask].stop
+
+        if start-1 in xran and view[y][start] == "":
+            view[y][start-1] = " "
+        if stop in xran and view[y][stop] == "":
+            view[y][stop] = " "
+        for x in xran[xmask]:
+            view[y][x] = " "
+
+    return view
 
 
 class TimedVariable:
@@ -206,44 +239,43 @@ class Beatbar:
 
             while True:
                 time_ = time - self.start_time
-                view0 = view[0]
-                self.width = len(view0)
-                cells_range = range(self.width)
+                view_range = range(len(view[0]) if view else 0)
 
-                time_, view0 = content_node.send((time_, view0))
+                time_, view = content_node.send((time_, view))
 
-                icon = self.current_icon.get(time_)
-                icon_text = icon(time_, cells_range[self.icon_mask])
-                icon_start = cells_range[self.icon_mask].start
-                view0 = self._draw_masked(view0, icon_start, icon_text, self.icon_mask)
+                icon_func = self.current_icon.get(time_)
+                icon_text = icon_func(time_, view_range[self.icon_mask])
+                icon_start = view_range[self.icon_mask].start
+                view = self._draw_masked(view, icon_start, icon_text, self.icon_mask)
 
-                header = self.current_header.get(time_)
-                header_text = header(time_, cells_range[self.header_mask])
-                header_start = cells_range[self.header_mask].start
-                view0 = self._draw_masked(view0, header_start, header_text, self.header_mask, ("[", "]"))
+                header_func = self.current_header.get(time_)
+                header_text = header_func(time_, view_range[self.header_mask])
+                header_start = view_range[self.header_mask].start
+                view = self._draw_masked(view, header_start, header_text, self.header_mask, ("[", "]"))
 
-                footer = self.current_footer.get(time_)
-                footer_text = footer(time_, cells_range[self.footer_mask])
-                footer_start = cells_range[self.footer_mask].start
-                view0 = self._draw_masked(view0, footer_start, footer_text, self.footer_mask, ("[", "]"))
+                footer_func = self.current_footer.get(time_)
+                footer_text = footer_func(time_, view_range[self.footer_mask])
+                footer_start = view_range[self.footer_mask].start
+                view = self._draw_masked(view, footer_start, footer_text, self.footer_mask, ("[", "]"))
 
                 time, view = yield time, view
 
     def _draw_masked(self, view, start, text, mask, enclosed_by=None):
-        mask_ran = range(self.width)[mask]
-        _, text_ran = textrange(start, text)
+        mask_ran = range(len(view[0]) if view else 0)[mask]
+        _, text_ran = textrange(0, start, text)
 
-        view = addtext(view, start, text, mask=mask)
+        view = clear(view, xmask=mask)
+        view = addtext(view, 0, start, text, xmask=mask)
 
         if text_ran.start < mask_ran.start:
-            view = addtext(view, mask_ran.start, "…")
+            view = addtext(view, 0, mask_ran.start, "…")
 
         if text_ran.stop > mask_ran.stop:
-            view = addtext(view, mask_ran.stop-1, "…")
+            view = addtext(view, 0, mask_ran.stop-1, "…")
 
         if enclosed_by is not None:
-            view = addtext(view, mask_ran.start-len(enclosed_by[0]), enclosed_by[0])
-            view = addtext(view, mask_ran.stop-1+len(enclosed_by[1]), enclosed_by[1])
+            view = addtext(view, 0, mask_ran.start-len(enclosed_by[0]), enclosed_by[0])
+            view = addtext(view, 0, mask_ran.stop, enclosed_by[1])
 
         return view
 

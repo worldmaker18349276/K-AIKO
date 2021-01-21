@@ -655,7 +655,7 @@ class KAIKOGame:
         def fit(templates, ran):
             for template in templates:
                 text = template.format(**self.get_status())
-                _, text_ran = beatbar.textrange(ran.start, text)
+                _, text_ran = beatbar.textrange(0, ran.start, text)
                 if text_ran.start in ran and text_ran.stop-1 in ran:
                     break
             return text
@@ -845,13 +845,13 @@ class KAIKOGame:
         if self.bar_flip:
             pos = 1 - pos
 
-        content_start, content_end, _ = self.beatbar.content_mask.indices(self.beatbar.width)
+        content_start, content_end, _ = self.beatbar.content_mask.indices(len(view[0]) if view else 0)
         index = round(content_start + pos * max(0, content_end - content_start - 1))
 
         if isinstance(text, tuple):
             text = text[self.bar_flip]
 
-        return beatbar.addtext(view, index, text, mask=self.beatbar.content_mask)
+        return beatbar.addtext(view, 0, index, text, xmask=self.beatbar.content_mask)
 
 
     def add_score(self, score):
