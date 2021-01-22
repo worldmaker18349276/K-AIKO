@@ -8,6 +8,7 @@ import numpy
 import audioread
 from . import cfg
 from . import datanodes as dn
+from . import tui
 from . import beatbar
 
 
@@ -655,7 +656,7 @@ class KAIKOGame:
         def fit(templates, ran):
             for template in templates:
                 text = template.format(**self.get_status())
-                _, text_ran = beatbar.textrange(0, ran.start, text)
+                _, text_ran, _, _ = tui.textrange(0, ran.start, text)
                 if text_ran.start in ran and text_ran.stop-1 in ran:
                     break
             return text
@@ -819,7 +820,7 @@ class KAIKOGame:
                 if perf_is_reversed:
                     perf_text = perf_text[::-1]
 
-                view = self._draw_content(view, 0, perf_text)
+                view, _, _ = self._draw_content(view, 0, perf_text)
 
             # draw sight
             if sight is not None:
@@ -836,7 +837,7 @@ class KAIKOGame:
             else:
                 sight_text = sight_appearances[0]
 
-            view = self._draw_content(view, 0, sight_text)
+            view, _, _ = self._draw_content(view, 0, sight_text)
 
             time, view = yield time, view
 
@@ -851,7 +852,7 @@ class KAIKOGame:
         if isinstance(text, tuple):
             text = text[self.bar_flip]
 
-        return beatbar.addtext(view, 0, index, text, xmask=self.beatbar.content_mask)
+        return tui.addtext(view, 0, index, text, xmask=self.beatbar.content_mask)
 
 
     def add_score(self, score):
@@ -901,7 +902,7 @@ class KAIKOGame:
                 time, view = yield time, view
 
             while duration is None or time < start + duration:
-                view = self._draw_content(view, pos_func(time), text_func(time))
+                view, _, _ = self._draw_content(view, pos_func(time), text_func(time))
                 time, view = yield time, view
 
         node = _content_node(pos, text, start, duration)

@@ -6,6 +6,7 @@ import queue
 import numpy
 from . import cfg
 from . import datanodes as dn
+from . import tui
 
 
 def to_slices(segments):
@@ -24,148 +25,6 @@ def to_slices(segments):
     post_slices = [slice(-b, -a, None) for a, b in zip(post_index[:-1], post_index[1:])]
 
     return [first_slice, *pre_slices, middle_slice, *post_slices[::-1], last_slice]
-
-def cover(*rans):
-    start = min(ran.start for ran in rans)
-    stop = max(ran.stop for ran in rans)
-    return range(start, stop)
-
-def clamp(ran, ran_):
-    start = min(max(ran.start, ran_.start), ran.stop)
-    stop = max(min(ran.stop, ran_.stop), ran.start)
-    return range(start, stop)
-
-def addtext(view, y, x, text, ymask=slice(None,None), xmask=slice(None,None)):
-    yran = range(len(view))
-    xran = range(len(view[0]) if view else 0)
-
-    for ch in text:
-        width = wcwidth.wcwidth(ch)
-
-        if ch == "\t":
-            x += 1
-
-        elif ch == "\b":
-            x -= 1
-
-        elif ch == "\v":
-            y += 1
-
-        elif ch == "\f":
-            y -= 1
-
-        elif ch == "\000":
-            pass
-
-        elif width == 0:
-            x_ = x - 1
-            if y in yran and x_ in xran and view[y][x_] == "":
-                x_ -= 1
-            if y in yran[ymask] and x_ in xran[xmask]:
-                view[y][x_] += ch
-
-        elif width == 2:
-            x_ = x + 1
-            if y in yran[ymask] and x in xran[xmask] and x_ in xran[xmask]:
-                if x-1 in xran and view[y][x] == "":
-                    view[y][x-1] = " "
-                if x_+1 in xran and view[y][x_+1] == "":
-                    view[y][x_+1] = " "
-                view[y][x] = ch
-                view[y][x_] = ""
-            x += 2
-
-        elif width == 1:
-            if y in yran[ymask] and x in xran[xmask]:
-                if x-1 in xran and view[y][x] == "":
-                    view[y][x-1] = " "
-                if x+1 in xran and view[y][x+1] == "":
-                    view[y][x+1] = " "
-                view[y][x] = ch
-            x += 1
-
-        else:
-            raise ValueError
-
-    return view
-
-def textrange(y, x, text):
-    ystart = ystop = y
-    xstart = xstop = x
-
-    for ch in text:
-        width = wcwidth.wcwidth(ch)
-
-        if ch == "\t":
-            x += 1
-
-        elif ch == "\b":
-            x -= 1
-
-        elif ch == "\v":
-            y += 1
-
-        elif ch == "\f":
-            y -= 1
-
-        elif ch == "\000":
-            pass
-
-        elif width == 0:
-            ystart = min(ystart, y)
-            ystop = max(ystop, y+1)
-            xstart = min(xstart, x-1)
-            xstop = max(xstop, x)
-
-        elif width == 2:
-            ystart = min(ystart, y)
-            ystop = max(ystop, y+1)
-            xstart = min(xstart, x)
-            xstop = max(xstop, x+2)
-            x += 2
-
-        elif width == 1:
-            ystart = min(ystart, y)
-            ystop = max(ystop, y+1)
-            xstart = min(xstart, x)
-            xstop = max(xstop, x+1)
-            x += 1
-
-    return range(ystart, ystop), range(xstart, xstop)
-
-def addpad(view, y, x, pad, ymask=slice(None,None), xmask=slice(None,None)):
-    yran = range(len(view))
-    xran = range(len(view[0]) if view else 0)
-    ys = clamp(range(y, y+len(pad)), yran[ymask])
-    xs = clamp(range(x, x+len(pad[0] if pad else [])), xran[xmask])
-
-    if ys and xs:
-        for y_ in ys:
-            if xs[0]-1 in xran and view[y_][xs[0]] == "":
-                view[y_][xs[0]-1] = " "
-            if xs[-1]+1 in xran and view[y_][xs[-1]+1] == "":
-                view[y_][xs[-1]+1] = " "
-            for x_ in xs:
-                view[y_][x_] = pad[y_-y][x_-x]
-
-    return view
-
-def clear(view, ymask=slice(None,None), xmask=slice(None,None)):
-    yran = range(len(view))
-    xran = range(len(view[0]) if view else 0)
-
-    for y in yran[ymask]:
-        start = xran[xmask].start
-        stop = xran[xmask].stop
-
-        if start-1 in xran and view[y][start] == "":
-            view[y][start-1] = " "
-        if stop in xran and view[y][stop] == "":
-            view[y][stop] = " "
-        for x in xran[xmask]:
-            view[y][x] = " "
-
-    return view
 
 
 class TimedVariable:
@@ -262,22 +121,48 @@ class Beatbar:
 
     def _draw_masked(self, view, start, text, mask, enclosed_by=None):
         mask_ran = range(len(view[0]) if view else 0)[mask]
-        _, text_ran = textrange(0, start, text)
+        _, text_ran, _, _ = tui.textrange(0, start, text)
 
-        view = clear(view, xmask=mask)
-        view = addtext(view, 0, start, text, xmask=mask)
+        view = tui.clear(view, xmask=mask)
+        view, _, _ = tui.addtext(view, 0, start, text, xmask=mask)
 
         if text_ran.start < mask_ran.start:
-            view = addtext(view, 0, mask_ran.start, "…")
+            view, _, _ = tui.addtext(view, 0, mask_ran.start, "…")
 
         if text_ran.stop > mask_ran.stop:
-            view = addtext(view, 0, mask_ran.stop-1, "…")
+            view, _, _ = tui.addtext(view, 0, mask_ran.stop-1, "…")
 
         if enclosed_by is not None:
-            view = addtext(view, 0, mask_ran.start-len(enclosed_by[0]), enclosed_by[0])
-            view = addtext(view, 0, mask_ran.stop, enclosed_by[1])
+            view, _, _ = tui.addtext(view, 0, mask_ran.start-len(enclosed_by[0]), enclosed_by[0])
+            view, _, _ = tui.addtext(view, 0, mask_ran.stop, enclosed_by[1])
 
         return view
+
+    @dn.datanode
+    def _bar_drawer(self, variable, mask, enclosed_by=None):
+        time, view = yield
+
+        while True:
+            time_ = time - self.start_time
+            mask_ran = range(len(view[0]) if view else 0)[mask]
+
+            text = variable.get(time_)(time_, mask_ran)
+            _, text_ran, _, _ = tui.textrange(0, mask_ran.start, text)
+
+            view = tui.clear(view, xmask=mask)
+            view, _, _ = tui.addtext(view, 0, mask_ran.start, text, xmask=mask)
+
+            if text_ran.start < mask_ran.start:
+                view, _, _ = tui.addtext(view, 0, mask_ran.start, "…")
+
+            if text_ran.stop > mask_ran.stop:
+                view, _, _ = tui.addtext(view, 0, mask_ran.stop-1, "…")
+
+            if enclosed_by is not None:
+                view, _, _ = tui.addtext(view, 0, mask_ran.start-wcwidth.wcswidth(enclosed_by[0]), enclosed_by[0])
+                view, _, _ = tui.addtext(view, 0, mask_ran.stop, enclosed_by[1])
+
+            time, view = yield time, view
 
     def set_icon(self, icon, start=None, duration=None):
         icon_func = icon if hasattr(icon, '__call__') else lambda time, ran: icon

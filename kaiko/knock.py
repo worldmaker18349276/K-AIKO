@@ -14,6 +14,7 @@ import pyaudio
 import audioread
 from . import cfg
 from . import datanodes as dn
+from . import tui
 
 
 @contextlib.contextmanager
@@ -203,7 +204,7 @@ class TerminalRenderer:
                 time = index / framerate + self.display_delay
                 view = [[" "]*width for _ in range(height)]
                 _, view = drawer_node.send((time, view))
-                yield "\r" + "\n".join(map("".join, view)) + "\r" + (f"\033[{height-1}A" if height > 1 else "")
+                yield "\r" + "\n".join(map("".join, view)) + "\r" + (f"\x1b[{height-1}A" if height > 1 else "")
                 index += 1
 
     @contextlib.contextmanager
@@ -422,5 +423,24 @@ class KnockConsole:
     def add_drawer(self, node, zindex=(0,)):
         return self.renderer.add_drawer(node, zindex)
 
+    def add_text(self, text_node, y=0, x=0, ymask=slice(None,None), xmask=slice(None,None), zindex=(0,)):
+        return self.renderer.add_drawer(self._text_drawer(text_node, y, x, ymask, xmask), zindex)
+
     def remove_drawer(self, key):
         self.renderer.remove_drawer(key)
+
+    @dn.datanode
+    @staticmethod
+    def _text_drawer(text_node, y=0, x=0, ymask=slice(None,None), xmask=slice(None,None)):
+        text_node = dn.DataNode.wrap(text_node)
+        with text_node:
+            time, view = yield
+            while True:
+                rows = len(view)
+                columns = len(view[0]) if view else 0
+
+                text = text_node.send((time, range(-y, rows-y)[ymask], range(-x, columns-x)[xmask]))
+
+                tui.addtext(view, y, x, text, ymask=ymask, xmask=xmask)
+
+                time, view = yield time, view
