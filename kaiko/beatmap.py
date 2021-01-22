@@ -666,9 +666,9 @@ class KAIKOGame:
         self.beatbar.current_footer.set(lambda time, ran: fit(footer_templates, ran))
 
         hit_hint_duration = max(self.settings.hit_decay_time, self.settings.hit_sustain_time)
-        self.current_hit_hint = beatbar.TimedVariable(value=None, duration=hit_hint_duration)
-        self.current_perf_hint = beatbar.TimedVariable(value=(None, None), duration=self.settings.performance_sustain_time)
-        self.current_sight = beatbar.TimedVariable(value=None)
+        self.current_hit_hint = dn.TimedVariable(value=None, duration=hit_hint_duration)
+        self.current_perf_hint = dn.TimedVariable(value=(None, None), duration=self.settings.performance_sustain_time)
+        self.current_sight = dn.TimedVariable(value=None)
 
         self.beatbar.add_content_drawer(self._sight_handler(), zindex=(2,))
 

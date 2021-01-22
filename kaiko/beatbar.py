@@ -27,46 +27,6 @@ def to_slices(segments):
     return [first_slice, *pre_slices, middle_slice, *post_slices[::-1], last_slice]
 
 
-class TimedVariable:
-    def __init__(self, value=None, duration=numpy.inf):
-        self._queue = queue.Queue()
-        self._lock = threading.Lock()
-        self._scheduled = []
-        self._default_value = value
-        self._default_duration = duration
-        self._item = (value, None, numpy.inf)
-
-    def get(self, time, ret_sched=False):
-        with self._lock:
-            value, start, duration = self._item
-            if start is None:
-                start = time
-
-            while not self._queue.empty():
-                item = self._queue.get()
-                if item[1] is None:
-                    item = (item[0], time, item[2])
-                self._scheduled.append(item)
-            self._scheduled.sort(key=lambda item: item[1])
-
-            while self._scheduled and self._scheduled[0][1] <= time:
-                value, start, duration = self._scheduled.pop(0)
-
-            if start + duration <= time:
-                value, start, duration = self._default_value, None, numpy.inf
-
-            self._item = (value, start, duration)
-            return value if not ret_sched else self._item
-
-    def set(self, value, start=None, duration=None):
-        if duration is None:
-            duration = self._default_duration
-        self._queue.put((value, start, duration))
-
-    def reset(self, start=None):
-        self._queue.put((self._default_value, start, numpy.inf))
-
-
 @cfg.configurable
 class BeatbarSettings:
     icon_width: int = 8
@@ -84,20 +44,18 @@ class Beatbar:
         self.icon_mask, _, self.header_mask, _, self.content_mask, _, self.footer_mask, _ = layout
 
         self.content_queue = queue.Queue()
-        self.current_icon = TimedVariable(value=lambda time, ran: "")
-        self.current_header = TimedVariable(value=lambda time, ran: "")
-        self.current_footer = TimedVariable(value=lambda time, ran: "")
+        self.current_icon = dn.TimedVariable(value=lambda time, ran: "")
+        self.current_header = dn.TimedVariable(value=lambda time, ran: "")
+        self.current_footer = dn.TimedVariable(value=lambda time, ran: "")
 
     @dn.datanode
     def node(self, start_time):
-        self.start_time = start_time
-
         content_node = dn.schedule(self.content_queue)
         with content_node:
             time, view = yield
 
             while True:
-                time_ = time - self.start_time
+                time_ = time - start_time
                 view_range = range(len(view[0]) if view else 0)
 
                 time_, view = content_node.send((time_, view))
@@ -139,11 +97,11 @@ class Beatbar:
         return view
 
     @dn.datanode
-    def _bar_drawer(self, variable, mask, enclosed_by=None):
+    def _bar_drawer(self, start_time, variable, mask, enclosed_by=None):
         time, view = yield
 
         while True:
-            time_ = time - self.start_time
+            time_ = time - start_time
             mask_ran = range(len(view[0]) if view else 0)[mask]
 
             text = variable.get(time_)(time_, mask_ran)

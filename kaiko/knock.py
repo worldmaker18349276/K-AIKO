@@ -440,7 +440,6 @@ class KnockConsole:
                 columns = len(view[0]) if view else 0
 
                 text = text_node.send((time, range(-y, rows-y)[ymask], range(-x, columns-x)[xmask]))
-
-                tui.addtext(view, y, x, text, ymask=ymask, xmask=xmask)
+                view, y, x = tui.addtext(view, y, x, text, ymask=ymask, xmask=xmask)
 
                 time, view = yield time, view
