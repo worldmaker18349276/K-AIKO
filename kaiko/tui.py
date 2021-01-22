@@ -133,7 +133,7 @@ def addpad(view, y, x, pad, ymask=slice(None,None), xmask=slice(None,None)):
             for x_ in xs:
                 view[y_][x_] = pad[y_-y][x_-x]
 
-    return view
+    return view, ys, xs
 
 def clear(view, ymask=slice(None,None), xmask=slice(None,None)):
     yran = range(len(view))

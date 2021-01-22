@@ -404,7 +404,8 @@ class KnockConsole:
         return self.add_listener(self._hit_listener(func, time, duration))
 
     @dn.datanode
-    def _hit_listener(self, func, start_time, duration):
+    @staticmethod
+    def _hit_listener(func, start_time, duration):
         time, strength, detected = yield
         if start_time is None:
             start_time = time
@@ -426,6 +427,9 @@ class KnockConsole:
     def add_text(self, text_node, y=0, x=0, ymask=slice(None,None), xmask=slice(None,None), zindex=(0,)):
         return self.renderer.add_drawer(self._text_drawer(text_node, y, x, ymask, xmask), zindex)
 
+    def add_pad(self, pad_node, ymask=slice(None,None), xmask=slice(None,None), zindex=(0,)):
+        return self.renderer.add_drawer(self._text_drawer(pad_node, ymask, xmask), zindex)
+
     def remove_drawer(self, key):
         self.renderer.remove_drawer(key)
 
@@ -441,5 +445,18 @@ class KnockConsole:
 
                 text = text_node.send((time, range(-y, rows-y)[ymask], range(-x, columns-x)[xmask]))
                 view, y, x = tui.addtext(view, y, x, text, ymask=ymask, xmask=xmask)
+
+                time, view = yield time, view
+
+    @dn.datanode
+    @staticmethod
+    def _pad_drawer(pad_node, ymask=slice(None,None), xmask=slice(None,None)):
+        pad_node = dn.DataNode.wrap(pad_node)
+        with pad_node:
+            time, view = yield
+            while True:
+                subview, y, x = tui.newpad(view, ymask=ymask, xmask=xmask)
+                _, subview = pad_node.send((time, subview))
+                view, yran, xran = tui.addpad(view, y, x, subview)
 
                 time, view = yield time, view
