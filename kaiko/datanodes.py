@@ -1101,6 +1101,8 @@ def timeit(node, name="timeit"):
         get_time = time.perf_counter
 
     N = 10
+    start = 0
+    stop = 0
     count = 0
     total = 0.0
     total2 = 0.0
@@ -1109,23 +1111,30 @@ def timeit(node, name="timeit"):
 
     @datanode
     def timed_node():
-        nonlocal node, count, total, total2, worst, best
+        nonlocal node, count, total, total2, worst, best, start, stop
         with node:
-            data = None
-            while True:
-                data = yield data
+            data = yield
+            try:
+                start = time.time()
 
-                t0 = get_time()
-                data = node.send(data)
-                t = get_time() - t0
+                while True:
 
-                count += 1
-                total += t
-                total2 += t**2
-                bisect.insort(worst, t)
-                worst.pop(0)
-                bisect.insort_left(best, t)
-                best.pop()
+                    t0 = get_time()
+                    data = node.send(data)
+                    t = get_time() - t0
+
+                    count += 1
+                    total += t
+                    total2 += t**2
+                    bisect.insort(worst, t)
+                    worst.pop(0)
+                    bisect.insort_left(best, t)
+                    best.pop()
+
+                    data = yield data
+
+            finally:
+                stop = time.time()
 
     try:
         yield timed_node()
@@ -1137,13 +1146,14 @@ def timeit(node, name="timeit"):
         else:
             avg = total/count
             dev = (total2/count - avg**2)**0.5
+            eff = total/(stop - start)
 
             if count < N:
-                print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms")
+                print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms ({eff: >6.1%})")
 
             else:
                 print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms"
-                      f" ({sum(best)/N*1000:5.3f}ms ~ {sum(worst)/N*1000:5.3f}ms)")
+                      f" ({sum(best)/N*1000:5.3f}ms ~ {sum(worst)/N*1000:5.3f}ms) ({eff: >6.1%})")
 
 
 # not data nodes
