@@ -301,30 +301,39 @@ class KnockConsoleSettings:
     debug_timeit: bool = False
 
 class KnockConsole:
-    settings: KnockConsoleSettings = KnockConsoleSettings()
-
-    def __init__(self, settings=None):
-        if isinstance(settings, str):
-            cfg.config_read(open(settings, 'r'), main=self.settings)
+    def __init__(self, mixer, detector, renderer, ref_time, settings):
+        self.mixer = mixer
+        self.detector = detector
+        self.renderer = renderer
+        self.ref_time = ref_time
+        self.settings = settings
 
     @property
     def time(self):
-        return time.time() - self._ref_time
+        return time.time() - self.ref_time
 
-    def run(self, knock_program):
+    @classmethod
+    def run(clz, knock_program, settings=None):
+        if isinstance(settings, str):
+            with open(settings, 'r') as file:
+                settings = KnockConsoleSettings()
+                cfg.config_read(file, main=settings)
+
         try:
             manager = pyaudio.PyAudio()
 
             # initialize audio/video streams
-            with AudioMixer.create(manager, self.settings) as self.mixer,\
-                 KnockDetector.create(manager, self.settings) as self.detector,\
-                 TerminalRenderer.create(self.settings) as self.renderer:
+            with AudioMixer.create(manager, settings) as mixer,\
+                 KnockDetector.create(manager, settings) as detector,\
+                 TerminalRenderer.create(settings) as renderer:
 
                 # activate audio/video streams
-                self._ref_time = time.time()
-                self.mixer.start()
-                self.detector.start()
-                self.renderer.start()
+                ref_time = time.time()
+                mixer.start()
+                detector.start()
+                renderer.start()
+
+                self = clz(mixer, detector, renderer, ref_time, settings=settings)
 
                 # connect to program
                 with knock_program.connect(self) as loop:
@@ -337,15 +346,16 @@ class KnockConsole:
                         if SIGINT_event.is_set():
                             break
 
-                        if (not self.mixer.is_active()
-                            or not self.detector.is_active()
-                            or not self.renderer.is_active()):
+                        if not self.is_active():
                             break
 
                         signal.signal(signal.SIGINT, SIGINT_handler)
 
         finally:
             manager.terminate()
+
+    def is_active(self):
+        return self.mixer.is_active() and self.detector.is_active() and self.renderer.is_active()
 
     def add_effect(self, node, time=None, zindex=(0,)):
         if time is not None:

@@ -8,8 +8,7 @@ filename = sys.argv[1]
 
 beatmap = BeatmapDraft.read(filename)
 game = KAIKOGame(beatmap)
-console = KnockConsole("debug_config")
-console.run(game)
+KnockConsole.run(game, settings="debug_config")
 
 print()
 show_analyze(beatmap.settings.performance_tolerance, game.perfs)
