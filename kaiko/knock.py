@@ -5,7 +5,6 @@ import functools
 import unicodedata
 import contextlib
 from collections import OrderedDict
-import queue
 import threading
 import shutil
 import signal
@@ -26,7 +25,7 @@ class AudioMixer:
     def __init__(self, settings, sound_delay):
         self.settings = settings
         self.sound_delay = sound_delay
-        self.effect_queue = queue.Queue()
+        self.effects_scheduler = dn.Scheduler()
 
     @dn.datanode
     def get_output_node(self):
@@ -35,13 +34,12 @@ class AudioMixer:
         nchannels = self.settings.output_channels
 
         index = 0
-        effect_node = dn.schedule(self.effect_queue)
-        with effect_node:
+        with self.effects_scheduler:
             yield
             while True:
                 time = index * buffer_length / samplerate + self.sound_delay
                 data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
-                time, data = effect_node.send((time, data))
+                time, data = self.effects_scheduler.send((time, data))
                 yield data
                 index += 1
 
@@ -72,19 +70,17 @@ class AudioMixer:
                 yield stream
 
     def add_effect(self, node, zindex=(0,)):
-        key = object()
-        self.effect_queue.put((key, node, zindex))
-        return key
+        return self.effects_scheduler.add_node(node, zindex=zindex)
 
     def remove_effect(self, key):
-        self.effect_queue.put((key, None, 0))
+        return self.effects_scheduler.remove_node(key)
 
 class KnockDetector:
     def __init__(self, settings, knock_delay, knock_energy):
         self.settings = settings
         self.knock_delay = knock_delay
         self.knock_energy = knock_energy
-        self.listener_queue = queue.Queue()
+        self.listeners_scheduler = dn.Scheduler()
 
     @dn.datanode
     def get_input_node(self):
@@ -113,8 +109,7 @@ class KnockDetector:
             dn.onset_strength(1))
         picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
 
-        listener_node = dn.schedule(self.listener_queue)
-        with listener_node, onset, picker:
+        with self.listeners_scheduler, onset, picker:
             data = yield
             buffer = [(self.knock_delay, 0.0)]*prepare
             index = 0
@@ -127,7 +122,7 @@ class KnockDetector:
                 buffer.append((time, strength))
                 time, strength = buffer.pop(0)
 
-                listener_node.send((time, strength, detected))
+                self.listeners_scheduler.send((time, strength, detected))
                 data = yield
 
                 index += 1
@@ -162,19 +157,17 @@ class KnockDetector:
                 yield stream
 
     def add_listener(self, node):
-        key = object()
         node = dn.branch(node)
-        self.listener_queue.put((key, node, 0))
-        return key
+        return self.listeners_scheduler.add_node(node, (0,))
 
     def remove_listener(self, key):
-        self.listener_queue.put((key, None, 0))
+        self.listeners_scheduler.remove_node(key)
 
 class TerminalRenderer:
     def __init__(self, settings, display_delay):
         self.settings = settings
         self.display_delay = display_delay
-        self.drawer_queue = queue.Queue()
+        self.drawers_scheduler = dn.Scheduler()
         self.SIGWINCH_event = threading.Event()
 
     @dn.datanode
@@ -191,8 +184,7 @@ class TerminalRenderer:
         self.SIGWINCH_event.set()
 
         index = 0
-        drawer_node = dn.schedule(self.drawer_queue)
-        with drawer_node:
+        with self.drawers_scheduler:
             yield
             while True:
                 if self.SIGWINCH_event.is_set():
@@ -203,7 +195,7 @@ class TerminalRenderer:
 
                 time = index / framerate + self.display_delay
                 view = [[" "]*width for _ in range(height)]
-                _, view = drawer_node.send((time, view))
+                _, view = self.drawers_scheduler.send((time, view))
                 yield "\r" + "\n".join(map("".join, view)) + "\r" + (f"\x1b[{height-1}A" if height > 1 else "")
                 index += 1
 
@@ -228,12 +220,10 @@ class TerminalRenderer:
                 yield thread
 
     def add_drawer(self, node, zindex=(0,)):
-        key = object()
-        self.drawer_queue.put((key, node, zindex))
-        return key
+        return self.drawers_scheduler.add_node(node, zindex=zindex)
 
     def remove_drawer(self, key):
-        self.drawer_queue.put((key, None, (0,)))
+        self.drawers_scheduler.remove_node(key)
 
 
 @cfg.configurable

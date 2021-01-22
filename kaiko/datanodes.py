@@ -447,8 +447,7 @@ class TimedVariable:
     def reset(self, start=None):
         self._queue.put((self._default_value, start, numpy.inf))
 
-@datanode
-def schedule(queue):
+class Scheduler(DataNode):
     """A data node schedule given data nodes dynamically.
 
     Parameters
@@ -468,33 +467,47 @@ def schedule(queue):
     data : any
         The output signal.
     """
-    nodes = OrderedDict()
 
-    try:
-        data = None
+    def __init__(self):
+        self.queue = queue.Queue()
+        super().__init__(self.proxy())
 
-        while True:
-            data = yield data
+    def proxy(self):
+        nodes = OrderedDict()
 
-            while not queue.empty():
-                key, node, zindex = queue.get()
-                if key in nodes:
-                    nodes[key][0].__exit__()
-                    del nodes[key]
-                if node is not None:
-                    node.__enter__()
-                    zindex_func = zindex if hasattr(zindex, '__call__') else lambda z=zindex: z
-                    nodes[key] = (node, zindex_func)
+        try:
+            data = None
 
-            for key, (node, _) in sorted(nodes.items(), key=lambda item: item[1][1]()):
-                try:
-                    data = node.send(data)
-                except StopIteration:
-                    del nodes[key]
+            while True:
+                data = yield data
 
-    finally:
-        for node, _ in nodes.values():
-            node.__exit__()
+                while not self.queue.empty():
+                    key, node, zindex = self.queue.get()
+                    if key in nodes:
+                        nodes[key][0].__exit__()
+                        del nodes[key]
+                    if node is not None:
+                        node.__enter__()
+                        zindex_func = zindex if hasattr(zindex, '__call__') else lambda z=zindex: z
+                        nodes[key] = (node, zindex_func)
+
+                for key, (node, _) in sorted(nodes.items(), key=lambda item: item[1][1]()):
+                    try:
+                        data = node.send(data)
+                    except StopIteration:
+                        del nodes[key]
+
+        finally:
+            for node, _ in nodes.values():
+                node.__exit__()
+
+    def add_node(self, node, zindex=(0,)):
+        key = object()
+        self.queue.put((key, node, zindex))
+        return key
+
+    def remove_node(self, key):
+        self.queue.put((key, None, (0,)))
 
 
 # for fixed-width data

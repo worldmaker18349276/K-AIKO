@@ -43,22 +43,21 @@ class Beatbar:
         layout = to_slices((icon_width, 1, header_width, 1, ..., 1, footer_width, 1))
         self.icon_mask, _, self.header_mask, _, self.content_mask, _, self.footer_mask, _ = layout
 
-        self.content_queue = queue.Queue()
+        self.content_scheduler = dn.Scheduler()
         self.current_icon = dn.TimedVariable(value=lambda time, ran: "")
         self.current_header = dn.TimedVariable(value=lambda time, ran: "")
         self.current_footer = dn.TimedVariable(value=lambda time, ran: "")
 
     @dn.datanode
     def node(self, start_time):
-        content_node = dn.schedule(self.content_queue)
-        with content_node:
+        with self.content_scheduler:
             time, view = yield
 
             while True:
                 time_ = time - start_time
                 view_range = range(len(view[0]) if view else 0)
 
-                time_, view = content_node.send((time_, view))
+                time_, view = self.content_scheduler.send((time_, view))
 
                 icon_func = self.current_icon.get(time_)
                 icon_text = icon_func(time_, view_range[self.icon_mask])
@@ -135,9 +134,7 @@ class Beatbar:
         self.current_footer.set(footer_func, start, duration)
 
     def add_content_drawer(self, node, zindex=(0,)):
-        key = object()
-        self.content_queue.put((key, node, zindex))
-        return key
+        return self.content_scheduler.add_node(node, zindex=zindex)
 
     def remove_content_drawer(self, key):
-        self.content_queue.put((key, None, (0,)))
+        self.content_scheduler.remove_node(key)
