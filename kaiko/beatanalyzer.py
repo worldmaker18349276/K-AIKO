@@ -48,8 +48,8 @@ def show_analyze(tol, perfs):
     bad_wrong_count     = sum(grade.is_wrong and abs(grade.shift) == 2 for grade in grades)
     good_wrong_count    = sum(grade.is_wrong and abs(grade.shift) == 1 for grade in grades)
     perfect_wrong_count = sum(grade.is_wrong and abs(grade.shift) == 0 for grade in grades)
-    accuracy = sum(2.0**(-abs(grade.shift)) for grade in grades) / len(perfs)
-    mistakes = sum(grade.is_wrong for grade in grades) / len(grades)
+    accuracy = sum(2.0**(-abs(grade.shift)) for grade in grades) / len(perfs) if perfs else 0.0
+    mistakes = sum(grade.is_wrong for grade in grades) / len(grades) if grades else 0.0
 
     grad_infos = [
         f"   miss: {   miss_count}",
@@ -67,9 +67,9 @@ def show_analyze(tol, perfs):
     # statistics infos
     errors = [(perf.time, perf.err) for perf in perfs if not perf.is_miss]
     misses = [perf.time for perf in perfs if perf.is_miss]
-    err = sum(abs(err) for _, err in errors) / len(errors)
-    ofs = sum(err for _, err in errors) / len(errors)
-    dev = (sum((err-ofs)**2 for _, err in errors) / len(errors))**0.5
+    err = sum(abs(err) for _, err in errors) / len(errors) if errors else 0.0
+    ofs = sum(err for _, err in errors) / len(errors) if errors else 0.0
+    dev = (sum((err-ofs)**2 for _, err in errors) / len(errors))**0.5 if errors else 0.0
 
     stat_infos = [
         f"err={err*1000:.3f} ms",

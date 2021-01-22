@@ -1,10 +1,6 @@
-import sys
-import os
 import time
 import functools
-import unicodedata
 import contextlib
-from collections import OrderedDict
 import threading
 import shutil
 import signal
@@ -17,46 +13,41 @@ from . import tui
 
 
 @contextlib.contextmanager
-def nullcontext(contextmanager):
-    with contextmanager as context:
-        yield context
+def nullcontext(value):
+    yield value
 
 class AudioMixer:
-    def __init__(self, settings, sound_delay):
-        self.settings = settings
-        self.sound_delay = sound_delay
-        self.effects_scheduler = dn.Scheduler()
+    def __init__(self, effects_scheduler, output_stream):
+        self.effects_scheduler = effects_scheduler
+        self.output_stream = output_stream
 
+    @classmethod
     @dn.datanode
-    def get_output_node(self):
-        samplerate = self.settings.output_samplerate
-        buffer_length = self.settings.output_buffer_length
-        nchannels = self.settings.output_channels
-
+    def get_output_node(clz, scheduler, samplerate, buffer_length, nchannels, sound_delay):
         index = 0
-        with self.effects_scheduler:
+        with scheduler:
             yield
             while True:
-                time = index * buffer_length / samplerate + self.sound_delay
+                time = index * buffer_length / samplerate + sound_delay
                 data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
-                time, data = self.effects_scheduler.send((time, data))
+                time, data = scheduler.send((time, data))
                 yield data
                 index += 1
 
+    @classmethod
     @contextlib.contextmanager
-    def get_output_stream(self, manager):
-        samplerate = self.settings.output_samplerate
-        buffer_length = self.settings.output_buffer_length
-        nchannels = self.settings.output_channels
-        format = self.settings.output_format
-        device = self.settings.output_device
+    def create(clz, manager, settings):
+        samplerate = settings.output_samplerate
+        buffer_length = settings.output_buffer_length
+        nchannels = settings.output_channels
+        format = settings.output_format
+        device = settings.output_device
+        sound_delay = settings.sound_delay
+        debug_timeit = settings.debug_timeit
 
-        output_node = self.get_output_node()
-
-        if self.settings.debug_timeit:
-            output_ctxt = dn.timeit(output_node, " output")
-        else:
-            output_ctxt = nullcontext(output_node)
+        scheduler = dn.Scheduler()
+        output_node = clz.get_output_node(scheduler, samplerate, buffer_length, nchannels, sound_delay)
+        output_ctxt = dn.timeit(output_node, " output") if debug_timeit else nullcontext(output_node)
 
         with output_ctxt as output_node:
             stream_ctxt = dn.play(manager, output_node,
@@ -67,7 +58,22 @@ class AudioMixer:
                                   )
 
             with stream_ctxt as stream:
-                yield stream
+                yield clz(scheduler, stream)
+
+    def start(self):
+        return self.output_stream.start_stream()
+
+    def stop(self):
+        return self.output_stream.stop_stream()
+
+    def is_active(self):
+        return self.output_stream.is_active()
+
+    def is_stopped(self):
+        return self.output_stream.is_stopped()
+
+    def close(self):
+        return self.output_stream.close()
 
     def add_effect(self, node, zindex=(0,)):
         return self.effects_scheduler.add_node(node, zindex=zindex)
@@ -76,27 +82,15 @@ class AudioMixer:
         return self.effects_scheduler.remove_node(key)
 
 class KnockDetector:
-    def __init__(self, settings, knock_delay, knock_energy):
-        self.settings = settings
-        self.knock_delay = knock_delay
-        self.knock_energy = knock_energy
-        self.listeners_scheduler = dn.Scheduler()
+    def __init__(self, listeners_scheduler, input_stream):
+        self.listeners_scheduler = listeners_scheduler
+        self.input_stream = input_stream
 
+    @classmethod
     @dn.datanode
-    def get_input_node(self):
-        samplerate = self.settings.input_samplerate
-
-        time_res = self.settings.detector_time_res
-        freq_res = self.settings.detector_freq_res
-        hop_length = round(samplerate*time_res)
-        win_length = round(samplerate/freq_res)
-
-        pre_max  = round(self.settings.detector_pre_max  / time_res)
-        post_max = round(self.settings.detector_post_max / time_res)
-        pre_avg  = round(self.settings.detector_pre_avg  / time_res)
-        post_avg = round(self.settings.detector_post_avg / time_res)
-        wait     = round(self.settings.detector_wait     / time_res)
-        delta    =       self.settings.detector_delta
+    def get_input_node(clz, scheduler, samplerate, hop_length, win_length,
+                            pre_max, post_max, pre_avg, post_avg, wait, delta,
+                            knock_delay, knock_energy):
         prepare = max(post_max, post_avg)
 
         window = dn.get_half_Hann_window(win_length)
@@ -109,41 +103,58 @@ class KnockDetector:
             dn.onset_strength(1))
         picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
 
-        with self.listeners_scheduler, onset, picker:
+        with scheduler, onset, picker:
             data = yield
-            buffer = [(self.knock_delay, 0.0)]*prepare
+            buffer = [(knock_delay, 0.0)]*prepare
             index = 0
             while True:
                 strength = onset.send(data)
                 detected = picker.send(strength)
-                time = index * hop_length / samplerate + self.knock_delay
-                strength = strength / self.knock_energy
+                time = index * hop_length / samplerate + knock_delay
+                strength = strength / knock_energy
 
                 buffer.append((time, strength))
                 time, strength = buffer.pop(0)
 
-                self.listeners_scheduler.send((time, strength, detected))
+                scheduler.send((time, strength, detected))
                 data = yield
 
                 index += 1
 
+    @classmethod
     @contextlib.contextmanager
-    def get_input_stream(self, manager):
-        samplerate = self.settings.input_samplerate
-        buffer_length = self.settings.input_buffer_length
-        nchannels = self.settings.input_channels
-        format = self.settings.input_format
-        device = self.settings.input_device
+    def create(clz, manager, settings):
+        samplerate = settings.input_samplerate
+        buffer_length = settings.input_buffer_length
+        nchannels = settings.input_channels
+        format = settings.input_format
+        device = settings.input_device
 
-        input_node = self.get_input_node()
-        time_res = self.settings.detector_time_res
+        time_res = settings.detector_time_res
+        freq_res = settings.detector_freq_res
         hop_length = round(samplerate*time_res)
+        win_length = round(samplerate/freq_res)
+
+        pre_max  = round(settings.detector_pre_max  / time_res)
+        post_max = round(settings.detector_post_max / time_res)
+        pre_avg  = round(settings.detector_pre_avg  / time_res)
+        post_avg = round(settings.detector_post_avg / time_res)
+        wait     = round(settings.detector_wait     / time_res)
+        delta    =       settings.detector_delta
+
+        knock_delay = settings.knock_delay
+        knock_energy = settings.knock_energy
+
+        debug_timeit = settings.debug_timeit
+
+        scheduler = dn.Scheduler()
+        input_node = clz.get_input_node(scheduler, samplerate, hop_length, win_length,
+                                        pre_max, post_max, pre_avg, post_avg, wait, delta,
+                                        knock_delay, knock_energy)
+
         if buffer_length != hop_length:
             input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
-        if self.settings.debug_timeit:
-            input_ctxt = dn.timeit(input_node, "  input")
-        else:
-            input_ctxt = nullcontext(input_node)
+        input_ctxt = dn.timeit(input_node, "  input") if debug_timeit else nullcontext(input_node)
 
         with input_ctxt as input_node:
             stream_ctxt = dn.record(manager, input_node,
@@ -154,7 +165,22 @@ class KnockDetector:
                                     )
 
             with stream_ctxt as stream:
-                yield stream
+                yield clz(scheduler, stream)
+
+    def start(self):
+        return self.input_stream.start_stream()
+
+    def stop(self):
+        return self.input_stream.stop_stream()
+
+    def is_active(self):
+        return self.input_stream.is_active()
+
+    def is_stopped(self):
+        return self.input_stream.is_stopped()
+
+    def close(self):
+        return self.input_stream.close()
 
     def add_listener(self, node):
         node = dn.branch(node)
@@ -164,60 +190,70 @@ class KnockDetector:
         self.listeners_scheduler.remove_node(key)
 
 class TerminalRenderer:
-    def __init__(self, settings, display_delay):
-        self.settings = settings
-        self.display_delay = display_delay
-        self.drawers_scheduler = dn.Scheduler()
-        self.SIGWINCH_event = threading.Event()
+    def __init__(self, drawers_scheduler, display_thread):
+        self.drawers_scheduler = drawers_scheduler
+        self.display_thread = display_thread
 
+    @classmethod
     @dn.datanode
-    def get_display_node(self):
-        framerate = self.settings.display_framerate
-        rows = self.settings.display_rows
-        columns = self.settings.display_columns
+    def get_display_node(clz, scheduler, resize_event, framerate, display_delay, rows, columns):
         width = 0
         height = 0
 
         def SIGWINCH_handler(sig, frame):
-            self.SIGWINCH_event.set()
+            resize_event.set()
         signal.signal(signal.SIGWINCH, SIGWINCH_handler)
-        self.SIGWINCH_event.set()
+        resize_event.set()
 
         index = 0
-        with self.drawers_scheduler:
+        with scheduler:
             yield
             while True:
-                if self.SIGWINCH_event.is_set():
-                    self.SIGWINCH_event.clear()
+                if resize_event.is_set():
+                    resize_event.clear()
                     size = shutil.get_terminal_size()
                     width = size.columns if columns == -1 else min(columns, size.columns)
                     height = size.lines if rows == -1 else min(rows, size.lines)
 
-                time = index / framerate + self.display_delay
+                time = index / framerate + display_delay
                 view = [[" "]*width for _ in range(height)]
-                _, view = self.drawers_scheduler.send((time, view))
+                _, view = scheduler.send((time, view))
                 yield "\r" + "\n".join(map("".join, view)) + "\r" + (f"\x1b[{height-1}A" if height > 1 else "")
                 index += 1
 
+    @classmethod
     @contextlib.contextmanager
-    def get_display_thread(self):
-        framerate = self.settings.display_framerate
+    def create(clz, settings):
+        framerate = settings.display_framerate
+        display_delay = settings.display_delay
+        rows = settings.display_rows
+        columns = settings.display_columns
+        debug_timeit = settings.debug_timeit
+
+        resize_event = threading.Event()
 
         @dn.datanode
         def show():
             try:
                 while True:
                     current_time, view = yield
-                    if view and not self.SIGWINCH_event.is_set():
+                    if view and not resize_event.is_set():
                         print(view, end="", flush=True)
             finally:
                 print()
 
-        display_node = self.get_display_node()
-        display_ctxt = dn.timeit(display_node, "display") if self.settings.debug_timeit else nullcontext(display_node)
+        scheduler = dn.Scheduler()
+        display_node = clz.get_display_node(scheduler, resize_event, framerate, display_delay, rows, columns)
+        display_ctxt = dn.timeit(display_node, "display") if debug_timeit else nullcontext(display_node)
         with display_ctxt as display_node:
             with dn.interval(display_node, show(), 1/framerate) as thread:
-                yield thread
+                yield clz(scheduler, thread)
+
+    def start(self):
+        return self.display_thread.start()
+
+    def is_active(self):
+        return self.display_thread.is_alive()
 
     def add_drawer(self, node, zindex=(0,)):
         return self.drawers_scheduler.add_node(node, zindex=zindex)
@@ -276,23 +312,19 @@ class KnockConsole:
         return time.time() - self._ref_time
 
     def run(self, knock_program):
-        self.mixer = AudioMixer(self.settings, self.settings.sound_delay)
-        self.detector = KnockDetector(self.settings, self.settings.knock_delay, self.settings.knock_energy)
-        self.renderer = TerminalRenderer(self.settings, self.settings.display_delay)
-
         try:
             manager = pyaudio.PyAudio()
 
             # initialize audio/video streams
-            with self.mixer.get_output_stream(manager) as output_stream,\
-                 self.detector.get_input_stream(manager) as input_stream,\
-                 self.renderer.get_display_thread() as display_thread:
+            with AudioMixer.create(manager, self.settings) as self.mixer,\
+                 KnockDetector.create(manager, self.settings) as self.detector,\
+                 TerminalRenderer.create(self.settings) as self.renderer:
 
                 # activate audio/video streams
                 self._ref_time = time.time()
-                output_stream.start_stream()
-                input_stream.start_stream()
-                display_thread.start()
+                self.mixer.start()
+                self.detector.start()
+                self.renderer.start()
 
                 # connect to program
                 with knock_program.connect(self) as loop:
@@ -305,9 +337,9 @@ class KnockConsole:
                         if SIGINT_event.is_set():
                             break
 
-                        if (not output_stream.is_active()
-                            or not input_stream.is_active()
-                            or not display_thread.is_alive()):
+                        if (not self.mixer.is_active()
+                            or not self.detector.is_active()
+                            or not self.renderer.is_active()):
                             break
 
                         signal.signal(signal.SIGINT, SIGINT_handler)

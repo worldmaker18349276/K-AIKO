@@ -8,7 +8,6 @@ import threading
 import bisect
 import numpy
 import scipy
-import scipy.fftpack
 import scipy.signal
 import pyaudio
 import wave

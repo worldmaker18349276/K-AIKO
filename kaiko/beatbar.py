@@ -1,9 +1,4 @@
 import wcwidth
-from enum import Enum
-from typing import List, Tuple, Dict, Optional, Union
-import threading
-import queue
-import numpy
 from . import cfg
 from . import datanodes as dn
 from . import tui
