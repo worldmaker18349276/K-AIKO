@@ -12,6 +12,8 @@ from . import datanodes as dn
 from . import tui
 
 
+SIGINT_reassignment_time = 0.005
+
 @contextlib.contextmanager
 def nullcontext(value):
     yield value
@@ -402,20 +404,23 @@ class Kerminal:
                 self = clz(mixer, detector, renderer, ref_time, settings=settings)
 
                 # connect to program
-                with knock_program.connect(self) as loop:
-                    SIGINT_event = threading.Event()
-                    def SIGINT_handler(sig, frame):
-                        SIGINT_event.set()
-                    signal.signal(signal.SIGINT, SIGINT_handler)
+                SIGINT_event = threading.Event()
+                def SIGINT_handler(sig, frame):
+                    SIGINT_event.set()
+                signal.signal(signal.SIGINT, SIGINT_handler)
 
-                    for _ in loop:
-                        if SIGINT_event.is_set():
-                            break
+                main = threading.Thread(target=knock_program.connect, args=(self, SIGINT_event))
 
-                        if not self.is_active():
-                            break
+                try:
+                    main.start()
 
+                    while main.is_alive() and self.is_active():
                         signal.signal(signal.SIGINT, SIGINT_handler)
+                        time.sleep(SIGINT_reassignment_time)
+
+                finally:
+                    SIGINT_event.set()
+                    main.join()
 
         finally:
             manager.terminate()

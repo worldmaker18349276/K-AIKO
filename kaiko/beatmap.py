@@ -609,8 +609,7 @@ class KAIKOGame:
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
 
-    @dn.datanode
-    def connect(self, kerminal):
+    def connect(self, kerminal, stop_event):
         # prepare events
         self.events = self.beatmap.build_events()
         self.events.sort(key=lambda e: e.lifespan[0])
@@ -692,8 +691,10 @@ class KAIKOGame:
                 events_iter = iter(self.events)
                 event = next(events_iter, None)
 
-                yield
                 for time in timer:
+                    if stop_event.is_set():
+                        break
+
                     if max(events_end_time, duration) <= time:
                         break
 
@@ -703,8 +704,6 @@ class KAIKOGame:
 
                     time = int(max(0.0, time))
                     self.time = datetime.time(time//3600, time%3600//60, time%60)
-
-                    yield
 
 
     def get_status(self):
