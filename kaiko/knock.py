@@ -32,7 +32,7 @@ class AudioMixer:
             while True:
                 time = index * buffer_length / samplerate + sound_delay
                 data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
-                time, data = scheduler.send((time, data))
+                data = scheduler.send((time, data))
                 yield data
                 index += 1
 
@@ -43,8 +43,8 @@ class AudioMixer:
             time, data = yield
             while True:
                 time_ = time - start_time
-                time_, data = scheduler.send((time_, data))
-                time, data = yield time, data
+                data = scheduler.send((time_, data))
+                time, data = yield data
 
     @classmethod
     @contextlib.contextmanager
@@ -140,7 +140,7 @@ class KnockDetector:
                 buffer.append((time, strength))
                 time, strength = buffer.pop(0)
 
-                scheduler.send((time, strength, detected))
+                scheduler.send(((time, strength, detected), None))
                 data = yield
 
                 index += 1
@@ -149,11 +149,11 @@ class KnockDetector:
     @dn.datanode
     def get_subnode(clz, scheduler, start_time):
         with scheduler:
-            time, strength, detected = yield
+            (time, strength, detected), _ = yield
             while True:
                 time_ = time - start_time
-                time_, strength, detected = scheduler.send((time_, strength, detected))
-                time, strength, detected = yield time, strength, detected
+                scheduler.send(((time_, strength, detected), None))
+                (time, strength, detected), _ = yield
 
     @classmethod
     @contextlib.contextmanager
@@ -217,7 +217,6 @@ class KnockDetector:
         return self.input_stream.close()
 
     def add_listener(self, node):
-        node = dn.branch(node)
         return self.listeners_scheduler.add_node(node, (0,))
 
     def remove_listener(self, key):
@@ -263,7 +262,7 @@ class MonoRenderer:
 
                 time = index / framerate + display_delay
                 view = [[" "]*width for _ in range(height)]
-                _, view = scheduler.send((time, view))
+                view = scheduler.send((time, view))
                 yield "\r" + "\n".join(map("".join, view)) + "\r" + (f"\x1b[{height-1}A" if height > 1 else "")
                 index += 1
 
@@ -274,8 +273,8 @@ class MonoRenderer:
             time, view = yield
             while True:
                 time_ = time - start_time
-                time_, view = scheduler.send((time_, view))
-                time, view = yield time, view
+                view = scheduler.send((time_, view))
+                time, view = yield view
 
     @classmethod
     @contextlib.contextmanager
@@ -470,11 +469,11 @@ class Kerminal:
                     offset -= data.shape[0]
                 else:
                     data1, data2 = data[:offset], data[offset:]
-                    _, data2 = node.send((time+offset/samplerate, data2))
+                    data2 = node.send((time+offset/samplerate, data2))
                     data = numpy.concatenate((data1, data2), axis=0)
                     offset = 0
 
-                time, data = yield time, data
+                time, data = yield data
 
             while True:
                 time, data = yield node.send((time, data))
@@ -493,8 +492,8 @@ class Kerminal:
             node = dn.pipe(node, dn.resample(ratio=(self.settings.output_samplerate, samplerate)))
         if volume != 0:
             node = dn.pipe(node, lambda s: s * 10**(volume/20))
-        node = dn.pair(lambda t:t, dn.attach(node))
 
+        node = dn.pipe(lambda a:a[1], dn.attach(node))
         return self.add_effect(node, time=time, zindex=zindex)
 
     def add_listener(self, node):
@@ -509,12 +508,12 @@ class Kerminal:
     @dn.datanode
     @staticmethod
     def _hit_listener(func, start_time, duration):
-        time, strength, detected = yield
+        (time, strength, detected), _ = yield
         if start_time is None:
             start_time = time
 
         while time < start_time:
-            time, strength, detected = yield
+            (time, strength, detected), _ = yield
 
         while duration is None or time < start_time + duration:
             if detected:
@@ -522,7 +521,7 @@ class Kerminal:
                 if finished:
                     return
 
-            time, strength, detected = yield
+            (time, strength, detected), _ = yield
 
     def add_drawer(self, node, zindex=(0,)):
         return self.renderer.add_drawer(node, zindex)
@@ -531,7 +530,7 @@ class Kerminal:
         return self.renderer.add_drawer(self._text_drawer(text_node, y, x, ymask, xmask), zindex)
 
     def add_pad(self, pad_node, ymask=slice(None,None), xmask=slice(None,None), zindex=(0,)):
-        return self.renderer.add_drawer(self._text_drawer(pad_node, ymask, xmask), zindex)
+        return self.renderer.add_drawer(self._pad_drawer(pad_node, ymask, xmask), zindex)
 
     def remove_drawer(self, key):
         self.renderer.remove_drawer(key)
@@ -549,7 +548,7 @@ class Kerminal:
                 text = text_node.send((time, range(-y, rows-y)[ymask], range(-x, columns-x)[xmask]))
                 view, y, x = tui.addtext(view, y, x, text, ymask=ymask, xmask=xmask)
 
-                time, view = yield time, view
+                time, view = yield view
 
     @dn.datanode
     @staticmethod
@@ -559,10 +558,10 @@ class Kerminal:
             time, view = yield
             while True:
                 subview, y, x = tui.newpad(view, ymask=ymask, xmask=xmask)
-                _, subview = pad_node.send((time, subview))
+                subview = pad_node.send((time, subview))
                 view, yran, xran = tui.addpad(view, y, x, subview)
 
-                time, view = yield time, view
+                time, view = yield view
 
     @contextlib.contextmanager
     def subkerminal(self, start_time=None):

@@ -51,7 +51,7 @@ class Beatbar:
             while True:
                 view_range = range(len(view[0]) if view else 0)
 
-                time, view = self.content_scheduler.send((time, view))
+                view = self.content_scheduler.send((time, view))
 
                 icon_func = self.current_icon.get(time)
                 icon_text = icon_func(time, view_range[self.icon_mask])
@@ -68,7 +68,7 @@ class Beatbar:
                 footer_start = view_range[self.footer_mask].start
                 view = self._draw_masked(view, footer_start, footer_text, self.footer_mask, ("[", "]"))
 
-                time, view = yield time, view
+                time, view = yield view
 
     def _draw_masked(self, view, start, text, mask, enclosed_by=None):
         mask_ran = range(len(view[0]) if view else 0)[mask]

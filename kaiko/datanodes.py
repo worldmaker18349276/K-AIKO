@@ -83,12 +83,15 @@ class DataNode:
                     yield data
             return DataNode(iter(node_like))
 
-        else:
+        elif hasattr(node_like, '__call__'):
             def pure(func):
                 data = yield
                 while True:
                     data = yield func(data)
             return DataNode(pure(node_like))
+
+        else:
+            raise ValueError
 
 def datanode(gen):
     @functools.wraps(gen)
@@ -449,17 +452,10 @@ class TimedVariable:
 class Scheduler(DataNode):
     """A data node schedule given data nodes dynamically.
 
-    Parameters
-    ----------
-    queue : queue of DataNode
-        The sequence of data nodes to schedule.  The entry are tuple of
-        `(key, node, zindex)`, where `key` is a hashable object, `node` is the
-        data node to schedule, and `zindex` is the priority of scheduled node.
-
     Receives
     --------
-    data : any
-        The input signal.
+    data : tuple
+        The meta signal and the input signal.
 
     Yields
     ------
@@ -475,11 +471,9 @@ class Scheduler(DataNode):
         nodes = OrderedDict()
 
         try:
-            data = None
+            meta, data = yield
 
             while True:
-                data = yield data
-
                 while not self.queue.empty():
                     key, node, zindex = self.queue.get()
                     if key in nodes:
@@ -492,9 +486,11 @@ class Scheduler(DataNode):
 
                 for key, (node, _) in sorted(nodes.items(), key=lambda item: item[1][1]()):
                     try:
-                        data = node.send(data)
+                        data = node.send((meta, data))
                     except StopIteration:
                         del nodes[key]
+
+                meta, data = yield data
 
         finally:
             for node, _ in nodes.values():
@@ -1135,24 +1131,22 @@ def timeit(node, name="timeit"):
             finally:
                 stop = time.time()
 
-    try:
-        yield timed_node()
+    yield timed_node()
 
-    finally:
-        if count == 0:
-            print(f"{name}: count=0")
+    if count == 0:
+        print(f"{name}: count=0")
+
+    else:
+        avg = total/count
+        dev = (total2/count - avg**2)**0.5
+        eff = total/(stop - start)
+
+        if count < N:
+            print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms ({eff: >6.1%})")
 
         else:
-            avg = total/count
-            dev = (total2/count - avg**2)**0.5
-            eff = total/(stop - start)
-
-            if count < N:
-                print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms ({eff: >6.1%})")
-
-            else:
-                print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms"
-                      f" ({sum(best)/N*1000:5.3f}ms ~ {sum(worst)/N*1000:5.3f}ms) ({eff: >6.1%})")
+            print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms"
+                  f" ({sum(best)/N*1000:5.3f}ms ~ {sum(worst)/N*1000:5.3f}ms) ({eff: >6.1%})")
 
 
 # not data nodes

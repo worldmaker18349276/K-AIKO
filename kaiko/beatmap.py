@@ -751,7 +751,7 @@ class KAIKOGame:
                             for slic, prev in zip(slices, vols)]
                     self.spectrum = "".join(map(draw_bar, vols[0::2], vols[1::2]))
 
-        return dn.pair(lambda t:t, dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels))))
+        return dn.pipe(lambda a:a[1], dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels))))
 
     @dn.datanode
     def _hit_handler(self):
@@ -760,7 +760,7 @@ class KAIKOGame:
 
         while True:
             # update hit signal
-            time, strength, detected = yield
+            (time, strength, detected), _ = yield
             strength = min(1.0, strength)
             if detected:
                 self.current_hit_hint.set(strength)
@@ -834,7 +834,7 @@ class KAIKOGame:
 
             view, _, _ = self._draw_content(view, 0, sight_text)
 
-            time, view = yield time, view
+            time, view = yield view
 
     def _draw_content(self, view, pos, text):
         pos = pos + self.bar_shift
@@ -892,16 +892,16 @@ class KAIKOGame:
                 start = time
 
             while time < start:
-                time, view = yield time, view
+                time, view = yield view
 
             while duration is None or time < start + duration:
                 view, _, _ = self._draw_content(view, pos_func(time), text_func(time))
-                time, view = yield time, view
+                time, view = yield view
 
         node = _content_node(pos, text, start, duration)
         return self.beatbar.add_content_drawer(node, zindex=zindex)
 
     def on_before_render(self, node):
-        node = dn.branch(dn.pair(node, lambda v: v))
+        node = dn.pipe(dn.pair(node, lambda v: v), lambda a:a[1])
         return self.kerminal.add_drawer(node, zindex=())
 
