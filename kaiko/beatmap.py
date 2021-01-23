@@ -678,35 +678,33 @@ class KAIKOGame:
         time_shift = prepare_time + max(-events_start_time, 0.0)
 
         with dn.tick(1/tickrate, prepare_time, -time_shift) as timer:
-            start_time = kerminal.time + time_shift
-            self.kerminal = kerminal.subkerminal(start_time)
+            with kerminal.subkerminal(kerminal.time + time_shift) as self.kerminal:
+                # play music
+                if audionode is not None:
+                    self.kerminal.play(audionode, volume=volume, time=0.0, zindex=(-3,))
 
-            # play music
-            if audionode is not None:
-                self.kerminal.play(audionode, volume=volume, time=0.0, zindex=(-3,))
+                # register handlers
+                self.kerminal.add_effect(self._spec_handler(), zindex=(-1,))
+                self.kerminal.add_drawer(self.beatbar.node(), zindex=(0,))
+                self.kerminal.add_listener(self._hit_handler())
 
-            # register handlers
-            self.kerminal.add_effect(self._spec_handler(), zindex=(-1,))
-            self.kerminal.add_drawer(self.beatbar.node(), zindex=(0,))
-            self.kerminal.add_listener(self._hit_handler())
-
-            # register events
-            events_iter = iter(self.events)
-            event = next(events_iter, None)
-
-            yield
-            for time in timer:
-                if max(events_end_time, duration) <= time:
-                    break
-
-                while event is not None and event.lifespan[0] <= time + prepare_time:
-                    event.register(self)
-                    event = next(events_iter, None)
-
-                time = int(max(0.0, time))
-                self.time = datetime.time(time//3600, time%3600//60, time%60)
+                # register events
+                events_iter = iter(self.events)
+                event = next(events_iter, None)
 
                 yield
+                for time in timer:
+                    if max(events_end_time, duration) <= time:
+                        break
+
+                    while event is not None and event.lifespan[0] <= time + prepare_time:
+                        event.register(self)
+                        event = next(events_iter, None)
+
+                    time = int(max(0.0, time))
+                    self.time = datetime.time(time//3600, time%3600//60, time%60)
+
+                    yield
 
 
     def get_status(self):

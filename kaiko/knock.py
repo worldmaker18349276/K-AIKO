@@ -91,13 +91,17 @@ class AudioMixer:
     def remove_effect(self, key):
         return self.effects_scheduler.remove_node(key)
 
+    @contextlib.contextmanager
     def submixer(self, start_time, zindex=(0,)):
         clz = type(self)
         scheduler = dn.Scheduler()
         subnode = clz.get_subnode(scheduler, start_time)
-        self.add_effect(subnode, zindex=zindex)
+        subnode_key = self.add_effect(subnode, zindex=zindex)
         submixer = clz(scheduler, self.output_stream)
-        return submixer
+        try:
+            yield submixer
+        finally:
+            self.remove_effect(subnode_key)
 
 class KnockDetector:
     def __init__(self, listeners_scheduler, input_stream):
@@ -217,13 +221,17 @@ class KnockDetector:
     def remove_listener(self, key):
         self.listeners_scheduler.remove_node(key)
 
+    @contextlib.contextmanager
     def subdetector(self, start_time):
         clz = type(self)
         scheduler = dn.Scheduler()
         subnode = clz.get_subnode(scheduler, start_time)
-        self.add_listener(subnode)
+        subnode_key = self.add_listener(subnode)
         subdetector = clz(scheduler, self.input_stream)
-        return subdetector
+        try:
+            yield subdetector
+        finally:
+            self.remove_listener(subnode_key)
 
 class MonoRenderer:
     def __init__(self, drawers_scheduler, display_thread):
@@ -307,13 +315,17 @@ class MonoRenderer:
     def remove_drawer(self, key):
         self.drawers_scheduler.remove_node(key)
 
+    @contextlib.contextmanager
     def subrenderer(self, start_time, zindex=(0,)):
         clz = type(self)
         scheduler = dn.Scheduler()
         subnode = clz.get_subnode(scheduler, start_time)
-        self.add_drawer(subnode, zindex=zindex)
+        subnode_key = self.add_drawer(subnode, zindex=zindex)
         subrenderer = clz(scheduler, self.display_thread)
-        return subrenderer
+        try:
+            yield subrenderer
+        finally:
+            self.remove_drawer(subnode_key)
 
 
 @cfg.configurable
@@ -547,11 +559,14 @@ class Kerminal:
 
                 time, view = yield time, view
 
+    @contextlib.contextmanager
     def subkerminal(self, start_time=None):
         if start_time is None:
             start_time = self.time
-        submixer = self.mixer.submixer(start_time)
-        subdetector = self.detector.subdetector(start_time)
-        subrenderer = self.renderer.subrenderer(start_time)
-        ref_time = self.ref_time + start_time
-        return Kerminal(submixer, subdetector, subrenderer, ref_time, self.settings)
+
+        with self.mixer.submixer(start_time) as submixer,\
+             self.detector.subdetector(start_time) as subdetector,\
+             self.renderer.subrenderer(start_time) as subrenderer:
+
+            ref_time = self.ref_time + start_time
+            yield Kerminal(submixer, subdetector, subrenderer, ref_time, self.settings)
