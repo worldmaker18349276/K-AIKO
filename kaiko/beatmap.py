@@ -611,8 +611,6 @@ class KAIKOGame:
 
     @dn.datanode
     def connect(self, kerminal):
-        self.kerminal = kerminal
-
         # prepare events
         self.events = self.beatmap.build_events()
         self.events.sort(key=lambda e: e.lifespan[0])
@@ -630,7 +628,7 @@ class KAIKOGame:
             audiopath = os.path.join(self.beatmap.path, self.beatmap.audio)
             with audioread.audio_open(audiopath) as file:
                 duration = file.duration
-            audionode = dn.DataNode.wrap(self.kerminal.load_sound(audiopath))
+            audionode = dn.DataNode.wrap(kerminal.load_sound(audiopath))
             volume = self.beatmap.volume
 
         # initialize game state
@@ -680,15 +678,16 @@ class KAIKOGame:
         time_shift = prepare_time + max(-events_start_time, 0.0)
 
         with dn.tick(1/tickrate, prepare_time, -time_shift) as timer:
-            self.start_time = self.kerminal.time + time_shift
+            start_time = kerminal.time + time_shift
+            self.kerminal = kerminal.subkerminal(start_time)
 
             # play music
             if audionode is not None:
-                self.kerminal.play(audionode, volume=volume, time=self.start_time, zindex=(-3,))
+                self.kerminal.play(audionode, volume=volume, time=0.0, zindex=(-3,))
 
             # register handlers
             self.kerminal.add_effect(self._spec_handler(), zindex=(-1,))
-            self.kerminal.add_drawer(self.beatbar.node(self.start_time), zindex=(0,))
+            self.kerminal.add_drawer(self.beatbar.node(), zindex=(0,))
             self.kerminal.add_listener(self._hit_handler())
 
             # register events
@@ -765,7 +764,6 @@ class KAIKOGame:
         while True:
             # update hit signal
             time, strength, detected = yield
-            time -= self.start_time
             strength = min(1.0, strength)
             if detected:
                 self.current_hit_hint.set(strength)
@@ -871,8 +869,6 @@ class KAIKOGame:
 
 
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
-        if time is not None:
-            time += self.start_time
         return self.kerminal.play(node, samplerate=samplerate, channels=channels,
                                         volume=volume, start=start, end=end,
                                         time=time, zindex=zindex)
@@ -909,6 +905,6 @@ class KAIKOGame:
         return self.beatbar.add_content_drawer(node, zindex=zindex)
 
     def on_before_render(self, node):
-        node = dn.branch(dn.pair(dn.pipe(lambda t: t-self.start_time, node), lambda v: v))
+        node = dn.branch(dn.pair(node, lambda v: v))
         return self.kerminal.add_drawer(node, zindex=())
 

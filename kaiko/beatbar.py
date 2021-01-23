@@ -44,28 +44,27 @@ class Beatbar:
         self.current_footer = dn.TimedVariable(value=lambda time, ran: "")
 
     @dn.datanode
-    def node(self, start_time):
+    def node(self):
         with self.content_scheduler:
             time, view = yield
 
             while True:
-                time_ = time - start_time
                 view_range = range(len(view[0]) if view else 0)
 
-                time_, view = self.content_scheduler.send((time_, view))
+                time, view = self.content_scheduler.send((time, view))
 
-                icon_func = self.current_icon.get(time_)
-                icon_text = icon_func(time_, view_range[self.icon_mask])
+                icon_func = self.current_icon.get(time)
+                icon_text = icon_func(time, view_range[self.icon_mask])
                 icon_start = view_range[self.icon_mask].start
                 view = self._draw_masked(view, icon_start, icon_text, self.icon_mask)
 
-                header_func = self.current_header.get(time_)
-                header_text = header_func(time_, view_range[self.header_mask])
+                header_func = self.current_header.get(time)
+                header_text = header_func(time, view_range[self.header_mask])
                 header_start = view_range[self.header_mask].start
                 view = self._draw_masked(view, header_start, header_text, self.header_mask, ("[", "]"))
 
-                footer_func = self.current_footer.get(time_)
-                footer_text = footer_func(time_, view_range[self.footer_mask])
+                footer_func = self.current_footer.get(time)
+                footer_text = footer_func(time, view_range[self.footer_mask])
                 footer_start = view_range[self.footer_mask].start
                 view = self._draw_masked(view, footer_start, footer_text, self.footer_mask, ("[", "]"))
 
@@ -91,14 +90,13 @@ class Beatbar:
         return view
 
     @dn.datanode
-    def _bar_drawer(self, start_time, variable, mask, enclosed_by=None):
+    def _bar_drawer(self, variable, mask, enclosed_by=None):
         time, view = yield
 
         while True:
-            time_ = time - start_time
             mask_ran = range(len(view[0]) if view else 0)[mask]
 
-            text = variable.get(time_)(time_, mask_ran)
+            text = variable.get(time)(time, mask_ran)
             _, text_ran, _, _ = tui.textrange(0, mask_ran.start, text)
 
             view = tui.clear(view, xmask=mask)

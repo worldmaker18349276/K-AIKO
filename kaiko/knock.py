@@ -35,6 +35,16 @@ class AudioMixer:
                 index += 1
 
     @classmethod
+    @dn.datanode
+    def get_subnode(clz, scheduler, start_time):
+        with scheduler:
+            time, data = yield
+            while True:
+                time_ = time - start_time
+                time_, data = scheduler.send((time_, data))
+                time, data = yield time, data
+
+    @classmethod
     @contextlib.contextmanager
     def create(clz, manager, settings):
         samplerate = settings.output_samplerate
@@ -81,6 +91,14 @@ class AudioMixer:
     def remove_effect(self, key):
         return self.effects_scheduler.remove_node(key)
 
+    def submixer(self, start_time, zindex=(0,)):
+        clz = type(self)
+        scheduler = dn.Scheduler()
+        subnode = clz.get_subnode(scheduler, start_time)
+        self.add_effect(subnode, zindex=zindex)
+        submixer = clz(scheduler, self.output_stream)
+        return submixer
+
 class KnockDetector:
     def __init__(self, listeners_scheduler, input_stream):
         self.listeners_scheduler = listeners_scheduler
@@ -120,6 +138,16 @@ class KnockDetector:
                 data = yield
 
                 index += 1
+
+    @classmethod
+    @dn.datanode
+    def get_subnode(clz, scheduler, start_time):
+        with scheduler:
+            time, strength, detected = yield
+            while True:
+                time_ = time - start_time
+                time_, strength, detected = scheduler.send((time_, strength, detected))
+                time, strength, detected = yield time, strength, detected
 
     @classmethod
     @contextlib.contextmanager
@@ -189,6 +217,14 @@ class KnockDetector:
     def remove_listener(self, key):
         self.listeners_scheduler.remove_node(key)
 
+    def subdetector(self, start_time):
+        clz = type(self)
+        scheduler = dn.Scheduler()
+        subnode = clz.get_subnode(scheduler, start_time)
+        self.add_listener(subnode)
+        subdetector = clz(scheduler, self.input_stream)
+        return subdetector
+
 class MonoRenderer:
     def __init__(self, drawers_scheduler, display_thread):
         self.drawers_scheduler = drawers_scheduler
@@ -220,6 +256,16 @@ class MonoRenderer:
                 _, view = scheduler.send((time, view))
                 yield "\r" + "\n".join(map("".join, view)) + "\r" + (f"\x1b[{height-1}A" if height > 1 else "")
                 index += 1
+
+    @classmethod
+    @dn.datanode
+    def get_subnode(clz, scheduler, start_time):
+        with scheduler:
+            time, view = yield
+            while True:
+                time_ = time - start_time
+                time_, view = scheduler.send((time_, view))
+                time, view = yield time, view
 
     @classmethod
     @contextlib.contextmanager
@@ -260,6 +306,14 @@ class MonoRenderer:
 
     def remove_drawer(self, key):
         self.drawers_scheduler.remove_node(key)
+
+    def subrenderer(self, start_time, zindex=(0,)):
+        clz = type(self)
+        scheduler = dn.Scheduler()
+        subnode = clz.get_subnode(scheduler, start_time)
+        self.add_drawer(subnode, zindex=zindex)
+        subrenderer = clz(scheduler, self.display_thread)
+        return subrenderer
 
 
 @cfg.configurable
@@ -492,3 +546,12 @@ class Kerminal:
                 view, yran, xran = tui.addpad(view, y, x, subview)
 
                 time, view = yield time, view
+
+    def subkerminal(self, start_time=None):
+        if start_time is None:
+            start_time = self.time
+        submixer = self.mixer.submixer(start_time)
+        subdetector = self.detector.subdetector(start_time)
+        subrenderer = self.renderer.subrenderer(start_time)
+        ref_time = self.ref_time + start_time
+        return Kerminal(submixer, subdetector, subrenderer, ref_time, self.settings)
