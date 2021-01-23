@@ -189,7 +189,7 @@ class KnockDetector:
     def remove_listener(self, key):
         self.listeners_scheduler.remove_node(key)
 
-class TerminalRenderer:
+class MonoRenderer:
     def __init__(self, drawers_scheduler, display_thread):
         self.drawers_scheduler = drawers_scheduler
         self.display_thread = display_thread
@@ -263,7 +263,7 @@ class TerminalRenderer:
 
 
 @cfg.configurable
-class KnockConsoleSettings:
+class KerminalSettings:
     # input
     input_device: int = -1
     input_samplerate: int = 44100
@@ -300,7 +300,7 @@ class KnockConsoleSettings:
     # debug
     debug_timeit: bool = False
 
-class KnockConsole:
+class Kerminal:
     def __init__(self, mixer, detector, renderer, ref_time, settings):
         self.mixer = mixer
         self.detector = detector
@@ -316,7 +316,7 @@ class KnockConsole:
     def run(clz, knock_program, settings=None):
         if isinstance(settings, str):
             with open(settings, 'r') as file:
-                settings = KnockConsoleSettings()
+                settings = KerminalSettings()
                 cfg.config_read(file, main=settings)
 
         try:
@@ -325,7 +325,7 @@ class KnockConsole:
             # initialize audio/video streams
             with AudioMixer.create(manager, settings) as mixer,\
                  KnockDetector.create(manager, settings) as detector,\
-                 TerminalRenderer.create(settings) as renderer:
+                 MonoRenderer.create(settings) as renderer:
 
                 # activate audio/video streams
                 ref_time = time.time()

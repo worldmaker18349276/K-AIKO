@@ -610,8 +610,8 @@ class KAIKOGame:
             cfg.config_read(open(config, 'r'), main=self.settings)
 
     @dn.datanode
-    def connect(self, console):
-        self.console = console
+    def connect(self, kerminal):
+        self.kerminal = kerminal
 
         # prepare events
         self.events = self.beatmap.build_events()
@@ -630,7 +630,7 @@ class KAIKOGame:
             audiopath = os.path.join(self.beatmap.path, self.beatmap.audio)
             with audioread.audio_open(audiopath) as file:
                 duration = file.duration
-            audionode = dn.DataNode.wrap(self.console.load_sound(audiopath))
+            audionode = dn.DataNode.wrap(self.kerminal.load_sound(audiopath))
             volume = self.beatmap.volume
 
         # initialize game state
@@ -680,16 +680,16 @@ class KAIKOGame:
         time_shift = prepare_time + max(-events_start_time, 0.0)
 
         with dn.tick(1/tickrate, prepare_time, -time_shift) as timer:
-            self.start_time = self.console.time + time_shift
+            self.start_time = self.kerminal.time + time_shift
 
             # play music
             if audionode is not None:
-                self.console.play(audionode, volume=volume, time=self.start_time, zindex=(-3,))
+                self.kerminal.play(audionode, volume=volume, time=self.start_time, zindex=(-3,))
 
             # register handlers
-            self.console.add_effect(self._spec_handler(), zindex=(-1,))
-            self.console.add_drawer(self.beatbar.node(self.start_time), zindex=(0,))
-            self.console.add_listener(self._hit_handler())
+            self.kerminal.add_effect(self._spec_handler(), zindex=(-1,))
+            self.kerminal.add_drawer(self.beatbar.node(self.start_time), zindex=(0,))
+            self.kerminal.add_listener(self._hit_handler())
 
             # register events
             events_iter = iter(self.events)
@@ -721,8 +721,8 @@ class KAIKOGame:
 
     def _spec_handler(self):
         spec_width = self.settings.spec_width
-        samplerate = self.console.settings.output_samplerate
-        nchannels = self.console.settings.output_channels
+        samplerate = self.kerminal.settings.output_samplerate
+        nchannels = self.kerminal.settings.output_channels
         hop_length = round(samplerate * self.settings.spec_time_res)
         win_length = round(samplerate / self.settings.spec_freq_res)
 
@@ -873,9 +873,9 @@ class KAIKOGame:
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
         if time is not None:
             time += self.start_time
-        return self.console.play(node, samplerate=samplerate, channels=channels,
-                                       volume=volume, start=start, end=end,
-                                       time=time, zindex=zindex)
+        return self.kerminal.play(node, samplerate=samplerate, channels=channels,
+                                        volume=volume, start=start, end=end,
+                                        time=time, zindex=zindex)
 
     def listen(self, node, start=None, duration=None):
         self.target_queue.put((node, start, duration))
@@ -910,5 +910,5 @@ class KAIKOGame:
 
     def on_before_render(self, node):
         node = dn.branch(dn.pair(dn.pipe(lambda t: t-self.start_time, node), lambda v: v))
-        return self.console.add_drawer(node, zindex=())
+        return self.kerminal.add_drawer(node, zindex=())
 
