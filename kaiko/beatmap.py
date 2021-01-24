@@ -651,10 +651,11 @@ class KAIKOGame:
         footer_templates = self.settings.footer_templates
 
         def fit(templates, ran):
+            status = self.get_status()
             for template in templates:
-                text = template.format(**self.get_status())
+                text = template.format(**status)
                 _, text_ran, _, _ = tui.textrange(0, ran.start, text)
-                if text_ran.start in ran and text_ran.stop-1 in ran:
+                if ran.start <= text_ran.start and text_ran.stop <= ran.stop:
                     break
             return text
 
@@ -662,12 +663,22 @@ class KAIKOGame:
         self.beatbar.current_header.set(lambda time, ran: fit(header_templates, ran))
         self.beatbar.current_footer.set(lambda time, ran: fit(footer_templates, ran))
 
-        hit_hint_duration = max(self.settings.hit_decay_time, self.settings.hit_sustain_time)
+        hit_decay_time = self.settings.hit_decay_time
+        hit_sustain_time = self.settings.hit_sustain_time
+        perf_appearances = self.settings.performances_appearances
+        sight_appearances = self.settings.sight_appearances
+        perf_sustain_time = self.settings.performance_sustain_time
+        hit_hint_duration = max(hit_decay_time, hit_sustain_time)
+
         self.current_hit_hint = dn.TimedVariable(value=None, duration=hit_hint_duration)
-        self.current_perf_hint = dn.TimedVariable(value=(None, None), duration=self.settings.performance_sustain_time)
+        self.current_perf_hint = dn.TimedVariable(value=(None, None), duration=perf_sustain_time)
         self.current_sight = dn.TimedVariable(value=None)
 
-        self.beatbar.add_content_drawer(self._sight_handler(), zindex=(2,))
+        sight_handler = self._sight_handler(
+            self.current_hit_hint, self.current_perf_hint, self.current_sight,
+            hit_decay_time, hit_sustain_time, perf_appearances, sight_appearances)
+
+        self.beatbar.add_content_drawer(sight_handler, zindex=(2,))
 
         self.target_queue = queue.Queue()
 
@@ -796,18 +807,14 @@ class KAIKOGame:
                     target, start, duration = None, None, None
 
     @dn.datanode
-    def _sight_handler(self):
-        hit_decay_time = self.settings.hit_decay_time
-        hit_sustain_time = self.settings.hit_sustain_time
-        perf_appearances = self.settings.performances_appearances
-        sight_appearances = self.settings.sight_appearances
-
+    def _sight_handler(self, current_hit_hint, current_perf_hint, current_sight,
+                             hit_decay_time, hit_sustain_time, perf_appearances, sight_appearances):
         (time, height, width), view = yield
         while True:
             # update hit hint, perf hint, sight drawers
-            hit_strength, hit_time, _ = self.current_hit_hint.get(time, ret_sched=True)
-            (perf, perf_is_reversed), perf_time, _ = self.current_perf_hint.get(time, ret_sched=True)
-            sight = self.current_sight.get(time)
+            hit_strength, hit_time, _ = current_hit_hint.get(time, ret_sched=True)
+            (perf, perf_is_reversed), perf_time, _ = current_perf_hint.get(time, ret_sched=True)
+            sight = current_sight.get(time)
 
             # draw perf hint
             if perf is not None:
@@ -837,17 +844,19 @@ class KAIKOGame:
             (time, height, width), view = yield view
 
     def _draw_content(self, view, height, width, pos, text):
+        mask = self.beatbar.content_mask
+
         pos = pos + self.bar_shift
         if self.bar_flip:
             pos = 1 - pos
 
-        content_start, content_end, _ = self.beatbar.content_mask.indices(width)
+        content_start, content_end, _ = mask.indices(width)
         index = round(content_start + pos * max(0, content_end - content_start - 1))
 
         if isinstance(text, tuple):
             text = text[self.bar_flip]
 
-        return tui.addtext(view, height, width, 0, index, text, xmask=self.beatbar.content_mask)
+        return tui.addtext(view, height, width, 0, index, text, xmask=mask)
 
 
     def add_score(self, score):
