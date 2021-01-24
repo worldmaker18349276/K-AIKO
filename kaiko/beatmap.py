@@ -735,7 +735,7 @@ class KAIKOGame:
     def start(self):
         return self.thread.start()
 
-    def is_active(self):
+    def is_alive(self):
         return self.thread.is_alive()
 
 

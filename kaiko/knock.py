@@ -74,17 +74,8 @@ class AudioMixer:
     def start(self):
         return self.output_stream.start_stream()
 
-    def stop(self):
-        return self.output_stream.stop_stream()
-
-    def is_active(self):
+    def is_alive(self):
         return self.output_stream.is_active()
-
-    def is_stopped(self):
-        return self.output_stream.is_stopped()
-
-    def close(self):
-        return self.output_stream.close()
 
     def add_effect(self, node, zindex=(0,)):
         return self.effects_scheduler.add_node(node, zindex=zindex)
@@ -203,17 +194,8 @@ class KnockDetector:
     def start(self):
         return self.input_stream.start_stream()
 
-    def stop(self):
-        return self.input_stream.stop_stream()
-
-    def is_active(self):
+    def is_alive(self):
         return self.input_stream.is_active()
-
-    def is_stopped(self):
-        return self.input_stream.is_stopped()
-
-    def close(self):
-        return self.input_stream.close()
 
     def add_listener(self, node):
         return self.listeners_scheduler.add_node(node, (0,))
@@ -306,7 +288,7 @@ class MonoRenderer:
     def start(self):
         return self.display_thread.start()
 
-    def is_active(self):
+    def is_alive(self):
         return self.display_thread.is_alive()
 
     def add_drawer(self, node, zindex=(0,)):
@@ -402,7 +384,7 @@ class Kerminal:
             yield self.time
 
     @classmethod
-    def execute(clz, knock_program, settings=None):
+    def execute(clz, khread, settings=None):
         if isinstance(settings, str):
             with open(settings, 'r') as file:
                 settings = KerminalSettings()
@@ -425,18 +407,18 @@ class Kerminal:
                 self = clz(mixer, detector, renderer, ref_time, settings=settings)
 
                 # connect to program
-                with knock_program.connect(self) as main:
+                with khread.connect(self) as main:
                     main.start()
 
                     for _ in until_interrupt():
-                        if not main.is_active() or not self.is_active():
+                        if not main.is_alive() or not self.is_alive():
                             break
 
         finally:
             manager.terminate()
 
-    def is_active(self):
-        return self.mixer.is_active() and self.detector.is_active() and self.renderer.is_active()
+    def is_alive(self):
+        return self.mixer.is_alive() and self.detector.is_alive() and self.renderer.is_alive()
 
     def add_effect(self, node, time=None, zindex=(0,)):
         if time is not None:
