@@ -46,73 +46,48 @@ class Beatbar:
     @dn.datanode
     def node(self):
         with self.content_scheduler:
-            time, view = yield
+            (time, height, width), view = yield
 
             while True:
-                view_range = range(len(view[0]) if view else 0)
+                ran = range(width)
 
-                view = self.content_scheduler.send((time, view))
+                view = self.content_scheduler.send(((time, height, width), view))
 
                 icon_func = self.current_icon.get(time)
-                icon_text = icon_func(time, view_range[self.icon_mask])
-                icon_start = view_range[self.icon_mask].start
-                view = self._draw_masked(view, icon_start, icon_text, self.icon_mask)
+                icon_text = icon_func(time, ran[self.icon_mask])
+                icon_start = ran[self.icon_mask].start
+                view = self._draw_masked(view, height, width, icon_start, icon_text, self.icon_mask)
 
                 header_func = self.current_header.get(time)
-                header_text = header_func(time, view_range[self.header_mask])
-                header_start = view_range[self.header_mask].start
-                view = self._draw_masked(view, header_start, header_text, self.header_mask, ("[", "]"))
+                header_text = header_func(time, ran[self.header_mask])
+                header_start = ran[self.header_mask].start
+                view = self._draw_masked(view, height, width, header_start, header_text, self.header_mask, ("[", "]"))
 
                 footer_func = self.current_footer.get(time)
-                footer_text = footer_func(time, view_range[self.footer_mask])
-                footer_start = view_range[self.footer_mask].start
-                view = self._draw_masked(view, footer_start, footer_text, self.footer_mask, ("[", "]"))
+                footer_text = footer_func(time, ran[self.footer_mask])
+                footer_start = ran[self.footer_mask].start
+                view = self._draw_masked(view, height, width, footer_start, footer_text, self.footer_mask, ("[", "]"))
 
-                time, view = yield view
+                (time, height, width), view = yield view
 
-    def _draw_masked(self, view, start, text, mask, enclosed_by=None):
-        mask_ran = range(len(view[0]) if view else 0)[mask]
+    def _draw_masked(self, view, height, width, start, text, mask, enclosed_by=None):
+        mask_ran = range(width)[mask]
         _, text_ran, _, _ = tui.textrange(0, start, text)
 
-        view = tui.clear(view, xmask=mask)
-        view, _, _ = tui.addtext(view, 0, start, text, xmask=mask)
+        view = tui.clear(view, height, width, xmask=mask)
+        view, _, _ = tui.addtext(view, height, width, 0, start, text, xmask=mask)
 
         if text_ran.start < mask_ran.start:
-            view, _, _ = tui.addtext(view, 0, mask_ran.start, "…")
+            view, _, _ = tui.addtext(view, height, width, 0, mask_ran.start, "…")
 
         if text_ran.stop > mask_ran.stop:
-            view, _, _ = tui.addtext(view, 0, mask_ran.stop-1, "…")
+            view, _, _ = tui.addtext(view, height, width, 0, mask_ran.stop-1, "…")
 
         if enclosed_by is not None:
-            view, _, _ = tui.addtext(view, 0, mask_ran.start-len(enclosed_by[0]), enclosed_by[0])
-            view, _, _ = tui.addtext(view, 0, mask_ran.stop, enclosed_by[1])
+            view, _, _ = tui.addtext(view, height, width, 0, mask_ran.start-len(enclosed_by[0]), enclosed_by[0])
+            view, _, _ = tui.addtext(view, height, width, 0, mask_ran.stop, enclosed_by[1])
 
         return view
-
-    @dn.datanode
-    def _bar_drawer(self, variable, mask, enclosed_by=None):
-        time, view = yield
-
-        while True:
-            mask_ran = range(len(view[0]) if view else 0)[mask]
-
-            text = variable.get(time)(time, mask_ran)
-            _, text_ran, _, _ = tui.textrange(0, mask_ran.start, text)
-
-            view = tui.clear(view, xmask=mask)
-            view, _, _ = tui.addtext(view, 0, mask_ran.start, text, xmask=mask)
-
-            if text_ran.start < mask_ran.start:
-                view, _, _ = tui.addtext(view, 0, mask_ran.start, "…")
-
-            if text_ran.stop > mask_ran.stop:
-                view, _, _ = tui.addtext(view, 0, mask_ran.stop-1, "…")
-
-            if enclosed_by is not None:
-                view, _, _ = tui.addtext(view, 0, mask_ran.start-wcwidth.wcswidth(enclosed_by[0]), enclosed_by[0])
-                view, _, _ = tui.addtext(view, 0, mask_ran.stop, enclosed_by[1])
-
-            time, view = yield time, view
 
     def set_icon(self, icon, start=None, duration=None):
         icon_func = icon if hasattr(icon, '__call__') else lambda time, ran: icon

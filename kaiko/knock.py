@@ -262,7 +262,7 @@ class MonoRenderer:
 
                 time = index / framerate + display_delay
                 view = [[" "]*width for _ in range(height)]
-                view = scheduler.send((time, view))
+                view = scheduler.send(((time, height, width), view))
                 yield "\r" + "\n".join(map("".join, view)) + "\r" + (f"\x1b[{height-1}A" if height > 1 else "")
                 index += 1
 
@@ -270,11 +270,11 @@ class MonoRenderer:
     @dn.datanode
     def get_subnode(clz, scheduler, start_time):
         with scheduler:
-            time, view = yield
+            (time, height, width), view = yield
             while True:
                 time_ = time - start_time
-                view = scheduler.send((time_, view))
-                time, view = yield view
+                view = scheduler.send(((time_, height, width), view))
+                (time, height, width), view = yield view
 
     @classmethod
     @contextlib.contextmanager
@@ -540,28 +540,25 @@ class Kerminal:
     def _text_drawer(text_node, y=0, x=0, ymask=slice(None,None), xmask=slice(None,None)):
         text_node = dn.DataNode.wrap(text_node)
         with text_node:
-            time, view = yield
+            (time, height, width), view = yield
             while True:
-                rows = len(view)
-                columns = len(view[0]) if view else 0
+                text = text_node.send((time, range(-y, height-y)[ymask], range(-x, width-x)[xmask]))
+                view, y, x = tui.addtext(view, height, width, y, x, text, ymask=ymask, xmask=xmask)
 
-                text = text_node.send((time, range(-y, rows-y)[ymask], range(-x, columns-x)[xmask]))
-                view, y, x = tui.addtext(view, y, x, text, ymask=ymask, xmask=xmask)
-
-                time, view = yield view
+                (time, height, width), view = yield view
 
     @dn.datanode
     @staticmethod
     def _pad_drawer(pad_node, ymask=slice(None,None), xmask=slice(None,None)):
         pad_node = dn.DataNode.wrap(pad_node)
         with pad_node:
-            time, view = yield
+            (time, height, width), view = yield
             while True:
-                subview, y, x = tui.newpad(view, ymask=ymask, xmask=xmask)
-                subview = pad_node.send((time, subview))
-                view, yran, xran = tui.addpad(view, y, x, subview)
+                subview, y, x, subheight, subwidth = tui.newpad(view, height, width, ymask=ymask, xmask=xmask)
+                subview = pad_node.send(((time, subheight, subwidth), subview))
+                view, yran, xran = tui.addpad(view, height, width, y, x, subview, subheight, subwidth)
 
-                time, view = yield view
+                (time, height, width), view = yield view
 
     @contextlib.contextmanager
     def subkerminal(self, start_time=None):

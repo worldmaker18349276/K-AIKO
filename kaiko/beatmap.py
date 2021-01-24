@@ -56,17 +56,17 @@ class Flip(Event):
 
     @dn.datanode
     def _node(self, field):
-        time = yield
+        time, height, width = yield
 
         while time < self.time:
-            time = yield
+            time, height, width = yield
 
         if self.flip is None:
             field.bar_flip = not field.bar_flip
         else:
             field.bar_flip = self.flip
 
-        time = yield
+        time, height, width = yield
 
 class Shift(Event):
     def __init__(self, beatmap, shift, beat=None, length=None):
@@ -80,21 +80,21 @@ class Shift(Event):
 
     @dn.datanode
     def _node(self, field):
-        time = yield
+        time, height, width = yield
 
         while time < self.time:
-            time = yield
+            time, height, width = yield
 
         shift0 = field.bar_shift
         speed = (self.shift - shift0) / (self.end - self.time) if self.end != self.time else 0
 
         while time < self.end:
             field.bar_shift = shift0 + speed * (time - self.time)
-            time = yield
+            time, height, width = yield
 
         field.bar_shift = self.shift
 
-        time = yield
+        time, height, width = yield
 
 def set_context(beatmap, *, context, **kw):
     context.update(**kw)
@@ -802,7 +802,7 @@ class KAIKOGame:
         perf_appearances = self.settings.performances_appearances
         sight_appearances = self.settings.sight_appearances
 
-        time, view = yield
+        (time, height, width), view = yield
         while True:
             # update hit hint, perf hint, sight drawers
             hit_strength, hit_time, _ = self.current_hit_hint.get(time, ret_sched=True)
@@ -815,7 +815,7 @@ class KAIKOGame:
                 if perf_is_reversed:
                     perf_text = perf_text[::-1]
 
-                view, _, _ = self._draw_content(view, 0, perf_text)
+                view, _, _ = self._draw_content(view, height, width, 0, perf_text)
 
             # draw sight
             if sight is not None:
@@ -832,22 +832,22 @@ class KAIKOGame:
             else:
                 sight_text = sight_appearances[0]
 
-            view, _, _ = self._draw_content(view, 0, sight_text)
+            view, _, _ = self._draw_content(view, height, width, 0, sight_text)
 
-            time, view = yield view
+            (time, height, width), view = yield view
 
-    def _draw_content(self, view, pos, text):
+    def _draw_content(self, view, height, width, pos, text):
         pos = pos + self.bar_shift
         if self.bar_flip:
             pos = 1 - pos
 
-        content_start, content_end, _ = self.beatbar.content_mask.indices(len(view[0]) if view else 0)
+        content_start, content_end, _ = self.beatbar.content_mask.indices(width)
         index = round(content_start + pos * max(0, content_end - content_start - 1))
 
         if isinstance(text, tuple):
             text = text[self.bar_flip]
 
-        return tui.addtext(view, 0, index, text, xmask=self.beatbar.content_mask)
+        return tui.addtext(view, height, width, 0, index, text, xmask=self.beatbar.content_mask)
 
 
     def add_score(self, score):
@@ -886,17 +886,17 @@ class KAIKOGame:
 
         @dn.datanode
         def _content_node(pos, text, start, duration):
-            time, view = yield
+            (time, height, width), view = yield
 
             if start is None:
                 start = time
 
             while time < start:
-                time, view = yield view
+                (time, height, width), view = yield view
 
             while duration is None or time < start + duration:
-                view, _, _ = self._draw_content(view, pos_func(time), text_func(time))
-                time, view = yield view
+                view, _, _ = self._draw_content(view, height, width, pos_func(time), text_func(time))
+                (time, height, width), view = yield view
 
         node = _content_node(pos, text, start, duration)
         return self.beatbar.add_content_drawer(node, zindex=zindex)

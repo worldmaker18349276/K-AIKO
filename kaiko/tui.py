@@ -11,9 +11,9 @@ def clamp(ran, ran_):
     stop = max(min(ran.stop, ran_.stop), ran.start)
     return range(start, stop)
 
-def addtext(view, y, x, text, ymask=slice(None,None), xmask=slice(None,None)):
-    yran = range(len(view))
-    xran = range(len(view[0]) if view else 0)
+def addtext(view, height, width, y, x, text, ymask=slice(None,None), xmask=slice(None,None)):
+    yran = range(height)
+    xran = range(width)
 
     for ch in text:
         width = wcwidth.wcwidth(ch)
@@ -112,17 +112,17 @@ def textrange(y, x, text):
 
     return range(ystart, ystop), range(xstart, xstop), y, x
 
-def newpad(view, fill=" ", ymask=slice(None,None), xmask=slice(None,None)):
-    ys = range(len(view))[ymask]
-    xs = range(len(view[0]) if view else 0)[xmask]
+def newpad(view, height, width, fill=" ", ymask=slice(None,None), xmask=slice(None,None)):
+    ys = range(height)[ymask]
+    xs = range(width)[xmask]
     pad = [[fill for _ in xs] for _ in ys]
-    return pad, ys.start, xs.start
+    return pad, ys.start, xs.start, len(ys), len(xs)
 
-def addpad(view, y, x, pad, ymask=slice(None,None), xmask=slice(None,None)):
-    yran = range(len(view))
-    xran = range(len(view[0]) if view else 0)
-    ys = clamp(range(y, y+len(pad)), yran[ymask])
-    xs = clamp(range(x, x+len(pad[0]) if pad else x), xran[xmask])
+def addpad(view, height, width, y, x, pad, pad_height, pad_width, ymask=slice(None,None), xmask=slice(None,None)):
+    yran = range(height)
+    xran = range(width)
+    ys = clamp(range(y, y+pad_height), yran[ymask])
+    xs = clamp(range(x, x+pad_width), xran[xmask])
 
     if ys and xs:
         for y_ in ys:
@@ -135,9 +135,9 @@ def addpad(view, y, x, pad, ymask=slice(None,None), xmask=slice(None,None)):
 
     return view, ys, xs
 
-def clear(view, ymask=slice(None,None), xmask=slice(None,None)):
-    yran = range(len(view))
-    xran = range(len(view[0]) if view else 0)
+def clear(view, height, width, ymask=slice(None,None), xmask=slice(None,None)):
+    yran = range(height)
+    xran = range(width)
     ys = yran[ymask]
     xs = xran[xmask]
 
