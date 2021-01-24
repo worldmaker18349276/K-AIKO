@@ -504,6 +504,103 @@ class Scheduler(DataNode):
     def remove_node(self, key):
         self.queue.put((key, None, (0,)))
 
+@contextlib.contextmanager
+def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
+    producer = DataNode.wrap(producer)
+    consumer = DataNode.wrap(consumer)
+    stop = threading.Event()
+
+    def run():
+        ref_time = time.time()
+
+        for i, data in enumerate(producer):
+            if stop.wait(max(0.0, ref_time+t0+i*dt - time.time())):
+                break
+
+            consumer.send((time.time()-ref_time, data))
+
+    with producer, consumer:
+        thread = threading.Thread(target=run)
+        try:
+            yield thread
+        finally:
+            stop.set()
+            thread.join()
+
+@datanode
+def tick(dt, t0=0.0, shift=0.0):
+    stop = threading.Event()
+    ref_time = time.time()
+
+    yield
+    for i in itertools.count():
+        if stop.wait(max(0.0, ref_time+t0+i*dt - time.time())):
+            break
+
+        yield time.time()-ref_time+shift
+
+@contextlib.contextmanager
+def timeit(node, name="timeit"):
+    if hasattr(time, 'thread_time'):
+        get_time = time.thread_time
+    elif hasattr(time, 'clock_gettime'):
+        get_time = lambda: time.clock_gettime(time.CLOCK_THREAD_CPUTIME_ID)
+    else:
+        get_time = time.perf_counter
+
+    N = 10
+    start = 0
+    stop = 0
+    count = 0
+    total = 0.0
+    total2 = 0.0
+    worst = [0.0]*N
+    best = [numpy.inf]*N
+
+    @datanode
+    def timed_node():
+        nonlocal node, count, total, total2, worst, best, start, stop
+        with node:
+            data = yield
+            try:
+                start = time.time()
+
+                while True:
+
+                    t0 = get_time()
+                    data = node.send(data)
+                    t = get_time() - t0
+
+                    count += 1
+                    total += t
+                    total2 += t**2
+                    bisect.insort(worst, t)
+                    worst.pop(0)
+                    bisect.insort_left(best, t)
+                    best.pop()
+
+                    data = yield data
+
+            finally:
+                stop = time.time()
+
+    yield timed_node()
+
+    if count == 0:
+        print(f"{name}: count=0")
+
+    else:
+        avg = total/count
+        dev = (total2/count - avg**2)**0.5
+        eff = total/(stop - start)
+
+        if count < N:
+            print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms ({eff: >6.1%})")
+
+        else:
+            print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms"
+                  f" ({sum(best)/N*1000:5.3f}ms ~ {sum(worst)/N*1000:5.3f}ms) ({eff: >6.1%})")
+
 
 # for fixed-width data
 @datanode
@@ -1050,103 +1147,6 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
         finally:
             output_stream.stop_stream()
             output_stream.close()
-
-@contextlib.contextmanager
-def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
-    producer = DataNode.wrap(producer)
-    consumer = DataNode.wrap(consumer)
-    stop = threading.Event()
-
-    def run():
-        ref_time = time.time()
-
-        for i, data in enumerate(producer):
-            if stop.wait(max(0.0, ref_time+t0+i*dt - time.time())):
-                break
-
-            consumer.send((time.time()-ref_time, data))
-
-    with producer, consumer:
-        thread = threading.Thread(target=run)
-        try:
-            yield thread
-        finally:
-            stop.set()
-            thread.join()
-
-@datanode
-def tick(dt, t0=0.0, shift=0.0):
-    stop = threading.Event()
-    ref_time = time.time()
-
-    yield
-    for i in itertools.count():
-        if stop.wait(max(0.0, ref_time+t0+i*dt - time.time())):
-            break
-
-        yield time.time()-ref_time+shift
-
-@contextlib.contextmanager
-def timeit(node, name="timeit"):
-    if hasattr(time, 'thread_time'):
-        get_time = time.thread_time
-    elif hasattr(time, 'clock_gettime'):
-        get_time = lambda: time.clock_gettime(time.CLOCK_THREAD_CPUTIME_ID)
-    else:
-        get_time = time.perf_counter
-
-    N = 10
-    start = 0
-    stop = 0
-    count = 0
-    total = 0.0
-    total2 = 0.0
-    worst = [0.0]*N
-    best = [numpy.inf]*N
-
-    @datanode
-    def timed_node():
-        nonlocal node, count, total, total2, worst, best, start, stop
-        with node:
-            data = yield
-            try:
-                start = time.time()
-
-                while True:
-
-                    t0 = get_time()
-                    data = node.send(data)
-                    t = get_time() - t0
-
-                    count += 1
-                    total += t
-                    total2 += t**2
-                    bisect.insort(worst, t)
-                    worst.pop(0)
-                    bisect.insort_left(best, t)
-                    best.pop()
-
-                    data = yield data
-
-            finally:
-                stop = time.time()
-
-    yield timed_node()
-
-    if count == 0:
-        print(f"{name}: count=0")
-
-    else:
-        avg = total/count
-        dev = (total2/count - avg**2)**0.5
-        eff = total/(stop - start)
-
-        if count < N:
-            print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms ({eff: >6.1%})")
-
-        else:
-            print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms"
-                  f" ({sum(best)/N*1000:5.3f}ms ~ {sum(worst)/N*1000:5.3f}ms) ({eff: >6.1%})")
 
 
 # not data nodes

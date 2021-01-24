@@ -1,4 +1,5 @@
 import time
+import itertools
 import functools
 import contextlib
 import threading
@@ -379,8 +380,18 @@ class Kerminal:
     def time(self):
         return time.time() - self.ref_time
 
+    def tick(self, dt, t0=0.0, stop=None):
+        if stop is None:
+            stop = threading.Event()
+
+        for i in itertools.count():
+            if stop.wait(max(0.0, t0+i*dt - self.time)):
+                break
+
+            yield self.time
+
     @classmethod
-    def run(clz, knock_program, settings=None):
+    def execute(clz, knock_program, settings=None):
         if isinstance(settings, str):
             with open(settings, 'r') as file:
                 settings = KerminalSettings()
@@ -408,18 +419,13 @@ class Kerminal:
                     SIGINT_event.set()
                 signal.signal(signal.SIGINT, SIGINT_handler)
 
-                main = threading.Thread(target=knock_program.connect, args=(self, SIGINT_event))
-
-                try:
+                with knock_program.connect(self) as main:
                     main.start()
 
-                    while main.is_alive() and self.is_active():
+                    while not SIGINT_event.wait(SIGINT_reassignment_time):
                         signal.signal(signal.SIGINT, SIGINT_handler)
-                        time.sleep(SIGINT_reassignment_time)
-
-                finally:
-                    SIGINT_event.set()
-                    main.join()
+                        if not main.is_active() or not self.is_active():
+                            break
 
         finally:
             manager.terminate()

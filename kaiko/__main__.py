@@ -8,7 +8,7 @@ filename = sys.argv[1]
 
 beatmap = BeatmapDraft.read(filename)
 game = KAIKOGame(beatmap)
-Kerminal.run(game, settings="debug_config")
+Kerminal.execute(game, settings="debug_config")
 
 print()
 show_analyze(beatmap.settings.performance_tolerance, game.perfs)

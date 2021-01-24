@@ -1,9 +1,11 @@
 import os
 import datetime
+import contextlib
 from enum import Enum
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
 import queue
+import threading
 import numpy
 import audioread
 from . import cfg
@@ -609,7 +611,7 @@ class KAIKOGame:
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
 
-    def connect(self, kerminal, stop_event):
+    def prepare(self, kerminal):
         # prepare events
         self.events = self.beatmap.build_events()
         self.events.sort(key=lambda e: e.lifespan[0])
@@ -620,15 +622,18 @@ class KAIKOGame:
 
         # prepare music
         if self.beatmap.audio is None:
-            audionode = None
-            duration = 0.0
-            volume = 0.0
+            self.audionode = None
+            self.duration = 0.0
+            self.volume = 0.0
         else:
             audiopath = os.path.join(self.beatmap.path, self.beatmap.audio)
             with audioread.audio_open(audiopath) as file:
-                duration = file.duration
-            audionode = dn.DataNode.wrap(kerminal.load_sound(audiopath))
-            volume = self.beatmap.volume
+                self.duration = file.duration
+            self.audionode = dn.DataNode.wrap(kerminal.load_sound(audiopath))
+            self.volume = self.beatmap.volume
+
+        self.start_time = min(events_start_time, 0.0)
+        self.end_time = max(events_end_time, self.duration)
 
         # initialize game state
         self.bar_shift = self.settings.bar_shift
@@ -682,39 +687,56 @@ class KAIKOGame:
 
         self.target_queue = queue.Queue()
 
-        # game loop
+        return self.settings.prepare_time - self.start_time
+
+    @contextlib.contextmanager
+    def connect(self, kerminal):
+        time_shift = self.prepare(kerminal)
+
+        with kerminal.subkerminal(kerminal.time + time_shift) as self.kerminal:
+            # play music
+            if self.audionode is not None:
+                self.kerminal.play(self.audionode, volume=self.volume, time=0.0, zindex=(-3,))
+
+            # register handlers
+            self.kerminal.add_effect(self._spec_handler(), zindex=(-1,))
+            self.beatbar.register_drawers(self.kerminal)
+            self.kerminal.add_listener(self._hit_handler())
+
+            # game loop
+            stop_event = threading.Event()
+            self.thread = threading.Thread(target=self.run, args=(stop_event,))
+
+            try:
+                yield self
+            finally:
+                stop_event.set()
+                self.thread.join()
+
+    def run(self, stop_event):
+        # register events
+        events_iter = iter(self.events)
+        event = next(events_iter, None)
+
         tickrate = self.settings.tickrate
         prepare_time = self.settings.prepare_time
-        time_shift = prepare_time + max(-events_start_time, 0.0)
 
-        with dn.tick(1/tickrate, prepare_time, -time_shift) as timer:
-            with kerminal.subkerminal(kerminal.time + time_shift) as self.kerminal:
-                # play music
-                if audionode is not None:
-                    self.kerminal.play(audionode, volume=volume, time=0.0, zindex=(-3,))
+        for time in self.kerminal.tick(1/tickrate, self.start_time, stop_event):
+            if self.end_time <= time:
+                break
 
-                # register handlers
-                self.kerminal.add_effect(self._spec_handler(), zindex=(-1,))
-                self.beatbar.register_drawers(self.kerminal)
-                self.kerminal.add_listener(self._hit_handler())
-
-                # register events
-                events_iter = iter(self.events)
+            while event is not None and event.lifespan[0] <= time + prepare_time:
+                event.register(self)
                 event = next(events_iter, None)
 
-                for time in timer:
-                    if stop_event.is_set():
-                        break
+            time = int(max(0.0, time)) # datetime cannot be negative
+            self.time = datetime.time(time//3600, time%3600//60, time%60)
 
-                    if max(events_end_time, duration) <= time:
-                        break
+    def start(self):
+        return self.thread.start()
 
-                    while event is not None and event.lifespan[0] <= time + prepare_time:
-                        event.register(self)
-                        event = next(events_iter, None)
-
-                    time = int(max(0.0, time))
-                    self.time = datetime.time(time//3600, time%3600//60, time%60)
+    def is_active(self):
+        return self.thread.is_alive()
 
 
     def get_status(self):
