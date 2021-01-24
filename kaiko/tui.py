@@ -112,11 +112,16 @@ def textrange(y, x, text):
 
     return range(ystart, ystop), range(xstart, xstop), y, x
 
+def newwin(height, width):
+    return [[" "]*width for _ in range(height)]
+
 def newpad(view, height, width, fill=" ", ymask=slice(None,None), xmask=slice(None,None)):
     ys = range(height)[ymask]
     xs = range(width)[xmask]
-    pad = [[fill for _ in xs] for _ in ys]
-    return pad, ys.start, xs.start, len(ys), len(xs)
+    pad_height = len(ys)
+    pad_width = len(xs)
+    pad = newwin(pad_height, pad_width)
+    return pad, ys.start, xs.start, pad_height, pad_width
 
 def addpad(view, height, width, y, x, pad, pad_height, pad_width, ymask=slice(None,None), xmask=slice(None,None)):
     yran = range(height)

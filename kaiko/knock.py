@@ -261,7 +261,7 @@ class MonoRenderer:
                     height = size.lines if rows == -1 else min(rows, size.lines)
 
                 time = index / framerate + display_delay
-                view = [[" "]*width for _ in range(height)]
+                view = tui.newwin(height, width)
                 view = scheduler.send(((time, height, width), view))
                 yield "\r" + "\n".join(map("".join, view)) + "\r" + (f"\x1b[{height-1}A" if height > 1 else "")
                 index += 1
