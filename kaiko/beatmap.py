@@ -684,7 +684,7 @@ class KAIKOGame:
 
                 # register handlers
                 self.kerminal.add_effect(self._spec_handler(), zindex=(-1,))
-                self.kerminal.add_drawer(self.beatbar.node(), zindex=(0,))
+                self.beatbar.register_drawers(self.kerminal)
                 self.kerminal.add_listener(self._hit_handler())
 
                 # register events
