@@ -32,7 +32,7 @@ class AudioMixer:
             while True:
                 time = index * buffer_length / samplerate + sound_delay
                 data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
-                data = scheduler.send((time, data))
+                data = scheduler.send((data, time))
                 yield data
                 index += 1
 
@@ -40,11 +40,11 @@ class AudioMixer:
     @dn.datanode
     def get_subnode(clz, scheduler, start_time):
         with scheduler:
-            time, data = yield
+            data, time = yield
             while True:
                 time_ = time - start_time
-                data = scheduler.send((time_, data))
-                time, data = yield data
+                data = scheduler.send((data, time_))
+                data, time = yield data
 
     @classmethod
     @contextlib.contextmanager
@@ -140,7 +140,7 @@ class KnockDetector:
                 buffer.append((time, strength))
                 time, strength = buffer.pop(0)
 
-                scheduler.send(((time, strength, detected), None))
+                scheduler.send((None, time, strength, detected))
                 data = yield
 
                 index += 1
@@ -149,11 +149,11 @@ class KnockDetector:
     @dn.datanode
     def get_subnode(clz, scheduler, start_time):
         with scheduler:
-            (time, strength, detected), _ = yield
+            _, time, strength, detected = yield
             while True:
                 time_ = time - start_time
-                scheduler.send(((time_, strength, detected), None))
-                (time, strength, detected), _ = yield
+                scheduler.send((None, time_, strength, detected))
+                _, time, strength, detected = yield
 
     @classmethod
     @contextlib.contextmanager
@@ -262,7 +262,7 @@ class MonoRenderer:
 
                 time = index / framerate + display_delay
                 view = tui.newwin(height, width)
-                view = scheduler.send(((time, height, width), view))
+                view = scheduler.send((view, time, height, width))
                 yield "\r" + "\n".join(map("".join, view)) + "\r" + (f"\x1b[{height-1}A" if height > 1 else "")
                 index += 1
 
@@ -270,11 +270,11 @@ class MonoRenderer:
     @dn.datanode
     def get_subnode(clz, scheduler, start_time):
         with scheduler:
-            (time, height, width), view = yield
+            view, time, height, width = yield
             while True:
                 time_ = time - start_time
-                view = scheduler.send(((time_, height, width), view))
-                (time, height, width), view = yield view
+                view = scheduler.send((view, time_, height, width))
+                view, time, height, width = yield view
 
     @classmethod
     @contextlib.contextmanager
@@ -455,7 +455,7 @@ class Kerminal:
         nchannels = self.settings.output_channels
 
         with node:
-            time, data = yield
+            data, time = yield
             offset = round((start_time - time) * samplerate) if start_time is not None else 0
 
             while offset < 0:
@@ -469,14 +469,14 @@ class Kerminal:
                     offset -= data.shape[0]
                 else:
                     data1, data2 = data[:offset], data[offset:]
-                    data2 = node.send((time+offset/samplerate, data2))
+                    data2 = node.send((data2, time+offset/samplerate))
                     data = numpy.concatenate((data1, data2), axis=0)
                     offset = 0
 
-                time, data = yield data
+                data, time = yield data
 
             while True:
-                time, data = yield node.send((time, data))
+                data, time = yield node.send((data, time))
 
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
         if isinstance(node, str):
@@ -493,7 +493,7 @@ class Kerminal:
         if volume != 0:
             node = dn.pipe(node, lambda s: s * 10**(volume/20))
 
-        node = dn.pipe(lambda a:a[1], dn.attach(node))
+        node = dn.pipe(lambda a:a[0], dn.attach(node))
         return self.add_effect(node, time=time, zindex=zindex)
 
     def add_listener(self, node):
@@ -508,12 +508,12 @@ class Kerminal:
     @dn.datanode
     @staticmethod
     def _hit_listener(func, start_time, duration):
-        (time, strength, detected), _ = yield
+        _, time, strength, detected = yield
         if start_time is None:
             start_time = time
 
         while time < start_time:
-            (time, strength, detected), _ = yield
+            _, time, strength, detected = yield
 
         while duration is None or time < start_time + duration:
             if detected:
@@ -521,7 +521,7 @@ class Kerminal:
                 if finished:
                     return
 
-            (time, strength, detected), _ = yield
+            _, time, strength, detected = yield
 
     def add_drawer(self, node, zindex=(0,)):
         return self.renderer.add_drawer(node, zindex)
@@ -540,25 +540,25 @@ class Kerminal:
     def _text_drawer(text_node, y=0, x=0, ymask=slice(None,None), xmask=slice(None,None)):
         text_node = dn.DataNode.wrap(text_node)
         with text_node:
-            (time, height, width), view = yield
+            view, time, height, width = yield
             while True:
                 text = text_node.send((time, range(-y, height-y)[ymask], range(-x, width-x)[xmask]))
                 view, y, x = tui.addtext(view, height, width, y, x, text, ymask=ymask, xmask=xmask)
 
-                (time, height, width), view = yield view
+                view, time, height, width = yield view
 
     @dn.datanode
     @staticmethod
     def _pad_drawer(pad_node, ymask=slice(None,None), xmask=slice(None,None)):
         pad_node = dn.DataNode.wrap(pad_node)
         with pad_node:
-            (time, height, width), view = yield
+            view, time, height, width = yield
             while True:
                 subview, y, x, subheight, subwidth = tui.newpad(view, height, width, ymask=ymask, xmask=xmask)
                 subview = pad_node.send(((time, subheight, subwidth), subview))
                 view, yran, xran = tui.addpad(view, height, width, y, x, subview, subheight, subwidth)
 
-                (time, height, width), view = yield view
+                view, time, height, width = yield view
 
     @contextlib.contextmanager
     def subkerminal(self, start_time=None):

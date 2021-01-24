@@ -762,7 +762,7 @@ class KAIKOGame:
                             for slic, prev in zip(slices, vols)]
                     self.spectrum = "".join(map(draw_bar, vols[0::2], vols[1::2]))
 
-        return dn.pipe(lambda a:a[1], dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels))))
+        return dn.pipe(lambda a:a[0], dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels))))
 
     @dn.datanode
     def _hit_handler(self):
@@ -771,7 +771,7 @@ class KAIKOGame:
 
         while True:
             # update hit signal
-            (time, strength, detected), _ = yield
+            _, time, strength, detected = yield
             strength = min(1.0, strength)
             if detected:
                 self.current_hit_hint.set(strength)
@@ -809,7 +809,7 @@ class KAIKOGame:
     @dn.datanode
     def _sight_handler(self, current_hit_hint, current_perf_hint, current_sight,
                              hit_decay_time, hit_sustain_time, perf_appearances, sight_appearances):
-        (time, height, width), view = yield
+        view, time, height, width = yield
         while True:
             # update hit hint, perf hint, sight drawers
             hit_strength, hit_time, _ = current_hit_hint.get(time, ret_sched=True)
@@ -841,7 +841,7 @@ class KAIKOGame:
 
             view, _, _ = self._draw_content(view, height, width, 0, sight_text)
 
-            (time, height, width), view = yield view
+            view, time, height, width = yield view
 
     def _draw_content(self, view, height, width, pos, text):
         mask = self.beatbar.content_mask
@@ -895,22 +895,22 @@ class KAIKOGame:
 
         @dn.datanode
         def _content_node(pos, text, start, duration):
-            (time, height, width), view = yield
+            view, time, height, width = yield
 
             if start is None:
                 start = time
 
             while time < start:
-                (time, height, width), view = yield view
+                view, time, height, width = yield view
 
             while duration is None or time < start + duration:
                 view, _, _ = self._draw_content(view, height, width, pos_func(time), text_func(time))
-                (time, height, width), view = yield view
+                view, time, height, width = yield view
 
         node = _content_node(pos, text, start, duration)
         return self.beatbar.add_content_drawer(node, zindex=zindex)
 
     def on_before_render(self, node):
-        node = dn.pipe(dn.pair(node, lambda v: v), lambda a:a[1])
+        node = dn.pipe(dn.branch(lambda a:a[1:], node), lambda a:a[0])
         return self.kerminal.add_drawer(node, zindex=())
 

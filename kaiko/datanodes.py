@@ -455,7 +455,7 @@ class Scheduler(DataNode):
     Receives
     --------
     data : tuple
-        The meta signal and the input signal.
+        The input signal and the meta signal.
 
     Yields
     ------
@@ -471,7 +471,7 @@ class Scheduler(DataNode):
         nodes = OrderedDict()
 
         try:
-            meta, data = yield
+            data, *meta = yield
 
             while True:
                 while not self.queue.empty():
@@ -486,11 +486,11 @@ class Scheduler(DataNode):
 
                 for key, (node, _) in sorted(nodes.items(), key=lambda item: item[1][1]()):
                     try:
-                        data = node.send((meta, data))
+                        data = node.send((data, *meta))
                     except StopIteration:
                         del nodes[key]
 
-                meta, data = yield data
+                data, *meta = yield data
 
         finally:
             for node, _ in nodes.values():

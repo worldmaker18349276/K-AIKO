@@ -51,7 +51,7 @@ class Beatbar:
 
     @dn.datanode
     def _masked_node(self, variable, mask, enclosed_by=None):
-        (time, height, width), view = yield
+        view, time, height, width = yield
 
         while True:
             mask_ran = range(width)[mask]
@@ -74,7 +74,7 @@ class Beatbar:
                 view, _, _ = tui.addtext(view, height, width, 0, mask_ran.start, enclosed_by[0])
                 view, _, _ = tui.addtext(view, height, width, 0, mask_ran.stop, enclosed_by[1])
 
-            (time, height, width), view = yield view
+            view, time, height, width = yield view
 
     def set_icon(self, icon, start=None, duration=None):
         icon_func = icon if hasattr(icon, '__call__') else lambda time, ran: icon
