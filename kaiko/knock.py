@@ -13,8 +13,6 @@ from . import datanodes as dn
 from . import tui
 
 
-SIGINT_reassignment_time = 0.005
-
 @contextlib.contextmanager
 def nullcontext(value):
     yield value
@@ -330,6 +328,19 @@ class MonoRenderer:
             self.remove_drawer(subnode_key)
 
 
+def until_interrupt(dt=0.005):
+    SIGINT_event = threading.Event()
+    def SIGINT_handler(sig, frame):
+        SIGINT_event.set()
+
+    while True:
+        # Using PyAudio in non-blocking mode will continuously cancel the SIGINT handler.
+        signal.signal(signal.SIGINT, SIGINT_handler)
+        yield
+
+        if SIGINT_event.wait(dt):
+            break
+
 @cfg.configurable
 class KerminalSettings:
     # input
@@ -414,16 +425,10 @@ class Kerminal:
                 self = clz(mixer, detector, renderer, ref_time, settings=settings)
 
                 # connect to program
-                SIGINT_event = threading.Event()
-                def SIGINT_handler(sig, frame):
-                    SIGINT_event.set()
-                signal.signal(signal.SIGINT, SIGINT_handler)
-
                 with knock_program.connect(self) as main:
                     main.start()
 
-                    while not SIGINT_event.wait(SIGINT_reassignment_time):
-                        signal.signal(signal.SIGINT, SIGINT_handler)
+                    for _ in until_interrupt():
                         if not main.is_active() or not self.is_active():
                             break
 
