@@ -58,17 +58,17 @@ class Flip(Event):
 
     @dn.datanode
     def _node(self, field):
-        time, height, width = yield
+        time, width = yield
 
         while time < self.time:
-            time, height, width = yield
+            time, width = yield
 
         if self.flip is None:
             field.bar_flip = not field.bar_flip
         else:
             field.bar_flip = self.flip
 
-        time, height, width = yield
+        time, width = yield
 
 class Shift(Event):
     def __init__(self, beatmap, shift, beat=None, length=None):
@@ -82,21 +82,21 @@ class Shift(Event):
 
     @dn.datanode
     def _node(self, field):
-        time, height, width = yield
+        time, width = yield
 
         while time < self.time:
-            time, height, width = yield
+            time, width = yield
 
         shift0 = field.bar_shift
         speed = (self.shift - shift0) / (self.end - self.time) if self.end != self.time else 0
 
         while time < self.end:
             field.bar_shift = shift0 + speed * (time - self.time)
-            time, height, width = yield
+            time, width = yield
 
         field.bar_shift = self.shift
 
-        time, height, width = yield
+        time, width = yield
 
 def set_context(beatmap, *, context, **kw):
     context.update(**kw)
@@ -659,7 +659,7 @@ class KAIKOGame:
             status = self.get_status()
             for template in templates:
                 text = template.format(**status)
-                _, text_ran, _, _ = tui.textrange(0, ran.start, text)
+                text_ran, _ = tui.textrange1(ran.start, text)
                 if ran.start <= text_ran.start and text_ran.stop <= ran.stop:
                     break
             return text
@@ -831,7 +831,7 @@ class KAIKOGame:
     @dn.datanode
     def _sight_handler(self, current_hit_hint, current_perf_hint, current_sight,
                              hit_decay_time, hit_sustain_time, perf_appearances, sight_appearances):
-        view, time, height, width = yield
+        view, time, width = yield
         while True:
             # update hit hint, perf hint, sight drawers
             hit_strength, hit_time, _ = current_hit_hint.get(time, ret_sched=True)
@@ -844,7 +844,7 @@ class KAIKOGame:
                 if perf_is_reversed:
                     perf_text = perf_text[::-1]
 
-                view, _, _ = self._draw_content(view, height, width, 0, perf_text)
+                view, _ = self._draw_content(view, width, 0, perf_text)
 
             # draw sight
             if sight is not None:
@@ -861,11 +861,11 @@ class KAIKOGame:
             else:
                 sight_text = sight_appearances[0]
 
-            view, _, _ = self._draw_content(view, height, width, 0, sight_text)
+            view, _ = self._draw_content(view, width, 0, sight_text)
 
-            view, time, height, width = yield view
+            view, time, width = yield view
 
-    def _draw_content(self, view, height, width, pos, text):
+    def _draw_content(self, view, width, pos, text):
         mask = self.beatbar.content_mask
 
         pos = pos + self.bar_shift
@@ -878,7 +878,7 @@ class KAIKOGame:
         if isinstance(text, tuple):
             text = text[self.bar_flip]
 
-        return tui.addtext(view, height, width, 0, index, text, xmask=mask)
+        return tui.addtext1(view, width, index, text, xmask=mask)
 
 
     def add_score(self, score):
@@ -917,17 +917,17 @@ class KAIKOGame:
 
         @dn.datanode
         def _content_node(pos, text, start, duration):
-            view, time, height, width = yield
+            view, time, width = yield
 
             if start is None:
                 start = time
 
             while time < start:
-                view, time, height, width = yield view
+                view, time, width = yield view
 
             while duration is None or time < start + duration:
-                view, _, _ = self._draw_content(view, height, width, pos_func(time), text_func(time))
-                view, time, height, width = yield view
+                view, _ = self._draw_content(view, width, pos_func(time), text_func(time))
+                view, time, width = yield view
 
         node = _content_node(pos, text, start, duration)
         return self.beatbar.add_content_drawer(node, zindex=zindex)

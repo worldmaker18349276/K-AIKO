@@ -222,9 +222,8 @@ class MonoRenderer:
 
     @classmethod
     @dn.datanode
-    def get_display_node(clz, scheduler, resize_event, framerate, display_delay, rows, columns):
+    def get_display_node(clz, scheduler, resize_event, framerate, display_delay, columns):
         width = 0
-        height = 0
 
         def SIGWINCH_handler(sig, frame):
             resize_event.set()
@@ -239,23 +238,22 @@ class MonoRenderer:
                     resize_event.clear()
                     size = shutil.get_terminal_size()
                     width = size.columns if columns == -1 else min(columns, size.columns)
-                    height = size.lines if rows == -1 else min(rows, size.lines)
 
                 time = index / framerate + display_delay
-                view = tui.newwin(height, width)
-                view = scheduler.send((view, time, height, width))
-                yield "\r" + "\n".join(map("".join, view)) + "\r" + (f"\x1b[{height-1}A" if height > 1 else "")
+                view = tui.newwin1(width)
+                view = scheduler.send((view, time, width))
+                yield "\r" + "".join(view) + "\r"
                 index += 1
 
     @classmethod
     @dn.datanode
     def get_subnode(clz, scheduler, start_time):
         with scheduler:
-            view, time, height, width = yield
+            view, time, width = yield
             while True:
                 time_ = time - start_time
-                view = scheduler.send((view, time_, height, width))
-                view, time, height, width = yield view
+                view = scheduler.send((view, time_, width))
+                view, time, width = yield view
 
     @classmethod
     @contextlib.contextmanager
@@ -279,7 +277,7 @@ class MonoRenderer:
                 print()
 
         scheduler = dn.Scheduler()
-        display_node = clz.get_display_node(scheduler, resize_event, framerate, display_delay, rows, columns)
+        display_node = clz.get_display_node(scheduler, resize_event, framerate, display_delay, columns)
         display_ctxt = dn.timeit(display_node, "display") if debug_timeit else nullcontext(display_node)
         with display_ctxt as display_node:
             with dn.interval(display_node, show(), 1/framerate) as thread:
@@ -519,39 +517,39 @@ class Kerminal:
     def add_drawer(self, node, zindex=(0,)):
         return self.renderer.add_drawer(node, zindex)
 
-    def add_text(self, text_node, y=0, x=0, ymask=slice(None,None), xmask=slice(None,None), zindex=(0,)):
-        return self.renderer.add_drawer(self._text_drawer(text_node, y, x, ymask, xmask), zindex)
+    def add_text(self, text_node, x=0, xmask=slice(None,None), zindex=(0,)):
+        return self.renderer.add_drawer(self._text_drawer(text_node, x, xmask), zindex)
 
-    def add_pad(self, pad_node, ymask=slice(None,None), xmask=slice(None,None), zindex=(0,)):
-        return self.renderer.add_drawer(self._pad_drawer(pad_node, ymask, xmask), zindex)
+    def add_pad(self, pad_node, xmask=slice(None,None), zindex=(0,)):
+        return self.renderer.add_drawer(self._pad_drawer(pad_node, xmask), zindex)
 
     def remove_drawer(self, key):
         self.renderer.remove_drawer(key)
 
     @dn.datanode
     @staticmethod
-    def _text_drawer(text_node, y=0, x=0, ymask=slice(None,None), xmask=slice(None,None)):
+    def _text_drawer(text_node, x=0, xmask=slice(None,None)):
         text_node = dn.DataNode.wrap(text_node)
         with text_node:
-            view, time, height, width = yield
+            view, time, width = yield
             while True:
-                text = text_node.send((time, range(-y, height-y)[ymask], range(-x, width-x)[xmask]))
-                view, y, x = tui.addtext(view, height, width, y, x, text, ymask=ymask, xmask=xmask)
+                text = text_node.send((time, range(-x, width-x)[xmask]))
+                view, x = tui.addtext1(view, width, x, text, xmask=xmask)
 
-                view, time, height, width = yield view
+                view, time, width = yield view
 
     @dn.datanode
     @staticmethod
-    def _pad_drawer(pad_node, ymask=slice(None,None), xmask=slice(None,None)):
+    def _pad_drawer(pad_node, xmask=slice(None,None)):
         pad_node = dn.DataNode.wrap(pad_node)
         with pad_node:
-            view, time, height, width = yield
+            view, time, width = yield
             while True:
-                subview, y, x, subheight, subwidth = tui.newpad(view, height, width, ymask=ymask, xmask=xmask)
-                subview = pad_node.send(((time, subheight, subwidth), subview))
-                view, yran, xran = tui.addpad(view, height, width, y, x, subview, subheight, subwidth)
+                subview, x, subwidth = tui.newpad1(view, width, xmask=xmask)
+                subview = pad_node.send(((time, subwidth), subview))
+                view, xran = tui.addpad1(view, width, x, subview, subwidth)
 
-                view, time, height, width = yield view
+                view, time, width = yield view
 
     @contextlib.contextmanager
     def subkerminal(self, start_time=None):

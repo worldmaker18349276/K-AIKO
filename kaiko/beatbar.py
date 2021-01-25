@@ -51,7 +51,7 @@ class Beatbar:
 
     @dn.datanode
     def _masked_node(self, variable, mask, enclosed_by=None):
-        view, time, height, width = yield
+        view, time, width = yield
 
         while True:
             mask_ran = range(width)[mask]
@@ -59,22 +59,22 @@ class Beatbar:
             text = func(time, mask_ran)
             start = mask_ran.start
 
-            _, text_ran, _, _ = tui.textrange(0, start, text)
+            text_ran, _ = tui.textrange1(start, text)
 
-            view = tui.clear(view, height, width, xmask=mask)
-            view, _, _ = tui.addtext(view, height, width, 0, start, text, xmask=mask)
+            view = tui.clear1(view, width, xmask=mask)
+            view, _ = tui.addtext1(view, width, start, text, xmask=mask)
 
             if text_ran.start < mask_ran.start:
-                view, _, _ = tui.addtext(view, height, width, 0, mask_ran.start, "…")
+                view, _ = tui.addtext1(view, width, mask_ran.start, "…")
 
             if text_ran.stop > mask_ran.stop:
-                view, _, _ = tui.addtext(view, height, width, 0, mask_ran.stop-1, "…")
+                view, _ = tui.addtext1(view, width, mask_ran.stop-1, "…")
 
             if enclosed_by is not None:
-                view, _, _ = tui.addtext(view, height, width, 0, mask_ran.start, enclosed_by[0])
-                view, _, _ = tui.addtext(view, height, width, 0, mask_ran.stop, enclosed_by[1])
+                view, _ = tui.addtext1(view, width, mask_ran.start, enclosed_by[0])
+                view, _ = tui.addtext1(view, width, mask_ran.stop, enclosed_by[1])
 
-            view, time, height, width = yield view
+            view, time, width = yield view
 
     def set_icon(self, icon, start=None, duration=None):
         icon_func = icon if hasattr(icon, '__call__') else lambda time, ran: icon
