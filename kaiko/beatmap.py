@@ -693,7 +693,7 @@ class KAIKOGame:
     def connect(self, kerminal):
         time_shift = self.prepare(kerminal)
 
-        with kerminal.subkerminal(kerminal.time + time_shift) as self.kerminal:
+        with kerminal.subkerminal(kerminal, time_shift) as self.kerminal:
             # play music
             if self.audionode is not None:
                 self.kerminal.play(self.audionode, volume=self.volume, time=0.0, zindex=(-3,))
