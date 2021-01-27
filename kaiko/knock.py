@@ -18,9 +18,8 @@ def nullcontext(value):
     yield value
 
 class KerminalMixer:
-    def __init__(self, effects_scheduler, output_stream):
+    def __init__(self, effects_scheduler):
         self.effects_scheduler = effects_scheduler
-        self.output_stream = output_stream
 
     @classmethod
     @dn.datanode
@@ -34,16 +33,6 @@ class KerminalMixer:
                 data = scheduler.send((data, time))
                 yield data
                 index += 1
-
-    @classmethod
-    @dn.datanode
-    def get_subnode(clz, scheduler, time_shift):
-        with scheduler:
-            data, time = yield
-            while True:
-                time_ = time - time_shift
-                data = scheduler.send((data, time_))
-                data, time = yield data
 
     @classmethod
     @contextlib.contextmanager
@@ -69,19 +58,17 @@ class KerminalMixer:
                                   )
 
             with stream_ctxt as stream:
-                yield clz(scheduler, stream)
+                yield stream, clz(scheduler)
 
-    def start(self):
-        return self.output_stream.start_stream()
-
-    def is_alive(self):
-        return self.output_stream.is_active()
-
-    def add_effect(self, node, zindex=(0,)):
-        return self.effects_scheduler.add_node(node, zindex=zindex)
-
-    def remove_effect(self, key):
-        return self.effects_scheduler.remove_node(key)
+    @classmethod
+    @dn.datanode
+    def get_subnode(clz, scheduler, time_shift):
+        with scheduler:
+            data, time = yield
+            while True:
+                time_ = time - time_shift
+                data = scheduler.send((data, time_))
+                data, time = yield data
 
     @classmethod
     @contextlib.contextmanager
@@ -89,16 +76,20 @@ class KerminalMixer:
         scheduler = dn.Scheduler()
         subnode = clz.get_subnode(scheduler, time_shift)
         subnode_key = mixer.add_effect(subnode, zindex=zindex)
-        submixer = clz(scheduler, mixer.output_stream)
         try:
-            yield submixer
+            yield clz(scheduler)
         finally:
             mixer.remove_effect(subnode_key)
 
+    def add_effect(self, node, zindex=(0,)):
+        return self.effects_scheduler.add_node(node, zindex=zindex)
+
+    def remove_effect(self, key):
+        return self.effects_scheduler.remove_node(key)
+
 class KerminalDetector:
-    def __init__(self, listeners_scheduler, input_stream):
+    def __init__(self, listeners_scheduler):
         self.listeners_scheduler = listeners_scheduler
-        self.input_stream = input_stream
 
     @classmethod
     @dn.datanode
@@ -134,16 +125,6 @@ class KerminalDetector:
                 data = yield
 
                 index += 1
-
-    @classmethod
-    @dn.datanode
-    def get_subnode(clz, scheduler, time_shift):
-        with scheduler:
-            _, time, strength, detected = yield
-            while True:
-                time_ = time - time_shift
-                scheduler.send((None, time_, strength, detected))
-                _, time, strength, detected = yield
 
     @classmethod
     @contextlib.contextmanager
@@ -189,19 +170,17 @@ class KerminalDetector:
                                     )
 
             with stream_ctxt as stream:
-                yield clz(scheduler, stream)
+                yield stream, clz(scheduler)
 
-    def start(self):
-        return self.input_stream.start_stream()
-
-    def is_alive(self):
-        return self.input_stream.is_active()
-
-    def add_listener(self, node):
-        return self.listeners_scheduler.add_node(node, (0,))
-
-    def remove_listener(self, key):
-        self.listeners_scheduler.remove_node(key)
+    @classmethod
+    @dn.datanode
+    def get_subnode(clz, scheduler, time_shift):
+        with scheduler:
+            _, time, strength, detected = yield
+            while True:
+                time_ = time - time_shift
+                scheduler.send((None, time_, strength, detected))
+                _, time, strength, detected = yield
 
     @classmethod
     @contextlib.contextmanager
@@ -209,16 +188,20 @@ class KerminalDetector:
         scheduler = dn.Scheduler()
         subnode = clz.get_subnode(scheduler, time_shift)
         subnode_key = detector.add_listener(subnode)
-        subdetector = clz(scheduler, detector.input_stream)
         try:
-            yield subdetector
+            yield clz(scheduler)
         finally:
             detector.remove_listener(subnode_key)
 
+    def add_listener(self, node):
+        return self.listeners_scheduler.add_node(node, (0,))
+
+    def remove_listener(self, key):
+        self.listeners_scheduler.remove_node(key)
+
 class KerminalRenderer:
-    def __init__(self, drawers_scheduler, display_thread):
+    def __init__(self, drawers_scheduler):
         self.drawers_scheduler = drawers_scheduler
-        self.display_thread = display_thread
 
     @classmethod
     @dn.datanode
@@ -246,16 +229,6 @@ class KerminalRenderer:
                 index += 1
 
     @classmethod
-    @dn.datanode
-    def get_subnode(clz, scheduler, time_shift):
-        with scheduler:
-            view, time, width = yield
-            while True:
-                time_ = time - time_shift
-                view = scheduler.send((view, time_, width))
-                view, time, width = yield view
-
-    @classmethod
     @contextlib.contextmanager
     def create(clz, settings):
         framerate = settings.display_framerate
@@ -281,19 +254,17 @@ class KerminalRenderer:
         display_ctxt = dn.timeit(display_node, "display") if debug_timeit else nullcontext(display_node)
         with display_ctxt as display_node:
             with dn.interval(display_node, show(), 1/framerate) as thread:
-                yield clz(scheduler, thread)
+                yield thread, clz(scheduler)
 
-    def start(self):
-        return self.display_thread.start()
-
-    def is_alive(self):
-        return self.display_thread.is_alive()
-
-    def add_drawer(self, node, zindex=(0,)):
-        return self.drawers_scheduler.add_node(node, zindex=zindex)
-
-    def remove_drawer(self, key):
-        self.drawers_scheduler.remove_node(key)
+    @classmethod
+    @dn.datanode
+    def get_subnode(clz, scheduler, time_shift):
+        with scheduler:
+            view, time, width = yield
+            while True:
+                time_ = time - time_shift
+                view = scheduler.send((view, time_, width))
+                view, time, width = yield view
 
     @classmethod
     @contextlib.contextmanager
@@ -301,11 +272,16 @@ class KerminalRenderer:
         scheduler = dn.Scheduler()
         subnode = clz.get_subnode(scheduler, time_shift)
         subnode_key = renderer.add_drawer(subnode, zindex=zindex)
-        subrenderer = clz(scheduler, renderer.display_thread)
         try:
-            yield subrenderer
+            yield clz(scheduler)
         finally:
             renderer.remove_drawer(subnode_key)
+
+    def add_drawer(self, node, zindex=(0,)):
+        return self.drawers_scheduler.add_node(node, zindex=zindex)
+
+    def remove_drawer(self, key):
+        self.drawers_scheduler.remove_node(key)
 
 
 def until_interrupt(dt=0.005):
@@ -372,15 +348,6 @@ class Kerminal:
         self.renderer = renderer
         self.settings = settings
 
-    def start(self):
-        self.ref_time = time.time()
-        self.mixer.start()
-        self.detector.start()
-        self.renderer.start()
-
-    def is_alive(self):
-        return self.mixer.is_alive() and self.detector.is_alive() and self.renderer.is_alive()
-
     @classmethod
     def execute(clz, knockable, settings=None):
         if isinstance(settings, str):
@@ -392,22 +359,28 @@ class Kerminal:
             manager = pyaudio.PyAudio()
 
             # initialize audio/video streams
-            with clz.MixerClass.create(manager, settings) as mixer,\
-                 clz.DetectorClass.create(manager, settings) as detector,\
-                 clz.RendererClass.create(settings) as renderer:
+            with clz.MixerClass.create(manager, settings) as (output_stream, mixer),\
+                 clz.DetectorClass.create(manager, settings) as (input_stream, detector),\
+                 clz.RendererClass.create(settings) as (display_thread, renderer):
 
                 # initialize kerminal
                 self = clz(mixer, detector, renderer, settings)
 
                 # activate audio/video streams
-                self.start()
+                self.ref_time = time.time()
+                output_stream.start_stream()
+                input_stream.start_stream()
+                display_thread.start()
 
                 # connect to knockable
                 with knockable.connect(self) as main:
                     main.start()
 
                     for _ in until_interrupt():
-                        if not main.is_alive() or not self.is_alive():
+                        if (not main.is_alive()
+                            or not output_stream.is_active()
+                            or not input_stream.is_active()
+                            or not display_thread.is_alive()):
                             break
 
         finally:
