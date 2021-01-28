@@ -87,6 +87,69 @@ class KerminalMixer:
     def remove_effect(self, key):
         return self.effects_scheduler.remove_node(key)
 
+class KerminalSoundLoader:
+    def __init__(self, samplerate, buffer_length, nchannels):
+        self.samplerate = samplerate
+        self.buffer_length = buffer_length
+        self.nchannels = nchannels
+
+    @functools.lru_cache(maxsize=32)
+    def load_sound(self, filepath):
+        with audioread.audio_open(filepath) as file:
+            samplerate = file.samplerate
+        node = dn.load(filepath)
+        if samplerate != self.samplerate:
+            node = dn.pipe(node, dn.resample(ratio=(self.samplerate, samplerate)))
+        with node as filenode:
+            sound = list(filenode)
+        return sound
+
+    @dn.datanode
+    def delay(self, node, start_time):
+        node = dn.DataNode.wrap(node)
+
+        samplerate = self.samplerate
+        buffer_length = self.buffer_length
+        nchannels = self.nchannels
+
+        with node:
+            data, time = yield
+            offset = round((start_time - time) * samplerate) if start_time is not None else 0
+
+            while offset < 0:
+                length = min(-offset, buffer_length)
+                dummy = numpy.zeros((length, nchannels), dtype=numpy.float32)
+                node.send((dummy, time+offset/samplerate))
+                offset += length
+
+            while 0 < offset:
+                if data.shape[0] < offset:
+                    offset -= data.shape[0]
+                else:
+                    data1, data2 = data[:offset], data[offset:]
+                    data2 = node.send((data2, time+offset/samplerate))
+                    data = numpy.concatenate((data1, data2), axis=0)
+                    offset = 0
+
+                data, time = yield data
+
+            while True:
+                data, time = yield node.send((data, time))
+
+    def resample(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None):
+        if channels is None:
+            channels = self.nchannels
+
+        if start is not None or end is not None:
+            node = dn.tslice(node, samplerate, start, end)
+        node = dn.pipe(node, dn.rechannel(channels))
+        if samplerate is not None and samplerate != self.samplerate:
+            node = dn.pipe(node, dn.resample(ratio=(self.samplerate, samplerate)))
+        if volume != 0:
+            node = dn.pipe(node, lambda s: s * 10**(volume/20))
+
+        return node
+
 class KerminalDetector:
     def __init__(self, listeners_scheduler):
         self.listeners_scheduler = listeners_scheduler
@@ -233,7 +296,6 @@ class KerminalRenderer:
     def create(clz, settings):
         framerate = settings.display_framerate
         display_delay = settings.display_delay
-        rows = settings.display_rows
         columns = settings.display_columns
         debug_timeit = settings.debug_timeit
 
@@ -326,7 +388,6 @@ class KerminalSettings:
     # controls
     display_framerate: float = 160.0 # ~ 2 / detector_time_res
     display_delay: float = 0.0
-    display_rows: int = 1
     display_columns: int = -1
     knock_delay: float = 0.0
     knock_energy: float = 1.0e-3
@@ -341,12 +402,12 @@ class Kerminal:
     RendererClass = KerminalRenderer
     SettingsClass = KerminalSettings
 
-    def __init__(self, mixer, detector, renderer, settings):
+    def __init__(self, mixer, detector, renderer, loader):
         self.ref_time = None
         self.mixer = mixer
         self.detector = detector
         self.renderer = renderer
-        self.settings = settings
+        self.loader = loader
 
     @classmethod
     def execute(clz, knockable, settings=None):
@@ -358,13 +419,17 @@ class Kerminal:
         try:
             manager = pyaudio.PyAudio()
 
+            loader = KerminalSoundLoader(settings.output_samplerate,
+                                         settings.output_buffer_length,
+                                         settings.output_channels)
+
             # initialize audio/video streams
             with clz.MixerClass.create(manager, settings) as (output_stream, mixer),\
                  clz.DetectorClass.create(manager, settings) as (input_stream, detector),\
                  clz.RendererClass.create(settings) as (display_thread, renderer):
 
                 # initialize kerminal
-                self = clz(mixer, detector, renderer, settings)
+                self = clz(mixer, detector, renderer, loader)
 
                 # activate audio/video streams
                 self.ref_time = time.time()
@@ -393,7 +458,7 @@ class Kerminal:
              clz.DetectorClass.subdetector(kerminal.detector, time_shift) as subdetector,\
              clz.RendererClass.subrenderer(kerminal.renderer, time_shift) as subrenderer:
 
-            subkerminal = clz(submixer, subdetector, subrenderer, kerminal.settings)
+            subkerminal = clz(submixer, subdetector, subrenderer, kerminal.loader)
             subkerminal.ref_time = kerminal.ref_time + kerminal.time + time_shift
             yield subkerminal
 
@@ -414,69 +479,21 @@ class Kerminal:
 
     def add_effect(self, node, time=None, zindex=(0,)):
         if time is not None:
-            node = self._timed_effect(node, time)
+            node = self.loader.delay(node, time)
         return self.mixer.add_effect(node, zindex)
 
     def remove_effect(self, key):
         self.mixer.remove_effect(key)
 
-    @functools.lru_cache(maxsize=32)
     def load_sound(self, filepath):
-        with audioread.audio_open(filepath) as file:
-            samplerate = file.samplerate
-        node = dn.load(filepath)
-        if samplerate != self.settings.output_samplerate:
-            node = dn.pipe(node, dn.resample(ratio=(self.settings.output_samplerate, samplerate)))
-        with node as filenode:
-            sound = list(filenode)
-        return sound
-
-    @dn.datanode
-    def _timed_effect(self, node, start_time):
-        node = dn.DataNode.wrap(node)
-
-        samplerate = self.settings.output_samplerate
-        buffer_length = self.settings.output_buffer_length
-        nchannels = self.settings.output_channels
-
-        with node:
-            data, time = yield
-            offset = round((start_time - time) * samplerate) if start_time is not None else 0
-
-            while offset < 0:
-                length = min(-offset, buffer_length)
-                dummy = numpy.zeros((length, nchannels), dtype=numpy.float32)
-                node.send((time+offset/samplerate, dummy))
-                offset += length
-
-            while 0 < offset:
-                if data.shape[0] < offset:
-                    offset -= data.shape[0]
-                else:
-                    data1, data2 = data[:offset], data[offset:]
-                    data2 = node.send((data2, time+offset/samplerate))
-                    data = numpy.concatenate((data1, data2), axis=0)
-                    offset = 0
-
-                data, time = yield data
-
-            while True:
-                data, time = yield node.send((data, time))
+        return self.loader.load_sound(filepath)
 
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
         if isinstance(node, str):
             node = dn.DataNode.wrap(self.load_sound(node))
             samplerate = None
-        if channels is None:
-            channels = self.settings.output_channels
 
-        if start is not None or end is not None:
-            node = dn.tslice(node, samplerate, start, end)
-        node = dn.pipe(node, dn.rechannel(channels))
-        if samplerate is not None and samplerate != self.settings.output_samplerate:
-            node = dn.pipe(node, dn.resample(ratio=(self.settings.output_samplerate, samplerate)))
-        if volume != 0:
-            node = dn.pipe(node, lambda s: s * 10**(volume/20))
+        node = self.loader.resample(node, samplerate, channels, volume, start, end)
 
         node = dn.pipe(lambda a:a[0], dn.attach(node))
         return self.add_effect(node, time=time, zindex=zindex)

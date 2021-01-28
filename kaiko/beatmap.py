@@ -750,8 +750,8 @@ class KAIKOGame:
 
     def _spec_handler(self):
         spec_width = self.settings.spec_width
-        samplerate = self.kerminal.settings.output_samplerate
-        nchannels = self.kerminal.settings.output_channels
+        samplerate = self.kerminal.loader.samplerate
+        nchannels = self.kerminal.loader.nchannels
         hop_length = round(samplerate * self.settings.spec_time_res)
         win_length = round(samplerate / self.settings.spec_freq_res)
 
