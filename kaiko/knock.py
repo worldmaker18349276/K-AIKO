@@ -62,19 +62,19 @@ class KerminalMixer:
 
     @classmethod
     @dn.datanode
-    def get_subnode(clz, scheduler, time_shift):
+    def get_subnode(clz, scheduler, ref_time):
         with scheduler:
             data, time = yield
             while True:
-                time_ = time - time_shift
+                time_ = time - ref_time
                 data = scheduler.send((data, time_))
                 data, time = yield data
 
     @classmethod
     @contextlib.contextmanager
-    def submixer(clz, mixer, time_shift, zindex=(0,)):
+    def submixer(clz, mixer, ref_time, zindex=(0,)):
         scheduler = dn.Scheduler()
-        subnode = clz.get_subnode(scheduler, time_shift)
+        subnode = clz.get_subnode(scheduler, ref_time)
         subnode_key = mixer.add_effect(subnode, zindex=zindex)
         try:
             yield clz(scheduler)
@@ -237,19 +237,19 @@ class KerminalDetector:
 
     @classmethod
     @dn.datanode
-    def get_subnode(clz, scheduler, time_shift):
+    def get_subnode(clz, scheduler, ref_time):
         with scheduler:
             _, time, strength, detected = yield
             while True:
-                time_ = time - time_shift
+                time_ = time - ref_time
                 scheduler.send((None, time_, strength, detected))
                 _, time, strength, detected = yield
 
     @classmethod
     @contextlib.contextmanager
-    def subdetector(clz, detector, time_shift):
+    def subdetector(clz, detector, ref_time):
         scheduler = dn.Scheduler()
-        subnode = clz.get_subnode(scheduler, time_shift)
+        subnode = clz.get_subnode(scheduler, ref_time)
         subnode_key = detector.add_listener(subnode)
         try:
             yield clz(scheduler)
@@ -320,19 +320,19 @@ class KerminalRenderer:
 
     @classmethod
     @dn.datanode
-    def get_subnode(clz, scheduler, time_shift):
+    def get_subnode(clz, scheduler, ref_time):
         with scheduler:
             view, time, width = yield
             while True:
-                time_ = time - time_shift
+                time_ = time - ref_time
                 view = scheduler.send((view, time_, width))
                 view, time, width = yield view
 
     @classmethod
     @contextlib.contextmanager
-    def subrenderer(clz, renderer, time_shift, zindex=(0,)):
+    def subrenderer(clz, renderer, ref_time, zindex=(0,)):
         scheduler = dn.Scheduler()
-        subnode = clz.get_subnode(scheduler, time_shift)
+        subnode = clz.get_subnode(scheduler, ref_time)
         subnode_key = renderer.add_drawer(subnode, zindex=zindex)
         try:
             yield clz(scheduler)
@@ -453,13 +453,13 @@ class Kerminal:
 
     @classmethod
     @contextlib.contextmanager
-    def subkerminal(clz, kerminal, time_shift=0.0):
-        with clz.MixerClass.submixer(kerminal.mixer, time_shift) as submixer,\
-             clz.DetectorClass.subdetector(kerminal.detector, time_shift) as subdetector,\
-             clz.RendererClass.subrenderer(kerminal.renderer, time_shift) as subrenderer:
+    def subkerminal(clz, kerminal, ref_time=0.0):
+        with clz.MixerClass.submixer(kerminal.mixer, ref_time) as submixer,\
+             clz.DetectorClass.subdetector(kerminal.detector, ref_time) as subdetector,\
+             clz.RendererClass.subrenderer(kerminal.renderer, ref_time) as subrenderer:
 
             subkerminal = clz(submixer, subdetector, subrenderer, kerminal.loader)
-            subkerminal.ref_time = kerminal.ref_time + kerminal.time + time_shift
+            subkerminal.ref_time = kerminal.ref_time + ref_time
             yield subkerminal
 
 

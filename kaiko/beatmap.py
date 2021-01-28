@@ -560,6 +560,7 @@ class GameplaySettings:
     leadin_time: float = 1.0
     skip_time: float = 8.0
     tickrate: float = 60.0
+    load_time: float = 0.5
     prepare_time: float = 0.1
 
     # PlayFieldSkin:
@@ -687,13 +688,15 @@ class KAIKOGame:
 
         self.target_queue = queue.Queue()
 
-        return self.settings.prepare_time - self.start_time
+        return abs(self.start_time)
 
     @contextlib.contextmanager
     def connect(self, kerminal):
         time_shift = self.prepare(kerminal)
+        load_time = self.settings.load_time
+        ref_time = kerminal.time + load_time + time_shift
 
-        with kerminal.subkerminal(kerminal, time_shift) as self.kerminal:
+        with kerminal.subkerminal(kerminal, ref_time) as self.kerminal:
             # play music
             if self.audionode is not None:
                 self.kerminal.play(self.audionode, volume=self.volume, time=0.0, zindex=(-3,))
@@ -725,7 +728,7 @@ class KAIKOGame:
             if self.end_time <= time:
                 break
 
-            while event is not None and event.lifespan[0] <= time + prepare_time:
+            while event is not None and event.lifespan[0] - prepare_time <= time:
                 event.register(self)
                 event = next(events_iter, None)
 
