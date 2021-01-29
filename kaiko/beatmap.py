@@ -568,7 +568,7 @@ class GameplaySettings:
     header_templates: List[str] = ["{score:05d}/{full_score:05d}"]
     footer_templates: List[str] = ["{progress:>6.1%}|{time:%M:%S}"]
 
-    spec_width: int = 7
+    spec_width: int = 6
     spec_decay_time: float = 0.01
     spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
     spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
@@ -649,9 +649,7 @@ class KAIKOGame:
         self.time = datetime.time(0, 0, 0)
         self.spectrum = "\u2800"*self.settings.spec_width
 
-        # beatbar
-        self.beatbar = beatbar.Beatbar()
-
+        # icon/header/footer handlers
         icon_templates = self.settings.icon_templates
         header_templates = self.settings.header_templates
         footer_templates = self.settings.footer_templates
@@ -665,10 +663,11 @@ class KAIKOGame:
                     break
             return text
 
-        self.beatbar.current_icon.set(lambda time, ran: fit(icon_templates, ran))
-        self.beatbar.current_header.set(lambda time, ran: fit(header_templates, ran))
-        self.beatbar.current_footer.set(lambda time, ran: fit(footer_templates, ran))
+        self.icon_func = lambda time, ran: fit(icon_templates, ran)
+        self.header_func = lambda time, ran: fit(header_templates, ran)
+        self.footer_func = lambda time, ran: fit(footer_templates, ran)
 
+        # content handler
         hit_decay_time = self.settings.hit_decay_time
         hit_sustain_time = self.settings.hit_sustain_time
         perf_appearances = self.settings.performances_appearances
@@ -680,13 +679,13 @@ class KAIKOGame:
         self.current_perf_hint = dn.TimedVariable(value=(None, None), duration=perf_sustain_time)
         self.current_sight = dn.TimedVariable(value=None)
 
-        sight_handler = self._sight_handler(
+        self.sight_handler = self._sight_handler(
             self.current_hit_hint, self.current_perf_hint, self.current_sight,
             hit_decay_time, hit_sustain_time, perf_appearances, sight_appearances)
 
-        self.beatbar.add_content_drawer(sight_handler, zindex=(2,))
-
+        # hit handler
         self.target_queue = queue.Queue()
+        self.hit_handler = self._hit_handler()
 
         return abs(self.start_time)
 
@@ -703,8 +702,13 @@ class KAIKOGame:
 
             # register handlers
             self.kerminal.add_effect(self._spec_handler(), zindex=(-1,))
-            self.beatbar.register_drawers(self.kerminal)
-            self.kerminal.add_listener(self._hit_handler())
+            self.beatbar = beatbar.Beatbar.initialize(self.kerminal)
+
+            self.beatbar.current_icon.set(self.icon_func)
+            self.beatbar.current_header.set(self.header_func)
+            self.beatbar.current_footer.set(self.footer_func)
+            self.beatbar.add_content_drawer(self.sight_handler, zindex=(2,))
+            self.kerminal.add_listener(self.hit_handler)
 
             # game loop
             stop_event = threading.Event()
