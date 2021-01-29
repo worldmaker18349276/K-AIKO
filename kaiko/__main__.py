@@ -1,14 +1,11 @@
 import sys
-from .knock import *
-from .beatmap import *
-from .beatsheet import *
+from .kerminal import *
+from .beatmenu import *
 from .beatanalyzer import *
 
 filename = sys.argv[1]
-
-beatmap = BeatmapDraft.read(filename)
-game = KAIKOGame(beatmap)
-Kerminal.execute(game, settings="debug_config")
+self = KAIKO(filename)
+Kerminal.execute(self, settings="debug_config")
 
 print()
-show_analyze(beatmap.settings.performance_tolerance, game.perfs)
+show_analyze(self.beatmap.settings.performance_tolerance, self.game.perfs)

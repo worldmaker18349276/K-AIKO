@@ -11,7 +11,6 @@ import audioread
 from . import cfg
 from . import datanodes as dn
 from . import tui
-from . import beatbar
 
 
 class Event:
@@ -603,7 +602,7 @@ class GameplaySettings:
     bar_shift: float = 0.1
     bar_flip: bool = False
 
-class KAIKOGame:
+class BeatmapPlayer:
     settings: GameplaySettings = GameplaySettings()
 
     def __init__(self, beatmap, config=None):
@@ -612,7 +611,7 @@ class KAIKOGame:
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
 
-    def prepare(self, kerminal):
+    def prepare(self, kerminal, beatbar):
         # prepare events
         self.events = self.beatmap.build_events()
         self.events.sort(key=lambda e: e.lifespan[0])
@@ -690,20 +689,19 @@ class KAIKOGame:
         return abs(self.start_time)
 
     @contextlib.contextmanager
-    def connect(self, kerminal):
-        time_shift = self.prepare(kerminal)
+    def connect(self, kerminal, beatbar):
+        time_shift = self.prepare(kerminal, beatbar)
         load_time = self.settings.load_time
         ref_time = kerminal.time + load_time + time_shift
 
-        with kerminal.subkerminal(kerminal, ref_time) as self.kerminal:
+        with kerminal.subkerminal(kerminal, ref_time) as self.kerminal,\
+             beatbar.subbeatbar(beatbar, ref_time) as self.beatbar:
             # play music
             if self.audionode is not None:
                 self.kerminal.play(self.audionode, volume=self.volume, time=0.0, zindex=(-3,))
 
             # register handlers
             self.kerminal.add_effect(self._spec_handler(), zindex=(-1,))
-            self.beatbar = beatbar.Beatbar.initialize(self.kerminal)
-
             self.beatbar.current_icon.set(self.icon_func)
             self.beatbar.current_header.set(self.header_func)
             self.beatbar.current_footer.set(self.footer_func)

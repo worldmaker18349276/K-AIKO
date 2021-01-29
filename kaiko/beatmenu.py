@@ -1,7 +1,11 @@
+import time
 import contextlib
+import threading
 from . import cfg
 from . import datanodes as dn
 from . import tui
+from .beatmap import BeatmapPlayer
+from .beatsheet import BeatmapDraft
 
 
 def to_slices(segments):
@@ -67,9 +71,10 @@ class Beatbar:
 
     @classmethod
     @contextlib.contextmanager
-    def subrenderer(clz, beatbar, ref_time):
+    def subbeatbar(clz, beatbar, ref_time):
         content_scheduler = dn.Scheduler()
         try:
+            content_key = beatbar.content_scheduler.add_node(content_scheduler, zindex=(0,))
             yield clz(beatbar.icon_mask, beatbar.header_mask, beatbar.content_mask, beatbar.footer_mask,
                        content_scheduler, beatbar.current_icon, beatbar.current_header, beatbar.current_footer,
                        beatbar.ref_time + ref_time)
@@ -77,6 +82,7 @@ class Beatbar:
             beatbar.current_icon.reset()
             beatbar.current_header.reset()
             beatbar.current_footer.reset()
+            beatbar.content_scheduler.remove_node(content_key)
 
     @staticmethod
     @dn.datanode
@@ -146,3 +152,26 @@ class Beatbar:
 
     def remove_content_drawer(self, key):
         self.content_scheduler.remove_node(key)
+
+
+class KAIKO:
+    def __init__(self, filename):
+        self.filename = filename
+
+    @contextlib.contextmanager
+    def connect(self, kerminal):
+        self.kerminal = kerminal
+        self.beatbar = Beatbar.initialize(kerminal)
+
+        self.beatmap = BeatmapDraft.read(self.filename)
+        self.game = BeatmapPlayer(self.beatmap)
+
+        with self.game.connect(self.kerminal, self.beatbar) as main:
+            yield main
+
+    def start(self):
+        return self.game.start()
+
+    def is_alive(self):
+        return self.game.is_alive()
+
