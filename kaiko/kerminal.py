@@ -371,7 +371,7 @@ class KerminalSettings:
     # output
     output_device: int = -1
     output_samplerate: int = 44100
-    output_buffer_length: int = 512
+    output_buffer_length: int = 512*4
     output_channels: int = 1
     output_format: str = 'f4'
 
