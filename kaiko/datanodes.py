@@ -14,6 +14,12 @@ import wave
 import audioread
 
 
+def datanode(gen_func):
+    @functools.wraps(gen_func)
+    def node_func(*args, **kwargs):
+        return DataNode(gen_func(*args, **kwargs))
+    return node_func
+
 class DataNode:
     def __init__(self, generator):
         self.generator = generator
@@ -72,59 +78,34 @@ class DataNode:
         return False
 
     @staticmethod
+    @datanode
+    def from_iter(iterator):
+        yield
+        for data in iterator:
+            yield data
+
+    @staticmethod
+    @datanode
+    def from_func(function):
+        data = yield
+        while True:
+            data = yield function(data)
+
+    @staticmethod
     def wrap(node_like):
         if isinstance(node_like, DataNode):
             return node_like
 
         elif hasattr(node_like, '__iter__'):
-            def iter(it):
-                yield
-                for data in it:
-                    yield data
-            return DataNode(iter(node_like))
+            return DataNode.from_iter(node_like)
 
         elif hasattr(node_like, '__call__'):
-            def pure(func):
-                data = yield
-                while True:
-                    data = yield func(data)
-            return DataNode(pure(node_like))
+            return DataNode.from_func(node_like)
 
         else:
             raise ValueError
 
-def datanode(gen):
-    @functools.wraps(gen)
-    def node_builder(*args, **kwargs):
-        return DataNode(gen(*args, **kwargs))
-    return node_builder
-
-
 # basic data nodes
-@datanode
-def rewrap(node, context=contextlib.suppress()):
-    """A data node processing data by another data node.
-
-    Parameters
-    ----------
-    node : DataNode
-        The data node.
-    context : contextmanager, optional
-        The context manager wraps the node.
-
-    Receives
-    --------
-    data : any
-        The input signal.
-
-    Yields
-    ------
-    data : any
-        The processed signal.
-    """
-    with context, node:
-        yield from node.join((yield))
-
 @datanode
 def delay(prepend):
     """A data node delays signals and prepends given values.
