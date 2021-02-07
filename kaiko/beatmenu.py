@@ -138,25 +138,3 @@ class Beatbar:
     def remove_content_drawer(self, key):
         self.content_scheduler.remove_node(key)
 
-
-class KAIKO:
-    def __init__(self, filename):
-        self.filename = filename
-
-    @contextlib.contextmanager
-    def connect(self, kerminal):
-        self.kerminal = kerminal
-        self.beatbar = Beatbar.initialize(kerminal)
-
-        self.beatmap = BeatmapDraft.read(self.filename)
-        self.game = BeatmapPlayer(self.beatmap)
-
-        with self.game.connect(self.kerminal, self.beatbar) as main:
-            yield main
-
-    def start(self):
-        return self.game.start()
-
-    def is_alive(self):
-        return self.game.is_alive()
-

@@ -1,7 +1,26 @@
 import sys
+import contextlib
 from .kerminal import *
 from .beatmenu import *
+from .beatsheet import *
 from .beatanalyzer import *
+
+
+class KAIKO:
+    def __init__(self, filename):
+        self.filename = filename
+
+    @contextlib.contextmanager
+    def connect(self, kerminal):
+        self.kerminal = kerminal
+        self.beatbar = Beatbar.initialize(kerminal)
+
+        self.beatmap = BeatmapDraft.read(self.filename)
+        self.game = BeatmapPlayer(self.beatmap)
+
+        with self.game.connect(self.kerminal, self.beatbar) as main:
+            yield main
+
 
 filename = sys.argv[1]
 self = KAIKO(filename)
