@@ -8,24 +8,6 @@ from .beatmap import BeatmapPlayer
 from .beatsheet import BeatmapDraft
 
 
-def to_slices(segments):
-    middle = segments.index(...)
-    pre  = segments[:middle:+1]
-    post = segments[:middle:-1]
-
-    pre_index  = [sum(pre[:i+1])  for i in range(len(pre))]
-    post_index = [sum(post[:i+1]) for i in range(len(post))]
-
-    first_slice  = slice(None, pre_index[0], None)
-    last_slice   = slice(-post_index[0], None, None)
-    middle_slice = slice(pre_index[-1], -post_index[-1], None)
-
-    pre_slices  = [slice(+a, +b, None) for a, b in zip(pre_index[:-1],  pre_index[1:])]
-    post_slices = [slice(-b, -a, None) for a, b in zip(post_index[:-1], post_index[1:])]
-
-    return [first_slice, *pre_slices, middle_slice, *post_slices[::-1], last_slice]
-
-
 @cfg.configurable
 class BeatbarSettings:
     icon_width: int = 8
@@ -53,8 +35,11 @@ class Beatbar:
         icon_width = settings.icon_width
         header_width = settings.header_width
         footer_width = settings.footer_width
-        layout = to_slices((icon_width, 1, header_width, 1, ..., 1, footer_width, 1))
-        icon_mask, _, header_mask, _, content_mask, _, footer_mask, _ = layout
+
+        icon_mask = slice(None, icon_width)
+        header_mask = slice(icon_width+1, icon_width+1+header_width)
+        content_mask = slice(icon_width+1+header_width+1, -1-footer_width-1)
+        footer_mask = slice(-footer_width-1, -1)
 
         content_scheduler = dn.Scheduler()
         current_icon = dn.TimedVariable(value=lambda time, ran: "")
