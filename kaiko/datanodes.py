@@ -489,13 +489,14 @@ class Scheduler(DataNode):
 def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
     producer = DataNode.wrap(producer)
     consumer = DataNode.wrap(consumer)
-    stop = threading.Event()
+    stop_event = threading.Event()
 
     def run():
         ref_time = time.time()
 
         for i, data in enumerate(producer):
-            if stop.wait(max(0.0, ref_time+t0+i*dt - time.time())):
+            delta = ref_time+t0+i*dt - time.time()
+            if stop_event.wait(delta) if delta > 0 else stop_event.is_set():
                 break
 
             consumer.send((time.time()-ref_time, data))
@@ -505,17 +506,17 @@ def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
         try:
             yield thread
         finally:
-            stop.set()
+            stop_event.set()
             thread.join()
 
 @datanode
 def tick(dt, t0=0.0, shift=0.0):
-    stop = threading.Event()
+    stop_event = threading.Event()
     ref_time = time.time()
 
     yield
     for i in itertools.count():
-        if stop.wait(max(0.0, ref_time+t0+i*dt - time.time())):
+        if stop_event.wait(max(0.0, ref_time+t0+i*dt - time.time())):
             break
 
         yield time.time()-ref_time+shift
@@ -1128,6 +1129,65 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
         finally:
             output_stream.stop_stream()
             output_stream.close()
+
+@contextlib.contextmanager
+def input(node, stream=None):
+    import sys, os, signal, termios, fcntl
+
+    node = DataNode.wrap(node)
+    MAX_KEY_LEN = 16
+
+    if stream is None:
+        stream = sys.stdin
+
+    fd = stream.fileno()
+    old_attrs = termios.tcgetattr(fd)
+    new_attrs = list(old_attrs)
+    new_attrs[3] = new_attrs[3] & ~termios.ICANON & ~termios.ECHO
+    old_flags = fcntl.fcntl(fd, fcntl.F_SETFL)
+    new_flags = old_flags | os.O_NONBLOCK | os.O_ASYNC
+    old_owner = fcntl.fcntl(fd, fcntl.F_GETOWN)
+    new_owner = os.getpid()
+
+    io_event = threading.Event()
+    def SIGIO_handler(signal, frame):
+        io_event.set()
+    signal.signal(signal.SIGIO, SIGIO_handler)
+
+    stop_event = threading.Event()
+
+    def run():
+        ref_time = time.time()
+
+        while True:
+            io_event.wait()
+            io_event.clear()
+
+            if stop_event.is_set():
+                break
+
+            key = stream.read(MAX_KEY_LEN)
+
+            if key:
+                node.send((time.time()-ref_time, key))
+
+    try:
+        fcntl.fcntl(fd, fcntl.F_SETFL, new_flags)
+        fcntl.fcntl(fd, fcntl.F_SETOWN, new_owner)
+        termios.tcsetattr(fd, termios.TCSANOW, new_attrs)
+
+        with node:
+            thread = threading.Thread(target=run)
+            try:
+                yield thread
+            finally:
+                stop_event.set()
+                thread.join()
+
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
+        fcntl.fcntl(fd, fcntl.F_SETOWN, old_owner)
+        fcntl.fcntl(fd, fcntl.F_SETFL, old_flags)
 
 
 # not data nodes

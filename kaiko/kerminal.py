@@ -345,6 +345,53 @@ class KerminalRenderer:
     def remove_drawer(self, key):
         self.drawers_scheduler.remove_node(key)
 
+class KerminalKeyboard:
+    def __init__(self, handlers_scheduler):
+        self.handlers_scheduler = handlers_scheduler
+
+    @classmethod
+    @dn.datanode
+    def get_keyboard_node(clz, scheduler):
+        with scheduler:
+            while True:
+                t, key = yield
+                scheduler.send((None, t, key))
+
+    @classmethod
+    @contextlib.contextmanager
+    def create(clz, settings):
+        scheduler = dn.Scheduler()
+        node = clz.get_keyboard_node(scheduler)
+        with dn.input(node) as thread:
+            yield thread, clz(scheduler)
+
+    @classmethod
+    @dn.datanode
+    def get_subnode(clz, scheduler, ref_time):
+        with scheduler:
+            _, time, key = yield
+            while True:
+                time_ = time - ref_time
+                scheduler.send((None, time_, key))
+                _, time, key = yield
+
+    @classmethod
+    @contextlib.contextmanager
+    def subkeyboard(clz, keyboard, ref_time):
+        scheduler = dn.Scheduler()
+        subnode = clz.get_subnode(scheduler, ref_time)
+        subnode_key = keyboard.add_handler(subnode)
+        try:
+            yield clz(scheduler)
+        finally:
+            keyboard.remove_handler(subnode_key)
+
+    def add_handler(self, node):
+        return self.handlers_scheduler.add_node(node, (0,))
+
+    def remove_handler(self, key):
+        self.handlers_scheduler.remove_node(key)
+
 
 def until_interrupt(dt=0.005):
     SIGINT_event = threading.Event()
@@ -400,13 +447,15 @@ class Kerminal:
     MixerClass = KerminalMixer
     DetectorClass = KerminalDetector
     RendererClass = KerminalRenderer
+    KeyboardClass = KerminalKeyboard
     SettingsClass = KerminalSettings
 
-    def __init__(self, mixer, detector, renderer, loader):
+    def __init__(self, mixer, detector, renderer, keyboard, loader):
         self.ref_time = None
         self.mixer = mixer
         self.detector = detector
         self.renderer = renderer
+        self.keyboard = keyboard
         self.loader = loader
 
     @classmethod
@@ -426,16 +475,18 @@ class Kerminal:
             # initialize audio/video streams
             with clz.MixerClass.create(manager, settings) as (output_stream, mixer),\
                  clz.DetectorClass.create(manager, settings) as (input_stream, detector),\
-                 clz.RendererClass.create(settings) as (display_thread, renderer):
+                 clz.RendererClass.create(settings) as (display_thread, renderer),\
+                 clz.KeyboardClass.create(settings) as (keyboard_thread, keyboard):
 
                 # initialize kerminal
-                self = clz(mixer, detector, renderer, loader)
+                self = clz(mixer, detector, renderer, keyboard, loader)
 
                 # activate audio/video streams
                 self.ref_time = time.time()
                 output_stream.start_stream()
                 input_stream.start_stream()
                 display_thread.start()
+                keyboard_thread.start()
 
                 # connect to knockable
                 with knockable.connect(self) as main:
@@ -445,7 +496,8 @@ class Kerminal:
                         if (not main.is_alive()
                             or not output_stream.is_active()
                             or not input_stream.is_active()
-                            or not display_thread.is_alive()):
+                            or not display_thread.is_alive()
+                            or not keyboard_thread.is_alive()):
                             break
 
         finally:
@@ -456,9 +508,10 @@ class Kerminal:
     def subkerminal(clz, kerminal, ref_time=0.0):
         with clz.MixerClass.submixer(kerminal.mixer, ref_time) as submixer,\
              clz.DetectorClass.subdetector(kerminal.detector, ref_time) as subdetector,\
-             clz.RendererClass.subrenderer(kerminal.renderer, ref_time) as subrenderer:
+             clz.RendererClass.subrenderer(kerminal.renderer, ref_time) as subrenderer,\
+             clz.KeyboardClass.subkeyboard(kerminal.keyboard, ref_time) as subkeyboard:
 
-            subkerminal = clz(submixer, subdetector, subrenderer, kerminal.loader)
+            subkerminal = clz(submixer, subdetector, subrenderer, subkeyboard, kerminal.loader)
             subkerminal.ref_time = kerminal.ref_time + ref_time
             yield subkerminal
 
@@ -536,6 +589,12 @@ class Kerminal:
 
     def remove_drawer(self, key):
         self.renderer.remove_drawer(key)
+
+    def add_handler(self, node):
+        return self.keyboard.add_handler(node)
+
+    def remove_handler(self, key):
+        self.keyboard.remove_handler(key)
 
     @dn.datanode
     @staticmethod
