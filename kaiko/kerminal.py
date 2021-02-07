@@ -397,10 +397,9 @@ def until_interrupt(dt=0.005):
     SIGINT_event = threading.Event()
     def SIGINT_handler(sig, frame):
         SIGINT_event.set()
+    signal.signal(signal.SIGINT, SIGINT_handler)
 
     while True:
-        # Using PyAudio in non-blocking mode will continuously cancel the SIGINT handler.
-        signal.signal(signal.SIGINT, SIGINT_handler)
         yield
 
         if SIGINT_event.wait(dt):
