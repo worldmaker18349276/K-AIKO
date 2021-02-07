@@ -46,10 +46,10 @@ class Beatbar:
         current_header = dn.TimedVariable(value=lambda time, ran: "")
         current_footer = dn.TimedVariable(value=lambda time, ran: "")
 
-        kerminal.add_drawer(content_scheduler, zindex=(0,))
-        kerminal.add_drawer(clz._masked_node(current_icon, icon_mask), zindex=(1,))
-        kerminal.add_drawer(clz._masked_node(current_header, header_mask, ("\b[", "]")), zindex=(2,))
-        kerminal.add_drawer(clz._masked_node(current_footer, footer_mask, ("\b[", "]")), zindex=(3,))
+        kerminal.renderer.add_drawer(content_scheduler, zindex=(0,))
+        kerminal.renderer.add_drawer(clz._masked_node(current_icon, icon_mask), zindex=(1,))
+        kerminal.renderer.add_drawer(clz._masked_node(current_header, header_mask, ("\b[", "]")), zindex=(2,))
+        kerminal.renderer.add_drawer(clz._masked_node(current_footer, footer_mask, ("\b[", "]")), zindex=(3,))
 
         return clz(icon_mask, header_mask, content_mask, footer_mask,
                    content_scheduler, current_icon, current_header, current_footer, ref_time)
@@ -61,8 +61,8 @@ class Beatbar:
         try:
             content_key = beatbar.content_scheduler.add_node(content_scheduler, zindex=(0,))
             yield clz(beatbar.icon_mask, beatbar.header_mask, beatbar.content_mask, beatbar.footer_mask,
-                       content_scheduler, beatbar.current_icon, beatbar.current_header, beatbar.current_footer,
-                       beatbar.ref_time + ref_time)
+                      content_scheduler, beatbar.current_icon, beatbar.current_header, beatbar.current_footer,
+                      beatbar.ref_time + ref_time)
         finally:
             beatbar.current_icon.reset()
             beatbar.current_header.reset()
@@ -118,7 +118,7 @@ class Beatbar:
     def set_footer(self, footer, start=None, duration=None):
         if hasattr(footer, '__call__'):
             footer_func = lambda time, ran: footer(time-self.ref_time, ran)
-        elif isinstance(header, str):
+        elif isinstance(footer, str):
             footer_func = lambda time, ran: footer
         else:
             raise ValueError

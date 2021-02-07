@@ -629,7 +629,7 @@ class BeatmapPlayer:
             audiopath = os.path.join(self.beatmap.path, self.beatmap.audio)
             with audioread.audio_open(audiopath) as file:
                 self.duration = file.duration
-            self.audionode = dn.DataNode.wrap(kerminal.load_sound(audiopath))
+            self.audionode = dn.DataNode.wrap(kerminal.mixer.load_sound(audiopath))
             self.volume = self.beatmap.volume
 
         self.start_time = min(events_start_time, 0.0)
@@ -698,15 +698,15 @@ class BeatmapPlayer:
              beatbar.subbeatbar(beatbar, ref_time) as self.beatbar:
             # play music
             if self.audionode is not None:
-                self.kerminal.play(self.audionode, volume=self.volume, time=0.0, zindex=(-3,))
+                self.kerminal.mixer.play(self.audionode, volume=self.volume, time=0.0, zindex=(-3,))
 
             # register handlers
-            self.kerminal.add_effect(self._spec_handler(), zindex=(-1,))
+            self.kerminal.mixer.add_effect(self._spec_handler(), zindex=(-1,))
             self.beatbar.current_icon.set(self.icon_func)
             self.beatbar.current_header.set(self.header_func)
             self.beatbar.current_footer.set(self.footer_func)
             self.beatbar.add_content_drawer(self.sight_handler, zindex=(2,))
-            self.kerminal.add_listener(self.hit_handler)
+            self.kerminal.detector.add_listener(self.hit_handler)
 
             # game loop
             stop_event = threading.Event()
@@ -755,8 +755,8 @@ class BeatmapPlayer:
 
     def _spec_handler(self):
         spec_width = self.settings.spec_width
-        samplerate = self.kerminal.loader.samplerate
-        nchannels = self.kerminal.loader.nchannels
+        samplerate = self.kerminal.mixer.samplerate
+        nchannels = self.kerminal.mixer.nchannels
         hop_length = round(samplerate * self.settings.spec_time_res)
         win_length = round(samplerate / self.settings.spec_freq_res)
 
@@ -902,9 +902,9 @@ class BeatmapPlayer:
 
 
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
-        return self.kerminal.play(node, samplerate=samplerate, channels=channels,
-                                        volume=volume, start=start, end=end,
-                                        time=time, zindex=zindex)
+        return self.kerminal.mixer.play(node, samplerate=samplerate, channels=channels,
+                                              volume=volume, start=start, end=end,
+                                              time=time, zindex=zindex)
 
     def listen(self, node, start=None, duration=None):
         self.target_queue.put((node, start, duration))
@@ -939,5 +939,5 @@ class BeatmapPlayer:
 
     def on_before_render(self, node):
         node = dn.pipe(dn.branch(lambda a:a[1:], node), lambda a:a[0])
-        return self.kerminal.add_drawer(node, zindex=())
+        return self.kerminal.renderer.add_drawer(node, zindex=())
 

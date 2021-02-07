@@ -18,12 +18,15 @@ def nullcontext(value):
     yield value
 
 class KerminalMixer:
-    def __init__(self, effects_scheduler):
+    def __init__(self, effects_scheduler, samplerate, buffer_length, nchannels):
         self.effects_scheduler = effects_scheduler
+        self.samplerate = samplerate
+        self.buffer_length = buffer_length
+        self.nchannels = nchannels
 
-    @classmethod
+    @staticmethod
     @dn.datanode
-    def get_output_node(clz, scheduler, samplerate, buffer_length, nchannels, sound_delay):
+    def get_node(scheduler, samplerate, buffer_length, nchannels, sound_delay):
         index = 0
         with scheduler:
             yield
@@ -46,7 +49,7 @@ class KerminalMixer:
         debug_timeit = settings.debug_timeit
 
         scheduler = dn.Scheduler()
-        output_node = clz.get_output_node(scheduler, samplerate, buffer_length, nchannels, sound_delay)
+        output_node = clz.get_node(scheduler, samplerate, buffer_length, nchannels, sound_delay)
         output_ctxt = dn.timeit(output_node, " output") if debug_timeit else nullcontext(output_node)
 
         with output_ctxt as output_node:
@@ -58,7 +61,7 @@ class KerminalMixer:
                                   )
 
             with stream_ctxt as stream:
-                yield stream, clz(scheduler)
+                yield stream, clz(scheduler, samplerate, buffer_length, nchannels)
 
     @classmethod
     @dn.datanode
@@ -73,36 +76,25 @@ class KerminalMixer:
     @classmethod
     @contextlib.contextmanager
     def submixer(clz, mixer, ref_time, zindex=(0,)):
+        samplerate = mixer.samplerate
+        buffer_length = mixer.buffer_length
+        nchannels = mixer.nchannels
+
         scheduler = dn.Scheduler()
         subnode = clz.get_subnode(scheduler, ref_time)
         subnode_key = mixer.add_effect(subnode, zindex=zindex)
         try:
-            yield clz(scheduler)
+            yield clz(scheduler, samplerate, buffer_length, nchannels)
         finally:
             mixer.remove_effect(subnode_key)
-
-    def add_effect(self, node, zindex=(0,)):
-        return self.effects_scheduler.add_node(node, zindex=zindex)
 
     def remove_effect(self, key):
         return self.effects_scheduler.remove_node(key)
 
-class KerminalSoundLoader:
-    def __init__(self, samplerate, buffer_length, nchannels):
-        self.samplerate = samplerate
-        self.buffer_length = buffer_length
-        self.nchannels = nchannels
-
-    @functools.lru_cache(maxsize=32)
-    def load_sound(self, filepath):
-        with audioread.audio_open(filepath) as file:
-            samplerate = file.samplerate
-        node = dn.load(filepath)
-        if samplerate != self.samplerate:
-            node = dn.pipe(node, dn.resample(ratio=(self.samplerate, samplerate)))
-        with node as filenode:
-            sound = list(filenode)
-        return sound
+    def add_effect(self, node, time=None, zindex=(0,)):
+        if time is not None:
+            node = self.delay(node, time)
+        return self.effects_scheduler.add_node(node, zindex=zindex)
 
     @dn.datanode
     def delay(self, node, start_time):
@@ -150,15 +142,36 @@ class KerminalSoundLoader:
 
         return node
 
+    @functools.lru_cache(maxsize=32)
+    def load_sound(self, filepath):
+        with audioread.audio_open(filepath) as file:
+            samplerate = file.samplerate
+        node = dn.load(filepath)
+        if samplerate != self.samplerate:
+            node = dn.pipe(node, dn.resample(ratio=(self.samplerate, samplerate)))
+        with node as filenode:
+            sound = list(filenode)
+        return sound
+
+    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
+        if isinstance(node, str):
+            node = dn.DataNode.wrap(self.load_sound(node))
+            samplerate = None
+
+        node = self.resample(node, samplerate, channels, volume, start, end)
+
+        node = dn.pipe(lambda a:a[0], dn.attach(node))
+        return self.add_effect(node, time=time, zindex=zindex)
+
 class KerminalDetector:
     def __init__(self, listeners_scheduler):
         self.listeners_scheduler = listeners_scheduler
 
-    @classmethod
+    @staticmethod
     @dn.datanode
-    def get_input_node(clz, scheduler, samplerate, hop_length, win_length,
-                            pre_max, post_max, pre_avg, post_avg, wait, delta,
-                            knock_delay, knock_energy):
+    def get_node(scheduler, samplerate, hop_length, win_length,
+                 pre_max, post_max, pre_avg, post_avg, wait, delta,
+                 knock_delay, knock_energy):
         prepare = max(post_max, post_avg)
 
         window = dn.get_half_Hann_window(win_length)
@@ -216,9 +229,9 @@ class KerminalDetector:
         debug_timeit = settings.debug_timeit
 
         scheduler = dn.Scheduler()
-        input_node = clz.get_input_node(scheduler, samplerate, hop_length, win_length,
-                                        pre_max, post_max, pre_avg, post_avg, wait, delta,
-                                        knock_delay, knock_energy)
+        input_node = clz.get_node(scheduler, samplerate, hop_length, win_length,
+                                  pre_max, post_max, pre_avg, post_avg, wait, delta,
+                                  knock_delay, knock_energy)
 
         if buffer_length != hop_length:
             input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
@@ -262,13 +275,34 @@ class KerminalDetector:
     def remove_listener(self, key):
         self.listeners_scheduler.remove_node(key)
 
+    def on_hit(self, func, time=None, duration=None):
+        return self.add_listener(self._hit_listener(func, time, duration))
+
+    @dn.datanode
+    @staticmethod
+    def _hit_listener(func, start_time, duration):
+        _, time, strength, detected = yield
+        if start_time is None:
+            start_time = time
+
+        while time < start_time:
+            _, time, strength, detected = yield
+
+        while duration is None or time < start_time + duration:
+            if detected:
+                finished = func(strength)
+                if finished:
+                    return
+
+            _, time, strength, detected = yield
+
 class KerminalRenderer:
     def __init__(self, drawers_scheduler):
         self.drawers_scheduler = drawers_scheduler
 
-    @classmethod
+    @staticmethod
     @dn.datanode
-    def get_display_node(clz, scheduler, resize_event, framerate, display_delay, columns):
+    def get_node(scheduler, resize_event, framerate, display_delay, columns):
         width = 0
 
         def SIGWINCH_handler(sig, frame):
@@ -312,7 +346,7 @@ class KerminalRenderer:
                 print()
 
         scheduler = dn.Scheduler()
-        display_node = clz.get_display_node(scheduler, resize_event, framerate, display_delay, columns)
+        display_node = clz.get_node(scheduler, resize_event, framerate, display_delay, columns)
         display_ctxt = dn.timeit(display_node, "display") if debug_timeit else nullcontext(display_node)
         with display_ctxt as display_node:
             with dn.interval(display_node, show(), 1/framerate) as thread:
@@ -345,13 +379,44 @@ class KerminalRenderer:
     def remove_drawer(self, key):
         self.drawers_scheduler.remove_node(key)
 
-class KerminalKeyboard:
+    def add_text(self, text_node, x=0, xmask=slice(None,None), zindex=(0,)):
+        return self.add_drawer(self._text_drawer(text_node, x, xmask), zindex)
+
+    def add_pad(self, pad_node, xmask=slice(None,None), zindex=(0,)):
+        return self.add_drawer(self._pad_drawer(pad_node, xmask), zindex)
+
+    @dn.datanode
+    @staticmethod
+    def _text_drawer(text_node, x=0, xmask=slice(None,None)):
+        text_node = dn.DataNode.wrap(text_node)
+        with text_node:
+            view, time, width = yield
+            while True:
+                text = text_node.send((time, range(-x, width-x)[xmask]))
+                view, x = tui.addtext1(view, width, x, text, xmask=xmask)
+
+                view, time, width = yield view
+
+    @dn.datanode
+    @staticmethod
+    def _pad_drawer(pad_node, xmask=slice(None,None)):
+        pad_node = dn.DataNode.wrap(pad_node)
+        with pad_node:
+            view, time, width = yield
+            while True:
+                subview, x, subwidth = tui.newpad1(view, width, xmask=xmask)
+                subview = pad_node.send(((time, subwidth), subview))
+                view, xran = tui.addpad1(view, width, x, subview, subwidth)
+
+                view, time, width = yield view
+
+class KerminalController:
     def __init__(self, handlers_scheduler):
         self.handlers_scheduler = handlers_scheduler
 
-    @classmethod
+    @staticmethod
     @dn.datanode
-    def get_keyboard_node(clz, scheduler):
+    def get_node(scheduler):
         with scheduler:
             while True:
                 t, key = yield
@@ -361,7 +426,7 @@ class KerminalKeyboard:
     @contextlib.contextmanager
     def create(clz, settings):
         scheduler = dn.Scheduler()
-        node = clz.get_keyboard_node(scheduler)
+        node = clz.get_node(scheduler)
         with dn.input(node) as thread:
             yield thread, clz(scheduler)
 
@@ -377,14 +442,14 @@ class KerminalKeyboard:
 
     @classmethod
     @contextlib.contextmanager
-    def subkeyboard(clz, keyboard, ref_time):
+    def subcontroller(clz, controller, ref_time):
         scheduler = dn.Scheduler()
         subnode = clz.get_subnode(scheduler, ref_time)
-        subnode_key = keyboard.add_handler(subnode)
+        subnode_key = controller.add_handler(subnode)
         try:
             yield clz(scheduler)
         finally:
-            keyboard.remove_handler(subnode_key)
+            controller.remove_handler(subnode_key)
 
     def add_handler(self, node):
         return self.handlers_scheduler.add_node(node, (0,))
@@ -443,49 +508,38 @@ class KerminalSettings:
     debug_timeit: bool = False
 
 class Kerminal:
-    MixerClass = KerminalMixer
-    DetectorClass = KerminalDetector
-    RendererClass = KerminalRenderer
-    KeyboardClass = KerminalKeyboard
-    SettingsClass = KerminalSettings
-
-    def __init__(self, mixer, detector, renderer, keyboard, loader):
+    def __init__(self, mixer, detector, renderer, controller):
         self.ref_time = None
         self.mixer = mixer
         self.detector = detector
         self.renderer = renderer
-        self.keyboard = keyboard
-        self.loader = loader
+        self.controller = controller
 
     @classmethod
     def execute(clz, knockable, settings=None):
         if isinstance(settings, str):
             with open(settings, 'r') as file:
-                settings = clz.SettingsClass()
+                settings = KerminalSettings()
                 cfg.config_read(file, main=settings)
 
         try:
             manager = pyaudio.PyAudio()
 
-            loader = KerminalSoundLoader(settings.output_samplerate,
-                                         settings.output_buffer_length,
-                                         settings.output_channels)
-
-            # initialize audio/video streams
-            with clz.MixerClass.create(manager, settings) as (output_stream, mixer),\
-                 clz.DetectorClass.create(manager, settings) as (input_stream, detector),\
-                 clz.RendererClass.create(settings) as (display_thread, renderer),\
-                 clz.KeyboardClass.create(settings) as (keyboard_thread, keyboard):
+            # initialize audio/text streams
+            with KerminalMixer.create(manager, settings) as (audioout_stream, mixer),\
+                 KerminalDetector.create(manager, settings) as (audioin_stream, detector),\
+                 KerminalRenderer.create(settings) as (textout_thread, renderer),\
+                 KerminalController.create(settings) as (textin_thread, controller):
 
                 # initialize kerminal
-                self = clz(mixer, detector, renderer, keyboard, loader)
+                self = clz(mixer, detector, renderer, controller)
 
                 # activate audio/video streams
                 self.ref_time = time.time()
-                output_stream.start_stream()
-                input_stream.start_stream()
-                display_thread.start()
-                keyboard_thread.start()
+                audioout_stream.start_stream()
+                audioin_stream.start_stream()
+                textout_thread.start()
+                textin_thread.start()
 
                 # connect to knockable
                 with knockable.connect(self) as main:
@@ -493,10 +547,10 @@ class Kerminal:
 
                     for _ in until_interrupt():
                         if (not main.is_alive()
-                            or not output_stream.is_active()
-                            or not input_stream.is_active()
-                            or not display_thread.is_alive()
-                            or not keyboard_thread.is_alive()):
+                            or not audioout_stream.is_active()
+                            or not audioin_stream.is_active()
+                            or not textout_thread.is_alive()
+                            or not textin_thread.is_alive()):
                             break
 
         finally:
@@ -505,12 +559,12 @@ class Kerminal:
     @classmethod
     @contextlib.contextmanager
     def subkerminal(clz, kerminal, ref_time=0.0):
-        with clz.MixerClass.submixer(kerminal.mixer, ref_time) as submixer,\
-             clz.DetectorClass.subdetector(kerminal.detector, ref_time) as subdetector,\
-             clz.RendererClass.subrenderer(kerminal.renderer, ref_time) as subrenderer,\
-             clz.KeyboardClass.subkeyboard(kerminal.keyboard, ref_time) as subkeyboard:
+        with KerminalMixer.submixer(kerminal.mixer, ref_time) as submixer,\
+             KerminalDetector.subdetector(kerminal.detector, ref_time) as subdetector,\
+             KerminalRenderer.subrenderer(kerminal.renderer, ref_time) as subrenderer,\
+             KerminalController.subcontroller(kerminal.controller, ref_time) as subcontroller:
 
-            subkerminal = clz(submixer, subdetector, subrenderer, subkeyboard, kerminal.loader)
+            subkerminal = clz(submixer, subdetector, subrenderer, subcontroller)
             subkerminal.ref_time = kerminal.ref_time + ref_time
             yield subkerminal
 
@@ -519,103 +573,12 @@ class Kerminal:
     def time(self):
         return time.time() - self.ref_time
 
-    def tick(self, dt, t0=0.0, stop=None):
-        if stop is None:
-            stop = threading.Event()
+    def tick(self, dt, t0=0.0, stop_event=None):
+        if stop_event is None:
+            stop_event = threading.Event()
 
         for i in itertools.count():
-            if stop.wait(max(0.0, t0+i*dt - self.time)):
+            if stop_event.wait(max(0.0, t0+i*dt - self.time)):
                 break
 
             yield self.time
-
-    def add_effect(self, node, time=None, zindex=(0,)):
-        if time is not None:
-            node = self.loader.delay(node, time)
-        return self.mixer.add_effect(node, zindex)
-
-    def remove_effect(self, key):
-        self.mixer.remove_effect(key)
-
-    def load_sound(self, filepath):
-        return self.loader.load_sound(filepath)
-
-    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
-        if isinstance(node, str):
-            node = dn.DataNode.wrap(self.load_sound(node))
-            samplerate = None
-
-        node = self.loader.resample(node, samplerate, channels, volume, start, end)
-
-        node = dn.pipe(lambda a:a[0], dn.attach(node))
-        return self.add_effect(node, time=time, zindex=zindex)
-
-    def add_listener(self, node):
-        return self.detector.add_listener(node)
-
-    def remove_listener(self, key):
-        self.detector.remove_listener(key)
-
-    def on_hit(self, func, time=None, duration=None):
-        return self.add_listener(self._hit_listener(func, time, duration))
-
-    @dn.datanode
-    @staticmethod
-    def _hit_listener(func, start_time, duration):
-        _, time, strength, detected = yield
-        if start_time is None:
-            start_time = time
-
-        while time < start_time:
-            _, time, strength, detected = yield
-
-        while duration is None or time < start_time + duration:
-            if detected:
-                finished = func(strength)
-                if finished:
-                    return
-
-            _, time, strength, detected = yield
-
-    def add_drawer(self, node, zindex=(0,)):
-        return self.renderer.add_drawer(node, zindex)
-
-    def add_text(self, text_node, x=0, xmask=slice(None,None), zindex=(0,)):
-        return self.renderer.add_drawer(self._text_drawer(text_node, x, xmask), zindex)
-
-    def add_pad(self, pad_node, xmask=slice(None,None), zindex=(0,)):
-        return self.renderer.add_drawer(self._pad_drawer(pad_node, xmask), zindex)
-
-    def remove_drawer(self, key):
-        self.renderer.remove_drawer(key)
-
-    def add_handler(self, node):
-        return self.keyboard.add_handler(node)
-
-    def remove_handler(self, key):
-        self.keyboard.remove_handler(key)
-
-    @dn.datanode
-    @staticmethod
-    def _text_drawer(text_node, x=0, xmask=slice(None,None)):
-        text_node = dn.DataNode.wrap(text_node)
-        with text_node:
-            view, time, width = yield
-            while True:
-                text = text_node.send((time, range(-x, width-x)[xmask]))
-                view, x = tui.addtext1(view, width, x, text, xmask=xmask)
-
-                view, time, width = yield view
-
-    @dn.datanode
-    @staticmethod
-    def _pad_drawer(pad_node, xmask=slice(None,None)):
-        pad_node = dn.DataNode.wrap(pad_node)
-        with pad_node:
-            view, time, width = yield
-            while True:
-                subview, x, subwidth = tui.newpad1(view, width, xmask=xmask)
-                subview = pad_node.send(((time, subwidth), subview))
-                view, xran = tui.addpad1(view, width, x, subview, subwidth)
-
-                view, time, width = yield view
