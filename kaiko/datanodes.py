@@ -477,8 +477,21 @@ class Scheduler(DataNode):
             for node, _ in nodes.values():
                 node.__exit__()
 
+    class _NodeKey:
+        def __init__(self, parent):
+            self.parent = parent
+
+        def remove(self):
+            self.parent.remove_node(self)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, type, value, traceback):
+            self.remove()
+
     def add_node(self, node, zindex=(0,)):
-        key = object()
+        key = self._NodeKey(self)
         self.queue.put((key, node, zindex))
         return key
 
@@ -499,7 +512,10 @@ def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
             if stop_event.wait(delta) if delta > 0 else stop_event.is_set():
                 break
 
-            consumer.send((time.time()-ref_time, data))
+            try:
+                consumer.send((time.time()-ref_time, data))
+            except StopIteration:
+                return
 
     with producer, consumer:
         thread = threading.Thread(target=run)
@@ -1169,7 +1185,10 @@ def input(node, stream=None):
             key = stream.read(MAX_KEY_LEN)
 
             if key:
-                node.send((time.time()-ref_time, key))
+                try:
+                    node.send((time.time()-ref_time, key))
+                except StopIteration:
+                    return
 
     try:
         fcntl.fcntl(fd, fcntl.F_SETFL, new_flags)

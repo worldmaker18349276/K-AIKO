@@ -83,19 +83,16 @@ class KerminalMixer:
 
         scheduler = dn.Scheduler()
         subnode = clz.get_subnode(scheduler, ref_time)
-        subnode_key = mixer.add_effect(subnode, zindex=zindex)
-        try:
+        with mixer.add_effect(subnode, zindex=zindex):
             yield clz(scheduler, samplerate, buffer_length, nchannels)
-        finally:
-            mixer.remove_effect(subnode_key)
-
-    def remove_effect(self, key):
-        return self.effects_scheduler.remove_node(key)
 
     def add_effect(self, node, time=None, zindex=(0,)):
         if time is not None:
             node = self.delay(node, time)
         return self.effects_scheduler.add_node(node, zindex=zindex)
+
+    def remove_effect(self, key):
+        return self.effects_scheduler.remove_node(key)
 
     @dn.datanode
     def delay(self, node, start_time):
@@ -264,11 +261,8 @@ class KerminalDetector:
     def subdetector(clz, detector, ref_time):
         scheduler = dn.Scheduler()
         subnode = clz.get_subnode(scheduler, ref_time)
-        subnode_key = detector.add_listener(subnode)
-        try:
+        with detector.add_listener(subnode):
             yield clz(scheduler)
-        finally:
-            detector.remove_listener(subnode_key)
 
     def add_listener(self, node):
         return self.listeners_scheduler.add_node(node, (0,))
@@ -368,11 +362,8 @@ class KerminalRenderer:
     def subrenderer(clz, renderer, ref_time, zindex=(0,)):
         scheduler = dn.Scheduler()
         subnode = clz.get_subnode(scheduler, ref_time)
-        subnode_key = renderer.add_drawer(subnode, zindex=zindex)
-        try:
+        with renderer.add_drawer(subnode, zindex=zindex):
             yield clz(scheduler)
-        finally:
-            renderer.remove_drawer(subnode_key)
 
     def add_drawer(self, node, zindex=(0,)):
         return self.drawers_scheduler.add_node(node, zindex=zindex)
@@ -446,11 +437,8 @@ class KerminalController:
     def subcontroller(clz, controller, ref_time):
         scheduler = dn.Scheduler()
         subnode = clz.get_subnode(scheduler, ref_time)
-        subnode_key = controller.add_handler(subnode)
-        try:
+        with controller.add_handler(subnode):
             yield clz(scheduler)
-        finally:
-            controller.remove_handler(subnode_key)
 
     def add_handler(self, node, key=None):
         if key is None:
