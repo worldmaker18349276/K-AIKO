@@ -10,6 +10,24 @@ from .beatmap import BeatmapPlayer
 from .beatsheet import BeatmapDraft, BeatmapParseError
 
 
+class BeatMenuPlay:
+    def __init__(self, filepath):
+        self.filepath = filepath
+
+    @contextlib.contextmanager
+    def connect(self, kerminal):
+        try:
+            beatmap = BeatmapDraft.read(self.filepath)
+
+        except BeatmapParseError:
+            print(f"failed to read beatmap {file}")
+            yield
+
+        else:
+            game = BeatmapPlayer(beatmap)
+            with game.connect(kerminal) as main:
+                yield main
+
 class BeatMenu:
     def __init__(self):
         songs = dict()
@@ -18,13 +36,7 @@ class BeatMenu:
             for file in files:
                 if file.endswith((".k-aiko", ".kaiko", ".ka", ".osu")):
                     filepath = os.path.join(root, file)
-                    try:
-                        beatmap = BeatmapDraft.read(filepath)
-                    except BeatmapParseError:
-                        pass
-                    else:
-                        game = BeatmapPlayer(beatmap)
-                        songs[file] = game
+                    songs[file] = BeatMenuPlay(filepath)
 
         self.tree = {
             "songs": songs,

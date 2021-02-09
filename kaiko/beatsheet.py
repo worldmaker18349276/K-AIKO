@@ -22,10 +22,8 @@ class BeatmapDraft(Beatmap):
     def __init__(self, path=".", info="", audio=None, volume=0.0, offset=0.0, tempo=60.0):
         super().__init__(path, info, audio, volume, offset, tempo)
 
-        self.definitions = {}
-        self.tracks = []
-        self.notations = self.NotationDict(self.definitions)
-        self.chart = self.NoteChart(self.tracks, self.definitions)
+        self.notations = self.NotationDict()
+        self.chart = self.NoteChart(self.notations)
 
         self.notations['x'] = Soft
         self.notations['o'] = Loud
@@ -40,14 +38,9 @@ class BeatmapDraft(Beatmap):
     def build_events(self):
         events = []
 
-        for track in self.tracks:
-            if track.hide:
-                continue
-            context = dict()
-            for note in track.notes:
-                event = note.create(self, context)
-                if event is not None:
-                    events.append(event)
+        for track in self.chart.tracks:
+            for event in track.build_events(self):
+                events.append(event)
 
         return events
 
@@ -76,8 +69,8 @@ class BeatmapDraft(Beatmap):
             raise ValueError(f"unknown file extension: {filename}")
 
     class NotationDict:
-        def __init__(self, definitions):
-            self.definitions = definitions
+        def __init__(self):
+            self.definitions = {}
 
         def __setitem__(self, symbol, builder):
             if any(c in symbol for c in " \b\t\n\r\f\v()[]{}\'\"\\#|~") or symbol == '_':
@@ -93,12 +86,17 @@ class BeatmapDraft(Beatmap):
             return self.definitions[symbol].builder
 
     class NoteChart:
-        def __init__(self, tracks, definitions):
-            self.tracks = tracks
-            self.definitions = definitions
+        def __init__(self, notations):
+            self.notations = notations
+            self.tracks = []
 
         def __iadd__(self, track_str):
-            self.tracks.append(NoteTrack.parse(track_str, self.definitions))
+            try:
+                track = K_AIKO_STD_FORMAT.parse_track(track_str, self.notations.definitions)
+            except Exception as e:
+                raise BeatmapParseError("failed to read track") from e
+
+            self.tracks.append(track)
             return self
 
 class NoteTrack:
@@ -109,9 +107,14 @@ class NoteTrack:
         self.hide = hide
         self.notes = []
 
-    @staticmethod
-    def parse(track_str, definitions):
-        return K_AIKO_STD_FORMAT.read_track(track_str, definitions)
+    def build_events(self, beatmap):
+        if self.hide:
+            return
+        context = dict()
+        for note in self.notes:
+            event = note.create(beatmap, context)
+            if event is not None:
+                yield event
 
 def NoteType(symbol, builder):
     # builder(beatmap, *args, context, **kwargs) -> Event | None
@@ -270,14 +273,22 @@ _MSTR_PREFIX: /'''(?=\n)/
 _MSTR_POSTFIX: /(?<=\n)'''/
 
 contents: info audio volume offset tempo chart _e
-k_aiko_std: header contents
+std: header contents
+
+contents_str: (/[\s\S]+/)?
+std_header: header contents_str
+
+track_str: /\n((?!''')[\s\S])*/
+track_strs: (_n "beatmap.chart += r" _MSTR_PREFIX track_str _MSTR_POSTFIX)*
+std_metadata: info audio volume offset tempo track_strs _e
 """
 
 class K_AIKO_STD_Transformer(Transformer):
-    # defaults: k_aiko_std, header, contents,
+    # defaults: std, header, contents, std_header, std_metadata,
     #           track, note, text, lengthen, measure, division, instant
-    chart = pattern = lambda self, args: args
-    version = symbol = key = value = mod = lambda self, args: args[0]
+    chart = pattern = track_strs = lambda self, args: args
+    version = symbol = key = value = mod = track_str = lambda self, args: args[0]
+    contents_str = lambda self, args: "" if len(args) == 0 else args[0]
     info = audio = volume = offset = tempo = lambda self, args: None if len(args) == 0 else args[0]
     none = bool = int = float = str = mstr = lambda self, args: literal_eval(args[0])
     frac = lambda self, args: Fraction(args[0])
@@ -303,27 +314,32 @@ class K_AIKO_STD_Transformer(Transformer):
 
 class K_AIKO_STD:
     version = "0.1.0"
-    k_aiko_std_parser = Lark(k_aiko_grammar, start='k_aiko_std')
-    track_parser = Lark(k_aiko_grammar, start='track')
+    std_parser = Lark(k_aiko_grammar, start='std')
+    std_header_parser = Lark(k_aiko_grammar, start='std_header')
+    std_metadata_parser = Lark(k_aiko_grammar, start='std_metadata')
+    std_track_parser = Lark(k_aiko_grammar, start='track')
     transformer = K_AIKO_STD_Transformer()
 
     def read(self, filename):
         path = os.path.dirname(filename)
         str = open(filename, newline="").read()
-        return self.load_beatmap(path, self.transformer.transform(self.k_aiko_std_parser.parse(str)))
+        beatmap = self.parse_beatmap(str, path)
+        return beatmap
 
-    def read_track(self, str, definitions):
-        return self.load_track(self.transformer.transform(self.track_parser.parse(str)), definitions)
-
-    def load_beatmap(self, path, node):
-        header, contents = node.children
+    def parse_beatmap(self, str, path):
+        # parse header
+        node = self.transformer.transform(self.std_header_parser.parse(str))
+        header, contents_str = node.children
         version, = header.children
-        info, audio, volume, offset, tempo, chart = contents.children
 
         vernum = version.split(".")
         vernum0 = self.version.split(".")
         if vernum[0] != vernum0[0] or vernum[1:] > vernum0[1:]:
             raise BeatmapParseError("incompatible version")
+
+        # parse metadata
+        contents = self.transformer.transform(self.std_metadata_parser.parse(contents_str))
+        info, audio, volume, offset, tempo, track_strs = contents.children
 
         beatmap = BeatmapDraft()
 
@@ -339,13 +355,15 @@ class K_AIKO_STD:
         if tempo is not None:
             beatmap.tempo = tempo
 
-        for track_node in chart:
-            track = self.load_track(track_node, beatmap.definitions)
-            beatmap.tracks.append(track)
+        # parse chart
+        for track_str in track_strs:
+            track = self.parse_track(track_str, beatmap.notations.definitions)
+            beatmap.chart.tracks.append(track)
 
         return beatmap
 
-    def load_track(self, node, definitions):
+    def parse_track(self, str, definitions):
+        node = self.transformer.transform(self.std_track_parser.parse(str))
         (args, kwargs), pattern = node.children
 
         track = NoteTrack(*args, **kwargs)
@@ -453,7 +471,7 @@ class OSU:
 
             beatmap = BeatmapDraft()
             beatmap.path = path
-            beatmap.tracks.append(NoteTrack())
+            beatmap.chart.tracks.append(NoteTrack())
             context = {}
 
             parse = None
@@ -520,7 +538,7 @@ class OSU:
             context['beatLength0'] = beatLength
             beatmap.offset = time/1000
             beatmap.tempo = 60 / (beatLength/1000)
-            beatmap.tracks[0].meter = meter
+            beatmap.chart.tracks[0].meter = meter
 
         if uninherited == "0":
             multiplier = multiplier / (-0.01 * beatLength)
@@ -537,6 +555,8 @@ class OSU:
     def parse_colours(self, beatmap, context, line): pass
 
     def parse_hitobjects(self, beatmap, context, line):
+        definitions = beatmap.notations.definitions
+
         x,y,time,type,hitSound,*objectParams,hitSample = line.rstrip("\n").split(",")
         time = int(time)
         type = int(type)
@@ -550,12 +570,12 @@ class OSU:
 
         if type & 1: # circle
             if hitSound == 0 or hitSound & 1: # don
-                note = beatmap.definitions['x'](beat=beat, speed=speed, volume=volume)
-                beatmap.tracks[0].notes.append(note)
+                note = definitions['x'](beat=beat, speed=speed, volume=volume)
+                beatmap.chart.tracks[0].notes.append(note)
 
             elif hitSound & 10: # kat
-                note = beatmap.definitions['o'](beat=beat, speed=speed, volume=volume)
-                beatmap.tracks[0].notes.append(note)
+                note = definitions['o'](beat=beat, speed=speed, volume=volume)
+                beatmap.chart.tracks[0].notes.append(note)
 
         elif type & 2: # slider
             # curve,slides,sliderLength,edgeSounds,edgeSets = objectParams
@@ -563,8 +583,8 @@ class OSU:
             sliderLength = float(sliderLength)
             length = sliderLength / sliderVelocity
 
-            note = beatmap.definitions['%'](density=density, beat=beat, length=length, speed=speed, volume=volume)
-            beatmap.tracks[0].notes.append(note)
+            note = definitions['%'](density=density, beat=beat, length=length, speed=speed, volume=volume)
+            beatmap.chart.tracks[0].notes.append(note)
 
         elif type & 8: # spinner
             end_time, = objectParams
@@ -572,7 +592,7 @@ class OSU:
             length = (end_time - time)/context['beatLength0']
             # 10
 
-            note = beatmap.definitions['@'](density=density, beat=beat, length=length, speed=speed, volume=volume)
-            beatmap.tracks[0].notes.append(note)
+            note = definitions['@'](density=density, beat=beat, length=length, speed=speed, volume=volume)
+            beatmap.chart.tracks[0].notes.append(note)
 
 OSU_FORMAT = OSU()
