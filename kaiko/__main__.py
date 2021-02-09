@@ -1,7 +1,7 @@
 import sys
 import contextlib
 from .kerminal import *
-from .beatmenu import *
+from .beatmap import *
 from .beatsheet import *
 from .beatanalyzer import *
 
@@ -13,12 +13,11 @@ class KAIKO:
     @contextlib.contextmanager
     def connect(self, kerminal):
         self.kerminal = kerminal
-        self.beatbar = Beatbar.initialize(kerminal)
 
         self.beatmap = BeatmapDraft.read(self.filename)
         self.game = BeatmapPlayer(self.beatmap)
 
-        with self.game.connect(self.kerminal, self.beatbar) as main:
+        with self.game.connect(self.kerminal) as main:
             yield main
 
 

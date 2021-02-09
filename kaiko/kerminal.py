@@ -1,6 +1,7 @@
 import time
 import itertools
 import functools
+import re
 import contextlib
 import threading
 import shutil
@@ -385,20 +386,20 @@ class KerminalRenderer:
     def add_pad(self, pad_node, xmask=slice(None,None), zindex=(0,)):
         return self.add_drawer(self._pad_drawer(pad_node, xmask), zindex)
 
-    @dn.datanode
     @staticmethod
+    @dn.datanode
     def _text_drawer(text_node, x=0, xmask=slice(None,None)):
         text_node = dn.DataNode.wrap(text_node)
         with text_node:
             view, time, width = yield
             while True:
                 text = text_node.send((time, range(-x, width-x)[xmask]))
-                view, x = tui.addtext1(view, width, x, text, xmask=xmask)
+                view, _ = tui.addtext1(view, width, x, text, xmask=xmask)
 
                 view, time, width = yield view
 
-    @dn.datanode
     @staticmethod
+    @dn.datanode
     def _pad_drawer(pad_node, xmask=slice(None,None)):
         pad_node = dn.DataNode.wrap(pad_node)
         with pad_node:
@@ -451,12 +452,25 @@ class KerminalController:
         finally:
             controller.remove_handler(subnode_key)
 
-    def add_handler(self, node):
-        return self.handlers_scheduler.add_node(node, (0,))
+    def add_handler(self, node, key=None):
+        if key is None:
+            return self.handlers_scheduler.add_node(node, (0,))
+        else:
+            if isinstance(key, str):
+                key = re.compile(re.escape(key))
+            return self.handlers_scheduler.add_node(self._filter_node(node, key), (0,))
 
     def remove_handler(self, key):
         self.handlers_scheduler.remove_node(key)
 
+    @dn.datanode
+    def _filter_node(self, node, regex):
+        node = dn.DataNode.wrap(node)
+        with node:
+            while True:
+                _, t, key = yield
+                if regex.fullmatch(key):
+                    node.send((None, t, key))
 
 def until_interrupt(dt=0.005):
     SIGINT_event = threading.Event()

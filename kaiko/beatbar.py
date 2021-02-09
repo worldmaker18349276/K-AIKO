@@ -4,8 +4,6 @@ import threading
 from . import cfg
 from . import datanodes as dn
 from . import tui
-from .beatmap import BeatmapPlayer
-from .beatsheet import BeatmapDraft
 
 
 @cfg.configurable
@@ -31,6 +29,7 @@ class Beatbar:
         self.ref_time = ref_time
 
     @classmethod
+    @contextlib.contextmanager
     def initialize(clz, kerminal, ref_time=0.0, settings=BeatbarSettings()):
         icon_width = settings.icon_width
         header_width = settings.header_width
@@ -46,13 +45,19 @@ class Beatbar:
         current_header = dn.TimedVariable(value=lambda time, ran: "")
         current_footer = dn.TimedVariable(value=lambda time, ran: "")
 
-        kerminal.renderer.add_drawer(content_scheduler, zindex=(0,))
-        kerminal.renderer.add_drawer(clz._masked_node(current_icon, icon_mask), zindex=(1,))
-        kerminal.renderer.add_drawer(clz._masked_node(current_header, header_mask, ("\b[", "]")), zindex=(2,))
-        kerminal.renderer.add_drawer(clz._masked_node(current_footer, footer_mask, ("\b[", "]")), zindex=(3,))
+        content_key = kerminal.renderer.add_drawer(content_scheduler, zindex=(0,))
+        icon_key = kerminal.renderer.add_drawer(clz._masked_node(current_icon, icon_mask), zindex=(1,))
+        header_key = kerminal.renderer.add_drawer(clz._masked_node(current_header, header_mask, ("\b[", "]")), zindex=(2,))
+        footer_key = kerminal.renderer.add_drawer(clz._masked_node(current_footer, footer_mask, ("\b[", "]")), zindex=(3,))
 
-        return clz(icon_mask, header_mask, content_mask, footer_mask,
-                   content_scheduler, current_icon, current_header, current_footer, ref_time)
+        try:
+            yield clz(icon_mask, header_mask, content_mask, footer_mask,
+                      content_scheduler, current_icon, current_header, current_footer, ref_time)
+        finally:
+            kerminal.renderer.remove_drawer(content_key)
+            kerminal.renderer.remove_drawer(icon_key)
+            kerminal.renderer.remove_drawer(header_key)
+            kerminal.renderer.remove_drawer(footer_key)
 
     @classmethod
     @contextlib.contextmanager

@@ -8,6 +8,7 @@ import queue
 import threading
 import numpy
 import audioread
+from . import beatbar
 from . import cfg
 from . import datanodes as dn
 from . import tui
@@ -611,7 +612,7 @@ class BeatmapPlayer:
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
 
-    def prepare(self, kerminal, beatbar):
+    def prepare(self, kerminal):
         # prepare events
         self.events = self.beatmap.build_events()
         self.events.sort(key=lambda e: e.lifespan[0])
@@ -689,13 +690,13 @@ class BeatmapPlayer:
         return abs(self.start_time)
 
     @contextlib.contextmanager
-    def connect(self, kerminal, beatbar):
-        time_shift = self.prepare(kerminal, beatbar)
+    def connect(self, kerminal):
+        time_shift = self.prepare(kerminal)
         load_time = self.settings.load_time
         ref_time = kerminal.time + load_time + time_shift
 
         with kerminal.subkerminal(kerminal, ref_time) as self.kerminal,\
-             beatbar.subbeatbar(beatbar, ref_time) as self.beatbar:
+             beatbar.Beatbar.initialize(kerminal, ref_time) as self.beatbar:
             # play music
             if self.audionode is not None:
                 self.kerminal.mixer.play(self.audionode, volume=self.volume, time=0.0, zindex=(-3,))

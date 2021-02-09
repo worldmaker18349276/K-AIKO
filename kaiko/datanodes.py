@@ -1182,6 +1182,7 @@ def input(node, stream=None):
                 yield thread
             finally:
                 stop_event.set()
+                io_event.set()
                 thread.join()
 
     finally:
