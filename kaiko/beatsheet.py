@@ -15,6 +15,9 @@ from .beatmap import (
 Rest = lambda: None
 Divisor = lambda divisor=2: divisor
 
+class BeatmapParseError(Exception):
+    pass
+
 class BeatmapDraft(Beatmap):
     def __init__(self, path=".", info="", audio=None, volume=0.0, offset=0.0, tempo=60.0):
         super().__init__(path, info, audio, volume, offset, tempo)
@@ -50,18 +53,21 @@ class BeatmapDraft(Beatmap):
 
     @staticmethod
     def read(filename, hack=False):
-        if filename.endswith((".k-aiko", ".kaiko", ".ka")):
-            if hack:
-                beatmap = BeatmapDraft()
-                beatmap.path = os.path.dirname(filename)
-                exec(open(filename).read(), dict(), dict(beatmap=beatmap))
-                return beatmap
+        try:
+            if filename.endswith((".k-aiko", ".kaiko", ".ka")):
+                if hack:
+                    beatmap = BeatmapDraft()
+                    beatmap.path = os.path.dirname(filename)
+                    exec(open(filename).read(), dict(), dict(beatmap=beatmap))
+                    return beatmap
+                else:
+                    return K_AIKO_STD_FORMAT.read(filename)
+            elif filename.endswith(".osu"):
+                return OSU_FORMAT.read(filename)
             else:
-                return K_AIKO_STD_FORMAT.read(filename)
-        elif filename.endswith(".osu"):
-            return OSU_FORMAT.read(filename)
-        else:
-            raise ValueError(f"unknown file extension: {filename}")
+                raise ValueError(f"unknown file extension: {filename}")
+        except Exception as e:
+            raise BeatmapParseError(f"failed to read beatmap {filename}") from e
 
     class NotationDict:
         def __init__(self, definitions):
