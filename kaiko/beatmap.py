@@ -361,7 +361,7 @@ class Roll(Target):
         self.speed = speed
         self.volume = volume
         self.roll = 0
-        self.number = int(length * density)
+        self.number = max(int(length * density), 1)
         self.is_finished = False
         self.score = 0
 
