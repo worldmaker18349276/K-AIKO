@@ -53,21 +53,27 @@ class BeatmapDraft(Beatmap):
 
     @staticmethod
     def read(filename, hack=False):
-        try:
-            if filename.endswith((".k-aiko", ".kaiko", ".ka")):
-                if hack:
-                    beatmap = BeatmapDraft()
-                    beatmap.path = os.path.dirname(filename)
-                    exec(open(filename).read(), dict(), dict(beatmap=beatmap))
-                    return beatmap
-                else:
-                    return K_AIKO_STD_FORMAT.read(filename)
-            elif filename.endswith(".osu"):
-                return OSU_FORMAT.read(filename)
+        if filename.endswith((".k-aiko", ".kaiko", ".ka")):
+            if hack:
+                beatmap = BeatmapDraft()
+                beatmap.path = os.path.dirname(filename)
+                exec(open(filename).read(), dict(), dict(beatmap=beatmap))
+                return beatmap
+
             else:
-                raise ValueError(f"unknown file extension: {filename}")
-        except Exception as e:
-            raise BeatmapParseError(f"failed to read beatmap {filename}") from e
+                try:
+                    return K_AIKO_STD_FORMAT.read(filename)
+                except Exception as e:
+                    raise BeatmapParseError(f"failed to read beatmap {filename}") from e
+
+        elif filename.endswith(".osu"):
+            try:
+                return OSU_FORMAT.read(filename)
+            except Exception as e:
+                raise BeatmapParseError(f"failed to read beatmap {filename}") from e
+
+        else:
+            raise ValueError(f"unknown file extension: {filename}")
 
     class NotationDict:
         def __init__(self, definitions):
@@ -317,7 +323,7 @@ class K_AIKO_STD:
         vernum = version.split(".")
         vernum0 = self.version.split(".")
         if vernum[0] != vernum0[0] or vernum[1:] > vernum0[1:]:
-            raise ValueError("incompatible version")
+            raise BeatmapParseError("incompatible version")
 
         beatmap = BeatmapDraft()
 
@@ -387,7 +393,7 @@ class K_AIKO_STD:
                     track.notes.append(note)
 
                 else:
-                    raise ValueError(f"undefined symbol {symbol}")
+                    raise BeatmapParseError(f"undefined symbol {symbol}")
 
                 beat = beat + length
 
@@ -408,7 +414,7 @@ class K_AIKO_STD:
 
             elif node.data == 'measure':
                 if (beat - track.beat) % track.meter != 0:
-                    raise ValueError("wrong measure")
+                    raise BeatmapParseError("wrong measure")
 
             elif node.data == 'division':
                 (args, kwargs), pattern = node.children
@@ -428,7 +434,7 @@ class K_AIKO_STD:
                 track, beat, _, note = self.load_pattern(pattern, track, beat, 0, note, definitions)
 
             else:
-                raise ValueError(f"unknown node {str(node)}")
+                raise BeatmapParseError(f"unknown node {str(node)}")
 
         return track, beat, length, note
 
@@ -437,11 +443,13 @@ K_AIKO_STD_FORMAT = K_AIKO_STD()
 class OSU:
     def read(self, filename):
         path = os.path.dirname(filename)
+        index = 0
 
         with open(filename) as file:
             format = file.readline()
+            index += 1
             if format != "osu file format v14\n":
-                raise ValueError(f"invalid file format: {repr(format)}")
+                raise BeatmapParseError(f"invalid file format: {repr(format)}")
 
             beatmap = BeatmapDraft()
             beatmap.path = path
@@ -471,9 +479,13 @@ class OSU:
                 elif line == "[HitObjects]\n":
                     parse = self.parse_hitobjects
                 else:
-                    parse(beatmap, context, line)
+                    try:
+                        parse(beatmap, context, line)
+                    except Exception as e:
+                        raise BeatmapParseError(f"parse error at line {index}") from e
 
                 line = file.readline()
+                index += 1
 
         return beatmap
 
@@ -546,7 +558,8 @@ class OSU:
                 beatmap.tracks[0].notes.append(note)
 
         elif type & 2: # slider
-            curve,slides,sliderLength,edgeSounds,edgeSets = objectParams
+            # curve,slides,sliderLength,edgeSounds,edgeSets = objectParams
+            sliderLength = float(objectParams[2]) if len(objectParams) >= 3 else 0.0
             sliderLength = float(sliderLength)
             length = sliderLength / sliderVelocity
 

@@ -7,7 +7,7 @@ from . import cfg
 from . import datanodes as dn
 from . import tui
 from .beatmap import BeatmapPlayer
-from .beatsheet import BeatmapDraft
+from .beatsheet import BeatmapDraft, BeatmapParseError
 
 
 class BeatMenu:
@@ -18,9 +18,13 @@ class BeatMenu:
             for file in files:
                 if file.endswith((".k-aiko", ".kaiko", ".ka", ".osu")):
                     filepath = os.path.join(root, file)
-                    beatmap = BeatmapDraft.read(filepath)
-                    game = BeatmapPlayer(beatmap)
-                    songs[file] = game
+                    try:
+                        beatmap = BeatmapDraft.read(filepath)
+                    except BeatmapParseError:
+                        pass
+                    else:
+                        game = BeatmapPlayer(beatmap)
+                        songs[file] = game
 
         self.tree = {
             "songs": songs,
