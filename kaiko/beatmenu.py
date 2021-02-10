@@ -29,21 +29,15 @@ class BeatMenuPlay:
                 yield main
 
 class BeatMenu:
+    keymap = {
+        'NEXT': "\x1b[B",
+        'PREV': "\x1b[A",
+        'ENTER': "\n",
+        'EXIT': "\x1b",
+    }
+
     def __init__(self):
-        songs = dict()
-
-        for root, dirs, files in os.walk("./songs"):
-            for file in files:
-                if file.endswith((".kaiko", ".ka", ".osu")):
-                    filepath = os.path.join(root, file)
-                    songs[file] = BeatMenuPlay(filepath)
-
-        self.tree = {
-            "play": songs,
-            "settings": None,
-            "quit": self.quit,
-        }
-        self.indices = (0,)
+        self.prompts = []
         self.sessions = queue.Queue()
         self.stop_event = threading.Event()
         self.sep = "❯ "
@@ -55,78 +49,109 @@ class BeatMenu:
         with dn.interval(consumer=self.run(), dt=0.1) as thread:
             yield thread
 
+    def get_menu_node(self):
+        songs = []
+
+        for root, dirs, files in os.walk("./songs"):
+            for file in files:
+                if file.endswith((".kaiko", ".ka", ".osu")):
+                    filepath = os.path.join(root, file)
+                    songs.append((file, BeatMenuPlay(filepath)))
+
+        return menu_node([
+            ("play", lambda: menu_node(songs, self.keymap)),
+            ("settings", None),
+            ("quit", self.get_quit_node),
+        ], self.keymap)
+
     @dn.datanode
-    def input_handler(self):
+    def get_quit_node(self):
+        self.stop_event.set()
+        yield
+
+    @dn.datanode
+    def input_handler(self, menu_node):
         while True:
             _, _, key = yield
-
-            if key == "\x1b[A":
-                self.prev()
-            elif key == "\x1b[B":
-                self.next()
-            elif key == "\n":
-                self.enter()
-            elif key == "\x1b":
-                self.esc()
+            res = menu_node.send(key)
+            if isinstance(res, list):
+                self.prompts = res
+            else:
+                self.sessions.put(res)
 
     @dn.datanode
     def prompt_drawer(self):
         yield
         while True:
-            keys, _ = self.get_item(self.indices)
-            yield self.sep + self.sep.join(keys)
+            yield self.sep + self.sep.join(self.prompts)
 
     @dn.datanode
     def run(self):
-        while True:
-            if self.sessions.empty():
-                with self.kerminal.renderer.add_text(self.prompt_drawer(), 0),\
-                     self.kerminal.controller.add_handler(self.input_handler()):
-                    while self.sessions.empty():
-                        if self.stop_event.is_set():
-                            return
-                        yield
+        menu_node = self.get_menu_node()
+
+        with menu_node:
+            self.prompts = menu_node.send(None)
+            while True:
+                if self.sessions.empty():
+                    with self.kerminal.renderer.add_text(self.prompt_drawer(), 0),\
+                         self.kerminal.controller.add_handler(self.input_handler(menu_node)):
+                        while self.sessions.empty():
+                            if self.stop_event.is_set():
+                                return
+                            if menu_node.finalized:
+                                return
+                            yield
+
+                else:
+                    session = self.sessions.get()
+                    with session.connect(self.kerminal) as main:
+                        main.start()
+                        while main.is_alive():
+                            yield
+
+@dn.datanode
+def menu_node(items, keymap):
+    index = 0
+    length = len(items)
+    prompt, func = items[index]
+
+    # ignore the first action and yield initial prompt
+    yield
+    key = yield [prompt]
+
+    while True:
+        if key == keymap['NEXT']:
+            index = min(index+1, length-1)
+
+        elif key == keymap['PREV']:
+            index = max(index-1, 0)
+
+        elif key == keymap['ENTER']:
+            if func is None:
+                # None -> no action
+                pass
+
+            elif hasattr(func, 'connect'):
+                # knockable -> suspend to execute
+                key = yield func
+                continue
+
+            elif hasattr(func, '__call__'):
+                # datanode function -> forward action to submenu
+                with func() as node:
+                    while True:
+                        try:
+                            res = node.send(key)
+                        except StopIteration:
+                            break
+                        res = res if hasattr(res, 'connect') else [prompt, *res]
+                        key = yield res
 
             else:
-                session = self.sessions.get()
-                with session.connect(self.kerminal) as main:
-                    main.start()
-                    while main.is_alive():
-                        yield
+                raise ValueError(f"unknown function: {repr(func)}")
 
-    def get_item(self, indices):
-        keys = []
-        tree = self.tree
-        for i in indices:
-            key, tree = list(tree.items())[i]
-            keys.append(key)
-        return keys, tree
+        elif key == keymap['EXIT']:
+            break
 
-    def next(self):
-        _, tree = self.get_item(self.indices[:-1])
-        index = min(self.indices[-1] + 1, len(tree)-1)
-        self.indices = self.indices[:-1] + (index,)
-
-    def prev(self):
-        index = max(self.indices[-1] - 1, 0)
-        self.indices = self.indices[:-1] + (index,)
-
-    def enter(self):
-        _, tree = self.get_item(self.indices)
-        if tree is None:
-            pass
-        elif hasattr(tree, '__call__'):
-            tree()
-        elif hasattr(tree, 'connect'):
-            self.sessions.put(tree)
-        else:
-            self.indices = self.indices + (0,)
-
-    def esc(self):
-        if len(self.indices) > 1:
-            self.indices = self.indices[:-1]
-        else:
-            self.indices = (2,)
-
-    def quit(self):
-        self.stop_event.set()
+        prompt, func = items[index]
+        key = yield [prompt]
