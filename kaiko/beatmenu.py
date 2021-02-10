@@ -39,13 +39,14 @@ class BeatMenu:
                     songs[file] = BeatMenuPlay(filepath)
 
         self.tree = {
-            "songs": songs,
+            "play": songs,
             "settings": None,
             "quit": self.quit,
         }
         self.indices = (0,)
         self.sessions = queue.Queue()
         self.stop_event = threading.Event()
+        self.sep = "❯ "
 
     @contextlib.contextmanager
     def connect(self, kerminal):
@@ -73,7 +74,7 @@ class BeatMenu:
         yield
         while True:
             keys, _ = self.get_item(self.indices)
-            yield ">" + ">".join(keys)
+            yield self.sep + self.sep.join(keys)
 
     @dn.datanode
     def run(self):
@@ -124,6 +125,8 @@ class BeatMenu:
     def esc(self):
         if len(self.indices) > 1:
             self.indices = self.indices[:-1]
+        else:
+            self.indices = (2,)
 
     def quit(self):
         self.stop_event.set()
