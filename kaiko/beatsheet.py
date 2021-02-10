@@ -229,8 +229,8 @@ class Note:
 k_aiko_grammar = r"""
 _NEWLINE: /\r\n?|\n/
 _WHITESPACE: /[ \t]+/
-_COMMENT: /\#[^\r\n]*/
-_MCOMMENT: /\#((?![\r\n]|''').)*/
+_COMMENT: /#[^\r\n]*/
+_MCOMMENT: /#((?!''')[^\r\n])*/
 _n: (_NEWLINE _COMMENT?)* _NEWLINE
 _e: (_NEWLINE _COMMENT?)*
 _s: (_WHITESPACE | (_NEWLINE _MCOMMENT?)* _NEWLINE)*
@@ -241,7 +241,7 @@ int:   /[-+]?(0|[1-9][0-9]*)/
 frac:  /[-+]?(0|[1-9][0-9]*)\/[1-9][0-9]*/
 float: /[-+]?[0-9]+\.[0-9]+/
 str:   /'([^\r\n\\']|\\[\\'btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*'/
-mstr:  /'''(?=\n)([^\\']|\\[\\'btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*(?<=\n)'''/
+mstr:  /'''(\r\n?|\n)((?!''')[\s\S])*((?<=\r\n)|(?<=\r)|(?<=\n))'''/
 
 value: none | bool | float | frac | int | str
 key: /[a-zA-Z_][a-zA-Z0-9_]*/
@@ -251,7 +251,7 @@ arg:             value  ->  pos
    | key mod "=" value  ->  ikw
 arguments: ["(" [ arg (", " arg)* ] ")"]
 
-symbol: /[^ \b\t\n\r\f\v()[\]{}\'"\\#|~]+/
+symbol: /[^ \b\t\n\r\f\v()[\]{}'"\\#|~]+/
 note: symbol arguments
 text: str arguments
 lengthen: "~"
@@ -268,9 +268,9 @@ audio:  [_n "beatmap.audio"  " = " str]
 volume: [_n "beatmap.volume" " = " float]
 offset: [_n "beatmap.offset" " = " float]
 tempo:  [_n "beatmap.tempo"  " = " float]
-chart: (_n "beatmap.chart += r" _MSTR_PREFIX track _MSTR_POSTFIX)*
-_MSTR_PREFIX: /'''(?=\n)/
-_MSTR_POSTFIX: /(?<=\n)'''/
+chart: (_n "beatmap.chart"  " += " _MSTR_PREFIX track _MSTR_POSTFIX)*
+_MSTR_PREFIX: /r'''(?=\r\n?|\n)/
+_MSTR_POSTFIX: /((?<=\r\n)|(?<=\r)|(?<=\n))'''/
 
 contents: info audio volume offset tempo chart _e
 std: header contents
@@ -278,8 +278,8 @@ std: header contents
 contents_str: (/[\s\S]+/)?
 std_header: header contents_str
 
-track_str: /\n((?!''')[\s\S])*/
-track_strs: (_n "beatmap.chart += r" _MSTR_PREFIX track_str _MSTR_POSTFIX)*
+track_str: /(\r\n?|\n)((?!''')[\s\S])*/
+track_strs: (_n "beatmap.chart"  " += " _MSTR_PREFIX track_str _MSTR_POSTFIX)*
 std_metadata: info audio volume offset tempo track_strs _e
 """
 
