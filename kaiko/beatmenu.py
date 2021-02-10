@@ -34,7 +34,7 @@ class BeatMenu:
 
         for root, dirs, files in os.walk("./songs"):
             for file in files:
-                if file.endswith((".k-aiko", ".kaiko", ".ka", ".osu")):
+                if file.endswith((".kaiko", ".ka", ".osu")):
                     filepath = os.path.join(root, file)
                     songs[file] = BeatMenuPlay(filepath)
 
