@@ -3,6 +3,7 @@ import itertools
 import functools
 import re
 import contextlib
+import queue
 import threading
 import shutil
 import signal
@@ -292,12 +293,13 @@ class KerminalDetector:
             _, time, strength, detected = yield
 
 class KerminalRenderer:
-    def __init__(self, drawers_scheduler):
+    def __init__(self, drawers_scheduler, msg_queue):
         self.drawers_scheduler = drawers_scheduler
+        self.msg_queue = msg_queue
 
     @staticmethod
     @dn.datanode
-    def get_node(scheduler, resize_event, framerate, display_delay, columns):
+    def get_node(scheduler, msg_queue, resize_event, framerate, display_delay, columns):
         width = 0
 
         def SIGWINCH_handler(sig, frame):
@@ -314,10 +316,16 @@ class KerminalRenderer:
                     size = shutil.get_terminal_size()
                     width = size.columns if columns == -1 else min(columns, size.columns)
 
+                msg = []
+                while not msg_queue.empty():
+                    msg.append(msg_queue.get())
+
                 time = index / framerate + display_delay
                 view = tui.newwin1(width)
                 view = scheduler.send((view, time, width))
-                yield "\r" + "".join(view) + "\r"
+
+                msg = "\n" + "".join(msg) + "\n" if msg else ""
+                yield msg + "\r" + "".join(view) + "\r"
                 index += 1
 
     @classmethod
@@ -341,11 +349,12 @@ class KerminalRenderer:
                 print()
 
         scheduler = dn.Scheduler()
-        display_node = clz.get_node(scheduler, resize_event, framerate, display_delay, columns)
+        msg_queue = queue.Queue()
+        display_node = clz.get_node(scheduler, msg_queue, resize_event, framerate, display_delay, columns)
         display_ctxt = dn.timeit(display_node, "display") if debug_timeit else nullcontext(display_node)
         with display_ctxt as display_node:
             with dn.interval(display_node, show(), 1/framerate) as thread:
-                yield thread, clz(scheduler)
+                yield thread, clz(scheduler, msg_queue)
 
     @classmethod
     @dn.datanode
@@ -363,7 +372,10 @@ class KerminalRenderer:
         scheduler = dn.Scheduler()
         subnode = clz.get_subnode(scheduler, ref_time)
         with renderer.add_drawer(subnode, zindex=zindex):
-            yield clz(scheduler)
+            yield clz(scheduler, renderer.msg_queue)
+
+    def message(self, msg):
+        self.msg_queue.put(msg)
 
     def add_drawer(self, node, zindex=(0,)):
         return self.drawers_scheduler.add_node(node, zindex=zindex)

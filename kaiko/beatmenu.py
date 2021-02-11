@@ -10,6 +10,10 @@ from .beatmap import BeatmapPlayer
 from .beatsheet import BeatmapDraft, BeatmapParseError
 
 
+class Dead:
+    def start(self): pass
+    def is_alive(self): return False
+
 class BeatMenuPlay:
     def __init__(self, filepath):
         self.filepath = filepath
@@ -20,8 +24,8 @@ class BeatMenuPlay:
             beatmap = BeatmapDraft.read(self.filepath)
 
         except BeatmapParseError:
-            print(f"failed to read beatmap {file}")
-            yield
+            kerminal.renderer.message(f"failed to read beatmap {self.filepath}")
+            yield Dead()
 
         else:
             game = BeatmapPlayer(beatmap)
@@ -90,9 +94,9 @@ class BeatMenu:
         menu_node = self.get_menu_node()
 
         with menu_node:
-            self.prompts = menu_node.send(None)
             while True:
                 if self.sessions.empty():
+                    self.prompts = menu_node.send(None)
                     with self.kerminal.renderer.add_text(self.prompt_drawer(), 0),\
                          self.kerminal.controller.add_handler(self.input_handler(menu_node)):
                         while self.sessions.empty():
@@ -115,12 +119,13 @@ def menu_node(items, keymap):
     length = len(items)
     prompt, func = items[index]
 
-    # ignore the first action and yield initial prompt
-    yield
-    key = yield [prompt]
+    key = yield
 
     while True:
-        if key == keymap['NEXT']:
+        if key is None:
+            pass
+
+        elif key == keymap['NEXT']:
             index = min(index+1, length-1)
 
         elif key == keymap['PREV']:
@@ -139,6 +144,7 @@ def menu_node(items, keymap):
             elif hasattr(func, '__call__'):
                 # datanode function -> forward action to submenu
                 with func() as node:
+                    key = None
                     while True:
                         try:
                             res = node.send(key)
