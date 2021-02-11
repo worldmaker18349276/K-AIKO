@@ -31,6 +31,7 @@ class BeatMenuPlay:
             game = BeatmapPlayer(beatmap)
             with game.connect(kerminal) as main:
                 yield main
+                kerminal.renderer.message("")
 
 class BeatMenu:
     keymap = {
@@ -89,6 +90,14 @@ class BeatMenu:
         while True:
             yield self.sep + self.sep.join(self.prompts)
 
+    @contextlib.contextmanager
+    def menu(self, menu_node):
+        self.prompts = menu_node.send(None)
+        with self.kerminal.renderer.add_text(self.prompt_drawer(), 0),\
+             self.kerminal.controller.add_handler(self.input_handler(menu_node)):
+            yield
+            self.kerminal.renderer.message("")
+
     @dn.datanode
     def run(self):
         menu_node = self.get_menu_node()
@@ -96,9 +105,7 @@ class BeatMenu:
         with menu_node:
             while True:
                 if self.sessions.empty():
-                    self.prompts = menu_node.send(None)
-                    with self.kerminal.renderer.add_text(self.prompt_drawer(), 0),\
-                         self.kerminal.controller.add_handler(self.input_handler(menu_node)):
+                    with self.menu(menu_node):
                         while self.sessions.empty():
                             if self.stop_event.is_set():
                                 return

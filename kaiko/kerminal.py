@@ -316,13 +316,13 @@ class KerminalRenderer:
                     size = shutil.get_terminal_size()
                     width = size.columns if columns == -1 else min(columns, size.columns)
 
-                msg = []
-                while not msg_queue.empty():
-                    msg.append(msg_queue.get())
-
                 time = index / framerate + display_delay
                 view = tui.newwin1(width)
                 view = scheduler.send((view, time, width))
+
+                msg = []
+                while not msg_queue.empty():
+                    msg.append(msg_queue.get())
 
                 msg = "\n" + "".join(msg) + "\n" if msg else ""
                 yield msg + "\r" + "".join(view) + "\r"
