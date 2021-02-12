@@ -516,7 +516,7 @@ def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
                 break
 
             try:
-                consumer.send((time.time()-ref_time, data))
+                consumer.send(data)
             except StopIteration:
                 return
 
@@ -526,11 +526,13 @@ def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
             yield thread
         finally:
             stop_event.set()
-            thread.join()
+            if thread.is_alive():
+                thread.join()
 
 @datanode
-def tick(dt, t0=0.0, shift=0.0):
-    stop_event = threading.Event()
+def tick(dt, t0=0.0, shift=0.0, stop_event=None):
+    if stop_event is None:
+        stop_event = threading.Event()
     ref_time = time.time()
 
     yield
@@ -1205,12 +1207,46 @@ def input(node, stream=None):
             finally:
                 stop_event.set()
                 io_event.set()
-                thread.join()
+                if thread.is_alive():
+                    thread.join()
 
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
         fcntl.fcntl(fd, fcntl.F_SETOWN, old_owner)
         fcntl.fcntl(fd, fcntl.F_SETFL, old_flags)
+
+@datanode
+def show(stream=None):
+    import sys
+
+    if stream is None:
+        stream = sys.stdout
+
+    try:
+        while True:
+            view = yield
+            stream.write(view)
+            stream.flush()
+    finally:
+        stream.write("\n")
+        stream.flush()
+
+@datanode
+def terminal_size():
+    import signal, shutil
+
+    resize_event = threading.Event()
+    def SIGWINCH_handler(sig, frame):
+        resize_event.set()
+    resize_event.set()
+    signal.signal(signal.SIGWINCH, SIGWINCH_handler)
+
+    yield
+    while True:
+        if resize_event.is_set():
+            resize_event.clear()
+            size = shutil.get_terminal_size()
+        yield size
 
 
 # not data nodes

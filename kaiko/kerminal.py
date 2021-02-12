@@ -299,22 +299,17 @@ class KerminalRenderer:
 
     @staticmethod
     @dn.datanode
-    def get_node(scheduler, msg_queue, resize_event, framerate, display_delay, columns):
+    def get_node(scheduler, msg_queue, framerate, display_delay, columns):
         width = 0
 
-        def SIGWINCH_handler(sig, frame):
-            resize_event.set()
-        signal.signal(signal.SIGWINCH, SIGWINCH_handler)
-        resize_event.set()
+        size_node = dn.terminal_size()
 
         index = 0
-        with scheduler:
+        with scheduler, size_node:
             yield
             while True:
-                if resize_event.is_set():
-                    resize_event.clear()
-                    size = shutil.get_terminal_size()
-                    width = size.columns if columns == -1 else min(columns, size.columns)
+                size = size_node.send(None)
+                width = size.columns if columns == -1 else min(columns, size.columns)
 
                 time = index / framerate + display_delay
                 view = tui.newwin1(width)
@@ -336,24 +331,12 @@ class KerminalRenderer:
         columns = settings.display_columns
         debug_timeit = settings.debug_timeit
 
-        resize_event = threading.Event()
-
-        @dn.datanode
-        def show():
-            try:
-                while True:
-                    current_time, view = yield
-                    if view and not resize_event.is_set():
-                        print(view, end="", flush=True)
-            finally:
-                print()
-
         scheduler = dn.Scheduler()
         msg_queue = queue.Queue()
-        display_node = clz.get_node(scheduler, msg_queue, resize_event, framerate, display_delay, columns)
+        display_node = clz.get_node(scheduler, msg_queue, framerate, display_delay, columns)
         display_ctxt = dn.timeit(display_node, "display") if debug_timeit else nullcontext(display_node)
         with display_ctxt as display_node:
-            with dn.interval(display_node, show(), 1/framerate) as thread:
+            with dn.interval(display_node, dn.print(), 1/framerate) as thread:
                 yield thread, clz(scheduler, msg_queue)
 
     @classmethod
