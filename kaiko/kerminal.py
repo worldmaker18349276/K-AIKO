@@ -27,17 +27,48 @@ class KerminalMixer:
         self.nchannels = nchannels
 
     @staticmethod
-    @dn.datanode
-    def get_node(scheduler, samplerate, buffer_length, nchannels, sound_delay):
-        index = 0
-        with scheduler:
-            yield
-            while True:
-                time = index * buffer_length / samplerate + sound_delay
-                data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
-                data = scheduler.send((data, time))
-                yield data
-                index += 1
+    @contextlib.contextmanager
+    def get_node(scheduler, settings):
+        samplerate = settings.output_samplerate
+        buffer_length = settings.output_buffer_length
+        nchannels = settings.output_channels
+        sound_delay = settings.sound_delay
+        debug_timeit = settings.debug_timeit
+
+        @dn.datanode
+        def _node():
+            index = 0
+            with scheduler:
+                yield
+                while True:
+                    time = index * buffer_length / samplerate + sound_delay
+                    data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
+                    data = scheduler.send((data, time))
+                    yield data
+                    index += 1
+
+        output_ctxt = dn.timeit(_node(), " output") if debug_timeit else nullcontext(_node())
+        with output_ctxt as output_node:
+            yield output_node
+
+    @staticmethod
+    @contextlib.contextmanager
+    def get_stream(manager, output_node, settings):
+        samplerate = settings.output_samplerate
+        buffer_length = settings.output_buffer_length
+        nchannels = settings.output_channels
+        format = settings.output_format
+        device = settings.output_device
+
+        stream_ctxt = dn.play(manager, output_node,
+                              samplerate=samplerate,
+                              buffer_shape=(buffer_length, nchannels),
+                              format=format,
+                              device=device,
+                              )
+
+        with stream_ctxt as stream:
+            yield stream
 
     @classmethod
     @contextlib.contextmanager
@@ -45,24 +76,10 @@ class KerminalMixer:
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
-        format = settings.output_format
-        device = settings.output_device
-        sound_delay = settings.sound_delay
-        debug_timeit = settings.debug_timeit
 
         scheduler = dn.Scheduler()
-        output_node = clz.get_node(scheduler, samplerate, buffer_length, nchannels, sound_delay)
-        output_ctxt = dn.timeit(output_node, " output") if debug_timeit else nullcontext(output_node)
-
-        with output_ctxt as output_node:
-            stream_ctxt = dn.play(manager, output_node,
-                                  samplerate=samplerate,
-                                  buffer_shape=(buffer_length, nchannels),
-                                  format=format,
-                                  device=device,
-                                  )
-
-            with stream_ctxt as stream:
+        with clz.get_node(scheduler, settings) as output_node:
+            with clz.get_stream(manager, output_node, settings) as stream:
                 yield stream, clz(scheduler, samplerate, buffer_length, nchannels)
 
     @classmethod
@@ -167,43 +184,8 @@ class KerminalDetector:
         self.listeners_scheduler = listeners_scheduler
 
     @staticmethod
-    @dn.datanode
-    def get_node(scheduler, samplerate, hop_length, win_length,
-                 pre_max, post_max, pre_avg, post_avg, wait, delta,
-                 knock_delay, knock_energy):
-        prepare = max(post_max, post_avg)
-
-        window = dn.get_half_Hann_window(win_length)
-        onset = dn.pipe(
-            dn.frame(win_length=win_length, hop_length=hop_length),
-            dn.power_spectrum(win_length=win_length,
-                              samplerate=samplerate,
-                              windowing=window,
-                              weighting=True),
-            dn.onset_strength(1))
-        picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
-
-        with scheduler, onset, picker:
-            data = yield
-            buffer = [(knock_delay, 0.0)]*prepare
-            index = 0
-            while True:
-                strength = onset.send(data)
-                detected = picker.send(strength)
-                time = index * hop_length / samplerate + knock_delay
-                strength = strength / knock_energy
-
-                buffer.append((time, strength))
-                time, strength = buffer.pop(0)
-
-                scheduler.send((None, time, strength, detected))
-                data = yield
-
-                index += 1
-
-    @classmethod
     @contextlib.contextmanager
-    def create(clz, manager, settings):
+    def get_node(scheduler, settings):
         samplerate = settings.input_samplerate
         buffer_length = settings.input_buffer_length
         nchannels = settings.input_channels
@@ -227,24 +209,71 @@ class KerminalDetector:
 
         debug_timeit = settings.debug_timeit
 
-        scheduler = dn.Scheduler()
-        input_node = clz.get_node(scheduler, samplerate, hop_length, win_length,
-                                  pre_max, post_max, pre_avg, post_avg, wait, delta,
-                                  knock_delay, knock_energy)
+        @dn.datanode
+        def _node():
+            prepare = max(post_max, post_avg)
+
+            window = dn.get_half_Hann_window(win_length)
+            onset = dn.pipe(
+                dn.frame(win_length=win_length, hop_length=hop_length),
+                dn.power_spectrum(win_length=win_length,
+                                  samplerate=samplerate,
+                                  windowing=window,
+                                  weighting=True),
+                dn.onset_strength(1))
+            picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
+
+            with scheduler, onset, picker:
+                data = yield
+                buffer = [(knock_delay, 0.0)]*prepare
+                index = 0
+                while True:
+                    strength = onset.send(data)
+                    detected = picker.send(strength)
+                    time = index * hop_length / samplerate + knock_delay
+                    strength = strength / knock_energy
+
+                    buffer.append((time, strength))
+                    time, strength = buffer.pop(0)
+
+                    scheduler.send((None, time, strength, detected))
+                    data = yield
+
+                    index += 1
+
+        _node = _node()
 
         if buffer_length != hop_length:
-            input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
-        input_ctxt = dn.timeit(input_node, "  input") if debug_timeit else nullcontext(input_node)
-
+            _node = dn.unchunk(_node, chunk_shape=(hop_length, nchannels))
+        input_ctxt = dn.timeit(_node, "  input") if debug_timeit else nullcontext(_node)
         with input_ctxt as input_node:
-            stream_ctxt = dn.record(manager, input_node,
-                                    samplerate=samplerate,
-                                    buffer_shape=(buffer_length, nchannels),
-                                    format=format,
-                                    device=device,
-                                    )
+            yield input_node
 
-            with stream_ctxt as stream:
+    @staticmethod
+    @contextlib.contextmanager
+    def get_stream(manager, input_node, settings):
+        samplerate = settings.input_samplerate
+        buffer_length = settings.input_buffer_length
+        nchannels = settings.input_channels
+        format = settings.input_format
+        device = settings.input_device
+
+        stream_ctxt = dn.record(manager, input_node,
+                                samplerate=samplerate,
+                                buffer_shape=(buffer_length, nchannels),
+                                format=format,
+                                device=device,
+                                )
+
+        with stream_ctxt as stream:
+            yield stream
+
+    @classmethod
+    @contextlib.contextmanager
+    def create(clz, manager, settings):
+        scheduler = dn.Scheduler()
+        with clz.get_node(scheduler, settings) as input_node:
+            with clz.get_stream(manager, input_node, settings) as stream:
                 yield stream, clz(scheduler)
 
     @classmethod
@@ -298,45 +327,57 @@ class KerminalRenderer:
         self.msg_queue = msg_queue
 
     @staticmethod
-    @dn.datanode
-    def get_node(scheduler, msg_queue, framerate, display_delay, columns):
-        width = 0
-
-        size_node = dn.terminal_size()
-
-        index = 0
-        with scheduler, size_node:
-            yield
-            while True:
-                size = size_node.send(None)
-                width = size.columns if columns == -1 else min(columns, size.columns)
-
-                time = index / framerate + display_delay
-                view = tui.newwin1(width)
-                view = scheduler.send((view, time, width))
-
-                msg = []
-                while not msg_queue.empty():
-                    msg.append(msg_queue.get())
-
-                msg = "\n" + "".join(msg) + "\n" if msg else ""
-                yield msg + "\r" + "".join(view) + "\r"
-                index += 1
-
-    @classmethod
     @contextlib.contextmanager
-    def create(clz, settings):
+    def get_node(scheduler, msg_queue, settings):
         framerate = settings.display_framerate
         display_delay = settings.display_delay
         columns = settings.display_columns
         debug_timeit = settings.debug_timeit
 
+        @dn.datanode
+        def _node():
+            width = 0
+
+            size_node = dn.terminal_size()
+
+            index = 0
+            with scheduler, size_node:
+                yield
+                while True:
+                    size = size_node.send(None)
+                    width = size.columns if columns == -1 else min(columns, size.columns)
+
+                    time = index / framerate + display_delay
+                    view = tui.newwin1(width)
+                    view = scheduler.send((view, time, width))
+
+                    msg = []
+                    while not msg_queue.empty():
+                        msg.append(msg_queue.get())
+
+                    msg = "\n" + "".join(msg) + "\n" if msg else ""
+                    yield msg + "\r" + "".join(view) + "\r"
+                    index += 1
+
+        display_ctxt = dn.timeit(_node(), "display") if debug_timeit else nullcontext(_node())
+        with display_ctxt as display_node:
+            yield display_node
+
+    @staticmethod
+    @contextlib.contextmanager
+    def get_thread(display_node, settings):
+        framerate = settings.display_framerate
+
+        with dn.interval(display_node, dn.show(), 1/framerate) as thread:
+            yield thread
+
+    @classmethod
+    @contextlib.contextmanager
+    def create(clz, settings):
         scheduler = dn.Scheduler()
         msg_queue = queue.Queue()
-        display_node = clz.get_node(scheduler, msg_queue, framerate, display_delay, columns)
-        display_ctxt = dn.timeit(display_node, "display") if debug_timeit else nullcontext(display_node)
-        with display_ctxt as display_node:
-            with dn.interval(display_node, dn.print(), 1/framerate) as thread:
+        with clz.get_node(scheduler, msg_queue, settings) as display_node:
+            with clz.get_thread(display_node, settings) as thread:
                 yield thread, clz(scheduler, msg_queue)
 
     @classmethod
@@ -402,20 +443,30 @@ class KerminalController:
         self.handlers_scheduler = handlers_scheduler
 
     @staticmethod
-    @dn.datanode
-    def get_node(scheduler):
-        with scheduler:
-            while True:
-                t, key = yield
-                scheduler.send((None, t, key))
+    @contextlib.contextmanager
+    def get_node(scheduler, settings):
+        @dn.datanode
+        def _node():
+            with scheduler:
+                while True:
+                    t, key = yield
+                    scheduler.send((None, t, key))
+
+        yield _node()
+
+    @staticmethod
+    @contextlib.contextmanager
+    def get_thread(node, settings):
+        with dn.input(node) as thread:
+            yield thread
 
     @classmethod
     @contextlib.contextmanager
     def create(clz, settings):
         scheduler = dn.Scheduler()
-        node = clz.get_node(scheduler)
-        with dn.input(node) as thread:
-            yield thread, clz(scheduler)
+        with clz.get_node(scheduler, settings) as node:
+            with clz.get_thread(node, settings) as thread:
+                yield thread, clz(scheduler)
 
     @classmethod
     @dn.datanode
@@ -454,6 +505,7 @@ class KerminalController:
                 _, t, key = yield
                 if regex.fullmatch(key):
                     node.send((None, t, key))
+
 
 def until_interrupt(dt=0.005):
     SIGINT_event = threading.Event()
