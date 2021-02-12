@@ -77,6 +77,9 @@ class DataNode:
         self.finalized = True
         return False
 
+    def close(self):
+        self.generator.close()
+
     @staticmethod
     @datanode
     def from_iter(iterator):
