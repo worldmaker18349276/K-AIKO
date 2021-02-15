@@ -449,6 +449,52 @@ class KerminalController:
                 if regex.fullmatch(key):
                     node.send((None, t, key))
 
+class Kerminal:
+    def __init__(self, mixer, detector, renderer, controller):
+        self.ref_time = None
+        self.mixer = mixer
+        self.detector = detector
+        self.renderer = renderer
+        self.controller = controller
+
+    @classmethod
+    @contextlib.contextmanager
+    def create(clz, settings):
+        with KerminalMixer.create(settings) as (audioout_node, mixer),\
+             KerminalDetector.create(settings) as (audioin_node, detector),\
+             KerminalRenderer.create(settings) as (textout_node, renderer),\
+             KerminalController.create(settings) as (textin_node, controller):
+
+            # initialize kerminal
+            kerminal = clz(mixer, detector, renderer, controller)
+            yield audioout_node, audioin_node, textout_node, textin_node, kerminal
+
+    @property
+    def time(self):
+        return time.time() - self.ref_time
+
+    def tick(self, dt, t0=0.0, stop_event=None):
+        if stop_event is None:
+            stop_event = threading.Event()
+
+        for i in itertools.count():
+            if stop_event.wait(max(0.0, t0+i*dt - self.time)):
+                break
+
+            yield self.time
+
+    @classmethod
+    @contextlib.contextmanager
+    def subkerminal(clz, kerminal, ref_time=0.0):
+        with KerminalMixer.submixer(kerminal.mixer, ref_time) as submixer,\
+             KerminalDetector.subdetector(kerminal.detector, ref_time) as subdetector,\
+             KerminalRenderer.subrenderer(kerminal.renderer, ref_time) as subrenderer,\
+             KerminalController.subcontroller(kerminal.controller, ref_time) as subcontroller:
+
+            subkerminal = clz(submixer, subdetector, subrenderer, subcontroller)
+            subkerminal.ref_time = kerminal.ref_time + ref_time
+            yield subkerminal
+
 
 def until_interrupt(dt=0.005):
     SIGINT_event = threading.Event()
@@ -499,14 +545,7 @@ class KerminalSettings:
     # debug
     debug_timeit: bool = False
 
-class Kerminal:
-    def __init__(self, mixer, detector, renderer, controller):
-        self.ref_time = None
-        self.mixer = mixer
-        self.detector = detector
-        self.renderer = renderer
-        self.controller = controller
-
+class KerminalLaucher:
     @classmethod
     def execute(clz, knockable, settings=None):
         if isinstance(settings, str):
@@ -517,29 +556,24 @@ class Kerminal:
         try:
             manager = pyaudio.PyAudio()
 
-            # initialize audio/text streams
-            with KerminalMixer.create(settings) as (audioout_node, mixer),\
-                 KerminalDetector.create(settings) as (audioin_node, detector),\
-                 KerminalRenderer.create(settings) as (textout_node, renderer),\
-                 KerminalController.create(settings) as (textin_node, controller):
+            # initialize kerminal
+            with Kerminal.create(settings) as (audioout_node, audioin_node, textout_node, textin_node, kerminal):
 
+                # initialize audio/text streams
                 with clz.get_audioout_stream(audioout_node, manager, settings) as audioout_stream,\
                      clz.get_audioin_stream(audioin_node, manager, settings) as audioin_stream,\
                      clz.get_textout_thread(textout_node, settings) as textout_thread,\
                      clz.get_textin_thread(textin_node, settings) as textin_thread:
 
-                    # initialize kerminal
-                    self = clz(mixer, detector, renderer, controller)
-
                     # activate audio/video streams
-                    self.ref_time = time.time()
+                    kerminal.ref_time = time.time()
                     audioout_stream.start_stream()
                     audioin_stream.start_stream()
                     textout_thread.start()
                     textin_thread.start()
 
                     # connect to knockable
-                    with knockable.connect(self) as main:
+                    with knockable.connect(kerminal) as main:
                         main.start()
 
                         for _ in until_interrupt():
@@ -552,18 +586,6 @@ class Kerminal:
 
         finally:
             manager.terminate()
-
-    @classmethod
-    @contextlib.contextmanager
-    def subkerminal(clz, kerminal, ref_time=0.0):
-        with KerminalMixer.submixer(kerminal.mixer, ref_time) as submixer,\
-             KerminalDetector.subdetector(kerminal.detector, ref_time) as subdetector,\
-             KerminalRenderer.subrenderer(kerminal.renderer, ref_time) as subrenderer,\
-             KerminalController.subcontroller(kerminal.controller, ref_time) as subcontroller:
-
-            subkerminal = clz(submixer, subdetector, subrenderer, subcontroller)
-            subkerminal.ref_time = kerminal.ref_time + ref_time
-            yield subkerminal
 
     @staticmethod
     @contextlib.contextmanager
@@ -616,18 +638,3 @@ class Kerminal:
     def get_textin_thread(node, settings):
         with dn.input(node) as thread:
             yield thread
-
-
-    @property
-    def time(self):
-        return time.time() - self.ref_time
-
-    def tick(self, dt, t0=0.0, stop_event=None):
-        if stop_event is None:
-            stop_event = threading.Event()
-
-        for i in itertools.count():
-            if stop_event.wait(max(0.0, t0+i*dt - self.time)):
-                break
-
-            yield self.time
