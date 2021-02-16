@@ -675,13 +675,38 @@ class BeatmapPlayer:
         perf_sustain_time = self.settings.performance_sustain_time
         hit_hint_duration = max(hit_decay_time, hit_sustain_time)
 
+        def _default_sight(time, hit_hint, perf_hint):
+            hit_strength, hit_time, _ = hit_hint
+            (perf, perf_is_reversed), perf_time, _ = perf_hint
+
+            # draw perf hint
+            if perf is not None:
+                perf_text = perf_appearances[perf.grade]
+                if perf_is_reversed:
+                    perf_text = perf_text[::-1]
+            else:
+                perf_text = ("", "")
+
+            # draw sight
+            if hit_strength is not None:
+                strength = hit_strength - (time - hit_time) / hit_decay_time
+                strength = max(0.0, min(1.0, strength))
+                loudness = int(strength * (len(sight_appearances) - 1))
+                if time - hit_time < hit_sustain_time:
+                    loudness = max(1, loudness)
+                sight_text = sight_appearances[loudness]
+
+            else:
+                sight_text = sight_appearances[0]
+
+            if isinstance(sight_text, str):
+                sight_text = (sight_text, sight_text)
+
+            return (perf_text[0]+"\r"+sight_text[0], perf_text[1]+"\r"+sight_text[1])
+
         self.current_hit_hint = dn.TimedVariable(value=None, duration=hit_hint_duration)
         self.current_perf_hint = dn.TimedVariable(value=(None, None), duration=perf_sustain_time)
-        self.current_sight = dn.TimedVariable(value=None)
-
-        self.sight_handler = self._sight_handler(
-            self.current_hit_hint, self.current_perf_hint, self.current_sight,
-            hit_decay_time, hit_sustain_time, perf_appearances, sight_appearances)
+        self.current_sight = dn.TimedVariable(value=_default_sight)
 
         # hit handler
         self.target_queue = queue.Queue()
@@ -706,7 +731,7 @@ class BeatmapPlayer:
             self.beatbar.current_icon.set(self.icon_func)
             self.beatbar.current_header.set(self.header_func)
             self.beatbar.current_footer.set(self.footer_func)
-            self.beatbar.add_content_drawer(self.sight_handler, zindex=(2,))
+            self.draw_content(0.0, self._sight_drawer, zindex=(2,))
             self.kerminal.detector.add_listener(self.hit_handler)
 
             # game loop
@@ -792,6 +817,22 @@ class BeatmapPlayer:
 
         return dn.pipe(lambda a:a[0], dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels))))
 
+
+    def add_score(self, score):
+        self.score += score
+
+    def add_full_score(self, full_score):
+        self.full_score += full_score
+
+    def add_finished(self, finished=1):
+        self.finished_subjects += finished
+
+    def add_perf(self, perf, show=True, is_reversed=False):
+        self.perfs.append(perf)
+        if show:
+            self.current_perf_hint.set((perf, is_reversed))
+
+
     @dn.datanode
     def _hit_handler(self):
         target, start, duration = None, None, None
@@ -834,42 +875,16 @@ class BeatmapPlayer:
                 except StopIteration:
                     target, start, duration = None, None, None
 
-    @dn.datanode
-    def _sight_handler(self, current_hit_hint, current_perf_hint, current_sight,
-                             hit_decay_time, hit_sustain_time, perf_appearances, sight_appearances):
-        view, time, width = yield
-        while True:
-            # update hit hint, perf hint, sight drawers
-            hit_strength, hit_time, _ = current_hit_hint.get(time, ret_sched=True)
-            (perf, perf_is_reversed), perf_time, _ = current_perf_hint.get(time, ret_sched=True)
-            sight = current_sight.get(time)
+    def _sight_drawer(self, time):
+        # update hit hint, perf hint
+        hit_hint = self.current_hit_hint.get(time, ret_sched=True)
+        perf_hint = self.current_perf_hint.get(time, ret_sched=True)
 
-            # draw perf hint
-            if perf is not None:
-                perf_text = perf_appearances[perf.grade]
-                if perf_is_reversed:
-                    perf_text = perf_text[::-1]
+        # draw sight
+        sight_func = self.current_sight.get(time)
+        sight_text = sight_func(time, hit_hint, perf_hint)
 
-                view, _ = self._draw_content(view, width, 0, perf_text)
-
-            # draw sight
-            if sight is not None:
-                sight_text = sight(time)
-
-            elif hit_strength is not None:
-                strength = hit_strength - (time - hit_time) / hit_decay_time
-                strength = max(0.0, min(1.0, strength))
-                loudness = int(strength * (len(sight_appearances) - 1))
-                if time - hit_time < hit_sustain_time:
-                    loudness = max(1, loudness)
-                sight_text = sight_appearances[loudness]
-
-            else:
-                sight_text = sight_appearances[0]
-
-            view, _ = self._draw_content(view, width, 0, sight_text)
-
-            view, time, width = yield view
+        return sight_text
 
     def _draw_content(self, view, width, pos, text):
         mask = self.beatbar.content_mask
@@ -886,22 +901,6 @@ class BeatmapPlayer:
 
         return tui.addtext1(view, width, index, text, xmask=mask)
 
-
-    def add_score(self, score):
-        self.score += score
-
-    def add_full_score(self, full_score):
-        self.full_score += full_score
-
-    def add_finished(self, finished=1):
-        self.finished_subjects += finished
-
-    def add_perf(self, perf, show=True, is_reversed=False):
-        self.perfs.append(perf)
-        if show:
-            self.current_perf_hint.set((perf, is_reversed))
-
-
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
         return self.kerminal.mixer.play(node, samplerate=samplerate, channels=channels,
                                               volume=volume, start=start, end=end,
@@ -911,7 +910,7 @@ class BeatmapPlayer:
         self.target_queue.put((node, start, duration))
 
     def draw_sight(self, text, start=None, duration=None):
-        text_func = text if hasattr(text, '__call__') else lambda time: text
+        text_func = text if hasattr(text, '__call__') else lambda time, hit_hint, perf_hint: text
         self.current_sight.set(text_func, start, duration)
 
     def reset_sight(self, start=None):

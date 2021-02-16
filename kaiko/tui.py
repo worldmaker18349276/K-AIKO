@@ -14,6 +14,7 @@ def clamp(ran, ran_):
 
 def addtext1(view, width, x, text, xmask=slice(None,None)):
     xran = range(width)
+    x0 = x
 
     for ch in text:
         width = wcwidth.wcwidth(ch)
@@ -23,6 +24,9 @@ def addtext1(view, width, x, text, xmask=slice(None,None)):
 
         elif ch == "\b":
             x -= 1
+
+        elif ch == "\r":
+            x = x0
 
         elif ch == "\x00":
             pass
@@ -60,7 +64,7 @@ def addtext1(view, width, x, text, xmask=slice(None,None)):
     return view, x
 
 def textrange1(x, text):
-    xstart = xstop = x
+    xstart = xstop = x0 = x
 
     for ch in text:
         width = wcwidth.wcwidth(ch)
@@ -70,6 +74,9 @@ def textrange1(x, text):
 
         elif ch == "\b":
             x -= 1
+
+        elif ch == "\r":
+            x = x0
 
         elif ch == "\x00":
             pass
@@ -133,6 +140,7 @@ def clear1(view, width, xmask=slice(None,None)):
 def addtext2(view, height, width, y, x, text, ymask=slice(None,None), xmask=slice(None,None)):
     yran = range(height)
     xran = range(width)
+    x0 = x
 
     for ch in text:
         width = wcwidth.wcwidth(ch)
@@ -142,6 +150,9 @@ def addtext2(view, height, width, y, x, text, ymask=slice(None,None), xmask=slic
 
         elif ch == "\b":
             x -= 1
+
+        elif ch == "\r":
+            x = x0
 
         elif ch == "\v":
             y += 1
@@ -186,7 +197,7 @@ def addtext2(view, height, width, y, x, text, ymask=slice(None,None), xmask=slic
 
 def textrange2(y, x, text):
     ystart = ystop = y
-    xstart = xstop = x
+    xstart = xstop = x0 = x
 
     for ch in text:
         width = wcwidth.wcwidth(ch)
@@ -196,6 +207,9 @@ def textrange2(y, x, text):
 
         elif ch == "\b":
             x -= 1
+
+        elif ch == "\r":
+            x = x0
 
         elif ch == "\v":
             y += 1

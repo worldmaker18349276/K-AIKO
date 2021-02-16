@@ -130,11 +130,11 @@ class Beatbar:
         self.current_footer.set(footer_func, start, duration)
 
     def add_content_drawer(self, node, zindex=(0,)):
-        return self.content_scheduler.add_node(self._shifed_node(node, self.ref_time), zindex=zindex)
+        return self.content_scheduler.add_node(self._shifted_node(node, self.ref_time), zindex=zindex)
 
     @staticmethod
     @dn.datanode
-    def _shifed_node(node, ref_time):
+    def _shifted_node(node, ref_time):
         with node:
             view, time, width = yield
             while True:
