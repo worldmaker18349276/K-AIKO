@@ -1,10 +1,90 @@
 import time
 import contextlib
+from enum import Enum
+from typing import List, Tuple, Dict, Optional, Union
+import queue
 import threading
 from . import cfg
 from . import datanodes as dn
 from . import tui
 
+
+class PerformanceGrade(Enum):
+    MISS               = (None, None)
+    PERFECT            = ( 0, False)
+    LATE_GOOD          = (+1, False)
+    EARLY_GOOD         = (-1, False)
+    LATE_BAD           = (+2, False)
+    EARLY_BAD          = (-2, False)
+    LATE_FAILED        = (+3, False)
+    EARLY_FAILED       = (-3, False)
+    PERFECT_WRONG      = ( 0,  True)
+    LATE_GOOD_WRONG    = (+1,  True)
+    EARLY_GOOD_WRONG   = (-1,  True)
+    LATE_BAD_WRONG     = (+2,  True)
+    EARLY_BAD_WRONG    = (-2,  True)
+    LATE_FAILED_WRONG  = (+3,  True)
+    EARLY_FAILED_WRONG = (-3,  True)
+
+    def __init__(self, shift, is_wrong):
+        self.shift = shift
+        self.is_wrong = is_wrong
+
+    def __repr__(self):
+        return f"PerformanceGrade.{self.name}"
+
+class Performance:
+    def __init__(self, grade, time, err):
+        self.grade = grade
+        self.time = time
+        self.err = err
+
+    @staticmethod
+    def judge(tol, time, hit_time=None, is_correct_key=True):
+        if hit_time is None:
+            return Performance(PerformanceGrade((None, None)), time, None)
+
+        is_wrong = not is_correct_key
+        err = hit_time - time
+        shift = next((i for i in range(3) if abs(err) < tol*(2*i+1)), 3)
+        if err < 0:
+            shift = -shift
+
+        return Performance(PerformanceGrade((shift, is_wrong)), time, err)
+
+    @property
+    def shift(self):
+        return self.grade.shift
+
+    @property
+    def is_wrong(self):
+        return self.grade.is_wrong
+
+    @property
+    def is_miss(self):
+        return self.grade == PerformanceGrade.MISS
+
+    discriptions = {
+        PerformanceGrade.MISS               : "Miss"                      ,
+        PerformanceGrade.PERFECT            : "Perfect"                   ,
+        PerformanceGrade.LATE_GOOD          : "Late Good"                 ,
+        PerformanceGrade.EARLY_GOOD         : "Early Good"                ,
+        PerformanceGrade.LATE_BAD           : "Late Bad"                  ,
+        PerformanceGrade.EARLY_BAD          : "Early Bad"                 ,
+        PerformanceGrade.LATE_FAILED        : "Late Failed"               ,
+        PerformanceGrade.EARLY_FAILED       : "Early Failed"              ,
+        PerformanceGrade.PERFECT_WRONG      : "Perfect but Wrong Key"     ,
+        PerformanceGrade.LATE_GOOD_WRONG    : "Late Good but Wrong Key"   ,
+        PerformanceGrade.EARLY_GOOD_WRONG   : "Early Good but Wrong Key"  ,
+        PerformanceGrade.LATE_BAD_WRONG     : "Late Bad but Wrong Key"    ,
+        PerformanceGrade.EARLY_BAD_WRONG    : "Early Bad but Wrong Key"   ,
+        PerformanceGrade.LATE_FAILED_WRONG  : "Late Failed but Wrong Key" ,
+        PerformanceGrade.EARLY_FAILED_WRONG : "Early Failed but Wrong Key",
+    }
+
+    @property
+    def description(self):
+        return self.discriptions[self.grade]
 
 @cfg.configurable
 class BeatbarSettings:
@@ -15,10 +95,38 @@ class BeatbarSettings:
     bar_shift: float = 0.1
     bar_flip: bool = False
 
+    # PerformanceSkin:
+    performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
+        PerformanceGrade.MISS               : (""   , ""     ),
+
+        PerformanceGrade.LATE_FAILED        : ("\b⟪", "\t\t⟫"),
+        PerformanceGrade.LATE_BAD           : ("\b⟨", "\t\t⟩"),
+        PerformanceGrade.LATE_GOOD          : ("\b‹", "\t\t›"),
+        PerformanceGrade.PERFECT            : (""   , ""     ),
+        PerformanceGrade.EARLY_GOOD         : ("\t\t›", "\b‹"),
+        PerformanceGrade.EARLY_BAD          : ("\t\t⟩", "\b⟨"),
+        PerformanceGrade.EARLY_FAILED       : ("\t\t⟫", "\b⟪"),
+
+        PerformanceGrade.LATE_FAILED_WRONG  : ("\b⟪", "\t\t⟫"),
+        PerformanceGrade.LATE_BAD_WRONG     : ("\b⟨", "\t\t⟩"),
+        PerformanceGrade.LATE_GOOD_WRONG    : ("\b‹", "\t\t›"),
+        PerformanceGrade.PERFECT_WRONG      : (""   , ""     ),
+        PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t›", "\b‹"),
+        PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t⟩", "\b⟨"),
+        PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t⟫", "\b⟪"),
+        }
+
+    performance_sustain_time: float = 0.1
+
+    # ScrollingBarSkin:
+    sight_appearances: Union[List[str], List[Tuple[str, str]]] = ["⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
+    hit_decay_time: float = 0.4
+    hit_sustain_time: float = 0.1
+
 class Beatbar:
     def __init__(self, icon_mask, header_mask, content_mask, footer_mask, bar_shift, bar_flip,
                        content_scheduler, current_icon, current_header, current_footer,
-                       ref_time):
+                       current_hit_hint, current_perf_hint, current_sight, target_queue):
         self.icon_mask = icon_mask
         self.header_mask = header_mask
         self.content_mask = content_mask
@@ -32,11 +140,14 @@ class Beatbar:
         self.current_header = current_header
         self.current_footer = current_footer
 
-        self.ref_time = ref_time
+        self.current_hit_hint = current_hit_hint
+        self.current_perf_hint = current_perf_hint
+        self.current_sight = current_sight
+        self.target_queue = target_queue
 
     @classmethod
     @contextlib.contextmanager
-    def initialize(clz, kerminal, ref_time=0.0, settings=BeatbarSettings()):
+    def initialize(clz, kerminal, settings=BeatbarSettings()):
         icon_width = settings.icon_width
         header_width = settings.header_width
         footer_width = settings.footer_width
@@ -53,34 +164,42 @@ class Beatbar:
         current_header = dn.TimedVariable(value=lambda time, ran: "")
         current_footer = dn.TimedVariable(value=lambda time, ran: "")
 
-        content_key = kerminal.renderer.add_drawer(content_scheduler, zindex=(0,))
-        icon_key = kerminal.renderer.add_drawer(clz._masked_node(current_icon, icon_mask), zindex=(1,))
-        header_key = kerminal.renderer.add_drawer(clz._masked_node(current_header, header_mask, ("\b[", "]")), zindex=(2,))
-        footer_key = kerminal.renderer.add_drawer(clz._masked_node(current_footer, footer_mask, ("\b[", "]")), zindex=(3,))
+        icon_drawer = clz._masked_node(current_icon, icon_mask)
+        header_drawer = clz._masked_node(current_header, header_mask, ("\b[", "]"))
+        footer_drawer = clz._masked_node(current_footer, footer_mask, ("\b[", "]"))
 
-        try:
-            yield clz(icon_mask, header_mask, content_mask, footer_mask, bar_shift, bar_flip,
-                      content_scheduler, current_icon, current_header, current_footer, ref_time)
-        finally:
-            kerminal.renderer.remove_drawer(content_key)
-            kerminal.renderer.remove_drawer(icon_key)
-            kerminal.renderer.remove_drawer(header_key)
-            kerminal.renderer.remove_drawer(footer_key)
+        # sight
+        hit_decay_time = settings.hit_decay_time
+        hit_sustain_time = settings.hit_sustain_time
+        perf_appearances = settings.performances_appearances
+        sight_appearances = settings.sight_appearances
+        perf_sustain_time = settings.performance_sustain_time
+        hit_hint_duration = max(hit_decay_time, hit_sustain_time)
 
-    @classmethod
-    @contextlib.contextmanager
-    def subbeatbar(clz, beatbar, ref_time):
-        content_scheduler = dn.Scheduler()
-        try:
-            content_key = beatbar.content_scheduler.add_node(content_scheduler, zindex=(0,))
-            yield clz(beatbar.icon_mask, beatbar.header_mask, beatbar.content_mask, beatbar.footer_mask, beatbar.bar_shift, beatbar.bar_flip,
-                      content_scheduler, beatbar.current_icon, beatbar.current_header, beatbar.current_footer,
-                      beatbar.ref_time + ref_time)
-        finally:
-            beatbar.current_icon.reset()
-            beatbar.current_header.reset()
-            beatbar.current_footer.reset()
-            beatbar.content_scheduler.remove_node(content_key)
+        default_sight = clz._get_default_sight(hit_decay_time, hit_sustain_time,
+                                               perf_appearances, sight_appearances)
+
+        current_hit_hint = dn.TimedVariable(value=None, duration=hit_hint_duration)
+        current_perf_hint = dn.TimedVariable(value=(None, None), duration=perf_sustain_time)
+        current_sight = dn.TimedVariable(value=default_sight)
+
+        # hit handler
+        target_queue = queue.Queue()
+        hit_handler = clz._hit_handler(current_hit_hint, target_queue)
+
+        with kerminal.renderer.add_drawer(content_scheduler, zindex=(0,)),\
+             kerminal.renderer.add_drawer(icon_drawer, zindex=(1,)),\
+             kerminal.renderer.add_drawer(header_drawer, zindex=(2,)),\
+             kerminal.renderer.add_drawer(footer_drawer, zindex=(3,)),\
+             kerminal.detector.add_listener(hit_handler):
+
+            self = clz(icon_mask, header_mask, content_mask, footer_mask, bar_shift, bar_flip,
+                       content_scheduler, current_icon, current_header, current_footer,
+                       current_hit_hint, current_perf_hint, current_sight, target_queue)
+
+            self.draw_content(0.0, self._sight_drawer, zindex=(2,))
+
+            yield self
 
     @staticmethod
     @dn.datanode
@@ -111,34 +230,19 @@ class Beatbar:
             view, time, width = yield view
 
     def set_icon(self, icon, start=None, duration=None):
-        if hasattr(icon, '__call__'):
-            icon_func = lambda time, ran: icon(time-self.ref_time, ran)
-        elif isinstance(icon, str):
-            icon_func = lambda time, ran: icon
-        else:
-            raise ValueError
+        icon_func = icon if hasattr(icon, '__call__') else lambda time, ran: icon
         self.current_icon.set(icon_func, start, duration)
 
     def set_header(self, header, start=None, duration=None):
-        if hasattr(header, '__call__'):
-            header_func = lambda time, ran: header(time-self.ref_time, ran)
-        elif isinstance(header, str):
-            header_func = lambda time, ran: header
-        else:
-            raise ValueError
+        header_func = header if hasattr(header, '__call__') else lambda time, ran: header
         self.current_header.set(header_func, start, duration)
 
     def set_footer(self, footer, start=None, duration=None):
-        if hasattr(footer, '__call__'):
-            footer_func = lambda time, ran: footer(time-self.ref_time, ran)
-        elif isinstance(footer, str):
-            footer_func = lambda time, ran: footer
-        else:
-            raise ValueError
+        footer_func = footer if hasattr(footer, '__call__') else lambda time, ran: footer
         self.current_footer.set(footer_func, start, duration)
 
     def add_content_drawer(self, node, zindex=(0,)):
-        return self.content_scheduler.add_node(self._shifted_node(node, self.ref_time), zindex=zindex)
+        return self.content_scheduler.add_node(node, zindex=zindex)
 
     def _draw_content(self, view, width, pos, text):
         mask = self.content_mask
@@ -176,14 +280,105 @@ class Beatbar:
         node = _content_node(pos, text, start, duration)
         return self.add_content_drawer(node, zindex=zindex)
 
-    @staticmethod
-    @dn.datanode
-    def _shifted_node(node, ref_time):
-        with node:
-            view, time, width = yield
-            while True:
-                view, time, width = yield node.send((view, time-ref_time, width))
-
     def remove_content_drawer(self, key):
         self.content_scheduler.remove_node(key)
+
+
+    @staticmethod
+    @dn.datanode
+    def _hit_handler(current_hit_hint, target_queue):
+        target, start, duration = None, None, None
+        waiting_targets = []
+
+        while True:
+            # update hit signal
+            _, time, strength, detected = yield
+
+            strength = min(1.0, strength)
+            if detected:
+                current_hit_hint.set(strength)
+
+            # update waiting targets
+            while not target_queue.empty():
+                item = target_queue.get()
+                if item[1] is None:
+                    item = (item[0], time, item[2])
+                waiting_targets.append(item)
+            waiting_targets.sort(key=lambda item: item[1])
+
+            while True:
+                # find the next target if absent
+                if target is None and waiting_targets and waiting_targets[0][1] <= time:
+                    target, start, duration = waiting_targets.pop(0)
+                    target.__enter__()
+
+                # end listen if expired
+                if duration is not None and start + duration <= time:
+                    target.__exit__()
+                    target, start, duration = None, None, None
+
+                else:
+                    # stop the loop for unexpired target or no target
+                    break
+
+            # send message to listening target
+            if target is not None and detected:
+                try:
+                    target.send((time, strength))
+                except StopIteration:
+                    target, start, duration = None, None, None
+
+    def _sight_drawer(self, time):
+        # update hit hint, perf hint
+        hit_hint = self.current_hit_hint.get(time, ret_sched=True)
+        perf_hint = self.current_perf_hint.get(time, ret_sched=True)
+
+        # draw sight
+        sight_func = self.current_sight.get(time)
+        sight_text = sight_func(time, hit_hint, perf_hint)
+
+        return sight_text
+
+    def listen(self, node, start=None, duration=None):
+        self.target_queue.put((node, start, duration))
+
+    def draw_sight(self, text, start=None, duration=None):
+        text_func = text if hasattr(text, '__call__') else lambda time, hit_hint, perf_hint: text
+        self.current_sight.set(text_func, start, duration)
+
+    def reset_sight(self, start=None):
+        self.current_sight.reset(start)
+
+    @staticmethod
+    def _get_default_sight(hit_decay_time, hit_sustain_time, perf_appearances, sight_appearances):
+        def _default_sight(time, hit_hint, perf_hint):
+            hit_strength, hit_time, _ = hit_hint
+            (perf, perf_is_reversed), perf_time, _ = perf_hint
+
+            # draw perf hint
+            if perf is not None:
+                perf_text = perf_appearances[perf.grade]
+                if perf_is_reversed:
+                    perf_text = perf_text[::-1]
+            else:
+                perf_text = ("", "")
+
+            # draw sight
+            if hit_strength is not None:
+                strength = hit_strength - (time - hit_time) / hit_decay_time
+                strength = max(0.0, min(1.0, strength))
+                loudness = int(strength * (len(sight_appearances) - 1))
+                if time - hit_time < hit_sustain_time:
+                    loudness = max(1, loudness)
+                sight_text = sight_appearances[loudness]
+
+            else:
+                sight_text = sight_appearances[0]
+
+            if isinstance(sight_text, str):
+                sight_text = (sight_text, sight_text)
+
+            return (perf_text[0]+"\r"+sight_text[0], perf_text[1]+"\r"+sight_text[1])
+
+        return _default_sight
 
