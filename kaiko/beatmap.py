@@ -64,9 +64,9 @@ class Flip(Event):
             time, width = yield
 
         if self.flip is None:
-            field.bar_flip = not field.bar_flip
+            field.beatbar.bar_flip = not field.beatbar.bar_flip
         else:
-            field.bar_flip = self.flip
+            field.beatbar.bar_flip = self.flip
 
         time, width = yield
 
@@ -87,14 +87,14 @@ class Shift(Event):
         while time < self.time:
             time, width = yield
 
-        shift0 = field.bar_shift
+        shift0 = field.beatbar.bar_shift
         speed = (self.shift - shift0) / (self.end - self.time) if self.end != self.time else 0
 
         while time < self.end:
-            field.bar_shift = shift0 + speed * (time - self.time)
+            field.beatbar.bar_shift = shift0 + speed * (time - self.time)
             time, width = yield
 
-        field.bar_shift = self.shift
+        field.beatbar.bar_shift = self.shift
 
         time, width = yield
 
@@ -600,8 +600,6 @@ class GameplaySettings:
     sight_appearances: Union[List[str], List[Tuple[str, str]]] = ["⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
     hit_decay_time: float = 0.4
     hit_sustain_time: float = 0.1
-    bar_shift: float = 0.1
-    bar_flip: bool = False
 
 class BeatmapPlayer:
     settings: GameplaySettings = GameplaySettings()
@@ -637,9 +635,6 @@ class BeatmapPlayer:
         self.end_time = max(events_end_time, self.duration)
 
         # initialize game state
-        self.bar_shift = self.settings.bar_shift
-        self.bar_flip = self.settings.bar_flip
-
         self.total_subjects = sum(event.is_subject for event in self.events)
         self.finished_subjects = 0
         self.full_score = 0
@@ -886,21 +881,6 @@ class BeatmapPlayer:
 
         return sight_text
 
-    def _draw_content(self, view, width, pos, text):
-        mask = self.beatbar.content_mask
-
-        pos = pos + self.bar_shift
-        if self.bar_flip:
-            pos = 1 - pos
-
-        content_start, content_end, _ = mask.indices(width)
-        index = round(content_start + pos * max(0, content_end - content_start - 1))
-
-        if isinstance(text, tuple):
-            text = text[self.bar_flip]
-
-        return tui.addtext1(view, width, index, text, xmask=mask)
-
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
         return self.kerminal.mixer.play(node, samplerate=samplerate, channels=channels,
                                               volume=volume, start=start, end=end,
@@ -917,25 +897,7 @@ class BeatmapPlayer:
         self.current_sight.reset(start)
 
     def draw_content(self, pos, text, start=None, duration=None, zindex=(0,)):
-        pos_func = pos if hasattr(pos, '__call__') else lambda time: pos
-        text_func = text if hasattr(text, '__call__') else lambda time: text
-
-        @dn.datanode
-        def _content_node(pos, text, start, duration):
-            view, time, width = yield
-
-            if start is None:
-                start = time
-
-            while time < start:
-                view, time, width = yield view
-
-            while duration is None or time < start + duration:
-                view, _ = self._draw_content(view, width, pos_func(time), text_func(time))
-                view, time, width = yield view
-
-        node = _content_node(pos, text, start, duration)
-        return self.beatbar.add_content_drawer(node, zindex=zindex)
+        return self.beatbar.draw_content(pos, text, start=start, duration=duration, zindex=zindex)
 
     def on_before_render(self, node):
         node = dn.pipe(dn.branch(lambda a:a[1:], node), lambda a:a[0])
