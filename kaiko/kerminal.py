@@ -27,7 +27,7 @@ class KerminalMixer:
 
     @staticmethod
     @contextlib.contextmanager
-    def get_node(scheduler, settings):
+    def get_node(scheduler, settings, ref_time):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
@@ -40,7 +40,7 @@ class KerminalMixer:
             with scheduler:
                 yield
                 while True:
-                    time = index * buffer_length / samplerate + sound_delay
+                    time = index * buffer_length / samplerate + sound_delay - ref_time
                     data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
                     data = scheduler.send((data, time))
                     yield data
@@ -52,13 +52,13 @@ class KerminalMixer:
 
     @classmethod
     @contextlib.contextmanager
-    def create(clz, settings):
+    def create(clz, settings, ref_time=0.0):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
 
         scheduler = dn.Scheduler()
-        with clz.get_node(scheduler, settings) as output_node:
+        with clz.get_node(scheduler, settings, ref_time) as output_node:
             yield output_node, clz(scheduler, samplerate, buffer_length, nchannels)
 
     @classmethod
@@ -157,7 +157,7 @@ class KerminalDetector:
 
     @staticmethod
     @contextlib.contextmanager
-    def get_node(scheduler, settings):
+    def get_node(scheduler, settings, ref_time):
         samplerate = settings.input_samplerate
         buffer_length = settings.input_buffer_length
         nchannels = settings.input_channels
@@ -202,7 +202,7 @@ class KerminalDetector:
                 while True:
                     strength = onset.send(data)
                     detected = picker.send(strength)
-                    time = index * hop_length / samplerate + knock_delay
+                    time = index * hop_length / samplerate + knock_delay - ref_time
                     strength = strength / knock_energy
 
                     buffer.append((time, strength))
@@ -223,9 +223,9 @@ class KerminalDetector:
 
     @classmethod
     @contextlib.contextmanager
-    def create(clz, settings):
+    def create(clz, settings, ref_time=0.0):
         scheduler = dn.Scheduler()
-        with clz.get_node(scheduler, settings) as input_node:
+        with clz.get_node(scheduler, settings, ref_time) as input_node:
             yield input_node, clz(scheduler)
 
     @classmethod
@@ -280,7 +280,7 @@ class KerminalRenderer:
 
     @staticmethod
     @contextlib.contextmanager
-    def get_node(scheduler, msg_queue, settings):
+    def get_node(scheduler, msg_queue, settings, ref_time):
         framerate = settings.display_framerate
         display_delay = settings.display_delay
         columns = settings.display_columns
@@ -299,7 +299,7 @@ class KerminalRenderer:
                     size = size_node.send(None)
                     width = size.columns if columns == -1 else min(columns, size.columns)
 
-                    time = index / framerate + display_delay
+                    time = index / framerate + display_delay - ref_time
                     view = tui.newwin1(width)
                     view = scheduler.send((view, time, width))
 
@@ -317,10 +317,10 @@ class KerminalRenderer:
 
     @classmethod
     @contextlib.contextmanager
-    def create(clz, settings):
+    def create(clz, settings, ref_time=0.0):
         scheduler = dn.Scheduler()
         msg_queue = queue.Queue()
-        with clz.get_node(scheduler, msg_queue, settings) as display_node:
+        with clz.get_node(scheduler, msg_queue, settings, ref_time) as display_node:
             yield display_node, clz(scheduler, msg_queue)
 
     @classmethod
@@ -387,21 +387,22 @@ class KerminalController:
 
     @staticmethod
     @contextlib.contextmanager
-    def get_node(scheduler, settings):
+    def get_node(scheduler, settings, ref_time):
         @dn.datanode
         def _node():
             with scheduler:
                 while True:
-                    t, key = yield
-                    scheduler.send((None, t, key))
+                    time, key = yield
+                    time_ = time - ref_time
+                    scheduler.send((None, time_, key))
 
         yield _node()
 
     @classmethod
     @contextlib.contextmanager
-    def create(clz, settings):
+    def create(clz, settings, ref_time=0.0):
         scheduler = dn.Scheduler()
-        with clz.get_node(scheduler, settings) as node:
+        with clz.get_node(scheduler, settings, ref_time) as node:
             yield node, clz(scheduler)
 
     @classmethod
@@ -452,11 +453,11 @@ class Kerminal:
 
     @classmethod
     @contextlib.contextmanager
-    def create(clz, settings):
-        with KerminalMixer.create(settings) as (audioout_node, mixer),\
-             KerminalDetector.create(settings) as (audioin_node, detector),\
-             KerminalRenderer.create(settings) as (textout_node, renderer),\
-             KerminalController.create(settings) as (textin_node, controller):
+    def create(clz, settings, ref_time=0.0):
+        with KerminalMixer.create(settings, ref_time) as (audioout_node, mixer),\
+             KerminalDetector.create(settings, ref_time) as (audioin_node, detector),\
+             KerminalRenderer.create(settings, ref_time) as (textout_node, renderer),\
+             KerminalController.create(settings, ref_time) as (textin_node, controller):
 
             # initialize kerminal
             kerminal = clz(mixer, detector, renderer, controller)
@@ -558,7 +559,7 @@ class KerminalLaucher:
                      clz.get_textout_thread(textout_node, settings) as textout_thread,\
                      clz.get_textin_thread(textin_node, settings) as textin_thread:
 
-                    # activate audio/video streams
+                    # activate audio/text streams
                     kerminal.ref_time = time.time()
                     audioout_stream.start_stream()
                     audioin_stream.start_stream()
