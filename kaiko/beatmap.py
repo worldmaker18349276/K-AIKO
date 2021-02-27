@@ -672,7 +672,7 @@ class BeatmapPlayer:
     def add_perf(self, perf, show=True, is_reversed=False):
         self.perfs.append(perf)
         if show:
-            self.beatbar.current_perf_hint.set((perf, is_reversed))
+            self.beatbar.set_perf(perf, is_reversed)
 
 
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):

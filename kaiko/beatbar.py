@@ -342,6 +342,9 @@ class Beatbar:
     def listen(self, node, start=None, duration=None):
         self.target_queue.put((node, start, duration))
 
+    def set_perf(self, perf, is_reversed=False):
+        self.current_perf_hint.set((perf, is_reversed))
+
     def draw_sight(self, text, start=None, duration=None):
         text_func = text if hasattr(text, '__call__') else lambda time, hit_hint, perf_hint: text
         self.current_sight.set(text_func, start, duration)
