@@ -1301,3 +1301,46 @@ def get_A_weight(samplerate, win_length):
 
     return weight
 
+def load_sound(filepath, samplerate=None, channels=None, volume=0.0, start=None, end=None, chunk_length=1024):
+    with audioread.audio_open(filepath) as file:
+        file_samplerate = file.samplerate
+
+    filenode = load(filepath)
+
+    if start is not None or end is not None:
+        filenode = tslice(filenode, file_samplerate, start, end)
+
+    with filenode:
+        sound = numpy.concatenate(tuple(filenode), axis=0)
+
+    if volume != 0:
+        sound = sound * 10**(volume/20)
+
+    # resample
+    if samplerate is not None and file_samplerate != samplerate:
+        length = sound.shape[0] * samplerate/file_samplerate
+        sound = scipy.signal.resample(sound, length, axis=0)
+
+    # rechannel
+    if channels == 0:
+        if sound.ndim != 1:
+            sound = numpy.mean(sound, axis=1)
+
+    elif isinstance(channels, int):
+        if sound.ndim != 1:
+            sound = numpy.mean(sound, axis=1, keepdims=True)
+        sound = sound[:, [0]*channels]
+
+    elif channels is not None:
+        sound = sound[:, channels]
+
+    # chunk
+    if chunk_length is not None:
+        shape = (chunk_length, *sound.shape[1:])
+        with chunk([sound], shape) as node:
+            sound = list(node)
+    else:
+        sound = [sound]
+
+    return sound
+

@@ -139,14 +139,7 @@ class KerminalMixer:
 
     @functools.lru_cache(maxsize=32)
     def load_sound(self, filepath):
-        with audioread.audio_open(filepath) as file:
-            samplerate = file.samplerate
-        node = dn.load(filepath)
-        if samplerate != self.samplerate:
-            node = dn.pipe(node, dn.resample(ratio=(self.samplerate, samplerate)))
-        with node as filenode:
-            sound = list(filenode)
-        return sound
+        return dn.load_sound(filepath, samplerate=self.samplerate)
 
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
         if isinstance(node, str):
