@@ -64,7 +64,7 @@ class Performance:
     def is_miss(self):
         return self.grade == PerformanceGrade.MISS
 
-    discriptions = {
+    descriptions = {
         PerformanceGrade.MISS               : "Miss"                      ,
         PerformanceGrade.PERFECT            : "Perfect"                   ,
         PerformanceGrade.LATE_GOOD          : "Late Good"                 ,
@@ -84,7 +84,7 @@ class Performance:
 
     @property
     def description(self):
-        return self.discriptions[self.grade]
+        return self.descriptions[self.grade]
 
 @cfg.configurable
 class BeatbarSettings:
