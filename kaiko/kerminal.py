@@ -443,9 +443,80 @@ class KerminalController:
                 if regex.fullmatch(key):
                     node.send((None, t, key))
 
+class KerminalClock:
+    def __init__(self, coroutines_scheduler):
+        self.coroutines_scheduler = coroutines_scheduler
+
+    @staticmethod
+    @contextlib.contextmanager
+    def get_node(scheduler, settings, ref_time):
+        tickrate = settings.tickrate
+        clock_delay = settings.clock_delay
+
+        @dn.datanode
+        def _node():
+            index = 0
+            with scheduler:
+                yield
+                while True:
+                    time = index / tickrate + clock_delay - ref_time
+                    scheduler.send((None, time))
+                    yield
+                    index += 1
+
+        yield _node()
+
+    @classmethod
+    @contextlib.contextmanager
+    def create(clz, settings, ref_time=0.0):
+        scheduler = dn.Scheduler()
+        with clz.get_node(scheduler, settings, ref_time) as node:
+            yield node, clz(scheduler)
+
+    @classmethod
+    @dn.datanode
+    def get_subnode(clz, scheduler, ref_time):
+        with scheduler:
+            _, time = yield
+            while True:
+                time_ = time - ref_time
+                scheduler.send((None, time_))
+                _, time = yield
+
+    @classmethod
+    @contextlib.contextmanager
+    def subclock(clz, clock, ref_time):
+        scheduler = dn.Scheduler()
+        subnode = clz.get_subnode(scheduler, ref_time)
+        with clock.add_coroutine(subnode):
+            yield clz(scheduler)
+
+    def add_coroutine(self, node, time=None):
+        if time is not None:
+            node = self.schedule(node, time)
+        return self.coroutines_scheduler.add_node(node, (0,))
+
+    @dn.datanode
+    def schedule(self, node, start_time):
+        node = dn.DataNode.wrap(node)
+
+        with node:
+            _, time = yield
+
+            while time < start_time:
+                _, time = yield
+
+            while True:
+                node.send((None, time))
+                _, time = yield
+
+    def remove_coroutine(self, key):
+        self.coroutines_scheduler.remove_node(key)
+
 class Kerminal:
-    def __init__(self, mixer, detector, renderer, controller):
+    def __init__(self, clock, mixer, detector, renderer, controller):
         self.ref_time = None
+        self.clock = clock
         self.mixer = mixer
         self.detector = detector
         self.renderer = renderer
@@ -454,14 +525,15 @@ class Kerminal:
     @classmethod
     @contextlib.contextmanager
     def create(clz, settings, ref_time=0.0):
-        with KerminalMixer.create(settings, ref_time) as (audioout_node, mixer),\
+        with KerminalClock.create(settings, ref_time) as (tick_node, clock),\
+             KerminalMixer.create(settings, ref_time) as (audioout_node, mixer),\
              KerminalDetector.create(settings, ref_time) as (audioin_node, detector),\
              KerminalRenderer.create(settings, ref_time) as (textout_node, renderer),\
              KerminalController.create(settings, ref_time) as (textin_node, controller):
 
             # initialize kerminal
-            kerminal = clz(mixer, detector, renderer, controller)
-            yield audioout_node, audioin_node, textout_node, textin_node, kerminal
+            kerminal = clz(clock, mixer, detector, renderer, controller)
+            yield tick_node, audioout_node, audioin_node, textout_node, textin_node, kerminal
 
     @property
     def time(self):
@@ -480,12 +552,13 @@ class Kerminal:
     @classmethod
     @contextlib.contextmanager
     def subkerminal(clz, kerminal, ref_time=0.0):
-        with KerminalMixer.submixer(kerminal.mixer, ref_time) as submixer,\
+        with KerminalClock.subclock(kerminal.clock, ref_time) as subclock,\
+             KerminalMixer.submixer(kerminal.mixer, ref_time) as submixer,\
              KerminalDetector.subdetector(kerminal.detector, ref_time) as subdetector,\
              KerminalRenderer.subrenderer(kerminal.renderer, ref_time) as subrenderer,\
              KerminalController.subcontroller(kerminal.controller, ref_time) as subcontroller:
 
-            subkerminal = clz(submixer, subdetector, subrenderer, subcontroller)
+            subkerminal = clz(subclock, submixer, subdetector, subrenderer, subcontroller)
             subkerminal.ref_time = kerminal.ref_time + ref_time
             yield subkerminal
 
@@ -535,6 +608,8 @@ class KerminalSettings:
     knock_delay: float = 0.0
     knock_energy: float = 1.0e-3
     sound_delay: float = 0.0
+    tickrate: float = 60.0
+    clock_delay: float = 0.0
 
     # debug
     debug_timeit: bool = False
@@ -551,16 +626,18 @@ class KerminalLaucher:
             manager = pyaudio.PyAudio()
 
             # initialize kerminal
-            with Kerminal.create(settings) as (audioout_node, audioin_node, textout_node, textin_node, kerminal):
+            with Kerminal.create(settings) as (tick_node, audioout_node, audioin_node, textout_node, textin_node, kerminal):
 
                 # initialize audio/text streams
-                with clz.get_audioout_stream(audioout_node, manager, settings) as audioout_stream,\
+                with clz.get_tick_thread(tick_node, settings) as tick_thread,\
+                     clz.get_audioout_stream(audioout_node, manager, settings) as audioout_stream,\
                      clz.get_audioin_stream(audioin_node, manager, settings) as audioin_stream,\
                      clz.get_textout_thread(textout_node, settings) as textout_thread,\
                      clz.get_textin_thread(textin_node, settings) as textin_thread:
 
                     # activate audio/text streams
                     kerminal.ref_time = time.time()
+                    tick_thread.start()
                     audioout_stream.start_stream()
                     audioin_stream.start_stream()
                     textout_thread.start()
@@ -572,6 +649,7 @@ class KerminalLaucher:
 
                         for _ in until_interrupt():
                             if (not main.is_alive()
+                                or not tick_thread.is_alive()
                                 or not audioout_stream.is_active()
                                 or not audioin_stream.is_active()
                                 or not textout_thread.is_alive()
@@ -580,6 +658,14 @@ class KerminalLaucher:
 
         finally:
             manager.terminate()
+
+    @staticmethod
+    @contextlib.contextmanager
+    def get_tick_thread(node, settings):
+        tickrate = settings.tickrate
+
+        with dn.interval(consumer=node, dt=1/tickrate) as thread:
+            yield thread
 
     @staticmethod
     @contextlib.contextmanager
