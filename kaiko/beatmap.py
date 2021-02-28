@@ -481,7 +481,6 @@ class GameplaySettings:
     ## Controls:
     leadin_time: float = 1.0
     skip_time: float = 8.0
-    tickrate: float = 60.0
     load_time: float = 0.5
     prepare_time: float = 0.1
 
@@ -577,24 +576,20 @@ class BeatmapPlayer:
             self.beatbar.current_footer.set(self.footer_func)
 
             # game loop
-            stop_event = threading.Event()
-            self.thread = threading.Thread(target=self.run, args=(stop_event,))
+            self.kerminal.clock.add_coroutine(self.run(), time=self.start_time)
 
-            try:
-                yield self
-            finally:
-                stop_event.set()
-                self.thread.join()
+            yield self
 
-    def run(self, stop_event):
+    @dn.datanode
+    def run(self):
         # register events
         events_iter = iter(self.events)
         event = next(events_iter, None)
 
-        tickrate = self.settings.tickrate
         prepare_time = self.settings.prepare_time
 
-        for time in self.kerminal.tick(1/tickrate, self.start_time, stop_event):
+        _, time = yield
+        while True:
             if self.end_time <= time:
                 break
 
@@ -605,11 +600,13 @@ class BeatmapPlayer:
             time = int(max(0.0, time)) # datetime cannot be negative
             self.time = datetime.time(time//3600, time%3600//60, time%60)
 
+            _, time = yield
+
     def start(self):
-        return self.thread.start()
+        pass
 
     def is_alive(self):
-        return self.thread.is_alive()
+        return True
 
 
     def get_status(self):
