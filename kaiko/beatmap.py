@@ -499,6 +499,7 @@ class BeatmapPlayer:
 
     def __init__(self, beatmap, config=None):
         self.beatmap = beatmap
+        self.stop_event = threading.Event()
 
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
@@ -594,7 +595,7 @@ class BeatmapPlayer:
         _, time = yield
         while True:
             if self.end_time <= time:
-                break
+                self.stop_event.set()
 
             while event is not None and event.lifespan[0] - prepare_time <= time:
                 event.register(self)
@@ -609,7 +610,7 @@ class BeatmapPlayer:
         pass
 
     def is_alive(self):
-        return True
+        return not self.stop_event.is_set()
 
 
     def get_status(self):
