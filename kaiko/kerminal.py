@@ -453,6 +453,14 @@ def until_interrupt(dt=0.005):
         if SIGINT_event.wait(dt):
             break
 
+@contextlib.contextmanager
+def prepare_pyaudio():
+    try:
+        manager = pyaudio.PyAudio()
+        yield manager
+    finally:
+        manager.terminate()
+
 @cfg.configurable
 class KerminalSettings:
     # input
@@ -500,9 +508,7 @@ class KerminalLaucher:
                 settings = KerminalSettings()
                 cfg.config_read(file, main=settings)
 
-        try:
-            manager = pyaudio.PyAudio()
-
+        with prepare_pyaudio() as manager:
             # connect to knockable
             with knockable.connect(settings) as (tick_node, audioout_node, audioin_node, textout_node, textin_node, main):
 
@@ -530,9 +536,6 @@ class KerminalLaucher:
                             or not textout_thread.is_alive()
                             or not textin_thread.is_alive()):
                             break
-
-        finally:
-            manager.terminate()
 
     @staticmethod
     @contextlib.contextmanager
