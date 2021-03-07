@@ -559,44 +559,41 @@ class BeatmapPlayer:
         return abs(self.start_time)
 
     @contextlib.contextmanager
-    def execute(self, kerminal_settings, manager=None):
-        from .kerminal import Kerminal, KerminalSettings, prepare_pyaudio, nullcontext, until_interrupt
+    def execute(self, manager, kerminal_settings):
+        from .kerminal import Kerminal, KerminalSettings
 
         if isinstance(kerminal_settings, str):
             with open(kerminal_settings, 'r') as file:
                 kerminal_settings = KerminalSettings()
                 cfg.config_read(file, main=kerminal_settings)
 
-        pyaudio_ctxt = prepare_pyaudio() if manager is None else nullcontext(manager)
+        time_shift = self.prepare(kerminal_settings.output_samplerate)
+        load_time = self.settings.load_time
+        ref_time = load_time + time_shift
 
-        with pyaudio_ctxt as manager:
-            time_shift = self.prepare(kerminal_settings.output_samplerate)
-            load_time = self.settings.load_time
-            ref_time = load_time + time_shift
+        with Kerminal.create(kerminal_settings, manager, ref_time) as (stream_node, self.kerminal),\
+             beatbar.Beatbar.initialize(self.kerminal) as self.beatbar:
+            # play music
+            if self.audionode is not None:
+                self.kerminal.mixer.play(self.audionode, volume=self.volume, time=0.0, zindex=(-3,))
 
-            with Kerminal.create(kerminal_settings, manager, ref_time) as (stream_node, self.kerminal),\
-                 beatbar.Beatbar.initialize(self.kerminal) as self.beatbar:
-                # play music
-                if self.audionode is not None:
-                    self.kerminal.mixer.play(self.audionode, volume=self.volume, time=0.0, zindex=(-3,))
+            # register handlers
+            self.kerminal.mixer.add_effect(self._spec_handler(), zindex=(-1,))
+            self.beatbar.current_icon.set(self.icon_func)
+            self.beatbar.current_header.set(self.header_func)
+            self.beatbar.current_footer.set(self.footer_func)
 
-                # register handlers
-                self.kerminal.mixer.add_effect(self._spec_handler(), zindex=(-1,))
-                self.beatbar.current_icon.set(self.icon_func)
-                self.beatbar.current_header.set(self.header_func)
-                self.beatbar.current_footer.set(self.footer_func)
+            # game loop
+            self.kerminal.clock.add_coroutine(self.run(), time=self.start_time)
 
-                # game loop
-                self.kerminal.clock.add_coroutine(self.run(), time=self.start_time)
+            with stream_node:
+                # activate audio/text streams
+                stream_node.send()
 
-                with stream_node:
-                    # activate audio/text streams
+                while True:
                     stream_node.send()
-
-                    for _ in until_interrupt():
-                        stream_node.send()
-                        if self.stop_event.is_set():
-                            break
+                    if self.stop_event.is_set():
+                        break
 
     @dn.datanode
     def run(self):
