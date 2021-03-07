@@ -558,12 +558,15 @@ class BeatmapPlayer:
         return abs(self.start_time)
 
     @contextlib.contextmanager
-    def connect(self, kerminal):
-        time_shift = self.prepare(kerminal.mixer.samplerate)
-        load_time = self.settings.load_time
-        ref_time = kerminal.time + load_time + time_shift
+    def connect(self, kerminal_settings):
+        from .kerminal import Kerminal
 
-        with kerminal.subkerminal(kerminal, ref_time) as self.kerminal,\
+        time_shift = self.prepare(kerminal_settings.output_samplerate)
+        load_time = self.settings.load_time
+        ref_time = load_time + time_shift
+
+        with Kerminal.create(kerminal_settings, ref_time) as (tick_node, audioout_node, audioin_node,
+                                                              textout_node, textin_node, self.kerminal),\
              beatbar.Beatbar.initialize(self.kerminal) as self.beatbar:
             # play music
             if self.audionode is not None:
@@ -578,7 +581,7 @@ class BeatmapPlayer:
             # game loop
             self.kerminal.clock.add_coroutine(self.run(), time=self.start_time)
 
-            yield self
+            yield (tick_node, audioout_node, audioin_node, textout_node, textin_node, self)
 
     @dn.datanode
     def run(self):

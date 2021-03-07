@@ -625,8 +625,8 @@ class KerminalLaucher:
         try:
             manager = pyaudio.PyAudio()
 
-            # initialize kerminal
-            with Kerminal.create(settings) as (tick_node, audioout_node, audioin_node, textout_node, textin_node, kerminal):
+            # connect to knockable
+            with knockable.connect(settings) as (tick_node, audioout_node, audioin_node, textout_node, textin_node, main):
 
                 # initialize audio/text streams
                 with clz.get_tick_thread(tick_node, settings) as tick_thread,\
@@ -636,25 +636,22 @@ class KerminalLaucher:
                      clz.get_textin_thread(textin_node, settings) as textin_thread:
 
                     # activate audio/text streams
-                    kerminal.ref_time = time.time()
                     tick_thread.start()
                     audioout_stream.start_stream()
                     audioin_stream.start_stream()
                     textout_thread.start()
                     textin_thread.start()
 
-                    # connect to knockable
-                    with knockable.connect(kerminal) as main:
-                        main.start()
+                    main.start()
 
-                        for _ in until_interrupt():
-                            if (not main.is_alive()
-                                or not tick_thread.is_alive()
-                                or not audioout_stream.is_active()
-                                or not audioin_stream.is_active()
-                                or not textout_thread.is_alive()
-                                or not textin_thread.is_alive()):
-                                break
+                    for _ in until_interrupt():
+                        if (not main.is_alive()
+                            or not tick_thread.is_alive()
+                            or not audioout_stream.is_active()
+                            or not audioin_stream.is_active()
+                            or not textout_thread.is_alive()
+                            or not textin_thread.is_alive()):
+                            break
 
         finally:
             manager.terminate()
