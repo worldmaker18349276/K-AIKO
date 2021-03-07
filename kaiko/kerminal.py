@@ -450,21 +450,10 @@ class Kerminal:
 
             # initialize kerminal
             kerminal = clz(clock, mixer, detector, renderer, controller)
-            stream_node = dn.pipe(tick_node, audioout_node, audioin_node, textout_node, textin_node)
+            stopper = dn.until_interrupt()
+            stream_node = dn.pipe(tick_node, audioout_node, audioin_node, textout_node, textin_node, stopper)
             yield stream_node, kerminal
 
-
-def until_interrupt(dt=0.005):
-    SIGINT_event = threading.Event()
-    def SIGINT_handler(sig, frame):
-        SIGINT_event.set()
-    signal.signal(signal.SIGINT, SIGINT_handler)
-
-    while True:
-        yield
-
-        if SIGINT_event.wait(dt):
-            break
 
 @contextlib.contextmanager
 def prepare_pyaudio():

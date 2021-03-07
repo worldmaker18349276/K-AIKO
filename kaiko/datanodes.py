@@ -5,6 +5,7 @@ from collections import OrderedDict
 import contextlib
 import queue
 import threading
+import signal
 import bisect
 import numpy
 import scipy
@@ -607,6 +608,22 @@ def timeit(node, name="timeit"):
         else:
             print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms"
                   f" ({sum(best)/N*1000:5.3f}ms ~ {sum(worst)/N*1000:5.3f}ms) ({eff: >6.1%})")
+
+@datanode
+def until_interrupt(stop_event=None):
+    if stop_event is None:
+        stop_event = threading.Event()
+    def SIGINT_handler(sig, frame):
+        stop_event.set()
+
+    yield
+    signal.signal(signal.SIGINT, SIGINT_handler)
+
+    while True:
+        yield
+
+        if stop_event.is_set():
+            break
 
 
 # for fixed-width data
