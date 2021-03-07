@@ -27,10 +27,12 @@ class KerminalMixer:
 
     @staticmethod
     @contextlib.contextmanager
-    def get_node(scheduler, settings, ref_time):
+    def get_node(scheduler, settings, manager, ref_time):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
+        format = settings.output_format
+        device = settings.output_device
         sound_delay = settings.sound_delay
         debug_timeit = settings.debug_timeit
 
@@ -48,17 +50,22 @@ class KerminalMixer:
 
         output_ctxt = dn.timeit(_node(), " output") if debug_timeit else nullcontext(_node())
         with output_ctxt as output_node:
-            yield output_node
+            yield dn.play(manager, output_node,
+                          samplerate=samplerate,
+                          buffer_shape=(buffer_length, nchannels),
+                          format=format,
+                          device=device,
+                          )
 
     @classmethod
     @contextlib.contextmanager
-    def create(clz, settings, ref_time=0.0):
+    def create(clz, settings, manager, ref_time=0.0):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
 
         scheduler = dn.Scheduler()
-        with clz.get_node(scheduler, settings, ref_time) as output_node:
+        with clz.get_node(scheduler, settings, manager, ref_time) as output_node:
             yield output_node, clz(scheduler, samplerate, buffer_length, nchannels)
 
     def add_effect(self, node, time=None, zindex=(0,)):
@@ -135,7 +142,7 @@ class KerminalDetector:
 
     @staticmethod
     @contextlib.contextmanager
-    def get_node(scheduler, settings, ref_time):
+    def get_node(scheduler, settings, manager, ref_time):
         samplerate = settings.input_samplerate
         buffer_length = settings.input_buffer_length
         nchannels = settings.input_channels
@@ -197,13 +204,18 @@ class KerminalDetector:
             _node = dn.unchunk(_node, chunk_shape=(hop_length, nchannels))
         input_ctxt = dn.timeit(_node, "  input") if debug_timeit else nullcontext(_node)
         with input_ctxt as input_node:
-            yield input_node
+            yield dn.record(manager, input_node,
+                            samplerate=samplerate,
+                            buffer_shape=(buffer_length, nchannels),
+                            format=format,
+                            device=device,
+                            )
 
     @classmethod
     @contextlib.contextmanager
-    def create(clz, settings, ref_time=0.0):
+    def create(clz, settings, manager, ref_time=0.0):
         scheduler = dn.Scheduler()
-        with clz.get_node(scheduler, settings, ref_time) as input_node:
+        with clz.get_node(scheduler, settings, manager, ref_time) as input_node:
             yield input_node, clz(scheduler)
 
     def add_listener(self, node):
@@ -273,7 +285,7 @@ class KerminalRenderer:
 
         display_ctxt = dn.timeit(_node(), "display") if debug_timeit else nullcontext(_node())
         with display_ctxt as display_node:
-            yield display_node
+            yield dn.interval(display_node, dn.show(), 1/framerate)
 
     @classmethod
     @contextlib.contextmanager
@@ -338,7 +350,7 @@ class KerminalController:
                     time_ = time - ref_time
                     scheduler.send((None, time_, key))
 
-        yield _node()
+        yield dn.input(_node())
 
     @classmethod
     @contextlib.contextmanager
@@ -388,7 +400,7 @@ class KerminalClock:
                     yield
                     index += 1
 
-        yield _node()
+        yield dn.interval(consumer=_node(), dt=1/tickrate)
 
     @classmethod
     @contextlib.contextmanager
@@ -429,16 +441,17 @@ class Kerminal:
 
     @classmethod
     @contextlib.contextmanager
-    def create(clz, settings, ref_time=0.0):
+    def create(clz, settings, manager, ref_time=0.0):
         with KerminalClock.create(settings, ref_time) as (tick_node, clock),\
-             KerminalMixer.create(settings, ref_time) as (audioout_node, mixer),\
-             KerminalDetector.create(settings, ref_time) as (audioin_node, detector),\
+             KerminalMixer.create(settings, manager, ref_time) as (audioout_node, mixer),\
+             KerminalDetector.create(settings, manager, ref_time) as (audioin_node, detector),\
              KerminalRenderer.create(settings, ref_time) as (textout_node, renderer),\
              KerminalController.create(settings, ref_time) as (textin_node, controller):
 
             # initialize kerminal
             kerminal = clz(clock, mixer, detector, renderer, controller)
-            yield tick_node, audioout_node, audioin_node, textout_node, textin_node, kerminal
+            stream_node = dn.pipe(tick_node, audioout_node, audioin_node, textout_node, textin_node)
+            yield stream_node, kerminal
 
 
 def until_interrupt(dt=0.005):
@@ -500,77 +513,3 @@ class KerminalSettings:
     # debug
     debug_timeit: bool = False
 
-class KerminalLaucher:
-    @classmethod
-    def execute(clz, knockable, settings=None):
-        if isinstance(settings, str):
-            with open(settings, 'r') as file:
-                settings = KerminalSettings()
-                cfg.config_read(file, main=settings)
-
-        with prepare_pyaudio() as manager:
-            # connect to knockable
-            with knockable.connect(settings) as (tick_node, audioout_node, audioin_node, textout_node, textin_node, main):
-
-                # initialize audio/text streams
-                stream_node = dn.pipe(clz.get_tick_thread(tick_node, settings),
-                                      clz.get_audioout_stream(audioout_node, manager, settings),
-                                      clz.get_audioin_stream(audioin_node, manager, settings),
-                                      clz.get_textout_thread(textout_node, settings),
-                                      clz.get_textin_thread(textin_node, settings))
-
-                with stream_node:
-                    # activate audio/text streams
-                    stream_node.send()
-                    main.start()
-
-                    for _ in until_interrupt():
-                        stream_node.send()
-                        if not main.is_alive():
-                            break
-
-    @staticmethod
-    def get_tick_thread(node, settings):
-        tickrate = settings.tickrate
-
-        return dn.interval(consumer=node, dt=1/tickrate)
-
-    @staticmethod
-    def get_audioout_stream(node, manager, settings):
-        samplerate = settings.output_samplerate
-        buffer_length = settings.output_buffer_length
-        nchannels = settings.output_channels
-        format = settings.output_format
-        device = settings.output_device
-
-        return dn.play(manager, node,
-                       samplerate=samplerate,
-                       buffer_shape=(buffer_length, nchannels),
-                       format=format,
-                       device=device,
-                       )
-
-    @staticmethod
-    def get_audioin_stream(node, manager, settings):
-        samplerate = settings.input_samplerate
-        buffer_length = settings.input_buffer_length
-        nchannels = settings.input_channels
-        format = settings.input_format
-        device = settings.input_device
-
-        return dn.record(manager, node,
-                         samplerate=samplerate,
-                         buffer_shape=(buffer_length, nchannels),
-                         format=format,
-                         device=device,
-                         )
-
-    @staticmethod
-    def get_textout_thread(node, settings):
-        framerate = settings.display_framerate
-
-        return dn.interval(node, dn.show(), 1/framerate)
-
-    @staticmethod
-    def get_textin_thread(node, settings):
-        return dn.input(node)
