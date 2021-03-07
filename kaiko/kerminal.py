@@ -61,28 +61,6 @@ class KerminalMixer:
         with clz.get_node(scheduler, settings, ref_time) as output_node:
             yield output_node, clz(scheduler, samplerate, buffer_length, nchannels)
 
-    @classmethod
-    @dn.datanode
-    def get_subnode(clz, scheduler, ref_time):
-        with scheduler:
-            data, time = yield
-            while True:
-                time_ = time - ref_time
-                data = scheduler.send((data, time_))
-                data, time = yield data
-
-    @classmethod
-    @contextlib.contextmanager
-    def submixer(clz, mixer, ref_time, zindex=(0,)):
-        samplerate = mixer.samplerate
-        buffer_length = mixer.buffer_length
-        nchannels = mixer.nchannels
-
-        scheduler = dn.Scheduler()
-        subnode = clz.get_subnode(scheduler, ref_time)
-        with mixer.add_effect(subnode, zindex=zindex):
-            yield clz(scheduler, samplerate, buffer_length, nchannels)
-
     def add_effect(self, node, time=None, zindex=(0,)):
         if time is not None:
             node = self.delay(node, time)
@@ -228,24 +206,6 @@ class KerminalDetector:
         with clz.get_node(scheduler, settings, ref_time) as input_node:
             yield input_node, clz(scheduler)
 
-    @classmethod
-    @dn.datanode
-    def get_subnode(clz, scheduler, ref_time):
-        with scheduler:
-            _, time, strength, detected = yield
-            while True:
-                time_ = time - ref_time
-                scheduler.send((None, time_, strength, detected))
-                _, time, strength, detected = yield
-
-    @classmethod
-    @contextlib.contextmanager
-    def subdetector(clz, detector, ref_time):
-        scheduler = dn.Scheduler()
-        subnode = clz.get_subnode(scheduler, ref_time)
-        with detector.add_listener(subnode):
-            yield clz(scheduler)
-
     def add_listener(self, node):
         return self.listeners_scheduler.add_node(node, (0,))
 
@@ -323,24 +283,6 @@ class KerminalRenderer:
         with clz.get_node(scheduler, msg_queue, settings, ref_time) as display_node:
             yield display_node, clz(scheduler, msg_queue)
 
-    @classmethod
-    @dn.datanode
-    def get_subnode(clz, scheduler, ref_time):
-        with scheduler:
-            view, time, width = yield
-            while True:
-                time_ = time - ref_time
-                view = scheduler.send((view, time_, width))
-                view, time, width = yield view
-
-    @classmethod
-    @contextlib.contextmanager
-    def subrenderer(clz, renderer, ref_time, zindex=(0,)):
-        scheduler = dn.Scheduler()
-        subnode = clz.get_subnode(scheduler, ref_time)
-        with renderer.add_drawer(subnode, zindex=zindex):
-            yield clz(scheduler, renderer.msg_queue)
-
     def message(self, msg):
         self.msg_queue.put(msg)
 
@@ -405,24 +347,6 @@ class KerminalController:
         with clz.get_node(scheduler, settings, ref_time) as node:
             yield node, clz(scheduler)
 
-    @classmethod
-    @dn.datanode
-    def get_subnode(clz, scheduler, ref_time):
-        with scheduler:
-            _, time, key = yield
-            while True:
-                time_ = time - ref_time
-                scheduler.send((None, time_, key))
-                _, time, key = yield
-
-    @classmethod
-    @contextlib.contextmanager
-    def subcontroller(clz, controller, ref_time):
-        scheduler = dn.Scheduler()
-        subnode = clz.get_subnode(scheduler, ref_time)
-        with controller.add_handler(subnode):
-            yield clz(scheduler)
-
     def add_handler(self, node, key=None):
         if key is None:
             return self.handlers_scheduler.add_node(node, (0,))
@@ -473,24 +397,6 @@ class KerminalClock:
         with clz.get_node(scheduler, settings, ref_time) as node:
             yield node, clz(scheduler)
 
-    @classmethod
-    @dn.datanode
-    def get_subnode(clz, scheduler, ref_time):
-        with scheduler:
-            _, time = yield
-            while True:
-                time_ = time - ref_time
-                scheduler.send((None, time_))
-                _, time = yield
-
-    @classmethod
-    @contextlib.contextmanager
-    def subclock(clz, clock, ref_time):
-        scheduler = dn.Scheduler()
-        subnode = clz.get_subnode(scheduler, ref_time)
-        with clock.add_coroutine(subnode):
-            yield clz(scheduler)
-
     def add_coroutine(self, node, time=None):
         if time is not None:
             node = self.schedule(node, time)
@@ -515,7 +421,6 @@ class KerminalClock:
 
 class Kerminal:
     def __init__(self, clock, mixer, detector, renderer, controller):
-        self.ref_time = None
         self.clock = clock
         self.mixer = mixer
         self.detector = detector
@@ -534,33 +439,6 @@ class Kerminal:
             # initialize kerminal
             kerminal = clz(clock, mixer, detector, renderer, controller)
             yield tick_node, audioout_node, audioin_node, textout_node, textin_node, kerminal
-
-    @property
-    def time(self):
-        return time.time() - self.ref_time
-
-    def tick(self, dt, t0=0.0, stop_event=None):
-        if stop_event is None:
-            stop_event = threading.Event()
-
-        for i in itertools.count():
-            if stop_event.wait(max(0.0, t0+i*dt - self.time)):
-                break
-
-            yield self.time
-
-    @classmethod
-    @contextlib.contextmanager
-    def subkerminal(clz, kerminal, ref_time=0.0):
-        with KerminalClock.subclock(kerminal.clock, ref_time) as subclock,\
-             KerminalMixer.submixer(kerminal.mixer, ref_time) as submixer,\
-             KerminalDetector.subdetector(kerminal.detector, ref_time) as subdetector,\
-             KerminalRenderer.subrenderer(kerminal.renderer, ref_time) as subrenderer,\
-             KerminalController.subcontroller(kerminal.controller, ref_time) as subcontroller:
-
-            subkerminal = clz(subclock, submixer, subdetector, subrenderer, subcontroller)
-            subkerminal.ref_time = kerminal.ref_time + ref_time
-            yield subkerminal
 
 
 def until_interrupt(dt=0.005):
