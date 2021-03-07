@@ -513,40 +513,29 @@ class KerminalLaucher:
             with knockable.connect(settings) as (tick_node, audioout_node, audioin_node, textout_node, textin_node, main):
 
                 # initialize audio/text streams
-                with clz.get_tick_thread(tick_node, settings) as tick_thread,\
-                     clz.get_audioout_stream(audioout_node, manager, settings) as audioout_stream,\
-                     clz.get_audioin_stream(audioin_node, manager, settings) as audioin_stream,\
-                     clz.get_textout_thread(textout_node, settings) as textout_thread,\
-                     clz.get_textin_thread(textin_node, settings) as textin_thread:
+                stream_node = dn.pipe(clz.get_tick_thread(tick_node, settings),
+                                      clz.get_audioout_stream(audioout_node, manager, settings),
+                                      clz.get_audioin_stream(audioin_node, manager, settings),
+                                      clz.get_textout_thread(textout_node, settings),
+                                      clz.get_textin_thread(textin_node, settings))
 
+                with stream_node:
                     # activate audio/text streams
-                    tick_thread.start()
-                    audioout_stream.start_stream()
-                    audioin_stream.start_stream()
-                    textout_thread.start()
-                    textin_thread.start()
-
+                    stream_node.send()
                     main.start()
 
                     for _ in until_interrupt():
-                        if (not main.is_alive()
-                            or not tick_thread.is_alive()
-                            or not audioout_stream.is_active()
-                            or not audioin_stream.is_active()
-                            or not textout_thread.is_alive()
-                            or not textin_thread.is_alive()):
+                        stream_node.send()
+                        if not main.is_alive():
                             break
 
     @staticmethod
-    @contextlib.contextmanager
     def get_tick_thread(node, settings):
         tickrate = settings.tickrate
 
-        with dn.interval(consumer=node, dt=1/tickrate) as thread:
-            yield thread
+        return dn.interval(consumer=node, dt=1/tickrate)
 
     @staticmethod
-    @contextlib.contextmanager
     def get_audioout_stream(node, manager, settings):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
@@ -554,18 +543,14 @@ class KerminalLaucher:
         format = settings.output_format
         device = settings.output_device
 
-        stream_ctxt = dn.play(manager, node,
-                              samplerate=samplerate,
-                              buffer_shape=(buffer_length, nchannels),
-                              format=format,
-                              device=device,
-                              )
-
-        with stream_ctxt as stream:
-            yield stream
+        return dn.play(manager, node,
+                       samplerate=samplerate,
+                       buffer_shape=(buffer_length, nchannels),
+                       format=format,
+                       device=device,
+                       )
 
     @staticmethod
-    @contextlib.contextmanager
     def get_audioin_stream(node, manager, settings):
         samplerate = settings.input_samplerate
         buffer_length = settings.input_buffer_length
@@ -573,26 +558,19 @@ class KerminalLaucher:
         format = settings.input_format
         device = settings.input_device
 
-        stream_ctxt = dn.record(manager, node,
-                                samplerate=samplerate,
-                                buffer_shape=(buffer_length, nchannels),
-                                format=format,
-                                device=device,
-                                )
-
-        with stream_ctxt as stream:
-            yield stream
+        return dn.record(manager, node,
+                         samplerate=samplerate,
+                         buffer_shape=(buffer_length, nchannels),
+                         format=format,
+                         device=device,
+                         )
 
     @staticmethod
-    @contextlib.contextmanager
     def get_textout_thread(node, settings):
         framerate = settings.display_framerate
 
-        with dn.interval(node, dn.show(), 1/framerate) as thread:
-            yield thread
+        return dn.interval(node, dn.show(), 1/framerate)
 
     @staticmethod
-    @contextlib.contextmanager
     def get_textin_thread(node, settings):
-        with dn.input(node) as thread:
-            yield thread
+        return dn.input(node)

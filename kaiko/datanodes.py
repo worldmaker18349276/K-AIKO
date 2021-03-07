@@ -501,7 +501,7 @@ class Scheduler(DataNode):
     def remove_node(self, key):
         self.queue.put((key, None, (0,)))
 
-@contextlib.contextmanager
+@datanode
 def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
     producer = DataNode.wrap(producer)
     consumer = DataNode.wrap(consumer)
@@ -523,7 +523,11 @@ def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
     with producer, consumer:
         thread = threading.Thread(target=run)
         try:
-            yield thread
+            yield
+            thread.start()
+            yield
+            while thread.is_alive():
+                yield
         finally:
             stop_event.set()
             if thread.is_alive():
@@ -1009,7 +1013,7 @@ def save(filename, samplerate=44100, channels=1, width=2):
         while True:
             file.writeframes(tobuffer((yield)))
 
-@contextlib.contextmanager
+@datanode
 def record(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device=-1):
     """A context manager of input stream processing by given node.
 
@@ -1075,12 +1079,16 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format='f4', devi
 
     with node:
         try:
-            yield input_stream
+            yield
+            input_stream.start_stream()
+            yield
+            while input_stream.is_active():
+                yield
         finally:
             input_stream.stop_stream()
             input_stream.close()
 
-@contextlib.contextmanager
+@datanode
 def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device=-1):
     """A context manager of output stream processing by given node.
 
@@ -1146,12 +1154,16 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
 
     with node:
         try:
-            yield output_stream
+            yield
+            output_stream.start_stream()
+            yield
+            while output_stream.is_active():
+                yield
         finally:
             output_stream.stop_stream()
             output_stream.close()
 
-@contextlib.contextmanager
+@datanode
 def input(node, stream=None):
     import sys, os, signal, termios, fcntl
 
@@ -1203,7 +1215,11 @@ def input(node, stream=None):
         with node:
             thread = threading.Thread(target=run)
             try:
-                yield thread
+                yield
+                thread.start()
+                yield
+                while thread.is_alive():
+                    yield
             finally:
                 stop_event.set()
                 io_event.set()
