@@ -7,7 +7,7 @@ import threading
 import numpy
 import audioread
 from . import beatbar
-from .beatbar import PerformanceGrade, Performance
+from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings
 from . import cfg
 from . import datanodes as dn
 from . import tui
@@ -478,11 +478,14 @@ class Beatmap:
 
 @cfg.configurable
 class GameplaySettings:
+    beatbar: BeatbarSettings = BeatbarSettings()
+
     ## Controls:
     leadin_time: float = 1.0
     skip_time: float = 8.0
     load_time: float = 0.5
     prepare_time: float = 0.1
+    tickrate: float = 60.0
 
     # PlayFieldSkin:
     icon_templates: List[str] = ["{spectrum:^8s}"]
@@ -499,7 +502,6 @@ class BeatmapPlayer:
 
     def __init__(self, beatmap, config=None):
         self.beatmap = beatmap
-        self.stop_event = threading.Event()
 
         if config is not None:
             cfg.config_read(open(config, 'r'), main=self.settings)
@@ -559,54 +561,46 @@ class BeatmapPlayer:
         return abs(self.start_time)
 
     @contextlib.contextmanager
-    def execute(self, manager, kerminal_settings):
-        from .kerminal import Kerminal, KerminalSettings
-
-        if isinstance(kerminal_settings, str):
-            with open(kerminal_settings, 'r') as file:
-                kerminal_settings = KerminalSettings()
-                cfg.config_read(file, main=kerminal_settings)
-
-        time_shift = self.prepare(kerminal_settings.output_samplerate)
+    def execute(self, manager):
+        tickrate = self.settings.tickrate
+        time_shift = self.prepare(self.settings.beatbar.mixer.output_samplerate)
         load_time = self.settings.load_time
         ref_time = load_time + time_shift
 
-        with Kerminal.create(kerminal_settings, manager, ref_time) as (stream_node, self.kerminal),\
-             beatbar.Beatbar.initialize(self.kerminal) as self.beatbar:
+        with Beatbar.create(self.settings.beatbar, manager, ref_time) as (beatbar_knot, self.beatbar):
             # play music
             if self.audionode is not None:
-                self.kerminal.mixer.play(self.audionode, volume=self.volume, time=0.0, zindex=(-3,))
+                self.beatbar.mixer.play(self.audionode, volume=self.volume, time=0.0, zindex=(-3,))
 
             # register handlers
-            self.kerminal.mixer.add_effect(self._spec_handler(), zindex=(-1,))
+            self.beatbar.mixer.add_effect(self._spec_handler(), zindex=(-1,))
             self.beatbar.current_icon.set(self.icon_func)
             self.beatbar.current_header.set(self.header_func)
             self.beatbar.current_footer.set(self.footer_func)
 
             # game loop
-            self.kerminal.clock.add_coroutine(self.run(), time=self.start_time)
-
-            with stream_node:
-                # activate audio/text streams
-                stream_node.send()
-
-                while True:
-                    stream_node.send()
-                    if self.stop_event.is_set():
-                        break
+            event_knot = dn.interval(consumer=self.update_events(), dt=1/tickrate)
+            game_knot = dn.pipe(event_knot, beatbar_knot)
+            dn.exhaust(game_knot, dt=0.1, interruptible=True)
 
     @dn.datanode
-    def run(self):
+    def update_events(self):
         # register events
         events_iter = iter(self.events)
         event = next(events_iter, None)
 
+        start_time = self.start_time
+        tickrate = self.settings.tickrate
         prepare_time = self.settings.prepare_time
 
-        _, time = yield
+        yield
+        index = 0
+
         while True:
+            time = index / tickrate + start_time
+
             if self.end_time <= time:
-                self.stop_event.set()
+                return
 
             while event is not None and event.lifespan[0] - prepare_time <= time:
                 event.register(self)
@@ -615,7 +609,8 @@ class BeatmapPlayer:
             time = int(max(0.0, time)) # datetime cannot be negative
             self.time = datetime.time(time//3600, time%3600//60, time%60)
 
-            _, time = yield
+            yield
+            index += 1
 
 
     def get_status(self):
@@ -629,8 +624,8 @@ class BeatmapPlayer:
 
     def _spec_handler(self):
         spec_width = self.settings.spec_width
-        samplerate = self.kerminal.mixer.samplerate
-        nchannels = self.kerminal.mixer.nchannels
+        samplerate = self.settings.beatbar.mixer.output_samplerate
+        nchannels = self.settings.beatbar.mixer.output_channels
         hop_length = round(samplerate * self.settings.spec_time_res)
         win_length = round(samplerate / self.settings.spec_freq_res)
 
@@ -682,7 +677,7 @@ class BeatmapPlayer:
 
 
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
-        return self.kerminal.mixer.play(node, samplerate=samplerate, channels=channels,
+        return self.beatbar.mixer.play(node, samplerate=samplerate, channels=channels,
                                               volume=volume, start=start, end=end,
                                               time=time, zindex=zindex)
 
@@ -700,5 +695,5 @@ class BeatmapPlayer:
 
     def on_before_render(self, node):
         node = dn.pipe(dn.branch(lambda a:a[1:], node), lambda a:a[0])
-        return self.kerminal.renderer.add_drawer(node, zindex=())
+        return self.beatbar.renderer.add_drawer(node, zindex=())
 

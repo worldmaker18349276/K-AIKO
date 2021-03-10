@@ -18,7 +18,28 @@ from . import tui
 def nullcontext(value):
     yield value
 
-class KerminalMixer:
+@contextlib.contextmanager
+def prepare_pyaudio():
+    try:
+        manager = pyaudio.PyAudio()
+        yield manager
+    finally:
+        manager.terminate()
+
+
+@cfg.configurable
+class MixerSettings:
+    output_device: int = -1
+    output_samplerate: int = 44100
+    output_buffer_length: int = 512*4
+    output_channels: int = 1
+    output_format: str = 'f4'
+
+    sound_delay: float = 0.0
+
+    debug_timeit: bool = False
+
+class Mixer:
     def __init__(self, effects_scheduler, samplerate, buffer_length, nchannels):
         self.effects_scheduler = effects_scheduler
         self.samplerate = samplerate
@@ -136,7 +157,31 @@ class KerminalMixer:
         node = dn.pipe(lambda a:a[0], dn.attach(node))
         return self.add_effect(node, time=time, zindex=zindex)
 
-class KerminalDetector:
+
+@cfg.configurable
+class DetectorSettings:
+    # input
+    input_device: int = -1
+    input_samplerate: int = 44100
+    input_buffer_length: int = 512
+    input_channels: int = 1
+    input_format: str = 'f4'
+
+    detector_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
+    detector_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
+    detector_pre_max: float = 0.03
+    detector_post_max: float = 0.03
+    detector_pre_avg: float = 0.03
+    detector_post_avg: float = 0.03
+    detector_wait: float = 0.03
+    detector_delta: float = 5.48e-6
+
+    knock_delay: float = 0.0
+    knock_energy: float = 1.0e-3
+
+    debug_timeit: bool = False
+
+class Detector:
     def __init__(self, listeners_scheduler):
         self.listeners_scheduler = listeners_scheduler
 
@@ -245,7 +290,16 @@ class KerminalDetector:
 
             _, time, strength, detected = yield
 
-class KerminalRenderer:
+
+@cfg.configurable
+class RendererSettings:
+    display_framerate: float = 160.0 # ~ 2 / detector_time_res
+    display_delay: float = 0.0
+    display_columns: int = -1
+
+    debug_timeit: bool = False
+
+class Renderer:
     def __init__(self, drawers_scheduler, msg_queue):
         self.drawers_scheduler = drawers_scheduler
         self.msg_queue = msg_queue
@@ -335,7 +389,12 @@ class KerminalRenderer:
 
                 view, time, width = yield view
 
-class KerminalController:
+
+@cfg.configurable
+class ControllerSettings:
+    pass
+
+class Controller:
     def __init__(self, handlers_scheduler):
         self.handlers_scheduler = handlers_scheduler
 
@@ -379,7 +438,13 @@ class KerminalController:
                 if regex.fullmatch(key):
                     node.send((None, t, key))
 
-class KerminalClock:
+
+@cfg.configurable
+class ClockSettings:
+    tickrate: float = 60.0
+    clock_delay: float = 0.0
+
+class Clock:
     def __init__(self, coroutines_scheduler):
         self.coroutines_scheduler = coroutines_scheduler
 
@@ -430,75 +495,4 @@ class KerminalClock:
 
     def remove_coroutine(self, key):
         self.coroutines_scheduler.remove_node(key)
-
-class Kerminal:
-    def __init__(self, clock, mixer, detector, renderer, controller):
-        self.clock = clock
-        self.mixer = mixer
-        self.detector = detector
-        self.renderer = renderer
-        self.controller = controller
-
-    @classmethod
-    @contextlib.contextmanager
-    def create(clz, settings, manager, ref_time=0.0):
-        with KerminalClock.create(settings, ref_time) as (tick_node, clock),\
-             KerminalMixer.create(settings, manager, ref_time) as (audioout_node, mixer),\
-             KerminalDetector.create(settings, manager, ref_time) as (audioin_node, detector),\
-             KerminalRenderer.create(settings, ref_time) as (textout_node, renderer),\
-             KerminalController.create(settings, ref_time) as (textin_node, controller):
-
-            # initialize kerminal
-            kerminal = clz(clock, mixer, detector, renderer, controller)
-            stopper = dn.until_interrupt()
-            stream_node = dn.pipe(tick_node, audioout_node, audioin_node, textout_node, textin_node, stopper)
-            yield stream_node, kerminal
-
-
-@contextlib.contextmanager
-def prepare_pyaudio():
-    try:
-        manager = pyaudio.PyAudio()
-        yield manager
-    finally:
-        manager.terminate()
-
-@cfg.configurable
-class KerminalSettings:
-    # input
-    input_device: int = -1
-    input_samplerate: int = 44100
-    input_buffer_length: int = 512
-    input_channels: int = 1
-    input_format: str = 'f4'
-
-    # output
-    output_device: int = -1
-    output_samplerate: int = 44100
-    output_buffer_length: int = 512*4
-    output_channels: int = 1
-    output_format: str = 'f4'
-
-    # detector
-    detector_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
-    detector_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
-    detector_pre_max: float = 0.03
-    detector_post_max: float = 0.03
-    detector_pre_avg: float = 0.03
-    detector_post_avg: float = 0.03
-    detector_wait: float = 0.03
-    detector_delta: float = 5.48e-6
-
-    # controls
-    display_framerate: float = 160.0 # ~ 2 / detector_time_res
-    display_delay: float = 0.0
-    display_columns: int = -1
-    knock_delay: float = 0.0
-    knock_energy: float = 1.0e-3
-    sound_delay: float = 0.0
-    tickrate: float = 60.0
-    clock_delay: float = 0.0
-
-    # debug
-    debug_timeit: bool = False
 

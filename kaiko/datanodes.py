@@ -609,21 +609,25 @@ def timeit(node, name="timeit"):
             print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms"
                   f" ({sum(best)/N*1000:5.3f}ms ~ {sum(worst)/N*1000:5.3f}ms) ({eff: >6.1%})")
 
-@datanode
-def until_interrupt(stop_event=None):
-    if stop_event is None:
-        stop_event = threading.Event()
+def exhaust(node, dt=0.0, interruptible=False):
+    node = DataNode.wrap(node)
+
+    stop_event = threading.Event()
     def SIGINT_handler(sig, frame):
         stop_event.set()
 
-    yield
-    signal.signal(signal.SIGINT, SIGINT_handler)
+    with node:
+        if interruptible:
+            signal.signal(signal.SIGINT, SIGINT_handler)
 
-    while True:
-        yield
+        while True:
+            if stop_event.wait(dt):
+                return
 
-        if stop_event.is_set():
-            break
+            try:
+                node.send(None)
+            except StopIteration:
+                return
 
 
 # for fixed-width data

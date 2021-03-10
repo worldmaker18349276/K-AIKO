@@ -7,6 +7,7 @@ import threading
 from . import cfg
 from . import datanodes as dn
 from . import tui
+from .kerminal import Mixer, MixerSettings, Detector, DetectorSettings, Renderer, RendererSettings
 
 
 class PerformanceGrade(Enum):
@@ -88,6 +89,11 @@ class Performance:
 
 @cfg.configurable
 class BeatbarSettings:
+    mixer: MixerSettings = MixerSettings()
+    detector: DetectorSettings = DetectorSettings()
+    renderer: RendererSettings = RendererSettings()
+
+    # BeatbarLayout:
     icon_width: int = 8
     header_width: int = 11
     footer_width: int = 12
@@ -124,9 +130,14 @@ class BeatbarSettings:
     hit_sustain_time: float = 0.1
 
 class Beatbar:
-    def __init__(self, icon_mask, header_mask, content_mask, footer_mask, bar_shift, bar_flip,
+    def __init__(self, mixer, detector, renderer,
+                       icon_mask, header_mask, content_mask, footer_mask, bar_shift, bar_flip,
                        content_scheduler, current_icon, current_header, current_footer,
                        current_hit_hint, current_perf_hint, current_sight, target_queue):
+        self.mixer = mixer
+        self.detector = detector
+        self.renderer = renderer
+
         self.icon_mask = icon_mask
         self.header_mask = header_mask
         self.content_mask = content_mask
@@ -147,7 +158,7 @@ class Beatbar:
 
     @classmethod
     @contextlib.contextmanager
-    def initialize(clz, kerminal, settings=BeatbarSettings()):
+    def create(clz, settings, manager, ref_time):
         icon_width = settings.icon_width
         header_width = settings.header_width
         footer_width = settings.footer_width
@@ -187,19 +198,26 @@ class Beatbar:
         target_queue = queue.Queue()
         hit_handler = clz._hit_handler(current_hit_hint, target_queue)
 
-        with kerminal.renderer.add_drawer(content_scheduler, zindex=(0,)),\
-             kerminal.renderer.add_drawer(icon_drawer, zindex=(1,)),\
-             kerminal.renderer.add_drawer(header_drawer, zindex=(2,)),\
-             kerminal.renderer.add_drawer(footer_drawer, zindex=(3,)),\
-             kerminal.detector.add_listener(hit_handler):
+        with Mixer.create(settings.mixer, manager, ref_time) as (mixer_loop, mixer),\
+             Detector.create(settings.detector, manager, ref_time) as (detector_loop, detector),\
+             Renderer.create(settings.renderer, ref_time) as (renderer_loop, renderer):
 
-            self = clz(icon_mask, header_mask, content_mask, footer_mask, bar_shift, bar_flip,
-                       content_scheduler, current_icon, current_header, current_footer,
-                       current_hit_hint, current_perf_hint, current_sight, target_queue)
+            with renderer.add_drawer(content_scheduler, zindex=(0,)),\
+                 renderer.add_drawer(icon_drawer, zindex=(1,)),\
+                 renderer.add_drawer(header_drawer, zindex=(2,)),\
+                 renderer.add_drawer(footer_drawer, zindex=(3,)),\
+                 detector.add_listener(hit_handler):
 
-            self.draw_content(0.0, self._sight_drawer, zindex=(2,))
+                self = clz(mixer, detector, renderer,
+                           icon_mask, header_mask, content_mask, footer_mask, bar_shift, bar_flip,
+                           content_scheduler, current_icon, current_header, current_footer,
+                           current_hit_hint, current_perf_hint, current_sight, target_queue)
 
-            yield self
+                self.draw_content(0.0, self._sight_drawer, zindex=(2,))
+
+                beatbar_loop = dn.pipe(mixer_loop, detector_loop, renderer_loop)
+
+                yield (beatbar_loop, self)
 
     @staticmethod
     @dn.datanode
