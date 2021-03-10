@@ -157,7 +157,6 @@ class Beatbar:
         self.target_queue = target_queue
 
     @classmethod
-    @contextlib.contextmanager
     def create(clz, settings, manager, ref_time):
         icon_width = settings.icon_width
         header_width = settings.header_width
@@ -198,26 +197,28 @@ class Beatbar:
         target_queue = queue.Queue()
         hit_handler = clz._hit_handler(current_hit_hint, target_queue)
 
-        with Mixer.create(settings.mixer, manager, ref_time) as (mixer_loop, mixer),\
-             Detector.create(settings.detector, manager, ref_time) as (detector_loop, detector),\
-             Renderer.create(settings.renderer, ref_time) as (renderer_loop, renderer):
+        # build mixer, detector, renderer
+        mixer_knot, mixer = Mixer.create(settings.mixer, manager, ref_time)
+        detector_knot, detector = Detector.create(settings.detector, manager, ref_time)
+        renderer_knot, renderer = Renderer.create(settings.renderer, ref_time)
 
-            with renderer.add_drawer(content_scheduler, zindex=(0,)),\
-                 renderer.add_drawer(icon_drawer, zindex=(1,)),\
-                 renderer.add_drawer(header_drawer, zindex=(2,)),\
-                 renderer.add_drawer(footer_drawer, zindex=(3,)),\
-                 detector.add_listener(hit_handler):
+        beatbar_knot = dn.pipe(mixer_knot, detector_knot, renderer_knot)
 
-                self = clz(mixer, detector, renderer,
-                           icon_mask, header_mask, content_mask, footer_mask, bar_shift, bar_flip,
-                           content_scheduler, current_icon, current_header, current_footer,
-                           current_hit_hint, current_perf_hint, current_sight, target_queue)
+        # register handlers
+        renderer.add_drawer(content_scheduler, zindex=(0,))
+        renderer.add_drawer(icon_drawer, zindex=(1,))
+        renderer.add_drawer(header_drawer, zindex=(2,))
+        renderer.add_drawer(footer_drawer, zindex=(3,))
+        detector.add_listener(hit_handler)
 
-                self.draw_content(0.0, self._sight_drawer, zindex=(2,))
+        self = clz(mixer, detector, renderer,
+                   icon_mask, header_mask, content_mask, footer_mask, bar_shift, bar_flip,
+                   content_scheduler, current_icon, current_header, current_footer,
+                   current_hit_hint, current_perf_hint, current_sight, target_queue)
 
-                beatbar_loop = dn.pipe(mixer_loop, detector_loop, renderer_loop)
+        self.draw_content(0.0, self._sight_drawer, zindex=(2,))
 
-                yield (beatbar_loop, self)
+        return beatbar_knot, self
 
     @staticmethod
     @dn.datanode

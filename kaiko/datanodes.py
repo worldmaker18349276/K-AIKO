@@ -547,8 +547,8 @@ def tick(dt, t0=0.0, shift=0.0, stop_event=None):
 
         yield time.time()-ref_time+shift
 
-@contextlib.contextmanager
-def timeit(node, name="timeit"):
+@datanode
+def timeit(node, log=print):
     if hasattr(time, 'thread_time'):
         get_time = time.thread_time
     elif hasattr(time, 'clock_gettime'):
@@ -557,57 +557,57 @@ def timeit(node, name="timeit"):
         get_time = time.perf_counter
 
     N = 10
-    start = 0
-    stop = 0
+    start = 0.0
+    stop = numpy.inf
     count = 0
     total = 0.0
     total2 = 0.0
     worst = [0.0]*N
     best = [numpy.inf]*N
 
-    @datanode
-    def timed_node():
-        nonlocal node, count, total, total2, worst, best, start, stop
-        with node:
+    with node:
+        try:
             data = yield
-            try:
-                start = time.time()
 
-                while True:
+            start = stop = time.time()
 
-                    t0 = get_time()
-                    data = node.send(data)
-                    t = get_time() - t0
+            while True:
 
-                    count += 1
-                    total += t
-                    total2 += t**2
-                    bisect.insort(worst, t)
-                    worst.pop(0)
-                    bisect.insort_left(best, t)
-                    best.pop()
-
-                    data = yield data
-
-            finally:
+                t0 = get_time()
+                data = node.send(data)
+                t = get_time() - t0
                 stop = time.time()
 
-    yield timed_node()
+                count += 1
+                total += t
+                total2 += t**2
+                bisect.insort(worst, t)
+                worst.pop(0)
+                bisect.insort_left(best, t)
+                best.pop()
 
-    if count == 0:
-        print(f"{name}: count=0")
+                data = yield data
 
-    else:
-        avg = total/count
-        dev = (total2/count - avg**2)**0.5
-        eff = total/(stop - start)
+        finally:
+            stop = time.time()
 
-        if count < N:
-            print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms ({eff: >6.1%})")
+            if count == 0:
+                log(f"count=0")
 
-        else:
-            print(f"{name}: count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms"
-                  f" ({sum(best)/N*1000:5.3f}ms ~ {sum(worst)/N*1000:5.3f}ms) ({eff: >6.1%})")
+            else:
+                avg = total/count
+                dev = (total2/count - avg**2)**0.5
+                eff = total/(stop - start)
+
+                if count < N:
+                    log(f"count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms ({eff: >6.1%})")
+
+                else:
+                    best_time = sum(best)/N
+                    worst_time = sum(worst)/N
+
+                    log(f"count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms"
+                        f" ({best_time*1000:5.3f}ms ~ {worst_time*1000:5.3f}ms) ({eff: >6.1%})")
 
 def exhaust(node, dt=0.0, interruptible=False):
     node = DataNode.wrap(node)

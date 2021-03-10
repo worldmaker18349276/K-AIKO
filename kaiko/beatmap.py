@@ -567,21 +567,22 @@ class BeatmapPlayer:
         load_time = self.settings.load_time
         ref_time = load_time + time_shift
 
-        with Beatbar.create(self.settings.beatbar, manager, ref_time) as (beatbar_knot, self.beatbar):
-            # play music
-            if self.audionode is not None:
-                self.beatbar.mixer.play(self.audionode, volume=self.volume, time=0.0, zindex=(-3,))
+        beatbar_knot, self.beatbar = Beatbar.create(self.settings.beatbar, manager, ref_time)
 
-            # register handlers
-            self.beatbar.mixer.add_effect(self._spec_handler(), zindex=(-1,))
-            self.beatbar.current_icon.set(self.icon_func)
-            self.beatbar.current_header.set(self.header_func)
-            self.beatbar.current_footer.set(self.footer_func)
+        # play music
+        if self.audionode is not None:
+            self.beatbar.mixer.play(self.audionode, volume=self.volume, time=0.0, zindex=(-3,))
 
-            # game loop
-            event_knot = dn.interval(consumer=self.update_events(), dt=1/tickrate)
-            game_knot = dn.pipe(event_knot, beatbar_knot)
-            dn.exhaust(game_knot, dt=0.1, interruptible=True)
+        # register handlers
+        self.beatbar.mixer.add_effect(self._spec_handler(), zindex=(-1,))
+        self.beatbar.current_icon.set(self.icon_func)
+        self.beatbar.current_header.set(self.header_func)
+        self.beatbar.current_footer.set(self.footer_func)
+
+        # game loop
+        event_knot = dn.interval(consumer=self.update_events(), dt=1/tickrate)
+        game_knot = dn.pipe(event_knot, beatbar_knot)
+        dn.exhaust(game_knot, dt=0.1, interruptible=True)
 
     @dn.datanode
     def update_events(self):

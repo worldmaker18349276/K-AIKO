@@ -47,7 +47,6 @@ class Mixer:
         self.nchannels = nchannels
 
     @staticmethod
-    @contextlib.contextmanager
     def get_node(scheduler, settings, manager, ref_time):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
@@ -69,25 +68,26 @@ class Mixer:
                     yield data
                     index += 1
 
-        output_ctxt = dn.timeit(_node(), " output") if debug_timeit else nullcontext(_node())
-        with output_ctxt as output_node:
-            yield dn.play(manager, output_node,
-                          samplerate=samplerate,
-                          buffer_shape=(buffer_length, nchannels),
-                          format=format,
-                          device=device,
-                          )
+        output_node = _node()
+        if debug_timeit:
+            output_node = dn.timeit(output_node, lambda msg: print(" output: " + msg))
+
+        return dn.play(manager, output_node,
+                      samplerate=samplerate,
+                      buffer_shape=(buffer_length, nchannels),
+                      format=format,
+                      device=device,
+                      )
 
     @classmethod
-    @contextlib.contextmanager
     def create(clz, settings, manager, ref_time=0.0):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
 
         scheduler = dn.Scheduler()
-        with clz.get_node(scheduler, settings, manager, ref_time) as output_node:
-            yield output_node, clz(scheduler, samplerate, buffer_length, nchannels)
+        output_node = clz.get_node(scheduler, settings, manager, ref_time)
+        return output_node, clz(scheduler, samplerate, buffer_length, nchannels)
 
     def add_effect(self, node, time=None, zindex=(0,)):
         if time is not None:
@@ -186,7 +186,6 @@ class Detector:
         self.listeners_scheduler = listeners_scheduler
 
     @staticmethod
-    @contextlib.contextmanager
     def get_node(scheduler, settings, manager, ref_time):
         samplerate = settings.input_samplerate
         buffer_length = settings.input_buffer_length
@@ -243,25 +242,24 @@ class Detector:
 
                     index += 1
 
-        _node = _node()
-
+        input_node = _node()
         if buffer_length != hop_length:
-            _node = dn.unchunk(_node, chunk_shape=(hop_length, nchannels))
-        input_ctxt = dn.timeit(_node, "  input") if debug_timeit else nullcontext(_node)
-        with input_ctxt as input_node:
-            yield dn.record(manager, input_node,
-                            samplerate=samplerate,
-                            buffer_shape=(buffer_length, nchannels),
-                            format=format,
-                            device=device,
-                            )
+            input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
+        if debug_timeit:
+            input_node = dn.timeit(input_node, lambda msg: print("  input: " + msg))
+
+        return dn.record(manager, input_node,
+                        samplerate=samplerate,
+                        buffer_shape=(buffer_length, nchannels),
+                        format=format,
+                        device=device,
+                        )
 
     @classmethod
-    @contextlib.contextmanager
     def create(clz, settings, manager, ref_time=0.0):
         scheduler = dn.Scheduler()
-        with clz.get_node(scheduler, settings, manager, ref_time) as input_node:
-            yield input_node, clz(scheduler)
+        input_node = clz.get_node(scheduler, settings, manager, ref_time)
+        return input_node, clz(scheduler)
 
     def add_listener(self, node):
         return self.listeners_scheduler.add_node(node, (0,))
@@ -305,7 +303,6 @@ class Renderer:
         self.msg_queue = msg_queue
 
     @staticmethod
-    @contextlib.contextmanager
     def get_node(scheduler, msg_queue, settings, ref_time):
         framerate = settings.display_framerate
         display_delay = settings.display_delay
@@ -337,17 +334,17 @@ class Renderer:
                     yield msg + "\r" + "".join(view) + "\r"
                     index += 1
 
-        display_ctxt = dn.timeit(_node(), "display") if debug_timeit else nullcontext(_node())
-        with display_ctxt as display_node:
-            yield dn.interval(display_node, dn.show(), 1/framerate)
+        display_node = _node()
+        if debug_timeit:
+            display_node = dn.timeit(display_node, lambda msg: print("display: " + msg))
+        return dn.interval(display_node, dn.show(), 1/framerate)
 
     @classmethod
-    @contextlib.contextmanager
     def create(clz, settings, ref_time=0.0):
         scheduler = dn.Scheduler()
         msg_queue = queue.Queue()
-        with clz.get_node(scheduler, msg_queue, settings, ref_time) as display_node:
-            yield display_node, clz(scheduler, msg_queue)
+        display_node = clz.get_node(scheduler, msg_queue, settings, ref_time)
+        return display_node, clz(scheduler, msg_queue)
 
     def message(self, msg):
         self.msg_queue.put(msg)
@@ -399,7 +396,6 @@ class Controller:
         self.handlers_scheduler = handlers_scheduler
 
     @staticmethod
-    @contextlib.contextmanager
     def get_node(scheduler, settings, ref_time):
         @dn.datanode
         def _node():
@@ -409,14 +405,13 @@ class Controller:
                     time_ = time - ref_time
                     scheduler.send((None, time_, key))
 
-        yield dn.input(_node())
+        return dn.input(_node())
 
     @classmethod
-    @contextlib.contextmanager
     def create(clz, settings, ref_time=0.0):
         scheduler = dn.Scheduler()
-        with clz.get_node(scheduler, settings, ref_time) as node:
-            yield node, clz(scheduler)
+        node = clz.get_node(scheduler, settings, ref_time)
+        return node, clz(scheduler)
 
     def add_handler(self, node, key=None):
         if key is None:
@@ -449,7 +444,6 @@ class Clock:
         self.coroutines_scheduler = coroutines_scheduler
 
     @staticmethod
-    @contextlib.contextmanager
     def get_node(scheduler, settings, ref_time):
         tickrate = settings.tickrate
         clock_delay = settings.clock_delay
@@ -465,14 +459,13 @@ class Clock:
                     yield
                     index += 1
 
-        yield dn.interval(consumer=_node(), dt=1/tickrate)
+        return dn.interval(consumer=_node(), dt=1/tickrate)
 
     @classmethod
-    @contextlib.contextmanager
     def create(clz, settings, ref_time=0.0):
         scheduler = dn.Scheduler()
-        with clz.get_node(scheduler, settings, ref_time) as node:
-            yield node, clz(scheduler)
+        node = clz.get_node(scheduler, settings, ref_time)
+        return node, clz(scheduler)
 
     def add_coroutine(self, node, time=None):
         if time is not None:
