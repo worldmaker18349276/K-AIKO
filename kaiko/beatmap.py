@@ -500,11 +500,12 @@ class GameplaySettings:
 class BeatmapPlayer:
     settings: GameplaySettings = GameplaySettings()
 
-    def __init__(self, beatmap, config=None):
+    def __init__(self, beatmap, settings=None):
         self.beatmap = beatmap
 
-        if config is not None:
-            cfg.config_read(open(config, 'r'), main=self.settings)
+        if settings is not None:
+            self.settings = GameplaySettings()
+            cfg.config_read(open(settings, 'r'), main=self.settings)
 
     def prepare(self, output_samplerate):
         # prepare events

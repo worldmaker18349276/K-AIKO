@@ -622,7 +622,7 @@ def exhaust(node, dt=0.0, interruptible=False):
 
         while True:
             if stop_event.wait(dt):
-                return
+                raise KeyboardInterrupt
 
             try:
                 node.send(None)

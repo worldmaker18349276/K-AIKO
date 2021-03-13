@@ -6,165 +6,103 @@ import threading
 from . import cfg
 from . import datanodes as dn
 from . import tui
-from .beatmap import BeatmapPlayer
-from .beatsheet import BeatmapDraft, BeatmapParseError
 
+default_keymap = {
+    "\x1b[B": 'NEXT',
+    "\x1b[A": 'PREV',
+    "\n": 'ENTER',
+    "\x1b": 'EXIT',
+}
 
-class Dead:
-    def start(self): pass
-    def is_alive(self): return False
-
-class BeatMenuPlay:
-    def __init__(self, filepath):
-        self.filepath = filepath
-
-    @contextlib.contextmanager
-    def connect(self, kerminal):
-        try:
-            beatmap = BeatmapDraft.read(self.filepath)
-
-        except BeatmapParseError:
-            kerminal.renderer.message(f"failed to read beatmap {self.filepath}")
-            yield Dead()
-
-        else:
-            game = BeatmapPlayer(beatmap)
-            with game.connect(kerminal) as main:
-                yield main
-                kerminal.renderer.message("")
-
-class BeatMenu:
-    keymap = {
-        'NEXT': "\x1b[B",
-        'PREV': "\x1b[A",
-        'ENTER': "\n",
-        'EXIT': "\x1b",
-    }
-
-    def __init__(self):
-        self.prompts = []
-        self.sessions = queue.Queue()
-        self.stop_event = threading.Event()
-        self.sep = "❯ "
-
-    @contextlib.contextmanager
-    def connect(self, kerminal):
-        self.kerminal = kerminal
-
-        with dn.interval(consumer=self.run(), dt=0.1) as thread:
-            yield thread
-
-    def get_menu_node(self):
-        songs = []
-
-        for root, dirs, files in os.walk("./songs"):
-            for file in files:
-                if file.endswith((".kaiko", ".ka", ".osu")):
-                    filepath = os.path.join(root, file)
-                    songs.append((file, BeatMenuPlay(filepath)))
-
-        return menu_node([
-            ("play", lambda: menu_node(songs, self.keymap)),
-            ("settings", None),
-            ("quit", self.get_quit_node),
-        ], self.keymap)
+def explore(menu_tree, keymap=default_keymap, sep="❯ ", framerate=60.0):
+    prompts = []
+    result = None
 
     @dn.datanode
-    def get_quit_node(self):
-        self.stop_event.set()
-        yield
+    def input_handler(menu_tree):
+        nonlocal prompts, result
+        prompts = menu_tree.send(None)
 
-    @dn.datanode
-    def input_handler(self, menu_node):
         while True:
-            _, _, key = yield
-            res = menu_node.send(key)
+            _, key = yield
+            if key not in keymap:
+                continue
+
+            res = menu_tree.send(keymap[key])
+
             if isinstance(res, list):
-                self.prompts = res
+                prompts = res
             else:
-                self.sessions.put(res)
+                result = res
+                return
+
+    input_knot = dn.input(input_handler(menu_tree))
 
     @dn.datanode
-    def prompt_drawer(self):
-        yield
-        while True:
-            yield self.sep + self.sep.join(self.prompts)
+    def prompt_node():
+        size_node = dn.terminal_size()
 
-    @contextlib.contextmanager
-    def menu(self, menu_node):
-        self.prompts = menu_node.send(None)
-        with self.kerminal.renderer.add_text(self.prompt_drawer(), 0),\
-             self.kerminal.controller.add_handler(self.input_handler(menu_node)):
+        with size_node:
             yield
-            self.kerminal.renderer.message("")
-
-    @dn.datanode
-    def run(self):
-        menu_node = self.get_menu_node()
-
-        with menu_node:
             while True:
-                if self.sessions.empty():
-                    with self.menu(menu_node):
-                        while self.sessions.empty():
-                            if self.stop_event.is_set():
-                                return
-                            if menu_node.finalized:
-                                return
-                            yield
+                size = size_node.send(None)
+                width = size.columns
+                view = tui.newwin1(width)
+                tui.addtext1(view, width, 0, sep+sep.join(prompts))
+                yield "\r" + "".join(view) + "\r"
 
-                else:
-                    session = self.sessions.get()
-                    with session.connect(self.kerminal) as main:
-                        main.start()
-                        while main.is_alive():
-                            yield
+    display_knot = dn.interval(prompt_node(), dn.show(), 1/framerate)
+
+    menu_knot = dn.pipe(input_knot, display_knot)
+    dn.exhaust(menu_knot, dt=0.01, interruptible=True)
+    return result
 
 @dn.datanode
-def menu_node(items, keymap):
+def menu_tree(items):
     index = 0
     length = len(items)
     prompt, func = items[index]
 
-    key = yield
+    action = yield
 
     while True:
-        if key is None:
+        if action is None:
             pass
 
-        elif key == keymap['NEXT']:
+        elif action == 'NEXT':
             index = min(index+1, length-1)
 
-        elif key == keymap['PREV']:
+        elif action == 'PREV':
             index = max(index-1, 0)
 
-        elif key == keymap['ENTER']:
+        elif action == 'ENTER':
             if func is None:
                 # None -> no action
                 pass
 
-            elif hasattr(func, 'connect'):
-                # knockable -> suspend to execute
-                key = yield func
+            elif hasattr(func, 'execute'):
+                # executable -> suspend to execute
+                action = yield func
                 continue
 
             elif hasattr(func, '__call__'):
                 # datanode function -> forward action to submenu
                 with func() as node:
-                    key = None
+                    action = None
                     while True:
                         try:
-                            res = node.send(key)
+                            res = node.send(action)
                         except StopIteration:
                             break
-                        res = res if hasattr(res, 'connect') else [prompt, *res]
-                        key = yield res
+                        res = res if hasattr(res, 'execute') else [prompt, *res]
+                        action = yield res
 
             else:
                 raise ValueError(f"unknown function: {repr(func)}")
 
-        elif key == keymap['EXIT']:
+        elif action == 'EXIT':
             break
 
         prompt, func = items[index]
-        key = yield [prompt]
+        action = yield [prompt]
+
