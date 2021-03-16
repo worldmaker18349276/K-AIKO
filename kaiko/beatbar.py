@@ -87,11 +87,10 @@ class Performance:
     def description(self):
         return self.descriptions[self.grade]
 
-@cfg.configurable
-class BeatbarSettings:
-    mixer: MixerSettings = MixerSettings()
-    detector: DetectorSettings = DetectorSettings()
-    renderer: RendererSettings = RendererSettings()
+class BeatbarSettings(metaclass=cfg.Configurable):
+    mixer: MixerSettings
+    detector: DetectorSettings
+    renderer: RendererSettings
 
     # BeatbarLayout:
     icon_width: int = 8

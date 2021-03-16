@@ -27,8 +27,7 @@ def prepare_pyaudio():
         manager.terminate()
 
 
-@cfg.configurable
-class MixerSettings:
+class MixerSettings(metaclass=cfg.Configurable):
     output_device: int = -1
     output_samplerate: int = 44100
     output_buffer_length: int = 512*4
@@ -158,8 +157,7 @@ class Mixer:
         return self.add_effect(node, time=time, zindex=zindex)
 
 
-@cfg.configurable
-class DetectorSettings:
+class DetectorSettings(metaclass=cfg.Configurable):
     # input
     input_device: int = -1
     input_samplerate: int = 44100
@@ -289,8 +287,7 @@ class Detector:
             _, time, strength, detected = yield
 
 
-@cfg.configurable
-class RendererSettings:
+class RendererSettings(metaclass=cfg.Configurable):
     display_framerate: float = 160.0 # ~ 2 / detector_time_res
     display_delay: float = 0.0
     display_columns: int = -1
@@ -387,8 +384,7 @@ class Renderer:
                 view, time, width = yield view
 
 
-@cfg.configurable
-class ControllerSettings:
+class ControllerSettings(metaclass=cfg.Configurable):
     pass
 
 class Controller:
@@ -434,8 +430,7 @@ class Controller:
                     node.send((None, t, key))
 
 
-@cfg.configurable
-class ClockSettings:
+class ClockSettings(metaclass=cfg.Configurable):
     tickrate: float = 60.0
     clock_delay: float = 0.0
 

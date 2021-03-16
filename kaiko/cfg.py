@@ -1,6 +1,7 @@
 import re
 import typing
 import dataclasses
+import functools
 import enum
 
 
@@ -220,19 +221,26 @@ def unrepr(clz, repr_str, strict=True):
         raise SyntaxError
     return eval(repr_str)
 
+class Configurable(type):
+    def __init__(self, name, supers, attrs):
+        if not hasattr(self, '__configurable_excludes__'):
+            self.__configurable_excludes__ = []
 
-def configurable(arg=None, excludes=[]):
-    def configurable_decorator(clz):
-        fields = typing.get_type_hints(clz)
-        for field in excludes:
+        fields = typing.get_type_hints(self)
+        for field in self.__configurable_excludes__:
             del fields[field]
-        clz.__configurable_fields__ = fields
-        return clz
+        self.__configurable_fields__ = fields
 
-    if arg is None:
-        return configurable_decorator
-    else:
-        return configurable_decorator(arg)
+    def __configurable_init__(self, instance):
+        for field_name, field_type in self.__configurable_fields__.items():
+            if hasattr(field_type, '__configurable_fields__'):
+                instance.__dict__[field_name] = field_type()
+
+    def __call__(self, *args, **kwargs):
+        instance = self.__new__(self, *args, **kwargs)
+        self.__configurable_init__(instance)
+        self.__init__(instance, *args, **kwargs)
+        return instance
 
 def get_configurable_fields(clz):
     field_hints = {}
@@ -277,9 +285,11 @@ def config_write(file, **targets):
         for names, hint in field_hints.items():
             value = target
             for name in names:
+                if name not in value.__dict__:
+                    break
                 value = getattr(value, name)
-
-            value_repr = hint.__repr__(value)
-            field_ref = ".".join([target_name, *names])
-            print(field_ref + " = " + value_repr, file=file)
+            else:
+                value_repr = hint.__repr__(value)
+                field_ref = ".".join([target_name, *names])
+                print(field_ref + " = " + value_repr, file=file)
 

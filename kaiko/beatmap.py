@@ -395,8 +395,7 @@ class Spin(Target):
 
 
 # Game
-@cfg.configurable
-class BeatmapSettings:
+class BeatmapSettings(metaclass=cfg.Configurable):
     ## Difficulty:
     performance_tolerance: float = 0.02
     soft_threshold: float = 0.5
@@ -454,8 +453,6 @@ class BeatmapSettings:
     spin_disk_sound: str = "samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
 
 class Beatmap:
-    settings: BeatmapSettings = BeatmapSettings()
-
     def __init__(self, path=".", info="", audio=None, volume=0.0, offset=0.0, tempo=60.0):
         self.path = path
         self.info = info
@@ -463,6 +460,7 @@ class Beatmap:
         self.volume = volume
         self.offset = offset
         self.tempo = tempo
+        self.settings = BeatmapSettings()
 
     def time(self, beat):
         return self.offset + beat*60/self.tempo
@@ -476,9 +474,8 @@ class Beatmap:
     def build_events(self):
         raise NotImplementedError
 
-@cfg.configurable
-class GameplaySettings:
-    beatbar: BeatbarSettings = BeatbarSettings()
+class GameplaySettings(metaclass=cfg.Configurable):
+    beatbar: BeatbarSettings
 
     ## Controls:
     leadin_time: float = 1.0
@@ -498,13 +495,11 @@ class GameplaySettings:
     spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
 
 class BeatmapPlayer:
-    settings: GameplaySettings = GameplaySettings()
-
     def __init__(self, beatmap, settings=None):
         self.beatmap = beatmap
 
+        self.settings = GameplaySettings()
         if settings is not None:
-            self.settings = GameplaySettings()
             cfg.config_read(open(settings, 'r'), main=self.settings)
 
     def prepare(self, output_samplerate):
