@@ -11,18 +11,17 @@ K-AIK▣  is a voice-controlled terminal-based rhythm game.
 ```
 git clone git@github.com:worldmaker18349276/K-AIKO
 cd K-AIKO
-conda env create -f environment.yml
-conda activate ./envs
+python -m pip install .
 ```
 
 ## Play
 
 ```
-python -m kaiko
+kaiko
 ```
 
 Or play beatmap directly
 
 ```
-python -m kaiko <beatmap file path>
+kaiko <beatmap file path>
 ```

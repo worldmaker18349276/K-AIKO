@@ -1,4 +1,5 @@
 import sys
+import traceback
 import os
 import contextlib
 from .beatmap import BeatmapPlayer
@@ -26,49 +27,62 @@ class BeatMenuPlay:
             print()
             beatanalyzer.show_analyze(beatmap.settings.performance_tolerance, game.perfs)
 
-# print logo
-print("""
-  ██▀ ▄██▀   ▄██████▄ ▀██████▄ ██  ▄██▀ █▀▀▀▀▀▀█
-  ▀ ▄██▀  ▄▄▄▀█    ██    ██    ██▄██▀   █ ▓▓▓▓ █
-  ▄██▀██▄ ▀▀▀▄███████    ██    ███▀██▄  █ ▓▓▓▓ █
-  █▀   ▀██▄  ██    ██ ▀██████▄ ██   ▀██▄█▄▄▄▄▄▄█
-""")
+def main():
+    try:
+        # print logo
+        print("\n"
+            "  ██▀ ▄██▀   ▄██████▄ ▀██████▄ ██  ▄██▀ █▀▀▀▀▀▀█\n"
+            "  ▀ ▄██▀  ▄▄▄▀█    ██    ██    ██▄██▀   █ ▓▓▓▓ █\n"
+            "  ▄██▀██▄ ▀▀▀▄███████    ██    ███▀██▄  █ ▓▓▓▓ █\n"
+            "  █▀   ▀██▄  ██    ██ ▀██████▄ ██   ▀██▄█▄▄▄▄▄▄█\n"
+            "\n")
 
-print("\x1b[94m🛠\x1b[0m  Loading PyAudio...")
+        print("\x1b[94m🛠\x1b[0m  Loading PyAudio...")
 
-print("\x1b[2m")
-with kerminal.prepare_pyaudio() as manager:
-    print("\x1b[0m")
+        print("\x1b[2m")
+        with kerminal.prepare_pyaudio() as manager:
+            print("\x1b[0m")
 
-    if len(sys.argv) > 1:
-        # play given beatmap
-        filepath = sys.argv[1]
-        BeatMenuPlay(filepath).execute(manager)
+            if len(sys.argv) > 1:
+                # play given beatmap
+                filepath = sys.argv[1]
+                BeatMenuPlay(filepath).execute(manager)
 
-    else:
-        # load songs
-        print("\x1b[94m🛠\x1b[0m  Loading songs...")
+            else:
+                # load songs
+                print("\x1b[94m🛠\x1b[0m  Loading songs...")
 
-        songs = []
+                songs = []
 
-        for root, dirs, files in os.walk("./songs"):
-            for file in files:
-                if file.endswith((".kaiko", ".ka", ".osu")):
-                    filepath = os.path.join(root, file)
-                    songs.append((file, BeatMenuPlay(filepath)))
+                for root, dirs, files in os.walk("./songs"):
+                    for file in files:
+                        if file.endswith((".kaiko", ".ka", ".osu")):
+                            filepath = os.path.join(root, file)
+                            songs.append((file, BeatMenuPlay(filepath)))
 
-        menu = beatmenu.menu_tree([
-            ("play", lambda: beatmenu.menu_tree(songs)),
-            ("settings", None),
-        ])
+                menu = beatmenu.menu_tree([
+                    ("play", lambda: beatmenu.menu_tree(songs)),
+                    ("settings", None),
+                ])
 
-        # enter menu
-        print("\x1b[93m💡\x1b[0m  Use up/down/enter/esc keys to select options.\n")
+                # enter menu
+                print("\x1b[93m💡\x1b[0m  Use up/down/enter/esc keys to select options.\n")
 
-        with menu:
-            while True:
-                result = beatmenu.explore(menu)
-                if hasattr(result, 'execute'):
-                    result.execute(manager)
-                elif result is None:
-                    break
+                with menu:
+                    while True:
+                        result = beatmenu.explore(menu)
+                        if hasattr(result, 'execute'):
+                            result.execute(manager)
+                        elif result is None:
+                            break
+
+    except KeyboardInterrupt:
+        pass
+
+    except:
+        print("\x1b[31m", end="")
+        traceback.print_exc(file=sys.stdout)
+        print("\x1b[0m", end="")
+
+if __name__ == '__main__':
+    main()

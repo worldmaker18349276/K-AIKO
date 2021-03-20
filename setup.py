@@ -1,12 +1,10 @@
 from setuptools import setup
 
-long_description = open("README.md", "r").read()
-
 setup(
     name="K-AIKO",
     version="0.1.0",
     description="A voice-controlled terminal-based rhythm game",
-    long_description=long_description,
+    long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/worldmaker18349276/K-AIKO",
     author="worldmaker18349276",
@@ -19,7 +17,20 @@ setup(
         "Programming Language :: Python :: 3.6",
     ],
     keywords="voice-controlled, terminal-based, rhythm game",
-    packages=".",
+    packages=["kaiko"],
     python_requires=">=3.6, <4",
-    install_requires=["dataclasses", "lark", "numpy", "scipy", "audioread", "pyaudio", "wcwidth"],
+    install_requires=[
+        'dataclasses; python_version < "3.7"',
+        "lark",
+        "numpy",
+        "scipy",
+        "audioread",
+        "pyaudio",
+        "wcwidth"
+    ],
+    entry_points={
+        "console_scripts": [
+            "kaiko = kaiko.__main__:main"
+        ]
+    },
 )
