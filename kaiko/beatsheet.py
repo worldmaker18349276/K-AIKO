@@ -463,11 +463,11 @@ class OSU:
         path = os.path.dirname(filename)
         index = 0
 
-        with open(filename) as file:
+        with open(filename, encoding='utf-8-sig') as file:
             format = file.readline()
             index += 1
-            if format != "osu file format v14\n":
-                raise BeatmapParseError(f"invalid file format: {repr(format)}")
+            # if format != "osu file format v14\n":
+            #     raise BeatmapParseError(f"invalid file format: {repr(format)}")
 
             beatmap = BeatmapDraft()
             beatmap.path = path
@@ -526,10 +526,10 @@ class OSU:
 
     def parse_timingpoints(self, beatmap, context, line):
         time,beatLength,meter,sampleSet,sampleIndex,volume,uninherited,effects = line.rstrip("\n").split(",")
-        time = int(time)
+        time = float(time)
         beatLength = float(beatLength)
         meter = int(meter)
-        volume = int(volume)
+        volume = float(volume)
         multiplier = context['multiplier0']
 
         if 'timings' not in context:
@@ -558,7 +558,7 @@ class OSU:
         definitions = beatmap.notations.definitions
 
         x,y,time,type,hitSound,*objectParams,hitSample = line.rstrip("\n").split(",")
-        time = int(time)
+        time = float(time)
         type = int(type)
         hitSound = int(hitSound)
 
@@ -588,9 +588,8 @@ class OSU:
 
         elif type & 8: # spinner
             end_time, = objectParams
-            end_time = int(end_time)
+            end_time = float(end_time)
             length = (end_time - time)/context['beatLength0']
-            # 10
 
             note = definitions['@'](density=density, beat=beat, length=length, speed=speed, volume=volume)
             beatmap.chart.tracks[0].notes.append(note)
