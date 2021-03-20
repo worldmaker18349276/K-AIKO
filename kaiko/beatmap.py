@@ -649,7 +649,10 @@ class BeatmapPlayer:
 
                 while True:
                     data = yield
-                    J = node.send(data)
+                    try:
+                        J = node.send(data)
+                    except StopIteration:
+                        return
 
                     vols = [max(0.0, prev-decay, min(1.0, volume_of(J[slic])))
                             for slic, prev in zip(slices, vols)]

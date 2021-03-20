@@ -63,7 +63,10 @@ class Mixer:
                 while True:
                     time = index * buffer_length / samplerate + sound_delay - ref_time
                     data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
-                    data = scheduler.send((data, time))
+                    try:
+                        data = scheduler.send((data, time))
+                    except StopIteration:
+                        return
                     yield data
                     index += 1
 
@@ -111,7 +114,10 @@ class Mixer:
             while offset < 0:
                 length = min(-offset, buffer_length)
                 dummy = numpy.zeros((length, nchannels), dtype=numpy.float32)
-                node.send((dummy, time+offset/samplerate))
+                try:
+                    node.send((dummy, time+offset/samplerate))
+                except StopIteration:
+                    return
                 offset += length
 
             while 0 < offset:
@@ -119,14 +125,20 @@ class Mixer:
                     offset -= data.shape[0]
                 else:
                     data1, data2 = data[:offset], data[offset:]
-                    data2 = node.send((data2, time+offset/samplerate))
+                    try:
+                        data2 = node.send((data2, time+offset/samplerate))
+                    except StopIteration:
+                        return
                     data = numpy.concatenate((data1, data2), axis=0)
                     offset = 0
 
                 data, time = yield data
 
             while True:
-                data, time = yield node.send((data, time))
+                try:
+                    data, time = yield node.send((data, time))
+                except StopIteration:
+                    return
 
     def resample(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None):
         if channels is None:
@@ -227,15 +239,21 @@ class Detector:
                 buffer = [(knock_delay, 0.0)]*prepare
                 index = 0
                 while True:
-                    strength = onset.send(data)
-                    detected = picker.send(strength)
+                    try:
+                        strength = onset.send(data)
+                        detected = picker.send(strength)
+                    except StopIteration:
+                        return
                     time = index * hop_length / samplerate + knock_delay - ref_time
                     strength = strength / knock_energy
 
                     buffer.append((time, strength))
                     time, strength = buffer.pop(0)
 
-                    scheduler.send((None, time, strength, detected))
+                    try:
+                        scheduler.send((None, time, strength, detected))
+                    except StopIteration:
+                        return
                     data = yield
 
                     index += 1
@@ -316,12 +334,18 @@ class Renderer:
             with scheduler, size_node:
                 yield
                 while True:
-                    size = size_node.send(None)
+                    try:
+                        size = size_node.send(None)
+                    except StopIteration:
+                        return
                     width = size.columns if columns == -1 else min(columns, size.columns)
 
                     time = index / framerate + display_delay - ref_time
                     view = tui.newwin1(width)
-                    view = scheduler.send((view, time, width))
+                    try:
+                        view = scheduler.send((view, time, width))
+                    except StopIteration:
+                        return
 
                     msg = []
                     while not msg_queue.empty():
@@ -365,7 +389,10 @@ class Renderer:
         with text_node:
             view, time, width = yield
             while True:
-                text = text_node.send((time, range(-x, width-x)[xmask]))
+                try:
+                    text = text_node.send((time, range(-x, width-x)[xmask]))
+                except StopIteration:
+                    return
                 view, _ = tui.addtext1(view, width, x, text, xmask=xmask)
 
                 view, time, width = yield view
@@ -378,7 +405,10 @@ class Renderer:
             view, time, width = yield
             while True:
                 subview, x, subwidth = tui.newpad1(view, width, xmask=xmask)
-                subview = pad_node.send(((time, subwidth), subview))
+                try:
+                    subview = pad_node.send(((time, subwidth), subview))
+                except StopIteration:
+                    return
                 view, xran = tui.addpad1(view, width, x, subview, subwidth)
 
                 view, time, width = yield view
@@ -399,7 +429,10 @@ class Controller:
                 while True:
                     time, key = yield
                     time_ = time - ref_time
-                    scheduler.send((None, time_, key))
+                    try:
+                        scheduler.send((None, time_, key))
+                    except StopIteration:
+                        return
 
         return dn.input(_node())
 
@@ -427,7 +460,10 @@ class Controller:
             while True:
                 _, t, key = yield
                 if regex.fullmatch(key):
-                    node.send((None, t, key))
+                    try:
+                        node.send((None, t, key))
+                    except StopIteration:
+                        return
 
 
 class ClockSettings(metaclass=cfg.Configurable):
@@ -450,7 +486,10 @@ class Clock:
                 yield
                 while True:
                     time = index / tickrate + clock_delay - ref_time
-                    scheduler.send((None, time))
+                    try:
+                        scheduler.send((None, time))
+                    except StopIteration:
+                        return
                     yield
                     index += 1
 
@@ -478,7 +517,10 @@ class Clock:
                 _, time = yield
 
             while True:
-                node.send((None, time))
+                try:
+                    node.send((None, time))
+                except StopIteration:
+                    return
                 _, time = yield
 
     def remove_coroutine(self, key):

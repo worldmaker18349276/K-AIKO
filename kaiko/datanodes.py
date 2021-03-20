@@ -169,10 +169,13 @@ def skip(node, prefeed):
         buffer = list(prefeed)
 
     with node:
-        for dummy in buffer:
-            node.send(dummpy)
+        try:
+            for dummy in buffer:
+                node.send(dummpy)
 
-        yield from node.join((yield))
+            yield from node.join((yield))
+        except StopIteration:
+            return
 
 @datanode
 def take(predicate):
@@ -199,8 +202,11 @@ def take(predicate):
 
     with predicate:
         data = yield
-        while predicate.send(data):
-            data = yield data
+        try:
+            while predicate.send(data):
+                data = yield data
+        except StopIteration:
+            return
 
 @datanode
 def pipe(*nodes):
@@ -230,7 +236,10 @@ def pipe(*nodes):
         while True:
             res = data
             for node in nodes:
-                res = node.send(res)
+                try:
+                    res = node.send(res)
+                except StopIteration:
+                    return
             data = yield res
 
 @datanode
@@ -261,7 +270,10 @@ def pair(*nodes):
         while True:
             data_ = []
             for node, subdata in zip(nodes, data):
-                data_.append(node.send(subdata))
+                try:
+                    data_.append(node.send(subdata))
+                except StopIteration:
+                    return
             data = yield tuple(data_)
 
 @datanode
@@ -290,7 +302,10 @@ def chain(*nodes):
 
         data = yield
         for node in nodes:
-            data = yield from node.join(data)
+            try:
+                data = yield from node.join(data)
+            except StopIteration:
+                return
 
 @datanode
 def branch(*nodes):
@@ -346,7 +361,10 @@ def merge(*nodes):
     with node:
         data = yield
         while True:
-            data = yield (data, node.send())
+            try:
+                data = yield (data, node.send())
+            except StopIteration:
+                return
 
 @datanode
 def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
@@ -588,6 +606,9 @@ def timeit(node, log=print):
 
                 data = yield data
 
+        except StopIteration:
+            return
+
         finally:
             stop = time.time()
 
@@ -825,9 +846,15 @@ def unchunk(node, chunk_shape=1024):
                     data = yield
                     jndex = 0
 
+        except StopIteration:
+            return
+
         except GeneratorExit:
             if index > 0:
-                node.send(chunk)
+                try:
+                    node.send(chunk)
+                except StopIteration:
+                    return
 
 @datanode
 def attach(node):

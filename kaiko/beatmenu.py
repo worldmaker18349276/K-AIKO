@@ -21,14 +21,20 @@ def explore(menu_tree, keymap=default_keymap, sep="❯ ", framerate=60.0):
     @dn.datanode
     def input_handler(menu_tree):
         nonlocal prompts, result
-        prompts = menu_tree.send(None)
+        try:
+            prompts = menu_tree.send(None)
+        except StopIteration:
+            return
 
         while True:
             _, key = yield
             if key not in keymap:
                 continue
 
-            res = menu_tree.send(keymap[key])
+            try:
+                res = menu_tree.send(keymap[key])
+            except StopIteration:
+                return
 
             if isinstance(res, list):
                 prompts = res
@@ -45,7 +51,10 @@ def explore(menu_tree, keymap=default_keymap, sep="❯ ", framerate=60.0):
         with size_node:
             yield
             while True:
-                size = size_node.send(None)
+                try:
+                    size = size_node.send(None)
+                except StopIteration:
+                    return
                 width = size.columns
                 view = tui.newwin1(width)
                 tui.addtext1(view, width, 0, sep+sep.join(prompts))
