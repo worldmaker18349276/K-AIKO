@@ -21,5 +21,5 @@ setup(
     keywords="voice-controlled, terminal-based, rhythm game",
     packages=".",
     python_requires=">=3.6, <4",
-    install_requires=["dataclasses", "lark", "numpy", "scipy", "audioread", "pyaudio"],
+    install_requires=["dataclasses", "lark", "numpy", "scipy", "audioread", "pyaudio", "wcwidth"],
 )
