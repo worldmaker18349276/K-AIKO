@@ -1,10 +1,12 @@
 import sys
 import traceback
 import os
+from typing import Tuple
 import contextlib
 import psutil
 import appdirs
 from .beatmap import BeatmapPlayer
+from . import cfg
 from .beatsheet import BeatmapDraft, BeatmapParseError
 from . import beatanalyzer
 from . import kerminal
@@ -29,7 +31,28 @@ class BeatMenuPlay:
             print()
             beatanalyzer.show_analyze(beatmap.settings.performance_tolerance, game.perfs)
 
-def main():
+class KAIKOTheme(metaclass=cfg.Configurable):
+    data_icon: str = "\x1b[92m🗀\x1b[0m "
+    info_icon: str = "\x1b[94m🛠\x1b[0m "
+    hint_icon: str = "\x1b[93m💡\x1b[0m "
+
+    verb: Tuple[str, str] = ("\x1b[2m", "\x1b[0m")
+    emph: Tuple[str, str] = ("\x1b[1m", "\x1b[21m")
+    warn: Tuple[str, str] = ("\x1b[31m", "\x1b[0m")
+
+def main(theme=None):
+    # load theme
+    theme = GameplaySettings()
+    if theme is not None:
+        cfg.config_read(open(theme, 'r'), main=theme)
+
+    data_icon = theme.data_icon
+    info_icon = theme.info_icon
+    hint_icon = theme.hint_icon
+    verb = theme.verb
+    emph = theme.emph
+    warn = theme.warn
+
     try:
         # print logo
         print("\n"
@@ -44,10 +67,12 @@ def main():
             , flush=True)
 
         # load PyAudio
-        print("\x1b[94m🛠\x1b[0m  Loading PyAudio...", flush=True)
-        print("\x1b[2m")
+        print(f"{info_icon} Loading PyAudio...")
+        print()
+        print(verb[0], end="", flush=True)
         with kerminal.prepare_pyaudio() as manager:
-            print("\x1b[0m", flush=True)
+            print(verb[1], end="")
+            print(flush=True)
 
             # play given beatmap
             if len(sys.argv) > 1:
@@ -60,14 +85,14 @@ def main():
             user_songs_dir = os.path.join(user_data_dir, "songs")
             if not os.path.isdir(user_data_dir) or True:
                 # start up
-                print(f"\x1b[92m🗀\x1b[0m  preparing your profile...")
+                print(f"{data_icon} preparing your profile...")
                 os.makedirs(user_data_dir, exist_ok=True)
                 os.makedirs(user_songs_dir, exist_ok=True)
-                print(f"\x1b[92m🗀\x1b[0m  your data will be stored in \x1b[1mfile://{user_data_dir}\x1b[21m")
+                print(f"{data_icon} your data will be stored in {('file://'+user_data_dir).join(emph)}")
                 print(flush=True)
 
             # load songs
-            print(f"\x1b[94m🛠\x1b[0m  Loading songs from \x1b[1mfile://{user_songs_dir}\x1b[21m...")
+            print(f"{info_icon} Loading songs from {('file://'+user_songs_dir).join(emph)}...")
 
             songs = []
 
@@ -85,12 +110,8 @@ def main():
             print(flush=True)
 
             # enter menu
-            print("\x1b[93m💡\x1b[0m  Use "
-                  "\x1b[1mup\x1b[21m/"
-                  "\x1b[1mdown\x1b[21m/"
-                  "\x1b[1menter\x1b[21m/"
-                  "\x1b[1mesc\x1b[21m"
-                  " keys to select options.")
+            print(f"{hint_icon} Use {'up'.join(emph)}/{'down'.join(emph)}/"
+                  f"{'enter'.join(emph)}/{'esc'.join(emph)} keys to select options.")
             print(flush=True)
 
             with menu:
@@ -106,9 +127,9 @@ def main():
 
     except:
         # print error
-        print("\x1b[31m", end="")
+        print(warn[0], end="")
         traceback.print_exc(file=sys.stdout)
-        print("\x1b[0m", end="")
+        print(warn[1], end="")
 
 if __name__ == '__main__':
     main()
