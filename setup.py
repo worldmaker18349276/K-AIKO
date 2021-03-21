@@ -21,7 +21,7 @@ setup(
         "Programming Language :: Python :: 3.7",
         "Programming Language :: Python :: 3.8",
     ],
-    keywords="voice-controlled, terminal-based, rhythm game",
+    keywords=["voice-controlled", "terminal-based", "rhythm game"],
     packages=["kaiko"],
     python_requires=">=3.6, <4",
     install_requires=[

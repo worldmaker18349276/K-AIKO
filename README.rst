@@ -1,4 +1,4 @@
-|image0|
+.. image:: https://github.com/worldmaker18349276/K-AIKO/raw/master/logo.png
 
 K-AIK▣ is a voice-controlled terminal-based rhythm game.
 
@@ -163,5 +163,3 @@ License
 -------
 
 MIT
-
-.. |image0| image:: logo.png
