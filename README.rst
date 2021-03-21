@@ -134,9 +134,9 @@ You can prepare environment for testing
 
     git clone git@github.com:worldmaker18349276/K-AIKO
     cd K-AIKO
-    conda create -f environment.yml
+    conda env create --prefix ./envs python=3.6
 
-Remember to activate environment before playing
+Remember to activate environment before testing
 
 ::
 

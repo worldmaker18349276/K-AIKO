@@ -31,7 +31,9 @@ setup(
         "scipy",
         "audioread",
         "pyaudio",
-        "wcwidth"
+        "wcwidth",
+        "psutil",
+        "appdirs"
     ],
     entry_points={
         "console_scripts": [

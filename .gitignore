@@ -1,6 +1,6 @@
 .ipynb_checkpoints
 __pycache__
-envs
+envs*
 songs
 build
 dist
