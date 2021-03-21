@@ -13,6 +13,8 @@ from . import datanodes as dn
 from . import tui
 
 
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
 class Event:
     # lifespan
     # __init__(beatmap, *args, **kwargs)
@@ -438,19 +440,19 @@ class BeatmapSettings(metaclass=cfg.Configurable):
     ## NoteSkin:
     soft_approach_appearance:  Union[str, Tuple[str, str]] = "□"
     soft_wrong_appearance:     Union[str, Tuple[str, str]] = "⬚"
-    soft_sound: str = "samples/soft.wav" # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
+    soft_sound: str = f"{BASE_DIR}/samples/soft.wav" # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
     loud_approach_appearance:  Union[str, Tuple[str, str]] = "■"
     loud_wrong_appearance:     Union[str, Tuple[str, str]] = "⬚"
-    loud_sound: str = "samples/loud.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
+    loud_sound: str = f"{BASE_DIR}/samples/loud.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
     incr_approach_appearance:  Union[str, Tuple[str, str]] = "⬒"
     incr_wrong_appearance:     Union[str, Tuple[str, str]] = "⬚"
-    incr_sound: str = "samples/incr.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
+    incr_sound: str = f"{BASE_DIR}/samples/incr.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
     roll_rock_appearance:      Union[str, Tuple[str, str]] = "◎"
-    roll_rock_sound: str = "samples/rock.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
+    roll_rock_sound: str = f"{BASE_DIR}/samples/rock.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
     spin_disk_appearances:     Union[List[str], List[Tuple[str, str]]] = ["◴", "◵", "◶", "◷"]
     spin_finishing_appearance: Union[str, Tuple[str, str]] = "☺"
     spin_finish_sustain_time: float = 0.1
-    spin_disk_sound: str = "samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
+    spin_disk_sound: str = f"{BASE_DIR}/samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
 
 class Beatmap:
     def __init__(self, path=".", info="", audio=None, volume=0.0, offset=0.0, tempo=60.0):
