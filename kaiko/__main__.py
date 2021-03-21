@@ -35,13 +35,13 @@ def main():
             "  ▀ ▄██▀  ▄▄▄▀█    ██    ██    ██▄██▀   █ ▓▓▓▓ █\n"
             "  ▄██▀██▄ ▀▀▀▄███████    ██    ███▀██▄  █ ▓▓▓▓ █\n"
             "  █▀   ▀██▄  ██    ██ ▀██████▄ ██   ▀██▄█▄▄▄▄▄▄█\n"
-            "\n")
+            "\n", flush=True)
 
-        print("\x1b[94m🛠\x1b[0m  Loading PyAudio...")
+        print("\x1b[94m🛠\x1b[0m  Loading PyAudio...", flush=True)
 
         print("\x1b[2m")
         with kerminal.prepare_pyaudio() as manager:
-            print("\x1b[0m")
+            print("\x1b[0m", flush=True)
 
             if len(sys.argv) > 1:
                 # play given beatmap
@@ -50,7 +50,7 @@ def main():
 
             else:
                 # load songs
-                print("\x1b[94m🛠\x1b[0m  Loading songs...")
+                print("\x1b[94m🛠\x1b[0m  Loading songs...", flush=True)
 
                 songs = []
 
