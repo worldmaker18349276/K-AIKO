@@ -10,3 +10,4 @@ dependencies:
   - pyaudio
   - lark-parser
   - wcwidth
+  - twine

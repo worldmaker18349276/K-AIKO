@@ -1,20 +1,26 @@
 from setuptools import setup
 
+exec(open("kaiko/_version.py").read())
+
 setup(
     name="K-AIKO",
-    version="0.1.0",
+    version=__version__,
     description="A voice-controlled terminal-based rhythm game",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     url="https://github.com/worldmaker18349276/K-AIKO",
     author="worldmaker18349276",
     author_email="worldmaker18349276@gmail.com",
+    license="MIT",
     classifiers=[
         "Development Status :: 2 - Pre-Alpha",
         "Intended Audience :: End Users/Desktop",
         "Topic :: Games/Entertainment",
         "License :: OSI Approved :: MIT License",
+        "Environment :: Console",
         "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
+        "Programming Language :: Python :: 3.8",
     ],
     keywords="voice-controlled, terminal-based, rhythm game",
     packages=["kaiko"],
