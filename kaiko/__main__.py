@@ -5,8 +5,9 @@ from typing import Tuple
 import contextlib
 import psutil
 import appdirs
-from .beatmap import BeatmapPlayer
+from . import datanodes as dn
 from . import cfg
+from .beatmap import BeatmapPlayer
 from .beatsheet import BeatmapDraft, BeatmapParseError
 from . import beatanalyzer
 from . import kerminal
@@ -30,6 +31,49 @@ class BeatMenuPlay:
 
             print()
             beatanalyzer.show_analyze(beatmap.settings.performance_tolerance, game.perfs)
+
+def print_pyaudio_info(manager):
+    import pyaudio
+
+    print()
+
+    print("portaudio version:")
+    print("  " + pyaudio.get_portaudio_version_text())
+    print()
+
+    print("available devices:")
+    apis_list = [manager.get_host_api_info_by_index(i)['name'] for i in range(manager.get_host_api_count())]
+
+    table = []
+    for index in range(manager.get_device_count()):
+        info = manager.get_device_info_by_index(index)
+
+        ind = str(index)
+        name = info['name']
+        api = apis_list[info['hostApi']]
+        freq = str(info['defaultSampleRate']/1000)
+        chin = str(info['maxInputChannels'])
+        chout = str(info['maxOutputChannels'])
+
+        table.append((ind, name, api, freq, chin, chout))
+
+    ind_len   = max(len(entry[0]) for entry in table)
+    name_len  = max(len(entry[1]) for entry in table)
+    api_len   = max(len(entry[2]) for entry in table)
+    freq_len  = max(len(entry[3]) for entry in table)
+    chin_len  = max(len(entry[4]) for entry in table)
+    chout_len = max(len(entry[5]) for entry in table)
+
+    for ind, name, api, freq, chin, chout in table:
+        print(f"  {ind:>{ind_len}}. {name:{name_len}}  by  {api:{api_len}}"
+              f"  ({freq:>{freq_len}} kHz, in: {chin:>{chin_len}}, out: {chout:>{chout_len}})")
+
+    print()
+
+    default_input_device_index = manager.get_default_input_device_info()['index']
+    default_output_device_index = manager.get_default_output_device_info()['index']
+    print(f"default input device: {default_input_device_index}")
+    print(f"default output device: {default_output_device_index}")
 
 class KAIKOTheme(metaclass=cfg.Configurable):
     data_icon: str = "\x1b[92m🗀\x1b[0m "
@@ -71,6 +115,9 @@ def main(theme=None):
         print()
         print(verb[0], end="", flush=True)
         with kerminal.prepare_pyaudio() as manager:
+
+            print_pyaudio_info(manager)
+
             print(verb[1], end="")
             print(flush=True)
 
