@@ -70,6 +70,9 @@ def explore(menu_tree, keymap=default_keymap, sep="❯ ", framerate=60.0):
 def menu_tree(items):
     index = 0
     length = len(items)
+    if length == 0:
+        return
+
     prompt, func = items[index]
 
     action = yield

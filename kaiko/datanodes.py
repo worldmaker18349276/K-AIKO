@@ -63,10 +63,12 @@ class DataNode:
 
         try:
             next(self.generator)
-            return self
 
         except StopIteration:
             self.finalized = True
+
+        finally:
+            return self
 
     def __exit__(self, type=None, value=None, traceback=None):
         if not self.initialized:

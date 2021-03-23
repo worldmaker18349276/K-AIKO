@@ -42,16 +42,16 @@ class KAIKOTheme(metaclass=cfg.Configurable):
 
 def main(theme=None):
     # load theme
-    theme = GameplaySettings()
+    settings = KAIKOTheme()
     if theme is not None:
-        cfg.config_read(open(theme, 'r'), main=theme)
+        cfg.config_read(open(theme, 'r'), main=settings)
 
-    data_icon = theme.data_icon
-    info_icon = theme.info_icon
-    hint_icon = theme.hint_icon
-    verb = theme.verb
-    emph = theme.emph
-    warn = theme.warn
+    data_icon = settings.data_icon
+    info_icon = settings.info_icon
+    hint_icon = settings.hint_icon
+    verb = settings.verb
+    emph = settings.emph
+    warn = settings.warn
 
     try:
         # print logo
@@ -83,7 +83,7 @@ def main(theme=None):
             # load user data
             user_data_dir = appdirs.user_data_dir("K-AIKO", psutil.Process().username())
             user_songs_dir = os.path.join(user_data_dir, "songs")
-            if not os.path.isdir(user_data_dir) or True:
+            if not os.path.isdir(user_data_dir):
                 # start up
                 print(f"{data_icon} preparing your profile...")
                 os.makedirs(user_data_dir, exist_ok=True)
