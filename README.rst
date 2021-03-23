@@ -20,7 +20,7 @@ After installing Anaconda, just run
 
     conda install -c anaconda pyaudio
 
-If you don't want to use conda, see `next section <#install-pyaudio-without-using-conda>`__.
+If you have issue (no sound or error while playing), see `next section <#install-pyaudio-without-using-conda>`__.
 
 Install K-AIKO
 ~~~~~~~~~~~~~~
@@ -62,6 +62,14 @@ You can play one beatmap directly
 
 Install PyAudio Without Using Conda
 -----------------------------------
+
+The PortAudio provided by Annaconda conda-forge channel seems have some issues, see `<https://github.com/ContinuumIO/anaconda-issues/issues/4139>`__.
+The solution is simple: don't use Annaconda.
+Before install PyAudio, you should uninstall them in conda
+
+::
+
+    conda remove pyaudio
 
 Linux
 ~~~~~
