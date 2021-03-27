@@ -1,6 +1,7 @@
 import sys
 import traceback
 import os
+import zipfile
 from typing import Tuple
 import contextlib
 import psutil
@@ -141,18 +142,46 @@ def main(theme=None):
             # load songs
             print(f"{info_icon} Loading songs from {('file://'+user_songs_dir).join(emph)}...")
 
-            songs = []
+            def load_songs():
+                songs = []
 
-            for root, dirs, files in os.walk(user_songs_dir):
-                for file in files:
-                    if file.endswith((".kaiko", ".ka", ".osu")):
-                        filepath = os.path.join(root, file)
-                        songs.append((file, BeatMenuPlay(filepath)))
+                for root, dirs, files in os.walk(user_songs_dir):
+                    for file in files:
+                        if file.endswith(".osz"):
+                            filepath = os.path.join(root, file)
+                            distpath, _ = os.path.splitext(filepath)
+                            if os.path.isdir(distpath):
+                                continue
+                            print(f"{info_icon} Unzip file {('file://'+filepath).join(emph)}...")
+                            os.makedirs(distpath)
+                            zf = zipfile.ZipFile(filepath, 'r')
+                            zf.extractall(path=distpath)
+
+                for root, dirs, files in os.walk(user_songs_dir):
+                    for file in files:
+                        if file.endswith((".kaiko", ".ka", ".osu")):
+                            filepath = os.path.join(root, file)
+                            songs.append((file, BeatMenuPlay(filepath)))
+
+                return songs
+
+            songs = load_songs()
+            songs_mtime = os.stat(user_songs_dir).st_mtime
+
+            def play_menu():
+                nonlocal songs, songs_mtime
+                if songs_mtime != os.stat(user_songs_dir).st_mtime:
+                    songs = load_songs()
+                    songs_mtime = os.stat(user_songs_dir).st_mtime
+                return beatmenu.menu_tree(songs)
 
             menu = beatmenu.menu_tree([
-                ("play", lambda: beatmenu.menu_tree(songs)),
+                ("play", play_menu),
                 ("settings", None),
             ])
+
+            if len(songs) == 0:
+                print("{info_icon} There is no song in the folder yet!")
 
             print(flush=True)
 
