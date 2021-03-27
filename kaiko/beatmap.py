@@ -504,7 +504,7 @@ class BeatmapPlayer:
         if settings is not None:
             cfg.config_read(open(settings, 'r'), main=self.settings)
 
-    def prepare(self, output_samplerate):
+    def prepare(self, output_samplerate, output_nchannels):
         # prepare events
         self.events = self.beatmap.build_events()
         self.events.sort(key=lambda e: e.lifespan[0])
@@ -522,7 +522,8 @@ class BeatmapPlayer:
             audiopath = os.path.join(self.beatmap.path, self.beatmap.audio)
             with audioread.audio_open(audiopath) as file:
                 self.duration = file.duration
-            self.audionode = dn.DataNode.wrap(dn.load_sound(audiopath, samplerate=output_samplerate))
+            self.audionode = dn.DataNode.wrap(dn.load_sound(audiopath, samplerate=output_samplerate,
+                                                                       channels=output_nchannels))
             self.volume = self.beatmap.volume
 
         self.start_time = min(events_start_time, 0.0)
@@ -561,7 +562,9 @@ class BeatmapPlayer:
     @contextlib.contextmanager
     def execute(self, manager):
         tickrate = self.settings.tickrate
-        time_shift = self.prepare(self.settings.beatbar.mixer.output_samplerate)
+        samplerate = self.settings.beatbar.mixer.output_samplerate
+        nchannels = self.settings.beatbar.mixer.output_channels
+        time_shift = self.prepare(samplerate, nchannels)
         load_time = self.settings.load_time
         ref_time = load_time + time_shift
 

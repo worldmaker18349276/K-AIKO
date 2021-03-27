@@ -1388,17 +1388,25 @@ def load_sound(filepath, samplerate=None, channels=None, volume=0.0, start=None,
         sound = scipy.signal.resample(sound, length, axis=0)
 
     # rechannel
-    if channels == 0:
-        if sound.ndim != 1:
+    if sound.ndim == 1:
+        sound = sound[:,None]
+
+    if isinstance(channels, int):
+        if channels == 0:
             sound = numpy.mean(sound, axis=1)
 
-    elif isinstance(channels, int):
-        if sound.ndim != 1:
+        elif channels != sound.shape[1]:
             sound = numpy.mean(sound, axis=1, keepdims=True)
-        sound = sound[:, [0]*channels]
+            sound = sound[:, [0]*channels]
 
-    elif channels is not None:
+    elif isinstance(channels, list):
         sound = sound[:, channels]
+
+    elif channels is None:
+        pass
+
+    else:
+        raise ValueError(f"invalid channel map: {repr(channels)}")
 
     # chunk
     if chunk_length is not None:

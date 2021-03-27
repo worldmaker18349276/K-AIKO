@@ -141,12 +141,11 @@ class Mixer:
                     return
 
     def resample(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None):
-        if channels is None:
-            channels = self.nchannels
 
         if start is not None or end is not None:
             node = dn.tslice(node, samplerate, start, end)
-        node = dn.pipe(node, dn.rechannel(channels))
+        if channels is not None and channels != self.nchannels:
+            node = dn.pipe(node, dn.rechannel(self.channels))
         if samplerate is not None and samplerate != self.samplerate:
             node = dn.pipe(node, dn.resample(ratio=(self.samplerate, samplerate)))
         if volume != 0:
@@ -156,12 +155,13 @@ class Mixer:
 
     @functools.lru_cache(maxsize=32)
     def load_sound(self, filepath):
-        return dn.load_sound(filepath, samplerate=self.samplerate)
+        return dn.load_sound(filepath, channels=self.nchannels, samplerate=self.samplerate)
 
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
         if isinstance(node, str):
             node = dn.DataNode.wrap(self.load_sound(node))
             samplerate = None
+            channels = None
 
         node = self.resample(node, samplerate, channels, volume, start, end)
 
