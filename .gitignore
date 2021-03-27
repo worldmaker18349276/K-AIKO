@@ -1,8 +1,6 @@
 .ipynb_checkpoints
 __pycache__
 envs*
-songs
 build
 dist
 K_AIKO.egg-info
-_
