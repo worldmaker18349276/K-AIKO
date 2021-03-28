@@ -1,6 +1,64 @@
 import wcwidth
 
 
+def parse(text):
+    text = iter(text)
+    attr_str = ""
+    attr_width = 0
+
+    try:
+        while True:
+            ch = next(text)
+
+            if ch == "\x1b":
+                attr_str += ch
+                ch = next(text)
+
+                if ch != "[":
+                    raise ValueError
+                attr_str += ch
+                ch = next(text)
+
+                if ch == "m":
+                    attr_str += ch
+                    yield (attr_str, attr_width)
+                    attr_str = ""
+                    attr_width = 0
+                    continue
+
+                while True:
+                    if ch in "0123456789;":
+                        attr_str += ch
+                        ch = next(text)
+                    elif ch == "m":
+                        attr_str += ch
+                        break
+                    else:
+                        raise ValueError
+
+            elif ch in "\t\b\r\x00":
+                if attr_str:
+                    raise ValueError
+                yield (ch, -1)
+
+            else:
+                width = wcwidth.wcwidth(ch)
+                if width == -1:
+                    raise ValueError
+
+                elif attr_str:
+                    attr_str += ch
+                    attr_width += width
+
+                else:
+                    yield (ch, width)
+
+    except StopIteration:
+        if attr_str:
+            raise ValueError
+        return
+
+
 def cover(*rans):
     start = min(ran.start for ran in rans)
     stop = max(ran.stop for ran in rans)
@@ -16,9 +74,7 @@ def addtext1(view, width, x, text, xmask=slice(None,None)):
     xran = range(width)
     x0 = x
 
-    for ch in text:
-        width = wcwidth.wcwidth(ch)
-
+    for ch, width in parse(text):
         if ch == "\t":
             x += 1
 
@@ -33,42 +89,37 @@ def addtext1(view, width, x, text, xmask=slice(None,None)):
 
         elif width == 0:
             x_ = x - 1
-            if x_ in xran and view[x_] == "":
+            while x_ in xran and view[x_] == "":
                 x_ -= 1
             if x_ in xran[xmask]:
                 view[x_] += ch
 
-        elif width == 1:
-            if x in xran[xmask]:
-                if x-1 in xran and view[x] == "":
-                    view[x-1] = " "
-                if x+1 in xran and view[x+1] == "":
-                    view[x+1] = " "
-                view[x] = ch
-            x += 1
-
-        elif width == 2:
-            x_ = x + 1
-            if x in xran[xmask] and x_ in xran[xmask]:
-                if x-1 in xran and view[x] == "":
-                    view[x-1] = " "
-                if x_+1 in xran and view[x_+1] == "":
-                    view[x_+1] = " "
-                view[x] = ch
-                view[x_] = ""
-            x += 2
-
         else:
-            raise ValueError
+            x_ = x + width - 1
+            if x in xran[xmask] and x_ in xran[xmask]:
+                x1 = x
+                if view[x1] == "":
+                    while view[x1] == "":
+                        view[x1] = " "
+                        x1 -= 1
+                    view[x1] = " "
+
+                x2 = x_+1
+                while x2 in xran and view[x2] == "":
+                    view[x2] = " "
+                    x2 += 1
+
+                view[x] = ch
+                for dx in range(1, width):
+                    view[x+dx] = ""
+            x += width
 
     return view, x
 
 def textrange1(x, text):
     xstart = xstop = x0 = x
 
-    for ch in text:
-        width = wcwidth.wcwidth(ch)
-
+    for ch, width in parse(text):
         if ch == "\t":
             x += 1
 
@@ -85,18 +136,10 @@ def textrange1(x, text):
             xstart = min(xstart, x-1)
             xstop = max(xstop, x)
 
-        elif width == 1:
-            xstart = min(xstart, x)
-            xstop = max(xstop, x+1)
-            x += 1
-
-        elif width == 2:
-            xstart = min(xstart, x)
-            xstop = max(xstop, x+2)
-            x += 2
-
         else:
-            raise ValueError
+            xstart = min(xstart, x)
+            xstop = max(xstop, x+width)
+            x += width
 
     return range(xstart, xstop), x
 
@@ -114,25 +157,45 @@ def addpad1(view, width, x, pad, pad_width, xmask=slice(None,None)):
     xs = clamp(range(x, x+pad_width), xran[xmask])
 
     if xs:
-        if xs.start-1 in xran and view[xs.start] == "":
-            view[xs.start-1] = " "
-        if xs.stop in xran and view[xs.stop] == "":
-            view[xs.stop] = " "
+        x1 = xs.start
+        if view[x1] == "":
+            while view[x1] == "":
+                view[x1] = " "
+                x1 -= 1
+            view[x1] = " "
+
+        x2 = xs.stop
+        while x2 in xran and view[x2] == "":
+            view[x2] = " "
+            x2 += 1
+
         for x_ in xs:
             view[x_] = pad[x_-x]
 
     return view, xs
 
 def clear1(view, width, xmask=slice(None,None)):
+    if xmask.start is None and xmask.stop is None:
+        return view
+
     xran = range(width)
     xs = xran[xmask]
 
-    if xs.start-1 in xran and view[xs.start] == "":
-        view[xs.start-1] = " "
-    if xs.stop in xran and view[xs.stop] == "":
-        view[xs.stop] = " "
-    for x in xs:
-        view[x] = " "
+    if xs:
+        x1 = xs.start
+        if view[x1] == "":
+            while view[x1] == "":
+                view[x1] = " "
+                x1 -= 1
+            view[x1] = " "
+
+        x2 = xs.stop
+        while x2 in xran and view[x2] == "":
+            view[x2] = " "
+            x2 += 1
+
+        for x in xs:
+            view[x] = " "
 
     return view
 

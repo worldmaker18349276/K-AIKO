@@ -62,7 +62,7 @@ def edit(framerate=60.0):
             input_event.set()
 
             if len(key) == 1 and key.isprintable():
-                input_text[cursor_pos:cursor_pos+1] = [key]
+                input_text[cursor_pos:cursor_pos] = [key]
                 cursor_pos += 1
 
             elif key == keymap["Backspace"]:
@@ -99,14 +99,14 @@ def edit(framerate=60.0):
     def prompt_node():
         size_node = dn.terminal_size()
         headers = [ # game of life - Blocker
-            "⠶⠦⣚⠀⠶❯ ",
-            "⢎⣀⡛⠀⠶❯ ",
-            "⢖⣄⠻⠀⠶❯ ",
-            "⠖⠐⡩⠂⠶❯ ",
-            "⠶⠀⡭⠲⠶❯ ",
-            "⠶⠀⣬⠉⡱❯ ",
-            "⠶⠀⣦⠙⠵❯ ",
-            "⠶⠠⣊⠄⠴❯ ",
+            "\x1b[36m⠶⠦⣚⠀⠶\x1b[32m❯\x1b[m ",
+            "\x1b[36m⢎⣀⡛⠀⠶\x1b[32m❯\x1b[m ",
+            "\x1b[36m⢖⣄⠻⠀⠶\x1b[32m❯\x1b[m ",
+            "\x1b[36m⠖⠐⡩⠂⠶\x1b[32m❯\x1b[m ",
+            "\x1b[36m⠶⠀⡭⠲⠶\x1b[32m❯\x1b[m ",
+            "\x1b[36m⠶⠀⣬⠉⡱\x1b[32m❯\x1b[m ",
+            "\x1b[36m⠶⠀⣦⠙⠵\x1b[32m❯\x1b[m ",
+            "\x1b[36m⠶⠠⣊⠄⠴\x1b[32m❯\x1b[m ",
             ]
         period = 0.8
 
@@ -123,7 +123,9 @@ def edit(framerate=60.0):
 
                 if int((ind-indr)/framerate/period * 2) % 2 == 0:
                     input_text_ = list(input_text)
-                    input_text_[cursor_pos:cursor_pos+1] = ["█"]
+                    cursored_text = input_text_[cursor_pos] if cursor_pos < len(input_text_) else " "
+                    cursored_text = f"\x1b[7m{cursored_text}\x1b[m"
+                    input_text_[cursor_pos:cursor_pos+1] = [cursored_text]
                     input = "".join(input_text_)
                 else:
                     input = "".join(input_text)
@@ -152,7 +154,7 @@ default_keymap = {
     "\x1b": 'EXIT',
 }
 
-def explore(menu_tree, keymap=default_keymap, sep="❯ ", framerate=60.0):
+def explore(menu_tree, keymap=default_keymap, sep="\x1b[32m❯\x1b[m ", framerate=60.0):
     prompts = []
     result = None
 
@@ -186,14 +188,14 @@ def explore(menu_tree, keymap=default_keymap, sep="❯ ", framerate=60.0):
     def prompt_node():
         size_node = dn.terminal_size()
         headers = [ # game of life - Blocker
-            "⠶⠦⣚⠀⠶",
-            "⢎⣀⡛⠀⠶",
-            "⢖⣄⠻⠀⠶",
-            "⠖⠐⡩⠂⠶",
-            "⠶⠀⡭⠲⠶",
-            "⠶⠀⣬⠉⡱",
-            "⠶⠀⣦⠙⠵",
-            "⠶⠠⣊⠄⠴",
+            "\x1b[36m⠶⠦⣚⠀⠶\x1b[m",
+            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m",
+            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m",
+            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m",
+            "\x1b[36m⠶⠀⡭⠲⠶\x1b[m",
+            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m",
+            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m",
+            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m",
             ]
         period = 1/8
 
