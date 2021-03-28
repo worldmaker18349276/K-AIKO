@@ -438,19 +438,22 @@ class BeatmapSettings(metaclass=cfg.Configurable):
     spin_score: int = 16
 
     ## NoteSkin:
-    soft_approach_appearance:  Union[str, Tuple[str, str]] = "□"
-    soft_wrong_appearance:     Union[str, Tuple[str, str]] = "⬚"
+    soft_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[96m□\x1b[m"
+    soft_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[96m⬚\x1b[m"
     soft_sound: str = f"{BASE_DIR}/samples/soft.wav" # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
-    loud_approach_appearance:  Union[str, Tuple[str, str]] = "■"
-    loud_wrong_appearance:     Union[str, Tuple[str, str]] = "⬚"
+    loud_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[94m■\x1b[m"
+    loud_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[94m⬚\x1b[m"
     loud_sound: str = f"{BASE_DIR}/samples/loud.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
-    incr_approach_appearance:  Union[str, Tuple[str, str]] = "⬒"
-    incr_wrong_appearance:     Union[str, Tuple[str, str]] = "⬚"
+    incr_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[94m⬒\x1b[m"
+    incr_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[94m⬚\x1b[m"
     incr_sound: str = f"{BASE_DIR}/samples/incr.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
-    roll_rock_appearance:      Union[str, Tuple[str, str]] = "◎"
+    roll_rock_appearance:      Union[str, Tuple[str, str]] = "\x1b[96m◎\x1b[m"
     roll_rock_sound: str = f"{BASE_DIR}/samples/rock.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
-    spin_disk_appearances:     Union[List[str], List[Tuple[str, str]]] = ["◴", "◵", "◶", "◷"]
-    spin_finishing_appearance: Union[str, Tuple[str, str]] = "☺"
+    spin_disk_appearances:     Union[List[str], List[Tuple[str, str]]] = ["\x1b[94m◴\x1b[m",
+                                                                          "\x1b[94m◵\x1b[m",
+                                                                          "\x1b[94m◶\x1b[m",
+                                                                          "\x1b[94m◷\x1b[m"]
+    spin_finishing_appearance: Union[str, Tuple[str, str]] = "\x1b[94m☺\x1b[m"
     spin_finish_sustain_time: float = 0.1
     spin_disk_sound: str = f"{BASE_DIR}/samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
 
@@ -487,9 +490,9 @@ class GameplaySettings(metaclass=cfg.Configurable):
     tickrate: float = 60.0
 
     # PlayFieldSkin:
-    icon_templates: List[str] = ["{spectrum:^8s}"]
-    header_templates: List[str] = ["{score:05d}/{full_score:05d}"]
-    footer_templates: List[str] = ["{progress:>6.1%}|{time:%M:%S}"]
+    icon_templates: List[str] = ["\x1b[95m{spectrum:^8s}\x1b[m"]
+    header_templates: List[str] = ["\x1b[38;5;93m{score:05d}\x1b[1m/\x1b[21m{full_score:05d}\x1b[m"]
+    footer_templates: List[str] = ["\x1b[38;5;93m{progress:>6.1%}\x1b[1m|\x1b[21m{time:%M:%S}\x1b[m"]
 
     spec_width: int = 6
     spec_decay_time: float = 0.01

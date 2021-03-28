@@ -100,31 +100,40 @@ class BeatbarSettings(metaclass=cfg.Configurable):
     bar_shift: float = 0.1
     bar_flip: bool = False
 
+    header_quotes: Tuple[str, str] = ("\b\x1b[38;5;93;1m[\x1b[m", "\x1b[38;5;93;1m]\x1b[m")
+    footer_quotes: Tuple[str, str] = ("\b\x1b[38;5;93;1m[\x1b[m", "\x1b[38;5;93;1m]\x1b[m")
+
     # PerformanceSkin:
     performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
         PerformanceGrade.MISS               : (""   , ""     ),
 
-        PerformanceGrade.LATE_FAILED        : ("\b⟪", "\t\t⟫"),
-        PerformanceGrade.LATE_BAD           : ("\b⟨", "\t\t⟩"),
-        PerformanceGrade.LATE_GOOD          : ("\b‹", "\t\t›"),
+        PerformanceGrade.LATE_FAILED        : ("\b\x1b[95m⟪\x1b[m", "\t\t\x1b[95m⟫\x1b[m"),
+        PerformanceGrade.LATE_BAD           : ("\b\x1b[95m⟨\x1b[m", "\t\t\x1b[95m⟩\x1b[m"),
+        PerformanceGrade.LATE_GOOD          : ("\b\x1b[95m‹\x1b[m", "\t\t\x1b[95m›\x1b[m"),
         PerformanceGrade.PERFECT            : (""   , ""     ),
-        PerformanceGrade.EARLY_GOOD         : ("\t\t›", "\b‹"),
-        PerformanceGrade.EARLY_BAD          : ("\t\t⟩", "\b⟨"),
-        PerformanceGrade.EARLY_FAILED       : ("\t\t⟫", "\b⟪"),
+        PerformanceGrade.EARLY_GOOD         : ("\t\t\x1b[95m›\x1b[m", "\b\x1b[95m‹\x1b[m"),
+        PerformanceGrade.EARLY_BAD          : ("\t\t\x1b[95m⟩\x1b[m", "\b\x1b[95m⟨\x1b[m"),
+        PerformanceGrade.EARLY_FAILED       : ("\t\t\x1b[95m⟫\x1b[m", "\b\x1b[95m⟪\x1b[m"),
 
-        PerformanceGrade.LATE_FAILED_WRONG  : ("\b⟪", "\t\t⟫"),
-        PerformanceGrade.LATE_BAD_WRONG     : ("\b⟨", "\t\t⟩"),
-        PerformanceGrade.LATE_GOOD_WRONG    : ("\b‹", "\t\t›"),
+        PerformanceGrade.LATE_FAILED_WRONG  : ("\b\x1b[95m⟪\x1b[m", "\t\t\x1b[95m⟫\x1b[m"),
+        PerformanceGrade.LATE_BAD_WRONG     : ("\b\x1b[95m⟨\x1b[m", "\t\t\x1b[95m⟩\x1b[m"),
+        PerformanceGrade.LATE_GOOD_WRONG    : ("\b\x1b[95m‹\x1b[m", "\t\t\x1b[95m›\x1b[m"),
         PerformanceGrade.PERFECT_WRONG      : (""   , ""     ),
-        PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t›", "\b‹"),
-        PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t⟩", "\b⟨"),
-        PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t⟫", "\b⟪"),
+        PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t\x1b[95m›\x1b[m", "\b\x1b[95m‹\x1b[m"),
+        PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t\x1b[95m⟩\x1b[m", "\b\x1b[95m⟨\x1b[m"),
+        PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t\x1b[95m⟫\x1b[m", "\b\x1b[95m⟪\x1b[m"),
         }
 
     performance_sustain_time: float = 0.1
 
     # ScrollingBarSkin:
-    sight_appearances: Union[List[str], List[Tuple[str, str]]] = ["⛶", "🞎", "🞏", "🞐", "🞑", "🞒", "🞓"]
+    sight_appearances: Union[List[str], List[Tuple[str, str]]] = ["\x1b[95m⛶\x1b[m",
+                                                                  "\x1b[38;5;201m🞎\x1b[m",
+                                                                  "\x1b[38;5;200m🞏\x1b[m",
+                                                                  "\x1b[38;5;199m🞐\x1b[m",
+                                                                  "\x1b[38;5;198m🞑\x1b[m",
+                                                                  "\x1b[38;5;197m🞒\x1b[m",
+                                                                  "\x1b[38;5;196m🞓\x1b[m"]
     hit_decay_time: float = 0.4
     hit_sustain_time: float = 0.1
 
@@ -162,6 +171,8 @@ class Beatbar:
         footer_width = settings.footer_width
         bar_shift = settings.bar_shift
         bar_flip = settings.bar_flip
+        header_quotes = settings.header_quotes
+        footer_quotes = settings.footer_quotes
 
         icon_mask = slice(None, icon_width)
         header_mask = slice(icon_width+1, icon_width+1+header_width)
@@ -174,8 +185,8 @@ class Beatbar:
         current_footer = dn.TimedVariable(value=lambda time, ran: "")
 
         icon_drawer = clz._masked_node(current_icon, icon_mask)
-        header_drawer = clz._masked_node(current_header, header_mask, ("\b[", "]"))
-        footer_drawer = clz._masked_node(current_footer, footer_mask, ("\b[", "]"))
+        header_drawer = clz._masked_node(current_header, header_mask, header_quotes)
+        footer_drawer = clz._masked_node(current_footer, footer_mask, footer_quotes)
 
         # sight
         hit_decay_time = settings.hit_decay_time
