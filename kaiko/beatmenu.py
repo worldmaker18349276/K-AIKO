@@ -92,6 +92,9 @@ def edit(framerate=60.0):
             elif key == keymap["End"]:
                 cursor_pos = len(input_text)
 
+            elif key == keymap["Esc"]:
+                return
+
 
     input_knot = dn.input(input_handler())
 
@@ -99,32 +102,63 @@ def edit(framerate=60.0):
     def prompt_node():
         size_node = dn.terminal_size()
         headers = [ # game of life - Blocker
-            "\x1b[36m⠶⠦⣚⠀⠶\x1b[32m❯\x1b[m ",
-            "\x1b[36m⢎⣀⡛⠀⠶\x1b[32m❯\x1b[m ",
-            "\x1b[36m⢖⣄⠻⠀⠶\x1b[32m❯\x1b[m ",
-            "\x1b[36m⠖⠐⡩⠂⠶\x1b[32m❯\x1b[m ",
-            "\x1b[36m⠶⠀⡭⠲⠶\x1b[32m❯\x1b[m ",
-            "\x1b[36m⠶⠀⣬⠉⡱\x1b[32m❯\x1b[m ",
-            "\x1b[36m⠶⠀⣦⠙⠵\x1b[32m❯\x1b[m ",
-            "\x1b[36m⠶⠠⣊⠄⠴\x1b[32m❯\x1b[m ",
+            "\x1b[96;1m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;255m❯\x1b[m ",
+            "\x1b[96;1m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;255m❯\x1b[m ",
+            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;254m❯\x1b[m ",
+            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;254m❯\x1b[m ",
+            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;253m❯\x1b[m ",
+            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;253m❯\x1b[m ",
+            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;252m❯\x1b[m ",
+            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;252m❯\x1b[m ",
+
+            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;251m❯\x1b[m ",
+            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;251m❯\x1b[m ",
+            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;250m❯\x1b[m ",
+            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;250m❯\x1b[m ",
+            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;249m❯\x1b[m ",
+            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;249m❯\x1b[m ",
+            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;248m❯\x1b[m ",
+            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;248m❯\x1b[m ",
+
+            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;247m❯\x1b[m ",
+            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;247m❯\x1b[m ",
+            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;246m❯\x1b[m ",
+            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;246m❯\x1b[m ",
+            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;245m❯\x1b[m ",
+            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;245m❯\x1b[m ",
+            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;244m❯\x1b[m ",
+            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;244m❯\x1b[m ",
+
+            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;243m❯\x1b[m ",
+            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;243m❯\x1b[m ",
+            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;242m❯\x1b[m ",
+            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;242m❯\x1b[m ",
+            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;241m❯\x1b[m ",
+            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;241m❯\x1b[m ",
+            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;240m❯\x1b[m ",
+            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;240m❯\x1b[m ",
             ]
-        period = 0.8
+        period = 0.6
 
         with size_node:
             yield
-            ind = 0
-            indr = 0
+            t = 0
+            tr = 0
             while True:
                 if input_event.is_set():
                     input_event.clear()
-                    indr = ind
+                    tr = t // -1 * -1
 
-                header = headers[int(ind/framerate/period * len(headers)) % len(headers)]
+                ind = int(t / 4 * len(headers)) % len(headers)
+                header = headers[ind]
 
-                if int((ind-indr)/framerate/period * 2) % 2 == 0:
+                if t-tr < 0 or (t-tr) % 1 < 0.3:
                     input_text_ = list(input_text)
                     cursored_text = input_text_[cursor_pos] if cursor_pos < len(input_text_) else " "
-                    cursored_text = f"\x1b[7m{cursored_text}\x1b[m"
+                    if ind == 0 or ind == 1:
+                        cursored_text = f"\x1b[7;1m{cursored_text}\x1b[m"
+                    else:
+                        cursored_text = f"\x1b[7;2m{cursored_text}\x1b[m"
                     input_text_[cursor_pos:cursor_pos+1] = [cursored_text]
                     input = "".join(input_text_)
                 else:
@@ -139,7 +173,7 @@ def edit(framerate=60.0):
                 view = tui.newwin1(width)
                 tui.addtext1(view, width, 0, header + input)
                 yield "\r" + "".join(view) + "\r"
-                ind += 1
+                t += 1/framerate/period
 
     display_knot = dn.interval(prompt_node(), dn.show(hide_cursor=True), 1/framerate)
 
