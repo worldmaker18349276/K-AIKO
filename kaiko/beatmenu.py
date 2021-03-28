@@ -14,6 +14,137 @@ from .beatmap import BeatmapPlayer
 from .beatsheet import BeatmapDraft, BeatmapParseError
 from . import beatanalyzer
 
+
+def edit(framerate=60.0):
+    input_text = []
+    cursor_pos = 0
+    input_event = threading.Event()
+
+    keymap = {
+        "Backspace"        : "\x7f",
+        "Delete"           : "\x1b[3~",
+        "Left"             : "\x1b[D",
+        "Right"            : "\x1b[C",
+        "Home"             : "\x1b[H",
+        "End"              : "\x1b[F",
+        "Up"               : "\x1b[A",
+        "Down"             : "\x1b[B",
+        "PageUp"           : "\x1b[5~",
+        "PageDown"         : "\x1b[6~",
+        "Tab"              : "\t",
+        "Esc"              : "\x1b",
+        "Enter"            : "\n",
+        "Shift+Tab"        : "\x1b[Z",
+        "Ctrl+Backspace"   : "\x08",
+        "Ctrl+Delete"      : "\x1b[3;5~",
+        "Shift+Left"       : "\x1b[1;2D",
+        "Shift+Right"      : "\x1b[1;2C",
+        "Alt+Left"         : "\x1b[1;3D",
+        "Alt+Right"        : "\x1b[1;3C",
+        "Alt+Shift+Left"   : "\x1b[1;4D",
+        "Alt+Shift+Right"  : "\x1b[1;4C",
+        "Ctrl+Left"        : "\x1b[1;5D",
+        "Ctrl+Right"       : "\x1b[1;5C",
+        "Ctrl+Shift+Left"  : "\x1b[1;6D",
+        "Ctrl+Shift+Right" : "\x1b[1;6C",
+        "Alt+Ctrl+Left"    : "\x1b[1;7D",
+        "Alt+Ctrl+Right"   : "\x1b[1;7C",
+        "Alt+Ctrl+Shift+Left"  : "\x1b[1;8D",
+        "Alt+Ctrl+Shift+Right" : "\x1b[1;8C",
+    }
+
+    @dn.datanode
+    def input_handler():
+        nonlocal input_text, cursor_pos, input_event
+
+        while True:
+            _, key = yield
+            input_event.set()
+
+            if len(key) == 1 and key.isprintable():
+                input_text[cursor_pos:cursor_pos+1] = [key]
+                cursor_pos += 1
+
+            elif key == keymap["Backspace"]:
+                if cursor_pos == 0:
+                    continue
+                cursor_pos -= 1
+                del input_text[cursor_pos]
+
+            elif key == keymap["Delete"]:
+                if cursor_pos >= len(input_text):
+                    continue
+                del input_text[cursor_pos]
+
+            elif key == keymap["Left"]:
+                if cursor_pos == 0:
+                    continue
+                cursor_pos -= 1
+
+            elif key == keymap["Right"]:
+                if cursor_pos >= len(input_text):
+                    continue
+                cursor_pos += 1
+
+            elif key == keymap["Home"]:
+                cursor_pos = 0
+
+            elif key == keymap["End"]:
+                cursor_pos = len(input_text)
+
+
+    input_knot = dn.input(input_handler())
+
+    @dn.datanode
+    def prompt_node():
+        size_node = dn.terminal_size()
+        headers = [ # game of life - Blocker
+            "⠶⠦⣚⠀⠶❯ ",
+            "⢎⣀⡛⠀⠶❯ ",
+            "⢖⣄⠻⠀⠶❯ ",
+            "⠖⠐⡩⠂⠶❯ ",
+            "⠶⠀⡭⠲⠶❯ ",
+            "⠶⠀⣬⠉⡱❯ ",
+            "⠶⠀⣦⠙⠵❯ ",
+            "⠶⠠⣊⠄⠴❯ ",
+            ]
+        period = 0.8
+
+        with size_node:
+            yield
+            ind = 0
+            indr = 0
+            while True:
+                if input_event.is_set():
+                    input_event.clear()
+                    indr = ind
+
+                header = headers[int(ind/framerate/period * len(headers)) % len(headers)]
+
+                if int((ind-indr)/framerate/period * 2) % 2 == 0:
+                    input_text_ = list(input_text)
+                    input_text_[cursor_pos:cursor_pos+1] = ["█"]
+                    input = "".join(input_text_)
+                else:
+                    input = "".join(input_text)
+
+                try:
+                    size = size_node.send(None)
+                except StopIteration:
+                    return
+                width = size.columns
+
+                view = tui.newwin1(width)
+                tui.addtext1(view, width, 0, header + input)
+                yield "\r" + "".join(view) + "\r"
+                ind += 1
+
+    display_knot = dn.interval(prompt_node(), dn.show(hide_cursor=True), 1/framerate)
+
+    menu_knot = dn.pipe(input_knot, display_knot)
+    dn.exhaust(menu_knot, dt=0.01, interruptible=True)
+
+
 default_keymap = {
     "\x1b[B": 'NEXT',
     "\x1b[A": 'PREV',
