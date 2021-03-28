@@ -358,7 +358,7 @@ class Renderer:
         display_node = _node()
         if debug_timeit:
             display_node = dn.timeit(display_node, lambda msg: print("display: " + msg))
-        return dn.interval(display_node, dn.show(), 1/framerate)
+        return dn.interval(display_node, dn.show(hide_cursor=True), 1/framerate)
 
     @classmethod
     def create(clz, settings, ref_time=0.0):

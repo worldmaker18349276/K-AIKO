@@ -76,7 +76,7 @@ def explore(menu_tree, keymap=default_keymap, sep="❯ ", framerate=60.0):
                 yield "\r" + "".join(view) + "\r"
                 ind += 1
 
-    display_knot = dn.interval(prompt_node(), dn.show(), 1/framerate)
+    display_knot = dn.interval(prompt_node(), dn.show(hide_cursor=True), 1/framerate)
 
     menu_knot = dn.pipe(input_knot, display_knot)
     dn.exhaust(menu_knot, dt=0.01, interruptible=True)

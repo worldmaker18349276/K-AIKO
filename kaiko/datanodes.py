@@ -1282,18 +1282,22 @@ def input(node, stream=None):
         fcntl.fcntl(fd, fcntl.F_SETFL, old_flags)
 
 @datanode
-def show(stream=None):
+def show(stream=None, hide_cursor=False):
     import sys
 
     if stream is None:
         stream = sys.stdout
 
     try:
+        if hide_cursor and stream == sys.stdout:
+            stream.write("\x1b[?25l")
+
         while True:
             view = yield
             stream.write(view)
             stream.flush()
     finally:
+        stream.write("\x1b[?25h")
         stream.write("\n")
         stream.flush()
 
