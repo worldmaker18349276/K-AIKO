@@ -47,18 +47,34 @@ def explore(menu_tree, keymap=default_keymap, sep="❯ ", framerate=60.0):
     @dn.datanode
     def prompt_node():
         size_node = dn.terminal_size()
+        headers = [ # game of life - Blocker
+            "⠶⠦⣚⠀⠶",
+            "⢎⣀⡛⠀⠶",
+            "⢖⣄⠻⠀⠶",
+            "⠖⠐⡩⠂⠶",
+            "⠶⠀⡭⠲⠶",
+            "⠶⠀⣬⠉⡱",
+            "⠶⠀⣦⠙⠵",
+            "⠶⠠⣊⠄⠴",
+            ]
+        period = 1/8
 
         with size_node:
             yield
+            ind = 0
             while True:
+                header = headers[int(ind/framerate/period) % len(headers)] + sep
+
                 try:
                     size = size_node.send(None)
                 except StopIteration:
                     return
                 width = size.columns
+
                 view = tui.newwin1(width)
-                tui.addtext1(view, width, 0, sep+sep.join(prompts))
+                tui.addtext1(view, width, 0, header + sep.join(prompts))
                 yield "\r" + "".join(view) + "\r"
+                ind += 1
 
     display_knot = dn.interval(prompt_node(), dn.show(), 1/framerate)
 
