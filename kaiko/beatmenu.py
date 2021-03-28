@@ -15,88 +15,122 @@ from .beatsheet import BeatmapDraft, BeatmapParseError
 from . import beatanalyzer
 
 
-def edit(framerate=60.0):
-    input_text = []
-    cursor_pos = 0
-    input_event = threading.Event()
+default_keymap = {
+    "Backspace"        : "\x7f",
+    "Delete"           : "\x1b[3~",
+    "Left"             : "\x1b[D",
+    "Right"            : "\x1b[C",
+    "Home"             : "\x1b[H",
+    "End"              : "\x1b[F",
+    "Up"               : "\x1b[A",
+    "Down"             : "\x1b[B",
+    "PageUp"           : "\x1b[5~",
+    "PageDown"         : "\x1b[6~",
+    "Tab"              : "\t",
+    "Esc"              : "\x1b",
+    "Enter"            : "\n",
+    "Shift+Tab"        : "\x1b[Z",
+    "Ctrl+Backspace"   : "\x08",
+    "Ctrl+Delete"      : "\x1b[3;5~",
+    "Shift+Left"       : "\x1b[1;2D",
+    "Shift+Right"      : "\x1b[1;2C",
+    "Alt+Left"         : "\x1b[1;3D",
+    "Alt+Right"        : "\x1b[1;3C",
+    "Alt+Shift+Left"   : "\x1b[1;4D",
+    "Alt+Shift+Right"  : "\x1b[1;4C",
+    "Ctrl+Left"        : "\x1b[1;5D",
+    "Ctrl+Right"       : "\x1b[1;5C",
+    "Ctrl+Shift+Left"  : "\x1b[1;6D",
+    "Ctrl+Shift+Right" : "\x1b[1;6C",
+    "Alt+Ctrl+Left"    : "\x1b[1;7D",
+    "Alt+Ctrl+Right"   : "\x1b[1;7C",
+    "Alt+Ctrl+Shift+Left"  : "\x1b[1;8D",
+    "Alt+Ctrl+Shift+Right" : "\x1b[1;8C",
+}
 
-    keymap = {
-        "Backspace"        : "\x7f",
-        "Delete"           : "\x1b[3~",
-        "Left"             : "\x1b[D",
-        "Right"            : "\x1b[C",
-        "Home"             : "\x1b[H",
-        "End"              : "\x1b[F",
-        "Up"               : "\x1b[A",
-        "Down"             : "\x1b[B",
-        "PageUp"           : "\x1b[5~",
-        "PageDown"         : "\x1b[6~",
-        "Tab"              : "\t",
-        "Esc"              : "\x1b",
-        "Enter"            : "\n",
-        "Shift+Tab"        : "\x1b[Z",
-        "Ctrl+Backspace"   : "\x08",
-        "Ctrl+Delete"      : "\x1b[3;5~",
-        "Shift+Left"       : "\x1b[1;2D",
-        "Shift+Right"      : "\x1b[1;2C",
-        "Alt+Left"         : "\x1b[1;3D",
-        "Alt+Right"        : "\x1b[1;3C",
-        "Alt+Shift+Left"   : "\x1b[1;4D",
-        "Alt+Shift+Right"  : "\x1b[1;4C",
-        "Ctrl+Left"        : "\x1b[1;5D",
-        "Ctrl+Right"       : "\x1b[1;5C",
-        "Ctrl+Shift+Left"  : "\x1b[1;6D",
-        "Ctrl+Shift+Right" : "\x1b[1;6C",
-        "Alt+Ctrl+Left"    : "\x1b[1;7D",
-        "Alt+Ctrl+Right"   : "\x1b[1;7C",
-        "Alt+Ctrl+Shift+Left"  : "\x1b[1;8D",
-        "Alt+Ctrl+Shift+Right" : "\x1b[1;8C",
-    }
+class EditSegment:
+    def __init__(self, text=None, pos=0, suggestions=None):
+        self.text = text or []
+        self.pos = pos
+        self.suggestions = suggestions or []
+        self.hint = ""
+        self.event = threading.Event()
+        self.keymap = default_keymap
 
     @dn.datanode
-    def input_handler():
-        nonlocal input_text, cursor_pos, input_event
-
+    def input_handler(self):
         while True:
             _, key = yield
-            input_event.set()
+            self.event.set()
 
+            self.hint = ""
+
+            # suggestions
+            while key == self.keymap["Tab"]:
+                original_text = "".join(self.text)
+                for suggestion in self.suggestions:
+                    if suggestion.startswith(original_text):
+                        self.text = list(suggestion)
+                        self.pos = len(self.text)
+
+                        _, key = yield
+                        self.event.set()
+                        if key != self.keymap["Tab"]:
+                            break
+
+                else:
+                    self.text = list(original_text)
+                    self.pos = len(self.text)
+
+                    _, key = yield
+                    self.event.set()
+
+            # edit
             if len(key) == 1 and key.isprintable():
-                input_text[cursor_pos:cursor_pos] = [key]
-                cursor_pos += 1
+                self.text[self.pos:self.pos] = [key]
+                self.pos += 1
 
-            elif key == keymap["Backspace"]:
-                if cursor_pos == 0:
+                # hint
+                input_text = "".join(self.text)
+                for suggestion in self.suggestions:
+                    if suggestion.startswith(input_text):
+                        self.hint = suggestion
+                        break
+
+            elif key == self.keymap["Backspace"]:
+                if self.pos == 0:
                     continue
-                cursor_pos -= 1
-                del input_text[cursor_pos]
+                self.pos -= 1
+                del self.text[self.pos]
 
-            elif key == keymap["Delete"]:
-                if cursor_pos >= len(input_text):
+            elif key == self.keymap["Delete"]:
+                if self.pos >= len(self.text):
                     continue
-                del input_text[cursor_pos]
+                del self.text[self.pos]
 
-            elif key == keymap["Left"]:
-                if cursor_pos == 0:
+            elif key == self.keymap["Left"]:
+                if self.pos == 0:
                     continue
-                cursor_pos -= 1
+                self.pos -= 1
 
-            elif key == keymap["Right"]:
-                if cursor_pos >= len(input_text):
+            elif key == self.keymap["Right"]:
+                if self.pos >= len(self.text):
                     continue
-                cursor_pos += 1
+                self.pos += 1
 
-            elif key == keymap["Home"]:
-                cursor_pos = 0
+            elif key == self.keymap["Home"]:
+                self.pos = 0
 
-            elif key == keymap["End"]:
-                cursor_pos = len(input_text)
+            elif key == self.keymap["End"]:
+                self.pos = len(self.text)
 
-            elif key == keymap["Esc"]:
-                return
+            elif key == self.keymap["Esc"]:
+                self.text.clear()
 
 
-    input_knot = dn.input(input_handler())
+def edit(framerate=60.0, suggestions=[]):
+    seg = EditSegment(suggestions=["play", "settings", "exit"])
+    input_knot = dn.input(seg.input_handler())
 
     @dn.datanode
     def prompt_node():
@@ -145,24 +179,25 @@ def edit(framerate=60.0):
             t = 0
             tr = 0
             while True:
-                if input_event.is_set():
-                    input_event.clear()
+                if seg.event.is_set():
+                    seg.event.clear()
                     tr = t // -1 * -1
 
                 ind = int(t / 4 * len(headers)) % len(headers)
                 header = headers[ind]
 
                 if t-tr < 0 or (t-tr) % 1 < 0.3:
-                    input_text_ = list(input_text)
-                    cursored_text = input_text_[cursor_pos] if cursor_pos < len(input_text_) else " "
+                    text_ = list(seg.text)
+                    cursored_text = text_[seg.pos] if seg.pos < len(text_) else " "
                     if ind == 0 or ind == 1:
                         cursored_text = f"\x1b[7;1m{cursored_text}\x1b[m"
                     else:
                         cursored_text = f"\x1b[7;2m{cursored_text}\x1b[m"
-                    input_text_[cursor_pos:cursor_pos+1] = [cursored_text]
-                    input = "".join(input_text_)
+                    text_[seg.pos:seg.pos+1] = [cursored_text]
+                    input_text = "".join(text_)
+
                 else:
-                    input = "".join(input_text)
+                    input_text = "".join(seg.text)
 
                 try:
                     size = size_node.send(None)
@@ -171,7 +206,7 @@ def edit(framerate=60.0):
                 width = size.columns
 
                 view = tui.newwin1(width)
-                tui.addtext1(view, width, 0, header + input)
+                tui.addtext1(view, width, 0, header + input_text)
                 yield "\r" + "".join(view) + "\r"
                 t += 1/framerate/period
 
@@ -179,134 +214,6 @@ def edit(framerate=60.0):
 
     menu_knot = dn.pipe(input_knot, display_knot)
     dn.exhaust(menu_knot, dt=0.01, interruptible=True)
-
-
-default_keymap = {
-    "\x1b[B": 'NEXT',
-    "\x1b[A": 'PREV',
-    "\n": 'ENTER',
-    "\x1b": 'EXIT',
-}
-
-def explore(menu_tree, keymap=default_keymap, sep="\x1b[32m❯\x1b[m ", framerate=60.0):
-    prompts = []
-    result = None
-
-    @dn.datanode
-    def input_handler(menu_tree):
-        nonlocal prompts, result
-        try:
-            prompts = menu_tree.send(None)
-        except StopIteration:
-            return
-
-        while True:
-            _, key = yield
-            if key not in keymap:
-                continue
-
-            try:
-                res = menu_tree.send(keymap[key])
-            except StopIteration:
-                return
-
-            if isinstance(res, list):
-                prompts = res
-            else:
-                result = res
-                return
-
-    input_knot = dn.input(input_handler(menu_tree))
-
-    @dn.datanode
-    def prompt_node():
-        size_node = dn.terminal_size()
-        headers = [ # game of life - Blocker
-            "\x1b[36m⠶⠦⣚⠀⠶\x1b[m",
-            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m",
-            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m",
-            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m",
-            "\x1b[36m⠶⠀⡭⠲⠶\x1b[m",
-            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m",
-            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m",
-            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m",
-            ]
-        period = 1/8
-
-        with size_node:
-            yield
-            ind = 0
-            while True:
-                header = headers[int(ind/framerate/period) % len(headers)] + sep
-
-                try:
-                    size = size_node.send(None)
-                except StopIteration:
-                    return
-                width = size.columns
-
-                view = tui.newwin1(width)
-                tui.addtext1(view, width, 0, header + sep.join(prompts))
-                yield "\r" + "".join(view) + "\r"
-                ind += 1
-
-    display_knot = dn.interval(prompt_node(), dn.show(hide_cursor=True), 1/framerate)
-
-    menu_knot = dn.pipe(input_knot, display_knot)
-    dn.exhaust(menu_knot, dt=0.01, interruptible=True)
-    return result
-
-@dn.datanode
-def menu_tree(items):
-    index = 0
-    length = len(items)
-    if length == 0:
-        return
-
-    prompt, func = items[index]
-
-    action = yield
-
-    while True:
-        if action is None:
-            pass
-
-        elif action == 'NEXT':
-            index = min(index+1, length-1)
-
-        elif action == 'PREV':
-            index = max(index-1, 0)
-
-        elif action == 'ENTER':
-            if func is None:
-                # None -> no action
-                pass
-
-            elif hasattr(func, 'execute'):
-                # executable -> suspend to execute
-                action = yield func
-                continue
-
-            elif hasattr(func, '__call__'):
-                # datanode function -> forward action to submenu
-                with func() as node:
-                    action = None
-                    while True:
-                        try:
-                            res = node.send(action)
-                        except StopIteration:
-                            break
-                        res = res if hasattr(res, 'execute') else [prompt, *res]
-                        action = yield res
-
-            else:
-                raise ValueError(f"unknown function: {repr(func)}")
-
-        elif action == 'EXIT':
-            break
-
-        prompt, func = items[index]
-        action = yield [prompt]
 
 
 class KAIKOTheme(metaclass=cfg.Configurable):
