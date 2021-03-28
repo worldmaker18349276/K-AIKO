@@ -129,7 +129,7 @@ class EditSegment:
 
 
 def edit(framerate=60.0, suggestions=[]):
-    seg = EditSegment(suggestions=["play", "settings", "exit"])
+    seg = EditSegment(suggestions=["play", "say", "settings", "exit"])
     input_knot = dn.input(seg.input_handler())
 
     @dn.datanode
@@ -186,27 +186,37 @@ def edit(framerate=60.0, suggestions=[]):
                 ind = int(t / 4 * len(headers)) % len(headers)
                 header = headers[ind]
 
+                # cursor
                 if t-tr < 0 or (t-tr) % 1 < 0.3:
-                    text_ = list(seg.text)
-                    cursored_text = text_[seg.pos] if seg.pos < len(text_) else " "
+                    cursor_pos = seg.pos
                     if ind == 0 or ind == 1:
-                        cursored_text = f"\x1b[7;1m{cursored_text}\x1b[m"
+                        cursor_wrapper = "\x1b[7;1m", "\x1b[m"
                     else:
-                        cursored_text = f"\x1b[7;2m{cursored_text}\x1b[m"
-                    text_[seg.pos:seg.pos+1] = [cursored_text]
-                    input_text = "".join(text_)
-
+                        cursor_wrapper = "\x1b[7;2m", "\x1b[m"
                 else:
-                    input_text = "".join(seg.text)
+                    cursor_wrapper = None
 
+                # input
+                input_text = "".join(seg.text)
+                input_hint = "".join(f"\x1b[2m{ch}\x1b[m" for ch in seg.hint) if seg.hint else ""
+
+                # size
                 try:
                     size = size_node.send(None)
                 except StopIteration:
                     return
                 width = size.columns
 
+                # draw
                 view = tui.newwin1(width)
-                tui.addtext1(view, width, 0, header + input_text)
+                view, x = tui.addtext1(view, width, 0, header)
+                tui.addtext1(view, width, x, input_hint)
+                tui.addtext1(view, width, x, input_text)
+                if cursor_wrapper:
+                    _, cursor_x = tui.textrange1(x, input_text[:cursor_pos])
+                    cursor_ran = tui.select1(view, width, slice(cursor_x, cursor_x+1))
+                    view[cursor_ran.start] = view[cursor_ran.start].join(cursor_wrapper)
+
                 yield "\r" + "".join(view) + "\r"
                 t += 1/framerate/period
 
