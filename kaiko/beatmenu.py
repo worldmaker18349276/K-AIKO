@@ -1,11 +1,18 @@
 import os
 import time
 import contextlib
+from typing import Tuple
 import queue
 import threading
+import zipfile
+import psutil
+import appdirs
 from . import cfg
 from . import datanodes as dn
 from . import tui
+from .beatmap import BeatmapPlayer
+from .beatsheet import BeatmapDraft, BeatmapParseError
+from . import beatanalyzer
 
 default_keymap = {
     "\x1b[B": 'NEXT',
@@ -134,3 +141,100 @@ def menu_tree(items):
         prompt, func = items[index]
         action = yield [prompt]
 
+
+class KAIKOTheme(metaclass=cfg.Configurable):
+    data_icon: str = "\x1b[92m🗀\x1b[0m "
+    info_icon: str = "\x1b[94m🛠\x1b[0m "
+    hint_icon: str = "\x1b[93m💡\x1b[0m "
+
+    verb: Tuple[str, str] = ("\x1b[2m", "\x1b[0m")
+    emph: Tuple[str, str] = ("\x1b[1m", "\x1b[21m")
+    warn: Tuple[str, str] = ("\x1b[31m", "\x1b[0m")
+
+class BeatMenuUser:
+    def __init__(self, theme):
+        self.theme = theme
+        self.data_dir = None
+        self.songs_dir = None
+
+    def load(self):
+        emph = self.theme.emph
+        data_icon = self.theme.data_icon
+
+        self.data_dir = appdirs.user_data_dir("K-AIKO", psutil.Process().username())
+        self.songs_dir = os.path.join(self.data_dir, "songs")
+        if not os.path.isdir(self.data_dir):
+            # start up
+            print(f"{data_icon} preparing your profile...")
+            os.makedirs(self.data_dir, exist_ok=True)
+            os.makedirs(self.songs_dir, exist_ok=True)
+            print(f"{data_icon} your data will be stored in {('file://'+self.data_dir).join(emph)}")
+            print(flush=True)
+
+class BeatMenuGame:
+    def __init__(self, user):
+        self.user = user
+        self._beatmaps = []
+        self.songs_mtime = None
+
+    def reload(self):
+        info_icon = self.user.theme.info_icon
+        emph = self.user.theme.emph
+        songs_dir = self.user.songs_dir
+
+        print(f"{info_icon} Loading songs from {('file://'+songs_dir).join(emph)}...")
+
+        self._beatmaps = []
+
+        for root, dirs, files in os.walk(songs_dir):
+            for file in files:
+                if file.endswith(".osz"):
+                    filepath = os.path.join(root, file)
+                    distpath, _ = os.path.splitext(filepath)
+                    if os.path.isdir(distpath):
+                        continue
+                    print(f"{info_icon} Unzip file {('file://'+filepath).join(emph)}...")
+                    os.makedirs(distpath)
+                    zf = zipfile.ZipFile(filepath, 'r')
+                    zf.extractall(path=distpath)
+
+        for root, dirs, files in os.walk(songs_dir):
+            for file in files:
+                if file.endswith((".kaiko", ".ka", ".osu")):
+                    filepath = os.path.join(root, file)
+                    self._beatmaps.append(filepath)
+
+        if len(self._beatmaps) == 0:
+            print("{info_icon} There is no song in the folder yet!")
+        print(flush=True)
+
+        self.songs_mtime = os.stat(songs_dir).st_mtime
+
+    @property
+    def beatmaps(self):
+        if self.songs_mtime != os.stat(self.user.songs_dir).st_mtime:
+            self.reload()
+
+        return list(self._beatmaps)
+
+    def play(self, beatmap:str="<path to the beatmap>"):
+        return BeatMenuPlay(beatmap)
+
+class BeatMenuPlay:
+    def __init__(self, filepath):
+        self.filepath = filepath
+
+    @contextlib.contextmanager
+    def execute(self, manager):
+        try:
+            beatmap = BeatmapDraft.read(self.filepath)
+
+        except BeatmapParseError:
+            print(f"failed to read beatmap {self.filepath}")
+
+        else:
+            game = BeatmapPlayer(beatmap)
+            game.execute(manager)
+
+            print()
+            beatanalyzer.show_analyze(beatmap.settings.performance_tolerance, game.perfs)
