@@ -36,7 +36,7 @@ default_keymap = {
     "Alt+Ctrl+Shift+Right" : "\x1b[1;8C",
 }
 
-class EditSegment:
+class Beatstroke:
     def __init__(self, text=None, pos=0, suggestions=None):
         self.text = text or []
         self.pos = pos
@@ -124,15 +124,13 @@ class EditSegment:
             elif key == self.keymap["End"]:
                 self.pos = len(self.text)
 
-
-def prompt(framerate=60.0, suggestions=[]):
-    seg = EditSegment(suggestions=["play", "say", "settings", "exit"])
-    input_knot = dn.input(seg.input_handler())
-
-    @dn.datanode
-    def prompt_node():
-        size_node = dn.terminal_size()
-        headers = [ # game of life - Blocker
+class Beatline:
+    def __init__(self, seg, framerate, offset=0.0, tempo=130.0):
+        self.seg = seg
+        self.framerate = framerate
+        self.offset = offset
+        self.tempo = tempo
+        self.headers = [ # game of life - Blocker
             "\x1b[96;1m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;255m❯\x1b[m ",
             "\x1b[96;1m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;255m❯\x1b[m ",
             "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;254m❯\x1b[m ",
@@ -169,24 +167,26 @@ def prompt(framerate=60.0, suggestions=[]):
             "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;240m❯\x1b[m ",
             "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;240m❯\x1b[m ",
             ]
-        offset = 0.1
-        tempo = 130.0
+
+    @dn.datanode
+    def output_handler(self):
+        size_node = dn.terminal_size()
 
         with size_node:
             yield
-            t = offset/(60/tempo)
+            t = self.offset/(60/self.tempo)
             tr = 0
             while True:
-                if seg.event.is_set():
-                    seg.event.clear()
+                if self.seg.event.is_set():
+                    self.seg.event.clear()
                     tr = t // -1 * -1
 
-                ind = int(t / 4 * len(headers)) % len(headers)
-                header = headers[ind]
+                ind = int(t / 4 * len(self.headers)) % len(self.headers)
+                header = self.headers[ind]
 
                 # cursor
                 if t-tr < 0 or (t-tr) % 1 < 0.3:
-                    cursor_pos = seg.pos
+                    cursor_pos = self.seg.pos
                     if ind == 0 or ind == 1:
                         cursor_wrapper = "\x1b[7;1m", "\x1b[m"
                     else:
@@ -195,8 +195,8 @@ def prompt(framerate=60.0, suggestions=[]):
                     cursor_wrapper = None
 
                 # input
-                input_text = "".join(seg.text)
-                input_hint = "".join(f"\x1b[2m{ch}\x1b[m" for ch in seg.hint) if seg.hint else ""
+                input_text = "".join(self.seg.text)
+                input_hint = "".join(f"\x1b[2m{ch}\x1b[m" for ch in self.seg.hint) if self.seg.hint else ""
 
                 # size
                 try:
@@ -216,9 +216,13 @@ def prompt(framerate=60.0, suggestions=[]):
                     view[cursor_ran.start] = view[cursor_ran.start].join(cursor_wrapper)
 
                 yield "\r" + "".join(view) + "\r"
-                t += 1/framerate/(60/tempo)
+                t += 1/self.framerate/(60/self.tempo)
 
-    display_knot = dn.interval(prompt_node(), dn.show(hide_cursor=True), 1/framerate)
+def prompt(framerate=60.0, suggestions=[]):
+    seg = Beatstroke(suggestions=["play", "say", "settings", "exit"])
+    input_knot = dn.input(seg.input_handler())
+    prompt = Beatline(seg, framerate)
+    display_knot = dn.interval(prompt.output_handler(), dn.show(hide_cursor=True), 1/framerate)
 
     menu_knot = dn.pipe(input_knot, display_knot)
     dn.exhaust(menu_knot, dt=0.01, interruptible=True)
