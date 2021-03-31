@@ -174,6 +174,24 @@ def addpad1(view, width, x, pad, pad_width, xmask=slice(None,None)):
 
     return view, xs
 
+def select1(view, width, xmask=slice(None,None)):
+    if xmask.start is None and xmask.stop is None:
+        return view
+
+    xran = range(width)
+    xs = xran[xmask]
+
+    if xs:
+        x1 = xs.start
+        while view[x1] == "":
+            x1 -= 1
+
+        x2 = xs.stop
+        while x2 in xran and view[x2] == "":
+            x2 += 1
+
+    return range(x1, x2)
+
 def clear1(view, width, xmask=slice(None,None)):
     if xmask.start is None and xmask.stop is None:
         return view
