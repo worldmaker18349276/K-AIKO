@@ -55,20 +55,32 @@ class EditSegment:
 
             # suggestions
             while key == self.keymap["Tab"]:
-                original_text = "".join(self.text)
+                original_text = list(self.text)
+                original_pos = self.pos
+
+                search_text = "".join(self.text)
                 for suggestion in self.suggestions:
-                    if suggestion.startswith(original_text):
+                    if suggestion.startswith(search_text):
                         self.text = list(suggestion)
                         self.pos = len(self.text)
 
                         _, key = yield
                         self.event.set()
-                        if key != self.keymap["Tab"]:
+
+                        if key == self.keymap["Esc"]:
+                            self.text = original_text
+                            self.pos = original_pos
+
+                            _, key = yield
+                            self.event.set()
+                            break
+
+                        elif key != self.keymap["Tab"]:
                             break
 
                 else:
-                    self.text = list(original_text)
-                    self.pos = len(self.text)
+                    self.text = original_text
+                    self.pos = original_pos
 
                     _, key = yield
                     self.event.set()
@@ -79,9 +91,9 @@ class EditSegment:
                 self.pos += 1
 
                 # hint
-                input_text = "".join(self.text)
+                search_text = "".join(self.text)
                 for suggestion in self.suggestions:
-                    if suggestion.startswith(input_text):
+                    if suggestion.startswith(search_text):
                         self.hint = suggestion
                         break
 
@@ -111,9 +123,6 @@ class EditSegment:
 
             elif key == self.keymap["End"]:
                 self.pos = len(self.text)
-
-            elif key == self.keymap["Esc"]:
-                self.text.clear()
 
 
 def prompt(framerate=60.0, suggestions=[]):
@@ -160,11 +169,12 @@ def prompt(framerate=60.0, suggestions=[]):
             "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;240m❯\x1b[m ",
             "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;240m❯\x1b[m ",
             ]
-        period = 0.6
+        offset = 0.1
+        tempo = 130.0
 
         with size_node:
             yield
-            t = 0
+            t = offset/(60/tempo)
             tr = 0
             while True:
                 if seg.event.is_set():
@@ -206,7 +216,7 @@ def prompt(framerate=60.0, suggestions=[]):
                     view[cursor_ran.start] = view[cursor_ran.start].join(cursor_wrapper)
 
                 yield "\r" + "".join(view) + "\r"
-                t += 1/framerate/period
+                t += 1/framerate/(60/tempo)
 
     display_knot = dn.interval(prompt_node(), dn.show(hide_cursor=True), 1/framerate)
 
