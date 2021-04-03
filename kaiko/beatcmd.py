@@ -143,37 +143,66 @@ def shlexer_escape(token, type=None):
     else:
         raise ValueError
 
-def shlexer_complete(token, state, restore=False):
-    if state == SHLEXER_STATE.SPACED or state == SHLEXER_STATE.PLAIN:
-        return [*shlexer_escape(token), " "]
+def shlexer_complete(raw, index, completer):
+    state = SHLEXER_STATE.SPACED
+    parser = shlexer_parse(raw[:index], partial=True)
+    tokens = []
+    try:
+        while True:
+            token, index, masked = next(parser)
+            tokens.append(token)
+    except StopIteration as e:
+        state = e.value
+
+    is_appended = len(raw) == index
+
+    if state == SHLEXER_STATE.SPACED:
+        target = ""
+        for compreply in completer(tokens, target):
+            compreply = list(shlexer_escape(compreply))
+            yield [*compreply, " "]
+
+    elif state == SHLEXER_STATE.PLAIN:
+        target = tokens[-1]
+        tokens = tokens[:-1]
+        for compreply in completer(tokens, target):
+            compreply = list(shlexer_escape(compreply)) if compreply else []
+            yield [*compreply, " "]
 
     elif state == SHLEXER_STATE.BACKSLASHED:
-        raw = list(shlexer_escape(token, type="\\")) if len(token) > 0 else ["\b"]
-        if raw[0] == "\\":
-            raw.pop(0)
-        raw.append(" ")
-        if restore:
-            raw.append("\\")
-        return raw
+        target = tokens[-1]
+        tokens = tokens[:-1]
+        for compreply in completer(tokens, target):
+            compreply = list(shlexer_escape(compreply, type="\\")) if compreply else ["\b"]
+            if compreply.startswith("\\"):
+                compreply = compreply[1:]
+            if is_appended:
+                yield [*compreply, " "]
+            else:
+                yield [*compreply, " ", "\\"]
 
     elif state == SHLEXER_STATE.QUOTED:
-        raw = list(shlexer_escape(token, type="'"))
-        raw.pop(0)
-        raw.append(" ")
-        if restore:
-            raw.append("'")
-        return raw
+        target = tokens[-1]
+        tokens = tokens[:-1]
+        for compreply in completer(tokens, target):
+            compreply = list(shlexer_escape(compreply, type="'"))[1:]
+            if is_appended:
+                yield [*compreply, " "]
+            else:
+                yield [*compreply, " ", "'"]
 
     elif state == SHLEXER_STATE.DOUBLE_QUOTED:
-        raw = list(shlexer_escape(token, type='"'))
-        raw.pop(0)
-        raw.append(" ")
-        if restore:
-            raw.append('"')
-        return raw
+        target = tokens[-1]
+        tokens = tokens[:-1]
+        for compreply in completer(tokens, target):
+            compreply = list(shlexer_escape(compreply, type='"'))[1:]
+            if is_appended:
+                yield [*compreply, " "]
+            else:
+                yield [*compreply, " ", '"']
 
 
-def parse_path(root, partial=False):
+def explore_path(root, partial=False):
     curr = root
 
     while True:
@@ -196,24 +225,18 @@ def parse_path(root, partial=False):
 
         curr = curr.get(token)
 
-def complete_path(root, path, target):
+def complete_path(root, tokens, target):
     curr = root
-    for token in path:
-        if not isinstance(curr, dict):
-            break
-
-        if token in curr:
+    for token in tokens:
+        if token not in curr:
             break
 
         curr = curr.get(token)
 
-    else:
         if not isinstance(curr, dict):
-            return
+            break
 
-        if token in curr:
-            return
-
+    else:
         for key in curr.keys():
             if key.startswith(target):
                 yield key[len(target):]
@@ -253,17 +276,17 @@ default_keymap = {
 }
 
 class BeatText:
-    def __init__(self, command=None):
+    def __init__(self, command=dict()):
         self.buffer = []
         self.pos = 0
-        self.command = command or dict()
+        self.command = command
 
         self.tokens = []
         self.state = SHLEXER_STATE.SPACED
 
     def parse(self):
         lex_parser = shlexer_parse(self.buffer, partial=True)
-        cmd_parser = parse_path(self.command, partial=True)
+        cmd_parser = explore_path(self.command, partial=True)
         next(cmd_parser)
 
         self.tokens = []
@@ -276,6 +299,32 @@ class BeatText:
 
             cmd = cmd_parser.send(token)
             self.tokens.append((cmd, index, masked))
+
+    def complete(self):
+        path_completer = lambda tokens, target: complete_path(self.command, tokens, target)
+        lex_completer = shlexer_complete(self.buffer, self.pos, path_completer)
+
+        count = 0
+        original_buffer = list(self.buffer)
+        original_pos = self.pos
+
+        for compreply in lex_completer:
+            if compreply[0] == "\b":
+                self.buffer[self.pos-1:self.pos] = compreply[1:]
+                self.pos = self.pos-1 + len(compreply[1:])
+            else:
+                self.buffer[self.pos:self.pos] = compreply
+                self.pos = self.pos + len(compreply)
+            self.parse()
+
+            count += 1
+            yield
+
+            self.buffer = list(original_buffer)
+            self.pos = original_pos
+
+        else:
+            self.parse()
 
     def render(self, view, width, ran, cursor=None, escape=("\x1b[2m", "\x1b[m"),
                      word=("\x1b[4m", "\x1b[m"), warn=("\x1b[31m", "\x1b[m")):
@@ -328,11 +377,16 @@ class BeatText:
     def move_to_end(self):
         self.pos = len(self.buffer)
 
+class INPUT_STATE(Enum):
+    EDIT = "edit"
+    TAB = "complete"
+
 class BeatStroke:
     def __init__(self, text):
         self.text = text
         self.event = threading.Event()
         self.keymap = default_keymap
+        self.state = INPUT_STATE.EDIT
 
     @dn.datanode
     def input_handler(self):
@@ -342,36 +396,16 @@ class BeatStroke:
 
             # completions
             while key == self.keymap["Tab"]:
-                # original_text = list(self.text)
-                # search_text = "".join(self.text[:self.pos])
-                # is_end = self.pos == len(self.text)
-                # 
-                # for suggestion in self.suggestions:
-                #     if suggestion.startswith(search_text):
-                #         self.text = list(suggestion)
-                #         self.pos = len(self.text)
-                # 
-                #         _, key = yield
-                #         self.event.set()
-                # 
-                #         if key == self.keymap["Esc"]:
-                #             self.text = original_text
-                #             self.pos = original_pos
-                # 
-                #             _, key = yield
-                #             self.event.set()
-                #             break
-                # 
-                #         elif key != self.keymap["Tab"]:
-                #             break
-                # 
-                # else:
-                #     self.text = original_text
-                #     self.pos = original_pos
-                # 
-                #     _, key = yield
-                #     self.event.set()
-                _, key = yield
+                self.state = INPUT_STATE.TAB
+                for _ in self.text.complete():
+                    _, key = yield
+                    if key != self.keymap["Tab"]:
+                        self.state = INPUT_STATE.EDIT
+                        break
+                else:
+                    self.state = INPUT_STATE.EDIT
+                    _, key = yield
+
 
             # edit
             if len(key) == 1 and key.isprintable():
@@ -462,6 +496,9 @@ class BeatPrompt:
                         cursor = "\x1b[7;1m", "\x1b[m"
                     else:
                         cursor = "\x1b[7;2m", "\x1b[m"
+
+                    if self.stroke.state == INPUT_STATE.TAB:
+                        cursor = ("↹".join(cursor),)
                 else:
                     cursor = None
 
