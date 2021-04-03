@@ -184,13 +184,13 @@ def parse_path(root, partial=False):
 
         if not isinstance(curr, dict):
             if not partial:
-                raise ValueError("no more dict")
+                raise ValueError(f"no more dict: {dict}")
             curr = None
             continue
 
-        if token in curr:
+        if token not in curr:
             if not partial:
-                raise ValueError("no such field")
+                raise ValueError(f"no such field {token} in {curr}")
             curr = None
             continue
 
@@ -277,16 +277,22 @@ class BeatText:
             cmd = cmd_parser.send(token)
             self.tokens.append((cmd, index, masked))
 
-    def render(self, view, width, ran, cursor=None, escape=("\x1b[2m", "\x1b[m"), word=("\x1b[4m", "\x1b[m")):
+    def render(self, view, width, ran, cursor=None, escape=("\x1b[2m", "\x1b[m"),
+                     word=("\x1b[4m", "\x1b[m"), warn=("\x1b[31m", "\x1b[m")):
         pos = self.pos
         buffer = list(self.buffer)
         for cmd, slic, masked in self.tokens:
             if escape is not None:
                 for index in masked:
                     buffer[index] = buffer[index].join(escape)
+
             if word is not None:
                 for index in range(len(buffer))[slic]:
                     buffer[index] = buffer[index].join(word)
+
+            if warn is not None and cmd is None and slic.stop is not None:
+                for index in range(len(buffer))[slic]:
+                    buffer[index] = buffer[index].join(warn)
 
         input_text = "".join(buffer)
         tui.addtext1(view, width, ran.start, input_text, ran)
