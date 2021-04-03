@@ -181,12 +181,12 @@ def select1(view, width, xmask=slice(None,None)):
     xran = range(width)
     xs = xran[xmask]
 
+    x1 = xs.start
+    x2 = xs.stop
     if xs:
-        x1 = xs.start
         while view[x1] == "":
             x1 -= 1
 
-        x2 = xs.stop
         while x2 in xran and view[x2] == "":
             x2 += 1
 

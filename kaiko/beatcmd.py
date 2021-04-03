@@ -34,12 +34,6 @@ def shlexer_parse(raw, partial=False):
         token = []
         masked = []
         while True:
-            try:
-                index, char = next(raw)
-            except StopIteration:
-                yield "".join(token), slice(start, None), masked
-                return SHLEXER_STATE.PLAIN
-
             if char == SPACE:
                 # end parsing token
                 yield "".join(token), slice(start, index), masked
@@ -93,6 +87,12 @@ def shlexer_parse(raw, partial=False):
             else:
                 # otherwise, as it is
                 token.append(char)
+
+            try:
+                index, char = next(raw)
+            except StopIteration:
+                yield "".join(token), slice(start, None), masked
+                return SHLEXER_STATE.PLAIN
 
 def shlexer_escape(token, type=None):
     if type is None:
@@ -277,12 +277,21 @@ class BeatText:
             cmd = cmd_parser.send(token)
             self.tokens.append((cmd, index, masked))
 
-    def render(self, view, width, ran, cursor=None):
-        input_text = "".join(self.buffer)
+    def render(self, view, width, ran, cursor=None, escape=("\x1b[2m", "\x1b[m"), word=("\x1b[4m", "\x1b[m")):
+        pos = self.pos
+        buffer = list(self.buffer)
+        for cmd, slic, masked in self.tokens:
+            if escape is not None:
+                for index in masked:
+                    buffer[index] = buffer[index].join(escape)
+            if word is not None:
+                for index in range(len(buffer))[slic]:
+                    buffer[index] = buffer[index].join(word)
 
+        input_text = "".join(buffer)
         tui.addtext1(view, width, ran.start, input_text, ran)
         if cursor:
-            _, cursor_pos = tui.textrange1(ran.start, "".join(self.buffer[:self.pos]))
+            _, cursor_pos = tui.textrange1(ran.start, "".join(buffer[:pos]))
             cursor_ran = tui.select1(view, width, slice(cursor_pos, cursor_pos+1))
             view[cursor_ran.start] = view[cursor_ran.start].join(cursor)
 
