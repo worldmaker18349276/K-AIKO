@@ -1,63 +1,38 @@
 import wcwidth
 
 
-def parse(text):
+def parse_attr(text):
     text = iter(text)
-    attr_str = ""
-    attr_width = 0
 
-    try:
-        while True:
+    while True:
+        try:
+            ch = next(text)
+        except StopIteration:
+            return
+
+        if ch != "\x1b":
+            width = wcwidth.wcwidth(ch)
+            yield (ch, width)
+            continue
+
+        try:
             ch = next(text)
 
-            if ch == "\x1b":
-                attr_str += ch
+            if ch != "[":
+                raise ValueError
+            ch = next(text)
+
+            attrs = ""
+            while ch != "m":
+                if ch not in "0123456789;":
+                    raise ValueError
+                attrs += ch
                 ch = next(text)
 
-                if ch != "[":
-                    raise ValueError
-                attr_str += ch
-                ch = next(text)
+            yield (f"\x1b[{attrs}m", -1)
 
-                if ch == "m":
-                    attr_str += ch
-                    yield (attr_str, attr_width)
-                    attr_str = ""
-                    attr_width = 0
-                    continue
-
-                while True:
-                    if ch in "0123456789;":
-                        attr_str += ch
-                        ch = next(text)
-                    elif ch == "m":
-                        attr_str += ch
-                        break
-                    else:
-                        raise ValueError
-
-            elif ch in "\t\b\r\x00":
-                if attr_str:
-                    raise ValueError
-                yield (ch, -1)
-
-            else:
-                width = wcwidth.wcwidth(ch)
-                if width == -1:
-                    raise ValueError
-
-                elif attr_str:
-                    attr_str += ch
-                    attr_width += width
-
-                else:
-                    yield (ch, width)
-
-    except StopIteration:
-        if attr_str:
+        except StopIteration:
             raise ValueError
-        return
-
 
 def cover(*rans):
     start = min(ran.start for ran in rans)
@@ -73,8 +48,9 @@ def clamp(ran, ran_):
 def addtext1(view, width, x, text, xmask=slice(None,None)):
     xran = range(width)
     x0 = x
+    attrs = ""
 
-    for ch, width in parse(text):
+    for ch, width in parse_attr(text):
         if ch == "\t":
             x += 1
 
@@ -87,39 +63,50 @@ def addtext1(view, width, x, text, xmask=slice(None,None)):
         elif ch == "\x00":
             pass
 
+        elif ch[0] == "\x1b":
+            if ch == "\x1b[m":
+                attrs = ""
+            elif not attrs:
+                attrs = ch[2:-1]
+            else:
+                attrs = f"{attrs};{ch[2:-1]}"
+
         elif width == 0:
             x_ = x - 1
-            while x_ in xran and view[x_] == "":
+            if x_ in xran and view[x_] == "":
                 x_ -= 1
             if x_ in xran[xmask]:
                 view[x_] += ch
 
-        else:
-            x_ = x + width - 1
+        elif width == 1:
+            if x in xran[xmask]:
+                if x-1 in xran and view[x] == "":
+                    view[x-1] = " "
+                if x+1 in xran and view[x+1] == "":
+                    view[x+1] = " "
+                view[x] = ch if not attrs else f"\x1b[{attrs}m{ch}\x1b[m"
+            x += 1
+
+        elif width == 2:
+            x_ = x + 1
             if x in xran[xmask] and x_ in xran[xmask]:
-                x1 = x
-                if view[x1] == "":
-                    while view[x1] == "":
-                        view[x1] = " "
-                        x1 -= 1
-                    view[x1] = " "
+                if x-1 in xran and view[x] == "":
+                    view[x-1] = " "
+                if x_+1 in xran and view[x_+1] == "":
+                    view[x_+1] = " "
+                view[x] = ch if not attrs else f"\x1b[{attrs}m{ch}\x1b[m"
+                view[x_] = ""
+            x += 2
 
-                x2 = x_+1
-                while x2 in xran and view[x2] == "":
-                    view[x2] = " "
-                    x2 += 1
-
-                view[x] = ch
-                for dx in range(1, width):
-                    view[x+dx] = ""
-            x += width
+        else:
+            raise ValueError
 
     return view, x
 
 def textrange1(x, text):
     xstart = xstop = x0 = x
 
-    for ch, width in parse(text):
+    for ch, width in parse_attr(text):
         if ch == "\t":
             x += 1
 
@@ -130,6 +117,9 @@ def textrange1(x, text):
             x = x0
 
         elif ch == "\x00":
+            pass
+
+        elif ch[0] == "\x1b":
             pass
 
         elif width == 0:
@@ -157,18 +147,10 @@ def addpad1(view, width, x, pad, pad_width, xmask=slice(None,None)):
     xs = clamp(range(x, x+pad_width), xran[xmask])
 
     if xs:
-        x1 = xs.start
-        if view[x1] == "":
-            while view[x1] == "":
-                view[x1] = " "
-                x1 -= 1
-            view[x1] = " "
-
-        x2 = xs.stop
-        while x2 in xran and view[x2] == "":
-            view[x2] = " "
-            x2 += 1
-
+        if xs.start-1 in xran and view[xs.start] == "":
+            view[xs.start-1] = " "
+        if xs.stop in xran and view[xs.stop] == "":
+            view[xs.stop] = " "
         for x_ in xs:
             view[x_] = pad[x_-x]
 
@@ -193,27 +175,15 @@ def select1(view, width, xmask=slice(None,None)):
     return range(x1, x2)
 
 def clear1(view, width, xmask=slice(None,None)):
-    if xmask.start is None and xmask.stop is None:
-        return view
-
     xran = range(width)
     xs = xran[xmask]
 
-    if xs:
-        x1 = xs.start
-        if view[x1] == "":
-            while view[x1] == "":
-                view[x1] = " "
-                x1 -= 1
-            view[x1] = " "
-
-        x2 = xs.stop
-        while x2 in xran and view[x2] == "":
-            view[x2] = " "
-            x2 += 1
-
-        for x in xs:
-            view[x] = " "
+    if xs.start-1 in xran and view[xs.start] == "":
+        view[xs.start-1] = " "
+    if xs.stop in xran and view[xs.stop] == "":
+        view[xs.stop] = " "
+    for x in xs:
+        view[x] = " "
 
     return view
 
@@ -222,10 +192,9 @@ def addtext2(view, height, width, y, x, text, ymask=slice(None,None), xmask=slic
     yran = range(height)
     xran = range(width)
     x0 = x
+    attrs = ""
 
-    for ch in text:
-        width = wcwidth.wcwidth(ch)
-
+    for ch, width in parse_attr(text):
         if ch == "\t":
             x += 1
 
@@ -244,6 +213,14 @@ def addtext2(view, height, width, y, x, text, ymask=slice(None,None), xmask=slic
         elif ch == "\x00":
             pass
 
+        elif ch[0] == "\x1b":
+            if ch == "\x1b[m":
+                attrs = ""
+            elif not attrs:
+                attrs = ch[2:-1]
+            else:
+                attrs = f"{attrs};{ch[2:-1]}"
+
         elif width == 0:
             x_ = x - 1
             if y in yran and x_ in xran and view[y][x_] == "":
@@ -257,7 +234,7 @@ def addtext2(view, height, width, y, x, text, ymask=slice(None,None), xmask=slic
                     view[y][x-1] = " "
                 if x+1 in xran and view[y][x+1] == "":
                     view[y][x+1] = " "
-                view[y][x] = ch
+                view[y][x] = ch if not attrs else f"\x1b[{attrs}m{ch}\x1b[m"
             x += 1
 
         elif width == 2:
@@ -267,7 +244,7 @@ def addtext2(view, height, width, y, x, text, ymask=slice(None,None), xmask=slic
                     view[y][x-1] = " "
                 if x_+1 in xran and view[y][x_+1] == "":
                     view[y][x_+1] = " "
-                view[y][x] = ch
+                view[y][x] = ch if not attrs else f"\x1b[{attrs}m{ch}\x1b[m"
                 view[y][x_] = ""
             x += 2
 
@@ -280,9 +257,7 @@ def textrange2(y, x, text):
     ystart = ystop = y
     xstart = xstop = x0 = x
 
-    for ch in text:
-        width = wcwidth.wcwidth(ch)
-
+    for ch, width in parse_attr(text):
         if ch == "\t":
             x += 1
 
@@ -299,6 +274,9 @@ def textrange2(y, x, text):
             y -= 1
 
         elif ch == "\x00":
+            pass
+
+        elif ch[0] == "\x1b":
             pass
 
         elif width == 0:
