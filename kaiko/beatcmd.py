@@ -1,6 +1,222 @@
+from enum import Enum
 import threading
 from . import datanodes as dn
 from . import tui
+
+
+class SHLEXER_STATE(Enum):
+    SPACED = " "
+    PLAIN = "*"
+    BACKSLASHED = "\\"
+    QUOTED = "'"
+    DOUBLE_QUOTED = '"'
+
+def shlexer_parse(raw, partial=False):
+    SPACE = " "
+    BACKSLASH = "\\"
+    QUOTE = "'"
+    DOUBLE_QUOTE = '"'
+
+    raw = enumerate(raw)
+
+    while True:
+        try:
+            index, char = next(raw)
+        except StopIteration:
+            return SHLEXER_STATE.SPACED
+
+        # guard space
+        if char == SPACE:
+            continue
+
+        # parse token
+        start = index
+        token = []
+        masked = []
+        while True:
+            try:
+                index, char = next(raw)
+            except StopIteration:
+                yield "".join(token), slice(start, None), masked
+                return SHLEXER_STATE.PLAIN
+
+            if char == SPACE:
+                # end parsing token
+                yield "".join(token), slice(start, index), masked
+                break
+
+            elif char == BACKSLASH:
+                # escape next character
+                try:
+                    masked.append(index)
+                    index, char = next(raw)
+                    token.append(char)
+
+                except StopIteration:
+                    if not partial:
+                        raise ValueError("No escaped character")
+                    yield "".join(token), slice(start, None), masked
+                    return SHLEXER_STATE.BACKSLASHED
+
+            elif char == QUOTE:
+                # start escape string until next quote
+                try:
+                    masked.append(index)
+                    index, char = next(raw)
+                    while char != QUOTE:
+                        token.append(char)
+                        index, char = next(raw)
+                    masked.append(index)
+
+                except StopIteration:
+                    if not partial:
+                        raise ValueError("No closing quotation")
+                    yield "".join(token), slice(start, None), masked
+                    return SHLEXER_STATE.QUOTED
+
+            elif char == DOUBLE_QUOTE:
+                # start escape string until next double quote
+                try:
+                    masked.append(index)
+                    index, char = next(raw)
+                    while char != DOUBLE_QUOTE:
+                        token.append(char)
+                        index, char = next(raw)
+                    masked.append(index)
+
+                except StopIteration:
+                    if not partial:
+                        raise ValueError("No closing double quotation")
+                    yield "".join(token), slice(start, None), masked
+                    return SHLEXER_STATE.DOUBLE_QUOTED
+
+            else:
+                # otherwise, as it is
+                token.append(char)
+
+def shlexer_escape(token, type=None):
+    if type is None:
+        if len(token) == 0:
+            yield from shlexer_escape(token, "'")
+        elif " " not in token:
+            yield from shlexer_escape(token, "\\")
+        elif "'" not in token:
+            yield from shlexer_escape(token, "'")
+        else:
+            yield from shlexer_escape(token, '"')
+
+    elif type == "\\":
+        if len(token) == 0:
+            raise ValueError("Unable to escape empty string")
+
+        for ch in token:
+            if ch in (" ", "\\", "'", '"'):
+                yield "\\"
+                yield ch
+            else:
+                yield ch
+
+    elif type == "'":
+        yield "'"
+        for ch in token:
+            if ch == "'":
+                yield "'"
+                yield "\\"
+                yield ch
+                yield "'"
+            else:
+                yield ch
+        yield "'"
+
+    elif type == '"':
+        yield '"'
+        for ch in token:
+            if ch == '"':
+                yield '"'
+                yield "\\"
+                yield ch
+                yield '"'
+            else:
+                yield ch
+        yield '"'
+
+    else:
+        raise ValueError
+
+def shlexer_complete(token, state, restore=False):
+    if state == SHLEXER_STATE.SPACED or state == SHLEXER_STATE.PLAIN:
+        return [*shlexer_escape(token), " "]
+
+    elif state == SHLEXER_STATE.BACKSLASHED:
+        raw = list(shlexer_escape(token, type="\\")) if len(token) > 0 else ["\b"]
+        if raw[0] == "\\":
+            raw.pop(0)
+        raw.append(" ")
+        if restore:
+            raw.append("\\")
+        return raw
+
+    elif state == SHLEXER_STATE.QUOTED:
+        raw = list(shlexer_escape(token, type="'"))
+        raw.pop(0)
+        raw.append(" ")
+        if restore:
+            raw.append("'")
+        return raw
+
+    elif state == SHLEXER_STATE.DOUBLE_QUOTED:
+        raw = list(shlexer_escape(token, type='"'))
+        raw.pop(0)
+        raw.append(" ")
+        if restore:
+            raw.append('"')
+        return raw
+
+
+def parse_path(root, partial=False):
+    curr = root
+
+    while True:
+        token = yield curr
+
+        if curr is None:
+            continue
+
+        if not isinstance(curr, dict):
+            if not partial:
+                raise ValueError("no more dict")
+            curr = None
+            continue
+
+        if token in curr:
+            if not partial:
+                raise ValueError("no such field")
+            curr = None
+            continue
+
+        curr = curr.get(token)
+
+def complete_path(root, path, target):
+    curr = root
+    for token in path:
+        if not isinstance(curr, dict):
+            break
+
+        if token in curr:
+            break
+
+        curr = curr.get(token)
+
+    else:
+        if not isinstance(curr, dict):
+            return
+
+        if token in curr:
+            return
+
+        for key in curr.keys():
+            if key.startswith(target):
+                yield key[len(target):]
 
 
 default_keymap = {
@@ -36,12 +252,70 @@ default_keymap = {
     "Alt+Ctrl+Shift+Right" : "\x1b[1;8C",
 }
 
-class Beatstroke:
-    def __init__(self, text=None, pos=0, suggestions=None):
-        self.text = text or []
-        self.pos = pos
-        self.suggestions = suggestions or []
-        self.hint = ""
+class BeatText:
+    def __init__(self, command=None):
+        self.buffer = []
+        self.pos = 0
+        self.command = command or dict()
+
+        self.tokens = []
+        self.state = SHLEXER_STATE.SPACED
+
+    def parse(self):
+        lex_parser = shlexer_parse(self.buffer, partial=True)
+        cmd_parser = parse_path(self.command, partial=True)
+        next(cmd_parser)
+
+        self.tokens = []
+        while True:
+            try:
+                token, index, masked = next(lex_parser)
+            except StopIteration as e:
+                self.state = e.value
+                break
+
+            cmd = cmd_parser.send(token)
+            self.tokens.append((cmd, index, masked))
+
+    def render(self, view, width, ran, cursor=None):
+        input_text = "".join(self.buffer)
+
+        tui.addtext1(view, width, ran.start, input_text, ran)
+        if cursor:
+            _, cursor_pos = tui.textrange1(ran.start, "".join(self.buffer[:self.pos]))
+            cursor_ran = tui.select1(view, width, slice(cursor_pos, cursor_pos+1))
+            view[cursor_ran.start] = view[cursor_ran.start].join(cursor)
+
+    def input(self, ch):
+        self.buffer[self.pos:self.pos] = [ch]
+        self.pos += 1
+        self.parse()
+
+    def backspace(self):
+        if self.pos == 0:
+            return
+        self.pos -= 1
+        del self.buffer[self.pos]
+        self.parse()
+
+    def delete(self):
+        if self.pos >= len(self.buffer):
+            return
+        del self.buffer[self.pos]
+        self.parse()
+
+    def move(self, offset):
+        self.pos = min(max(0, self.pos+offset), len(self.buffer))
+
+    def move_to(self, pos):
+        self.pos = min(max(0, pos), len(self.buffer))
+
+    def move_to_end(self):
+        self.pos = len(self.buffer)
+
+class BeatStroke:
+    def __init__(self, text):
+        self.text = text
         self.event = threading.Event()
         self.keymap = default_keymap
 
@@ -51,82 +325,65 @@ class Beatstroke:
             _, key = yield
             self.event.set()
 
-            self.hint = ""
-
-            # suggestions
+            # completions
             while key == self.keymap["Tab"]:
-                original_text = list(self.text)
-                original_pos = self.pos
-
-                search_text = "".join(self.text)
-                for suggestion in self.suggestions:
-                    if suggestion.startswith(search_text):
-                        self.text = list(suggestion)
-                        self.pos = len(self.text)
-
-                        _, key = yield
-                        self.event.set()
-
-                        if key == self.keymap["Esc"]:
-                            self.text = original_text
-                            self.pos = original_pos
-
-                            _, key = yield
-                            self.event.set()
-                            break
-
-                        elif key != self.keymap["Tab"]:
-                            break
-
-                else:
-                    self.text = original_text
-                    self.pos = original_pos
-
-                    _, key = yield
-                    self.event.set()
+                # original_text = list(self.text)
+                # search_text = "".join(self.text[:self.pos])
+                # is_end = self.pos == len(self.text)
+                # 
+                # for suggestion in self.suggestions:
+                #     if suggestion.startswith(search_text):
+                #         self.text = list(suggestion)
+                #         self.pos = len(self.text)
+                # 
+                #         _, key = yield
+                #         self.event.set()
+                # 
+                #         if key == self.keymap["Esc"]:
+                #             self.text = original_text
+                #             self.pos = original_pos
+                # 
+                #             _, key = yield
+                #             self.event.set()
+                #             break
+                # 
+                #         elif key != self.keymap["Tab"]:
+                #             break
+                # 
+                # else:
+                #     self.text = original_text
+                #     self.pos = original_pos
+                # 
+                #     _, key = yield
+                #     self.event.set()
+                _, key = yield
 
             # edit
             if len(key) == 1 and key.isprintable():
-                self.text[self.pos:self.pos] = [key]
-                self.pos += 1
-
-                # hint
-                search_text = "".join(self.text)
-                for suggestion in self.suggestions:
-                    if suggestion.startswith(search_text):
-                        self.hint = suggestion
-                        break
+                self.text.input(key)
 
             elif key == self.keymap["Backspace"]:
-                if self.pos == 0:
-                    continue
-                self.pos -= 1
-                del self.text[self.pos]
+                self.text.backspace()
 
             elif key == self.keymap["Delete"]:
-                if self.pos >= len(self.text):
-                    continue
-                del self.text[self.pos]
+                self.text.delete()
 
             elif key == self.keymap["Left"]:
-                if self.pos == 0:
-                    continue
-                self.pos -= 1
+                self.text.move(-1)
 
             elif key == self.keymap["Right"]:
-                if self.pos >= len(self.text):
-                    continue
-                self.pos += 1
+                self.text.move(+1)
 
             elif key == self.keymap["Home"]:
-                self.pos = 0
+                self.text.move_to(0)
 
             elif key == self.keymap["End"]:
-                self.pos = len(self.text)
+                self.text.move_to_end()
 
-class Beatline:
-    def __init__(self, seg, framerate, offset=0.0, tempo=130.0):
-        self.seg = seg
+class BeatPrompt:
+    def __init__(self, stroke, text, framerate, offset=0.0, tempo=130.0):
+        self.stroke = stroke
+        self.text = text
         self.framerate = framerate
         self.offset = offset
         self.tempo = tempo
@@ -177,8 +434,8 @@ class Beatline:
             t = self.offset/(60/self.tempo)
             tr = 0
             while True:
-                if self.seg.event.is_set():
-                    self.seg.event.clear()
+                if self.stroke.event.is_set():
+                    self.stroke.event.clear()
                     tr = t // -1 * -1
 
                 ind = int(t / 4 * len(self.headers)) % len(self.headers)
@@ -186,17 +443,12 @@ class Beatline:
 
                 # cursor
                 if t-tr < 0 or (t-tr) % 1 < 0.3:
-                    cursor_pos = self.seg.pos
                     if ind == 0 or ind == 1:
-                        cursor_wrapper = "\x1b[7;1m", "\x1b[m"
+                        cursor = "\x1b[7;1m", "\x1b[m"
                     else:
-                        cursor_wrapper = "\x1b[7;2m", "\x1b[m"
+                        cursor = "\x1b[7;2m", "\x1b[m"
                 else:
-                    cursor_wrapper = None
-
-                # input
-                input_text = "".join(self.seg.text)
-                input_hint = "".join(f"\x1b[2m{ch}\x1b[m" for ch in self.seg.hint) if self.seg.hint else ""
+                    cursor = None
 
                 # size
                 try:
@@ -208,20 +460,35 @@ class Beatline:
                 # draw
                 view = tui.newwin1(width)
                 view, x = tui.addtext1(view, width, 0, header)
-                tui.addtext1(view, width, x, input_hint)
-                tui.addtext1(view, width, x, input_text)
-                if cursor_wrapper:
-                    _, cursor_x = tui.textrange1(x, input_text[:cursor_pos])
-                    cursor_ran = tui.select1(view, width, slice(cursor_x, cursor_x+1))
-                    view[cursor_ran.start] = view[cursor_ran.start].join(cursor_wrapper)
+                self.text.render(view, width, slice(x, None), cursor=cursor)
 
                 yield "\r" + "".join(view) + "\r"
                 t += 1/self.framerate/(60/self.tempo)
 
 def prompt(framerate=60.0, suggestions=[]):
-    seg = Beatstroke(suggestions=["play", "say", "settings", "exit"])
-    input_knot = dn.input(seg.input_handler())
-    prompt = Beatline(seg, framerate)
+    command = {
+        "play": {
+            "osu": True,
+            "kaiko": True,
+        },
+        "say": {
+            "hi": True,
+            "murmur": {
+                "sth": True,
+            }
+        },
+        "settings": {
+            "nothing": True,
+            "something": True,
+            "everything": True,
+        },
+        "exit": True,
+    }
+
+    text = BeatText(command=command)
+    stroke = BeatStroke(text=text)
+    input_knot = dn.input(stroke.input_handler())
+    prompt = BeatPrompt(stroke, text, framerate)
     display_knot = dn.interval(prompt.output_handler(), dn.show(hide_cursor=True), 1/framerate)
 
     menu_knot = dn.pipe(input_knot, display_knot)
