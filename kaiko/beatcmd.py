@@ -94,18 +94,24 @@ def shlexer_parse(raw, partial=False):
                 yield "".join(token), slice(start, None), masked
                 return SHLEXER_STATE.PLAIN
 
-def shlexer_escape(token, type=None):
-    if type is None:
-        if len(token) == 0:
-            yield from shlexer_escape(token, "'")
-        elif " " not in token:
-            yield from shlexer_escape(token, "\\")
-        elif "'" not in token:
-            yield from shlexer_escape(token, "'")
-        else:
-            yield from shlexer_escape(token, '"')
+class SHLEXER_ESCAPE(Enum):
+    MIX = "*"
+    BACKSLASH = "\\"
+    QUOTE = "'"
+    DOUBLE_QUOTE = '"'
 
-    elif type == "\\":
+def shlexer_escape(token, strategy=SHLEXER_ESCAPE.MIX):
+    if strategy == SHLEXER_ESCAPE.MIX:
+        if len(token) == 0:
+            yield from shlexer_escape(token, SHLEXER_ESCAPE.QUOTE)
+        elif " " not in token:
+            yield from shlexer_escape(token, SHLEXER_ESCAPE.BACKSLASH)
+        elif "'" not in token:
+            yield from shlexer_escape(token, SHLEXER_ESCAPE.QUOTE)
+        else:
+            yield from shlexer_escape(token, SHLEXER_ESCAPE.DOUBLE_QUOTE)
+
+    elif strategy == SHLEXER_ESCAPE.BACKSLASH:
         if len(token) == 0:
             raise ValueError("Unable to escape empty string")
 
@@ -116,7 +122,7 @@ def shlexer_escape(token, type=None):
             else:
                 yield ch
 
-    elif type == "'":
+    elif strategy == SHLEXER_ESCAPE.QUOTE:
         yield "'"
         for ch in token:
             if ch == "'":
@@ -128,7 +134,7 @@ def shlexer_escape(token, type=None):
                 yield ch
         yield "'"
 
-    elif type == '"':
+    elif strategy == SHLEXER_ESCAPE.DOUBLE_QUOTE:
         yield '"'
         for ch in token:
             if ch == '"':
@@ -149,7 +155,7 @@ def shlexer_complete(raw, index, completer):
     tokens = []
     try:
         while True:
-            token, index, masked = next(parser)
+            token, *_ = next(parser)
             tokens.append(token)
     except StopIteration as e:
         state = e.value
@@ -173,7 +179,7 @@ def shlexer_complete(raw, index, completer):
         target = tokens[-1]
         tokens = tokens[:-1]
         for compreply in completer(tokens, target):
-            compreply = list(shlexer_escape(compreply, type="\\")) if compreply else ["\b"]
+            compreply = list(shlexer_escape(compreply, SHLEXER_ESCAPE.BACKSLASH)) if compreply else ["\b"]
             if compreply.startswith("\\"):
                 compreply = compreply[1:]
             if is_appended:
@@ -185,7 +191,7 @@ def shlexer_complete(raw, index, completer):
         target = tokens[-1]
         tokens = tokens[:-1]
         for compreply in completer(tokens, target):
-            compreply = list(shlexer_escape(compreply, type="'"))[1:]
+            compreply = list(shlexer_escape(compreply, SHLEXER_ESCAPE.QUOTE))[1:]
             if is_appended:
                 yield [*compreply, " "]
             else:
@@ -195,7 +201,7 @@ def shlexer_complete(raw, index, completer):
         target = tokens[-1]
         tokens = tokens[:-1]
         for compreply in completer(tokens, target):
-            compreply = list(shlexer_escape(compreply, type='"'))[1:]
+            compreply = list(shlexer_escape(compreply, SHLEXER_ESCAPE.DOUBLE_QUOTE))[1:]
             if is_appended:
                 yield [*compreply, " "]
             else:
@@ -304,20 +310,19 @@ class BeatText:
         path_completer = lambda tokens, target: complete_path(self.command, tokens, target)
         lex_completer = shlexer_complete(self.buffer, self.pos, path_completer)
 
-        count = 0
         original_buffer = list(self.buffer)
         original_pos = self.pos
 
         for compreply in lex_completer:
-            if compreply[0] == "\b":
-                self.buffer[self.pos-1:self.pos] = compreply[1:]
-                self.pos = self.pos-1 + len(compreply[1:])
-            else:
-                self.buffer[self.pos:self.pos] = compreply
-                self.pos = self.pos + len(compreply)
+            while compreply[0] == "\b":
+                del compreply[0]
+                del self.buffer[self.pos-1]
+                self.pos = self.pos-1
+
+            self.buffer[self.pos:self.pos] = compreply
+            self.pos = self.pos + len(compreply)
             self.parse()
 
-            count += 1
             yield
 
             self.buffer = list(original_buffer)
@@ -326,29 +331,34 @@ class BeatText:
         else:
             self.parse()
 
-    def render(self, view, width, ran, cursor=None, escape=("\x1b[2m", "\x1b[m"),
-                     word=("\x1b[4m", "\x1b[m"), warn=("\x1b[31m", "\x1b[m")):
+    def render(self, view, width, ran, cursor=None):
+        escape = lambda s: f"\x1b[2m{s}\x1b[m"
+        warn = lambda s: f"\x1b[31m{s}\x1b[m"
+        whitespace = "\x1b[2m⌴\x1b[m"
+
         pos = self.pos
         buffer = list(self.buffer)
         for cmd, slic, masked in self.tokens:
-            if escape is not None:
-                for index in masked:
-                    buffer[index] = buffer[index].join(escape)
+            for index in masked:
+                buffer[index] = escape(buffer[index])
 
-            if word is not None:
+            for index in range(len(buffer))[slic]:
+                if buffer[index] == " ":
+                    buffer[index] = whitespace
+
+            if cmd is None and slic.stop is not None:
                 for index in range(len(buffer))[slic]:
-                    buffer[index] = buffer[index].join(word)
+                    buffer[index] = warn(buffer[index])
 
-            if warn is not None and cmd is None and slic.stop is not None:
-                for index in range(len(buffer))[slic]:
-                    buffer[index] = buffer[index].join(warn)
+        tui.addtext1(view, width, ran.start, "".join(buffer), ran)
 
-        input_text = "".join(buffer)
-        tui.addtext1(view, width, ran.start, input_text, ran)
         if cursor:
             _, cursor_pos = tui.textrange1(ran.start, "".join(buffer[:pos]))
             cursor_ran = tui.select1(view, width, slice(cursor_pos, cursor_pos+1))
-            view[cursor_ran.start] = view[cursor_ran.start].join(cursor)
+            if hasattr(cursor, '__call__'):
+                view[cursor_ran.start] = cursor(view[cursor_ran.start])
+            else:
+                tui.addtext1(view, width, cursor_ran.start, cursor)
 
     def input(self, ch):
         self.buffer[self.pos:self.pos] = [ch]
@@ -377,9 +387,10 @@ class BeatText:
     def move_to_end(self):
         self.pos = len(self.buffer)
 
+
 class INPUT_STATE(Enum):
     EDIT = "edit"
-    TAB = "complete"
+    TAB = "tab"
 
 class BeatStroke:
     def __init__(self, text):
@@ -406,7 +417,6 @@ class BeatStroke:
                     self.state = INPUT_STATE.EDIT
                     _, key = yield
 
-
             # edit
             if len(key) == 1 and key.isprintable():
                 self.text.input(key)
@@ -429,6 +439,45 @@ class BeatStroke:
             elif key == self.keymap["End"]:
                 self.text.move_to_end()
 
+
+BLOCKER_HEADERS = [
+    "\x1b[96;1m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;255m❯\x1b[m ",
+    "\x1b[96;1m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;255m❯\x1b[m ",
+    "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;254m❯\x1b[m ",
+    "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;254m❯\x1b[m ",
+    "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;253m❯\x1b[m ",
+    "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;253m❯\x1b[m ",
+    "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;252m❯\x1b[m ",
+    "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;252m❯\x1b[m ",
+
+    "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;251m❯\x1b[m ",
+    "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;251m❯\x1b[m ",
+    "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;250m❯\x1b[m ",
+    "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;250m❯\x1b[m ",
+    "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;249m❯\x1b[m ",
+    "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;249m❯\x1b[m ",
+    "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;248m❯\x1b[m ",
+    "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;248m❯\x1b[m ",
+
+    "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;247m❯\x1b[m ",
+    "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;247m❯\x1b[m ",
+    "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;246m❯\x1b[m ",
+    "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;246m❯\x1b[m ",
+    "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;245m❯\x1b[m ",
+    "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;245m❯\x1b[m ",
+    "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;244m❯\x1b[m ",
+    "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;244m❯\x1b[m ",
+
+    "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;243m❯\x1b[m ",
+    "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;243m❯\x1b[m ",
+    "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;242m❯\x1b[m ",
+    "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;242m❯\x1b[m ",
+    "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;241m❯\x1b[m ",
+    "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;241m❯\x1b[m ",
+    "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;240m❯\x1b[m ",
+    "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;240m❯\x1b[m ",
+]
+
 class BeatPrompt:
     def __init__(self, stroke, text, framerate, offset=0.0, tempo=130.0):
         self.stroke = stroke
@@ -436,43 +485,7 @@ class BeatPrompt:
         self.framerate = framerate
         self.offset = offset
         self.tempo = tempo
-        self.headers = [ # game of life - Blocker
-            "\x1b[96;1m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;255m❯\x1b[m ",
-            "\x1b[96;1m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;255m❯\x1b[m ",
-            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;254m❯\x1b[m ",
-            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;254m❯\x1b[m ",
-            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;253m❯\x1b[m ",
-            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;253m❯\x1b[m ",
-            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;252m❯\x1b[m ",
-            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;252m❯\x1b[m ",
-
-            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;251m❯\x1b[m ",
-            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;251m❯\x1b[m ",
-            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;250m❯\x1b[m ",
-            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;250m❯\x1b[m ",
-            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;249m❯\x1b[m ",
-            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;249m❯\x1b[m ",
-            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;248m❯\x1b[m ",
-            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;248m❯\x1b[m ",
-
-            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;247m❯\x1b[m ",
-            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;247m❯\x1b[m ",
-            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;246m❯\x1b[m ",
-            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;246m❯\x1b[m ",
-            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;245m❯\x1b[m ",
-            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;245m❯\x1b[m ",
-            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;244m❯\x1b[m ",
-            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;244m❯\x1b[m ",
-
-            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;243m❯\x1b[m ",
-            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;243m❯\x1b[m ",
-            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;242m❯\x1b[m ",
-            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;242m❯\x1b[m ",
-            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;241m❯\x1b[m ",
-            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;241m❯\x1b[m ",
-            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;240m❯\x1b[m ",
-            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;240m❯\x1b[m ",
-            ]
+        self.headers = BLOCKER_HEADERS
 
     @dn.datanode
     def output_handler(self):
@@ -493,12 +506,12 @@ class BeatPrompt:
                 # cursor
                 if t-tr < 0 or (t-tr) % 1 < 0.3:
                     if ind == 0 or ind == 1:
-                        cursor = "\x1b[7;1m", "\x1b[m"
+                        cursor = lambda s: f"\x1b[7;1m{s}\x1b[m"
                     else:
-                        cursor = "\x1b[7;2m", "\x1b[m"
+                        cursor = lambda s: f"\x1b[7;2m{s}\x1b[m"
 
                     if self.stroke.state == INPUT_STATE.TAB:
-                        cursor = ("↹".join(cursor),)
+                        cursor = cursor("↹ ")
                 else:
                     cursor = None
 
@@ -517,26 +530,8 @@ class BeatPrompt:
                 yield "\r" + "".join(view) + "\r"
                 t += 1/self.framerate/(60/self.tempo)
 
-def prompt(framerate=60.0, suggestions=[]):
-    command = {
-        "play": {
-            "osu": True,
-            "kaiko": True,
-        },
-        "say": {
-            "hi": True,
-            "murmur": {
-                "sth": True,
-            }
-        },
-        "settings": {
-            "nothing": True,
-            "something": True,
-            "everything": True,
-        },
-        "exit": True,
-    }
 
+def prompt(command, framerate=60.0):
     text = BeatText(command=command)
     stroke = BeatStroke(text=text)
     input_knot = dn.input(stroke.input_handler())
