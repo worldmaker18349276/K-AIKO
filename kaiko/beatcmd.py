@@ -287,6 +287,7 @@ class BeatText:
         self.pos = 0
         self.offset = 0
         self.command = command
+        self.suggestion = ""
 
         self.tokens = []
         self.state = SHLEXER_STATE.SPACED
@@ -308,6 +309,8 @@ class BeatText:
             self.tokens.append((cmd, index, masked))
 
     def complete(self):
+        self.suggestion = ""
+
         path_completer = lambda tokens, target: complete_path(self.command, tokens, target)
         lex_completer = shlexer_complete(self.buffer, self.pos, path_completer)
 
@@ -332,16 +335,24 @@ class BeatText:
         else:
             self.parse()
 
+    def suggest(self):
+        path_completer = lambda tokens, target: complete_path(self.command, tokens, target)
+        lex_completer = shlexer_complete(self.buffer, len(self.buffer), path_completer)
+        compreply = next(lex_completer, None)
+        if compreply is not None and compreply[0] != "\b":
+            self.suggestion = "".join(compreply)
+
     def render(self, view, width, ran, cursor=None):
-        escape = lambda s: f"\x1b[2m{s}\x1b[m"
-        warn = lambda s: f"\x1b[31m{s}\x1b[m"
+        render_escape = lambda s: f"\x1b[2m{s}\x1b[m"
+        render_warn = lambda s: f"\x1b[31m{s}\x1b[m"
+        render_suggestion = lambda s: f"\x1b[2m{s}\x1b[m"
         whitespace = "\x1b[2m⌴\x1b[m"
 
         pos = self.pos
         buffer = list(self.buffer)
         for cmd, slic, masked in self.tokens:
             for index in masked:
-                buffer[index] = escape(buffer[index])
+                buffer[index] = render_escape(buffer[index])
 
             for index in range(len(buffer))[slic]:
                 if buffer[index] == " ":
@@ -349,7 +360,7 @@ class BeatText:
 
             if cmd is None and slic.stop is not None:
                 for index in range(len(buffer))[slic]:
-                    buffer[index] = warn(buffer[index])
+                    buffer[index] = render_warn(buffer[index])
 
         _, text_length = tui.textrange1(0, "".join(buffer))
         _, cursor_pos = tui.textrange1(0, "".join(buffer[:pos]))
@@ -360,7 +371,11 @@ class BeatText:
             self.offset = cursor_pos - display_width + 1
         elif cursor_pos - self.offset < 0:
             self.offset = cursor_pos
-        tui.addtext1(view, width, ran.start-self.offset, "".join(buffer), ran)
+
+        rendered_text = "".join(buffer)
+        if self.suggestion:
+            rendered_text += render_suggestion(self.suggestion)
+        tui.addtext1(view, width, ran.start-self.offset, rendered_text, ran)
         if self.offset > 0:
             tui.addtext1(view, width, ran.start, "…", ran)
         if text_length-self.offset >= display_width:
@@ -378,6 +393,8 @@ class BeatText:
         self.buffer[self.pos:self.pos] = [ch]
         self.pos += 1
         self.parse()
+        if self.pos == len(self.buffer):
+            self.suggest()
 
     def backspace(self):
         if self.pos == 0:
@@ -385,31 +402,38 @@ class BeatText:
         self.pos -= 1
         del self.buffer[self.pos]
         self.parse()
+        self.suggestion = ""
 
     def delete(self):
         if self.pos >= len(self.buffer):
             return
         del self.buffer[self.pos]
         self.parse()
+        self.suggestion = ""
 
     def move(self, offset):
         self.pos = min(max(0, self.pos+offset), len(self.buffer))
+        self.suggestion = ""
 
     def move_to(self, pos):
         self.pos = min(max(0, pos), len(self.buffer))
+        self.suggestion = ""
 
     def move_to_end(self):
         self.pos = len(self.buffer)
+        self.suggestion = ""
 
     def move_to_token_start(self):
         width = len(self.buffer)
         grid = (slic.indices(width)[0] for _, slic, _ in self.tokens[::-1])
         self.pos = next((pos for pos in grid if pos < self.pos), 0)
+        self.suggestion = ""
 
     def move_to_token_end(self):
         width = len(self.buffer)
         grid = (slic.indices(width)[1] for _, slic, _ in self.tokens)
         self.pos = next((pos for pos in grid if pos > self.pos), width)
+        self.suggestion = ""
 
 
 class INPUT_STATE(Enum):
