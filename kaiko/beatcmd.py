@@ -285,6 +285,7 @@ class BeatText:
     def __init__(self, command=dict()):
         self.buffer = []
         self.pos = 0
+        self.offset = 0
         self.command = command
 
         self.tokens = []
@@ -350,11 +351,24 @@ class BeatText:
                 for index in range(len(buffer))[slic]:
                     buffer[index] = warn(buffer[index])
 
-        tui.addtext1(view, width, ran.start, "".join(buffer), ran)
+        _, text_length = tui.textrange1(0, "".join(buffer))
+        _, cursor_pos = tui.textrange1(0, "".join(buffer[:pos]))
+        display_width = len(range(width)[ran])
+        if text_length+1 <= display_width:
+            self.offset = 0
+        elif cursor_pos - self.offset >= display_width:
+            self.offset = cursor_pos - display_width + 1
+        elif cursor_pos - self.offset < 0:
+            self.offset = cursor_pos
+        tui.addtext1(view, width, ran.start-self.offset, "".join(buffer), ran)
+        if self.offset > 0:
+            tui.addtext1(view, width, ran.start, "…", ran)
+        if text_length-self.offset >= display_width:
+            tui.addtext1(view, width, ran.start+display_width-1, "…", ran)
 
         if cursor:
-            _, cursor_pos = tui.textrange1(ran.start, "".join(buffer[:pos]))
-            cursor_ran = tui.select1(view, width, slice(cursor_pos, cursor_pos+1))
+            cursor_x = ran.start - self.offset + cursor_pos
+            cursor_ran = tui.select1(view, width, slice(cursor_x, cursor_x+1))
             if hasattr(cursor, '__call__'):
                 view[cursor_ran.start] = cursor(view[cursor_ran.start])
             else:
