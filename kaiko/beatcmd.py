@@ -401,6 +401,16 @@ class BeatText:
     def move_to_end(self):
         self.pos = len(self.buffer)
 
+    def move_to_token_start(self):
+        width = len(self.buffer)
+        grid = (slic.indices(width)[0] for _, slic, _ in self.tokens[::-1])
+        self.pos = next((pos for pos in grid if pos < self.pos), 0)
+
+    def move_to_token_end(self):
+        width = len(self.buffer)
+        grid = (slic.indices(width)[1] for _, slic, _ in self.tokens)
+        self.pos = next((pos for pos in grid if pos > self.pos), width)
+
 
 class INPUT_STATE(Enum):
     EDIT = "edit"
@@ -446,6 +456,12 @@ class BeatStroke:
 
             elif key == self.keymap["Right"]:
                 self.text.move(+1)
+
+            elif key == self.keymap["Ctrl+Left"]:
+                self.text.move_to_token_start()
+
+            elif key == self.keymap["Ctrl+Right"]:
+                self.text.move_to_token_end()
 
             elif key == self.keymap["Home"]:
                 self.text.move_to(0)
