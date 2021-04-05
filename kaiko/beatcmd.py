@@ -155,7 +155,7 @@ def shlexer_complete(raw, index, completer):
     tokens = []
     try:
         while True:
-            token, *_ = next(parser)
+            token, _, _ = next(parser)
             tokens.append(token)
     except StopIteration as e:
         state = e.value
@@ -208,85 +208,71 @@ def shlexer_complete(raw, index, completer):
                 yield [*compreply, " ", '"']
 
 
-def explore_path(root, partial=False):
-    curr = root
+class PromptComplete(Exception):
+    pass
 
-    while True:
-        token = yield curr
+def promptable_get(promptable, tokens):
+    gen = promptable()
+    next(gen)
 
-        if curr is None:
-            continue
-
-        if not isinstance(curr, dict):
-            if not partial:
-                raise ValueError(f"no more dict: {dict}")
-            curr = None
-            continue
-
-        if token not in curr:
-            if not partial:
-                raise ValueError(f"no such field {token} in {curr}")
-            curr = None
-            continue
-
-        curr = curr.get(token)
-
-def complete_path(root, tokens, target):
-    curr = root
     for token in tokens:
-        if token not in curr:
-            break
+        gen.send(token)
 
-        curr = curr.get(token)
-
-        if not isinstance(curr, dict):
-            break
-
+    try:
+        gen.close()
+    except StopIteration as e:
+        return e.value
     else:
-        for key in curr.keys():
-            if key.startswith(target):
-                yield key[len(target):]
+        raise ValueError
+
+def promptable_completer(promptable):
+    def completer(tokens, target):
+        gen = promptable()
+        next(gen)
+
+        for token in tokens:
+            gen.send(token)
+
+        try:
+            gen.throw(PromptComplete(target))
+        except StopIteration as e:
+            return e.value
+        else:
+            raise ValueError
+
+    return completer
+
+def explore_dict(root):
+    curr = root
+
+    try:
+        while True:
+            token = yield curr
+            if curr is None:
+                pass
+            elif not isinstance(curr, dict):
+                curr = None
+            elif token not in curr:
+                curr = None
+            else:
+                curr = curr.get(token)
+
+    except PromptComplete as e:
+        if curr is not None:
+            target, = e.args
+            return [key[len(target):] for key in curr.keys() if key.startswith(target)]
+        else:
+            return []
+
+    except GeneratorExit:
+        return curr
 
 
-default_keymap = {
-    "Backspace"        : "\x7f",
-    "Delete"           : "\x1b[3~",
-    "Left"             : "\x1b[D",
-    "Right"            : "\x1b[C",
-    "Home"             : "\x1b[H",
-    "End"              : "\x1b[F",
-    "Up"               : "\x1b[A",
-    "Down"             : "\x1b[B",
-    "PageUp"           : "\x1b[5~",
-    "PageDown"         : "\x1b[6~",
-    "Tab"              : "\t",
-    "Esc"              : "\x1b",
-    "Enter"            : "\n",
-    "Shift+Tab"        : "\x1b[Z",
-    "Ctrl+Backspace"   : "\x08",
-    "Ctrl+Delete"      : "\x1b[3;5~",
-    "Shift+Left"       : "\x1b[1;2D",
-    "Shift+Right"      : "\x1b[1;2C",
-    "Alt+Left"         : "\x1b[1;3D",
-    "Alt+Right"        : "\x1b[1;3C",
-    "Alt+Shift+Left"   : "\x1b[1;4D",
-    "Alt+Shift+Right"  : "\x1b[1;4C",
-    "Ctrl+Left"        : "\x1b[1;5D",
-    "Ctrl+Right"       : "\x1b[1;5C",
-    "Ctrl+Shift+Left"  : "\x1b[1;6D",
-    "Ctrl+Shift+Right" : "\x1b[1;6C",
-    "Alt+Ctrl+Left"    : "\x1b[1;7D",
-    "Alt+Ctrl+Right"   : "\x1b[1;7C",
-    "Alt+Ctrl+Shift+Left"  : "\x1b[1;8D",
-    "Alt+Ctrl+Shift+Right" : "\x1b[1;8C",
-}
-
-class BeatText:
-    def __init__(self, command=dict()):
+class BeatInput:
+    def __init__(self, promptable):
         self.buffer = []
         self.pos = 0
-        self.offset = 0
-        self.command = command
+        self.promptable = promptable
         self.suggestion = ""
 
         self.tokens = []
@@ -294,8 +280,8 @@ class BeatText:
 
     def parse(self):
         lex_parser = shlexer_parse(self.buffer, partial=True)
-        cmd_parser = explore_path(self.command, partial=True)
-        next(cmd_parser)
+        promptable_gen = self.promptable()
+        next(promptable_gen)
 
         self.tokens = []
         while True:
@@ -305,14 +291,13 @@ class BeatText:
                 self.state = e.value
                 break
 
-            cmd = cmd_parser.send(token)
+            cmd = promptable_gen.send(token)
             self.tokens.append((cmd, index, masked))
 
     def complete(self):
         self.suggestion = ""
 
-        path_completer = lambda tokens, target: complete_path(self.command, tokens, target)
-        lex_completer = shlexer_complete(self.buffer, self.pos, path_completer)
+        lex_completer = shlexer_complete(self.buffer, self.pos, promptable_completer(self.promptable))
 
         original_buffer = list(self.buffer)
         original_pos = self.pos
@@ -336,58 +321,12 @@ class BeatText:
             self.parse()
 
     def suggest(self):
-        path_completer = lambda tokens, target: complete_path(self.command, tokens, target)
-        lex_completer = shlexer_complete(self.buffer, len(self.buffer), path_completer)
+        lex_completer = shlexer_complete(self.buffer, len(self.buffer), promptable_completer(self.promptable))
         compreply = next(lex_completer, None)
-        if compreply is not None and compreply[0] != "\b":
+        if compreply is None:
+            self.suggestion = ""
+        elif compreply[0] != "\b":
             self.suggestion = "".join(compreply)
-
-    def render(self, view, width, ran, cursor=None):
-        render_escape = lambda s: f"\x1b[2m{s}\x1b[m"
-        render_warn = lambda s: f"\x1b[31m{s}\x1b[m"
-        render_suggestion = lambda s: f"\x1b[2m{s}\x1b[m"
-        whitespace = "\x1b[2m⌴\x1b[m"
-
-        pos = self.pos
-        buffer = list(self.buffer)
-        for cmd, slic, masked in self.tokens:
-            for index in masked:
-                buffer[index] = render_escape(buffer[index])
-
-            for index in range(len(buffer))[slic]:
-                if buffer[index] == " ":
-                    buffer[index] = whitespace
-
-            if cmd is None and slic.stop is not None:
-                for index in range(len(buffer))[slic]:
-                    buffer[index] = render_warn(buffer[index])
-
-        _, text_length = tui.textrange1(0, "".join(buffer))
-        _, cursor_pos = tui.textrange1(0, "".join(buffer[:pos]))
-        display_width = len(range(width)[ran])
-        if text_length+1 <= display_width:
-            self.offset = 0
-        elif cursor_pos - self.offset >= display_width:
-            self.offset = cursor_pos - display_width + 1
-        elif cursor_pos - self.offset < 0:
-            self.offset = cursor_pos
-
-        rendered_text = "".join(buffer)
-        if self.suggestion:
-            rendered_text += render_suggestion(self.suggestion)
-        tui.addtext1(view, width, ran.start-self.offset, rendered_text, ran)
-        if self.offset > 0:
-            tui.addtext1(view, width, ran.start, "…", ran)
-        if text_length-self.offset >= display_width:
-            tui.addtext1(view, width, ran.start+display_width-1, "…", ran)
-
-        if cursor:
-            cursor_x = ran.start - self.offset + cursor_pos
-            cursor_ran = tui.select1(view, width, slice(cursor_x, cursor_x+1))
-            if hasattr(cursor, '__call__'):
-                view[cursor_ran.start] = cursor(view[cursor_ran.start])
-            else:
-                tui.addtext1(view, width, cursor_ran.start, cursor)
 
     def input(self, ch):
         self.buffer[self.pos:self.pos] = [ch]
@@ -436,13 +375,46 @@ class BeatText:
         self.suggestion = ""
 
 
+default_keymap = {
+    "Backspace"        : "\x7f",
+    "Delete"           : "\x1b[3~",
+    "Left"             : "\x1b[D",
+    "Right"            : "\x1b[C",
+    "Home"             : "\x1b[H",
+    "End"              : "\x1b[F",
+    "Up"               : "\x1b[A",
+    "Down"             : "\x1b[B",
+    "PageUp"           : "\x1b[5~",
+    "PageDown"         : "\x1b[6~",
+    "Tab"              : "\t",
+    "Esc"              : "\x1b",
+    "Enter"            : "\n",
+    "Shift+Tab"        : "\x1b[Z",
+    "Ctrl+Backspace"   : "\x08",
+    "Ctrl+Delete"      : "\x1b[3;5~",
+    "Shift+Left"       : "\x1b[1;2D",
+    "Shift+Right"      : "\x1b[1;2C",
+    "Alt+Left"         : "\x1b[1;3D",
+    "Alt+Right"        : "\x1b[1;3C",
+    "Alt+Shift+Left"   : "\x1b[1;4D",
+    "Alt+Shift+Right"  : "\x1b[1;4C",
+    "Ctrl+Left"        : "\x1b[1;5D",
+    "Ctrl+Right"       : "\x1b[1;5C",
+    "Ctrl+Shift+Left"  : "\x1b[1;6D",
+    "Ctrl+Shift+Right" : "\x1b[1;6C",
+    "Alt+Ctrl+Left"    : "\x1b[1;7D",
+    "Alt+Ctrl+Right"   : "\x1b[1;7C",
+    "Alt+Ctrl+Shift+Left"  : "\x1b[1;8D",
+    "Alt+Ctrl+Shift+Right" : "\x1b[1;8C",
+}
+
 class INPUT_STATE(Enum):
     EDIT = "edit"
     TAB = "tab"
 
 class BeatStroke:
-    def __init__(self, text):
-        self.text = text
+    def __init__(self, input):
+        self.input = input
         self.event = threading.Event()
         self.keymap = default_keymap
         self.state = INPUT_STATE.EDIT
@@ -456,7 +428,7 @@ class BeatStroke:
             # completions
             while key == self.keymap["Tab"]:
                 self.state = INPUT_STATE.TAB
-                for _ in self.text.complete():
+                for _ in self.input.complete():
                     _, key = yield
                     if key != self.keymap["Tab"]:
                         self.state = INPUT_STATE.EDIT
@@ -467,31 +439,31 @@ class BeatStroke:
 
             # edit
             if len(key) == 1 and key.isprintable():
-                self.text.input(key)
+                self.input.input(key)
 
             elif key == self.keymap["Backspace"]:
-                self.text.backspace()
+                self.input.backspace()
 
             elif key == self.keymap["Delete"]:
-                self.text.delete()
+                self.input.delete()
 
             elif key == self.keymap["Left"]:
-                self.text.move(-1)
+                self.input.move(-1)
 
             elif key == self.keymap["Right"]:
-                self.text.move(+1)
+                self.input.move(+1)
 
             elif key == self.keymap["Ctrl+Left"]:
-                self.text.move_to_token_start()
+                self.input.move_to_token_start()
 
             elif key == self.keymap["Ctrl+Right"]:
-                self.text.move_to_token_end()
+                self.input.move_to_token_end()
 
             elif key == self.keymap["Home"]:
-                self.text.move_to(0)
+                self.input.move_to(0)
 
             elif key == self.keymap["End"]:
-                self.text.move_to_end()
+                self.input.move_to_end()
 
 
 BLOCKER_HEADERS = [
@@ -531,68 +503,134 @@ BLOCKER_HEADERS = [
     "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;240m❯\x1b[m ",
     "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;240m❯\x1b[m ",
 ]
+BLOCKER_HEADER_WIDTH = 7
 
 class BeatPrompt:
-    def __init__(self, stroke, text, framerate, offset=0.0, tempo=130.0):
+    def __init__(self, stroke, input, framerate, t0=0.0, tempo=130.0):
         self.stroke = stroke
-        self.text = text
+        self.input = input
         self.framerate = framerate
-        self.offset = offset
+        self.t0 = t0
         self.tempo = tempo
         self.headers = BLOCKER_HEADERS
+        self.header_width = BLOCKER_HEADER_WIDTH
 
-    @dn.datanode
     def output_handler(self):
         size_node = dn.terminal_size()
+        header_node = self.header_node()
+        render_node = self.render_node()
+        draw_node = self.draw_node()
+        return dn.pipe((lambda _: (None,None,None)), dn.pair(header_node, render_node, size_node), draw_node)
 
-        with size_node:
-            yield
-            t = self.offset/(60/self.tempo)
-            tr = 0
-            while True:
-                if self.stroke.event.is_set():
-                    self.stroke.event.clear()
-                    tr = t // -1 * -1
+    @dn.datanode
+    def header_node(self):
+        yield
+        t = self.t0/(60/self.tempo)
+        tr = 0
+        while True:
+            if self.stroke.event.is_set():
+                self.stroke.event.clear()
+                tr = t // -1 * -1
 
-                ind = int(t / 4 * len(self.headers)) % len(self.headers)
-                header = self.headers[ind]
+            ind = int(t / 4 * len(self.headers)) % len(self.headers)
+            header = self.headers[ind]
 
-                # cursor
-                if t-tr < 0 or (t-tr) % 1 < 0.3:
-                    if ind == 0 or ind == 1:
-                        cursor = lambda s: f"\x1b[7;1m{s}\x1b[m"
-                    else:
-                        cursor = lambda s: f"\x1b[7;2m{s}\x1b[m"
-
-                    if self.stroke.state == INPUT_STATE.TAB:
-                        cursor = cursor("↹ ")
+            # cursor
+            if t-tr < 0 or (t-tr) % 1 < 0.3:
+                if ind == 0 or ind == 1:
+                    cursor = lambda s: f"\x1b[7;1m{s}\x1b[m"
                 else:
-                    cursor = None
+                    cursor = lambda s: f"\x1b[7;2m{s}\x1b[m"
 
-                # size
-                try:
-                    size = size_node.send(None)
-                except StopIteration:
-                    return
-                width = size.columns
+                if self.stroke.state == INPUT_STATE.TAB:
+                    cursor = cursor("↹ ")
+            else:
+                cursor = None
 
-                # draw
-                view = tui.newwin1(width)
-                view, x = tui.addtext1(view, width, 0, header)
-                self.text.render(view, width, slice(x, None), cursor=cursor)
+            yield header, cursor
+            t += 1/self.framerate/(60/self.tempo)
 
-                yield "\r" + "".join(view) + "\r"
-                t += 1/self.framerate/(60/self.tempo)
+    @dn.datanode
+    def render_node(self):
+        render_escape = lambda s: f"\x1b[2m{s}\x1b[m"
+        render_warn = lambda s: f"\x1b[31m{s}\x1b[m"
+        render_suggestion = lambda s: f"\x1b[2m{s}\x1b[m"
+        whitespace = "\x1b[2m⌴\x1b[m"
+
+        yield
+        while True:
+            # render buffer
+            rendered_buffer = list(self.input.buffer)
+            for cmd, slic, masked in self.input.tokens:
+                for index in masked:
+                    rendered_buffer[index] = render_escape(rendered_buffer[index])
+
+                for index in range(len(rendered_buffer))[slic]:
+                    if rendered_buffer[index] == " ":
+                        rendered_buffer[index] = whitespace
+
+                if cmd is None and slic.stop is not None:
+                    for index in range(len(rendered_buffer))[slic]:
+                        rendered_buffer[index] = render_warn(rendered_buffer[index])
+
+            rendered_text = "".join(rendered_buffer)
+            rendered_suggestion = render_suggestion(self.input.suggestion) if self.input.suggestion else ""
+            _, cursor_pos = tui.textrange1(0, "".join(rendered_buffer[:self.input.pos]))
+
+            yield rendered_text, rendered_suggestion, cursor_pos
+
+    @dn.datanode
+    def draw_node(self):
+        input_offset = 0
+
+        (header, cursor), (rendered_text, rendered_suggestion, cursor_pos), size = yield
+        while True:
+            width = size.columns
+
+            # draw header
+            view = tui.newwin1(width)
+            tui.addtext1(view, width, 0, header, slice(0, self.header_width))
+
+            # adjust input offset
+            input_ran = slice(self.header_width, None)
+            input_width = len(range(width)[input_ran])
+            _, text_length = tui.textrange1(0, rendered_text)
+
+            if text_length+1 <= input_width:
+                input_offset = 0
+            elif cursor_pos - input_offset >= input_width:
+                input_offset = cursor_pos - input_width + 1
+            elif cursor_pos - input_offset < 0:
+                input_offset = cursor_pos
+
+            # draw input
+            tui.addtext1(view, width, input_ran.start-input_offset,
+                         rendered_text+rendered_suggestion, input_ran)
+            if input_offset > 0:
+                tui.addtext1(view, width, input_ran.start, "…", input_ran)
+            if text_length-input_offset >= input_width:
+                tui.addtext1(view, width, input_ran.start+input_width-1, "…", input_ran)
+
+            # draw cursor
+            if cursor:
+                cursor_x = input_ran.start - input_offset + cursor_pos
+                cursor_ran = tui.select1(view, width, slice(cursor_x, cursor_x+1))
+                if hasattr(cursor, '__call__'):
+                    view[cursor_ran.start] = cursor(view[cursor_ran.start])
+                else:
+                    tui.addtext1(view, width, cursor_ran.start, cursor)
+
+            (header, cursor), (rendered_text, rendered_suggestion, cursor_pos), size = yield "\r" + "".join(view) + "\r"
 
 
-def prompt(command, framerate=60.0):
-    text = BeatText(command=command)
-    stroke = BeatStroke(text=text)
+def prompt(promptable, framerate=60.0):
+    input = BeatInput(promptable=promptable)
+    stroke = BeatStroke(input=input)
     input_knot = dn.input(stroke.input_handler())
-    prompt = BeatPrompt(stroke, text, framerate)
+    prompt = BeatPrompt(stroke, input, framerate)
     display_knot = dn.interval(prompt.output_handler(), dn.show(hide_cursor=True), 1/framerate)
 
-    menu_knot = dn.pipe(input_knot, display_knot)
-    dn.exhaust(menu_knot, dt=0.01, interruptible=True)
+    prompt_knot = dn.pipe(input_knot, display_knot)
+    dn.exhaust(prompt_knot, dt=0.01, interruptible=True)
 
 
