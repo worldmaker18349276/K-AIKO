@@ -211,23 +211,66 @@ def shlexer_complete(raw, index, completer):
 class PromptComplete(Exception):
     pass
 
-def promptable_get(promptable, tokens):
-    gen = promptable()
-    next(gen)
+class TOKEN_TYPE(Enum):
+    COMMAND = "command"
+    FUNCTION = "function"
+    ARGUMENT = "argument"
+    LITERAL = "literal"
 
-    for token in tokens:
-        gen.send(token)
+class Promptable:
+    def __init__(self, root):
+        self.root = root
 
-    try:
+    def _node(self):
+        curr = self.root
+
+        try:
+            while True:
+                token = yield TOKEN_TYPE.COMMAND
+                if curr is None:
+                    pass
+                elif not isinstance(curr, dict):
+                    curr = None
+                elif token not in curr:
+                    curr = None
+                else:
+                    curr = curr.get(token)
+
+        except PromptComplete as e:
+            if curr is not None:
+                target, = e.args
+                return [key[len(target):] for key in curr.keys() if key.startswith(target)]
+            else:
+                return []
+
+        except GeneratorExit:
+            return curr
+
+    def parse(self, tokens):
+        gen = self._node()
+        next(gen)
+
+        types = []
+        for token in tokens:
+            types.append(gen.send(token))
+
         gen.close()
-    except StopIteration as e:
-        return e.value
-    else:
-        raise ValueError
+        return types
 
-def promptable_completer(promptable):
-    def completer(tokens, target):
-        gen = promptable()
+    def explore(self, tokens):
+        gen = self._node()
+        next(gen)
+
+        for token in tokens:
+            gen.send(token)
+
+        return gen.close()
+
+    def complete(self, tokens, target):
+        if target == "":
+            return ""
+
+        gen = self._node()
         next(gen)
 
         for token in tokens:
@@ -239,33 +282,6 @@ def promptable_completer(promptable):
             return e.value
         else:
             raise ValueError
-
-    return completer
-
-def explore_dict(root):
-    curr = root
-
-    try:
-        while True:
-            token = yield curr
-            if curr is None:
-                pass
-            elif not isinstance(curr, dict):
-                curr = None
-            elif token not in curr:
-                curr = None
-            else:
-                curr = curr.get(token)
-
-    except PromptComplete as e:
-        if curr is not None:
-            target, = e.args
-            return [key[len(target):] for key in curr.keys() if key.startswith(target)]
-        else:
-            return []
-
-    except GeneratorExit:
-        return curr
 
 
 class BeatInput:
@@ -280,24 +296,24 @@ class BeatInput:
 
     def parse(self):
         lex_parser = shlexer_parse(self.buffer, partial=True)
-        promptable_gen = self.promptable()
-        next(promptable_gen)
 
-        self.tokens = []
+        tokens = []
         while True:
             try:
-                token, index, masked = next(lex_parser)
+                token, slic, masked = next(lex_parser)
             except StopIteration as e:
                 self.state = e.value
                 break
 
-            cmd = promptable_gen.send(token)
-            self.tokens.append((cmd, index, masked))
+            tokens.append((token, slic, masked))
+
+        types = self.promptable.parse(token for token, _, _ in tokens)
+        self.tokens = [(token, type, slic, masked) for (token, slic, masked), type in zip(tokens, types)]
 
     def complete(self):
         self.suggestion = ""
 
-        lex_completer = shlexer_complete(self.buffer, self.pos, promptable_completer(self.promptable))
+        lex_completer = shlexer_complete(self.buffer, self.pos, self.promptable.complete)
 
         original_buffer = list(self.buffer)
         original_pos = self.pos
@@ -321,7 +337,7 @@ class BeatInput:
             self.parse()
 
     def suggest(self):
-        lex_completer = shlexer_complete(self.buffer, len(self.buffer), promptable_completer(self.promptable))
+        lex_completer = shlexer_complete(self.buffer, len(self.buffer), self.promptable.complete)
         compreply = next(lex_completer, None)
         if compreply is None:
             self.suggestion = ""
@@ -364,13 +380,13 @@ class BeatInput:
 
     def move_to_token_start(self):
         width = len(self.buffer)
-        grid = (slic.indices(width)[0] for _, slic, _ in self.tokens[::-1])
+        grid = (slic.indices(width)[0] for _, _, slic, _ in self.tokens[::-1])
         self.pos = next((pos for pos in grid if pos < self.pos), 0)
         self.suggestion = ""
 
     def move_to_token_end(self):
         width = len(self.buffer)
-        grid = (slic.indices(width)[1] for _, slic, _ in self.tokens)
+        grid = (slic.indices(width)[1] for _, _, slic, _ in self.tokens)
         self.pos = next((pos for pos in grid if pos > self.pos), width)
         self.suggestion = ""
 
@@ -561,7 +577,7 @@ class BeatPrompt:
         while True:
             # render buffer
             rendered_buffer = list(self.input.buffer)
-            for cmd, slic, masked in self.input.tokens:
+            for token, type, slic, masked in self.input.tokens:
                 for index in masked:
                     rendered_buffer[index] = render_escape(rendered_buffer[index])
 
@@ -569,7 +585,7 @@ class BeatPrompt:
                     if rendered_buffer[index] == " ":
                         rendered_buffer[index] = whitespace
 
-                if cmd is None and slic.stop is not None:
+                if type is None and slic.stop is not None:
                     for index in range(len(rendered_buffer))[slic]:
                         rendered_buffer[index] = render_warn(rendered_buffer[index])
 
