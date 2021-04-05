@@ -1,5 +1,8 @@
 from enum import Enum
+import functools
+import re
 import threading
+import inspect
 from . import datanodes as dn
 from . import tui
 
@@ -180,7 +183,7 @@ def shlexer_complete(raw, index, completer):
         tokens = tokens[:-1]
         for compreply in completer(tokens, target):
             compreply = list(shlexer_escape(compreply, SHLEXER_ESCAPE.BACKSLASH)) if compreply else ["\b"]
-            if compreply.startswith("\\"):
+            if compreply[0] == "\\":
                 compreply = compreply[1:]
             if is_appended:
                 yield [*compreply, " "]
@@ -208,7 +211,10 @@ def shlexer_complete(raw, index, completer):
                 yield [*compreply, " ", '"']
 
 
-class PromptComplete(Exception):
+class PromptUnfinished(Exception):
+    pass
+
+class PromptParseError(Exception):
     pass
 
 class TOKEN_TYPE(Enum):
@@ -224,27 +230,128 @@ class Promptable:
     def _node(self):
         curr = self.root
 
-        try:
-            while True:
+        # parse command
+        while isinstance(curr, dict):
+            try:
                 token = yield TOKEN_TYPE.COMMAND
-                if curr is None:
-                    pass
-                elif not isinstance(curr, dict):
-                    curr = None
-                elif token not in curr:
-                    curr = None
-                else:
-                    curr = curr.get(token)
+            except GeneratorExit:
+                raise PromptUnfinished(curr)
 
-        except PromptComplete as e:
-            if curr is not None:
-                target, = e.args
-                return [key[len(target):] for key in curr.keys() if key.startswith(target)]
+            if token is None:
+                return list(curr.keys())
+
+            elif token not in curr:
+                raise PromptParseError
+
             else:
-                return []
+                curr = curr.get(token)
 
+        # parse signature: (a, b, c, d=1, e=2)
+        if not hasattr(curr, '__call__'):
+            raise PromptParseError
+
+        sig = inspect.signature(curr)
+        args = list()
+        kwargs = dict()
+        for param in sig.parameters.values():
+            if param.default is param.empty:
+                args.append(param)
+            else:
+                kwargs["--" + param.name] = param
+
+        try:
+            token = yield TOKEN_TYPE.FUNCTION
         except GeneratorExit:
-            return curr
+            if args:
+                raise PromptUnfinished(curr)
+            else:
+                return curr
+
+        while True:
+            # parse argument name
+            if args:
+                param = args.pop(0)
+
+            elif kwargs:
+                if token is None:
+                    return list(kwargs.keys())
+                elif token not in kwargs:
+                    raise PromptParseError
+                else:
+                    param = kwargs[token]
+                    del kwargs[token]
+
+                    try:
+                        token = yield TOKEN_TYPE.ARGUMENT
+                    except GeneratorExit:
+                        raise PromptUnfinished(curr)
+
+            else:
+                raise PromptParseError
+
+            # parse argument value
+            ann = param.annotation
+
+            if isinstance(ann, tuple):
+                if token is None:
+                    return list(ann)
+                elif token not in ann:
+                    raise PromptParseError
+                else:
+                    curr = functools.partial(curr, token)
+
+            elif ann == bool:
+                if token is None:
+                    if param.default is param.empty:
+                        return ["True", "False"]
+                    else:
+                        return [str(param.default), str(not param.default)]
+                elif token not in ["True", "False"]:
+                    raise PromptParseError
+                else:
+                    curr = functools.partial(curr, bool(token))
+
+            elif ann == int:
+                if token is None:
+                    if param.default is param.empty:
+                        return []
+                    else:
+                        return [str(param.default)]
+                elif not re.fullmatch(r"[-+]?(0|[1-9][0-9]*)", token):
+                    raise PromptParseError
+                else:
+                    curr = functools.partial(curr, int(token))
+
+            elif ann == float:
+                if token is None:
+                    if param.default is param.empty:
+                        return []
+                    else:
+                        return [str(param.default)]
+                elif not re.fullmatch(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)", token):
+                    raise PromptParseError
+                else:
+                    curr = functools.partial(curr, float(token))
+
+            elif ann == str:
+                if token is None:
+                    if param.default is param.empty:
+                        return []
+                    else:
+                        return [param.default]
+                else:
+                    curr = functools.partial(curr, token)
+
+            else:
+                raise ValueError(f"Unable to parse parameter: {param}")
+
+            try:
+                token = yield TOKEN_TYPE.LITERAL
+            except GeneratorExit:
+                if args:
+                    raise PromptUnfinished(curr)
+                else:
+                    return curr
 
     def parse(self, tokens):
         gen = self._node()
@@ -252,9 +359,21 @@ class Promptable:
 
         types = []
         for token in tokens:
-            types.append(gen.send(token))
+            try:
+                res = gen.send(token) if gen is not None else None
+            except PromptParseError:
+                gen = None
+                res = None
+            types.append(res)
 
-        gen.close()
+        if gen is not None:
+            try:
+                gen.close()
+            except PromptParseError:
+                pass
+            except PromptUnfinished:
+                pass
+
         return types
 
     def explore(self, tokens):
@@ -267,21 +386,29 @@ class Promptable:
         return gen.close()
 
     def complete(self, tokens, target):
-        if target == "":
-            return ""
-
         gen = self._node()
         next(gen)
 
         for token in tokens:
-            gen.send(token)
+            try:
+                if gen is not None:
+                    gen.send(token)
+            except PromptParseError:
+                gen = None
 
-        try:
-            gen.throw(PromptComplete(target))
-        except StopIteration as e:
-            return e.value
+        if gen is not None:
+            try:
+                gen.send(None)
+            except PromptParseError:
+                return []
+            except StopIteration as e:
+                compreplies = e.value
+                return [compreply[len(target):] for compreply in compreplies if compreply.startswith(target)]
+            else:
+                raise ValueError
+
         else:
-            raise ValueError
+            return []
 
 
 class BeatInput:
@@ -573,6 +700,11 @@ class BeatPrompt:
         render_suggestion = lambda s: f"\x1b[2m{s}\x1b[m"
         whitespace = "\x1b[2m⌴\x1b[m"
 
+        render_command = lambda s: f"\x1b[94m{s}\x1b[m"
+        render_function = lambda s: f"\x1b[94m{s}\x1b[m"
+        render_argument = lambda s: f"\x1b[95m{s}\x1b[m"
+        render_literal = lambda s: f"\x1b[92m{s}\x1b[m"
+
         yield
         while True:
             # render buffer
@@ -588,6 +720,22 @@ class BeatPrompt:
                 if type is None and slic.stop is not None:
                     for index in range(len(rendered_buffer))[slic]:
                         rendered_buffer[index] = render_warn(rendered_buffer[index])
+
+                if type is TOKEN_TYPE.COMMAND:
+                    for index in range(len(rendered_buffer))[slic]:
+                        rendered_buffer[index] = render_command(rendered_buffer[index])
+
+                elif type is TOKEN_TYPE.FUNCTION:
+                    for index in range(len(rendered_buffer))[slic]:
+                        rendered_buffer[index] = render_function(rendered_buffer[index])
+
+                elif type is TOKEN_TYPE.ARGUMENT:
+                    for index in range(len(rendered_buffer))[slic]:
+                        rendered_buffer[index] = render_argument(rendered_buffer[index])
+
+                elif type is TOKEN_TYPE.LITERAL:
+                    for index in range(len(rendered_buffer))[slic]:
+                        rendered_buffer[index] = render_literal(rendered_buffer[index])
 
             rendered_text = "".join(rendered_buffer)
             rendered_suggestion = render_suggestion(self.input.suggestion) if self.input.suggestion else ""
