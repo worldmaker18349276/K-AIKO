@@ -277,7 +277,7 @@ class Promptable:
                 return list(curr.keys())
 
             elif token not in curr:
-                raise PromptParseError(index, f"Invalid command, it should be followed by: {list(curr.keys())}")
+                raise PromptParseError(index, f"Invalid command, it should be one of: {list(curr.keys())}")
 
             else:
                 curr = curr.get(token)
@@ -511,10 +511,10 @@ class BeatInput:
             return self.promptable.execute(token for token, _, _, _ in self.tokens)
         except PromptUnfinished as e:
             slic = slice(len(self.buffer)-1, len(self.buffer))
-            self.info = slic, f"\x1b[31m{e.info}\x1b[m"
+            self.info = slic, tui.add_attr(e.info, "31")
         except PromptParseError as e:
             _, _, slic, _ = self.tokens[e.index]
-            self.info = slic, f"\x1b[31m{e.info}\x1b[m"
+            self.info = slic, tui.add_attr(e.info, "31")
 
     def suggest(self):
         lex_completer = shlexer_complete(self.buffer, len(self.buffer), self.promptable.complete)
@@ -815,9 +815,9 @@ class BeatPrompt:
             # cursor
             if t-tr < 0 or (t-tr) % 1 < 0.3:
                 if ind == 0 or ind == 1:
-                    cursor = lambda s: f"\x1b[7;1m{s}\x1b[m"
+                    cursor = lambda s: tui.add_attr(s, "7;1")
                 else:
-                    cursor = lambda s: f"\x1b[7;2m{s}\x1b[m"
+                    cursor = lambda s: tui.add_attr(s, "7;2")
 
                 if self.stroke.state == INPUT_STATE.TAB:
                     cursor = cursor("↹ ")
@@ -848,15 +848,15 @@ class BeatPrompt:
 
     @dn.datanode
     def render_node(self):
-        render_escape = lambda s: f"\x1b[2m{s}\x1b[m"
-        render_warn = lambda s: f"\x1b[31m{s}\x1b[m"
-        render_suggestion = lambda s: f"\x1b[2m{s}\x1b[m"
-        whitespace = "\x1b[2m⌴\x1b[m"
+        render_escape = lambda s: tui.add_attr(s, "2")
+        render_warn = lambda s: tui.add_attr(s, "31")
+        render_suggestion = lambda s: tui.add_attr(s, "2")
+        whitespace = tui.add_attr("⌴", "2")
 
-        render_command = lambda s: f"\x1b[94m{s}\x1b[m"
-        render_function = lambda s: f"\x1b[94m{s}\x1b[m"
-        render_argument = lambda s: f"\x1b[95m{s}\x1b[m"
-        render_literal = lambda s: f"\x1b[92m{s}\x1b[m"
+        render_command = lambda s: tui.add_attr(s, "94")
+        render_function = lambda s: tui.add_attr(s, "94")
+        render_argument = lambda s: tui.add_attr(s, "95")
+        render_literal = lambda s: tui.add_attr(s, "92")
 
         yield
         while True:

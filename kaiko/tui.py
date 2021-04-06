@@ -34,6 +34,13 @@ def parse_attr(text):
         except StopIteration:
             raise ValueError
 
+def add_attr(text, attrs=""):
+    if not attrs:
+        return text
+
+    text_ = text.replace("\x1b[m", f"\x1b[m\x1b[{attrs}m")
+    return f"\x1b[{attrs}m{text_}\x1b[m"
+
 def cover(*rans):
     start = min(ran.start for ran in rans)
     stop = max(ran.stop for ran in rans)
