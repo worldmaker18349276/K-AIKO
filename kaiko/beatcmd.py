@@ -243,10 +243,13 @@ def echo_str(escaped_str):
 
 
 class PromptUnfinished(Exception):
-    pass
+    def __init__(self, info):
+        self.info = info
 
 class PromptParseError(Exception):
-    pass
+    def __init__(self, index, info):
+        self.index = index
+        self.info = info
 
 class TOKEN_TYPE(Enum):
     COMMAND = "command"
@@ -260,26 +263,28 @@ class Promptable:
 
     def _node(self):
         curr = self.root
+        index = -1
 
         # parse command
         while isinstance(curr, dict):
             try:
                 token = yield TOKEN_TYPE.COMMAND
+                index += 1
             except GeneratorExit:
-                raise PromptUnfinished(curr)
+                raise PromptUnfinished(f"Unfinished command, it should be followed by: {list(curr.keys())}")
 
             if token is None:
                 return list(curr.keys())
 
             elif token not in curr:
-                raise PromptParseError(f"invalid command: {token!r}")
+                raise PromptParseError(index, f"Invalid command, it should be followed by: {list(curr.keys())}")
 
             else:
                 curr = curr.get(token)
 
         # parse signature: (a, b, c, d=1, e=2)
         if not hasattr(curr, '__call__'):
-            raise PromptParseError(f"not a function: {curr!r}")
+            raise ValueError(f"Not a function: {curr!r}")
 
         sig = inspect.signature(curr)
         args = list()
@@ -292,9 +297,10 @@ class Promptable:
 
         try:
             token = yield TOKEN_TYPE.FUNCTION
+            index += 1
         except GeneratorExit:
             if args:
-                raise PromptUnfinished(curr)
+                raise PromptUnfinished(f"Missing argument: {args[0]}")
             else:
                 return curr
 
@@ -307,27 +313,31 @@ class Promptable:
                 if token is None:
                     return list(kwargs.keys())
                 elif token not in kwargs:
-                    raise PromptParseError(f"invalid argument: {token!r}")
+                    raise PromptParseError(index, f"Invalid parameter name, it should be one of: {list(kwargs.keys())}")
                 else:
                     param = kwargs[token]
                     del kwargs[token]
 
                     try:
                         token = yield TOKEN_TYPE.ARGUMENT
+                        index += 1
                     except GeneratorExit:
-                        raise PromptUnfinished(curr)
+                        raise PromptUnfinished(f"Missing argument: {token}")
 
             else:
-                raise PromptParseError(f"too many argument: {token!r}")
+                raise PromptParseError(index, f"Too many argument")
 
             # parse argument value
             ann = param.annotation
 
             if isinstance(ann, tuple):
+                if len(ann) == 0:
+                    raise ValueError(f"No valid value for {param}")
                 if token is None:
                     return list(ann)
                 elif token not in ann:
-                    raise PromptParseError(f"invalid value: {token!r}")
+                    info = ["Invalid value, it should be one of:", *map(shlexer_escape, ann)]
+                    raise PromptParseError(index, "\n".join(info))
                 else:
                     curr = functools.partial(curr, token)
 
@@ -338,7 +348,7 @@ class Promptable:
                     else:
                         return [str(param.default), str(not param.default)]
                 elif token not in ["True", "False"]:
-                    raise PromptParseError(f"not a bool: {token!r}")
+                    raise PromptParseError(index, "Invalid value, it should be a boolean value")
                 else:
                     curr = functools.partial(curr, bool(token))
 
@@ -349,7 +359,7 @@ class Promptable:
                     else:
                         return [str(param.default)]
                 elif not re.fullmatch(r"[-+]?(0|[1-9][0-9]*)", token):
-                    raise PromptParseError(f"not a number: {token!r}")
+                    raise PromptParseError(index, "Invalid value, it should be a integer")
                 else:
                     curr = functools.partial(curr, int(token))
 
@@ -360,7 +370,7 @@ class Promptable:
                     else:
                         return [str(param.default)]
                 elif not re.fullmatch(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)", token):
-                    raise PromptParseError(f"not a float: {token!r}")
+                    raise PromptParseError(index, "Invalid value, it should be a float number")
                 else:
                     curr = functools.partial(curr, float(token))
 
@@ -374,13 +384,14 @@ class Promptable:
                     curr = functools.partial(curr, token)
 
             else:
-                raise ValueError(f"Unable to parse parameter: {param}")
+                raise ValueError(f"Unable to parse parameter for {param}")
 
             try:
                 token = yield TOKEN_TYPE.LITERAL
+                index += 1
             except GeneratorExit:
                 if args:
-                    raise PromptUnfinished(curr)
+                    raise PromptUnfinished(f"Missing argument: {args[0]}")
                 else:
                     return curr
 
@@ -498,8 +509,12 @@ class BeatInput:
     def enter(self):
         try:
             return self.promptable.execute(token for token, _, _, _ in self.tokens)
-        except Exception as e:
-            self.info = f"\x1b[31m{e!r}\x1b[m"
+        except PromptUnfinished as e:
+            slic = slice(len(self.buffer)-1, len(self.buffer))
+            self.info = slic, f"\x1b[31m{e.info}\x1b[m"
+        except PromptParseError as e:
+            _, _, slic, _ = self.tokens[e.index]
+            self.info = slic, f"\x1b[31m{e.info}\x1b[m"
 
     def suggest(self):
         lex_completer = shlexer_complete(self.buffer, len(self.buffer), self.promptable.complete)
@@ -778,8 +793,11 @@ class BeatPrompt:
         size_node = dn.terminal_size()
         header_node = self.header_node()
         render_node = self.render_node()
+        info_node = self.info_node()
         draw_node = self.draw_node()
-        return dn.pipe((lambda _: (None,None,None)), dn.pair(header_node, render_node, size_node), draw_node)
+        return dn.pipe((lambda _: (None,None,None,None)),
+                       dn.pair(header_node, render_node, info_node, size_node),
+                       draw_node)
 
     @dn.datanode
     def header_node(self):
@@ -808,6 +826,25 @@ class BeatPrompt:
 
             yield header, cursor
             t += 1/self.framerate/(60/self.tempo)
+
+    @dn.datanode
+    def info_node(self):
+        yield
+        while True:
+            if self.input.info is not None:
+                pointto, msg = self.input.info
+                self.input.info = None
+
+                pointto_text = None
+                if pointto is not None:
+                    _, pointto_start = tui.textrange1(0, self.input.buffer[:pointto.start])
+                    _, pointto_stop = tui.textrange1(0, self.input.buffer[:pointto.stop])
+                    pointto_text = " "*pointto_start + "^"*(pointto_stop-pointto_start)
+
+                yield pointto_text, msg
+
+            else:
+                yield None
 
     @dn.datanode
     def render_node(self):
@@ -865,7 +902,7 @@ class BeatPrompt:
         output_text = None
 
         while True:
-            (header, cursor), (rendered_text, rendered_suggestion, cursor_pos), size = yield output_text
+            (header, cursor), (rendered_text, rendered_suggestion, cursor_pos), info, size = yield output_text
             width = size.columns
 
             # adjust input offset
@@ -902,9 +939,18 @@ class BeatPrompt:
                     tui.addtext1(view, width, cursor_ran.start, cursor)
 
             output_text = "\r" + "".join(view) + "\r"
-            if self.input.info is not None:
-                output_text = f"\n{self.input.info}\n" + output_text
-                self.input.info = None
+            if info is not None:
+                output_text = "\n" + output_text
+                pointto, msg = info
+
+                if msg is not None:
+                    output_text = "\n" + msg + output_text
+
+                if pointto is not None:
+                    if input_ran.start - input_offset >= 0:
+                        output_text = "\n" + " "*(input_ran.start-input_offset) + pointto + output_text
+                    else:
+                        output_text = "\n" + pointto[input_offset-input_ran.start:] + output_text
 
 
 def prompt(promptable, framerate=60.0):
