@@ -210,6 +210,37 @@ def shlexer_complete(raw, index, completer):
             else:
                 yield [*compreply, " ", '"']
 
+def echo_str(escaped_str):
+    regex = r"\\c.*|\\[\\abefnrtv]|\\0[0-7]{0,3}|\\x[0-9a-fA-F]{1,2}|."
+
+    escaped = {
+        r"\\": "\\",
+        r"\a": "\a",
+        r"\b": "\b",
+        "\\e": "\x1b",
+        r"\f": "\f",
+        r"\n": "\n",
+        r"\r": "\r",
+        r"\t": "\t",
+        r"\v": "\v",
+        }
+
+    def repl(match):
+        matched = match.group(0)
+
+        if matched.startswith("\\c"):
+            return ""
+        elif matched in escaped:
+            return escaped[matched]
+        elif matched.startswith("\\0"):
+            return chr(int(matched[2:] or "0", 8))
+        elif matched.startswith("\\x"):
+            return chr(int(matched[2:], 16))
+        else:
+            return matched
+
+    return re.sub(regex, repl, escaped_str)
+
 
 class PromptUnfinished(Exception):
     pass
@@ -471,9 +502,9 @@ class BeatInput:
         elif compreply[0] != "\b":
             self.suggestion = "".join(compreply)
 
-    def input(self, ch):
-        self.buffer[self.pos:self.pos] = [ch]
-        self.pos += 1
+    def input(self, text):
+        self.buffer[self.pos:self.pos] = list(text)
+        self.pos += len(text)
         self.parse()
         if self.pos == len(self.buffer):
             self.suggest()
@@ -519,36 +550,111 @@ class BeatInput:
 
 
 default_keymap = {
-    "Backspace"        : "\x7f",
-    "Delete"           : "\x1b[3~",
-    "Left"             : "\x1b[D",
-    "Right"            : "\x1b[C",
-    "Home"             : "\x1b[H",
-    "End"              : "\x1b[F",
-    "Up"               : "\x1b[A",
-    "Down"             : "\x1b[B",
-    "PageUp"           : "\x1b[5~",
-    "PageDown"         : "\x1b[6~",
-    "Tab"              : "\t",
-    "Esc"              : "\x1b",
-    "Enter"            : "\n",
-    "Shift+Tab"        : "\x1b[Z",
-    "Ctrl+Backspace"   : "\x08",
-    "Ctrl+Delete"      : "\x1b[3;5~",
-    "Shift+Left"       : "\x1b[1;2D",
-    "Shift+Right"      : "\x1b[1;2C",
-    "Alt+Left"         : "\x1b[1;3D",
-    "Alt+Right"        : "\x1b[1;3C",
-    "Alt+Shift+Left"   : "\x1b[1;4D",
-    "Alt+Shift+Right"  : "\x1b[1;4C",
-    "Ctrl+Left"        : "\x1b[1;5D",
-    "Ctrl+Right"       : "\x1b[1;5C",
-    "Ctrl+Shift+Left"  : "\x1b[1;6D",
-    "Ctrl+Shift+Right" : "\x1b[1;6C",
-    "Alt+Ctrl+Left"    : "\x1b[1;7D",
-    "Alt+Ctrl+Right"   : "\x1b[1;7C",
-    "Alt+Ctrl+Shift+Left"  : "\x1b[1;8D",
-    "Alt+Ctrl+Shift+Right" : "\x1b[1;8C",
+    "Esc"       : "\x1b",
+    "Alt+Esc"   : "\x1b\x1b",
+
+    "Enter"     : "\n",
+    "Alt+Enter" : "\x1b\n",
+
+    "Backspace"            : "\x7f",
+    "Ctrl+Backspace"       : "\x08",
+    "Alt+Backspace"        : "\x1b\x7f",
+    "Ctrl+Alt+Backspace"   : "\x1b\x08",
+
+    "Tab"                  : "\t",
+    "Shift+Tab"            : "\x1b[Z",
+    "Alt+Tab"              : "\x1b\t",
+    "Alt+Shift+Tab"        : "\x1b\x1b[Z",
+
+    "Up"                   : "\x1b[A",
+    "Shift+Up"             : "\x1b[1;2A",
+    "Alt+Up"               : "\x1b[1;3A",
+    "Alt+Shift+Up"         : "\x1b[1;4A",
+    "Ctrl+Up"              : "\x1b[1;5A",
+    "Ctrl+Shift+Up"        : "\x1b[1;6A",
+    "Ctrl+Alt+Up"          : "\x1b[1;7A",
+    "Ctrl+Alt+Shift+Up"    : "\x1b[1;8A",
+
+    "Down"                 : "\x1b[B",
+    "Shift+Down"           : "\x1b[1;2B",
+    "Alt+Down"             : "\x1b[1;3B",
+    "Alt+Shift+Down"       : "\x1b[1;4B",
+    "Ctrl+Down"            : "\x1b[1;5B",
+    "Ctrl+Shift+Down"      : "\x1b[1;6B",
+    "Ctrl+Alt+Down"        : "\x1b[1;7B",
+    "Ctrl+Alt+Shift+Down"  : "\x1b[1;8B",
+
+    "Right"                : "\x1b[C",
+    "Shift+Right"          : "\x1b[1;2C",
+    "Alt+Right"            : "\x1b[1;3C",
+    "Alt+Shift+Right"      : "\x1b[1;4C",
+    "Ctrl+Right"           : "\x1b[1;5C",
+    "Ctrl+Shift+Right"     : "\x1b[1;6C",
+    "Ctrl+Alt+Right"       : "\x1b[1;7C",
+    "Ctrl+Alt+Shift+Right" : "\x1b[1;8C",
+
+    "Left"                 : "\x1b[D",
+    "Shift+Left"           : "\x1b[1;2D",
+    "Alt+Left"             : "\x1b[1;3D",
+    "Alt+Shift+Left"       : "\x1b[1;4D",
+    "Ctrl+Left"            : "\x1b[1;5D",
+    "Ctrl+Shift+Left"      : "\x1b[1;6D",
+    "Ctrl+Alt+Left"        : "\x1b[1;7D",
+    "Ctrl+Alt+Shift+Left"  : "\x1b[1;8D",
+
+    "End"                  : "\x1b[F",
+    "Shift+End"            : "\x1b[1;2F",
+    "Alt+End"              : "\x1b[1;3F",
+    "Alt+Shift+End"        : "\x1b[1;4F",
+    "Ctrl+End"             : "\x1b[1;5F",
+    "Ctrl+Shift+End"       : "\x1b[1;6F",
+    "Ctrl+Alt+End"         : "\x1b[1;7F",
+    "Ctrl+Alt+Shift+End"   : "\x1b[1;8F",
+
+    "Home"                 : "\x1b[H",
+    "Shift+Home"           : "\x1b[1;2H",
+    "Alt+Home"             : "\x1b[1;3H",
+    "Alt+Shift+Home"       : "\x1b[1;4H",
+    "Ctrl+Home"            : "\x1b[1;5H",
+    "Ctrl+Shift+Home"      : "\x1b[1;6H",
+    "Ctrl+Alt+Home"        : "\x1b[1;7H",
+    "Ctrl+Alt+Shift+Home"  : "\x1b[1;8H",
+
+    "Insert"                 : "\x1b[2~",
+    "Shift+Insert"           : "\x1b[2;2~",
+    "Alt+Insert"             : "\x1b[2;3~",
+    "Alt+Shift+Insert"       : "\x1b[2;4~",
+    "Ctrl+Insert"            : "\x1b[2;5~",
+    "Ctrl+Shift+Insert"      : "\x1b[2;6~",
+    "Ctrl+Alt+Insert"        : "\x1b[2;7~",
+    "Ctrl+Alt+Shift+Insert"  : "\x1b[2;8~",
+
+    "Delete"                 : "\x1b[3~",
+    "Shift+Delete"           : "\x1b[3;2~",
+    "Alt+Delete"             : "\x1b[3;3~",
+    "Alt+Shift+Delete"       : "\x1b[3;4~",
+    "Ctrl+Delete"            : "\x1b[3;5~",
+    "Ctrl+Shift+Delete"      : "\x1b[3;6~",
+    "Ctrl+Alt+Delete"        : "\x1b[3;7~",
+    "Ctrl+Alt+Shift+Delete"  : "\x1b[3;8~",
+
+    "PageUp"                  : "\x1b[5~",
+    "Shift+PageUp"            : "\x1b[5;2~",
+    "Alt+PageUp"              : "\x1b[5;3~",
+    "Alt+Shift+PageUp"        : "\x1b[5;4~",
+    "Ctrl+PageUp"             : "\x1b[5;5~",
+    "Ctrl+Shift+PageUp"       : "\x1b[5;6~",
+    "Ctrl+Alt+PageUp"         : "\x1b[5;7~",
+    "Ctrl+Alt+Shift+PageUp"   : "\x1b[5;8~",
+
+    "PageDown"                : "\x1b[6~",
+    "Shift+PageDown"          : "\x1b[6;2~",
+    "Alt+PageDown"            : "\x1b[6;3~",
+    "Alt+Shift+PageDown"      : "\x1b[6;4~",
+    "Ctrl+PageDown"           : "\x1b[6;5~",
+    "Ctrl+Shift+PageDown"     : "\x1b[6;6~",
+    "Ctrl+Alt+PageDown"       : "\x1b[6;7~",
+    "Ctrl+Alt+Shift+PageDown" : "\x1b[6;8~",
 }
 
 class INPUT_STATE(Enum):
@@ -581,10 +687,7 @@ class BeatStroke:
                     _, key = yield
 
             # edit
-            if len(key) == 1 and key.isprintable():
-                self.input.input(key)
-
-            elif key == self.keymap["Backspace"]:
+            if key == self.keymap["Backspace"]:
                 self.input.backspace()
 
             elif key == self.keymap["Delete"]:
@@ -607,6 +710,9 @@ class BeatStroke:
 
             elif key == self.keymap["End"]:
                 self.input.move_to_end()
+
+            elif key.isprintable():
+                self.input.input(key)
 
 
 BLOCKER_HEADERS = [
