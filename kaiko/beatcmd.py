@@ -793,10 +793,9 @@ class BeatPrompt:
         size_node = dn.terminal_size()
         header_node = self.header_node()
         render_node = self.render_node()
-        info_node = self.info_node()
         draw_node = self.draw_node()
-        return dn.pipe((lambda _: (None,None,None,None)),
-                       dn.pair(header_node, render_node, info_node, size_node),
+        return dn.pipe((lambda _: (None,None,None)),
+                       dn.pair(header_node, render_node, size_node),
                        draw_node)
 
     @dn.datanode
@@ -826,25 +825,6 @@ class BeatPrompt:
 
             yield header, cursor
             t += 1/self.framerate/(60/self.tempo)
-
-    @dn.datanode
-    def info_node(self):
-        yield
-        while True:
-            if self.input.info is not None:
-                pointto, msg = self.input.info
-                self.input.info = None
-
-                pointto_text = None
-                if pointto is not None:
-                    _, pointto_start = tui.textrange1(0, self.input.buffer[:pointto.start])
-                    _, pointto_stop = tui.textrange1(0, self.input.buffer[:pointto.stop])
-                    pointto_text = " "*pointto_start + "^"*(pointto_stop-pointto_start)
-
-                yield pointto_text, msg
-
-            else:
-                yield None
 
     @dn.datanode
     def render_node(self):
@@ -902,7 +882,7 @@ class BeatPrompt:
         output_text = None
 
         while True:
-            (header, cursor), (rendered_text, rendered_suggestion, cursor_pos), info, size = yield output_text
+            (header, cursor), (rendered_text, rendered_suggestion, cursor_pos), size = yield output_text
             width = size.columns
 
             # adjust input offset
@@ -938,19 +918,27 @@ class BeatPrompt:
                 else:
                     tui.addtext1(view, width, cursor_ran.start, cursor)
 
-            output_text = "\r" + "".join(view) + "\r"
-            if info is not None:
-                output_text = "\n" + output_text
-                pointto, msg = info
+            # print info
+            info_text = ""
+            if self.input.info is not None:
+                pointto, msg = self.input.info
+                self.input.info = None
+                info_text = "\x1b[m\n"
 
                 if msg is not None:
-                    output_text = "\n" + msg + output_text
+                    info_text = "\n" + msg + info_text
 
                 if pointto is not None:
-                    if input_ran.start - input_offset >= 0:
-                        output_text = "\n" + " "*(input_ran.start-input_offset) + pointto + output_text
-                    else:
-                        output_text = "\n" + pointto[input_offset-input_ran.start:] + output_text
+                    _, pointto_start = tui.textrange1(-input_offset, self.input.buffer[:pointto.start])
+                    _, pointto_stop = tui.textrange1(-input_offset, self.input.buffer[:pointto.stop])
+                    pointto_start = max(0, min(input_width-1, pointto_start))
+                    pointto_stop = max(1, min(input_width, pointto_stop))
+
+                    padding = " "*(input_ran.start+pointto_start)
+                    pointto_text = "^"*(pointto_stop - pointto_start)
+                    info_text = "\n" + padding + pointto_text + info_text
+
+            output_text = info_text + "\r" + "".join(view) + "\r"
 
 
 def prompt(promptable, framerate=60.0):
