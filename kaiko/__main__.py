@@ -1,14 +1,131 @@
 import sys
-import traceback
 import os
-import zipfile
 import contextlib
+import traceback
+import zipfile
 import psutil
 import appdirs
 from . import datanodes as dn
 from . import cfg
+from . import tui
 from . import kerminal
-from . import beatmenu
+from . import beatcmd
+from .beatmap import BeatmapPlayer
+from .beatsheet import BeatmapDraft, BeatmapParseError
+from . import beatanalyzer
+
+
+class KAIKOTheme(metaclass=cfg.Configurable):
+    data_icon: str = "\x1b[92m🗀\x1b[m "
+    info_icon: str = "\x1b[94m🛠\x1b[m "
+    hint_icon: str = "\x1b[93m💡\x1b[m "
+
+    verb: str = "2"
+    emph: str = "1"
+    warn: str = "31"
+
+class KAIKOGame:
+    def __init__(self):
+        self.theme = None
+        self.data_dir = None
+        self.songs_dir = None
+        self._beatmaps = []
+        self.songs_mtime = None
+
+    def init(self, theme=None):
+        self.theme = KAIKOTheme()
+        if theme is not None:
+            cfg.config_read(open(theme, 'r'), main=self.theme)
+
+        emph = self.theme.emph
+        data_icon = self.theme.data_icon
+
+        self.data_dir = appdirs.user_data_dir("K-AIKO", psutil.Process().username())
+        self.songs_dir = os.path.join(self.data_dir, "songs")
+        if not os.path.isdir(self.data_dir):
+            # start up
+            print(f"{data_icon} preparing your profile...")
+            os.makedirs(self.data_dir, exist_ok=True)
+            os.makedirs(self.songs_dir, exist_ok=True)
+            print(f"{data_icon} your data will be stored in {tui.add_attr('file://'+self.data_dir, emph)}")
+            print(flush=True)
+
+    def reload(self):
+        info_icon = self.theme.info_icon
+        emph = self.theme.emph
+        songs_dir = self.songs_dir
+
+        print(f"{info_icon} Loading songs from {tui.add_attr('file://'+songs_dir, emph)}...")
+
+        self._beatmaps = []
+
+        for root, dirs, files in os.walk(songs_dir):
+            for file in files:
+                if file.endswith(".osz"):
+                    filepath = os.path.join(root, file)
+                    distpath, _ = os.path.splitext(filepath)
+                    if os.path.isdir(distpath):
+                        continue
+                    print(f"{info_icon} Unzip file {tui.add_attr('file://'+filepath, emph)}...")
+                    os.makedirs(distpath)
+                    zf = zipfile.ZipFile(filepath, 'r')
+                    zf.extractall(path=distpath)
+
+        for root, dirs, files in os.walk(songs_dir):
+            for file in files:
+                if file.endswith((".kaiko", ".ka", ".osu")):
+                    filepath = os.path.join(root, file)
+                    self._beatmaps.append(filepath)
+
+        if len(self._beatmaps) == 0:
+            print("{info_icon} There is no song in the folder yet!")
+        print(flush=True)
+
+        self.songs_mtime = os.stat(songs_dir).st_mtime
+
+    @property
+    def beatmaps(self):
+        if self.songs_mtime != os.stat(self.songs_dir).st_mtime:
+            self.reload()
+
+        return list(self._beatmaps)
+
+    def play(self, beatmap:str):
+        return KAIKOPlay(beatmap)
+
+    def menu(self):
+        def play(beatmap:self.beatmaps):
+            return self.play(beatmap)
+
+        def exit():
+            print("bye~")
+            raise KeyboardInterrupt
+
+        return beatcmd.Promptable({
+            "play": play,
+            "reload": self.reload,
+            "settings": lambda:None,
+            "exit": exit,
+        })
+
+class KAIKOPlay:
+    def __init__(self, filepath):
+        self.filepath = filepath
+
+    @contextlib.contextmanager
+    def execute(self, manager):
+        try:
+            beatmap = BeatmapDraft.read(self.filepath)
+
+        except BeatmapParseError:
+            print(f"failed to read beatmap {self.filepath}")
+
+        else:
+            game = BeatmapPlayer(beatmap)
+            game.execute(manager)
+
+            print()
+            beatanalyzer.show_analyze(beatmap.settings.performance_tolerance, game.perfs)
 
 
 def print_logo():
@@ -73,12 +190,12 @@ def load_pyaudio(theme):
 
     ctxt = kerminal.prepare_pyaudio()
 
-    print(theme.verb[0], end="", flush=True)
+    print(f"\x1b[{theme.verb}m", end="", flush=True)
     try:
         manager = ctxt.__enter__()
         print_pyaudio_info(manager)
     finally:
-        print(theme.verb[1], flush=True)
+        print("\x1b[m", flush=True)
 
     try:
         yield manager
@@ -88,30 +205,23 @@ def load_pyaudio(theme):
         ctxt.__exit__(None, None, None)
 
 def main(theme=None):
-    # load theme
-    settings = beatmenu.KAIKOTheme()
-    if theme is not None:
-        cfg.config_read(open(theme, 'r'), main=settings)
+    # print logo
+    print_logo()
 
-    data_icon = settings.data_icon
-    info_icon = settings.info_icon
-    hint_icon = settings.hint_icon
-    verb = settings.verb
-    emph = settings.emph
-    warn = settings.warn
+    # load data
+    game = KAIKOGame()
+    game.init()
+
+    data_icon = game.theme.data_icon
+    info_icon = game.theme.info_icon
+    hint_icon = game.theme.hint_icon
+    verb = game.theme.verb
+    emph = game.theme.emph
+    warn = game.theme.warn
 
     try:
-        # print logo
-        print_logo()
-
         # load PyAudio
-        with load_pyaudio(settings) as manager:
-
-            # load user data
-            user = beatmenu.BeatMenuUser(settings)
-            user.load()
-
-            game = beatmenu.BeatMenuGame(user)
+        with load_pyaudio(game.theme) as manager:
 
             # play given beatmap
             if len(sys.argv) > 1:
@@ -122,38 +232,24 @@ def main(theme=None):
             # load songs
             game.reload()
 
-            def play_menu():
-                songs = []
-                for filepath in game.beatmaps:
-                    songs.append((os.path.basename(filepath), game.play(filepath)))
-                return beatmenu.menu_tree(songs)
-
-            menu = beatmenu.menu_tree([
-                ("play", play_menu),
-                ("settings", None),
-            ])
-
             # enter menu
-            print(f"{hint_icon} Use {'up'.join(emph)}/{'down'.join(emph)}/"
-                  f"{'enter'.join(emph)}/{'esc'.join(emph)} keys to select options.")
+            print(f"{hint_icon} Use {tui.add_attr('up', emph)}/{tui.add_attr('down', emph)}/"
+                  f"{tui.add_attr('enter', emph)}/{tui.add_attr('esc', emph)} keys to select options.")
             print(flush=True)
 
-            with menu:
-                while True:
-                    result = beatmenu.explore(menu)
-                    if hasattr(result, 'execute'):
-                        result.execute(manager)
-                    elif result is None:
-                        break
+            while True:
+                result = beatcmd.prompt(game.menu())
+                if hasattr(result, 'execute'):
+                    result.execute(manager)
 
     except KeyboardInterrupt:
         pass
 
     except:
         # print error
-        print(warn[0], end="")
+        print(f"\x1b[{warn}m", end="")
         traceback.print_exc(file=sys.stdout)
-        print(warn[1], end="")
+        print(f"\x1b[m", end="")
 
 if __name__ == '__main__':
     main()

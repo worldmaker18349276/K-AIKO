@@ -331,14 +331,15 @@ class Promptable:
             # parse argument value
             ann = param.annotation
 
-            if isinstance(ann, tuple):
+            if isinstance(ann, (tuple, list)):
                 if len(ann) == 0:
                     raise ValueError(f"No valid value for {param}")
                 if token is self._PromptReturn:
                     raise PromptUnfinished(index, list(ann), f"Missing argument: {args[0]}")
                 elif token is None or token not in ann:
-                    info = ["Invalid value, it should be one of:", *map(shlexer_escape, ann)]
-                    raise PromptParseError(index, list(ann), "\n".join(info))
+                    info = "Invalid value, it should be one of:\n"
+                    info += "\n".join("".join(shlexer_escape(token)) for token in ann)
+                    raise PromptParseError(index, list(ann), info)
                 else:
                     curr = functools.partial(curr, token)
 
