@@ -243,12 +243,15 @@ def echo_str(escaped_str):
 
 
 class PromptUnfinished(Exception):
-    def __init__(self, info):
+    def __init__(self, index, suggestions, info):
+        self.index = index
+        self.suggestions = suggestions
         self.info = info
 
 class PromptParseError(Exception):
-    def __init__(self, index, info):
+    def __init__(self, index, suggestions, info):
         self.index = index
+        self.suggestions = suggestions
         self.info = info
 
 class TOKEN_TYPE(Enum):
@@ -260,24 +263,25 @@ class TOKEN_TYPE(Enum):
 class Promptable:
     def __init__(self, root):
         self.root = root
+        self._PromptReturn = object()
 
     def _node(self):
+        # Union[str, None, PromptReturn] -> TOKEN_TYPE
         curr = self.root
         index = -1
 
         # parse command
         while isinstance(curr, dict):
-            try:
-                token = yield TOKEN_TYPE.COMMAND
-                index += 1
-            except GeneratorExit:
-                raise PromptUnfinished(f"Unfinished command, it should be followed by: {list(curr.keys())}")
+            token = yield TOKEN_TYPE.COMMAND
+            index += 1
 
-            if token is None:
-                return list(curr.keys())
+            if token is self._PromptReturn:
+                raise PromptUnfinished(index, list(curr.keys()),
+                    f"Unfinished command, it should be followed by: {list(curr.keys())}")
 
-            elif token not in curr:
-                raise PromptParseError(index, f"Invalid command, it should be one of: {list(curr.keys())}")
+            elif token is None or token not in curr:
+                raise PromptParseError(index, list(curr.keys()),
+                    f"Invalid command, it should be one of: {list(curr.keys())}")
 
             else:
                 curr = curr.get(token)
@@ -295,14 +299,8 @@ class Promptable:
             else:
                 kwargs["--" + param.name] = param
 
-        try:
-            token = yield TOKEN_TYPE.FUNCTION
-            index += 1
-        except GeneratorExit:
-            if args:
-                raise PromptUnfinished(f"Missing argument: {args[0]}")
-            else:
-                return curr
+        token = yield TOKEN_TYPE.FUNCTION
+        index += 1
 
         while True:
             # parse argument name
@@ -310,22 +308,25 @@ class Promptable:
                 param = args.pop(0)
 
             elif kwargs:
-                if token is None:
-                    return list(kwargs.keys())
-                elif token not in kwargs:
-                    raise PromptParseError(index, f"Invalid parameter name, it should be one of: {list(kwargs.keys())}")
+                if token is self._PromptReturn:
+                    return curr
+
+                elif token is None or token not in kwargs:
+                    raise PromptParseError(index, list(kwargs.keys()),
+                        f"Invalid argument name, it should be one of: {list(kwargs.keys())}")
+
                 else:
                     param = kwargs[token]
                     del kwargs[token]
 
-                    try:
-                        token = yield TOKEN_TYPE.ARGUMENT
-                        index += 1
-                    except GeneratorExit:
-                        raise PromptUnfinished(f"Missing argument: {token}")
+                    token = yield TOKEN_TYPE.ARGUMENT
+                    index += 1
 
             else:
-                raise PromptParseError(index, f"Too many argument")
+                if token is self._PromptReturn:
+                    return curr
+                else:
+                    raise PromptParseError(index, [], f"Too many argument")
 
             # parse argument value
             ann = param.annotation
@@ -333,67 +334,71 @@ class Promptable:
             if isinstance(ann, tuple):
                 if len(ann) == 0:
                     raise ValueError(f"No valid value for {param}")
-                if token is None:
-                    return list(ann)
-                elif token not in ann:
+                if token is self._PromptReturn:
+                    raise PromptUnfinished(index, list(ann), f"Missing argument: {args[0]}")
+                elif token is None or token not in ann:
                     info = ["Invalid value, it should be one of:", *map(shlexer_escape, ann)]
-                    raise PromptParseError(index, "\n".join(info))
+                    raise PromptParseError(index, list(ann), "\n".join(info))
                 else:
                     curr = functools.partial(curr, token)
 
             elif ann == bool:
-                if token is None:
-                    if param.default is param.empty:
-                        return ["True", "False"]
-                    else:
-                        return [str(param.default), str(not param.default)]
-                elif token not in ["True", "False"]:
-                    raise PromptParseError(index, "Invalid value, it should be a boolean value")
+                if param.default is param.empty:
+                    sugg = ["True", "False"]
+                else:
+                    sugg = [str(param.default), str(not param.default)]
+
+                if token is self._PromptReturn:
+                    raise PromptUnfinished(index, sugg, "Missing boolean value")
+                elif token is None or token not in sugg:
+                    raise PromptParseError(index, sugg, "Invalid value, it should be a boolean value")
                 else:
                     curr = functools.partial(curr, bool(token))
 
             elif ann == int:
-                if token is None:
-                    if param.default is param.empty:
-                        return []
-                    else:
-                        return [str(param.default)]
-                elif not re.fullmatch(r"[-+]?(0|[1-9][0-9]*)", token):
-                    raise PromptParseError(index, "Invalid value, it should be a integer")
+                if param.default is param.empty:
+                    sugg = []
+                else:
+                    sugg = [str(param.default)]
+
+                if token is self._PromptReturn:
+                    raise PromptUnfinished(index, sugg, "Missing integer")
+                elif token is None or not re.fullmatch(r"[-+]?(0|[1-9][0-9]*)", token):
+                    raise PromptParseError(index, sugg, "Invalid value, it should be a integer")
                 else:
                     curr = functools.partial(curr, int(token))
 
             elif ann == float:
-                if token is None:
-                    if param.default is param.empty:
-                        return []
-                    else:
-                        return [str(param.default)]
-                elif not re.fullmatch(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)", token):
-                    raise PromptParseError(index, "Invalid value, it should be a float number")
+                if param.default is param.empty:
+                    sugg = []
+                else:
+                    sugg = [str(param.default)]
+
+                if token is self._PromptReturn:
+                    raise PromptUnfinished(index, sugg, "Missing float number")
+                elif token is None or not re.fullmatch(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)", token):
+                    raise PromptParseError(index, sugg, "Invalid value, it should be a float number")
                 else:
                     curr = functools.partial(curr, float(token))
 
             elif ann == str:
-                if token is None:
-                    if param.default is param.empty:
-                        return []
-                    else:
-                        return [param.default]
+                if param.default is param.empty:
+                    sugg = []
+                else:
+                    sugg = [param.default]
+
+                if token is self._PromptReturn:
+                    raise PromptUnfinished(index, sugg, "Missing string")
+                elif token is None:
+                    raise PromptParseError(index, sugg, "Invalid value, it should be a string")
                 else:
                     curr = functools.partial(curr, token)
 
             else:
                 raise ValueError(f"Unable to parse parameter for {param}")
 
-            try:
-                token = yield TOKEN_TYPE.LITERAL
-                index += 1
-            except GeneratorExit:
-                if args:
-                    raise PromptUnfinished(f"Missing argument: {args[0]}")
-                else:
-                    return curr
+            token = yield TOKEN_TYPE.LITERAL
+            index += 1
 
     def parse(self, tokens):
         gen = self._node()
@@ -406,26 +411,24 @@ class Promptable:
             except PromptParseError:
                 gen = None
                 res = None
-            types.append(res)
-
-        if gen is not None:
-            try:
-                gen.close()
-            except PromptParseError:
-                pass
-            except PromptUnfinished:
-                pass
+            else:
+                types.append(res)
 
         return types
 
-    def execute(self, tokens):
+    def generate(self, tokens):
         gen = self._node()
         next(gen)
 
         for token in tokens:
             gen.send(token)
 
-        return gen.close()
+        try:
+            gen.send(self._PromptReturn)
+        except StopIteration as e:
+            return e.value
+        else:
+            raise ValueError
 
     def complete(self, tokens, target):
         gen = self._node()
@@ -433,24 +436,16 @@ class Promptable:
 
         for token in tokens:
             try:
-                if gen is not None:
-                    gen.send(token)
-            except PromptParseError:
-                gen = None
-
-        if gen is not None:
-            try:
-                gen.send(None)
+                gen.send(token)
             except PromptParseError:
                 return []
-            except StopIteration as e:
-                compreplies = e.value
-                return [compreply[len(target):] for compreply in compreplies if compreply.startswith(target)]
-            else:
-                raise ValueError
 
+        try:
+            gen.send(None)
+        except PromptParseError as e:
+            return [compreply[len(target):] for compreply in e.suggestions if compreply.startswith(target)]
         else:
-            return []
+            raise ValueError
 
 
 class BeatInput:
@@ -463,6 +458,14 @@ class BeatInput:
 
         self.tokens = []
         self.state = SHLEXER_STATE.SPACED
+        self.result = None
+        self.finished = threading.Event()
+
+    @dn.datanode
+    def wait_node(self):
+        yield
+        while not self.finished.is_set():
+            yield
 
     def parse(self):
         lex_parser = shlexer_parse(self.buffer, partial=True)
@@ -508,13 +511,16 @@ class BeatInput:
 
     def enter(self):
         try:
-            return self.promptable.execute(token for token, _, _, _ in self.tokens)
+            res = self.promptable.generate(token for token, _, _, _ in self.tokens)
         except PromptUnfinished as e:
             slic = slice(len(self.buffer)-1, len(self.buffer))
             self.info = slic, tui.add_attr(e.info, "31")
         except PromptParseError as e:
             _, _, slic, _ = self.tokens[e.index]
             self.info = slic, tui.add_attr(e.info, "31")
+        else:
+            self.result = res
+            self.finished.set()
 
     def suggest(self):
         lex_completer = shlexer_complete(self.buffer, len(self.buffer), self.promptable.complete)
@@ -948,7 +954,8 @@ def prompt(promptable, framerate=60.0):
     prompt = BeatPrompt(stroke, input, framerate)
     display_knot = dn.interval(prompt.output_handler(), dn.show(hide_cursor=True), 1/framerate)
 
-    prompt_knot = dn.pipe(input_knot, display_knot)
+    prompt_knot = dn.pipe(input.wait_node(), input_knot, display_knot)
+
     dn.exhaust(prompt_knot, dt=0.01, interruptible=True)
 
-
+    return input.result()
