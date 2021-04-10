@@ -946,12 +946,12 @@ class BeatPrompt:
             input_width = len(range(width)[input_ran])
             _, text_length = tui.textrange1(0, rendered_text)
 
-            if text_length+1 <= input_width:
-                input_offset = 0
-            elif cursor_pos - input_offset >= input_width:
+            if cursor_pos - input_offset >= input_width:
                 input_offset = cursor_pos - input_width + 1
             elif cursor_pos - input_offset < 0:
                 input_offset = cursor_pos
+            elif text_length-input_offset+1 <= input_width:
+                input_offset = max(0, text_length-input_width+1)
 
             # draw header
             view = tui.newwin1(width)
