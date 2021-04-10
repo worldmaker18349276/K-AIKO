@@ -335,7 +335,7 @@ class Promptable:
                 if len(ann) == 0:
                     raise ValueError(f"No valid value for {param}")
                 if token is self._PromptReturn:
-                    raise PromptUnfinished(index, list(ann), f"Missing argument: {args[0]}")
+                    raise PromptUnfinished(index, list(ann), f"Missing argument")
                 elif token is None or token not in ann:
                     info = "Invalid value, it should be one of:\n"
                     info += "\n".join("".join(shlexer_escape(token)) for token in ann)

@@ -156,7 +156,7 @@ class KAIKOGame:
         for root, dirs, files in os.walk(songs_dir):
             for file in files:
                 if file.endswith((".kaiko", ".ka", ".osu")):
-                    filepath = os.path.join(root, file)
+                    filepath = os.path.relpath(os.path.join(root, file), songs_dir)
                     self._beatmaps.append(filepath)
 
         if len(self._beatmaps) == 0:
@@ -172,7 +172,9 @@ class KAIKOGame:
 
         return list(self._beatmaps)
 
-    def play(self, beatmap:str):
+    def play(self, beatmap):
+        if not os.path.isabs(beatmap):
+            beatmap = os.path.join(self.songs_dir, beatmap)
         return KAIKOPlay(beatmap)
 
     def exit(self):
@@ -210,7 +212,7 @@ class KAIKOPlay:
             beatanalyzer.show_analyze(beatmap.settings.performance_tolerance, game.perfs)
 
 
-def main(theme=None):
+def main():
     try:
         with KAIKOGame.init() as game:
             # play given beatmap
