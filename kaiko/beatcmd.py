@@ -412,8 +412,7 @@ class Promptable:
             except PromptParseError:
                 gen = None
                 res = None
-            else:
-                types.append(res)
+            types.append(res)
 
         return types
 
