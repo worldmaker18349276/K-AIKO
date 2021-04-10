@@ -484,15 +484,24 @@ class BeatInput:
         types = self.promptable.parse(token for token, _, _ in tokens)
         self.tokens = [(token, type, slic, masked) for (token, slic, masked), type in zip(tokens, types)]
 
-    def complete(self):
+    def complete(self, action=+1):
         self.suggestion = ""
 
-        lex_completer = shlexer_complete(self.buffer, self.pos, self.promptable.complete)
+        compreplies = list(shlexer_complete(self.buffer, self.pos, self.promptable.complete))
+        length = len(compreplies)
 
         original_buffer = list(self.buffer)
         original_pos = self.pos
 
-        for compreply in lex_completer:
+        if action == +1:
+            index = 0
+        elif action == -1:
+            index = length-1
+        else:
+            raise ValueError
+
+        while index in range(length):
+            compreply = compreplies[index]
             while compreply[0] == "\b":
                 del compreply[0]
                 del self.buffer[self.pos-1]
@@ -502,7 +511,13 @@ class BeatInput:
             self.pos = self.pos + len(compreply)
             self.parse()
 
-            yield
+            action = yield
+            if action == +1:
+                index += 1
+            elif action == -1:
+                index -= 1
+            elif action == 0:
+                index = -1
 
             self.buffer = list(original_buffer)
             self.pos = original_pos
@@ -704,14 +719,30 @@ class BeatStroke:
             self.event.set()
 
             # completions
-            while key == self.keymap["Tab"]:
+            while key == self.keymap["Tab"] or key == self.keymap["Shift+Tab"]:
                 self.state = INPUT_STATE.TAB
-                for _ in self.input.complete():
-                    _, key = yield
-                    if key != self.keymap["Tab"]:
-                        self.state = INPUT_STATE.EDIT
-                        break
-                else:
+
+                if key == self.keymap["Tab"]:
+                    complete = self.input.complete(+1)
+                elif key == self.keymap["Shift+Tab"]:
+                    complete = self.input.complete(-1)
+
+                try:
+                    next(complete)
+
+                    while True:
+                        _, key = yield
+                        if key == self.keymap["Tab"]:
+                            complete.send(+1)
+                        elif key == self.keymap["Shift+Tab"]:
+                            complete.send(-1)
+                        elif key == self.keymap["Esc"]:
+                            complete.send(0)
+                        else:
+                            self.state = INPUT_STATE.EDIT
+                            break
+
+                except StopIteration:
                     self.state = INPUT_STATE.EDIT
                     _, key = yield
 
