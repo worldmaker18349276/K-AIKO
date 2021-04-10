@@ -3,6 +3,7 @@ import os
 import contextlib
 import traceback
 import zipfile
+import shutil
 import psutil
 import appdirs
 from . import datanodes as dn
@@ -165,6 +166,22 @@ class KAIKOGame:
 
         self.songs_mtime = os.stat(songs_dir).st_mtime
 
+    def add(self, beatmap:str):
+        info_icon = self.theme.info_icon
+        emph = self.theme.emph
+        songs_dir = self.songs_dir
+
+        print(f"{info_icon} Adding new song from {tui.add_attr('file://'+beatmap, emph)}...")
+
+        if os.path.isfile(beatmap):
+            shutil.copy(beatmap, songs_dir)
+        elif os.path.isdir(beatmap):
+            shutil.copytree(beatmap, songs_dir)
+        else:
+            raise ValueError(f"Not a file: {repr(beatmap)}")
+
+        self.reload()
+
     @property
     def beatmaps(self):
         if self.songs_mtime != os.stat(self.songs_dir).st_mtime:
@@ -188,6 +205,7 @@ class KAIKOGame:
         return beatcmd.Promptable({
             "play": play,
             "reload": self.reload,
+            "add": self.add,
             "settings": lambda:None,
             "exit": self.exit,
         })
