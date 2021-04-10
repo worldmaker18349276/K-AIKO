@@ -568,28 +568,20 @@ class BeatInput:
         self.parse()
         self.suggestion = ""
 
+    def delete_range(self, start, end):
+        start = min(max(0, start), len(self.buffer))
+        end = min(max(0, end), len(self.buffer))
+        del self.buffer[start:end]
+        self.pos = start
+        self.parse()
+        self.suggestion = ""
+
     def move(self, offset):
         self.pos = min(max(0, self.pos+offset), len(self.buffer))
         self.suggestion = ""
 
     def move_to(self, pos):
-        self.pos = min(max(0, pos), len(self.buffer))
-        self.suggestion = ""
-
-    def move_to_end(self):
-        self.pos = len(self.buffer)
-        self.suggestion = ""
-
-    def move_to_token_start(self):
-        width = len(self.buffer)
-        grid = (slic.indices(width)[0] for _, _, slic, _ in self.tokens[::-1])
-        self.pos = next((pos for pos in grid if pos < self.pos), 0)
-        self.suggestion = ""
-
-    def move_to_token_end(self):
-        width = len(self.buffer)
-        grid = (slic.indices(width)[1] for _, _, slic, _ in self.tokens)
-        self.pos = next((pos for pos in grid if pos > self.pos), width)
+        self.pos = min(max(0, pos), len(self.buffer)) if pos is not None else len(self.buffer)
         self.suggestion = ""
 
 
@@ -759,17 +751,43 @@ class BeatStroke:
             elif key == self.keymap["Right"]:
                 self.input.move(+1)
 
-            elif key == self.keymap["Ctrl+Left"]:
-                self.input.move_to_token_start()
-
-            elif key == self.keymap["Ctrl+Right"]:
-                self.input.move_to_token_end()
-
             elif key == self.keymap["Home"]:
                 self.input.move_to(0)
 
             elif key == self.keymap["End"]:
-                self.input.move_to_end()
+                self.input.move_to(None)
+
+            elif key == self.keymap["Ctrl+Left"]:
+                for match in re.finditer("\w+|.", "".join(self.input.buffer)):
+                    if match.end() >= self.input.pos:
+                        self.input.move_to(match.start())
+                        break
+                else:
+                    self.input.move_to(0)
+
+            elif key == self.keymap["Ctrl+Right"]:
+                for match in re.finditer("\w+|.", "".join(self.input.buffer)):
+                    if match.end() > self.input.pos:
+                        self.input.move_to(match.end())
+                        break
+                else:
+                    self.input.move_to(None)
+
+            elif key == self.keymap["Ctrl+Backspace"]:
+                for match in re.finditer("\w+|.", "".join(self.input.buffer)):
+                    if match.end() >= self.input.pos:
+                        self.input.delete_range(match.start(), self.input.pos)
+                        break
+                else:
+                    self.input.delete_range(0, self.input.pos)
+
+            elif key == self.keymap["Ctrl+Right"]:
+                for match in re.finditer("\w+|.", "".join(self.input.buffer)):
+                    if match.end() > self.input.pos:
+                        self.input.delete_range(self.input.pos, match.end())
+                        break
+                else:
+                    self.input.delete_range(self.input.pos, None)
 
             elif key == self.keymap["Enter"]:
                 self.input.enter()
