@@ -256,8 +256,9 @@ def main():
             game.reload()
 
             # prompt
+            history = []
             while True:
-                result = beatcmd.prompt(game.commands())
+                result = beatcmd.prompt(game.commands(), history)
                 if hasattr(result, 'execute'):
                     result.execute(game.manager)
 

@@ -450,10 +450,15 @@ class Promptable:
 
 
 class BeatInput:
-    def __init__(self, promptable):
-        self.buffer = []
-        self.pos = 0
+    def __init__(self, promptable, history=None):
         self.promptable = promptable
+
+        self.history = history if history is not None else []
+        self.history.append([])
+        self.history_index = -1
+
+        self.buffer = self.history[self.history_index]
+        self.pos = len(self.buffer)
         self.suggestion = ""
         self.info = None
 
@@ -582,6 +587,26 @@ class BeatInput:
 
     def move_to(self, pos):
         self.pos = min(max(0, pos), len(self.buffer)) if pos is not None else len(self.buffer)
+        self.suggestion = ""
+
+    def prev(self):
+        if self.history_index == -len(self.history):
+            return
+        self.history_index -= 1
+
+        self.buffer = self.history[self.history_index]
+        self.pos = len(self.buffer)
+        self.parse()
+        self.suggestion = ""
+
+    def next(self):
+        if self.history_index == -1:
+            return
+        self.history_index += 1
+
+        self.buffer = self.history[self.history_index]
+        self.pos = len(self.buffer)
+        self.parse()
         self.suggestion = ""
 
 
@@ -750,6 +775,12 @@ class BeatStroke:
 
             elif key == self.keymap["Right"]:
                 self.input.move(+1)
+
+            elif key == self.keymap["Up"]:
+                self.input.prev()
+
+            elif key == self.keymap["Down"]:
+                self.input.next()
 
             elif key == self.keymap["Home"]:
                 self.input.move_to(0)
@@ -997,8 +1028,8 @@ class BeatPrompt:
             output_text = info_text + "\r" + "".join(view) + "\r"
 
 
-def prompt(promptable, framerate=60.0):
-    input = BeatInput(promptable=promptable)
+def prompt(promptable, history=None, framerate=60.0):
+    input = BeatInput(promptable=promptable, history=history)
     stroke = BeatStroke(input=input)
     input_knot = dn.input(stroke.input_handler())
     prompt = BeatPrompt(stroke, input, framerate)
