@@ -15,119 +15,6 @@ from .beatsheet import BeatmapDraft, BeatmapParseError
 from . import beatanalyzer
 
 
-class KAIKOTheme(metaclass=cfg.Configurable):
-    data_icon: str = "\x1b[92m🗀\x1b[m "
-    info_icon: str = "\x1b[94m🛠\x1b[m "
-    hint_icon: str = "\x1b[93m💡\x1b[m "
-
-    verb: str = "2"
-    emph: str = "1"
-    warn: str = "31"
-
-class KAIKOGame:
-    def __init__(self):
-        self.theme = None
-        self.data_dir = None
-        self.songs_dir = None
-        self._beatmaps = []
-        self.songs_mtime = None
-
-    def init(self, theme=None):
-        self.theme = KAIKOTheme()
-        if theme is not None:
-            cfg.config_read(open(theme, 'r'), main=self.theme)
-
-        emph = self.theme.emph
-        data_icon = self.theme.data_icon
-
-        self.data_dir = appdirs.user_data_dir("K-AIKO", psutil.Process().username())
-        self.songs_dir = os.path.join(self.data_dir, "songs")
-        if not os.path.isdir(self.data_dir):
-            # start up
-            print(f"{data_icon} preparing your profile...")
-            os.makedirs(self.data_dir, exist_ok=True)
-            os.makedirs(self.songs_dir, exist_ok=True)
-            print(f"{data_icon} your data will be stored in {tui.add_attr('file://'+self.data_dir, emph)}")
-            print(flush=True)
-
-    def reload(self):
-        info_icon = self.theme.info_icon
-        emph = self.theme.emph
-        songs_dir = self.songs_dir
-
-        print(f"{info_icon} Loading songs from {tui.add_attr('file://'+songs_dir, emph)}...")
-
-        self._beatmaps = []
-
-        for root, dirs, files in os.walk(songs_dir):
-            for file in files:
-                if file.endswith(".osz"):
-                    filepath = os.path.join(root, file)
-                    distpath, _ = os.path.splitext(filepath)
-                    if os.path.isdir(distpath):
-                        continue
-                    print(f"{info_icon} Unzip file {tui.add_attr('file://'+filepath, emph)}...")
-                    os.makedirs(distpath)
-                    zf = zipfile.ZipFile(filepath, 'r')
-                    zf.extractall(path=distpath)
-
-        for root, dirs, files in os.walk(songs_dir):
-            for file in files:
-                if file.endswith((".kaiko", ".ka", ".osu")):
-                    filepath = os.path.join(root, file)
-                    self._beatmaps.append(filepath)
-
-        if len(self._beatmaps) == 0:
-            print("{info_icon} There is no song in the folder yet!")
-        print(flush=True)
-
-        self.songs_mtime = os.stat(songs_dir).st_mtime
-
-    @property
-    def beatmaps(self):
-        if self.songs_mtime != os.stat(self.songs_dir).st_mtime:
-            self.reload()
-
-        return list(self._beatmaps)
-
-    def play(self, beatmap:str):
-        return KAIKOPlay(beatmap)
-
-    def menu(self):
-        def play(beatmap:self.beatmaps):
-            return self.play(beatmap)
-
-        def exit():
-            print("bye~")
-            raise KeyboardInterrupt
-
-        return beatcmd.Promptable({
-            "play": play,
-            "reload": self.reload,
-            "settings": lambda:None,
-            "exit": exit,
-        })
-
-class KAIKOPlay:
-    def __init__(self, filepath):
-        self.filepath = filepath
-
-    @contextlib.contextmanager
-    def execute(self, manager):
-        try:
-            beatmap = BeatmapDraft.read(self.filepath)
-
-        except BeatmapParseError:
-            print(f"failed to read beatmap {self.filepath}")
-
-        else:
-            game = BeatmapPlayer(beatmap)
-            game.execute(manager)
-
-            print()
-            beatanalyzer.show_analyze(beatmap.settings.performance_tolerance, game.perfs)
-
-
 def print_logo():
     print("\n"
         "  ██▀ ▄██▀   ▄██████▄ ▀██████▄ ██  ▄██▀ █▀▀▀▀▀▀█\n"
@@ -183,71 +70,170 @@ def print_pyaudio_info(manager):
     print(f"default input device: {default_input_device_index}")
     print(f"default output device: {default_output_device_index}")
 
-@contextlib.contextmanager
-def load_pyaudio(theme):
-    print(f"{theme.info_icon} Loading PyAudio...")
-    print()
+class KAIKOTheme(metaclass=cfg.Configurable):
+    data_icon: str = "\x1b[92m🗀\x1b[m "
+    info_icon: str = "\x1b[94m🛠\x1b[m "
+    hint_icon: str = "\x1b[93m💡\x1b[m "
 
-    ctxt = kerminal.prepare_pyaudio()
+    verb: str = "2"
+    emph: str = "1"
+    warn: str = "31"
 
-    print(f"\x1b[{theme.verb}m", end="", flush=True)
-    try:
-        manager = ctxt.__enter__()
-        print_pyaudio_info(manager)
-    finally:
-        print("\x1b[m", flush=True)
+class KAIKOGame:
+    def __init__(self, theme, data_dir, songs_dir, manager):
+        self.theme = theme
+        self.data_dir = data_dir
+        self.songs_dir = songs_dir
+        self.manager = manager
+        self._beatmaps = []
+        self.songs_mtime = None
 
-    try:
-        yield manager
-    except:
-        ctxt.__exit__(*sys.exc_info())
-    else:
-        ctxt.__exit__(None, None, None)
+    @classmethod
+    @contextlib.contextmanager
+    def init(clz, theme_path=None):
+        # print logo
+        print_logo()
+
+        # load theme
+        theme = KAIKOTheme()
+        if theme_path is not None:
+            cfg.config_read(open(theme_path, 'r'), main=theme)
+
+        # load user data
+        data_dir = appdirs.user_data_dir("K-AIKO", psutil.Process().username())
+        songs_dir = os.path.join(data_dir, "songs")
+
+        if not os.path.isdir(data_dir):
+            # start up
+            print(f"{theme.data_icon} preparing your profile...")
+            os.makedirs(data_dir, exist_ok=True)
+            os.makedirs(songs_dir, exist_ok=True)
+            print(f"{theme.data_icon} your data will be stored in "
+                  f"{tui.add_attr('file://'+data_dir, theme.emph)}")
+            print(flush=True)
+
+        # load PyAudio
+        print(f"{theme.info_icon} Loading PyAudio...")
+        print()
+
+        ctxt = kerminal.prepare_pyaudio()
+
+        print(f"\x1b[{theme.verb}m", end="", flush=True)
+        try:
+            manager = ctxt.__enter__()
+            print_pyaudio_info(manager)
+        finally:
+            print("\x1b[m", flush=True)
+
+        try:
+            yield clz(theme, data_dir, songs_dir, manager)
+        except:
+            ctxt.__exit__(*sys.exc_info())
+        else:
+            ctxt.__exit__(None, None, None)
+
+    def reload(self):
+        info_icon = self.theme.info_icon
+        emph = self.theme.emph
+        songs_dir = self.songs_dir
+
+        print(f"{info_icon} Loading songs from {tui.add_attr('file://'+songs_dir, emph)}...")
+
+        self._beatmaps = []
+
+        for root, dirs, files in os.walk(songs_dir):
+            for file in files:
+                if file.endswith(".osz"):
+                    filepath = os.path.join(root, file)
+                    distpath, _ = os.path.splitext(filepath)
+                    if os.path.isdir(distpath):
+                        continue
+                    print(f"{info_icon} Unzip file {tui.add_attr('file://'+filepath, emph)}...")
+                    os.makedirs(distpath)
+                    zf = zipfile.ZipFile(filepath, 'r')
+                    zf.extractall(path=distpath)
+
+        for root, dirs, files in os.walk(songs_dir):
+            for file in files:
+                if file.endswith((".kaiko", ".ka", ".osu")):
+                    filepath = os.path.join(root, file)
+                    self._beatmaps.append(filepath)
+
+        if len(self._beatmaps) == 0:
+            print("{info_icon} There is no song in the folder yet!")
+        print(flush=True)
+
+        self.songs_mtime = os.stat(songs_dir).st_mtime
+
+    @property
+    def beatmaps(self):
+        if self.songs_mtime != os.stat(self.songs_dir).st_mtime:
+            self.reload()
+
+        return list(self._beatmaps)
+
+    def play(self, beatmap:str):
+        return KAIKOPlay(beatmap)
+
+    def exit(self):
+        print("bye~")
+        raise KeyboardInterrupt
+
+    def menu(self):
+        def play(beatmap:self.beatmaps):
+            return self.play(beatmap)
+
+        return beatcmd.Promptable({
+            "play": play,
+            "reload": self.reload,
+            "settings": lambda:None,
+            "exit": self.exit,
+        })
+
+class KAIKOPlay:
+    def __init__(self, filepath):
+        self.filepath = filepath
+
+    @contextlib.contextmanager
+    def execute(self, manager):
+        try:
+            beatmap = BeatmapDraft.read(self.filepath)
+
+        except BeatmapParseError:
+            print(f"failed to read beatmap {self.filepath}")
+
+        else:
+            game = BeatmapPlayer(beatmap)
+            game.execute(manager)
+
+            print()
+            beatanalyzer.show_analyze(beatmap.settings.performance_tolerance, game.perfs)
+
 
 def main(theme=None):
-    # print logo
-    print_logo()
-
-    # load data
-    game = KAIKOGame()
-    game.init()
-
-    data_icon = game.theme.data_icon
-    info_icon = game.theme.info_icon
-    hint_icon = game.theme.hint_icon
-    verb = game.theme.verb
-    emph = game.theme.emph
-    warn = game.theme.warn
-
     try:
-        # load PyAudio
-        with load_pyaudio(game.theme) as manager:
-
+        with KAIKOGame.init() as game:
             # play given beatmap
             if len(sys.argv) > 1:
                 filepath = sys.argv[1]
-                game.play(filepath).execute(manager)
+                game.play(filepath).execute(game.manager)
                 return
 
             # load songs
             game.reload()
 
-            # enter menu
-            print(f"{hint_icon} Use {tui.add_attr('up', emph)}/{tui.add_attr('down', emph)}/"
-                  f"{tui.add_attr('enter', emph)}/{tui.add_attr('esc', emph)} keys to select options.")
-            print(flush=True)
-
+            # prompt
             while True:
                 result = beatcmd.prompt(game.menu())
                 if hasattr(result, 'execute'):
-                    result.execute(manager)
+                    result.execute(game.manager)
 
     except KeyboardInterrupt:
         pass
 
     except:
         # print error
-        print(f"\x1b[{warn}m", end="")
+        print("\x1b[31m", end="")
         traceback.print_exc(file=sys.stdout)
         print(f"\x1b[m", end="")
 
