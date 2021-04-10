@@ -198,14 +198,27 @@ class KAIKOGame:
         print("bye~")
         raise KeyboardInterrupt
 
-    def menu(self):
+    def commands(self):
         def play(beatmap:self.beatmaps):
             return self.play(beatmap)
+
+        def print_data_dir():
+            print(self.data_dir)
+
+        def print_songs_dir():
+            print(self.songs_dir)
+
+        def print_beatmaps():
+            for path in self.beatmaps:
+                print(path)
 
         return beatcmd.Promptable({
             "play": play,
             "reload": self.reload,
             "add": self.add,
+            "data_dir": print_data_dir,
+            "songs_dir": print_songs_dir,
+            "beatmaps": print_beatmaps,
             "settings": lambda:None,
             "exit": self.exit,
         })
@@ -244,7 +257,7 @@ def main():
 
             # prompt
             while True:
-                result = beatcmd.prompt(game.menu())
+                result = beatcmd.prompt(game.commands())
                 if hasattr(result, 'execute'):
                     result.execute(game.manager)
 
