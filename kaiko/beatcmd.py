@@ -4,7 +4,7 @@ import re
 import queue
 import threading
 import inspect
-from typing import List
+from typing import List, Tuple
 from . import datanodes as dn
 from . import tui
 from . import cfg
@@ -550,12 +550,13 @@ class InputResult:
 class BeatInput:
     def __init__(self, promptable, history=None):
         self.promptable = promptable
-
         self.history = history if history is not None else []
-        self.history.append([])
-        self.history_index = -1
 
-        self.buffer = self.history[self.history_index]
+        self.buffers = [list(history_buffer) for history_buffer in self.history]
+        self.buffers.append([])
+        self.buffers_index = -1
+
+        self.buffer = self.buffers[self.buffers_index]
         self.pos = len(self.buffer)
         self.suggestion = ""
 
@@ -615,6 +616,7 @@ class BeatInput:
 
     def enter(self):
         if len(self.tokens) == 0:
+            self.delete_range(None, None)
             self.result.put(InputError(None, None))
             return
 
@@ -622,38 +624,39 @@ class BeatInput:
             res = self.promptable.generate([token for token, _, _, _ in self.tokens], self.state)
 
         except PromptUnfinishError as e:
-            slic = slice(len(self.buffer)-1, len(self.buffer))
+            pointto = slice(len(self.buffer)-1, len(self.buffer))
 
             if isinstance(e.suggestion, (tuple, list)):
                 sugg = e.suggestion[:5] + ["…"] if len(e.suggestion) > 5 else e.suggestion
                 sugg = "\n".join("  " + "".join(shlexer_escape(s)) for s in sugg)
-                info = e.info + "\n" + f"It should be followed by:\n{sugg}"
+                msg = e.info + "\n" + f"It should be followed by:\n{sugg}"
             elif isinstance(e.suggestion, type):
-                info = e.info + "\n" + f"It should be followed by {e.suggestion.__name__} literal"
+                msg = e.info + "\n" + f"It should be followed by {e.suggestion.__name__} literal"
             elif e.suggestion is not None:
-                info = e.info + "\n" + f"It should be followed by {e.suggestion}"
+                msg = e.info + "\n" + f"It should be followed by {e.suggestion}"
             else:
-                info = e.info
+                msg = e.info
 
-            self.result.put(InputError(slic, info))
+            self.result.put(InputError(pointto, msg))
 
         except PromptParseError as e:
-            _, _, slic, _ = self.tokens[e.index]
+            _, _, pointto, _ = self.tokens[e.index]
 
             if isinstance(e.suggestion, (tuple, list)):
                 sugg = e.suggestion[:5] + ["…"] if len(e.suggestion) > 5 else e.suggestion
                 sugg = "\n".join("  " + "".join(shlexer_escape(s)) for s in sugg)
-                info = e.info + "\n" + f"It should be one of:\n{sugg}"
+                msg = e.info + "\n" + f"It should be one of:\n{sugg}"
             elif isinstance(e.suggestion, type):
-                info = e.info + "\n" + f"It should be {e.suggestion.__name__} literal"
+                msg = e.info + "\n" + f"It should be {e.suggestion.__name__} literal"
             elif e.suggestion is not None:
-                info = e.info + "\n" + f"It should be {e.suggestion}"
+                msg = e.info + "\n" + f"It should be {e.suggestion}"
             else:
-                info = e.info
+                msg = e.info
 
-            self.result.put(InputError(slic, info))
+            self.result.put(InputError(pointto, msg))
 
         else:
+            self.history.append("".join(self.buffer))
             self.result.put(InputResult(res))
 
     def suggest(self):
@@ -695,6 +698,10 @@ class BeatInput:
         self.suggestion = ""
 
     def delete_range(self, start, end):
+        if start is None:
+            start = 0
+        if end is None:
+            end = len(self.buffer)
         start = min(max(0, start), len(self.buffer))
         end = min(max(0, end), len(self.buffer))
         del self.buffer[start:end]
@@ -708,7 +715,7 @@ class BeatInput:
                 self.delete_range(match.start(), self.pos)
                 break
         else:
-            self.delete_range(0, self.pos)
+            self.delete_range(None, self.pos)
 
     def delete_to_word_end(self):
         for match in re.finditer("\w+|.", "".join(self.buffer)):
@@ -716,7 +723,7 @@ class BeatInput:
                 self.delete_range(self.pos, match.end())
                 break
         else:
-            self.delete_range(self.pos, len(self.buffer))
+            self.delete_range(self.pos, None)
 
     def move(self, offset):
         self.pos = min(max(0, self.pos+offset), len(self.buffer))
@@ -743,21 +750,21 @@ class BeatInput:
             self.move_to(None)
 
     def prev(self):
-        if self.history_index == -len(self.history):
+        if self.buffers_index == -len(self.buffers):
             return
-        self.history_index -= 1
+        self.buffers_index -= 1
 
-        self.buffer = self.history[self.history_index]
+        self.buffer = self.buffers[self.buffers_index]
         self.pos = len(self.buffer)
         self.parse()
         self.suggestion = ""
 
     def next(self):
-        if self.history_index == -1:
+        if self.buffers_index == -1:
             return
-        self.history_index += 1
+        self.buffers_index += 1
 
-        self.buffer = self.history[self.history_index]
+        self.buffer = self.buffers[self.buffers_index]
         self.pos = len(self.buffer)
         self.parse()
         self.suggestion = ""
@@ -990,20 +997,21 @@ class PromptTheme(metaclass=cfg.Configurable):
     ]
     header_width: int = 7
 
-    cursor: str = "7;2"
-    cursor_highlight: str = "7;1"
+    cursor_attr: Tuple[str, str] = ("7;2", "7;1")
+    cursor_blink_ratio: float = 0.3
     cursor_tab: str = "↹ "
 
-    escape: str = "2"
-    suggestion: str = "2"
-    whitespace: str = "\x1b[2m⌴\x1b[m"
-    error: str = "31"
+    error_message_attr: str = "31"
 
-    warn: str = "31"
-    command: str = "94"
-    function: str = "94"
-    argument: str = "95"
-    literal: str = "92"
+    escape_attr: str = "2"
+    suggestion_attr: str = "2"
+    whitespace: str = "\x1b[2m⌴\x1b[m"
+
+    token_invalid_attr: str = "31"
+    token_command_attr: str = "94"
+    token_function_attr: str = "94"
+    token_argument_attr: str = "95"
+    token_literal_attr: str = "92"
 
 class BeatPrompt:
     def __init__(self, stroke, input, theme):
@@ -1018,9 +1026,8 @@ class BeatPrompt:
         header_node = self.header_node()
         render_node = self.render_node()
         draw_node = self.draw_node()
-        return dn.pipe(result_node,
-                       (lambda a: (a, bool(a), bool(a), None)),
-                       dn.pair(lambda a:a, header_node, render_node, size_node),
+        return dn.pipe((lambda _: (None, None, None, None)),
+                       dn.pair(result_node, header_node, render_node, size_node),
                        draw_node)
 
     @dn.datanode
@@ -1039,126 +1046,152 @@ class BeatPrompt:
 
     @dn.datanode
     def header_node(self):
-        plain = yield
-        t = self.theme.t0/(60/self.theme.tempo)
+        t0 = self.theme.t0
+        tempo = self.theme.tempo
+        framerate = self.theme.framerate
+
+        headers = self.theme.headers
+
+        cursor_attr = self.theme.cursor_attr
+        cursor_tab = self.theme.cursor_tab
+        cursor_blink_ratio = self.theme.cursor_blink_ratio
+
+        yield
+        t = t0/(60/tempo)
         tr = 0
         while True:
+            # don't blink while key pressing
             if self.stroke.event.is_set():
                 self.stroke.event.clear()
                 tr = t // -1 * -1
 
-            ind = int(t / 4 * len(self.theme.headers)) % len(self.theme.headers)
-            header = self.theme.headers[ind]
-
-            # cursor
-            if not plain and (t-tr < 0 or (t-tr) % 1 < 0.3):
-                if t % 4 < 0.3:
-                    cursor = lambda s: tui.add_attr(s, self.theme.cursor_highlight)
+            # render cursor
+            if (t-tr < 0 or (t-tr) % 1 < cursor_blink_ratio):
+                if t % 4 < cursor_blink_ratio:
+                    cursor = lambda s: tui.add_attr(s, cursor_attr[1])
                 else:
-                    cursor = lambda s: tui.add_attr(s, self.theme.cursor)
+                    cursor = lambda s: tui.add_attr(s, cursor_attr[0])
 
                 if self.stroke.state == INPUT_STATE.TAB:
-                    cursor = cursor(self.theme.cursor_tab)
+                    cursor = cursor(cursor_tab)
             else:
                 cursor = None
 
-            plain = yield header, cursor
-            t += 1/self.theme.framerate/(60/self.theme.tempo)
+            # render header
+            ind = int(t / 4 * len(headers)) % len(headers)
+            header = headers[ind]
+
+            yield header, cursor
+            t += 1/framerate/(60/tempo)
 
     @dn.datanode
     def render_node(self):
-        render_escape     = lambda s: tui.add_attr(s, self.theme.escape)
-        render_warn       = lambda s: tui.add_attr(s, self.theme.warn)
-        render_suggestion = lambda s: tui.add_attr(s, self.theme.suggestion)
-        whitespace = self.theme.whitespace
+        escape_attr     = self.theme.escape_attr
+        suggestion_attr = self.theme.suggestion_attr
+        whitespace      = self.theme.whitespace
 
-        render_command  = lambda s: tui.add_attr(s, self.theme.command)
-        render_function = lambda s: tui.add_attr(s, self.theme.function)
-        render_argument = lambda s: tui.add_attr(s, self.theme.argument)
-        render_literal  = lambda s: tui.add_attr(s, self.theme.literal)
+        token_invalid_attr  = self.theme.token_invalid_attr
+        token_command_attr  = self.theme.token_command_attr
+        token_function_attr = self.theme.token_function_attr
+        token_argument_attr = self.theme.token_argument_attr
+        token_literal_attr  = self.theme.token_literal_attr
 
-        plain = yield
+        yield
         while True:
             # render buffer
             rendered_buffer = list(self.input.buffer)
-            for token, type, slic, masked in self.input.tokens:
-                for index in masked:
-                    rendered_buffer[index] = render_escape(rendered_buffer[index])
 
+            for token, type, slic, masked in self.input.tokens:
+                # render escape
+                for index in masked:
+                    rendered_buffer[index] = tui.add_attr(rendered_buffer[index], escape_attr)
+
+                # render whitespace
                 for index in range(len(rendered_buffer))[slic]:
                     if rendered_buffer[index] == " ":
                         rendered_buffer[index] = whitespace
 
+                # render invalid token except the final one
                 if type is None and slic.stop is not None:
                     for index in range(len(rendered_buffer))[slic]:
-                        rendered_buffer[index] = render_warn(rendered_buffer[index])
+                        rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_invalid_attr)
 
+                # render command token
                 if type is TOKEN_TYPE.COMMAND:
                     for index in range(len(rendered_buffer))[slic]:
-                        rendered_buffer[index] = render_command(rendered_buffer[index])
+                        rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_command_attr)
 
+                # render function token
                 elif type is TOKEN_TYPE.FUNCTION:
                     for index in range(len(rendered_buffer))[slic]:
-                        rendered_buffer[index] = render_function(rendered_buffer[index])
+                        rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_function_attr)
 
+                # render argument token
                 elif type is TOKEN_TYPE.ARGUMENT:
                     for index in range(len(rendered_buffer))[slic]:
-                        rendered_buffer[index] = render_argument(rendered_buffer[index])
+                        rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_argument_attr)
 
+                # render literal token
                 elif type is TOKEN_TYPE.LITERAL:
                     for index in range(len(rendered_buffer))[slic]:
-                        rendered_buffer[index] = render_literal(rendered_buffer[index])
+                        rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_literal_attr)
 
             rendered_text = "".join(rendered_buffer)
-            if not plain and self.input.suggestion:
-                rendered_suggestion = render_suggestion(self.input.suggestion)
-            else:
-                rendered_suggestion = ""
+
+            # render suggestion
+            rendered_sugg = tui.add_attr(self.input.suggestion, suggestion_attr) if self.input.suggestion else ""
+
+            # compute cursor position
             _, cursor_pos = tui.textrange1(0, "".join(rendered_buffer[:self.input.pos]))
 
-            plain = yield rendered_text, rendered_suggestion, cursor_pos
+            yield rendered_text, rendered_sugg, cursor_pos
 
     @dn.datanode
     def draw_node(self):
+        header_width = self.theme.header_width
+        header_ran = slice(None, header_width)
+        input_ran = slice(header_width, None)
+
+        error_message_attr = self.theme.error_message_attr
+
         input_offset = 0
         output_text = None
 
         while True:
-            result, (header, cursor), (rendered_text, rendered_suggestion, cursor_pos), size = yield output_text
+            result, (header, cursor), (text, suggestion, cursor_pos), size = yield output_text
             width = size.columns
+            view = tui.newwin1(width)
 
             # adjust input offset
-            input_ran = slice(self.theme.header_width, None)
             input_width = len(range(width)[input_ran])
-            _, text_length = tui.textrange1(0, rendered_text)
+            _, text_length = tui.textrange1(0, text)
 
             if cursor_pos - input_offset >= input_width:
                 input_offset = cursor_pos - input_width + 1
             elif cursor_pos - input_offset < 0:
                 input_offset = cursor_pos
-            elif text_length-input_offset+1 <= input_width:
+            elif text_length - input_offset + 1 <= input_width:
                 input_offset = max(0, text_length-input_width+1)
 
-            # draw header
-            view = tui.newwin1(width)
-            tui.addtext1(view, width, 0, header, slice(0, self.theme.header_width))
-
             # draw input
-            tui.addtext1(view, width, input_ran.start-input_offset,
-                         rendered_text+rendered_suggestion, input_ran)
+            text_ = text + (suggestion if not result else "")
+            tui.addtext1(view, width, input_ran.start-input_offset, text_, input_ran)
             if input_offset > 0:
                 tui.addtext1(view, width, input_ran.start, "…", input_ran)
             if text_length-input_offset >= input_width:
                 tui.addtext1(view, width, input_ran.start+input_width-1, "…", input_ran)
 
+            # draw header
+            tui.addtext1(view, width, 0, header, header_ran)
+
             # draw cursor
-            if cursor:
+            if not result and cursor:
                 cursor_x = input_ran.start - input_offset + cursor_pos
                 cursor_ran = tui.select1(view, width, slice(cursor_x, cursor_x+1))
                 if hasattr(cursor, '__call__'):
                     view[cursor_ran.start] = cursor(view[cursor_ran.start])
                 else:
-                    tui.addtext1(view, width, cursor_ran.start, cursor)
+                    tui.addtext1(view, width, cursor_ran.start, cursor, input_ran)
 
             # print error
             err_text = ""
@@ -1166,7 +1199,7 @@ class BeatPrompt:
                 err_text = "\n"
 
                 if result.message is not None:
-                    err_text = "\n" + tui.add_attr(result.message, self.theme.error) + err_text
+                    err_text = "\n" + tui.add_attr(result.message, error_message_attr) + err_text
 
                 if result.pointto is not None:
                     _, pointto_start = tui.textrange1(-input_offset, self.input.buffer[:result.pointto.start])
@@ -1178,7 +1211,6 @@ class BeatPrompt:
                     pointto_text = "^"*(pointto_stop - pointto_start)
                     err_text = "\n" + padding + pointto_text + err_text
 
-            # print error
             output_text = "\r" + "".join(view) + "\r" + err_text
 
 def prompt(promptable, history=None):
