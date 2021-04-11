@@ -1233,17 +1233,9 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
             if not error.empty():
                 raise error.get()
 
-@datanode
-def input(node, stream=None):
-    import sys, os, signal, termios, fcntl
-
-    error = None
-    node = DataNode.wrap(node)
-    MAX_KEY_LEN = 16
-    dt = 0.01
-
-    if stream is None:
-        stream = sys.stdin
+@contextlib.contextmanager
+def input_ctxt(stream):
+    import os, termios, fcntl
 
     fd = stream.fileno()
     old_attrs = termios.tcgetattr(fd)
@@ -1254,12 +1246,36 @@ def input(node, stream=None):
     old_owner = fcntl.fcntl(fd, fcntl.F_GETOWN)
     new_owner = os.getpid()
 
+    try:
+        fcntl.fcntl(fd, fcntl.F_SETFL, new_flags)
+        fcntl.fcntl(fd, fcntl.F_SETOWN, new_owner)
+        termios.tcsetattr(fd, termios.TCSANOW, new_attrs)
+
+        yield
+
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
+        fcntl.fcntl(fd, fcntl.F_SETOWN, old_owner)
+        fcntl.fcntl(fd, fcntl.F_SETFL, old_flags)
+
+@datanode
+def input(node, stream=None):
+    import sys, signal
+
+    node = DataNode.wrap(node)
+    MAX_KEY_LEN = 16
+    dt = 0.01
+
+    if stream is None:
+        stream = sys.stdin
+
     io_event = threading.Event()
     def SIGIO_handler(signal, frame):
         io_event.set()
     signal.signal(signal.SIGIO, SIGIO_handler)
 
     stop_event = threading.Event()
+    error = None
 
     def run():
         nonlocal error
@@ -1286,11 +1302,7 @@ def input(node, stream=None):
         except Exception as e:
             error = e
 
-    try:
-        fcntl.fcntl(fd, fcntl.F_SETFL, new_flags)
-        fcntl.fcntl(fd, fcntl.F_SETOWN, new_owner)
-        termios.tcsetattr(fd, termios.TCSANOW, new_attrs)
-
+    with input_ctxt(stream):
         with node:
             thread = threading.Thread(target=run)
             try:
@@ -1307,10 +1319,23 @@ def input(node, stream=None):
                 if error is not None:
                     raise error
 
+@contextlib.contextmanager
+def show_ctxt(stream, hide_cursor=False, end="\n"):
+    import sys
+
+    hide_cursor = hide_cursor and stream == sys.stdout
+
+    try:
+        if hide_cursor:
+            stream.write("\x1b[?25l")
+
+        yield
+
     finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
-        fcntl.fcntl(fd, fcntl.F_SETOWN, old_owner)
-        fcntl.fcntl(fd, fcntl.F_SETFL, old_flags)
+        if hide_cursor:
+            stream.write("\x1b[?25h")
+        stream.write(end)
+        stream.flush()
 
 @datanode
 def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
@@ -1319,7 +1344,6 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
     node = DataNode.wrap(node)
     if stream is None:
         stream = sys.stdout
-    hide_cursor = hide_cursor and stream == sys.stdout
 
     stop_event = threading.Event()
     error = None
@@ -1342,10 +1366,7 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
         except Exception as e:
             error = e
 
-    try:
-        if hide_cursor:
-            stream.write("\x1b[?25l")
-
+    with show_ctxt(stream, hide_cursor, end):
         with node:
             thread = threading.Thread(target=run)
 
@@ -1361,12 +1382,6 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
                     thread.join()
                 if error is not None:
                     raise error
-
-    finally:
-        if hide_cursor:
-            stream.write("\x1b[?25h")
-        stream.write(end)
-        stream.flush()
 
 @datanode
 def terminal_size():
