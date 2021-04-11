@@ -4,8 +4,10 @@ import re
 import queue
 import threading
 import inspect
+from typing import List
 from . import datanodes as dn
 from . import tui
+from . import cfg
 
 
 class SHLEXER_STATE(Enum):
@@ -536,6 +538,15 @@ class Promptable:
         return [sugg[len(target):] for sugg in self.suggest(tokens, target) if sugg.startswith(target)]
 
 
+class InputError:
+    def __init__(self, pointto, message):
+        self.pointto = pointto
+        self.message = message
+
+class InputResult:
+    def __init__(self, value):
+        self.value = value
+
 class BeatInput:
     def __init__(self, promptable, history=None):
         self.promptable = promptable
@@ -547,18 +558,11 @@ class BeatInput:
         self.buffer = self.history[self.history_index]
         self.pos = len(self.buffer)
         self.suggestion = ""
-        self.info = queue.Queue()
 
         self.tokens = []
         self.state = SHLEXER_STATE.SPACED
-        self.result = None
-        self.finished = threading.Event()
 
-    @dn.datanode
-    def wait_node(self):
-        yield
-        while not self.finished.is_set():
-            yield
+        self.result = queue.Queue()
 
     def parse(self):
         lex_parser = shlexer_parse(self.buffer, partial=True)
@@ -610,6 +614,10 @@ class BeatInput:
             self.parse()
 
     def enter(self):
+        if len(self.tokens) == 0:
+            self.result.put(InputError(None, None))
+            return
+
         try:
             res = self.promptable.generate([token for token, _, _, _ in self.tokens], self.state)
 
@@ -626,9 +634,8 @@ class BeatInput:
                 info = e.info + "\n" + f"It should be followed by {e.suggestion}"
             else:
                 info = e.info
-            info = tui.add_attr(info, "31")
 
-            self.info.put((slic, info))
+            self.result.put(InputError(slic, info))
 
         except PromptParseError as e:
             _, _, slic, _ = self.tokens[e.index]
@@ -643,13 +650,11 @@ class BeatInput:
                 info = e.info + "\n" + f"It should be {e.suggestion}"
             else:
                 info = e.info
-            info = tui.add_attr(info, "31")
 
-            self.info.put((slic, info))
+            self.result.put(InputError(slic, info))
 
         else:
-            self.result = res
-            self.finished.set()
+            self.result.put(InputResult(res))
 
     def suggest(self):
         lex_completer = shlexer_complete(self.buffer, len(self.buffer), self.promptable.complete)
@@ -887,11 +892,11 @@ class INPUT_STATE(Enum):
     TAB = "tab"
 
 class BeatStroke:
-    def __init__(self, input):
+    def __init__(self, input, keymap, keycodes):
         self.input = input
         self.event = threading.Event()
-        self.keycodes = default_keycodes
-        self.keymap = default_keymap
+        self.keymap = keymap
+        self.keycodes = keycodes
         self.state = INPUT_STATE.EDIT
 
     @dn.datanode
@@ -941,105 +946,138 @@ class BeatStroke:
                     self.input.input(key)
 
 
-BLOCKER_HEADERS = [
-    "\x1b[96;1m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;255m❯\x1b[m ",
-    "\x1b[96;1m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;255m❯\x1b[m ",
-    "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;254m❯\x1b[m ",
-    "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;254m❯\x1b[m ",
-    "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;253m❯\x1b[m ",
-    "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;253m❯\x1b[m ",
-    "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;252m❯\x1b[m ",
-    "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;252m❯\x1b[m ",
+class PromptTheme(metaclass=cfg.Configurable):
+    framerate: float = 60.0
+    t0: float = 0.0
+    tempo: float = 130.0
 
-    "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;251m❯\x1b[m ",
-    "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;251m❯\x1b[m ",
-    "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;250m❯\x1b[m ",
-    "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;250m❯\x1b[m ",
-    "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;249m❯\x1b[m ",
-    "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;249m❯\x1b[m ",
-    "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;248m❯\x1b[m ",
-    "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;248m❯\x1b[m ",
+    headers: List[str] = [
+        "\x1b[96;1m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;255m❯\x1b[m ",
+        "\x1b[96;1m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;255m❯\x1b[m ",
+        "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;254m❯\x1b[m ",
+        "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;254m❯\x1b[m ",
+        "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;253m❯\x1b[m ",
+        "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;253m❯\x1b[m ",
+        "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;252m❯\x1b[m ",
+        "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;252m❯\x1b[m ",
 
-    "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;247m❯\x1b[m ",
-    "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;247m❯\x1b[m ",
-    "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;246m❯\x1b[m ",
-    "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;246m❯\x1b[m ",
-    "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;245m❯\x1b[m ",
-    "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;245m❯\x1b[m ",
-    "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;244m❯\x1b[m ",
-    "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;244m❯\x1b[m ",
+        "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;251m❯\x1b[m ",
+        "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;251m❯\x1b[m ",
+        "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;250m❯\x1b[m ",
+        "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;250m❯\x1b[m ",
+        "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;249m❯\x1b[m ",
+        "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;249m❯\x1b[m ",
+        "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;248m❯\x1b[m ",
+        "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;248m❯\x1b[m ",
 
-    "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;243m❯\x1b[m ",
-    "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;243m❯\x1b[m ",
-    "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;242m❯\x1b[m ",
-    "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;242m❯\x1b[m ",
-    "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;241m❯\x1b[m ",
-    "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;241m❯\x1b[m ",
-    "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;240m❯\x1b[m ",
-    "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;240m❯\x1b[m ",
-]
-BLOCKER_HEADER_WIDTH = 7
+        "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;247m❯\x1b[m ",
+        "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;247m❯\x1b[m ",
+        "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;246m❯\x1b[m ",
+        "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;246m❯\x1b[m ",
+        "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;245m❯\x1b[m ",
+        "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;245m❯\x1b[m ",
+        "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;244m❯\x1b[m ",
+        "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;244m❯\x1b[m ",
+
+        "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;243m❯\x1b[m ",
+        "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;243m❯\x1b[m ",
+        "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;242m❯\x1b[m ",
+        "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;242m❯\x1b[m ",
+        "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;241m❯\x1b[m ",
+        "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;241m❯\x1b[m ",
+        "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;240m❯\x1b[m ",
+        "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;240m❯\x1b[m ",
+    ]
+    header_width: int = 7
+
+    cursor: str = "7;2"
+    cursor_highlight: str = "7;1"
+    cursor_tab: str = "↹ "
+
+    escape: str = "2"
+    suggestion: str = "2"
+    whitespace: str = "\x1b[2m⌴\x1b[m"
+    error: str = "31"
+
+    warn: str = "31"
+    command: str = "94"
+    function: str = "94"
+    argument: str = "95"
+    literal: str = "92"
 
 class BeatPrompt:
-    def __init__(self, stroke, input, framerate, t0=0.0, tempo=130.0):
+    def __init__(self, stroke, input, theme):
         self.stroke = stroke
         self.input = input
-        self.framerate = framerate
-        self.t0 = t0
-        self.tempo = tempo
-        self.headers = BLOCKER_HEADERS
-        self.header_width = BLOCKER_HEADER_WIDTH
+        self.theme = theme
+        self.result = None
 
     def output_handler(self):
         size_node = dn.terminal_size()
+        result_node = self.result_node()
         header_node = self.header_node()
         render_node = self.render_node()
         draw_node = self.draw_node()
-        return dn.pipe((lambda _: (None,None,None)),
-                       dn.pair(header_node, render_node, size_node),
+        return dn.pipe(result_node,
+                       (lambda a: (a, bool(a), bool(a), None)),
+                       dn.pair(lambda a:a, header_node, render_node, size_node),
                        draw_node)
 
     @dn.datanode
-    def header_node(self):
+    def result_node(self):
         yield
-        t = self.t0/(60/self.tempo)
+        while True:
+            result = None
+            while not self.input.result.empty():
+                result = self.input.result.get()
+
+            yield result
+
+            if isinstance(result, InputResult):
+                self.result = result.value
+                return
+
+    @dn.datanode
+    def header_node(self):
+        plain = yield
+        t = self.theme.t0/(60/self.theme.tempo)
         tr = 0
         while True:
             if self.stroke.event.is_set():
                 self.stroke.event.clear()
                 tr = t // -1 * -1
 
-            ind = int(t / 4 * len(self.headers)) % len(self.headers)
-            header = self.headers[ind]
+            ind = int(t / 4 * len(self.theme.headers)) % len(self.theme.headers)
+            header = self.theme.headers[ind]
 
             # cursor
-            if t-tr < 0 or (t-tr) % 1 < 0.3:
-                if ind == 0 or ind == 1:
-                    cursor = lambda s: tui.add_attr(s, "7;1")
+            if not plain and (t-tr < 0 or (t-tr) % 1 < 0.3):
+                if t % 4 < 0.3:
+                    cursor = lambda s: tui.add_attr(s, self.theme.cursor_highlight)
                 else:
-                    cursor = lambda s: tui.add_attr(s, "7;2")
+                    cursor = lambda s: tui.add_attr(s, self.theme.cursor)
 
                 if self.stroke.state == INPUT_STATE.TAB:
-                    cursor = cursor("↹ ")
+                    cursor = cursor(self.theme.cursor_tab)
             else:
                 cursor = None
 
-            yield header, cursor
-            t += 1/self.framerate/(60/self.tempo)
+            plain = yield header, cursor
+            t += 1/self.theme.framerate/(60/self.theme.tempo)
 
     @dn.datanode
     def render_node(self):
-        render_escape = lambda s: tui.add_attr(s, "2")
-        render_warn = lambda s: tui.add_attr(s, "31")
-        render_suggestion = lambda s: tui.add_attr(s, "2")
-        whitespace = tui.add_attr("⌴", "2")
+        render_escape     = lambda s: tui.add_attr(s, self.theme.escape)
+        render_warn       = lambda s: tui.add_attr(s, self.theme.warn)
+        render_suggestion = lambda s: tui.add_attr(s, self.theme.suggestion)
+        whitespace = self.theme.whitespace
 
-        render_command = lambda s: tui.add_attr(s, "94")
-        render_function = lambda s: tui.add_attr(s, "94;1")
-        render_argument = lambda s: tui.add_attr(s, "95")
-        render_literal = lambda s: tui.add_attr(s, "92")
+        render_command  = lambda s: tui.add_attr(s, self.theme.command)
+        render_function = lambda s: tui.add_attr(s, self.theme.function)
+        render_argument = lambda s: tui.add_attr(s, self.theme.argument)
+        render_literal  = lambda s: tui.add_attr(s, self.theme.literal)
 
-        yield
+        plain = yield
         while True:
             # render buffer
             rendered_buffer = list(self.input.buffer)
@@ -1072,10 +1110,13 @@ class BeatPrompt:
                         rendered_buffer[index] = render_literal(rendered_buffer[index])
 
             rendered_text = "".join(rendered_buffer)
-            rendered_suggestion = render_suggestion(self.input.suggestion) if self.input.suggestion else ""
+            if not plain and self.input.suggestion:
+                rendered_suggestion = render_suggestion(self.input.suggestion)
+            else:
+                rendered_suggestion = ""
             _, cursor_pos = tui.textrange1(0, "".join(rendered_buffer[:self.input.pos]))
 
-            yield rendered_text, rendered_suggestion, cursor_pos
+            plain = yield rendered_text, rendered_suggestion, cursor_pos
 
     @dn.datanode
     def draw_node(self):
@@ -1083,11 +1124,11 @@ class BeatPrompt:
         output_text = None
 
         while True:
-            (header, cursor), (rendered_text, rendered_suggestion, cursor_pos), size = yield output_text
+            result, (header, cursor), (rendered_text, rendered_suggestion, cursor_pos), size = yield output_text
             width = size.columns
 
             # adjust input offset
-            input_ran = slice(self.header_width, None)
+            input_ran = slice(self.theme.header_width, None)
             input_width = len(range(width)[input_ran])
             _, text_length = tui.textrange1(0, rendered_text)
 
@@ -1100,7 +1141,7 @@ class BeatPrompt:
 
             # draw header
             view = tui.newwin1(width)
-            tui.addtext1(view, width, 0, header, slice(0, self.header_width))
+            tui.addtext1(view, width, 0, header, slice(0, self.theme.header_width))
 
             # draw input
             tui.addtext1(view, width, input_ran.start-input_offset,
@@ -1119,37 +1160,37 @@ class BeatPrompt:
                 else:
                     tui.addtext1(view, width, cursor_ran.start, cursor)
 
-            # print info
-            info_text = ""
-            if not self.input.info.empty():
-                pointto, msg = self.input.info.get()
-                info_text = "\x1b[m\n"
+            # print error
+            err_text = ""
+            if isinstance(result, InputError):
+                err_text = "\n"
 
-                if msg is not None:
-                    info_text = "\n" + msg + info_text
+                if result.message is not None:
+                    err_text = "\n" + tui.add_attr(result.message, self.theme.error) + err_text
 
-                if pointto is not None:
-                    _, pointto_start = tui.textrange1(-input_offset, self.input.buffer[:pointto.start])
-                    _, pointto_stop = tui.textrange1(-input_offset, self.input.buffer[:pointto.stop])
+                if result.pointto is not None:
+                    _, pointto_start = tui.textrange1(-input_offset, self.input.buffer[:result.pointto.start])
+                    _, pointto_stop = tui.textrange1(-input_offset, self.input.buffer[:result.pointto.stop])
                     pointto_start = max(0, min(input_width-1, pointto_start))
                     pointto_stop = max(1, min(input_width, pointto_stop))
 
                     padding = " "*(input_ran.start+pointto_start)
                     pointto_text = "^"*(pointto_stop - pointto_start)
-                    info_text = "\n" + padding + pointto_text + info_text
+                    err_text = "\n" + padding + pointto_text + err_text
 
-            output_text = info_text + "\r" + "".join(view) + "\r"
+            # print error
+            output_text = "\r" + "".join(view) + "\r" + err_text
 
+def prompt(promptable, history=None):
+    theme = PromptTheme()
 
-def prompt(promptable, history=None, framerate=60.0):
-    input = BeatInput(promptable=promptable, history=history)
-    stroke = BeatStroke(input=input)
+    input = BeatInput(promptable, history)
+    stroke = BeatStroke(input, default_keymap, default_keycodes)
+    prompt = BeatPrompt(stroke, input, theme)
+
     input_knot = dn.input(stroke.input_handler())
-    prompt = BeatPrompt(stroke, input, framerate)
-    display_knot = dn.interval(prompt.output_handler(), dn.show(hide_cursor=True), 1/framerate)
-
-    prompt_knot = dn.pipe(input.wait_node(), input_knot, display_knot)
-
+    display_knot = dn.interval(prompt.output_handler(), dn.show(hide_cursor=True), 1/theme.framerate)
+    prompt_knot = dn.pipe(input_knot, display_knot)
     dn.exhaust(prompt_knot, dt=0.01, interruptible=True)
 
-    return input.result()
+    return prompt.result()
