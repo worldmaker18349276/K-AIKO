@@ -1313,22 +1313,54 @@ def input(node, stream=None):
         fcntl.fcntl(fd, fcntl.F_SETFL, old_flags)
 
 @datanode
-def show(stream=None, hide_cursor=False, end="\n"):
+def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
     import sys
 
+    node = DataNode.wrap(node)
     if stream is None:
         stream = sys.stdout
-
     hide_cursor = hide_cursor and stream == sys.stdout
+
+    stop_event = threading.Event()
+    error = None
+
+    def run():
+        nonlocal error
+        try:
+            ref_time = time.time()
+
+            for i, view in enumerate(node):
+                delta = ref_time+t0+i*dt - time.time()
+                if delta < 0:
+                    continue
+                if stop_event.wait(delta):
+                    break
+
+                stream.write(view)
+                stream.flush()
+
+        except Exception as e:
+            error = e
 
     try:
         if hide_cursor:
             stream.write("\x1b[?25l")
 
-        while True:
-            view = yield
-            stream.write(view)
-            stream.flush()
+        with node:
+            thread = threading.Thread(target=run)
+
+            try:
+                yield
+                thread.start()
+                yield
+                while thread.is_alive():
+                    yield
+            finally:
+                stop_event.set()
+                if thread.is_alive():
+                    thread.join()
+                if error is not None:
+                    raise error
 
     finally:
         if hide_cursor:

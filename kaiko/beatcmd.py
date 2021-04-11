@@ -1221,7 +1221,7 @@ def prompt(promptable, history=None):
     prompt = BeatPrompt(stroke, input, theme)
 
     input_knot = dn.input(stroke.input_handler())
-    display_knot = dn.interval(prompt.output_handler(), dn.show(hide_cursor=True), 1/theme.framerate)
+    display_knot = dn.show(prompt.output_handler(), 1/theme.framerate, hide_cursor=True)
 
     # `dn.show`, `dn.input` will fight each other...
     @dn.datanode
