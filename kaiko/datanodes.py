@@ -527,19 +527,25 @@ def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
     producer = DataNode.wrap(producer)
     consumer = DataNode.wrap(consumer)
     stop_event = threading.Event()
+    error = None
 
     def run():
-        ref_time = time.time()
+        nonlocal error
+        try:
+            ref_time = time.time()
 
-        for i, data in enumerate(producer):
-            delta = ref_time+t0+i*dt - time.time()
-            if stop_event.wait(delta) if delta > 0 else stop_event.is_set():
-                break
+            for i, data in enumerate(producer):
+                delta = ref_time+t0+i*dt - time.time()
+                if stop_event.wait(delta) if delta > 0 else stop_event.is_set():
+                    break
 
-            try:
-                consumer.send(data)
-            except StopIteration:
-                return
+                try:
+                    consumer.send(data)
+                except StopIteration:
+                    return
+
+        except Exception as e:
+            error = e
 
     with producer, consumer:
         thread = threading.Thread(target=run)
@@ -553,6 +559,8 @@ def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
             stop_event.set()
             if thread.is_alive():
                 thread.join()
+            if error is not None:
+                raise error
 
 @datanode
 def tick(dt, t0=0.0, shift=0.0, stop_event=None):
@@ -1106,6 +1114,7 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format='f4', devi
     if device == -1:
         device = None
 
+    error = queue.Queue()
     length, channels = (buffer_shape, 1) if isinstance(buffer_shape, int) else buffer_shape
 
     def input_callback(in_data, frame_count, time_info, status):
@@ -1115,6 +1124,9 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format='f4', devi
 
             return b"", pyaudio.paContinue
         except StopIteration:
+            return b"", pyaudio.paComplete
+        except Exception as e:
+            error.put(e)
             return b"", pyaudio.paComplete
 
     input_stream = manager.open(format=pa_format,
@@ -1137,6 +1149,8 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format='f4', devi
         finally:
             input_stream.stop_stream()
             input_stream.close()
+            if not error.empty():
+                raise error.get()
 
 @datanode
 def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device=-1):
@@ -1181,6 +1195,7 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
     if device == -1:
         device = None
 
+    error = queue.Queue()
     length, channels = (buffer_shape, 1) if isinstance(buffer_shape, int) else buffer_shape
 
     def output_callback(in_data, frame_count, time_info, status):
@@ -1190,6 +1205,9 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
 
             return out_data, pyaudio.paContinue
         except StopIteration:
+            return b"", pyaudio.paComplete
+        except Exception as e:
+            error.put(e)
             return b"", pyaudio.paComplete
 
     output_stream = manager.open(format=pa_format,
@@ -1212,11 +1230,14 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
         finally:
             output_stream.stop_stream()
             output_stream.close()
+            if not error.empty():
+                raise error.get()
 
 @datanode
 def input(node, stream=None):
     import sys, os, signal, termios, fcntl
 
+    error = None
     node = DataNode.wrap(node)
     MAX_KEY_LEN = 16
     dt = 0.01
@@ -1241,24 +1262,29 @@ def input(node, stream=None):
     stop_event = threading.Event()
 
     def run():
-        ref_time = time.time()
+        nonlocal error
+        try:
+            ref_time = time.time()
 
-        while True:
-            occured = io_event.wait(dt)
-            if stop_event.is_set():
-                break
-            if not occured:
-                continue
+            while True:
+                occured = io_event.wait(dt)
+                if stop_event.is_set():
+                    break
+                if not occured:
+                    continue
 
-            io_event.clear()
+                io_event.clear()
 
-            key = stream.read(MAX_KEY_LEN)
+                key = stream.read(MAX_KEY_LEN)
 
-            if key:
-                try:
-                    node.send((time.time()-ref_time, key))
-                except StopIteration:
-                    return
+                if key:
+                    try:
+                        node.send((time.time()-ref_time, key))
+                    except StopIteration:
+                        return
+
+        except Exception as e:
+            error = e
 
     try:
         fcntl.fcntl(fd, fcntl.F_SETFL, new_flags)
@@ -1278,6 +1304,8 @@ def input(node, stream=None):
                 io_event.set()
                 if thread.is_alive():
                     thread.join()
+                if error is not None:
+                    raise error
 
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
@@ -1285,7 +1313,7 @@ def input(node, stream=None):
         fcntl.fcntl(fd, fcntl.F_SETFL, old_flags)
 
 @datanode
-def show(stream=None, hide_cursor=False):
+def show(stream=None, hide_cursor=False, end="\n"):
     import sys
 
     if stream is None:
@@ -1305,7 +1333,7 @@ def show(stream=None, hide_cursor=False):
     finally:
         if hide_cursor:
             stream.write("\x1b[?25h")
-        stream.write("\n")
+        stream.write(end)
         stream.flush()
 
 @datanode
