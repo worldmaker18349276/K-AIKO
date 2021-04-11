@@ -1,6 +1,7 @@
 from enum import Enum
 import functools
 import re
+import queue
 import threading
 import inspect
 from . import datanodes as dn
@@ -154,6 +155,7 @@ def shlexer_escape(token, strategy=SHLEXER_ESCAPE.MIX):
 
 def shlexer_complete(raw, index, completer):
     state = SHLEXER_STATE.SPACED
+    is_appended = len(raw) == index
     parser = shlexer_parse(raw[:index], partial=True)
     tokens = []
     try:
@@ -163,18 +165,20 @@ def shlexer_complete(raw, index, completer):
     except StopIteration as e:
         state = e.value
 
-    is_appended = len(raw) == index
-
     if state == SHLEXER_STATE.SPACED:
+        # empty target
         target = ""
         for compreply in completer(tokens, target):
+            # escape any compreply, including empty compreply
             compreply = list(shlexer_escape(compreply))
             yield [*compreply, " "]
 
     elif state == SHLEXER_STATE.PLAIN:
+        # use the last token as target
         target = tokens[-1]
         tokens = tokens[:-1]
         for compreply in completer(tokens, target):
+            # don't escape empty compreply
             compreply = list(shlexer_escape(compreply)) if compreply else []
             yield [*compreply, " "]
 
@@ -182,33 +186,33 @@ def shlexer_complete(raw, index, completer):
         target = tokens[-1]
         tokens = tokens[:-1]
         for compreply in completer(tokens, target):
+            # delete backslash for empty compreply
             compreply = list(shlexer_escape(compreply, SHLEXER_ESCAPE.BACKSLASH)) if compreply else ["\b"]
+            # don't escape the backslash for escaping
             if compreply[0] == "\\":
                 compreply = compreply[1:]
-            if is_appended:
-                yield [*compreply, " "]
-            else:
-                yield [*compreply, " ", "\\"]
+            # add back backslash for original escaped character
+            yield [*compreply, " "] if is_appended else [*compreply, " ", "\\"]
 
     elif state == SHLEXER_STATE.QUOTED:
         target = tokens[-1]
         tokens = tokens[:-1]
         for compreply in completer(tokens, target):
-            compreply = list(shlexer_escape(compreply, SHLEXER_ESCAPE.QUOTE))[1:]
-            if is_appended:
-                yield [*compreply, " "]
-            else:
-                yield [*compreply, " ", "'"]
+            compreply = list(shlexer_escape(compreply, SHLEXER_ESCAPE.QUOTE))
+            # remove opening quote
+            compreply = compreply[1:]
+            # add back quote for original escaped string
+            yield [*compreply, " "] if is_appended else [*compreply, " ", "'"]
 
     elif state == SHLEXER_STATE.DOUBLE_QUOTED:
         target = tokens[-1]
         tokens = tokens[:-1]
         for compreply in completer(tokens, target):
-            compreply = list(shlexer_escape(compreply, SHLEXER_ESCAPE.DOUBLE_QUOTE))[1:]
-            if is_appended:
-                yield [*compreply, " "]
-            else:
-                yield [*compreply, " ", '"']
+            compreply = list(shlexer_escape(compreply, SHLEXER_ESCAPE.DOUBLE_QUOTE))
+            # remove opening double quote
+            compreply = compreply[1:]
+            # add back double quote for original escaped string
+            yield [*compreply, " "] if is_appended else [*compreply, " ", '"']
 
 def echo_str(escaped_str):
     regex = r"\\c.*|\\[\\abefnrtv]|\\0[0-7]{0,3}|\\x[0-9a-fA-F]{1,2}|."
@@ -242,16 +246,16 @@ def echo_str(escaped_str):
     return re.sub(regex, repl, escaped_str)
 
 
-class PromptUnfinished(Exception):
-    def __init__(self, index, suggestions, info):
+class PromptUnfinishError(Exception):
+    def __init__(self, index, suggestion, info):
         self.index = index
-        self.suggestions = suggestions
+        self.suggestion = suggestion
         self.info = info
 
 class PromptParseError(Exception):
-    def __init__(self, index, suggestions, info):
+    def __init__(self, index, suggestion, info):
         self.index = index
-        self.suggestions = suggestions
+        self.suggestion = suggestion
         self.info = info
 
 class TOKEN_TYPE(Enum):
@@ -265,32 +269,12 @@ class Promptable:
         self.root = root
         self._PromptReturn = object()
 
-    def _node(self):
-        # Union[str, None, PromptReturn] -> TOKEN_TYPE
-        curr = self.root
-        index = -1
-
-        # parse command
-        while isinstance(curr, dict):
-            token = yield TOKEN_TYPE.COMMAND
-            index += 1
-
-            if token is self._PromptReturn:
-                raise PromptUnfinished(index, list(curr.keys()),
-                    f"Unfinished command, it should be followed by: {list(curr.keys())}")
-
-            elif token is None or token not in curr:
-                raise PromptParseError(index, list(curr.keys()),
-                    f"Invalid command, it should be one of: {list(curr.keys())}")
-
-            else:
-                curr = curr.get(token)
-
+    def _sig(self, func):
         # parse signature: (a, b, c, d=1, e=2)
-        if not hasattr(curr, '__call__'):
+        if not hasattr(func, '__call__'):
             raise ValueError(f"Not a function: {curr!r}")
 
-        sig = inspect.signature(curr)
+        sig = inspect.signature(func)
         args = list()
         kwargs = dict()
         for param in sig.parameters.values():
@@ -299,153 +283,257 @@ class Promptable:
             else:
                 kwargs["--" + param.name] = param
 
-        token = yield TOKEN_TYPE.FUNCTION
-        index += 1
+        return args, kwargs
 
-        while True:
-            # parse argument name
-            if args:
-                param = args.pop(0)
+    def parse_lit(self, token, param):
+        type = param.annotation
+        if isinstance(type, (tuple, list)) and token in type:
+            return token
 
-            elif kwargs:
-                if token is self._PromptReturn:
-                    return curr
+        elif type == bool and re.fullmatch("True|False", token):
+            return bool(token)
 
-                elif token is None or token not in kwargs:
-                    raise PromptParseError(index, list(kwargs.keys()),
-                        f"Invalid argument name, it should be one of: {list(kwargs.keys())}")
+        elif type == int and re.fullmatch(r"[-+]?(0|[1-9][0-9]*)", token):
+            return int(token)
 
-                else:
-                    param = kwargs[token]
-                    del kwargs[token]
+        elif type == float and re.fullmatch(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)", token):
+            return float(token)
 
-                    token = yield TOKEN_TYPE.ARGUMENT
-                    index += 1
+        elif type == str:
+            return token
 
+        else:
+            return None
+
+    def suggest_lit(self, target, param):
+        type = param.annotation
+        if isinstance(type, (tuple, list)):
+            return type
+
+        elif type == bool:
+            if param.default is param.empty:
+                return ["True", "False"]
             else:
-                if token is self._PromptReturn:
-                    return curr
-                else:
-                    raise PromptParseError(index, [], f"Too many argument")
+                return [str(param.default), str(not param.default)]
 
-            # parse argument value
-            ann = param.annotation
-
-            if isinstance(ann, (tuple, list)):
-                if len(ann) == 0:
-                    raise ValueError(f"No valid value for {param}")
-                if token is self._PromptReturn:
-                    raise PromptUnfinished(index, list(ann), f"Missing argument")
-                elif token is None or token not in ann:
-                    info = "Invalid value, it should be one of:\n"
-                    info += "\n".join("".join(shlexer_escape(token)) for token in ann)
-                    raise PromptParseError(index, list(ann), info)
-                else:
-                    curr = functools.partial(curr, token)
-
-            elif ann == bool:
-                if param.default is param.empty:
-                    sugg = ["True", "False"]
-                else:
-                    sugg = [str(param.default), str(not param.default)]
-
-                if token is self._PromptReturn:
-                    raise PromptUnfinished(index, sugg, "Missing boolean value")
-                elif token is None or token not in sugg:
-                    raise PromptParseError(index, sugg, "Invalid value, it should be a boolean value")
-                else:
-                    curr = functools.partial(curr, bool(token))
-
-            elif ann == int:
-                if param.default is param.empty:
-                    sugg = []
-                else:
-                    sugg = [str(param.default)]
-
-                if token is self._PromptReturn:
-                    raise PromptUnfinished(index, sugg, "Missing integer")
-                elif token is None or not re.fullmatch(r"[-+]?(0|[1-9][0-9]*)", token):
-                    raise PromptParseError(index, sugg, "Invalid value, it should be a integer")
-                else:
-                    curr = functools.partial(curr, int(token))
-
-            elif ann == float:
-                if param.default is param.empty:
-                    sugg = []
-                else:
-                    sugg = [str(param.default)]
-
-                if token is self._PromptReturn:
-                    raise PromptUnfinished(index, sugg, "Missing float number")
-                elif token is None or not re.fullmatch(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)", token):
-                    raise PromptParseError(index, sugg, "Invalid value, it should be a float number")
-                else:
-                    curr = functools.partial(curr, float(token))
-
-            elif ann == str:
-                if param.default is param.empty:
-                    sugg = []
-                else:
-                    sugg = [param.default]
-
-                if token is self._PromptReturn:
-                    raise PromptUnfinished(index, sugg, "Missing string")
-                elif token is None:
-                    raise PromptParseError(index, sugg, "Invalid value, it should be a string")
-                else:
-                    curr = functools.partial(curr, token)
-
+        elif type == int:
+            if param.default is param.empty:
+                return []
             else:
-                raise ValueError(f"Unable to parse parameter for {param}")
+                return [str(param.default)]
 
-            token = yield TOKEN_TYPE.LITERAL
-            index += 1
+        elif type == float:
+            if param.default is param.empty:
+                return []
+            else:
+                return [str(param.default)]
+
+        elif type == str:
+            if param.default is param.empty:
+                return []
+            else:
+                return [param.default]
+
+        else:
+            return []
 
     def parse(self, tokens):
-        gen = self._node()
-        next(gen)
-
+        tokens = iter(tokens)
+        curr = self.root
         types = []
-        for token in tokens:
-            try:
-                res = gen.send(token) if gen is not None else None
-            except PromptParseError:
-                gen = None
-                res = None
-            types.append(res)
-
-        return types
-
-    def generate(self, tokens):
-        gen = self._node()
-        next(gen)
-
-        for token in tokens:
-            gen.send(token)
 
         try:
-            gen.send(self._PromptReturn)
-        except StopIteration as e:
-            return e.value
-        else:
-            raise ValueError
+            # parse command
+            while isinstance(curr, dict):
+                types.append(TOKEN_TYPE.COMMAND)
 
-    def complete(self, tokens, target):
-        gen = self._node()
-        next(gen)
+                token = next(tokens)
 
-        for token in tokens:
-            try:
-                gen.send(token)
-            except PromptParseError:
+                if token not in curr:
+                    while True:
+                        types.append(None)
+                        token = next(tokens)
+                curr = curr.get(token)
+
+            # parse function
+            if not hasattr(curr, '__call__'):
+                while True:
+                    types.append(None)
+                    token = next(tokens)
+            args, kwargs = self._sig(curr)
+            types.append(TOKEN_TYPE.FUNCTION)
+
+            token = next(tokens)
+
+            # parse positional arguments
+            for param in args:
+                value = self.parse_lit(token, param)
+                if value is None:
+                    while True:
+                        types.append(None)
+                        token = next(tokens)
+                types.append(TOKEN_TYPE.LITERAL)
+
+                token = next(tokens)
+
+            # parse keyword arguments
+            while kwargs:
+                # parse argument name
+                param = kwargs.pop(token, None)
+                if param is None:
+                    while True:
+                        types.append(None)
+                        token = next(tokens)
+                types.append(TOKEN_TYPE.ARGUMENT)
+
+                token = next(tokens)
+
+                # parse argument value
+                value = self.parse_lit(token, param)
+                if value is None:
+                    while True:
+                        types.append(None)
+                        token = next(tokens)
+                types.append(TOKEN_TYPE.LITERAL)
+
+                token = next(tokens)
+
+            # rest
+            while True:
+                types.append(None)
+                token = next(tokens)
+
+        except StopIteration:
+            pass
+
+        return types[1:]
+
+    def generate(self, tokens, state):
+        if state == SHLEXER_STATE.BACKSLASHED:
+            raise PromptParseError(len(tokens)-1, None, "No escaped character")
+        if state == SHLEXER_STATE.QUOTED:
+            raise PromptParseError(len(tokens)-1, None, "No closing quotation")
+        if state == SHLEXER_STATE.DOUBLE_QUOTED:
+            raise PromptParseError(len(tokens)-1, None, "No closing double quotation")
+
+        tokens = iter(tokens)
+        curr = self.root
+        index = -1
+
+        # parse command
+        while isinstance(curr, dict):
+            token = next(tokens, None)
+            index += 1
+
+            if token is None:
+                raise PromptUnfinishError(index, list(curr.keys()), "Unfinished command")
+            if token not in curr:
+                raise PromptParseError(index, list(curr.keys()), "Invalid command")
+            curr = curr.get(token)
+
+        # parse function
+        if not hasattr(curr, '__call__'):
+            raise ValueError(f"Not a function: {curr!r}")
+        args, kwargs = self._sig(curr)
+
+        token = next(tokens, None)
+        index += 1
+
+        # parse positional arguments
+        for param in args:
+            if token is None:
+                raise PromptUnfinishError(index, param.annotation, "Missing value")
+            value = self.parse_lit(token, param)
+            if value is None:
+                raise PromptParseError(index, param.annotation, "Invalid value")
+            curr = functools.partial(curr, value)
+
+            token = next(tokens, None)
+            index += 1
+
+        # parse keyword arguments
+        while kwargs and token is not None:
+            # parse argument name
+            param = kwargs.pop(token, None)
+            if param is None:
+                raise PromptUnfinishError(index, list(kwargs.keys()), "Unkown argument")
+
+            token = next(tokens, None)
+            index += 1
+
+            # parse argument value
+            if token is None:
+                raise PromptUnfinishError(index, param.annotation, "Missing value")
+            value = self.parse_lit(token, param)
+            if value is None:
+                raise PromptParseError(index, param.annotation, "Invalid value")
+            curr = functools.partial(curr, **{token: value})
+
+            token = next(tokens, None)
+            index += 1
+
+        # rest
+        if token is not None:
+            raise PromptParseError(index, None, "Too many arguments")
+
+        return curr
+
+    def suggest(self, tokens, target):
+        tokens = iter(tokens)
+        curr = self.root
+
+        # parse command
+        while isinstance(curr, dict):
+            token = next(tokens, None)
+
+            if token is None:
+                return list(curr.keys())
+            if token not in curr:
+                return []
+            curr = curr.get(token)
+
+        # parse function
+        if not hasattr(curr, '__call__'):
+            return []
+        args, kwargs = self._sig(curr)
+
+        token = next(tokens, None)
+
+        # parse positional arguments
+        for param in args:
+            if token is None:
+                return self.suggest_lit(target, param)
+            value = self.parse_lit(token, param)
+            if value is None:
                 return []
 
-        try:
-            gen.send(None)
-        except PromptParseError as e:
-            return [compreply[len(target):] for compreply in e.suggestions if compreply.startswith(target)]
-        else:
-            raise ValueError
+            token = next(tokens, None)
+
+        # parse keyword arguments
+        while kwargs:
+            # parse argument name
+            if token is None:
+                return list(kwargs.keys())
+            param = kwargs.pop(token, None)
+            if param is None:
+                return []
+
+            token = next(tokens, None)
+
+            # parse argument value
+            if token is None:
+                return self.suggest_lit(target, param)
+            value = self.parse_lit(token, param)
+            if value is None:
+                return []
+
+            token = next(tokens, None)
+
+        # rest
+        return []
+
+    def complete(self, tokens, target):
+        return [sugg[len(target):] for sugg in self.suggest(tokens, target) if sugg.startswith(target)]
 
 
 class BeatInput:
@@ -459,7 +547,7 @@ class BeatInput:
         self.buffer = self.history[self.history_index]
         self.pos = len(self.buffer)
         self.suggestion = ""
-        self.info = None
+        self.info = queue.Queue()
 
         self.tokens = []
         self.state = SHLEXER_STATE.SPACED
@@ -505,15 +593,7 @@ class BeatInput:
             raise ValueError
 
         while index in range(length):
-            compreply = compreplies[index]
-            while compreply[0] == "\b":
-                del compreply[0]
-                del self.buffer[self.pos-1]
-                self.pos = self.pos-1
-
-            self.buffer[self.pos:self.pos] = compreply
-            self.pos = self.pos + len(compreply)
-            self.parse()
+            self.input(compreplies[index], False)
 
             action = yield
             if action == +1:
@@ -521,7 +601,7 @@ class BeatInput:
             elif action == -1:
                 index -= 1
             elif action == 0:
-                index = -1
+                index = None
 
             self.buffer = list(original_buffer)
             self.pos = original_pos
@@ -531,13 +611,42 @@ class BeatInput:
 
     def enter(self):
         try:
-            res = self.promptable.generate(token for token, _, _, _ in self.tokens)
-        except PromptUnfinished as e:
+            res = self.promptable.generate([token for token, _, _, _ in self.tokens], self.state)
+
+        except PromptUnfinishError as e:
             slic = slice(len(self.buffer)-1, len(self.buffer))
-            self.info = slic, tui.add_attr(e.info, "31")
+
+            if isinstance(e.suggestion, (tuple, list)):
+                sugg = e.suggestion[:5] + ["…"] if len(e.suggestion) > 5 else e.suggestion
+                sugg = "\n".join("  " + "".join(shlexer_escape(s)) for s in sugg)
+                info = e.info + "\n" + f"It should be followed by:\n{sugg}"
+            elif isinstance(e.suggestion, type):
+                info = e.info + "\n" + f"It should be followed by {e.suggestion.__name__} literal"
+            elif e.suggestion is not None:
+                info = e.info + "\n" + f"It should be followed by {e.suggestion}"
+            else:
+                info = e.info
+            info = tui.add_attr(info, "31")
+
+            self.info.put((slic, info))
+
         except PromptParseError as e:
             _, _, slic, _ = self.tokens[e.index]
-            self.info = slic, tui.add_attr(e.info, "31")
+
+            if isinstance(e.suggestion, (tuple, list)):
+                sugg = e.suggestion[:5] + ["…"] if len(e.suggestion) > 5 else e.suggestion
+                sugg = "\n".join("  " + "".join(shlexer_escape(s)) for s in sugg)
+                info = e.info + "\n" + f"It should be one of:\n{sugg}"
+            elif isinstance(e.suggestion, type):
+                info = e.info + "\n" + f"It should be {e.suggestion.__name__} literal"
+            elif e.suggestion is not None:
+                info = e.info + "\n" + f"It should be {e.suggestion}"
+            else:
+                info = e.info
+            info = tui.add_attr(info, "31")
+
+            self.info.put((slic, info))
+
         else:
             self.result = res
             self.finished.set()
@@ -550,11 +659,19 @@ class BeatInput:
         elif compreply[0] != "\b":
             self.suggestion = "".join(compreply)
 
-    def input(self, text):
-        self.buffer[self.pos:self.pos] = list(text)
+    def input(self, text, suggest=True):
+        text = list(text)
+
+        while text[0] == "\b":
+            del text[0]
+            del self.buffer[self.pos-1]
+            self.pos = self.pos-1
+
+        self.buffer[self.pos:self.pos] = text
         self.pos += len(text)
         self.parse()
-        if self.pos == len(self.buffer):
+
+        if suggest and self.pos == len(self.buffer):
             self.suggest()
 
     def backspace(self):
@@ -580,6 +697,22 @@ class BeatInput:
         self.parse()
         self.suggestion = ""
 
+    def delete_to_word_start(self):
+        for match in re.finditer("\w+|.", "".join(self.buffer)):
+            if match.end() >= self.pos:
+                self.delete_range(match.start(), self.pos)
+                break
+        else:
+            self.delete_range(0, self.pos)
+
+    def delete_to_word_end(self):
+        for match in re.finditer("\w+|.", "".join(self.buffer)):
+            if match.end() > self.pos:
+                self.delete_range(self.pos, match.end())
+                break
+        else:
+            self.delete_range(self.pos, len(self.buffer))
+
     def move(self, offset):
         self.pos = min(max(0, self.pos+offset), len(self.buffer))
         self.suggestion = ""
@@ -587,6 +720,22 @@ class BeatInput:
     def move_to(self, pos):
         self.pos = min(max(0, pos), len(self.buffer)) if pos is not None else len(self.buffer)
         self.suggestion = ""
+
+    def move_to_word_start(self):
+        for match in re.finditer("\w+|.", "".join(self.buffer)):
+            if match.end() >= self.pos:
+                self.move_to(match.start())
+                break
+        else:
+            self.move_to(0)
+
+    def move_to_word_end(self):
+        for match in re.finditer("\w+|.", "".join(self.buffer)):
+            if match.end() > self.pos:
+                self.move_to(match.end())
+                break
+        else:
+            self.move_to(None)
 
     def prev(self):
         if self.history_index == -len(self.history):
@@ -609,7 +758,7 @@ class BeatInput:
         self.suggestion = ""
 
 
-default_keymap = {
+default_keycodes = {
     "Esc"       : "\x1b",
     "Alt+Esc"   : "\x1b\x1b",
 
@@ -717,6 +866,22 @@ default_keymap = {
     "Ctrl+Alt+Shift+PageDown" : "\x1b[6;8~",
 }
 
+default_keymap = {
+    "Backspace": lambda input: input.backspace(),
+       "Delete": lambda input: input.delete(),
+         "Left": lambda input: input.move(-1),
+        "Right": lambda input: input.move(+1),
+           "Up": lambda input: input.prev(),
+         "Down": lambda input: input.next(),
+         "Home": lambda input: input.move_to(0),
+          "End": lambda input: input.move_to(None),
+        "Enter": lambda input: input.enter(),
+         "Ctrl+Left": lambda input: input.move_to_word_start(),
+        "Ctrl+Right": lambda input: input.move_to_word_end(),
+    "Ctrl+Backspace": lambda input: input.delete_to_word_start(),
+       "Ctrl+Delete": lambda input: input.delete_to_word_end(),
+}
+
 class INPUT_STATE(Enum):
     EDIT = "edit"
     TAB = "tab"
@@ -725,6 +890,7 @@ class BeatStroke:
     def __init__(self, input):
         self.input = input
         self.event = threading.Event()
+        self.keycodes = default_keycodes
         self.keymap = default_keymap
         self.state = INPUT_STATE.EDIT
 
@@ -735,12 +901,12 @@ class BeatStroke:
             self.event.set()
 
             # completions
-            while key == self.keymap["Tab"] or key == self.keymap["Shift+Tab"]:
+            while key == self.keycodes["Tab"] or key == self.keycodes["Shift+Tab"]:
                 self.state = INPUT_STATE.TAB
 
-                if key == self.keymap["Tab"]:
+                if key == self.keycodes["Tab"]:
                     complete = self.input.complete(+1)
-                elif key == self.keymap["Shift+Tab"]:
+                elif key == self.keycodes["Shift+Tab"]:
                     complete = self.input.complete(-1)
 
                 try:
@@ -748,13 +914,14 @@ class BeatStroke:
 
                     while True:
                         _, key = yield
-                        if key == self.keymap["Tab"]:
+                        if key == self.keycodes["Tab"]:
                             complete.send(+1)
-                        elif key == self.keymap["Shift+Tab"]:
+                        elif key == self.keycodes["Shift+Tab"]:
                             complete.send(-1)
-                        elif key == self.keymap["Esc"]:
+                        elif key == self.keycodes["Esc"]:
                             complete.send(0)
                         else:
+                            complete.close()
                             self.state = INPUT_STATE.EDIT
                             break
 
@@ -762,68 +929,16 @@ class BeatStroke:
                     self.state = INPUT_STATE.EDIT
                     _, key = yield
 
-            # edit
-            if key == self.keymap["Backspace"]:
-                self.input.backspace()
+            # registered keystrokes
+            for keyname, func in self.keymap.items():
+                if key == self.keycodes[keyname]:
+                    func(self.input)
+                    break
 
-            elif key == self.keymap["Delete"]:
-                self.input.delete()
-
-            elif key == self.keymap["Left"]:
-                self.input.move(-1)
-
-            elif key == self.keymap["Right"]:
-                self.input.move(+1)
-
-            elif key == self.keymap["Up"]:
-                self.input.prev()
-
-            elif key == self.keymap["Down"]:
-                self.input.next()
-
-            elif key == self.keymap["Home"]:
-                self.input.move_to(0)
-
-            elif key == self.keymap["End"]:
-                self.input.move_to(None)
-
-            elif key == self.keymap["Ctrl+Left"]:
-                for match in re.finditer("\w+|.", "".join(self.input.buffer)):
-                    if match.end() >= self.input.pos:
-                        self.input.move_to(match.start())
-                        break
-                else:
-                    self.input.move_to(0)
-
-            elif key == self.keymap["Ctrl+Right"]:
-                for match in re.finditer("\w+|.", "".join(self.input.buffer)):
-                    if match.end() > self.input.pos:
-                        self.input.move_to(match.end())
-                        break
-                else:
-                    self.input.move_to(None)
-
-            elif key == self.keymap["Ctrl+Backspace"]:
-                for match in re.finditer("\w+|.", "".join(self.input.buffer)):
-                    if match.end() >= self.input.pos:
-                        self.input.delete_range(match.start(), self.input.pos)
-                        break
-                else:
-                    self.input.delete_range(0, self.input.pos)
-
-            elif key == self.keymap["Ctrl+Right"]:
-                for match in re.finditer("\w+|.", "".join(self.input.buffer)):
-                    if match.end() > self.input.pos:
-                        self.input.delete_range(self.input.pos, match.end())
-                        break
-                else:
-                    self.input.delete_range(self.input.pos, None)
-
-            elif key == self.keymap["Enter"]:
-                self.input.enter()
-
-            elif key.isprintable():
-                self.input.input(key)
+            else:
+                # edit
+                if key.isprintable():
+                    self.input.input(key)
 
 
 BLOCKER_HEADERS = [
@@ -920,7 +1035,7 @@ class BeatPrompt:
         whitespace = tui.add_attr("⌴", "2")
 
         render_command = lambda s: tui.add_attr(s, "94")
-        render_function = lambda s: tui.add_attr(s, "94")
+        render_function = lambda s: tui.add_attr(s, "94;1")
         render_argument = lambda s: tui.add_attr(s, "95")
         render_literal = lambda s: tui.add_attr(s, "92")
 
@@ -1006,9 +1121,8 @@ class BeatPrompt:
 
             # print info
             info_text = ""
-            if self.input.info is not None:
-                pointto, msg = self.input.info
-                self.input.info = None
+            if not self.input.info.empty():
+                pointto, msg = self.input.info.get()
                 info_text = "\x1b[m\n"
 
                 if msg is not None:
