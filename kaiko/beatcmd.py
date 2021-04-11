@@ -469,7 +469,7 @@ class Promptable:
             value = self.parse_lit(token, param)
             if value is None:
                 raise PromptParseError(index, param.annotation, "Invalid value")
-            curr = functools.partial(curr, **{token: value})
+            curr = functools.partial(curr, **{param.name: value})
 
             token = next(tokens, None)
             index += 1
@@ -1222,7 +1222,19 @@ def prompt(promptable, history=None):
 
     input_knot = dn.input(stroke.input_handler())
     display_knot = dn.interval(prompt.output_handler(), dn.show(hide_cursor=True), 1/theme.framerate)
-    prompt_knot = dn.pipe(input_knot, display_knot)
+
+    # `dn.show`, `dn.input` will fight each other...
+    @dn.datanode
+    def slow(dt=0.1):
+        import time
+        try:
+            yield
+            while True:
+                yield
+        finally:
+            time.sleep(dt)
+
+    prompt_knot = dn.pipe(input_knot, slow(), display_knot)
     dn.exhaust(prompt_knot, dt=0.01, interruptible=True)
 
     return prompt.result()

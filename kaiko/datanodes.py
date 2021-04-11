@@ -1219,6 +1219,7 @@ def input(node, stream=None):
 
     node = DataNode.wrap(node)
     MAX_KEY_LEN = 16
+    dt = 0.01
 
     if stream is None:
         stream = sys.stdin
@@ -1243,11 +1244,13 @@ def input(node, stream=None):
         ref_time = time.time()
 
         while True:
-            io_event.wait()
-            io_event.clear()
-
+            occured = io_event.wait(dt)
             if stop_event.is_set():
                 break
+            if not occured:
+                continue
+
+            io_event.clear()
 
             key = stream.read(MAX_KEY_LEN)
 
@@ -1288,16 +1291,20 @@ def show(stream=None, hide_cursor=False):
     if stream is None:
         stream = sys.stdout
 
+    hide_cursor = hide_cursor and stream == sys.stdout
+
     try:
-        if hide_cursor and stream == sys.stdout:
+        if hide_cursor:
             stream.write("\x1b[?25l")
 
         while True:
             view = yield
             stream.write(view)
             stream.flush()
+
     finally:
-        stream.write("\x1b[?25h")
+        if hide_cursor:
+            stream.write("\x1b[?25h")
         stream.write("\n")
         stream.flush()
 
