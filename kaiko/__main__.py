@@ -16,17 +16,17 @@ from .beatsheet import BeatmapDraft, BeatmapParseError
 from . import beatanalyzer
 
 
-def print_logo():
-    print("\n"
-        "  ██▀ ▄██▀   ▄██████▄ ▀██████▄ ██  ▄██▀ █▀▀▀▀▀▀█\n"
-        "  ▀ ▄██▀  ▄▄▄▀█    ██    ██    ██▄██▀   █ ▓▓▓▓ █\n"
-        "  ▄██▀██▄ ▀▀▀▄███████    ██    ███▀██▄  █ ▓▓▓▓ █\n"
-        "  █▀   ▀██▄  ██    ██ ▀██████▄ ██   ▀██▄█▄▄▄▄▄▄█\n"
-        "\n"
-        "\n"
-        "  🎧  Use headphones for the best experience 🎝 \n"
-        "\n"
-        , flush=True)
+logo = """
+
+  ██▀ ▄██▀   ▄██████▄ ▀██████▄ ██  ▄██▀ █▀▀▀▀▀▀█
+  ▀ ▄██▀  ▄▄▄▀█    ██    ██    ██▄██▀   █ ▓▓▓▓ █
+  ▄██▀██▄ ▀▀▀▄███████    ██    ███▀██▄  █ ▓▓▓▓ █
+  █▀   ▀██▄  ██    ██ ▀██████▄ ██   ▀██▄█▄▄▄▄▄▄█
+
+
+  🎧  Use headphones for the best experience 🎝 
+
+"""
 
 def print_pyaudio_info(manager):
     import pyaudio
@@ -72,13 +72,13 @@ def print_pyaudio_info(manager):
     print(f"default output device: {default_output_device_index}")
 
 class KAIKOTheme(metaclass=cfg.Configurable):
-    data_icon: str = "\x1b[92m🗀\x1b[m "
-    info_icon: str = "\x1b[94m🛠\x1b[m "
-    hint_icon: str = "\x1b[93m💡\x1b[m "
+    data_icon: str = "\x1b[92m🗀 \x1b[m"
+    info_icon: str = "\x1b[94m🛠 \x1b[m"
+    hint_icon: str = "\x1b[93m💡 \x1b[m"
 
-    verb: str = "2"
-    emph: str = "1"
-    warn: str = "31"
+    verb_attr: str = "2"
+    emph_attr: str = "1"
+    warn_attr: str = "31"
 
 class KAIKOGame:
     def __init__(self, theme, data_dir, songs_dir, manager):
@@ -93,12 +93,17 @@ class KAIKOGame:
     @contextlib.contextmanager
     def init(clz, theme_path=None):
         # print logo
-        print_logo()
+        print(logo, flush=True)
 
         # load theme
         theme = KAIKOTheme()
         if theme_path is not None:
             cfg.config_read(open(theme_path, 'r'), main=theme)
+
+        data_icon = theme.data_icon
+        info_icon = theme.info_icon
+        verb_attr = theme.verb_attr
+        emph_attr = theme.emph_attr
 
         # load user data
         data_dir = appdirs.user_data_dir("K-AIKO", psutil.Process().username())
@@ -106,20 +111,20 @@ class KAIKOGame:
 
         if not os.path.isdir(data_dir):
             # start up
-            print(f"{theme.data_icon} preparing your profile...")
+            print(f"{data_icon} preparing your profile...")
             os.makedirs(data_dir, exist_ok=True)
             os.makedirs(songs_dir, exist_ok=True)
-            print(f"{theme.data_icon} your data will be stored in "
-                  f"{tui.add_attr('file://'+data_dir, theme.emph)}")
+            print(f"{data_icon} your data will be stored in "
+                  f"{tui.add_attr('file://'+data_dir, emph_attr)}")
             print(flush=True)
 
         # load PyAudio
-        print(f"{theme.info_icon} Loading PyAudio...")
+        print(f"{info_icon} Loading PyAudio...")
         print()
 
         ctxt = kerminal.prepare_pyaudio()
 
-        print(f"\x1b[{theme.verb}m", end="", flush=True)
+        print(f"\x1b[{verb_attr}m", end="", flush=True)
         try:
             manager = ctxt.__enter__()
             print_pyaudio_info(manager)
@@ -135,10 +140,10 @@ class KAIKOGame:
 
     def reload(self):
         info_icon = self.theme.info_icon
-        emph = self.theme.emph
+        emph_attr = self.theme.emph_attr
         songs_dir = self.songs_dir
 
-        print(f"{info_icon} Loading songs from {tui.add_attr('file://'+songs_dir, emph)}...")
+        print(f"{info_icon} Loading songs from {tui.add_attr('file://'+songs_dir, emph_attr)}...")
 
         self._beatmaps = []
 
@@ -149,7 +154,7 @@ class KAIKOGame:
                     distpath, _ = os.path.splitext(filepath)
                     if os.path.isdir(distpath):
                         continue
-                    print(f"{info_icon} Unzip file {tui.add_attr('file://'+filepath, emph)}...")
+                    print(f"{info_icon} Unzip file {tui.add_attr('file://'+filepath, emph_attr)}...")
                     os.makedirs(distpath)
                     zf = zipfile.ZipFile(filepath, 'r')
                     zf.extractall(path=distpath)
@@ -168,10 +173,10 @@ class KAIKOGame:
 
     def add(self, beatmap:str):
         info_icon = self.theme.info_icon
-        emph = self.theme.emph
+        emph_attr = self.theme.emph_attr
         songs_dir = self.songs_dir
 
-        print(f"{info_icon} Adding new song from {tui.add_attr('file://'+beatmap, emph)}...")
+        print(f"{info_icon} Adding new song from {tui.add_attr('file://'+beatmap, emph_attr)}...")
 
         if os.path.isfile(beatmap):
             shutil.copy(beatmap, songs_dir)
@@ -194,10 +199,6 @@ class KAIKOGame:
             beatmap = os.path.join(self.songs_dir, beatmap)
         return KAIKOPlay(beatmap)
 
-    def exit(self):
-        print("bye~")
-        raise KeyboardInterrupt
-
     def commands(self):
         def play(beatmap:self.beatmaps):
             return self.play(beatmap)
@@ -212,6 +213,16 @@ class KAIKOGame:
             for path in self.beatmaps:
                 print(path)
 
+        def say(message:str, escape:bool=False):
+            if escape:
+                print(beatcmd.echo_str(message))
+            else:
+                print(message)
+
+        def exit():
+            print("bye~")
+            raise KeyboardInterrupt
+
         return beatcmd.Promptable({
             "play": play,
             "reload": self.reload,
@@ -220,7 +231,8 @@ class KAIKOGame:
             "songs_dir": print_songs_dir,
             "beatmaps": print_beatmaps,
             "settings": lambda:None,
-            "exit": self.exit,
+            "say": say,
+            "exit": exit,
         })
 
 class KAIKOPlay:
