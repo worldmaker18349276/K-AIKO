@@ -5,7 +5,9 @@ import traceback
 import zipfile
 import shutil
 import psutil
+from pathlib import Path
 import appdirs
+import pyaudio
 from . import datanodes as dn
 from . import cfg
 from . import tui
@@ -29,8 +31,6 @@ logo = """
 """
 
 def print_pyaudio_info(manager):
-    import pyaudio
-
     print()
 
     print("portaudio version:")
@@ -106,111 +106,117 @@ class KAIKOGame:
         emph_attr = theme.emph_attr
 
         # load user data
-        data_dir = appdirs.user_data_dir("K-AIKO", psutil.Process().username())
-        songs_dir = os.path.join(data_dir, "songs")
+        data_dir = Path(appdirs.user_data_dir("K-AIKO", psutil.Process().username()))
+        songs_dir = data_dir / "songs"
 
-        if not os.path.isdir(data_dir):
+        if not data_dir.exists():
             # start up
             print(f"{data_icon} preparing your profile...")
-            os.makedirs(data_dir, exist_ok=True)
-            os.makedirs(songs_dir, exist_ok=True)
+            data_dir.mkdir(exist_ok=True)
+            songs_dir.mkdir(exist_ok=True)
             print(f"{data_icon} your data will be stored in "
-                  f"{tui.add_attr('file://'+data_dir, emph_attr)}")
+                  f"{tui.add_attr(data_dir.as_uri(), emph_attr)}")
             print(flush=True)
 
         # load PyAudio
         print(f"{info_icon} Loading PyAudio...")
         print()
 
-        ctxt = kerminal.prepare_pyaudio()
-
         print(f"\x1b[{verb_attr}m", end="", flush=True)
         try:
-            manager = ctxt.__enter__()
+            manager = pyaudio.PyAudio()
             print_pyaudio_info(manager)
         finally:
             print("\x1b[m", flush=True)
 
         try:
             yield clz(theme, data_dir, songs_dir, manager)
-        except:
-            ctxt.__exit__(*sys.exc_info())
-        else:
-            ctxt.__exit__(None, None, None)
+        finally:
+            manager.terminate()
 
     def reload(self):
         info_icon = self.theme.info_icon
         emph_attr = self.theme.emph_attr
         songs_dir = self.songs_dir
 
-        print(f"{info_icon} Loading songs from {tui.add_attr('file://'+songs_dir, emph_attr)}...")
+        print(f"{info_icon} Loading songs from {tui.add_attr(songs_dir.as_uri(), emph_attr)}...")
 
         self._beatmaps = []
 
-        for root, dirs, files in os.walk(songs_dir):
-            for file in files:
-                if file.endswith(".osz"):
-                    filepath = os.path.join(root, file)
-                    distpath, _ = os.path.splitext(filepath)
-                    if os.path.isdir(distpath):
-                        continue
-                    print(f"{info_icon} Unzip file {tui.add_attr('file://'+filepath, emph_attr)}...")
-                    os.makedirs(distpath)
-                    zf = zipfile.ZipFile(filepath, 'r')
-                    zf.extractall(path=distpath)
+        for file in songs_dir.iterdir():
+            if file.is_dir() and file.suffix == ".osz":
+                distpath = file.parent / file.stem
+                if distpath.exists():
+                    continue
+                print(f"{info_icon} Unzip file {tui.add_attr(filepath.as_uri(), emph_attr)}...")
+                distpath.mkdir()
+                zf = zipfile.ZipFile(str(filepath), 'r')
+                zf.extractall(path=str(distpath))
 
-        for root, dirs, files in os.walk(songs_dir):
-            for file in files:
-                if file.endswith((".kaiko", ".ka", ".osu")):
-                    filepath = os.path.relpath(os.path.join(root, file), songs_dir)
-                    self._beatmaps.append(filepath)
+        # for root, dirs, files in os.walk(songs_dir): for file in files:
+        for song in songs_dir.iterdir():
+            if song.is_dir():
+                for beatmap in song.iterdir():
+                    if beatmap.suffix in (".kaiko", ".ka", ".osu"):
+                        self._beatmaps.append(beatmap.relative_to(str(songs_dir)))
 
         if len(self._beatmaps) == 0:
             print("{info_icon} There is no song in the folder yet!")
         print(flush=True)
 
-        self.songs_mtime = os.stat(songs_dir).st_mtime
+        self.songs_mtime = os.stat(str(songs_dir)).st_mtime
 
-    def add(self, beatmap:str):
+    def add(self, beatmap:Path):
         info_icon = self.theme.info_icon
         emph_attr = self.theme.emph_attr
+        warn_attr = self.theme.warn_attr
         songs_dir = self.songs_dir
 
-        print(f"{info_icon} Adding new song from {tui.add_attr('file://'+beatmap, emph_attr)}...")
+        if not beatmap.exists():
+            print(tui.add_attr(f"File not found: {str(beatmap)}", warn_attr))
+            return
 
-        if os.path.isfile(beatmap):
-            shutil.copy(beatmap, songs_dir)
-        elif os.path.isdir(beatmap):
-            shutil.copytree(beatmap, songs_dir)
+        print(f"{info_icon} Adding new song from {tui.add_attr(beatmap.as_uri(), emph_attr)}...")
+
+        if beatmap.is_file():
+            shutil.copy(str(beatmap), str(songs_dir))
+        elif beatmap.is_dir():
+            shutil.copytree(str(beatmap), str(songs_dir))
         else:
-            raise ValueError(f"Not a file: {repr(beatmap)}")
+            print(tui.add_attr(f"Not a file: {str(beatmap)}", warn_attr))
+            return
 
         self.reload()
 
     @property
     def beatmaps(self):
-        if self.songs_mtime != os.stat(self.songs_dir).st_mtime:
+        if self.songs_mtime != os.stat(str(self.songs_dir)).st_mtime:
             self.reload()
 
-        return list(self._beatmaps)
+        return self._beatmaps
 
-    def play(self, beatmap):
-        if not os.path.isabs(beatmap):
-            beatmap = os.path.join(self.songs_dir, beatmap)
+    def play(self, beatmap:Path):
+        if not beatmap.is_absolute():
+            beatmap = self.songs_dir.joinpath(beatmap)
         return KAIKOPlay(beatmap)
 
     def commands(self):
-        def play(beatmap:self.beatmaps):
-            return self.play(beatmap)
+        beatmaps_str = [str(beatmap) for beatmap in self.beatmaps]
+
+        def add(beatmap:str):
+            self.add(Path(beatmap))
+
+        def play(beatmap:beatmaps_str):
+            return self.play(Path(beatmap))
 
         def print_data_dir():
-            print(self.data_dir)
+            print(str(self.data_dir))
 
         def print_songs_dir():
-            print(self.songs_dir)
+            print(str(self.songs_dir))
 
         def print_beatmaps():
-            for path in self.beatmaps:
+            for path in beatmaps_str:
                 print(path)
 
         def say(message:str, escape:bool=False):
@@ -226,7 +232,7 @@ class KAIKOGame:
         return beatcmd.Promptable({
             "play": play,
             "reload": self.reload,
-            "add": self.add,
+            "add": add,
             "data_dir": print_data_dir,
             "songs_dir": print_songs_dir,
             "beatmaps": print_beatmaps,
@@ -242,10 +248,10 @@ class KAIKOPlay:
     @contextlib.contextmanager
     def execute(self, manager):
         try:
-            beatmap = BeatmapDraft.read(self.filepath)
+            beatmap = BeatmapDraft.read(str(self.filepath))
 
         except BeatmapParseError:
-            print(f"failed to read beatmap {self.filepath}")
+            print(f"failed to read beatmap {str(self.filepath)}")
 
         else:
             game = BeatmapPlayer(beatmap)
