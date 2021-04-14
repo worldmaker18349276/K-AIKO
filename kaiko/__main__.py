@@ -258,14 +258,15 @@ class KAIKOPlay:
 def main():
     try:
         with KAIKOGame.init() as game:
-            # play given beatmap
-            if len(sys.argv) > 1:
-                filepath = sys.argv[1]
-                game.play(filepath).execute(game.manager)
-                return
-
             # load songs
             game.reload()
+
+            # play given beatmap
+            if len(sys.argv) > 1:
+                res = game.commands().generate(sys.argv[1:])()
+                if hasattr(res, 'execute'):
+                    res.execute(game.manager)
+                return
 
             # prompt
             history = []

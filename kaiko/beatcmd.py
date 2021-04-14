@@ -410,7 +410,7 @@ class Promptable:
 
         return types[1:]
 
-    def generate(self, tokens, state):
+    def generate(self, tokens, state=SHLEXER_STATE.SPACED):
         if state == SHLEXER_STATE.BACKSLASHED:
             raise PromptParseError(len(tokens)-1, None, "No escaped character")
         if state == SHLEXER_STATE.QUOTED:
