@@ -581,7 +581,7 @@ class BeatInput:
         types = self.promptable.parse(token for token, _, _ in tokens)
         self.tokens = [(token, type, slic, masked) for (token, slic, masked), type in zip(tokens, types)]
 
-    def complete(self, action=+1):
+    def select_suggestions(self, action=+1):
         self.typeahead = ""
 
         compreplies = list(shlexer_complete(self.buffer, self.pos, self.promptable.complete))
@@ -663,7 +663,7 @@ class BeatInput:
             return True
 
     def suggest(self, suggest=True):
-        if not suggest:
+        if not suggest or self.pos != len(self.buffer):
             self.typeahead = ""
             return False
 
@@ -678,6 +678,13 @@ class BeatInput:
             return True
         else:
             return False
+
+    def insert_suggestion(self):
+        if self.typeahead == "" or self.pos != len(self.buffer):
+            return False
+
+        self.input(self.typeahead, False)
+        return True
 
     def input(self, text, suggest=True):
         text = list(text)
@@ -694,7 +701,7 @@ class BeatInput:
         self.pos += len(text)
         self.parse()
 
-        self.suggest(suggest and self.pos == len(self.buffer))
+        self.suggest(suggest)
 
         return True
 
@@ -923,7 +930,7 @@ default_keymap = {
     "Backspace": lambda input: input.backspace(),
        "Delete": lambda input: input.delete(),
          "Left": lambda input: input.move_left(),
-        "Right": lambda input: input.move_right(),
+        "Right": lambda input: input.insert_suggestion() or input.move_right(),
            "Up": lambda input: input.prev(),
          "Down": lambda input: input.next(),
          "Home": lambda input: input.move_to_start(),
@@ -958,23 +965,23 @@ class BeatStroke:
                 self.state = INPUT_STATE.TAB
 
                 if key == self.keycodes["Tab"]:
-                    complete = self.input.complete(+1)
+                    selector = self.input.select_suggestions(+1)
                 elif key == self.keycodes["Shift+Tab"]:
-                    complete = self.input.complete(-1)
+                    selector = self.input.select_suggestions(-1)
 
                 try:
-                    next(complete)
+                    next(selector)
 
                     while True:
                         _, key = yield
                         if key == self.keycodes["Tab"]:
-                            complete.send(+1)
+                            selector.send(+1)
                         elif key == self.keycodes["Shift+Tab"]:
-                            complete.send(-1)
+                            selector.send(-1)
                         elif key == self.keycodes["Esc"]:
-                            complete.send(0)
+                            selector.send(0)
                         else:
-                            complete.close()
+                            selector.close()
                             self.state = INPUT_STATE.EDIT
                             break
 
