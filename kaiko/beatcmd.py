@@ -558,7 +558,7 @@ class BeatInput:
 
         self.buffer = self.buffers[self.buffers_index]
         self.pos = len(self.buffer)
-        self.suggestion = ""
+        self.typeahead = ""
 
         self.tokens = []
         self.state = SHLEXER_STATE.SPACED
@@ -582,7 +582,7 @@ class BeatInput:
         self.tokens = [(token, type, slic, masked) for (token, slic, masked), type in zip(tokens, types)]
 
     def complete(self, action=+1):
-        self.suggestion = ""
+        self.typeahead = ""
 
         compreplies = list(shlexer_complete(self.buffer, self.pos, self.promptable.complete))
         length = len(compreplies)
@@ -618,7 +618,7 @@ class BeatInput:
         if len(self.tokens) == 0:
             self.delete_range(None, None)
             self.result.put(InputError(None, None))
-            return
+            return False
 
         try:
             res = self.promptable.generate([token for token, _, _, _ in self.tokens], self.state)
@@ -638,6 +638,7 @@ class BeatInput:
                 msg = e.info
 
             self.result.put(InputError(pointto, msg))
+            return False
 
         except PromptParseError as e:
             _, _, pointto, _ = self.tokens[e.index]
@@ -654,23 +655,37 @@ class BeatInput:
                 msg = e.info
 
             self.result.put(InputError(pointto, msg))
+            return False
 
         else:
             self.history.append("".join(self.buffer))
             self.result.put(InputResult(res))
+            return True
 
-    def suggest(self):
+    def suggest(self, suggest=True):
+        if not suggest:
+            self.typeahead = ""
+            return False
+
         lex_completer = shlexer_complete(self.buffer, len(self.buffer), self.promptable.complete)
         compreply = next(lex_completer, None)
+
         if compreply is None:
-            self.suggestion = ""
+            self.typeahead = ""
+            return False
         elif compreply[0] != "\b":
-            self.suggestion = "".join(compreply)
+            self.typeahead = "".join(compreply)
+            return True
+        else:
+            return False
 
     def input(self, text, suggest=True):
         text = list(text)
 
-        while text[0] == "\b":
+        if len(text) == 0:
+            return False
+
+        while len(text) > 0 and text[0] == "\b":
             del text[0]
             del self.buffer[self.pos-1]
             self.pos = self.pos-1
@@ -679,95 +694,121 @@ class BeatInput:
         self.pos += len(text)
         self.parse()
 
-        if suggest and self.pos == len(self.buffer):
-            self.suggest()
+        self.suggest(suggest and self.pos == len(self.buffer))
+
+        return True
 
     def backspace(self):
         if self.pos == 0:
-            return
+            return False
+
         self.pos -= 1
         del self.buffer[self.pos]
         self.parse()
-        self.suggestion = ""
+        self.suggest(False)
+
+        return True
 
     def delete(self):
         if self.pos >= len(self.buffer):
-            return
+            return False
+
         del self.buffer[self.pos]
         self.parse()
-        self.suggestion = ""
+        self.suggest(False)
+
+        return True
 
     def delete_range(self, start, end):
-        if start is None:
-            start = 0
-        if end is None:
-            end = len(self.buffer)
-        start = min(max(0, start), len(self.buffer))
-        end = min(max(0, end), len(self.buffer))
+        start = min(max(0, start), len(self.buffer)) if start is not None else 0
+        end = min(max(0, end), len(self.buffer)) if end is not None else len(self.buffer)
+
+        if start >= end:
+            return False
+
         del self.buffer[start:end]
         self.pos = start
         self.parse()
-        self.suggestion = ""
+        self.suggest(False)
+
+        return True
 
     def delete_to_word_start(self):
         for match in re.finditer("\w+|.", "".join(self.buffer)):
             if match.end() >= self.pos:
-                self.delete_range(match.start(), self.pos)
-                break
+                return self.delete_range(match.start(), self.pos)
         else:
-            self.delete_range(None, self.pos)
+            return self.delete_range(None, self.pos)
 
     def delete_to_word_end(self):
         for match in re.finditer("\w+|.", "".join(self.buffer)):
             if match.end() > self.pos:
-                self.delete_range(self.pos, match.end())
-                break
+                return self.delete_range(self.pos, match.end())
         else:
-            self.delete_range(self.pos, None)
+            return self.delete_range(self.pos, None)
 
     def move(self, offset):
-        self.pos = min(max(0, self.pos+offset), len(self.buffer))
-        self.suggestion = ""
+        return self.move_to(self.pos+offset)
+
+    def move_left(self):
+        return self.move(-1)
+
+    def move_right(self):
+        return self.move(+1)
 
     def move_to(self, pos):
-        self.pos = min(max(0, pos), len(self.buffer)) if pos is not None else len(self.buffer)
-        self.suggestion = ""
+        pos = min(max(0, pos), len(self.buffer)) if pos is not None else len(self.buffer)
+        self.suggest(False)
+
+        if self.pos == pos:
+            return False
+
+        self.pos = pos
+        return True
+
+    def move_to_start(self):
+        return self.move_to(0)
+
+    def move_to_end(self):
+        return self.move_to(None)
 
     def move_to_word_start(self):
         for match in re.finditer("\w+|.", "".join(self.buffer)):
             if match.end() >= self.pos:
-                self.move_to(match.start())
-                break
+                return self.move_to(match.start())
         else:
-            self.move_to(0)
+            return self.move_to(0)
 
     def move_to_word_end(self):
         for match in re.finditer("\w+|.", "".join(self.buffer)):
             if match.end() > self.pos:
-                self.move_to(match.end())
-                break
+                return self.move_to(match.end())
         else:
-            self.move_to(None)
+            return self.move_to(None)
 
     def prev(self):
         if self.buffers_index == -len(self.buffers):
-            return
+            return False
         self.buffers_index -= 1
 
         self.buffer = self.buffers[self.buffers_index]
         self.pos = len(self.buffer)
         self.parse()
-        self.suggestion = ""
+        self.suggest(False)
+
+        return True
 
     def next(self):
         if self.buffers_index == -1:
-            return
+            return False
         self.buffers_index += 1
 
         self.buffer = self.buffers[self.buffers_index]
         self.pos = len(self.buffer)
         self.parse()
-        self.suggestion = ""
+        self.suggest(False)
+
+        return True
 
 
 default_keycodes = {
@@ -881,12 +922,12 @@ default_keycodes = {
 default_keymap = {
     "Backspace": lambda input: input.backspace(),
        "Delete": lambda input: input.delete(),
-         "Left": lambda input: input.move(-1),
-        "Right": lambda input: input.move(+1),
+         "Left": lambda input: input.move_left(),
+        "Right": lambda input: input.move_right(),
            "Up": lambda input: input.prev(),
          "Down": lambda input: input.next(),
-         "Home": lambda input: input.move_to(0),
-          "End": lambda input: input.move_to(None),
+         "Home": lambda input: input.move_to_start(),
+          "End": lambda input: input.move_to_end(),
         "Enter": lambda input: input.enter(),
          "Ctrl+Left": lambda input: input.move_to_word_start(),
         "Ctrl+Right": lambda input: input.move_to_word_end(),
@@ -1004,7 +1045,7 @@ class PromptTheme(metaclass=cfg.Configurable):
     error_message_attr: str = "31"
 
     escape_attr: str = "2"
-    suggestion_attr: str = "2"
+    typeahead_attr: str = "2"
     whitespace: str = "\x1b[2m⌴\x1b[m"
 
     token_invalid_attr: str = "31"
@@ -1087,7 +1128,7 @@ class BeatPrompt:
     @dn.datanode
     def render_node(self):
         escape_attr     = self.theme.escape_attr
-        suggestion_attr = self.theme.suggestion_attr
+        typeahead_attr = self.theme.typeahead_attr
         whitespace      = self.theme.whitespace
 
         token_invalid_attr  = self.theme.token_invalid_attr
@@ -1138,13 +1179,13 @@ class BeatPrompt:
 
             rendered_text = "".join(rendered_buffer)
 
-            # render suggestion
-            rendered_sugg = tui.add_attr(self.input.suggestion, suggestion_attr) if self.input.suggestion else ""
+            # render typeahead
+            rendered_typeahead = tui.add_attr(self.input.typeahead, typeahead_attr) if self.input.typeahead else ""
 
             # compute cursor position
             _, cursor_pos = tui.textrange1(0, "".join(rendered_buffer[:self.input.pos]))
 
-            yield rendered_text, rendered_sugg, cursor_pos
+            yield rendered_text, rendered_typeahead, cursor_pos
 
     @dn.datanode
     def draw_node(self):
@@ -1158,7 +1199,7 @@ class BeatPrompt:
         output_text = None
 
         while True:
-            result, (header, cursor), (text, suggestion, cursor_pos), size = yield output_text
+            result, (header, cursor), (text, typeahead, cursor_pos), size = yield output_text
             width = size.columns
             view = tui.newwin1(width)
 
@@ -1174,7 +1215,7 @@ class BeatPrompt:
                 input_offset = max(0, text_length-input_width+1)
 
             # draw input
-            text_ = text + (suggestion if not result else "")
+            text_ = text + (typeahead if not result else "")
             tui.addtext1(view, width, input_ran.start-input_offset, text_, input_ran)
             if input_offset > 0:
                 tui.addtext1(view, width, input_ran.start, "…", input_ran)
