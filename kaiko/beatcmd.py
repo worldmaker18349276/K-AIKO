@@ -15,13 +15,11 @@ class SHLEXER_STATE(Enum):
     PLAIN = "*"
     BACKSLASHED = "\\"
     QUOTED = "'"
-    DOUBLE_QUOTED = '"'
 
-def shlexer_parse(raw, partial=False):
+def shlexer_tokenize(raw, partial=False):
     SPACE = " "
     BACKSLASH = "\\"
     QUOTE = "'"
-    DOUBLE_QUOTE = '"'
 
     raw = enumerate(raw)
 
@@ -38,57 +36,41 @@ def shlexer_parse(raw, partial=False):
         # parse token
         start = index
         token = []
-        masked = []
+        ignored = []
         while True:
             if char == SPACE:
                 # end parsing token
-                yield "".join(token), slice(start, index), masked
+                yield "".join(token), slice(start, index), ignored
                 break
 
             elif char == BACKSLASH:
-                # escape next character
+                # escape the next character
                 try:
-                    masked.append(index)
+                    ignored.append(index)
                     index, char = next(raw)
                     token.append(char)
 
                 except StopIteration:
                     if not partial:
                         raise ValueError("No escaped character")
-                    yield "".join(token), slice(start, None), masked
+                    yield "".join(token), slice(start, None), ignored
                     return SHLEXER_STATE.BACKSLASHED
 
             elif char == QUOTE:
-                # start escape string until next quote
+                # escape the following characters until the next quotation mark
                 try:
-                    masked.append(index)
+                    ignored.append(index)
                     index, char = next(raw)
                     while char != QUOTE:
                         token.append(char)
                         index, char = next(raw)
-                    masked.append(index)
+                    ignored.append(index)
 
                 except StopIteration:
                     if not partial:
                         raise ValueError("No closing quotation")
-                    yield "".join(token), slice(start, None), masked
+                    yield "".join(token), slice(start, None), ignored
                     return SHLEXER_STATE.QUOTED
-
-            elif char == DOUBLE_QUOTE:
-                # start escape string until next double quote
-                try:
-                    masked.append(index)
-                    index, char = next(raw)
-                    while char != DOUBLE_QUOTE:
-                        token.append(char)
-                        index, char = next(raw)
-                    masked.append(index)
-
-                except StopIteration:
-                    if not partial:
-                        raise ValueError("No closing double quotation")
-                    yield "".join(token), slice(start, None), masked
-                    return SHLEXER_STATE.DOUBLE_QUOTED
 
             else:
                 # otherwise, as it is
@@ -97,38 +79,35 @@ def shlexer_parse(raw, partial=False):
             try:
                 index, char = next(raw)
             except StopIteration:
-                yield "".join(token), slice(start, None), masked
+                yield "".join(token), slice(start, None), ignored
                 return SHLEXER_STATE.PLAIN
 
-class SHLEXER_ESCAPE(Enum):
+class SHLEXER_QUOTE(Enum):
     MIX = "*"
     BACKSLASH = "\\"
     QUOTE = "'"
-    DOUBLE_QUOTE = '"'
 
-def shlexer_escape(token, strategy=SHLEXER_ESCAPE.MIX):
-    if strategy == SHLEXER_ESCAPE.MIX:
+def shlexer_quote(token, strategy=SHLEXER_QUOTE.MIX):
+    if strategy == SHLEXER_QUOTE.MIX:
         if len(token) == 0:
-            yield from shlexer_escape(token, SHLEXER_ESCAPE.QUOTE)
+            yield from shlexer_quote(token, SHLEXER_QUOTE.QUOTE)
         elif " " not in token:
-            yield from shlexer_escape(token, SHLEXER_ESCAPE.BACKSLASH)
-        elif "'" not in token:
-            yield from shlexer_escape(token, SHLEXER_ESCAPE.QUOTE)
+            yield from shlexer_quote(token, SHLEXER_QUOTE.BACKSLASH)
         else:
-            yield from shlexer_escape(token, SHLEXER_ESCAPE.DOUBLE_QUOTE)
+            yield from shlexer_quote(token, SHLEXER_QUOTE.QUOTE)
 
-    elif strategy == SHLEXER_ESCAPE.BACKSLASH:
+    elif strategy == SHLEXER_QUOTE.BACKSLASH:
         if len(token) == 0:
             raise ValueError("Unable to escape empty string")
 
         for ch in token:
-            if ch in (" ", "\\", "'", '"'):
+            if ch in "\\'":
                 yield "\\"
                 yield ch
             else:
                 yield ch
 
-    elif strategy == SHLEXER_ESCAPE.QUOTE:
+    elif strategy == SHLEXER_QUOTE.QUOTE:
         yield "'"
         for ch in token:
             if ch == "'":
@@ -140,25 +119,12 @@ def shlexer_escape(token, strategy=SHLEXER_ESCAPE.MIX):
                 yield ch
         yield "'"
 
-    elif strategy == SHLEXER_ESCAPE.DOUBLE_QUOTE:
-        yield '"'
-        for ch in token:
-            if ch == '"':
-                yield '"'
-                yield "\\"
-                yield ch
-                yield '"'
-            else:
-                yield ch
-        yield '"'
-
     else:
         raise ValueError
 
-def shlexer_complete(raw, index, completer):
+def shlexer_compreplies(raw, is_appended, completer):
     state = SHLEXER_STATE.SPACED
-    is_appended = len(raw) == index
-    parser = shlexer_parse(raw[:index], partial=True)
+    parser = shlexer_tokenize(raw, partial=True)
     tokens = []
     try:
         while True:
@@ -170,26 +136,26 @@ def shlexer_complete(raw, index, completer):
     if state == SHLEXER_STATE.SPACED:
         # empty target
         target = ""
-        for compreply in completer(tokens, target):
-            # escape any compreply, including empty compreply
-            compreply = list(shlexer_escape(compreply))
+        for completion in completer(tokens, target):
+            # escape any completion, including empty completion
+            compreply = list(shlexer_quote(completion))
             yield [*compreply, " "]
 
     elif state == SHLEXER_STATE.PLAIN:
         # use the last token as target
         target = tokens[-1]
         tokens = tokens[:-1]
-        for compreply in completer(tokens, target):
-            # don't escape empty compreply
-            compreply = list(shlexer_escape(compreply)) if compreply else []
+        for completion in completer(tokens, target):
+            # don't escape empty completion
+            compreply = list(shlexer_quote(completion)) if completion else []
             yield [*compreply, " "]
 
     elif state == SHLEXER_STATE.BACKSLASHED:
         target = tokens[-1]
         tokens = tokens[:-1]
-        for compreply in completer(tokens, target):
-            # delete backslash for empty compreply
-            compreply = list(shlexer_escape(compreply, SHLEXER_ESCAPE.BACKSLASH)) if compreply else ["\b"]
+        for completion in completer(tokens, target):
+            # delete backslash for empty completion
+            compreply = list(shlexer_quote(completion, SHLEXER_QUOTE.BACKSLASH)) if completion else ["\b"]
             # don't escape the backslash for escaping
             if compreply[0] == "\\":
                 compreply = compreply[1:]
@@ -199,22 +165,12 @@ def shlexer_complete(raw, index, completer):
     elif state == SHLEXER_STATE.QUOTED:
         target = tokens[-1]
         tokens = tokens[:-1]
-        for compreply in completer(tokens, target):
-            compreply = list(shlexer_escape(compreply, SHLEXER_ESCAPE.QUOTE))
-            # remove opening quote
+        for completion in completer(tokens, target):
+            compreply = list(shlexer_quote(completion, SHLEXER_QUOTE.QUOTE))
+            # remove opening quotation
             compreply = compreply[1:]
-            # add back quote for original escaped string
+            # add back quotation for original escaped string
             yield [*compreply, " "] if is_appended else [*compreply, " ", "'"]
-
-    elif state == SHLEXER_STATE.DOUBLE_QUOTED:
-        target = tokens[-1]
-        tokens = tokens[:-1]
-        for compreply in completer(tokens, target):
-            compreply = list(shlexer_escape(compreply, SHLEXER_ESCAPE.DOUBLE_QUOTE))
-            # remove opening double quote
-            compreply = compreply[1:]
-            # add back double quote for original escaped string
-            yield [*compreply, " "] if is_appended else [*compreply, " ", '"']
 
 def echo_str(escaped_str):
     regex = r"\\c.*|\\[\\abefnrtv]|\\0[0-7]{0,3}|\\x[0-9a-fA-F]{1,2}|."
@@ -223,7 +179,7 @@ def echo_str(escaped_str):
         r"\\": "\\",
         r"\a": "\a",
         r"\b": "\b",
-        "\\e": "\x1b",
+        r"\e": "\x1b",
         r"\f": "\f",
         r"\n": "\n",
         r"\r": "\r",
@@ -248,13 +204,13 @@ def echo_str(escaped_str):
     return re.sub(regex, repl, escaped_str)
 
 
-class PromptUnfinishError(Exception):
+class TokenUnfinishError(Exception):
     def __init__(self, index, suggestion, info):
         self.index = index
         self.suggestion = suggestion
         self.info = info
 
-class PromptParseError(Exception):
+class TokenParseError(Exception):
     def __init__(self, index, suggestion, info):
         self.index = index
         self.suggestion = suggestion
@@ -269,12 +225,11 @@ class TOKEN_TYPE(Enum):
 class Promptable:
     def __init__(self, root):
         self.root = root
-        self._PromptReturn = object()
 
     def _sig(self, func):
         # parse signature: (a, b, c, d=1, e=2)
         if not hasattr(func, '__call__'):
-            raise ValueError(f"Not a function: {curr!r}")
+            raise ValueError(f"Not a function: {func!r}")
 
         sig = inspect.signature(func)
         args = list()
@@ -412,11 +367,9 @@ class Promptable:
 
     def generate(self, tokens, state=SHLEXER_STATE.SPACED):
         if state == SHLEXER_STATE.BACKSLASHED:
-            raise PromptParseError(len(tokens)-1, None, "No escaped character")
+            raise TokenParseError(len(tokens)-1, None, "No escaped character")
         if state == SHLEXER_STATE.QUOTED:
-            raise PromptParseError(len(tokens)-1, None, "No closing quotation")
-        if state == SHLEXER_STATE.DOUBLE_QUOTED:
-            raise PromptParseError(len(tokens)-1, None, "No closing double quotation")
+            raise TokenParseError(len(tokens)-1, None, "No closing quotation")
 
         tokens = iter(tokens)
         curr = self.root
@@ -428,9 +381,9 @@ class Promptable:
             index += 1
 
             if token is None:
-                raise PromptUnfinishError(index, list(curr.keys()), "Unfinished command")
+                raise TokenUnfinishError(index, list(curr.keys()), "Unfinished command")
             if token not in curr:
-                raise PromptParseError(index, list(curr.keys()), "Invalid command")
+                raise TokenParseError(index, list(curr.keys()), "Invalid command")
             curr = curr.get(token)
 
         # parse function
@@ -444,10 +397,10 @@ class Promptable:
         # parse positional arguments
         for param in args:
             if token is None:
-                raise PromptUnfinishError(index, param.annotation, "Missing value")
+                raise TokenUnfinishError(index, param.annotation, "Missing value")
             value = self.parse_lit(token, param)
             if value is None:
-                raise PromptParseError(index, param.annotation, "Invalid value")
+                raise TokenParseError(index, param.annotation, "Invalid value")
             curr = functools.partial(curr, value)
 
             token = next(tokens, None)
@@ -458,17 +411,17 @@ class Promptable:
             # parse argument name
             param = kwargs.pop(token, None)
             if param is None:
-                raise PromptUnfinishError(index, list(kwargs.keys()), "Unkown argument")
+                raise TokenUnfinishError(index, list(kwargs.keys()), "Unkown argument")
 
             token = next(tokens, None)
             index += 1
 
             # parse argument value
             if token is None:
-                raise PromptUnfinishError(index, param.annotation, "Missing value")
+                raise TokenUnfinishError(index, param.annotation, "Missing value")
             value = self.parse_lit(token, param)
             if value is None:
-                raise PromptParseError(index, param.annotation, "Invalid value")
+                raise TokenParseError(index, param.annotation, "Invalid value")
             curr = functools.partial(curr, **{param.name: value})
 
             token = next(tokens, None)
@@ -476,7 +429,7 @@ class Promptable:
 
         # rest
         if token is not None:
-            raise PromptParseError(index, None, "Too many arguments")
+            raise TokenParseError(index, None, "Too many arguments")
 
         return curr
 
@@ -566,25 +519,26 @@ class BeatInput:
         self.result = queue.Queue()
 
     def parse(self):
-        lex_parser = shlexer_parse(self.buffer, partial=True)
+        tokenizer = shlexer_tokenize(self.buffer, partial=True)
 
         tokens = []
         while True:
             try:
-                token, slic, masked = next(lex_parser)
+                token, slic, ignored = next(tokenizer)
             except StopIteration as e:
                 self.state = e.value
                 break
 
-            tokens.append((token, slic, masked))
+            tokens.append((token, slic, ignored))
 
         types = self.promptable.parse(token for token, _, _ in tokens)
-        self.tokens = [(token, type, slic, masked) for (token, slic, masked), type in zip(tokens, types)]
+        self.tokens = [(token, type, slic, ignored) for (token, slic, ignored), type in zip(tokens, types)]
 
     def select_suggestions(self, action=+1):
         self.typeahead = ""
 
-        compreplies = list(shlexer_complete(self.buffer, self.pos, self.promptable.complete))
+        is_appended = len(self.buffer) == self.pos
+        compreplies = list(shlexer_compreplies(self.buffer[:self.pos], is_appended, self.promptable.complete))
         length = len(compreplies)
 
         original_buffer = list(self.buffer)
@@ -623,12 +577,12 @@ class BeatInput:
         try:
             res = self.promptable.generate([token for token, _, _, _ in self.tokens], self.state)
 
-        except PromptUnfinishError as e:
+        except TokenUnfinishError as e:
             pointto = slice(len(self.buffer)-1, len(self.buffer))
 
             if isinstance(e.suggestion, (tuple, list)):
                 sugg = e.suggestion[:5] + ["…"] if len(e.suggestion) > 5 else e.suggestion
-                sugg = "\n".join("  " + "".join(shlexer_escape(s)) for s in sugg)
+                sugg = "\n".join("  " + "".join(shlexer_quote(s)) for s in sugg)
                 msg = e.info + "\n" + f"It should be followed by:\n{sugg}"
             elif isinstance(e.suggestion, type):
                 msg = e.info + "\n" + f"It should be followed by {e.suggestion.__name__} literal"
@@ -640,12 +594,12 @@ class BeatInput:
             self.result.put(InputError(pointto, msg))
             return False
 
-        except PromptParseError as e:
+        except TokenParseError as e:
             _, _, pointto, _ = self.tokens[e.index]
 
             if isinstance(e.suggestion, (tuple, list)):
                 sugg = e.suggestion[:5] + ["…"] if len(e.suggestion) > 5 else e.suggestion
-                sugg = "\n".join("  " + "".join(shlexer_escape(s)) for s in sugg)
+                sugg = "\n".join("  " + "".join(shlexer_quote(s)) for s in sugg)
                 msg = e.info + "\n" + f"It should be one of:\n{sugg}"
             elif isinstance(e.suggestion, type):
                 msg = e.info + "\n" + f"It should be {e.suggestion.__name__} literal"
@@ -667,8 +621,8 @@ class BeatInput:
             self.typeahead = ""
             return False
 
-        lex_completer = shlexer_complete(self.buffer, len(self.buffer), self.promptable.complete)
-        compreply = next(lex_completer, None)
+        comprelies = shlexer_compreplies(self.buffer, True, self.promptable.complete)
+        compreply = next(comprelies, None)
 
         if compreply is None:
             self.typeahead = ""
@@ -703,6 +657,10 @@ class BeatInput:
 
         self.suggest(suggest)
 
+        return True
+
+    def error(self, message):
+        self.result.put(InputError(None, message))
         return True
 
     def backspace(self):
@@ -999,6 +957,8 @@ class BeatStroke:
                 # edit
                 if key.isprintable():
                     self.input.input(key)
+                else:
+                    self.input.error(f"Unknown key: {key!r}")
 
 
 class PromptTheme(metaclass=cfg.Configurable):
@@ -1083,7 +1043,7 @@ class BeatPrompt:
         yield
         while True:
             result = None
-            while not self.input.result.empty():
+            if not self.input.result.empty():
                 result = self.input.result.get()
 
             yield result
@@ -1149,9 +1109,9 @@ class BeatPrompt:
             # render buffer
             rendered_buffer = list(self.input.buffer)
 
-            for token, type, slic, masked in self.input.tokens:
+            for token, type, slic, ignored in self.input.tokens:
                 # render escape
-                for index in masked:
+                for index in ignored:
                     rendered_buffer[index] = tui.add_attr(rendered_buffer[index], escape_attr)
 
                 # render whitespace
