@@ -90,87 +90,52 @@ class SHLEXER_QUOTE(Enum):
 def shlexer_quote(token, strategy=SHLEXER_QUOTE.MIX):
     if strategy == SHLEXER_QUOTE.MIX:
         if len(token) == 0:
-            yield from shlexer_quote(token, SHLEXER_QUOTE.QUOTE)
+            return shlexer_quote(token, SHLEXER_QUOTE.QUOTE)
         elif " " not in token:
-            yield from shlexer_quote(token, SHLEXER_QUOTE.BACKSLASH)
+            return shlexer_quote(token, SHLEXER_QUOTE.BACKSLASH)
         else:
-            yield from shlexer_quote(token, SHLEXER_QUOTE.QUOTE)
+            return shlexer_quote(token, SHLEXER_QUOTE.QUOTE)
 
     elif strategy == SHLEXER_QUOTE.BACKSLASH:
         if len(token) == 0:
             raise ValueError("Unable to escape empty string")
-
-        for ch in token:
-            if ch in "\\'":
-                yield "\\"
-                yield ch
-            else:
-                yield ch
+        return re.sub(r"([ \\'])", r"\\\1", token)
 
     elif strategy == SHLEXER_QUOTE.QUOTE:
-        yield "'"
-        for ch in token:
-            if ch == "'":
-                yield "'"
-                yield "\\"
-                yield ch
-                yield "'"
-            else:
-                yield ch
-        yield "'"
+        return "'" + token.replace("'", r"'\''") + "'"
 
     else:
         raise ValueError
 
-def shlexer_compreplies(raw, is_appended, completer):
-    state = SHLEXER_STATE.SPACED
-    parser = shlexer_tokenize(raw, partial=True)
-    tokens = []
-    try:
-        while True:
-            token, _, _ = next(parser)
-            tokens.append(token)
-    except StopIteration as e:
-        state = e.value
-
+def shlexer_complete(compreply, state):
     if state == SHLEXER_STATE.SPACED:
-        # empty target
-        target = ""
-        for completion in completer(tokens, target):
-            # escape any completion, including empty completion
-            compreply = list(shlexer_quote(completion))
-            yield [*compreply, " "]
+        # escape any string, including empty string
+        compreply = shlexer_quote(compreply) + " "
+        return compreply
 
     elif state == SHLEXER_STATE.PLAIN:
-        # use the last token as target
-        target = tokens[-1]
-        tokens = tokens[:-1]
-        for completion in completer(tokens, target):
-            # don't escape empty completion
-            compreply = list(shlexer_quote(completion)) if completion else []
-            yield [*compreply, " "]
+        # don't escape empty string
+        if compreply == "":
+            return ""
+        compreply = shlexer_quote(compreply) + " "
+        return compreply
 
     elif state == SHLEXER_STATE.BACKSLASHED:
-        target = tokens[-1]
-        tokens = tokens[:-1]
-        for completion in completer(tokens, target):
-            # delete backslash for empty completion
-            compreply = list(shlexer_quote(completion, SHLEXER_QUOTE.BACKSLASH)) if completion else ["\b"]
-            # don't escape the backslash for escaping
-            if compreply[0] == "\\":
-                compreply = compreply[1:]
-            # add back backslash for original escaped character
-            yield [*compreply, " "] if is_appended else [*compreply, " ", "\\"]
+        if compreply == "":
+            return ""
+        compreply = shlexer_quote(compreply, SHLEXER_QUOTE.BACKSLASH) + " "
+        # remove opening backslash
+        if compreply.startswith("\\"):
+            compreply = compreply[1:]
+        return compreply
 
     elif state == SHLEXER_STATE.QUOTED:
-        target = tokens[-1]
-        tokens = tokens[:-1]
-        for completion in completer(tokens, target):
-            compreply = list(shlexer_quote(completion, SHLEXER_QUOTE.QUOTE))
-            # remove opening quotation
-            compreply = compreply[1:]
-            # add back quotation for original escaped string
-            yield [*compreply, " "] if is_appended else [*compreply, " ", "'"]
+        if compreply == "":
+            return "'"
+        compreply = shlexer_quote(compreply, SHLEXER_QUOTE.QUOTE) + " "
+        # remove opening quotation
+        compreply = compreply[1:]
+        return compreply
 
 def echo_str(escaped_str):
     regex = r"\\c.*|\\[\\abefnrtv]|\\0[0-7]{0,3}|\\x[0-9a-fA-F]{1,2}|."
@@ -262,34 +227,37 @@ class Promptable:
         else:
             return None
 
+    def suggest_opt(self, target, options):
+        return [opt for opt in options if opt.startswith(target)]
+
     def suggest_lit(self, target, param):
         type = param.annotation
         if isinstance(type, (tuple, list)):
-            return type
+            return self.suggest_opt(target, type)
 
         elif type == bool:
             if param.default is param.empty:
-                return ["True", "False"]
+                return self.suggest_opt(target, ["True", "False"])
             else:
-                return [str(param.default), str(not param.default)]
+                return self.suggest_opt(target, [str(param.default), str(not param.default)])
 
         elif type == int:
             if param.default is param.empty:
                 return []
             else:
-                return [str(param.default)]
+                return self.suggest_opt(target, [str(param.default)])
 
         elif type == float:
             if param.default is param.empty:
                 return []
             else:
-                return [str(param.default)]
+                return self.suggest_opt(target, [str(param.default)])
 
         elif type == str:
             if param.default is param.empty:
                 return []
             else:
-                return [param.default]
+                return self.suggest_opt(target, [param.default])
 
         else:
             return []
@@ -442,7 +410,7 @@ class Promptable:
             token = next(tokens, None)
 
             if token is None:
-                return list(curr.keys())
+                return self.suggest_opt(target, list(curr.keys()))
             if token not in curr:
                 return []
             curr = curr.get(token)
@@ -468,7 +436,7 @@ class Promptable:
         while kwargs:
             # parse argument name
             if token is None:
-                return list(kwargs.keys())
+                return self.suggest_opt(target, list(kwargs.keys()))
             param = kwargs.pop(token, None)
             if param is None:
                 return []
@@ -486,9 +454,6 @@ class Promptable:
 
         # rest
         return []
-
-    def complete(self, tokens, target):
-        return [sugg[len(target):] for sugg in self.suggest(tokens, target) if sugg.startswith(target)]
 
 
 class InputError:
@@ -534,12 +499,26 @@ class BeatInput:
         types = self.promptable.parse(token for token, _, _ in tokens)
         self.tokens = [(token, type, slic, ignored) for (token, slic, ignored), type in zip(tokens, types)]
 
-    def select_suggestions(self, action=+1):
+    def autocomplete(self, action=+1):
         self.typeahead = ""
 
-        is_appended = len(self.buffer) == self.pos
-        compreplies = list(shlexer_compreplies(self.buffer[:self.pos], is_appended, self.promptable.complete))
-        length = len(compreplies)
+        # find the token to autocomplete
+        tokens = []
+        selection = slice(self.pos, self.pos)
+        target = ""
+        for token, _, slic, _ in self.tokens:
+            start, stop, _ = slic.indices(len(self.buffer))
+            if stop < self.pos:
+                tokens.append(token)
+            elif self.pos < start:
+                break
+            else:
+                selection = slic
+                target = token
+
+        # generate suggestions
+        suggestions = [shlexer_quote(sugg) + " " for sugg in self.promptable.suggest(tokens, target)]
+        length = len(suggestions)
 
         original_buffer = list(self.buffer)
         original_pos = self.pos
@@ -552,7 +531,9 @@ class BeatInput:
             raise ValueError
 
         while index in range(length):
-            self.input(compreplies[index], False)
+            self.buffer[selection] = suggestions[index]
+            self.pos = selection.start + len(suggestions[index])
+            self.parse()
 
             action = yield
             if action == +1:
@@ -568,6 +549,39 @@ class BeatInput:
         else:
             self.parse()
 
+    def make_typeahead(self, suggest=True):
+        if not suggest or self.pos != len(self.buffer):
+            self.typeahead = ""
+            return False
+
+        if self.state == SHLEXER_STATE.SPACED:
+            tokens = [token for token, _, _, _ in self.tokens]
+            target = ""
+        else:
+            tokens = [token for token, _, _, _ in self.tokens[:-1]]
+            target, _, _, _ = self.tokens[-1]
+
+        suggestions = self.promptable.suggest(tokens, target)
+        compreply = suggestions[0][len(target):] if suggestions else None
+
+        if compreply is None:
+            self.typeahead = ""
+            return False
+        else:
+            self.typeahead = shlexer_complete(compreply, self.state)
+            return True
+
+    def insert_typeahead(self):
+        if self.typeahead == "" or self.pos != len(self.buffer):
+            return False
+
+        self.buffer[self.pos:self.pos] = self.typeahead
+        self.pos += len(self.typeahead)
+        self.typeahead = ""
+        self.parse()
+
+        return True
+
     def enter(self):
         if len(self.tokens) == 0:
             self.delete_range(None, None)
@@ -582,7 +596,7 @@ class BeatInput:
 
             if isinstance(e.suggestion, (tuple, list)):
                 sugg = e.suggestion[:5] + ["…"] if len(e.suggestion) > 5 else e.suggestion
-                sugg = "\n".join("  " + "".join(shlexer_quote(s)) for s in sugg)
+                sugg = "\n".join("  " + shlexer_quote(s) for s in sugg)
                 msg = e.info + "\n" + f"It should be followed by:\n{sugg}"
             elif isinstance(e.suggestion, type):
                 msg = e.info + "\n" + f"It should be followed by {e.suggestion.__name__} literal"
@@ -599,7 +613,7 @@ class BeatInput:
 
             if isinstance(e.suggestion, (tuple, list)):
                 sugg = e.suggestion[:5] + ["…"] if len(e.suggestion) > 5 else e.suggestion
-                sugg = "\n".join("  " + "".join(shlexer_quote(s)) for s in sugg)
+                sugg = "\n".join("  " + shlexer_quote(s) for s in sugg)
                 msg = e.info + "\n" + f"It should be one of:\n{sugg}"
             elif isinstance(e.suggestion, type):
                 msg = e.info + "\n" + f"It should be {e.suggestion.__name__} literal"
@@ -616,31 +630,7 @@ class BeatInput:
             self.result.put(InputResult(res))
             return True
 
-    def suggest(self, suggest=True):
-        if not suggest or self.pos != len(self.buffer):
-            self.typeahead = ""
-            return False
-
-        comprelies = shlexer_compreplies(self.buffer, True, self.promptable.complete)
-        compreply = next(comprelies, None)
-
-        if compreply is None:
-            self.typeahead = ""
-            return False
-        elif compreply[0] != "\b":
-            self.typeahead = "".join(compreply)
-            return True
-        else:
-            return False
-
-    def insert_suggestion(self):
-        if self.typeahead == "" or self.pos != len(self.buffer):
-            return False
-
-        self.input(self.typeahead, False)
-        return True
-
-    def input(self, text, suggest=True):
+    def input(self, text):
         text = list(text)
 
         if len(text) == 0:
@@ -655,7 +645,7 @@ class BeatInput:
         self.pos += len(text)
         self.parse()
 
-        self.suggest(suggest)
+        self.make_typeahead(True)
 
         return True
 
@@ -670,7 +660,7 @@ class BeatInput:
         self.pos -= 1
         del self.buffer[self.pos]
         self.parse()
-        self.suggest(False)
+        self.make_typeahead(False)
 
         return True
 
@@ -680,7 +670,7 @@ class BeatInput:
 
         del self.buffer[self.pos]
         self.parse()
-        self.suggest(False)
+        self.make_typeahead(False)
 
         return True
 
@@ -694,7 +684,7 @@ class BeatInput:
         del self.buffer[start:end]
         self.pos = start
         self.parse()
-        self.suggest(False)
+        self.make_typeahead(False)
 
         return True
 
@@ -723,7 +713,7 @@ class BeatInput:
 
     def move_to(self, pos):
         pos = min(max(0, pos), len(self.buffer)) if pos is not None else len(self.buffer)
-        self.suggest(False)
+        self.make_typeahead(False)
 
         if self.pos == pos:
             return False
@@ -759,7 +749,7 @@ class BeatInput:
         self.buffer = self.buffers[self.buffers_index]
         self.pos = len(self.buffer)
         self.parse()
-        self.suggest(False)
+        self.make_typeahead(False)
 
         return True
 
@@ -771,7 +761,7 @@ class BeatInput:
         self.buffer = self.buffers[self.buffers_index]
         self.pos = len(self.buffer)
         self.parse()
-        self.suggest(False)
+        self.make_typeahead(False)
 
         return True
 
@@ -888,7 +878,7 @@ default_keymap = {
     "Backspace": lambda input: input.backspace(),
        "Delete": lambda input: input.delete(),
          "Left": lambda input: input.move_left(),
-        "Right": lambda input: input.insert_suggestion() or input.move_right(),
+        "Right": lambda input: input.insert_typeahead() or input.move_right(),
            "Up": lambda input: input.prev(),
          "Down": lambda input: input.next(),
          "Home": lambda input: input.move_to_start(),
@@ -923,9 +913,9 @@ class BeatStroke:
                 self.state = INPUT_STATE.TAB
 
                 if key == self.keycodes["Tab"]:
-                    selector = self.input.select_suggestions(+1)
+                    selector = self.input.autocomplete(+1)
                 elif key == self.keycodes["Shift+Tab"]:
-                    selector = self.input.select_suggestions(-1)
+                    selector = self.input.autocomplete(-1)
 
                 try:
                     next(selector)
