@@ -80,11 +80,12 @@ class KAIKOTheme(metaclass=cfg.Configurable):
     emph_attr: str = "1"
     warn_attr: str = "31"
 
+@beatcmd.promptable
 class KAIKOGame:
     def __init__(self, theme, data_dir, songs_dir, manager):
         self.theme = theme
-        self.data_dir = data_dir
-        self.songs_dir = songs_dir
+        self._data_dir = data_dir
+        self._songs_dir = songs_dir
         self.manager = manager
         self._beatmaps = []
         self.songs_mtime = None
@@ -134,10 +135,26 @@ class KAIKOGame:
         finally:
             manager.terminate()
 
+    @beatcmd.promptable
+    def data_dir(self):
+        return self._data_dir
+
+    @beatcmd.promptable
+    def songs_dir(self):
+        return self._songs_dir
+
+    @beatcmd.promptable
+    def beatmaps(self):
+        if self.songs_mtime != os.stat(str(self._songs_dir)).st_mtime:
+            self.reload()
+
+        return self._beatmaps
+
+    @beatcmd.promptable
     def reload(self):
         info_icon = self.theme.info_icon
         emph_attr = self.theme.emph_attr
-        songs_dir = self.songs_dir
+        songs_dir = self._songs_dir
 
         print(f"{info_icon} Loading songs from {tui.add_attr(songs_dir.as_uri(), emph_attr)}...")
 
@@ -166,11 +183,12 @@ class KAIKOGame:
 
         self.songs_mtime = os.stat(str(songs_dir)).st_mtime
 
+    @beatcmd.promptable
     def add(self, beatmap:Path):
         info_icon = self.theme.info_icon
         emph_attr = self.theme.emph_attr
         warn_attr = self.theme.warn_attr
-        songs_dir = self.songs_dir
+        songs_dir = self._songs_dir
 
         if not beatmap.exists():
             print(tui.add_attr(f"File not found: {str(beatmap)}", warn_attr))
@@ -188,55 +206,23 @@ class KAIKOGame:
 
         self.reload()
 
-    @property
-    def beatmaps(self):
-        if self.songs_mtime != os.stat(str(self.songs_dir)).st_mtime:
-            self.reload()
-
-        return self._beatmaps
-
+    @beatcmd.promptable
     def play(self, beatmap:Path):
         if not beatmap.is_absolute():
-            beatmap = self.songs_dir.joinpath(beatmap)
+            beatmap = self._songs_dir.joinpath(beatmap)
         return KAIKOPlay(beatmap)
 
-    def commands(self):
-        beatmaps_str = [str(beatmap) for beatmap in self.beatmaps]
+    @beatcmd.promptable
+    def say(self, message:str, escape:bool=False):
+        if escape:
+            print(beatcmd.echo_str(message))
+        else:
+            print(message)
 
-        def play(beatmap:beatmaps_str):
-            return self.play(Path(beatmap))
-
-        def print_data_dir():
-            print(str(self.data_dir))
-
-        def print_songs_dir():
-            print(str(self.songs_dir))
-
-        def print_beatmaps():
-            for path in beatmaps_str:
-                print(path)
-
-        def say(message:str, escape:bool=False):
-            if escape:
-                print(beatcmd.echo_str(message))
-            else:
-                print(message)
-
-        def exit():
-            print("bye~")
-            raise KeyboardInterrupt
-
-        return beatcmd.Promptable({
-            "play": play,
-            "reload": self.reload,
-            "add": self.add,
-            "data_dir": print_data_dir,
-            "songs_dir": print_songs_dir,
-            "beatmaps": print_beatmaps,
-            "settings": lambda:None,
-            "say": say,
-            "exit": exit,
-        })
+    @beatcmd.promptable
+    def exit(self):
+        print("bye~")
+        raise KeyboardInterrupt
 
 class KAIKOPlay:
     def __init__(self, filepath):
@@ -266,7 +252,7 @@ def main():
 
             # play given beatmap
             if len(sys.argv) > 1:
-                res = game.commands().generate(sys.argv[1:])()
+                res = beatcmd.Promptable(game).generate(sys.argv[1:])()
                 if hasattr(res, 'execute'):
                     res.execute(game.manager)
                 return
@@ -274,9 +260,17 @@ def main():
             # prompt
             history = []
             while True:
-                result = beatcmd.prompt(game.commands(), history)
+                result = beatcmd.prompt(game, history)
+
                 if hasattr(result, 'execute'):
                     result.execute(game.manager)
+
+                elif isinstance(result, list):
+                    for item in result:
+                        print(item)
+
+                elif result is not None:
+                    print(result)
 
     except KeyboardInterrupt:
         pass

@@ -107,7 +107,7 @@ def shlexer_tokenize(raw, partial=False):
                 yield "".join(token), slice(start, None), ignored
                 return SHLEXER_STATE.PLAIN
 
-def shlexer_complete(compreply, partial, state=SHLEXER_STATE.SPACED):
+def shlexer_complete(compreply, partial=False, state=SHLEXER_STATE.SPACED):
     if state == SHLEXER_STATE.PLAIN:
         compreply = re.sub(r"([ \\'])", r"\\\1", compreply)
 
@@ -193,11 +193,12 @@ class TOKEN_TYPE(Enum):
     ARGUMENT = "argument"
     LITERAL = "literal"
 
-class Promptable:
+class BeatShell:
     def __init__(self, root):
         self.root = root
 
-    def _sig(self, func):
+    @staticmethod
+    def _sig(func):
         # parse signature: (a, b, c, d=1, e=2)
         if not hasattr(func, '__call__'):
             raise ValueError(f"Not a function: {func!r}")
@@ -213,7 +214,8 @@ class Promptable:
 
         return args, kwargs
 
-    def parse_path(self, token):
+    @staticmethod
+    def parse_path(token):
         try:
             exists = os.path.exists(token or ".")
         except ValueError:
@@ -224,7 +226,8 @@ class Promptable:
 
         return Path(token)
 
-    def suggest_path(self, token, default=None):
+    @staticmethod
+    def suggest_path(token, default=None):
         suggestions = []
 
         if default is not None:
@@ -263,7 +266,8 @@ class Promptable:
 
         return suggestions
 
-    def parse_lit(self, token, param):
+    @staticmethod
+    def parse_lit(token, param):
         type = param.annotation
         if isinstance(type, (tuple, list)):
             if token not in type:
@@ -289,7 +293,7 @@ class Promptable:
             return token
 
         elif type == Path:
-            return self.parse_path(token)
+            return BeatShell.parse_path(token)
 
         elif hasattr(type, 'parse'):
             return type.parse(token)
@@ -297,7 +301,8 @@ class Promptable:
         else:
             return None
 
-    def suggest_lit(self, token, param):
+    @staticmethod
+    def suggest_lit(token, param):
         type = param.annotation
         if isinstance(type, (tuple, list)):
             return [(val, False) for val in fit(token, type)]
@@ -328,9 +333,9 @@ class Promptable:
 
         elif type == Path:
             if param.default is param.empty:
-                return self.suggest_path(token)
+                return BeatShell.suggest_path(token)
             else:
-                return self.suggest_path(token, param.default)
+                return BeatShell.suggest_path(token, param.default)
 
         elif hasattr(type, 'suggest'):
             if param.default is param.empty:
@@ -346,36 +351,37 @@ class Promptable:
         curr = self.root
         types = []
 
+        if not getattr(curr, '__is_promptable__', False):
+            raise ValueError(f"Not promptable: {curr!r}")
+
         try:
             # parse command
-            while isinstance(curr, dict):
+            while not hasattr(curr, '__call__'):
                 types.append(TOKEN_TYPE.COMMAND)
 
                 token = next(tokens)
 
-                if token not in curr:
-                    while True:
-                        types.append(None)
-                        token = next(tokens)
-                curr = curr.get(token)
+                if token not in get_promptable_fields(curr):
+                    curr = None
+                    break
+                curr = getattr(curr, token)
 
             # parse function
-            if not hasattr(curr, '__call__'):
-                while True:
-                    types.append(None)
-                    token = next(tokens)
-            args, kwargs = self._sig(curr)
-            types.append(TOKEN_TYPE.FUNCTION)
+            if curr is None:
+                args, kwargs = [], {}
 
-            token = next(tokens)
+            else:
+                args, kwargs = BeatShell._sig(curr)
+                types.append(TOKEN_TYPE.FUNCTION)
+
+                token = next(tokens)
 
             # parse positional arguments
             for param in args:
-                value = self.parse_lit(token, param)
+                value = BeatShell.parse_lit(token, param)
                 if value is None:
-                    while True:
-                        types.append(None)
-                        token = next(tokens)
+                    kwargs = {}
+                    break
                 types.append(TOKEN_TYPE.LITERAL)
 
                 token = next(tokens)
@@ -385,19 +391,15 @@ class Promptable:
                 # parse argument name
                 param = kwargs.pop(token, None)
                 if param is None:
-                    while True:
-                        types.append(None)
-                        token = next(tokens)
+                    break
                 types.append(TOKEN_TYPE.ARGUMENT)
 
                 token = next(tokens)
 
                 # parse argument value
-                value = self.parse_lit(token, param)
+                value = BeatShell.parse_lit(token, param)
                 if value is None:
-                    while True:
-                        types.append(None)
-                        token = next(tokens)
+                    break
                 types.append(TOKEN_TYPE.LITERAL)
 
                 token = next(tokens)
@@ -422,21 +424,24 @@ class Promptable:
         curr = self.root
         index = -1
 
+        if not getattr(curr, '__is_promptable__', False):
+            raise ValueError(f"Not promptable: {curr!r}")
+
         # parse command
-        while isinstance(curr, dict):
+        while not hasattr(curr, '__call__'):
             token = next(tokens, None)
             index += 1
 
+            fields = get_promptable_fields(curr)
+
             if token is None:
-                raise TokenUnfinishError(index, list(curr.keys()), "Unfinished command")
-            if token not in curr:
-                raise TokenParseError(index, list(curr.keys()), "Invalid command")
-            curr = curr.get(token)
+                raise TokenUnfinishError(index, fields, "Unfinished command")
+            if token not in fields:
+                raise TokenParseError(index, fields, "Invalid command")
+            curr = getattr(curr, token)
 
         # parse function
-        if not hasattr(curr, '__call__'):
-            raise ValueError(f"Not a function: {curr!r}")
-        args, kwargs = self._sig(curr)
+        args, kwargs = BeatShell._sig(curr)
 
         token = next(tokens, None)
         index += 1
@@ -445,7 +450,7 @@ class Promptable:
         for param in args:
             if token is None:
                 raise TokenUnfinishError(index, param.annotation, "Missing value")
-            value = self.parse_lit(token, param)
+            value = BeatShell.parse_lit(token, param)
             if value is None:
                 raise TokenParseError(index, param.annotation, "Invalid value")
             curr = functools.partial(curr, value)
@@ -466,7 +471,7 @@ class Promptable:
             # parse argument value
             if token is None:
                 raise TokenUnfinishError(index, param.annotation, "Missing value")
-            value = self.parse_lit(token, param)
+            value = BeatShell.parse_lit(token, param)
             if value is None:
                 raise TokenParseError(index, param.annotation, "Invalid value")
             curr = functools.partial(curr, **{param.name: value})
@@ -484,28 +489,31 @@ class Promptable:
         tokens = iter(tokens)
         curr = self.root
 
+        if not getattr(curr, '__is_promptable__', False):
+            raise ValueError(f"Not promptable: {curr!r}")
+
         # parse command
-        while isinstance(curr, dict):
+        while not hasattr(curr, '__call__'):
             token = next(tokens, None)
 
+            fields = get_promptable_fields(curr)
+
             if token is None:
-                return [(val, False) for val in fit(target, curr.keys())]
-            if token not in curr:
+                return [(val, False) for val in fit(target, fields)]
+            if token not in fields:
                 return []
-            curr = curr.get(token)
+            curr = getattr(curr, token)
 
         # parse function
-        if not hasattr(curr, '__call__'):
-            return []
-        args, kwargs = self._sig(curr)
+        args, kwargs = BeatShell._sig(curr)
 
         token = next(tokens, None)
 
         # parse positional arguments
         for param in args:
             if token is None:
-                return self.suggest_lit(target, param)
-            value = self.parse_lit(token, param)
+                return BeatShell.suggest_lit(target, param)
+            value = BeatShell.parse_lit(token, param)
             if value is None:
                 return []
 
@@ -524,8 +532,8 @@ class Promptable:
 
             # parse argument value
             if token is None:
-                return self.suggest_lit(target, param)
-            value = self.parse_lit(token, param)
+                return BeatShell.suggest_lit(target, param)
+            value = BeatShell.parse_lit(token, param)
             if value is None:
                 return []
 
@@ -533,6 +541,13 @@ class Promptable:
 
         # rest
         return []
+
+def promptable(target):
+    setattr(target, '__is_promptable__', True)
+    return target
+
+def get_promptable_fields(target):
+    return [k for k, v in type(target).__dict__.items() if getattr(v, '__is_promptable__', False)]
 
 
 class InputError:
@@ -545,8 +560,8 @@ class InputResult:
         self.value = value
 
 class BeatInput:
-    def __init__(self, promptable, history=None):
-        self.promptable = promptable
+    def __init__(self, shell, history=None):
+        self.shell = shell
         self.history = history if history is not None else []
 
         self.buffers = [list(history_buffer) for history_buffer in self.history]
@@ -575,7 +590,7 @@ class BeatInput:
 
             tokens.append((token, slic, ignored))
 
-        types = self.promptable.parse(token for token, _, _ in tokens)
+        types = self.shell.parse(token for token, _, _ in tokens)
         self.tokens = [(token, type, slic, ignored) for (token, slic, ignored), type in zip(tokens, types)]
 
     def autocomplete(self, action=+1):
@@ -596,7 +611,7 @@ class BeatInput:
                 target = token
 
         # generate suggestions
-        suggestions = [shlexer_complete(sugg, part) for sugg, part in self.promptable.suggest(tokens, target)]
+        suggestions = [shlexer_complete(sugg, part) for sugg, part in self.shell.suggest(tokens, target)]
         length = len(suggestions)
 
         original_buffer = list(self.buffer)
@@ -641,7 +656,7 @@ class BeatInput:
             target, _, _, _ = self.tokens[-1]
 
         compreply, partial = None, False
-        for suggestion, partial_ in self.promptable.suggest(tokens, target):
+        for suggestion, partial_ in self.shell.suggest(tokens, target):
             if suggestion.startswith(target):
                 compreply, partial = suggestion[len(target):], partial_
                 break
@@ -671,14 +686,14 @@ class BeatInput:
             return False
 
         try:
-            res = self.promptable.generate([token for token, _, _, _ in self.tokens], self.state)
+            res = self.shell.generate([token for token, _, _, _ in self.tokens], self.state)
 
         except TokenUnfinishError as e:
             pointto = slice(len(self.buffer)-1, len(self.buffer))
 
             if isinstance(e.suggestion, (tuple, list)):
                 sugg = e.suggestion[:5] + ["…"] if len(e.suggestion) > 5 else e.suggestion
-                sugg = "\n".join("  " + shlexer_quote(s) for s in sugg)
+                sugg = "\n".join("  " + shlexer_complete(s) for s in sugg)
                 msg = e.info + "\n" + f"It should be followed by:\n{sugg}"
             elif isinstance(e.suggestion, type):
                 msg = e.info + "\n" + f"It should be followed by {e.suggestion.__name__} literal"
@@ -695,7 +710,7 @@ class BeatInput:
 
             if isinstance(e.suggestion, (tuple, list)):
                 sugg = e.suggestion[:5] + ["…"] if len(e.suggestion) > 5 else e.suggestion
-                sugg = "\n".join("  " + shlexer_quote(s) for s in sugg)
+                sugg = "\n".join("  " + shlexer_complete(s) for s in sugg)
                 msg = e.info + "\n" + f"It should be one of:\n{sugg}"
             elif isinstance(e.suggestion, type):
                 msg = e.info + "\n" + f"It should be {e.suggestion.__name__} literal"
@@ -1300,7 +1315,8 @@ class BeatPrompt:
 def prompt(promptable, history=None):
     theme = PromptTheme()
 
-    input = BeatInput(promptable, history)
+    shell = BeatShell(promptable)
+    input = BeatInput(shell, history)
     stroke = BeatStroke(input, default_keymap, default_keycodes)
     prompt = BeatPrompt(stroke, input, theme)
 
