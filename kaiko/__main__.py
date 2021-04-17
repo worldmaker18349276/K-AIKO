@@ -203,9 +203,6 @@ class KAIKOGame:
     def commands(self):
         beatmaps_str = [str(beatmap) for beatmap in self.beatmaps]
 
-        def add(beatmap:str):
-            self.add(Path(beatmap))
-
         def play(beatmap:beatmaps_str):
             return self.play(Path(beatmap))
 
@@ -232,7 +229,7 @@ class KAIKOGame:
         return beatcmd.Promptable({
             "play": play,
             "reload": self.reload,
-            "add": add,
+            "add": self.add,
             "data_dir": print_data_dir,
             "songs_dir": print_songs_dir,
             "beatmaps": print_beatmaps,

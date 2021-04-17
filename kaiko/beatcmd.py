@@ -1,9 +1,11 @@
+import os
 from enum import Enum
 import functools
 import re
 import queue
 import threading
 import inspect
+from pathlib import Path
 from typing import List, Tuple
 from . import datanodes as dn
 from . import tui
@@ -211,6 +213,56 @@ class Promptable:
 
         return args, kwargs
 
+    def parse_path(self, token):
+        try:
+            exists = os.path.exists(token or ".")
+        except ValueError:
+            exists = False
+
+        if not exists:
+            return None
+
+        return Path(token)
+
+    def suggest_path(self, token, default=None):
+        suggestions = []
+
+        if default is not None:
+            suggestions.append((str(default), False))
+
+        # check path
+        try:
+            is_dir = os.path.isdir(token or ".")
+            is_file = os.path.isfile(token or ".")
+        except ValueError:
+            return suggestions
+
+        if is_file:
+            suggestions.append((token, False))
+            return suggestions
+
+        # separate parent and partial name
+        if is_dir:
+            suggestions.append((os.path.join(token or ".", ""), True))
+            target = ""
+        else:
+            token, target = os.path.split(token)
+
+        # explore directory
+        if os.path.isdir(token or "."):
+            names = fit(target, [(name, False) for name in os.listdir(token or ".") if not name.startswith(".")])
+            for name, _ in names:
+                subpath = os.path.join(token, name)
+
+                if os.path.isdir(subpath):
+                    subpath = os.path.join(subpath, "")
+                    suggestions.append((subpath, True))
+
+                elif os.path.isfile(subpath):
+                    suggestions.append((subpath, False))
+
+        return suggestions
+
     def parse_lit(self, token, param):
         type = param.annotation
         if isinstance(type, (tuple, list)):
@@ -236,49 +288,55 @@ class Promptable:
         elif type == str:
             return token
 
+        elif type == Path:
+            return self.parse_path(token)
+
         elif hasattr(type, 'parse'):
             return type.parse(token)
 
         else:
             return None
 
-    def suggest_lit(self, target, param):
+    def suggest_lit(self, token, param):
         type = param.annotation
         if isinstance(type, (tuple, list)):
-            return fit(target, [(opt, False) for opt in type])
+            return fit(token, [(opt, False) for opt in type])
 
         elif type == bool:
             if param.default is param.empty or param.default == True:
-                return fit(target, [("True", False), ("False", False)])
+                return fit(token, [("True", False), ("False", False)])
             else:
-                return fit(target, [("False", False), ("True", False)])
+                return fit(token, [("False", False), ("True", False)])
 
         elif type == int:
             if param.default is param.empty:
                 return []
             else:
-                return fit(target, [(str(param.default), False)])
+                return fit(token, [(str(param.default), False)])
 
         elif type == float:
             if param.default is param.empty:
                 return []
             else:
-                return fit(target, [(str(param.default), False)])
+                return fit(token, [(str(param.default), False)])
 
         elif type == str:
             if param.default is param.empty:
                 return []
             else:
-                return fit(target, [(param.default, False)])
+                return fit(token, [(param.default, False)])
+
+        elif type == Path:
+            if param.default is param.empty:
+                return self.suggest_path(token)
+            else:
+                return self.suggest_path(token, param.default)
 
         elif hasattr(type, 'suggest'):
-            suggestions = type.suggest(target)
-            if param.default is not param.empty:
-                default = (str(param.default), False)
-                if deault in suggestions:
-                    suggestions.remove(default)
-                suggestions.insert(0, default)
-            return suggestions
+            if param.default is param.empty:
+                return type.suggest(token)
+            else:
+                return type.suggest(token, param.default)
 
         else:
             return []
