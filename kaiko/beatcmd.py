@@ -10,6 +10,22 @@ from . import tui
 from . import cfg
 
 
+def fit(target, full):
+    if full == "" and target == "":
+        return 1.0
+    full = full.lower()
+    index = 0
+    n = 0.0
+    try:
+        for ch in target:
+            index_ = full.index(ch.lower(), index)
+            n += (1.0 if full[index_] == ch else 0.75) / (index_-index+1)
+            index = index_ + 1
+
+        return n/len(full)
+    except ValueError:
+        return 0.0
+
 class SHLEXER_STATE(Enum):
     SPACED = " "
     PLAIN = "*"
@@ -228,7 +244,11 @@ class Promptable:
             return None
 
     def suggest_opt(self, target, options):
-        return [opt for opt in options if opt.startswith(target)]
+        if target == "":
+            return options
+        weighted_options = [(fit(target, opt), opt) for opt in options]
+        sorted_options = sorted(weighted_options, reverse=True)
+        return [opt for weight, opt in sorted_options if weight != 0.0]
 
     def suggest_lit(self, target, param):
         type = param.annotation
@@ -562,7 +582,7 @@ class BeatInput:
             target, _, _, _ = self.tokens[-1]
 
         suggestions = self.promptable.suggest(tokens, target)
-        compreply = suggestions[0][len(target):] if suggestions else None
+        compreply = next((sugg[len(target):] for sugg in suggestions if sugg.startswith(target)), None)
 
         if compreply is None:
             self.typeahead = ""
@@ -629,6 +649,9 @@ class BeatInput:
             self.history.append("".join(self.buffer))
             self.result.put(InputResult(res))
             return True
+
+    def cancel(self):
+        return False
 
     def input(self, text):
         text = list(text)
@@ -884,6 +907,7 @@ default_keymap = {
          "Home": lambda input: input.move_to_start(),
           "End": lambda input: input.move_to_end(),
         "Enter": lambda input: input.enter(),
+          "Esc": lambda input: input.cancel(),
          "Ctrl+Left": lambda input: input.move_to_word_start(),
         "Ctrl+Right": lambda input: input.move_to_word_end(),
     "Ctrl+Backspace": lambda input: input.delete_to_word_start(),
