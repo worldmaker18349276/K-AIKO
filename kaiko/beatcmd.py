@@ -31,9 +31,9 @@ def fit_ratio(target, full):
 def fit(target, options):
     if target == "":
         return options
-    weighted_options = [(fit_ratio(target, opt), opt, partial) for opt, partial in options]
+    weighted_options = [(fit_ratio(target, opt), opt) for opt in options]
     sorted_options = sorted(weighted_options, reverse=True)
-    return [(opt, partial) for weight, opt, partial in sorted_options if weight != 0.0]
+    return [opt for weight, opt in sorted_options if weight != 0.0]
 
 class SHLEXER_STATE(Enum):
     SPACED = " "
@@ -250,8 +250,8 @@ class Promptable:
 
         # explore directory
         if os.path.isdir(token or "."):
-            names = fit(target, [(name, False) for name in os.listdir(token or ".") if not name.startswith(".")])
-            for name, _ in names:
+            names = fit(target, [name for name in os.listdir(token or ".") if not name.startswith(".")])
+            for name in names:
                 subpath = os.path.join(token, name)
 
                 if os.path.isdir(subpath):
@@ -300,31 +300,31 @@ class Promptable:
     def suggest_lit(self, token, param):
         type = param.annotation
         if isinstance(type, (tuple, list)):
-            return fit(token, [(opt, False) for opt in type])
+            return [(val, False) for val in fit(token, type)]
 
         elif type == bool:
             if param.default is param.empty or param.default == True:
-                return fit(token, [("True", False), ("False", False)])
+                return [(val, False) for val in fit(token, ["True", "False"])]
             else:
-                return fit(token, [("False", False), ("True", False)])
+                return [(val, False) for val in fit(token, ["False", "True"])]
 
         elif type == int:
             if param.default is param.empty:
                 return []
             else:
-                return fit(token, [(str(param.default), False)])
+                return [(val, False) for val in fit(token, [str(param.default)])]
 
         elif type == float:
             if param.default is param.empty:
                 return []
             else:
-                return fit(token, [(str(param.default), False)])
+                return [(val, False) for val in fit(token, [str(param.default)])]
 
         elif type == str:
             if param.default is param.empty:
                 return []
             else:
-                return fit(token, [(param.default, False)])
+                return [(val, False) for val in fit(token, [param.default])]
 
         elif type == Path:
             if param.default is param.empty:
@@ -489,7 +489,7 @@ class Promptable:
             token = next(tokens, None)
 
             if token is None:
-                return fit(target, [(cmd, False) for cmd in curr.keys()])
+                return [(val, False) for val in fit(target, curr.keys())]
             if token not in curr:
                 return []
             curr = curr.get(token)
@@ -515,7 +515,7 @@ class Promptable:
         while kwargs:
             # parse argument name
             if token is None:
-                return fit(target, [(kw, False) for kw in kwargs.keys()])
+                return [(val, False) for val in fit(target, kwargs.keys())]
             param = kwargs.pop(token, None)
             if param is None:
                 return []
