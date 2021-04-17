@@ -10,7 +10,7 @@ from . import tui
 from . import cfg
 
 
-def fit(target, full):
+def fit_ratio(target, full):
     if full == "" and target == "":
         return 1.0
     full = full.lower()
@@ -25,6 +25,13 @@ def fit(target, full):
         return n/len(full)
     except ValueError:
         return 0.0
+
+def fit(target, options):
+    if target == "":
+        return options
+    weighted_options = [(fit_ratio(target, opt), opt, partial) for opt, partial in options]
+    sorted_options = sorted(weighted_options, reverse=True)
+    return [(opt, partial) for weight, opt, partial in sorted_options if weight != 0.0]
 
 class SHLEXER_STATE(Enum):
     SPACED = " "
@@ -98,60 +105,41 @@ def shlexer_tokenize(raw, partial=False):
                 yield "".join(token), slice(start, None), ignored
                 return SHLEXER_STATE.PLAIN
 
-class SHLEXER_QUOTE(Enum):
-    MIX = "*"
-    BACKSLASH = "\\"
-    QUOTE = "'"
+def shlexer_complete(compreply, partial, state=SHLEXER_STATE.SPACED):
+    if state == SHLEXER_STATE.PLAIN:
+        compreply = re.sub(r"([ \\'])", r"\\\1", compreply)
 
-def shlexer_quote(token, strategy=SHLEXER_QUOTE.MIX):
-    if strategy == SHLEXER_QUOTE.MIX:
-        if len(token) == 0:
-            return shlexer_quote(token, SHLEXER_QUOTE.QUOTE)
-        elif " " not in token:
-            return shlexer_quote(token, SHLEXER_QUOTE.BACKSLASH)
+    elif state == SHLEXER_STATE.SPACED:
+        if compreply == "" and not partial:
+            # escape empty string
+            compreply = "''"
+        elif " " not in compreply:
+            compreply = re.sub(r"([ \\'])", r"\\\1", compreply)
         else:
-            return shlexer_quote(token, SHLEXER_QUOTE.QUOTE)
-
-    elif strategy == SHLEXER_QUOTE.BACKSLASH:
-        if len(token) == 0:
-            raise ValueError("Unable to escape empty string")
-        return re.sub(r"([ \\'])", r"\\\1", token)
-
-    elif strategy == SHLEXER_QUOTE.QUOTE:
-        return "'" + token.replace("'", r"'\''") + "'"
-
-    else:
-        raise ValueError
-
-def shlexer_complete(compreply, state):
-    if state == SHLEXER_STATE.SPACED:
-        # escape any string, including empty string
-        compreply = shlexer_quote(compreply) + " "
-        return compreply
-
-    elif state == SHLEXER_STATE.PLAIN:
-        # don't escape empty string
-        if compreply == "":
-            return ""
-        compreply = shlexer_quote(compreply) + " "
-        return compreply
+            # use quotation
+            compreply = compreply.replace("'", r"'\''")
+            if not partial:
+                compreply = compreply[:-1] if compreply.endswith("'") else compreply + "'"
+            compreply = "'" + compreply
 
     elif state == SHLEXER_STATE.BACKSLASHED:
         if compreply == "":
             return ""
-        compreply = shlexer_quote(compreply, SHLEXER_QUOTE.BACKSLASH) + " "
+        compreply = re.sub(r"([ \\'])", r"\\\1", compreply)
         # remove opening backslash
         if compreply.startswith("\\"):
             compreply = compreply[1:]
-        return compreply
 
     elif state == SHLEXER_STATE.QUOTED:
-        if compreply == "":
-            return "'"
-        compreply = shlexer_quote(compreply, SHLEXER_QUOTE.QUOTE) + " "
-        # remove opening quotation
-        compreply = compreply[1:]
-        return compreply
+        compreply = compreply.replace("'", r"'\''")
+        # add closing quotation
+        if not partial:
+            compreply = compreply[:-1] if compreply.endswith("'") else compreply + "'"
+
+    else:
+        raise ValueError
+
+    return compreply if partial else compreply + " "
 
 def echo_str(escaped_str):
     regex = r"\\c.*|\\[\\abefnrtv]|\\0[0-7]{0,3}|\\x[0-9a-fA-F]{1,2}|."
@@ -225,59 +213,72 @@ class Promptable:
 
     def parse_lit(self, token, param):
         type = param.annotation
-        if isinstance(type, (tuple, list)) and token in type:
+        if isinstance(type, (tuple, list)):
+            if token not in type:
+                return None
             return token
 
-        elif type == bool and re.fullmatch("True|False", token):
+        elif type == bool:
+            if not re.fullmatch("True|False", token):
+                return None
             return bool(token)
 
-        elif type == int and re.fullmatch(r"[-+]?(0|[1-9][0-9]*)", token):
+        elif type == int:
+            if not re.fullmatch(r"[-+]?(0|[1-9][0-9]*)", token):
+                return None
             return int(token)
 
-        elif type == float and re.fullmatch(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)", token):
+        elif type == float:
+            if not re.fullmatch(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)", token):
+                return None
             return float(token)
 
         elif type == str:
             return token
 
+        elif hasattr(type, 'parse'):
+            return type.parse(token)
+
         else:
             return None
-
-    def suggest_opt(self, target, options):
-        if target == "":
-            return options
-        weighted_options = [(fit(target, opt), opt) for opt in options]
-        sorted_options = sorted(weighted_options, reverse=True)
-        return [opt for weight, opt in sorted_options if weight != 0.0]
 
     def suggest_lit(self, target, param):
         type = param.annotation
         if isinstance(type, (tuple, list)):
-            return self.suggest_opt(target, type)
+            return fit(target, [(opt, False) for opt in type])
 
         elif type == bool:
-            if param.default is param.empty:
-                return self.suggest_opt(target, ["True", "False"])
+            if param.default is param.empty or param.default == True:
+                return fit(target, [("True", False), ("False", False)])
             else:
-                return self.suggest_opt(target, [str(param.default), str(not param.default)])
+                return fit(target, [("False", False), ("True", False)])
 
         elif type == int:
             if param.default is param.empty:
                 return []
             else:
-                return self.suggest_opt(target, [str(param.default)])
+                return fit(target, [(str(param.default), False)])
 
         elif type == float:
             if param.default is param.empty:
                 return []
             else:
-                return self.suggest_opt(target, [str(param.default)])
+                return fit(target, [(str(param.default), False)])
 
         elif type == str:
             if param.default is param.empty:
                 return []
             else:
-                return self.suggest_opt(target, [param.default])
+                return fit(target, [(param.default, False)])
+
+        elif hasattr(type, 'suggest'):
+            suggestions = type.suggest(target)
+            if param.default is not param.empty:
+                default = (str(param.default), False)
+                if deault in suggestions:
+                    suggestions.remove(default)
+                suggestions.insert(0, default)
+            return suggestions
 
         else:
             return []
@@ -430,7 +431,7 @@ class Promptable:
             token = next(tokens, None)
 
             if token is None:
-                return self.suggest_opt(target, list(curr.keys()))
+                return fit(target, [(cmd, False) for cmd in curr.keys()])
             if token not in curr:
                 return []
             curr = curr.get(token)
@@ -456,7 +457,7 @@ class Promptable:
         while kwargs:
             # parse argument name
             if token is None:
-                return self.suggest_opt(target, list(kwargs.keys()))
+                return fit(target, [(kw, False) for kw in kwargs.keys()])
             param = kwargs.pop(token, None)
             if param is None:
                 return []
@@ -537,7 +538,7 @@ class BeatInput:
                 target = token
 
         # generate suggestions
-        suggestions = [shlexer_quote(sugg) + " " for sugg in self.promptable.suggest(tokens, target)]
+        suggestions = [shlexer_complete(sugg, part) for sugg, part in self.promptable.suggest(tokens, target)]
         length = len(suggestions)
 
         original_buffer = list(self.buffer)
@@ -581,14 +582,17 @@ class BeatInput:
             tokens = [token for token, _, _, _ in self.tokens[:-1]]
             target, _, _, _ = self.tokens[-1]
 
-        suggestions = self.promptable.suggest(tokens, target)
-        compreply = next((sugg[len(target):] for sugg in suggestions if sugg.startswith(target)), None)
+        compreply, partial = None, False
+        for suggestion, partial_ in self.promptable.suggest(tokens, target):
+            if suggestion.startswith(target):
+                compreply, partial = suggestion[len(target):], partial_
+                break
 
         if compreply is None:
             self.typeahead = ""
             return False
         else:
-            self.typeahead = shlexer_complete(compreply, self.state)
+            self.typeahead = shlexer_complete(compreply, partial, self.state)
             return True
 
     def insert_typeahead(self):
