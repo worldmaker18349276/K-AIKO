@@ -188,8 +188,7 @@ class TokenParseError(Exception):
         self.info = info
 
 class TOKEN_TYPE(Enum):
-    SUBCOMMAND = "subcommand"
-    FUNCTION = "function"
+    COMMAND = "command"
     ARGUMENT = "argument"
     LITERAL = "literal"
 
@@ -399,7 +398,7 @@ class FunctionCommand(Command):
 
     def parse_command(self, tokens):
         tokens = iter(tokens)
-        types = [TOKEN_TYPE.FUNCTION]
+        types = [TOKEN_TYPE.COMMAND]
         args, kwargs = self.get_promptable_signature()
 
         try:
@@ -542,7 +541,7 @@ class SubCommand(Command):
 
     def parse_command(self, tokens):
         tokens = iter(tokens)
-        type = TOKEN_TYPE.SUBCOMMAND
+        type = TOKEN_TYPE.COMMAND
 
         try:
             token = next(tokens)
@@ -590,6 +589,9 @@ class SubCommand(Command):
             return []
 
         return field.suggest_command(tokens, target)
+
+class RootCommand(SubCommand):
+    pass
 
 
 class InputError:
@@ -1155,7 +1157,6 @@ class PromptTheme(metaclass=cfg.Configurable):
 
     token_invalid_attr: str = "31"
     token_command_attr: str = "94"
-    token_function_attr: str = "94"
     token_argument_attr: str = "95"
     token_literal_attr: str = "92"
 
@@ -1238,7 +1239,6 @@ class BeatPrompt:
 
         token_invalid_attr  = self.theme.token_invalid_attr
         token_command_attr  = self.theme.token_command_attr
-        token_function_attr = self.theme.token_function_attr
         token_argument_attr = self.theme.token_argument_attr
         token_literal_attr  = self.theme.token_literal_attr
 
@@ -1263,14 +1263,9 @@ class BeatPrompt:
                         rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_invalid_attr)
 
                 # render command token
-                if type is TOKEN_TYPE.SUBCOMMAND:
+                if type is TOKEN_TYPE.COMMAND:
                     for index in range(len(rendered_buffer))[slic]:
                         rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_command_attr)
-
-                # render function token
-                elif type is TOKEN_TYPE.FUNCTION:
-                    for index in range(len(rendered_buffer))[slic]:
-                        rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_function_attr)
 
                 # render argument token
                 elif type is TOKEN_TYPE.ARGUMENT:
@@ -1354,7 +1349,7 @@ class BeatPrompt:
                     pointto_stop = max(1, min(input_width, pointto_stop))
 
                     padding = " "*(input_ran.start+pointto_start)
-                    pointto_text = "^"*(pointto_stop - pointto_start)
+                    pointto_text = " \u0305"*(pointto_stop - pointto_start)
                     err_text = "\n" + padding + pointto_text + err_text
 
             output_text = "\r" + "".join(view) + "\r" + err_text
@@ -1362,7 +1357,7 @@ class BeatPrompt:
 def prompt(promptable, history=None):
     theme = PromptTheme()
 
-    command = SubCommand(promptable)
+    command = RootCommand(promptable)
     input = BeatInput(command, history)
     stroke = BeatStroke(input, default_keymap, default_keycodes)
     prompt = BeatPrompt(stroke, input, theme)
