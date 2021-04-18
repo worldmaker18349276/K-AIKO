@@ -159,9 +159,13 @@ class KAIKOGame:
 
         self.reload()
 
-    @beatcmd.function_command
-    def play(self, beatmap:Path):
-        return KAIKOPlay(beatmap)
+    @property
+    def _play_beatmap_ann(self):
+        return [str(beatmap.relative_to(self._songs_dir)) for beatmap in self.beatmaps()]
+
+    @beatcmd.function_command(beatmap=_play_beatmap_ann)
+    def play(self, beatmap):
+        return KAIKOPlay(self._songs_dir / beatmap)
 
     @beatcmd.function_command
     def say(self, message:str, escape:bool=False):

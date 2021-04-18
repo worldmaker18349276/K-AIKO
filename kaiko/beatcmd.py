@@ -194,7 +194,15 @@ class TOKEN_TYPE(Enum):
     LITERAL = "literal"
 
 
-class command:
+def function_command(proxy=None, **annotations):
+    if proxy is None:
+        return functools.partial(function_command, **annotations)
+    return FunctionCommandDescriptor(proxy, annotations)
+
+def subcommand(proxy):
+    return SubCommandDescriptor(proxy)
+
+class CommandDescriptor:
     def __init__(self, proxy):
         self.proxy = proxy
 
@@ -204,11 +212,16 @@ class command:
     def __get_command__(self, instance, owner):
         raise NotImplementedError
 
-class function_command(command):
-    def __get_command__(self, instance, owner):
-        return FunctionCommand(self.proxy.__get__(instance, owner))
+class FunctionCommandDescriptor(CommandDescriptor):
+    def __init__(self, proxy, annotations):
+        super(FunctionCommandDescriptor, self).__init__(proxy)
+        self.annotations = annotations
 
-class subcommand(command):
+    def __get_command__(self, instance, owner):
+        annotations = {key: value.__get__(instance, owner) for key, value in self.annotations.items()}
+        return FunctionCommand(self.proxy.__get__(instance, owner), annotations)
+
+class SubCommandDescriptor(CommandDescriptor):
     def __get_command__(self, instance, owner):
         return SubCommand(self.proxy.__get__(instance, owner))
 
@@ -266,81 +279,79 @@ class Command:
         return suggestions
 
     @staticmethod
-    def parse_lit(token, param):
-        type = param.annotation
-        if isinstance(type, (tuple, list)):
-            if token not in type:
+    def parse_lit(token, ann):
+        if isinstance(ann, (tuple, list)):
+            if token not in ann:
                 return None
             return token
 
-        elif type == bool:
+        elif ann == bool:
             if not re.fullmatch("True|False", token):
                 return None
             return bool(token)
 
-        elif type == int:
+        elif ann == int:
             if not re.fullmatch(r"[-+]?(0|[1-9][0-9]*)", token):
                 return None
             return int(token)
 
-        elif type == float:
+        elif ann == float:
             if not re.fullmatch(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)", token):
                 return None
             return float(token)
 
-        elif type == str:
+        elif ann == str:
             return token
 
-        elif type == Path:
+        elif ann == Path:
             return Command.parse_path(token)
 
-        elif hasattr(type, 'parse'):
-            return type.parse(token)
+        elif hasattr(ann, 'parse'):
+            return ann.parse(token)
 
         else:
             return None
 
     @staticmethod
-    def suggest_lit(token, param):
-        type = param.annotation
-        if isinstance(type, (tuple, list)):
-            return [(val, False) for val in fit(token, type)]
+    def suggest_lit(token, ann, default):
+        if isinstance(ann, (tuple, list)):
+            return [(val, False) for val in fit(token, ann)]
 
-        elif type == bool:
-            if param.default is param.empty or param.default == True:
+        elif ann == bool:
+            if default is inspect.Parameter.empty or default == True:
                 return [(val, False) for val in fit(token, ["True", "False"])]
             else:
                 return [(val, False) for val in fit(token, ["False", "True"])]
 
-        elif type == int:
-            if param.default is param.empty:
+        elif ann == int:
+            if default is inspect.Parameter.empty:
                 return []
             else:
-                return [(val, False) for val in fit(token, [str(param.default)])]
+                return [(val, False) for val in fit(token, [str(default)])]
 
-        elif type == float:
-            if param.default is param.empty:
+        elif ann == float:
+            if default is inspect.Parameter.empty:
                 return []
             else:
-                return [(val, False) for val in fit(token, [str(param.default)])]
+                return [(val, False) for val in fit(token, [str(default)])]
 
-        elif type == str:
-            if param.default is param.empty:
+        elif ann == str:
+            if default is inspect.Parameter.empty:
                 return []
             else:
-                return [(val, False) for val in fit(token, [param.default])]
+                return [(val, False) for val in fit(token, [default])]
 
-        elif type == Path:
-            if param.default is param.empty:
+        elif ann == Path:
+            if default is inspect.Parameter.empty:
                 return Command.suggest_path(token)
             else:
-                return Command.suggest_path(token, param.default)
+                return Command.suggest_path(token, default)
 
-        elif hasattr(type, 'suggest'):
-            if param.default is param.empty:
-                return type.suggest(token)
+        elif hasattr(ann, 'suggest'):
+            if default is inspect.Parameter.empty:
+                return ann.suggest(token)
             else:
-                return type.suggest(token, param.default)
+                return ann.suggest(token, default)
 
         else:
             return []
@@ -366,18 +377,23 @@ class Command:
         return []
 
 class FunctionCommand(Command):
-    def __init__(self, func):
+    def __init__(self, func, annotations):
         self.func = func
+        self.annotations = annotations
 
     def get_promptable_signature(self):
         sig = inspect.signature(self.func)
         args = list()
         kwargs = dict()
         for param in sig.parameters.values():
-            if param.default is param.empty:
-                args.append(param)
+            annotation = param.annotation
+            if param.name in self.annotations:
+                annotation = self.annotations[param.name]
+
+            if param.default is inspect.Parameter.empty:
+                args.append((annotation, param.default))
             else:
-                kwargs["--" + param.name] = param
+                kwargs["--" + param.name] = (annotation, param.default)
 
         return args, kwargs
 
@@ -390,8 +406,8 @@ class FunctionCommand(Command):
             token = next(tokens)
 
             # parse positional arguments
-            for param in args:
-                value = self.parse_lit(token, param)
+            for ann, default in args:
+                value = self.parse_lit(token, ann)
                 if value is None:
                     kwargs = {}
                     break
@@ -402,15 +418,15 @@ class FunctionCommand(Command):
             # parse keyword arguments
             while kwargs:
                 # parse argument name
-                param = kwargs.pop(token, None)
-                if param is None:
+                ann, default = kwargs.pop(token, (None, None))
+                if ann is None:
                     break
                 types.append(TOKEN_TYPE.ARGUMENT)
 
                 token = next(tokens)
 
                 # parse argument value
-                value = self.parse_lit(token, param)
+                value = self.parse_lit(token, ann)
                 if value is None:
                     break
                 types.append(TOKEN_TYPE.LITERAL)
@@ -435,12 +451,12 @@ class FunctionCommand(Command):
         token = next(tokens, None)
 
         # parse positional arguments
-        for param in args:
+        for ann, default in args:
             if token is None:
-                raise TokenUnfinishError(index, param.annotation, "Missing value")
-            value = self.parse_lit(token, param)
+                raise TokenUnfinishError(index, ann, "Missing value")
+            value = self.parse_lit(token, ann)
             if value is None:
-                raise TokenParseError(index, param.annotation, "Invalid value")
+                raise TokenParseError(index, ann, "Invalid value")
             func = functools.partial(func, value)
 
             token = next(tokens, None)
@@ -449,8 +465,9 @@ class FunctionCommand(Command):
         # parse keyword arguments
         while kwargs and token is not None:
             # parse argument name
-            param = kwargs.pop(token, None)
-            if param is None:
+            ann, default = kwargs.pop(token, (None, None))
+            name = token[2:]
+            if ann is None:
                 raise TokenUnfinishError(index, list(kwargs.keys()), "Unkown argument")
 
             token = next(tokens, None)
@@ -458,11 +475,11 @@ class FunctionCommand(Command):
 
             # parse argument value
             if token is None:
-                raise TokenUnfinishError(index, param.annotation, "Missing value")
-            value = self.parse_lit(token, param)
+                raise TokenUnfinishError(index, ann, "Missing value")
+            value = self.parse_lit(token, ann)
             if value is None:
-                raise TokenParseError(index, param.annotation, "Invalid value")
-            func = functools.partial(func, **{param.name: value})
+                raise TokenParseError(index, ann, "Invalid value")
+            func = functools.partial(func, **{name: value})
 
             token = next(tokens, None)
             index += 1
@@ -480,10 +497,10 @@ class FunctionCommand(Command):
         token = next(tokens, None)
 
         # parse positional arguments
-        for param in args:
+        for ann, default in args:
             if token is None:
-                return self.suggest_lit(target, param)
-            value = self.parse_lit(token, param)
+                return self.suggest_lit(target, ann, default)
+            value = self.parse_lit(token, ann)
             if value is None:
                 return []
 
@@ -494,16 +511,16 @@ class FunctionCommand(Command):
             # parse argument name
             if token is None:
                 return [(val, False) for val in fit(target, kwargs.keys())]
-            param = kwargs.pop(token, None)
-            if param is None:
+            ann, default = kwargs.pop(token, (None, None))
+            if ann is None:
                 return []
 
             token = next(tokens, None)
 
             # parse argument value
             if token is None:
-                return self.suggest_lit(target, param)
-            value = self.parse_lit(token, param)
+                return self.suggest_lit(target, ann, default)
+            value = self.parse_lit(token, ann)
             if value is None:
                 return []
 
@@ -517,11 +534,11 @@ class SubCommand(Command):
         self.root = root
 
     def get_promptable_fields(self):
-        return [k for k, v in type(self.root).__dict__.items() if isinstance(v, command)]
+        return [k for k, v in type(self.root).__dict__.items() if isinstance(v, CommandDescriptor)]
 
     def get_promptable_field(self, name):
         desc = type(self.root).__dict__[name]
-        return desc.__get_command__(self, type(self))
+        return desc.__get_command__(self.root, type(self.root))
 
     def parse_command(self, tokens):
         tokens = iter(tokens)
