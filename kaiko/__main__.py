@@ -80,7 +80,6 @@ class KAIKOTheme(metaclass=cfg.Configurable):
     emph_attr: str = "1"
     warn_attr: str = "31"
 
-@beatcmd.promptable
 class KAIKOGame:
     def __init__(self, theme, data_dir, songs_dir, manager):
         self.theme = theme
@@ -89,6 +88,92 @@ class KAIKOGame:
         self.manager = manager
         self._beatmaps = []
         self.songs_mtime = None
+
+    @beatcmd.function_command
+    def data_dir(self):
+        return self._data_dir
+
+    @beatcmd.function_command
+    def songs_dir(self):
+        return self._songs_dir
+
+    @beatcmd.function_command
+    def beatmaps(self):
+        if self.songs_mtime != os.stat(str(self._songs_dir)).st_mtime:
+            self.reload()
+
+        return self._beatmaps
+
+    @beatcmd.function_command
+    def reload(self):
+        info_icon = self.theme.info_icon
+        emph_attr = self.theme.emph_attr
+        songs_dir = self._songs_dir
+
+        print(f"{info_icon} Loading songs from {tui.add_attr(songs_dir.as_uri(), emph_attr)}...")
+
+        self._beatmaps = []
+
+        for file in songs_dir.iterdir():
+            if file.is_dir() and file.suffix == ".osz":
+                distpath = file.parent / file.stem
+                if distpath.exists():
+                    continue
+                print(f"{info_icon} Unzip file {tui.add_attr(filepath.as_uri(), emph_attr)}...")
+                distpath.mkdir()
+                zf = zipfile.ZipFile(str(filepath), 'r')
+                zf.extractall(path=str(distpath))
+
+        for song in songs_dir.iterdir():
+            if song.is_dir():
+                for beatmap in song.iterdir():
+                    if beatmap.suffix in (".kaiko", ".ka", ".osu"):
+                        self._beatmaps.append(beatmap)
+
+        if len(self._beatmaps) == 0:
+            print("{info_icon} There is no song in the folder yet!")
+        print(flush=True)
+
+        self.songs_mtime = os.stat(str(songs_dir)).st_mtime
+
+    @beatcmd.function_command
+    def add(self, beatmap:Path):
+        info_icon = self.theme.info_icon
+        emph_attr = self.theme.emph_attr
+        warn_attr = self.theme.warn_attr
+        songs_dir = self._songs_dir
+
+        if not beatmap.exists():
+            print(tui.add_attr(f"File not found: {str(beatmap)}", warn_attr))
+            return
+
+        print(f"{info_icon} Adding new song from {tui.add_attr(beatmap.as_uri(), emph_attr)}...")
+
+        if beatmap.is_file():
+            shutil.copy(str(beatmap), str(songs_dir))
+        elif beatmap.is_dir():
+            shutil.copytree(str(beatmap), str(songs_dir))
+        else:
+            print(tui.add_attr(f"Not a file: {str(beatmap)}", warn_attr))
+            return
+
+        self.reload()
+
+    @beatcmd.function_command
+    def play(self, beatmap:Path):
+        return KAIKOPlay(beatmap)
+
+    @beatcmd.function_command
+    def say(self, message:str, escape:bool=False):
+        if escape:
+            print(beatcmd.echo_str(message))
+        else:
+            print(message)
+
+    @beatcmd.function_command
+    def exit(self):
+        print("bye~")
+        raise KeyboardInterrupt
 
     @classmethod
     @contextlib.contextmanager
@@ -135,94 +220,43 @@ class KAIKOGame:
         finally:
             manager.terminate()
 
-    @beatcmd.promptable
-    def data_dir(self):
-        return self._data_dir
+    @staticmethod
+    def main():
+        try:
+            with KAIKOGame.init() as game:
+                # load songs
+                game.reload()
 
-    @beatcmd.promptable
-    def songs_dir(self):
-        return self._songs_dir
+                # play given beatmap
+                if len(sys.argv) > 1:
+                    res = beatcmd.SubCommand(game).build_command(sys.argv[1:])()
+                    if hasattr(res, 'execute'):
+                        res.execute(game.manager)
+                    return
 
-    @beatcmd.promptable
-    def beatmaps(self):
-        if self.songs_mtime != os.stat(str(self._songs_dir)).st_mtime:
-            self.reload()
+                # prompt
+                history = []
+                while True:
+                    result = beatcmd.prompt(game, history)
 
-        return self._beatmaps
+                    if hasattr(result, 'execute'):
+                        result.execute(game.manager)
 
-    @beatcmd.promptable
-    def reload(self):
-        info_icon = self.theme.info_icon
-        emph_attr = self.theme.emph_attr
-        songs_dir = self._songs_dir
+                    elif isinstance(result, list):
+                        for item in result:
+                            print(item)
 
-        print(f"{info_icon} Loading songs from {tui.add_attr(songs_dir.as_uri(), emph_attr)}...")
+                    elif result is not None:
+                        print(result)
 
-        self._beatmaps = []
+        except KeyboardInterrupt:
+            pass
 
-        for file in songs_dir.iterdir():
-            if file.is_dir() and file.suffix == ".osz":
-                distpath = file.parent / file.stem
-                if distpath.exists():
-                    continue
-                print(f"{info_icon} Unzip file {tui.add_attr(filepath.as_uri(), emph_attr)}...")
-                distpath.mkdir()
-                zf = zipfile.ZipFile(str(filepath), 'r')
-                zf.extractall(path=str(distpath))
-
-        # for root, dirs, files in os.walk(songs_dir): for file in files:
-        for song in songs_dir.iterdir():
-            if song.is_dir():
-                for beatmap in song.iterdir():
-                    if beatmap.suffix in (".kaiko", ".ka", ".osu"):
-                        self._beatmaps.append(beatmap.relative_to(str(songs_dir)))
-
-        if len(self._beatmaps) == 0:
-            print("{info_icon} There is no song in the folder yet!")
-        print(flush=True)
-
-        self.songs_mtime = os.stat(str(songs_dir)).st_mtime
-
-    @beatcmd.promptable
-    def add(self, beatmap:Path):
-        info_icon = self.theme.info_icon
-        emph_attr = self.theme.emph_attr
-        warn_attr = self.theme.warn_attr
-        songs_dir = self._songs_dir
-
-        if not beatmap.exists():
-            print(tui.add_attr(f"File not found: {str(beatmap)}", warn_attr))
-            return
-
-        print(f"{info_icon} Adding new song from {tui.add_attr(beatmap.as_uri(), emph_attr)}...")
-
-        if beatmap.is_file():
-            shutil.copy(str(beatmap), str(songs_dir))
-        elif beatmap.is_dir():
-            shutil.copytree(str(beatmap), str(songs_dir))
-        else:
-            print(tui.add_attr(f"Not a file: {str(beatmap)}", warn_attr))
-            return
-
-        self.reload()
-
-    @beatcmd.promptable
-    def play(self, beatmap:Path):
-        if not beatmap.is_absolute():
-            beatmap = self._songs_dir.joinpath(beatmap)
-        return KAIKOPlay(beatmap)
-
-    @beatcmd.promptable
-    def say(self, message:str, escape:bool=False):
-        if escape:
-            print(beatcmd.echo_str(message))
-        else:
-            print(message)
-
-    @beatcmd.promptable
-    def exit(self):
-        print("bye~")
-        raise KeyboardInterrupt
+        except:
+            # print error
+            print("\x1b[31m", end="")
+            traceback.print_exc(file=sys.stdout)
+            print(f"\x1b[m", end="")
 
 class KAIKOPlay:
     def __init__(self, filepath):
@@ -244,42 +278,5 @@ class KAIKOPlay:
             beatanalyzer.show_analyze(beatmap.settings.performance_tolerance, game.perfs)
 
 
-def main():
-    try:
-        with KAIKOGame.init() as game:
-            # load songs
-            game.reload()
-
-            # play given beatmap
-            if len(sys.argv) > 1:
-                res = beatcmd.Promptable(game).generate(sys.argv[1:])()
-                if hasattr(res, 'execute'):
-                    res.execute(game.manager)
-                return
-
-            # prompt
-            history = []
-            while True:
-                result = beatcmd.prompt(game, history)
-
-                if hasattr(result, 'execute'):
-                    result.execute(game.manager)
-
-                elif isinstance(result, list):
-                    for item in result:
-                        print(item)
-
-                elif result is not None:
-                    print(result)
-
-    except KeyboardInterrupt:
-        pass
-
-    except:
-        # print error
-        print("\x1b[31m", end="")
-        traceback.print_exc(file=sys.stdout)
-        print(f"\x1b[m", end="")
-
 if __name__ == '__main__':
-    main()
+    KAIKOGame.main()

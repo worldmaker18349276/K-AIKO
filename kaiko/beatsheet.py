@@ -46,6 +46,7 @@ class BeatmapDraft(Beatmap):
 
     @staticmethod
     def read(filename, hack=False):
+        filename = os.path.abspath(filename)
         if filename.endswith((".kaiko", ".ka")):
             if hack:
                 beatmap = BeatmapDraft()

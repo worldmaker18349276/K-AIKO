@@ -188,32 +188,31 @@ class TokenParseError(Exception):
         self.info = info
 
 class TOKEN_TYPE(Enum):
-    COMMAND = "command"
+    SUBCOMMAND = "subcommand"
     FUNCTION = "function"
     ARGUMENT = "argument"
     LITERAL = "literal"
 
-class BeatShell:
-    def __init__(self, root):
-        self.root = root
 
-    @staticmethod
-    def _sig(func):
-        # parse signature: (a, b, c, d=1, e=2)
-        if not hasattr(func, '__call__'):
-            raise ValueError(f"Not a function: {func!r}")
+class command:
+    def __init__(self, proxy):
+        self.proxy = proxy
 
-        sig = inspect.signature(func)
-        args = list()
-        kwargs = dict()
-        for param in sig.parameters.values():
-            if param.default is param.empty:
-                args.append(param)
-            else:
-                kwargs["--" + param.name] = param
+    def __get__(self, instance, owner):
+        return self.proxy.__get__(instance, owner)
 
-        return args, kwargs
+    def __get_command__(self, instance, owner):
+        raise NotImplementedError
 
+class function_command(command):
+    def __get_command__(self, instance, owner):
+        return FunctionCommand(self.proxy.__get__(instance, owner))
+
+class subcommand(command):
+    def __get_command__(self, instance, owner):
+        return SubCommand(self.proxy.__get__(instance, owner))
+
+class Command:
     @staticmethod
     def parse_path(token):
         try:
@@ -293,7 +292,7 @@ class BeatShell:
             return token
 
         elif type == Path:
-            return BeatShell.parse_path(token)
+            return Command.parse_path(token)
 
         elif hasattr(type, 'parse'):
             return type.parse(token)
@@ -333,9 +332,9 @@ class BeatShell:
 
         elif type == Path:
             if param.default is param.empty:
-                return BeatShell.suggest_path(token)
+                return Command.suggest_path(token)
             else:
-                return BeatShell.suggest_path(token, param.default)
+                return Command.suggest_path(token, param.default)
 
         elif hasattr(type, 'suggest'):
             if param.default is param.empty:
@@ -346,39 +345,53 @@ class BeatShell:
         else:
             return []
 
-    def parse(self, tokens):
+    def parse_command(self, tokens):
         tokens = iter(tokens)
-        curr = self.root
         types = []
 
-        if not getattr(curr, '__is_promptable__', False):
-            raise ValueError(f"Not promptable: {curr!r}")
+        try:
+            while True:
+                types.append(None)
+                token = next(tokens)
+
+        except StopIteration:
+            pass
+
+        return types
+
+    def build_command(self, tokens, index=0):
+        raise TokenParseError(index, None, "Too many arguments")
+
+    def suggest_command(self, tokens, target):
+        return []
+
+class FunctionCommand(Command):
+    def __init__(self, func):
+        self.func = func
+
+    def get_promptable_signature(self):
+        sig = inspect.signature(self.func)
+        args = list()
+        kwargs = dict()
+        for param in sig.parameters.values():
+            if param.default is param.empty:
+                args.append(param)
+            else:
+                kwargs["--" + param.name] = param
+
+        return args, kwargs
+
+    def parse_command(self, tokens):
+        tokens = iter(tokens)
+        types = [TOKEN_TYPE.FUNCTION]
+        args, kwargs = self.get_promptable_signature()
 
         try:
-            # parse command
-            while not hasattr(curr, '__call__'):
-                types.append(TOKEN_TYPE.COMMAND)
-
-                token = next(tokens)
-
-                if token not in get_promptable_fields(curr):
-                    curr = None
-                    break
-                curr = getattr(curr, token)
-
-            # parse function
-            if curr is None:
-                args, kwargs = [], {}
-
-            else:
-                args, kwargs = BeatShell._sig(curr)
-                types.append(TOKEN_TYPE.FUNCTION)
-
-                token = next(tokens)
+            token = next(tokens)
 
             # parse positional arguments
             for param in args:
-                value = BeatShell.parse_lit(token, param)
+                value = self.parse_lit(token, param)
                 if value is None:
                     kwargs = {}
                     break
@@ -397,7 +410,7 @@ class BeatShell:
                 token = next(tokens)
 
                 # parse argument value
-                value = BeatShell.parse_lit(token, param)
+                value = self.parse_lit(token, param)
                 if value is None:
                     break
                 types.append(TOKEN_TYPE.LITERAL)
@@ -412,48 +425,23 @@ class BeatShell:
         except StopIteration:
             pass
 
-        return types[1:]
+        return types
 
-    def generate(self, tokens, state=SHLEXER_STATE.SPACED):
-        if state == SHLEXER_STATE.BACKSLASHED:
-            raise TokenParseError(len(tokens)-1, None, "No escaped character")
-        if state == SHLEXER_STATE.QUOTED:
-            raise TokenParseError(len(tokens)-1, None, "No closing quotation")
-
+    def build_command(self, tokens, index=0):
         tokens = iter(tokens)
-        curr = self.root
-        index = -1
-
-        if not getattr(curr, '__is_promptable__', False):
-            raise ValueError(f"Not promptable: {curr!r}")
-
-        # parse command
-        while not hasattr(curr, '__call__'):
-            token = next(tokens, None)
-            index += 1
-
-            fields = get_promptable_fields(curr)
-
-            if token is None:
-                raise TokenUnfinishError(index, fields, "Unfinished command")
-            if token not in fields:
-                raise TokenParseError(index, fields, "Invalid command")
-            curr = getattr(curr, token)
-
-        # parse function
-        args, kwargs = BeatShell._sig(curr)
+        func = self.func
+        args, kwargs = self.get_promptable_signature()
 
         token = next(tokens, None)
-        index += 1
 
         # parse positional arguments
         for param in args:
             if token is None:
                 raise TokenUnfinishError(index, param.annotation, "Missing value")
-            value = BeatShell.parse_lit(token, param)
+            value = self.parse_lit(token, param)
             if value is None:
                 raise TokenParseError(index, param.annotation, "Invalid value")
-            curr = functools.partial(curr, value)
+            func = functools.partial(func, value)
 
             token = next(tokens, None)
             index += 1
@@ -471,10 +459,10 @@ class BeatShell:
             # parse argument value
             if token is None:
                 raise TokenUnfinishError(index, param.annotation, "Missing value")
-            value = BeatShell.parse_lit(token, param)
+            value = self.parse_lit(token, param)
             if value is None:
                 raise TokenParseError(index, param.annotation, "Invalid value")
-            curr = functools.partial(curr, **{param.name: value})
+            func = functools.partial(func, **{param.name: value})
 
             token = next(tokens, None)
             index += 1
@@ -483,37 +471,19 @@ class BeatShell:
         if token is not None:
             raise TokenParseError(index, None, "Too many arguments")
 
-        return curr
+        return func
 
-    def suggest(self, tokens, target):
+    def suggest_command(self, tokens, target):
         tokens = iter(tokens)
-        curr = self.root
-
-        if not getattr(curr, '__is_promptable__', False):
-            raise ValueError(f"Not promptable: {curr!r}")
-
-        # parse command
-        while not hasattr(curr, '__call__'):
-            token = next(tokens, None)
-
-            fields = get_promptable_fields(curr)
-
-            if token is None:
-                return [(val, False) for val in fit(target, fields)]
-            if token not in fields:
-                return []
-            curr = getattr(curr, token)
-
-        # parse function
-        args, kwargs = BeatShell._sig(curr)
+        args, kwargs = self.get_promptable_signature()
 
         token = next(tokens, None)
 
         # parse positional arguments
         for param in args:
             if token is None:
-                return BeatShell.suggest_lit(target, param)
-            value = BeatShell.parse_lit(token, param)
+                return self.suggest_lit(target, param)
+            value = self.parse_lit(token, param)
             if value is None:
                 return []
 
@@ -532,8 +502,8 @@ class BeatShell:
 
             # parse argument value
             if token is None:
-                return BeatShell.suggest_lit(target, param)
-            value = BeatShell.parse_lit(token, param)
+                return self.suggest_lit(target, param)
+            value = self.parse_lit(token, param)
             if value is None:
                 return []
 
@@ -542,12 +512,67 @@ class BeatShell:
         # rest
         return []
 
-def promptable(target):
-    setattr(target, '__is_promptable__', True)
-    return target
+class SubCommand(Command):
+    def __init__(self, root):
+        self.root = root
 
-def get_promptable_fields(target):
-    return [k for k, v in type(target).__dict__.items() if getattr(v, '__is_promptable__', False)]
+    def get_promptable_fields(self):
+        return [k for k, v in type(self.root).__dict__.items() if isinstance(v, command)]
+
+    def get_promptable_field(self, name):
+        desc = type(self.root).__dict__[name]
+        return desc.__get_command__(self, type(self))
+
+    def parse_command(self, tokens):
+        tokens = iter(tokens)
+        type = TOKEN_TYPE.SUBCOMMAND
+
+        try:
+            token = next(tokens)
+        except StopIteration:
+            return [type]
+
+        if token not in self.get_promptable_fields():
+            return [type, *super().parse_command(tokens)]
+
+        field = self.get_promptable_field(token)
+        if not isinstance(field, Command):
+            return [type, *super().parse_command(tokens)]
+
+        return [type, *field.parse_command(tokens)]
+
+    def build_command(self, tokens, index=0):
+        tokens = iter(tokens)
+        token = next(tokens, None)
+
+        fields = self.get_promptable_fields()
+        if token is None:
+            raise TokenUnfinishError(index, fields, "Unfinished command")
+        if token not in fields:
+            raise TokenParseError(index, fields, "Invalid command")
+
+        field = self.get_promptable_field(token)
+        if not isinstance(field, Command):
+            raise TokenParseError(index, [], "Not a command")
+
+        return field.build_command(tokens, index+1)
+
+    def suggest_command(self, tokens, target):
+        tokens = iter(tokens)
+        token = next(tokens, None)
+
+        fields = self.get_promptable_fields()
+
+        if token is None:
+            return [(val, False) for val in fit(target, fields)]
+        if token not in fields:
+            return []
+
+        field = self.get_promptable_field(token)
+        if not isinstance(field, Command):
+            return []
+
+        return field.suggest_command(tokens, target)
 
 
 class InputError:
@@ -560,8 +585,8 @@ class InputResult:
         self.value = value
 
 class BeatInput:
-    def __init__(self, shell, history=None):
-        self.shell = shell
+    def __init__(self, command, history=None):
+        self.command = command
         self.history = history if history is not None else []
 
         self.buffers = [list(history_buffer) for history_buffer in self.history]
@@ -577,7 +602,7 @@ class BeatInput:
 
         self.result = queue.Queue()
 
-    def parse(self):
+    def parse_syntax(self):
         tokenizer = shlexer_tokenize(self.buffer, partial=True)
 
         tokens = []
@@ -590,7 +615,8 @@ class BeatInput:
 
             tokens.append((token, slic, ignored))
 
-        types = self.shell.parse(token for token, _, _ in tokens)
+        types = self.command.parse_command(token for token, _, _ in tokens)
+        types = types[1:]
         self.tokens = [(token, type, slic, ignored) for (token, slic, ignored), type in zip(tokens, types)]
 
     def autocomplete(self, action=+1):
@@ -611,7 +637,7 @@ class BeatInput:
                 target = token
 
         # generate suggestions
-        suggestions = [shlexer_complete(sugg, part) for sugg, part in self.shell.suggest(tokens, target)]
+        suggestions = [shlexer_complete(sugg, part) for sugg, part in self.command.suggest_command(tokens, target)]
         length = len(suggestions)
 
         original_buffer = list(self.buffer)
@@ -627,7 +653,7 @@ class BeatInput:
         while index in range(length):
             self.buffer[selection] = suggestions[index]
             self.pos = selection.start + len(suggestions[index])
-            self.parse()
+            self.parse_syntax()
 
             action = yield
             if action == +1:
@@ -641,7 +667,7 @@ class BeatInput:
             self.pos = original_pos
 
         else:
-            self.parse()
+            self.parse_syntax()
 
     def make_typeahead(self, suggest=True):
         if not suggest or self.pos != len(self.buffer):
@@ -656,7 +682,7 @@ class BeatInput:
             target, _, _, _ = self.tokens[-1]
 
         compreply, partial = None, False
-        for suggestion, partial_ in self.shell.suggest(tokens, target):
+        for suggestion, partial_ in self.command.suggest_command(tokens, target):
             if suggestion.startswith(target):
                 compreply, partial = suggestion[len(target):], partial_
                 break
@@ -675,7 +701,7 @@ class BeatInput:
         self.buffer[self.pos:self.pos] = self.typeahead
         self.pos += len(self.typeahead)
         self.typeahead = ""
-        self.parse()
+        self.parse_syntax()
 
         return True
 
@@ -686,7 +712,11 @@ class BeatInput:
             return False
 
         try:
-            res = self.shell.generate([token for token, _, _, _ in self.tokens], self.state)
+            if self.state == SHLEXER_STATE.BACKSLASHED:
+                raise TokenParseError(len(self.tokens)-1, None, "No escaped character")
+            if self.state == SHLEXER_STATE.QUOTED:
+                raise TokenParseError(len(self.tokens)-1, None, "No closing quotation")
+            res = self.command.build_command([token for token, _, _, _ in self.tokens])
 
         except TokenUnfinishError as e:
             pointto = slice(len(self.buffer)-1, len(self.buffer))
@@ -743,7 +773,7 @@ class BeatInput:
 
         self.buffer[self.pos:self.pos] = text
         self.pos += len(text)
-        self.parse()
+        self.parse_syntax()
 
         self.make_typeahead(True)
 
@@ -759,7 +789,7 @@ class BeatInput:
 
         self.pos -= 1
         del self.buffer[self.pos]
-        self.parse()
+        self.parse_syntax()
         self.make_typeahead(False)
 
         return True
@@ -769,7 +799,7 @@ class BeatInput:
             return False
 
         del self.buffer[self.pos]
-        self.parse()
+        self.parse_syntax()
         self.make_typeahead(False)
 
         return True
@@ -783,7 +813,7 @@ class BeatInput:
 
         del self.buffer[start:end]
         self.pos = start
-        self.parse()
+        self.parse_syntax()
         self.make_typeahead(False)
 
         return True
@@ -848,7 +878,7 @@ class BeatInput:
 
         self.buffer = self.buffers[self.buffers_index]
         self.pos = len(self.buffer)
-        self.parse()
+        self.parse_syntax()
         self.make_typeahead(False)
 
         return True
@@ -860,7 +890,7 @@ class BeatInput:
 
         self.buffer = self.buffers[self.buffers_index]
         self.pos = len(self.buffer)
-        self.parse()
+        self.parse_syntax()
         self.make_typeahead(False)
 
         return True
@@ -1216,7 +1246,7 @@ class BeatPrompt:
                         rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_invalid_attr)
 
                 # render command token
-                if type is TOKEN_TYPE.COMMAND:
+                if type is TOKEN_TYPE.SUBCOMMAND:
                     for index in range(len(rendered_buffer))[slic]:
                         rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_command_attr)
 
@@ -1315,8 +1345,8 @@ class BeatPrompt:
 def prompt(promptable, history=None):
     theme = PromptTheme()
 
-    shell = BeatShell(promptable)
-    input = BeatInput(shell, history)
+    command = SubCommand(promptable)
+    input = BeatInput(command, history)
     stroke = BeatStroke(input, default_keymap, default_keycodes)
     prompt = BeatPrompt(stroke, input, theme)
 
