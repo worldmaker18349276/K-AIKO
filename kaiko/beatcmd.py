@@ -738,11 +738,10 @@ class BeatInput:
             res = self.command.build_command([token for token, _, _, _ in self.tokens])
 
         except TokenUnfinishError as e:
-            pointto = slice(len(self.buffer)-1, len(self.buffer))
+            _, _, pointto, _ = self.tokens[-1]
 
             if isinstance(e.suggestion, (tuple, list)):
-                sugg = e.suggestion[:5] + ["…"] if len(e.suggestion) > 5 else e.suggestion
-                sugg = "\n".join("  " + shlexer_complete(s) for s in sugg)
+                sugg = "\n".join("  " + shlexer_complete(s) for s in e.suggestion)
                 msg = e.info + "\n" + f"It should be followed by:\n{sugg}"
             elif isinstance(e.suggestion, type):
                 msg = e.info + "\n" + f"It should be followed by {e.suggestion.__name__} literal"
@@ -758,8 +757,7 @@ class BeatInput:
             _, _, pointto, _ = self.tokens[e.index]
 
             if isinstance(e.suggestion, (tuple, list)):
-                sugg = e.suggestion[:5] + ["…"] if len(e.suggestion) > 5 else e.suggestion
-                sugg = "\n".join("  " + shlexer_complete(s) for s in sugg)
+                sugg = "\n".join("  " + shlexer_complete(s) for s in e.suggestion)
                 msg = e.info + "\n" + f"It should be one of:\n{sugg}"
             elif isinstance(e.suggestion, type):
                 msg = e.info + "\n" + f"It should be {e.suggestion.__name__} literal"
@@ -1153,6 +1151,7 @@ class PromptTheme(metaclass=cfg.Configurable):
 
     escape_attr: str = "2"
     typeahead_attr: str = "2"
+    highlight_attr: str = "4"
     whitespace: str = "\x1b[2m⌴\x1b[m"
 
     token_invalid_attr: str = "31"
@@ -1294,6 +1293,7 @@ class BeatPrompt:
         input_ran = slice(header_width, None)
 
         error_message_attr = self.theme.error_message_attr
+        highlight_attr = self.theme.highlight_attr
 
         input_offset = 0
         output_text = None
@@ -1340,17 +1340,23 @@ class BeatPrompt:
                 err_text = "\n"
 
                 if result.message is not None:
-                    err_text = "\n" + tui.add_attr(result.message, error_message_attr) + err_text
+                    trim_lines = 8
+                    msg = "\n".join(result.message.split("\n")[:trim_lines])
+                    if result.message.count("\n") >= trim_lines:
+                        msg += "\n…"
 
+                    err_text = "\n" + tui.add_attr(msg, error_message_attr) + err_text
+
+                # highlight
                 if result.pointto is not None:
                     _, pointto_start = tui.textrange1(-input_offset, self.input.buffer[:result.pointto.start])
                     _, pointto_stop = tui.textrange1(-input_offset, self.input.buffer[:result.pointto.stop])
                     pointto_start = max(0, min(input_width-1, pointto_start))
                     pointto_stop = max(1, min(input_width, pointto_stop))
 
-                    padding = " "*(input_ran.start+pointto_start)
-                    pointto_text = " \u0305"*(pointto_stop - pointto_start)
-                    err_text = "\n" + padding + pointto_text + err_text
+                    for index in range(input_ran.start+pointto_start, input_ran.start+pointto_stop):
+                        if view[index]:
+                            view[index] = tui.add_attr(view[index], highlight_attr)
 
             output_text = "\r" + "".join(view) + "\r" + err_text
 
