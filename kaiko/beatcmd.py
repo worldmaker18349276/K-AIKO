@@ -355,17 +355,14 @@ class Command:
 
     @staticmethod
     def help_lit(token, ann):
-        if Command.parse_lit(token, ann) is not None:
-            return None
-
         if isinstance(ann, (tuple, list)):
             return "It should be one of:\n" + "\n".join("  " + shlexer_complete(s) for s in ann)
 
         elif isinstance(ann, type):
             return f"It should be {ann.__name__} literal"
 
-        elif hasattr(ann, 'suggest'):
-            return ann.suggest(token)
+        elif hasattr(ann, 'help'):
+            return ann.help(token)
 
         else:
             return None
@@ -385,10 +382,13 @@ class Command:
         return types
 
     def build_command(self, tokens, index=0):
-        raise TokenParseError(index, None, "Too many arguments")
+        raise TokenParseError(index, "Too many arguments")
 
     def suggest_command(self, tokens, target):
         return []
+
+    def help_command(self, tokens, target):
+        return None
 
 class FunctionCommand(Command):
     def __init__(self, func, annotations={}):
@@ -467,7 +467,7 @@ class FunctionCommand(Command):
         # parse positional arguments
         for ann, default in args:
             if token is None:
-                help = Command.help_lit("", ann)
+                help = Command.help_lit(None, ann)
                 msg = "Missing value" + ("\n" + help if help is not None else "")
                 raise TokenUnfinishError(index, msg)
 
@@ -490,16 +490,16 @@ class FunctionCommand(Command):
             name = token[2:]
 
             if ann is None:
-                help = Command.help_lit("", list(kwargs.keys()))
-                msg = "Unkown argument" + "\n" + help
-                raise TokenUnfinishError(index, msg)
+                help = Command.help_lit(None, list(kwargs.keys()))
+                msg = f"Unkown argument {name!r}" + "\n" + help
+                raise TokenParseError(index, msg)
 
             token = next(tokens, None)
             index += 1
 
             # parse argument value
             if token is None:
-                help = Command.help_lit("", ann)
+                help = Command.help_lit(None, ann)
                 msg = "Missing value" + ("\n" + help if help is not None else "")
                 raise TokenUnfinishError(index, msg)
 
@@ -560,6 +560,46 @@ class FunctionCommand(Command):
         # rest
         return []
 
+    def help_command(self, tokens, target):
+        tokens = iter(tokens)
+        func = self.func
+        args, kwargs = self.get_promptable_signature()
+
+        token = next(tokens, None)
+
+        # parse positional arguments
+        for ann, default in args:
+            if token is None:
+                return Command.help_lit(target, ann)
+            value = self.parse_lit(token, ann)
+            if value is None:
+                return None
+
+            token = next(tokens, None)
+
+        # parse keyword arguments
+        while kwargs:
+            # parse argument name
+            if token is None:
+                return Command.help_lit(target, list(kwargs.keys()))
+            ann, default = kwargs.pop(token, (None, None))
+            if ann is None:
+                return None
+
+            token = next(tokens, None)
+
+            # parse argument value
+            if token is None:
+                return Command.help_lit(target, ann)
+            value = self.parse_lit(token, ann)
+            if value is None:
+                return None
+
+            token = next(tokens, None)
+
+        # rest
+        return None
+
 class SubCommand(Command):
     def __init__(self, root):
         self.root = root
@@ -595,11 +635,11 @@ class SubCommand(Command):
 
         fields = self.get_promptable_fields()
         if token is None:
-            help = Command.help_lit("", fields)
+            help = Command.help_lit(None, fields)
             msg = "Unfinished command" + ("\n" + help if help is not None else "")
             raise TokenUnfinishError(index, msg)
         if token not in fields:
-            help = Command.help_lit("", fields)
+            help = Command.help_lit(None, fields)
             msg = "Invalid command" + ("\n" + help if help is not None else "")
             raise TokenParseError(index, "Invalid command")
 
@@ -626,8 +666,45 @@ class SubCommand(Command):
 
         return field.suggest_command(tokens, target)
 
+    def help_command(self, tokens, target):
+        tokens = iter(tokens)
+        token = next(tokens, None)
+
+        fields = self.get_promptable_fields()
+
+        if token is None:
+            return Command.help_lit(target, fields)
+        if token not in fields:
+            return []
+
+        field = self.get_promptable_field(token)
+        if not isinstance(field, Command):
+            return []
+
+        return field.help_command(tokens, target)
+
 class RootCommand(SubCommand):
-    pass
+    def get_promptable_fields(self):
+        fields = super(RootCommand, self).get_promptable_fields()
+        return ["help", *fields]
+
+    def get_promptable_field(self, name):
+        if name == "help":
+            return HelpCommand(self.root)
+        else:
+            return super(RootCommand, self).get_promptable_field(name)
+
+class HelpCommand(SubCommand):
+    def build_command(self, tokens, index=0):
+        tokens = list(tokens)
+        if len(tokens) == 0:
+            return lambda: "Sorry, can't help."
+
+        super().build_command(tokens[:-1], index)
+        help = self.help_command(tokens[:-1], tokens[-1])
+        if help is None:
+            return lambda: "Sorry, can't help."
+        return lambda: help
 
 
 class InputError:
@@ -768,13 +845,16 @@ class BeatInput:
 
         try:
             if self.state == SHLEXER_STATE.BACKSLASHED:
-                raise TokenParseError(len(self.tokens)-1, None, "No escaped character")
+                raise TokenParseError(len(self.tokens)-1, "No escaped character")
             if self.state == SHLEXER_STATE.QUOTED:
-                raise TokenParseError(len(self.tokens)-1, None, "No closing quotation")
+                raise TokenParseError(len(self.tokens)-1, "No closing quotation")
             res = self.command.build_command([token for token, _, _, _ in self.tokens])
 
         except TokenUnfinishError as e:
-            _, _, pointto, _ = self.tokens[-1]
+            if e.index < len(self.tokens):
+                _, _, pointto, _ = self.tokens[e.index]
+            else:
+                pointto = None
             self.result.put(InputError(pointto, e.info))
             return False
 
