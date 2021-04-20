@@ -1,5 +1,6 @@
 import os
 from enum import Enum
+from collections import OrderedDict
 import functools
 import re
 import queue
@@ -107,7 +108,7 @@ def shlexer_tokenize(raw, partial=False):
                 yield "".join(token), slice(start, None), ignored
                 return SHLEXER_STATE.PLAIN
 
-def shlexer_complete(compreply, partial=False, state=SHLEXER_STATE.SPACED):
+def shlexer_quoting(compreply, partial=False, state=SHLEXER_STATE.SPACED):
     if state == SHLEXER_STATE.PLAIN:
         compreply = re.sub(r"([ \\'])", r"\\\1", compreply)
 
@@ -176,19 +177,16 @@ def echo_str(escaped_str):
 
 
 class TokenUnfinishError(Exception):
-    def __init__(self, index, info):
-        self.index = index
-        self.info = info
+    pass
 
 class TokenParseError(Exception):
-    def __init__(self, index, info):
-        self.index = index
-        self.info = info
+    pass
 
 class TOKEN_TYPE(Enum):
     COMMAND = "command"
     ARGUMENT = "argument"
     LITERAL = "literal"
+    UNKNOWN = "unknown"
 
 
 def function_command(proxy=None, **annotations):
@@ -215,12 +213,28 @@ class FunctionCommandDescriptor(CommandDescriptor):
         self.annotations = annotations
 
     def __get_command__(self, instance, owner):
+        func = self.proxy.__get__(instance, owner)
         annotations = {key: value.__get__(instance, owner) for key, value in self.annotations.items()}
-        return FunctionCommand(self.proxy.__get__(instance, owner), annotations)
+
+        sig = inspect.signature(func)
+        args = OrderedDict()
+        kwargs = OrderedDict()
+        for param in sig.parameters.values():
+            type = annotations.get(param.name, param.annotation)
+            arg = (type, param.default)
+
+            if param.default is inspect.Parameter.empty:
+                args[param.name] = arg
+            else:
+                kwargs[param.name] = arg
+
+        return FunctionCommand(func, args, kwargs)
 
 class SubCommandDescriptor(CommandDescriptor):
     def __get_command__(self, instance, owner):
-        return SubCommand(self.proxy.__get__(instance, owner))
+        parent = self.proxy.__get__(instance, owner)
+        fields = [k for k, v in type(parent).__dict__.items() if isinstance(v, CommandDescriptor)]
+        return SubCommand(parent, fields)
 
 class Command:
     @staticmethod
@@ -231,15 +245,16 @@ class Command:
             exists = False
 
         if not exists:
-            return None
+            help = Command.help_lit(token, Path)
+            raise TokenParseError("Path does not exist" + ("\n" + help if help is not None else ""))
 
         return Path(token)
 
     @staticmethod
-    def suggest_path(token, default=None):
+    def suggest_path(token, default=inspect.Parameter.empty):
         suggestions = []
 
-        if default is not None:
+        if default is not inspect.Parameter.empty:
             suggestions.append((str(default), False))
 
         # check path
@@ -276,435 +291,257 @@ class Command:
         return suggestions
 
     @staticmethod
-    def parse_lit(token, ann):
-        if isinstance(ann, (tuple, list)):
-            if token not in ann:
-                return None
+    def parse_lit(token, type):
+        def raise_err():
+            help = Command.help_lit(token, type)
+            raise TokenParseError("Invalid value" + ("\n" + help if help is not None else ""))
+
+        if isinstance(type, (tuple, list)):
+            if token not in type:
+                raise_err()
             return token
 
-        elif ann == bool:
+        elif type == bool:
             if not re.fullmatch("True|False", token):
-                return None
+                raise_err()
             return bool(token)
 
-        elif ann == int:
+        elif type == int:
             if not re.fullmatch(r"[-+]?(0|[1-9][0-9]*)", token):
-                return None
+                raise_err()
             return int(token)
 
-        elif ann == float:
+        elif type == float:
             if not re.fullmatch(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)", token):
-                return None
+                raise_err()
             return float(token)
 
-        elif ann == str:
+        elif type == str:
             return token
 
-        elif ann == Path:
+        elif type == Path:
             return Command.parse_path(token)
 
-        elif hasattr(ann, 'parse'):
-            return ann.parse(token)
+        elif hasattr(type, 'parse'):
+            return type.parse(token)
 
         else:
-            return None
+            raise_err()
 
     @staticmethod
-    def suggest_lit(token, ann, default):
-        if isinstance(ann, (tuple, list)):
-            return [(val, False) for val in fit(token, ann)]
+    def suggest_lit(token, type, default=inspect.Parameter.empty):
+        if isinstance(type, (tuple, list)):
+            return [(val, False) for val in fit(token, type)]
 
-        elif ann == bool:
+        elif type == bool:
             if default is inspect.Parameter.empty or default == True:
                 return [(val, False) for val in fit(token, ["True", "False"])]
             else:
                 return [(val, False) for val in fit(token, ["False", "True"])]
 
-        elif ann == int:
+        elif type == int:
             if default is inspect.Parameter.empty:
                 return []
             else:
                 return [(val, False) for val in fit(token, [str(default)])]
 
-        elif ann == float:
+        elif type == float:
             if default is inspect.Parameter.empty:
                 return []
             else:
                 return [(val, False) for val in fit(token, [str(default)])]
 
-        elif ann == str:
+        elif type == str:
             if default is inspect.Parameter.empty:
                 return []
             else:
                 return [(val, False) for val in fit(token, [default])]
 
-        elif ann == Path:
-            if default is inspect.Parameter.empty:
-                return Command.suggest_path(token)
-            else:
-                return Command.suggest_path(token, default)
+        elif type == Path:
+            return Command.suggest_path(token, default)
 
-        elif hasattr(ann, 'suggest'):
-            if default is inspect.Parameter.empty:
-                return ann.suggest(token)
-            else:
-                return ann.suggest(token, default)
+        elif hasattr(type, 'suggest'):
+            return type.suggest(token, default)
 
         else:
             return []
 
     @staticmethod
-    def help_lit(token, ann):
-        if isinstance(ann, (tuple, list)):
-            return "It should be one of:\n" + "\n".join("  " + shlexer_complete(s) for s in ann)
+    def help_lit(token, type):
+        if isinstance(type, (tuple, list)):
+            return "It should be one of:\n" + "\n".join("  " + shlexer_quoting(s) for s in type)
 
-        elif isinstance(ann, type):
-            return f"It should be {ann.__name__} literal"
+        elif type in (bool, int, float, str, Path):
+            return f"It should be {type.__name__} literal"
 
-        elif hasattr(ann, 'help'):
-            return ann.help(token)
+        elif hasattr(type, 'help'):
+            return type.help(token)
 
         else:
             return None
 
-    def parse_command(self, tokens):
-        tokens = iter(tokens)
-        types = []
+    def finish(self):
+        raise NotImplementedError
 
-        try:
-            while True:
-                types.append(None)
-                token = next(tokens)
+    def parse(self, token):
+        raise NotImplementedError
 
-        except StopIteration:
-            pass
+    def suggest(self, token):
+        raise NotImplementedError
 
-        return types
+    def help(self, token):
+        raise NotImplementedError
 
-    def build_command(self, tokens, index=0):
-        raise TokenParseError(index, "Too many arguments")
+class UnknownCommand(Command):
+    def finish(self):
+        raise TokenParseError("Unknown command")
 
-    def suggest_command(self, tokens, target):
+    def parse(self, token):
+        return TOKEN_TYPE.UNKNOWN, self
+
+    def suggest(self, token):
         return []
 
-    def help_command(self, tokens, target):
+    def help(self, token):
         return None
 
 class FunctionCommand(Command):
-    def __init__(self, func, annotations={}):
+    def __init__(self, func, args, kwargs):
         self.func = func
-        self.annotations = dict(annotations)
+        self.args = args
+        self.kwargs = kwargs
 
-    def get_promptable_signature(self):
-        sig = inspect.signature(self.func)
-        args = list()
-        kwargs = dict()
-        for param in sig.parameters.values():
-            annotation = param.annotation
-            if param.name in self.annotations:
-                annotation = self.annotations[param.name]
+    def finish(self):
+        if self.args:
+            type, default = next(iter(self.args.values()))
+            help = Command.help_lit(None, type)
+            msg = "Missing value" + ("\n" + help if help is not None else "")
+            raise TokenUnfinishError(msg)
 
-            if param.default is inspect.Parameter.empty:
-                args.append((annotation, param.default))
-            else:
-                kwargs["--" + param.name] = (annotation, param.default)
+        return self.func
 
-        return args, kwargs
-
-    def parse_command(self, tokens):
-        tokens = iter(tokens)
-        types = [TOKEN_TYPE.COMMAND]
-        args, kwargs = self.get_promptable_signature()
-
-        try:
-            token = next(tokens)
-
-            # parse positional arguments
-            for ann, default in args:
-                value = self.parse_lit(token, ann)
-                if value is None:
-                    kwargs = {}
-                    break
-                types.append(TOKEN_TYPE.LITERAL)
-
-                token = next(tokens)
-
-            # parse keyword arguments
-            while kwargs:
-                # parse argument name
-                ann, default = kwargs.pop(token, (None, None))
-                if ann is None:
-                    break
-                types.append(TOKEN_TYPE.ARGUMENT)
-
-                token = next(tokens)
-
-                # parse argument value
-                value = self.parse_lit(token, ann)
-                if value is None:
-                    break
-                types.append(TOKEN_TYPE.LITERAL)
-
-                token = next(tokens)
-
-            # rest
-            while True:
-                types.append(None)
-                token = next(tokens)
-
-        except StopIteration:
-            pass
-
-        return types
-
-    def build_command(self, tokens, index=0):
-        tokens = iter(tokens)
-        func = self.func
-        args, kwargs = self.get_promptable_signature()
-
-        token = next(tokens, None)
-
+    def parse(self, token):
         # parse positional arguments
-        for ann, default in args:
-            if token is None:
-                help = Command.help_lit(None, ann)
-                msg = "Missing value" + ("\n" + help if help is not None else "")
-                raise TokenUnfinishError(index, msg)
+        if self.args:
+            args = OrderedDict(self.args)
+            name, (type, default) = args.popitem(False)
+            value = Command.parse_lit(token, type)
 
-            value = self.parse_lit(token, ann)
-
-            if value is None:
-                help = Command.help_lit(token, ann)
-                msg = "Invalid value" + ("\n" + help if help is not None else "")
-                raise TokenParseError(index, msg)
-
-            func = functools.partial(func, value)
-
-            token = next(tokens, None)
-            index += 1
+            func = functools.partial(self.func, **{name: value})
+            return TOKEN_TYPE.LITERAL, FunctionCommand(func, args, self.kwargs)
 
         # parse keyword arguments
-        while kwargs and token is not None:
-            # parse argument name
-            ann, default = kwargs.pop(token, (None, None))
-            name = token[2:]
+        if self.kwargs:
+            kwargs = OrderedDict(self.kwargs)
+            name = token[2:] if token.startswith("--") else None
+            arg = kwargs.pop(name, None)
 
-            if ann is None:
-                help = Command.help_lit(None, list(kwargs.keys()))
-                msg = f"Unkown argument {name!r}" + "\n" + help
-                raise TokenParseError(index, msg)
+            if arg is None:
+                help = Command.help_lit(None, ["--" + key for key in self.kwargs.keys()])
+                msg = f"Unknown argument {token!r}" + "\n" + help
+                raise TokenParseError(msg)
 
-            token = next(tokens, None)
-            index += 1
-
-            # parse argument value
-            if token is None:
-                help = Command.help_lit(None, ann)
-                msg = "Missing value" + ("\n" + help if help is not None else "")
-                raise TokenUnfinishError(index, msg)
-
-            value = self.parse_lit(token, ann)
-
-            if value is None:
-                help = Command.help_lit(token, ann)
-                msg = "Invalid value" + ("\n" + help if help is not None else "")
-                raise TokenParseError(index, msg)
-
-            func = functools.partial(func, **{name: value})
-
-            token = next(tokens, None)
-            index += 1
+            args = OrderedDict([(name, arg)])
+            return TOKEN_TYPE.ARGUMENT, FunctionCommand(self.func, args, kwargs)
 
         # rest
-        if token is not None:
-            raise TokenParseError(index, "Too many arguments")
+        raise TokenParseError("Too many arguments")
 
-        return func
-
-    def suggest_command(self, tokens, target):
-        tokens = iter(tokens)
-        args, kwargs = self.get_promptable_signature()
-
-        token = next(tokens, None)
-
+    def suggest(self, token):
         # parse positional arguments
-        for ann, default in args:
-            if token is None:
-                return self.suggest_lit(target, ann, default)
-            value = self.parse_lit(token, ann)
-            if value is None:
-                return []
-
-            token = next(tokens, None)
+        if self.args:
+            type, default = next(iter(self.args.values()))
+            return Command.suggest_lit(token, type, default)
 
         # parse keyword arguments
-        while kwargs:
-            # parse argument name
-            if token is None:
-                return [(val, False) for val in fit(target, kwargs.keys())]
-            ann, default = kwargs.pop(token, (None, None))
-            if ann is None:
-                return []
-
-            token = next(tokens, None)
-
-            # parse argument value
-            if token is None:
-                return self.suggest_lit(target, ann, default)
-            value = self.parse_lit(token, ann)
-            if value is None:
-                return []
-
-            token = next(tokens, None)
+        if self.kwargs:
+            keys = ["--" + key for key in self.kwargs.keys()]
+            return [(key, False) for key in fit(token, keys)]
 
         # rest
         return []
 
-    def help_command(self, tokens, target):
-        tokens = iter(tokens)
-        func = self.func
-        args, kwargs = self.get_promptable_signature()
-
-        token = next(tokens, None)
-
+    def help(self, token):
         # parse positional arguments
-        for ann, default in args:
-            if token is None:
-                return Command.help_lit(target, ann)
-            value = self.parse_lit(token, ann)
-            if value is None:
-                return None
-
-            token = next(tokens, None)
+        if self.args:
+            type, default = next(iter(self.args.values()))
+            return Command.help_lit(token, type)
 
         # parse keyword arguments
-        while kwargs:
-            # parse argument name
-            if token is None:
-                return Command.help_lit(target, list(kwargs.keys()))
-            ann, default = kwargs.pop(token, (None, None))
-            if ann is None:
-                return None
-
-            token = next(tokens, None)
-
-            # parse argument value
-            if token is None:
-                return Command.help_lit(target, ann)
-            value = self.parse_lit(token, ann)
-            if value is None:
-                return None
-
-            token = next(tokens, None)
+        if self.kwargs:
+            keys = ["--" + key for key in self.kwargs.keys()]
+            return Command.help_lit(token, keys)
 
         # rest
         return None
 
 class SubCommand(Command):
-    def __init__(self, root):
-        self.root = root
-
-    def get_promptable_fields(self):
-        return [k for k, v in type(self.root).__dict__.items() if isinstance(v, CommandDescriptor)]
+    def __init__(self, parent, fields):
+        self.parent = parent
+        self.fields = fields
 
     def get_promptable_field(self, name):
-        desc = type(self.root).__dict__[name]
-        return desc.__get_command__(self.root, type(self.root))
+        desc = type(self.parent).__dict__[name]
+        return desc.__get_command__(self.parent, type(self.parent))
 
-    def parse_command(self, tokens):
-        tokens = iter(tokens)
-        type = TOKEN_TYPE.COMMAND
+    def finish(self):
+        help = Command.help_lit(None, self.fields)
+        raise TokenUnfinishError("Unfinished command" + ("\n" + help if help is not None else ""))
 
-        try:
-            token = next(tokens)
-        except StopIteration:
-            return [type]
-
-        if token not in self.get_promptable_fields():
-            return [type, *super().parse_command(tokens)]
+    def parse(self, token):
+        if token not in self.fields:
+            help = Command.help_lit(None, self.fields)
+            msg = "Unknown command" + ("\n" + help if help is not None else "")
+            raise TokenParseError(msg)
 
         field = self.get_promptable_field(token)
         if not isinstance(field, Command):
-            return [type, *super().parse_command(tokens)]
+            raise TokenParseError("Not a command")
 
-        return [type, *field.parse_command(tokens)]
+        return TOKEN_TYPE.COMMAND, field
 
-    def build_command(self, tokens, index=0):
-        tokens = iter(tokens)
-        token = next(tokens, None)
+    def suggest(self, token):
+        return [(val, False) for val in fit(token, self.fields)]
 
-        fields = self.get_promptable_fields()
-        if token is None:
-            help = Command.help_lit(None, fields)
-            msg = "Unfinished command" + ("\n" + help if help is not None else "")
-            raise TokenUnfinishError(index, msg)
-        if token not in fields:
-            help = Command.help_lit(None, fields)
-            msg = "Invalid command" + ("\n" + help if help is not None else "")
-            raise TokenParseError(index, "Invalid command")
-
-        field = self.get_promptable_field(token)
-        if not isinstance(field, Command):
-            raise TokenParseError(index, "Not a command")
-
-        return field.build_command(tokens, index+1)
-
-    def suggest_command(self, tokens, target):
-        tokens = iter(tokens)
-        token = next(tokens, None)
-
-        fields = self.get_promptable_fields()
-
-        if token is None:
-            return [(val, False) for val in fit(target, fields)]
-        if token not in fields:
-            return []
-
-        field = self.get_promptable_field(token)
-        if not isinstance(field, Command):
-            return []
-
-        return field.suggest_command(tokens, target)
-
-    def help_command(self, tokens, target):
-        tokens = iter(tokens)
-        token = next(tokens, None)
-
-        fields = self.get_promptable_fields()
-
-        if token is None:
-            return Command.help_lit(target, fields)
-        if token not in fields:
-            return []
-
-        field = self.get_promptable_field(token)
-        if not isinstance(field, Command):
-            return []
-
-        return field.help_command(tokens, target)
+    def help(self, token):
+        return Command.help_lit(token, self.fields)
 
 class RootCommand(SubCommand):
-    def get_promptable_fields(self):
-        fields = super(RootCommand, self).get_promptable_fields()
-        return ["help", *fields]
+    def __init__(self, root):
+        fields = [k for k, v in type(root).__dict__.items() if isinstance(v, CommandDescriptor)]
+        super(RootCommand, self).__init__(root, fields)
 
-    def get_promptable_field(self, name):
-        if name == "help":
-            return HelpCommand(self.root)
-        else:
-            return super(RootCommand, self).get_promptable_field(name)
+    def parse_command(self, tokens):
+        cmd = self
+        types = []
+        res = None
 
-class HelpCommand(SubCommand):
-    def build_command(self, tokens, index=0):
-        tokens = list(tokens)
-        if len(tokens) == 0:
-            return lambda: "Sorry, can't help."
+        for index, token in enumerate(tokens):
+            try:
+                type, cmd = cmd.parse(token)
+            except TokenParseError as err:
+                res = err, index
+                type, cmd = TOKEN_TYPE.UNKNOWN, UnknownCommand()
+            types.append(type)
 
-        super().build_command(tokens[:-1], index)
-        help = self.help_command(tokens[:-1], tokens[-1])
-        if help is None:
-            return lambda: "Sorry, can't help."
-        return lambda: help
+        if res is not None:
+            return (types, *res)
+
+        try:
+            res = cmd.finish(), len(types)
+        except TokenUnfinishError as err:
+            res = err, len(types)
+
+        return (types, *res)
+
+    def suggest_command(self, tokens, target):
+        cmd = self
+        for token in tokens:
+            try:
+                _, cmd = cmd.parse(token)
+            except TokenParseError as err:
+                cmd = UnknownCommand()
+        return cmd.suggest(target)
 
 
 class InputError:
@@ -747,8 +584,7 @@ class BeatInput:
 
             tokens.append((token, slic, ignored))
 
-        types = self.command.parse_command(token for token, _, _ in tokens)
-        types = types[1:]
+        types, res, index = self.command.parse_command(token for token, _, _ in tokens)
         self.tokens = [(token, type, slic, ignored) for (token, slic, ignored), type in zip(tokens, types)]
 
     def autocomplete(self, action=+1):
@@ -769,7 +605,7 @@ class BeatInput:
                 target = token
 
         # generate suggestions
-        suggestions = [shlexer_complete(sugg, part) for sugg, part in self.command.suggest_command(tokens, target)]
+        suggestions = [shlexer_quoting(sugg, part) for sugg, part in self.command.suggest_command(tokens, target)]
         length = len(suggestions)
 
         original_buffer = list(self.buffer)
@@ -823,7 +659,7 @@ class BeatInput:
             self.typeahead = ""
             return False
         else:
-            self.typeahead = shlexer_complete(compreply, partial, self.state)
+            self.typeahead = shlexer_quoting(compreply, partial, self.state)
             return True
 
     def insert_typeahead(self):
@@ -843,26 +679,20 @@ class BeatInput:
             self.result.put(InputError(None, None))
             return False
 
-        try:
-            if self.state == SHLEXER_STATE.BACKSLASHED:
-                raise TokenParseError(len(self.tokens)-1, "No escaped character")
-            if self.state == SHLEXER_STATE.QUOTED:
-                raise TokenParseError(len(self.tokens)-1, "No closing quotation")
-            res = self.command.build_command([token for token, _, _, _ in self.tokens])
+        if self.state == SHLEXER_STATE.BACKSLASHED:
+            res, index = TokenParseError("No escaped character"), len(self.tokens)-1
+        elif self.state == SHLEXER_STATE.QUOTED:
+            res, index = TokenParseError("No closing quotation"), len(self.tokens)-1
+        else:
+            _, res, index = self.command.parse_command(token for token, _, _, _ in self.tokens)
 
-        except TokenUnfinishError as e:
-            if e.index < len(self.tokens):
-                _, _, pointto, _ = self.tokens[e.index]
-            else:
-                pointto = None
-            self.result.put(InputError(pointto, e.info))
+        if isinstance(res, TokenUnfinishError):
+            self.result.put(InputError(None, res.args[0]))
             return False
-
-        except TokenParseError as e:
-            _, _, pointto, _ = self.tokens[e.index]
-            self.result.put(InputError(pointto, e.info))
+        elif isinstance(res, TokenParseError):
+            _, _, pointto, _ = self.tokens[index]
+            self.result.put(InputError(pointto, res.args[0]))
             return False
-
         else:
             self.history.append("".join(self.buffer))
             self.result.put(InputResult(res))
@@ -1248,7 +1078,7 @@ class PromptTheme(metaclass=cfg.Configurable):
     highlight_attr: str = "4"
     whitespace: str = "\x1b[2m⌴\x1b[m"
 
-    token_invalid_attr: str = "31"
+    token_unknown_attr: str = "31"
     token_command_attr: str = "94"
     token_argument_attr: str = "95"
     token_literal_attr: str = "92"
@@ -1330,7 +1160,7 @@ class BeatPrompt:
         typeahead_attr = self.theme.typeahead_attr
         whitespace      = self.theme.whitespace
 
-        token_invalid_attr  = self.theme.token_invalid_attr
+        token_unknown_attr  = self.theme.token_unknown_attr
         token_command_attr  = self.theme.token_command_attr
         token_argument_attr = self.theme.token_argument_attr
         token_literal_attr  = self.theme.token_literal_attr
@@ -1350,10 +1180,10 @@ class BeatPrompt:
                     if rendered_buffer[index] == " ":
                         rendered_buffer[index] = whitespace
 
-                # render invalid token except the final one
-                if type is None and slic.stop is not None:
+                # render unknown token except the final one
+                if type is TOKEN_TYPE.UNKNOWN and slic.stop is not None:
                     for index in range(len(rendered_buffer))[slic]:
-                        rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_invalid_attr)
+                        rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_unknown_attr)
 
                 # render command token
                 if type is TOKEN_TYPE.COMMAND:
