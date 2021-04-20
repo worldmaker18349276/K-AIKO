@@ -176,15 +176,13 @@ def echo_str(escaped_str):
 
 
 class TokenUnfinishError(Exception):
-    def __init__(self, index, suggestion, info):
+    def __init__(self, index, info):
         self.index = index
-        self.suggestion = suggestion
         self.info = info
 
 class TokenParseError(Exception):
-    def __init__(self, index, suggestion, info):
+    def __init__(self, index, info):
         self.index = index
-        self.suggestion = suggestion
         self.info = info
 
 class TOKEN_TYPE(Enum):
@@ -355,6 +353,23 @@ class Command:
         else:
             return []
 
+    @staticmethod
+    def help_lit(token, ann):
+        if Command.parse_lit(token, ann) is not None:
+            return None
+
+        if isinstance(ann, (tuple, list)):
+            return "It should be one of:\n" + "\n".join("  " + shlexer_complete(s) for s in ann)
+
+        elif isinstance(ann, type):
+            return f"It should be {ann.__name__} literal"
+
+        elif hasattr(ann, 'suggest'):
+            return ann.suggest(token)
+
+        else:
+            return None
+
     def parse_command(self, tokens):
         tokens = iter(tokens)
         types = []
@@ -376,9 +391,9 @@ class Command:
         return []
 
 class FunctionCommand(Command):
-    def __init__(self, func, annotations):
+    def __init__(self, func, annotations={}):
         self.func = func
-        self.annotations = annotations
+        self.annotations = dict(annotations)
 
     def get_promptable_signature(self):
         sig = inspect.signature(self.func)
@@ -452,10 +467,17 @@ class FunctionCommand(Command):
         # parse positional arguments
         for ann, default in args:
             if token is None:
-                raise TokenUnfinishError(index, ann, "Missing value")
+                help = Command.help_lit("", ann)
+                msg = "Missing value" + ("\n" + help if help is not None else "")
+                raise TokenUnfinishError(index, msg)
+
             value = self.parse_lit(token, ann)
+
             if value is None:
-                raise TokenParseError(index, ann, "Invalid value")
+                help = Command.help_lit(token, ann)
+                msg = "Invalid value" + ("\n" + help if help is not None else "")
+                raise TokenParseError(index, msg)
+
             func = functools.partial(func, value)
 
             token = next(tokens, None)
@@ -466,18 +488,28 @@ class FunctionCommand(Command):
             # parse argument name
             ann, default = kwargs.pop(token, (None, None))
             name = token[2:]
+
             if ann is None:
-                raise TokenUnfinishError(index, list(kwargs.keys()), "Unkown argument")
+                help = Command.help_lit("", list(kwargs.keys()))
+                msg = "Unkown argument" + "\n" + help
+                raise TokenUnfinishError(index, msg)
 
             token = next(tokens, None)
             index += 1
 
             # parse argument value
             if token is None:
-                raise TokenUnfinishError(index, ann, "Missing value")
+                help = Command.help_lit("", ann)
+                msg = "Missing value" + ("\n" + help if help is not None else "")
+                raise TokenUnfinishError(index, msg)
+
             value = self.parse_lit(token, ann)
+
             if value is None:
-                raise TokenParseError(index, ann, "Invalid value")
+                help = Command.help_lit(token, ann)
+                msg = "Invalid value" + ("\n" + help if help is not None else "")
+                raise TokenParseError(index, msg)
+
             func = functools.partial(func, **{name: value})
 
             token = next(tokens, None)
@@ -485,7 +517,7 @@ class FunctionCommand(Command):
 
         # rest
         if token is not None:
-            raise TokenParseError(index, None, "Too many arguments")
+            raise TokenParseError(index, "Too many arguments")
 
         return func
 
@@ -563,13 +595,17 @@ class SubCommand(Command):
 
         fields = self.get_promptable_fields()
         if token is None:
-            raise TokenUnfinishError(index, fields, "Unfinished command")
+            help = Command.help_lit("", fields)
+            msg = "Unfinished command" + ("\n" + help if help is not None else "")
+            raise TokenUnfinishError(index, msg)
         if token not in fields:
-            raise TokenParseError(index, fields, "Invalid command")
+            help = Command.help_lit("", fields)
+            msg = "Invalid command" + ("\n" + help if help is not None else "")
+            raise TokenParseError(index, "Invalid command")
 
         field = self.get_promptable_field(token)
         if not isinstance(field, Command):
-            raise TokenParseError(index, [], "Not a command")
+            raise TokenParseError(index, "Not a command")
 
         return field.build_command(tokens, index+1)
 
@@ -739,34 +775,12 @@ class BeatInput:
 
         except TokenUnfinishError as e:
             _, _, pointto, _ = self.tokens[-1]
-
-            if isinstance(e.suggestion, (tuple, list)):
-                sugg = "\n".join("  " + shlexer_complete(s) for s in e.suggestion)
-                msg = e.info + "\n" + f"It should be followed by:\n{sugg}"
-            elif isinstance(e.suggestion, type):
-                msg = e.info + "\n" + f"It should be followed by {e.suggestion.__name__} literal"
-            elif e.suggestion is not None:
-                msg = e.info + "\n" + f"It should be followed by {e.suggestion}"
-            else:
-                msg = e.info
-
-            self.result.put(InputError(pointto, msg))
+            self.result.put(InputError(pointto, e.info))
             return False
 
         except TokenParseError as e:
             _, _, pointto, _ = self.tokens[e.index]
-
-            if isinstance(e.suggestion, (tuple, list)):
-                sugg = "\n".join("  " + shlexer_complete(s) for s in e.suggestion)
-                msg = e.info + "\n" + f"It should be one of:\n{sugg}"
-            elif isinstance(e.suggestion, type):
-                msg = e.info + "\n" + f"It should be {e.suggestion.__name__} literal"
-            elif e.suggestion is not None:
-                msg = e.info + "\n" + f"It should be {e.suggestion}"
-            else:
-                msg = e.info
-
-            self.result.put(InputError(pointto, msg))
+            self.result.put(InputError(pointto, e.info))
             return False
 
         else:
