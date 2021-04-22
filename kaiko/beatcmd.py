@@ -1189,10 +1189,11 @@ class BeatPrompt:
                     if rendered_buffer[index] == " ":
                         rendered_buffer[index] = whitespace
 
-                # render unknown token except the final one
-                if type is TOKEN_TYPE.UNKNOWN and slic.stop is not None:
-                    for index in range(len(rendered_buffer))[slic]:
-                        rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_unknown_attr)
+                # render unknown token except the unfinished one
+                if type is TOKEN_TYPE.UNKNOWN:
+                    if slic.stop is not None or isinstance(result, (InputError, InputResult)):
+                        for index in range(len(rendered_buffer))[slic]:
+                            rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_unknown_attr)
 
                 # render command token
                 if type is TOKEN_TYPE.COMMAND:
