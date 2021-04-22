@@ -515,24 +515,26 @@ class RootCommand(SubCommand):
         cmd = self
         types = []
         res = None
+        index = 0
 
-        for index, token in enumerate(tokens):
+        for i, token in enumerate(tokens):
             try:
                 type, cmd = cmd.parse(token)
             except TokenParseError as err:
-                res = err, index
+                res, index = err, i
                 type, cmd = TOKEN_TYPE.UNKNOWN, UnknownCommand()
             types.append(type)
 
         if res is not None:
-            return (types, *res)
+            return (types, res, index)
 
+        index = len(types)
         try:
-            res = cmd.finish(), len(types)
+            res = cmd.finish()
         except TokenUnfinishError as err:
-            res = err, len(types)
+            res = err
 
-        return (types, *res)
+        return (types, res, index)
 
     def suggest_command(self, tokens, target):
         cmd = self
@@ -545,8 +547,8 @@ class RootCommand(SubCommand):
 
 
 class InputError:
-    def __init__(self, pointto, message):
-        self.pointto = pointto
+    def __init__(self, index, message):
+        self.index = index
         self.message = message
 
 class InputResult:
@@ -584,7 +586,7 @@ class BeatInput:
 
             tokens.append((token, slic, ignored))
 
-        types, res, index = self.command.parse_command(token for token, _, _ in tokens)
+        types, _, _ = self.command.parse_command(token for token, _, _ in tokens)
         self.tokens = [(token, type, slic, ignored) for (token, slic, ignored), type in zip(tokens, types)]
 
     def autocomplete(self, action=+1):
@@ -690,8 +692,7 @@ class BeatInput:
             self.result.put(InputError(None, res.args[0]))
             return False
         elif isinstance(res, TokenParseError):
-            _, _, pointto, _ = self.tokens[index]
-            self.result.put(InputError(pointto, res.args[0]))
+            self.result.put(InputError(index, res.args[0]))
             return False
         else:
             self.history.append("".join(self.buffer))
@@ -1075,13 +1076,13 @@ class PromptTheme(metaclass=cfg.Configurable):
 
     escape_attr: str = "2"
     typeahead_attr: str = "2"
-    highlight_attr: str = "4"
     whitespace: str = "\x1b[2m⌴\x1b[m"
 
     token_unknown_attr: str = "31"
     token_command_attr: str = "94"
     token_argument_attr: str = "95"
     token_literal_attr: str = "92"
+    token_highlight_attr: str = "4"
 
 class BeatPrompt:
     def __init__(self, stroke, input, theme):
@@ -1090,15 +1091,22 @@ class BeatPrompt:
         self.theme = theme
         self.result = None
 
+    @dn.datanode
     def output_handler(self):
         size_node = dn.terminal_size()
         result_node = self.result_node()
         header_node = self.header_node()
         render_node = self.render_node()
         draw_node = self.draw_node()
-        return dn.pipe((lambda _: (None, None, None, None)),
-                       dn.pair(result_node, header_node, render_node, size_node),
-                       draw_node)
+        with size_node, result_node, header_node, render_node, draw_node:
+            yield
+            while True:
+                result = result_node.send(None)
+                header = header_node.send(None)
+                render = render_node.send(result)
+                size = size_node.send()
+                output_text = draw_node.send((result, header, render, size))
+                yield output_text
 
     @dn.datanode
     def result_node(self):
@@ -1157,15 +1165,16 @@ class BeatPrompt:
     @dn.datanode
     def render_node(self):
         escape_attr     = self.theme.escape_attr
-        typeahead_attr = self.theme.typeahead_attr
+        typeahead_attr  = self.theme.typeahead_attr
         whitespace      = self.theme.whitespace
 
         token_unknown_attr  = self.theme.token_unknown_attr
         token_command_attr  = self.theme.token_command_attr
         token_argument_attr = self.theme.token_argument_attr
         token_literal_attr  = self.theme.token_literal_attr
+        token_highlight_attr = self.theme.token_highlight_attr
 
-        yield
+        result = yield
         while True:
             # render buffer
             rendered_buffer = list(self.input.buffer)
@@ -1200,6 +1209,12 @@ class BeatPrompt:
                     for index in range(len(rendered_buffer))[slic]:
                         rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_literal_attr)
 
+            if isinstance(result, InputError) and result.index is not None:
+                # render highlighted token
+                _, _, slic, _ = self.input.tokens[result.index]
+                for index in range(len(rendered_buffer))[slic]:
+                    rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_highlight_attr)
+
             rendered_text = "".join(rendered_buffer)
 
             # render typeahead
@@ -1208,7 +1223,7 @@ class BeatPrompt:
             # compute cursor position
             _, cursor_pos = tui.textrange1(0, "".join(rendered_buffer[:self.input.pos]))
 
-            yield rendered_text, rendered_typeahead, cursor_pos
+            result = yield rendered_text, rendered_typeahead, cursor_pos
 
     @dn.datanode
     def draw_node(self):
@@ -1217,7 +1232,6 @@ class BeatPrompt:
         input_ran = slice(header_width, None)
 
         error_message_attr = self.theme.error_message_attr
-        highlight_attr = self.theme.highlight_attr
 
         input_offset = 0
         output_text = None
@@ -1270,17 +1284,6 @@ class BeatPrompt:
                         msg += "\n…"
 
                     err_text = "\n" + tui.add_attr(msg, error_message_attr) + err_text
-
-                # highlight
-                if result.pointto is not None:
-                    _, pointto_start = tui.textrange1(-input_offset, self.input.buffer[:result.pointto.start])
-                    _, pointto_stop = tui.textrange1(-input_offset, self.input.buffer[:result.pointto.stop])
-                    pointto_start = max(0, min(input_width-1, pointto_start))
-                    pointto_stop = max(1, min(input_width, pointto_stop))
-
-                    for index in range(input_ran.start+pointto_start, input_ran.start+pointto_stop):
-                        if view[index]:
-                            view[index] = tui.add_attr(view[index], highlight_attr)
 
             output_text = "\r" + "".join(view) + "\r" + err_text
 
