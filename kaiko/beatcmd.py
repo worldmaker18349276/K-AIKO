@@ -571,7 +571,7 @@ class BeatInput:
         self.tokens = []
         self.state = SHLEXER_STATE.SPACED
 
-        self.result = queue.Queue()
+        self.result = None
 
     def parse_syntax(self):
         tokenizer = shlexer_tokenize(self.buffer, partial=True)
@@ -678,7 +678,7 @@ class BeatInput:
     def enter(self):
         if len(self.tokens) == 0:
             self.delete_range(None, None)
-            self.result.put(InputError(None, None))
+            self.result = InputError(None, None)
             return False
 
         if self.state == SHLEXER_STATE.BACKSLASHED:
@@ -689,14 +689,14 @@ class BeatInput:
             _, res, index = self.command.parse_command(token for token, _, _, _ in self.tokens)
 
         if isinstance(res, TokenUnfinishError):
-            self.result.put(InputError(None, res.args[0]))
+            self.result = InputError(None, res.args[0])
             return False
         elif isinstance(res, TokenParseError):
-            self.result.put(InputError(index, res.args[0]))
+            self.result = InputError(index, res.args[0])
             return False
         else:
             self.history.append("".join(self.buffer))
-            self.result.put(InputResult(res))
+            self.result = InputResult(res)
             return True
 
     def cancel(self):
@@ -722,7 +722,7 @@ class BeatInput:
         return True
 
     def error(self, message):
-        self.result.put(InputError(None, message))
+        self.result = InputError(None, message)
         return True
 
     def backspace(self):
@@ -971,6 +971,7 @@ class BeatStroke:
     def __init__(self, input, keymap, keycodes):
         self.input = input
         self.event = threading.Event()
+        self.queue = queue.Queue()
         self.keymap = keymap
         self.keycodes = keycodes
         self.state = INPUT_STATE.EDIT
@@ -978,8 +979,14 @@ class BeatStroke:
     @dn.datanode
     def input_handler(self):
         while True:
-            _, key = yield
+            time, key = yield
+            self.queue.put((time, key))
             self.event.set()
+
+    @dn.datanode
+    def stroke_handler(self):
+        while True:
+            _, key = yield
 
             # completions
             while key == self.keycodes["Tab"] or key == self.keycodes["Shift+Tab"]:
@@ -1094,14 +1101,14 @@ class BeatPrompt:
     @dn.datanode
     def output_handler(self):
         size_node = dn.terminal_size()
-        result_node = self.result_node()
+        stroke_node = self.stroke_node()
         header_node = self.header_node()
         render_node = self.render_node()
         draw_node = self.draw_node()
-        with size_node, result_node, header_node, render_node, draw_node:
+        with size_node, stroke_node, header_node, render_node, draw_node:
             yield
             while True:
-                result = result_node.send(None)
+                result = stroke_node.send(None)
                 header = header_node.send(None)
                 render = render_node.send(result)
                 size = size_node.send()
@@ -1109,18 +1116,22 @@ class BeatPrompt:
                 yield output_text
 
     @dn.datanode
-    def result_node(self):
-        yield
-        while True:
-            result = None
-            if not self.input.result.empty():
-                result = self.input.result.get()
+    def stroke_node(self):
+        stroke_handler = self.stroke.stroke_handler()
+        with stroke_handler:
+            yield
+            while True:
+                while not self.stroke.queue.empty():
+                    stroke_handler.send(self.stroke.queue.get())
 
-            yield result
+                result = self.input.result
+                self.input.result = None
 
-            if isinstance(result, InputResult):
-                self.result = result.value
-                return
+                yield result
+
+                if isinstance(result, InputResult):
+                    self.result = result.value
+                    return
 
     @dn.datanode
     def header_node(self):
