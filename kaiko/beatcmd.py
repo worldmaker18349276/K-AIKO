@@ -761,14 +761,14 @@ class BeatInput:
         return True
 
     def delete_to_word_start(self):
-        for match in re.finditer("\w+|.", "".join(self.buffer)):
+        for match in re.finditer("\w+|\W+", "".join(self.buffer)):
             if match.end() >= self.pos:
                 return self.delete_range(match.start(), self.pos)
         else:
             return self.delete_range(None, self.pos)
 
     def delete_to_word_end(self):
-        for match in re.finditer("\w+|.", "".join(self.buffer)):
+        for match in re.finditer("\w+|\W+", "".join(self.buffer)):
             if match.end() > self.pos:
                 return self.delete_range(self.pos, match.end())
         else:
@@ -800,14 +800,14 @@ class BeatInput:
         return self.move_to(None)
 
     def move_to_word_start(self):
-        for match in re.finditer("\w+|.", "".join(self.buffer)):
+        for match in re.finditer("\w+|\W+", "".join(self.buffer)):
             if match.end() >= self.pos:
                 return self.move_to(match.start())
         else:
             return self.move_to(0)
 
     def move_to_word_end(self):
-        for match in re.finditer("\w+|.", "".join(self.buffer)):
+        for match in re.finditer("\w+|\W+", "".join(self.buffer)):
             if match.end() > self.pos:
                 return self.move_to(match.end())
         else:
