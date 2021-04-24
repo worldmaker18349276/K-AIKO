@@ -551,6 +551,11 @@ class InputError:
         self.index = index
         self.message = message
 
+class InputMessage:
+    def __init__(self, index, message):
+        self.index = index
+        self.message = message
+
 class InputResult:
     def __init__(self, value):
         self.value = value
@@ -571,6 +576,7 @@ class BeatInput:
         self.tokens = []
         self.state = SHLEXER_STATE.SPACED
 
+        self.resulted_tokens = None
         self.result = None
 
     def parse_syntax(self):
@@ -675,10 +681,56 @@ class BeatInput:
 
         return True
 
+    def index(self):
+        for index, (_, _, slic, _) in enumerate(self.tokens):
+            if slic.start <= self.pos:
+                return index
+        return None
+
+    def error(self, message, index=None):
+        if index is not None:
+            self.resulted_tokens = self.tokens[:index+1]
+            self.result = InputError(index, message)
+        else:
+            self.resulted_tokens = self.tokens[:]
+            self.result = InputError(None, message)
+        return True
+
+    def message(self, message, index=None):
+        if index is not None:
+            self.resulted_tokens = self.tokens[:index+1]
+            self.result = InputMessage(index, message)
+        else:
+            self.resulted_tokens = self.tokens[:]
+            self.result = InputMessage(None, message)
+        return True
+
+    def cancel_message(self):
+        self.resulted_tokens = None
+        self.result = None
+        return True
+
+    def update_message(self):
+        if self.resulted_tokens is None:
+            return False
+
+        if len(self.resulted_tokens) > len(self.tokens):
+            self.resulted_tokens = None
+            self.result = None
+            return True
+
+        for t1, t2 in zip(self.resulted_tokens, self.tokens):
+            if t1[0] != t2[0]:
+                self.resulted_tokens = None
+                self.result = None
+                return True
+
+        return False
+
     def enter(self):
         if len(self.tokens) == 0:
             self.delete_range(None, None)
-            self.result = InputError(None, None)
+            self.error(None)
             return False
 
         if self.state == SHLEXER_STATE.BACKSLASHED:
@@ -689,10 +741,10 @@ class BeatInput:
             _, res, index = self.command.parse_command(token for token, _, _, _ in self.tokens)
 
         if isinstance(res, TokenUnfinishError):
-            self.result = InputError(None, res.args[0])
+            self.error(res.args[0])
             return False
         elif isinstance(res, TokenParseError):
-            self.result = InputError(index, res.args[0])
+            self.error(res.args[0], index)
             return False
         else:
             self.history.append("".join(self.buffer))
@@ -700,6 +752,8 @@ class BeatInput:
             return True
 
     def cancel(self):
+        self.typeahead = ""
+        self.cancel_message()
         return False
 
     def input(self, text):
@@ -718,11 +772,8 @@ class BeatInput:
         self.parse_syntax()
 
         self.make_typeahead(True)
+        self.update_message()
 
-        return True
-
-    def error(self, message):
-        self.result = InputError(None, message)
         return True
 
     def backspace(self):
@@ -733,6 +784,7 @@ class BeatInput:
         del self.buffer[self.pos]
         self.parse_syntax()
         self.make_typeahead(False)
+        self.update_message()
 
         return True
 
@@ -743,6 +795,7 @@ class BeatInput:
         del self.buffer[self.pos]
         self.parse_syntax()
         self.make_typeahead(False)
+        self.update_message()
 
         return True
 
@@ -757,6 +810,7 @@ class BeatInput:
         self.pos = start
         self.parse_syntax()
         self.make_typeahead(False)
+        self.update_message()
 
         return True
 
@@ -822,6 +876,7 @@ class BeatInput:
         self.pos = len(self.buffer)
         self.parse_syntax()
         self.make_typeahead(False)
+        self.cancel_message()
 
         return True
 
@@ -834,6 +889,7 @@ class BeatInput:
         self.pos = len(self.buffer)
         self.parse_syntax()
         self.make_typeahead(False)
+        self.cancel_message()
 
         return True
 
@@ -1080,6 +1136,7 @@ class PromptTheme(metaclass=cfg.Configurable):
     cursor_tab: str = "↹ "
 
     error_message_attr: str = "31"
+    message_trim_to_lines: int = 8
 
     escape_attr: str = "2"
     typeahead_attr: str = "2"
@@ -1100,35 +1157,37 @@ class BeatPrompt:
 
     @dn.datanode
     def output_handler(self):
-        size_node = dn.terminal_size()
-        stroke_node = self.stroke_node()
-        header_node = self.header_node()
-        render_node = self.render_node()
-        draw_node = self.draw_node()
-        with size_node, stroke_node, header_node, render_node, draw_node:
-            yield
-            while True:
-                result = stroke_node.send(None)
-                header = header_node.send(None)
-                render = render_node.send(result)
-                size = size_node.send()
-                output_text = draw_node.send((result, header, render, size))
-                yield output_text
-
-    @dn.datanode
-    def stroke_node(self):
         stroke_handler = self.stroke.stroke_handler()
-        with stroke_handler:
+        size_node = dn.terminal_size()
+        header_node = self.header_node()
+        text_node = self.text_node()
+        message_node = self.message_node()
+        render_node = self.render_node()
+        with stroke_handler, size_node, header_node, text_node, message_node, render_node:
             yield
             while True:
+                # deal with keystrokes
                 while not self.stroke.queue.empty():
                     stroke_handler.send(self.stroke.queue.get())
-
                 result = self.input.result
-                self.input.result = None
 
-                yield result
+                size = size_node.send()
 
+                # draw message
+                msg_data, clean, highlighted = message_node.send(result)
+
+                # draw header
+                header_data = header_node.send(clean)
+
+                # draw text
+                text_data = text_node.send((clean, highlighted))
+
+                # render
+                output_text = render_node.send((result, header_data, text_data, msg_data, size))
+
+                yield output_text
+
+                # end
                 if isinstance(result, InputResult):
                     self.result = result.value
                     return
@@ -1145,7 +1204,7 @@ class BeatPrompt:
         cursor_tab = self.theme.cursor_tab
         cursor_blink_ratio = self.theme.cursor_blink_ratio
 
-        yield
+        clean = yield
         t = t0/(60/tempo)
         tr = 0
         while True:
@@ -1155,7 +1214,7 @@ class BeatPrompt:
                 tr = t // -1 * -1
 
             # render cursor
-            if (t-tr < 0 or (t-tr) % 1 < cursor_blink_ratio):
+            if not clean and (t-tr < 0 or (t-tr) % 1 < cursor_blink_ratio):
                 if t % 4 < cursor_blink_ratio:
                     cursor = lambda s: tui.add_attr(s, cursor_attr[1])
                 else:
@@ -1170,11 +1229,46 @@ class BeatPrompt:
             ind = int(t / 4 * len(headers)) % len(headers)
             header = headers[ind]
 
-            yield header, cursor
+            clean = yield header, cursor
             t += 1/framerate/(60/tempo)
 
     @dn.datanode
-    def render_node(self):
+    def message_node(self):
+        message_trim_to_lines = self.theme.message_trim_to_lines
+        error_message_attr = self.theme.error_message_attr
+        clear = False
+
+        result = yield
+        while True:
+            clean = isinstance(result, (InputError, InputResult))
+
+            if not isinstance(result, (InputError, InputMessage)):
+                result = yield ("", clear, False), clean, None
+                clear = False
+                continue
+
+            # render message
+            msg = result.message or ""
+            msg = "\n".join(msg.split("\n")[:message_trim_to_lines])
+            if msg.count("\n") >= message_trim_to_lines:
+                msg += "\n…"
+            if isinstance(result, InputError):
+                msg = tui.add_attr(msg, error_message_attr)
+            msg = "\n" + msg + ("\n" if msg else "")
+            moveback = isinstance(result, InputMessage)
+
+            # track changes of the result
+            shown_result = result
+            result = yield (msg, clear, moveback), clean, shown_result.index
+            clear = False
+            while shown_result == result:
+                result = yield ("", False, False), False, shown_result.index
+
+            if isinstance(shown_result, InputMessage):
+                clear = True
+
+    @dn.datanode
+    def text_node(self):
         escape_attr     = self.theme.escape_attr
         typeahead_attr  = self.theme.typeahead_attr
         whitespace      = self.theme.whitespace
@@ -1185,7 +1279,7 @@ class BeatPrompt:
         token_literal_attr  = self.theme.token_literal_attr
         token_highlight_attr = self.theme.token_highlight_attr
 
-        result = yield
+        clean, highlighted = yield
         while True:
             # render buffer
             rendered_buffer = list(self.input.buffer)
@@ -1200,9 +1294,9 @@ class BeatPrompt:
                     if rendered_buffer[index] == " ":
                         rendered_buffer[index] = whitespace
 
-                # render unknown token except the unfinished one
+                # render unknown token
                 if type is TOKEN_TYPE.UNKNOWN:
-                    if slic.stop is not None or isinstance(result, (InputError, InputResult)):
+                    if slic.stop is not None or clean:
                         for index in range(len(rendered_buffer))[slic]:
                             rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_unknown_attr)
 
@@ -1221,35 +1315,34 @@ class BeatPrompt:
                     for index in range(len(rendered_buffer))[slic]:
                         rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_literal_attr)
 
-            if isinstance(result, InputError) and result.index is not None:
+            if highlighted in range(len(self.input.tokens)):
                 # render highlighted token
-                _, _, slic, _ = self.input.tokens[result.index]
+                _, _, slic, _ = self.input.tokens[highlighted]
                 for index in range(len(rendered_buffer))[slic]:
                     rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_highlight_attr)
 
             rendered_text = "".join(rendered_buffer)
 
             # render typeahead
-            rendered_typeahead = tui.add_attr(self.input.typeahead, typeahead_attr) if self.input.typeahead else ""
+            if self.input.typeahead and not clean:
+                rendered_text += tui.add_attr(self.input.typeahead, typeahead_attr)
 
             # compute cursor position
             _, cursor_pos = tui.textrange1(0, "".join(rendered_buffer[:self.input.pos]))
 
-            result = yield rendered_text, rendered_typeahead, cursor_pos
+            clean, highlighted = yield rendered_text, cursor_pos
 
     @dn.datanode
-    def draw_node(self):
+    def render_node(self):
         header_width = self.theme.header_width
         header_ran = slice(None, header_width)
         input_ran = slice(header_width, None)
-
-        error_message_attr = self.theme.error_message_attr
 
         input_offset = 0
         output_text = None
 
         while True:
-            result, (header, cursor), (text, typeahead, cursor_pos), size = yield output_text
+            result, (header, cursor), (text, cursor_pos), (msg, clear, moveback), size = yield output_text
             width = size.columns
             view = tui.newwin1(width)
 
@@ -1265,8 +1358,7 @@ class BeatPrompt:
                 input_offset = max(0, text_length-input_width+1)
 
             # draw input
-            text_ = text + (typeahead if not result else "")
-            tui.addtext1(view, width, input_ran.start-input_offset, text_, input_ran)
+            tui.addtext1(view, width, input_ran.start-input_offset, text, input_ran)
             if input_offset > 0:
                 tui.addtext1(view, width, input_ran.start, "…", input_ran)
             if text_length-input_offset >= input_width:
@@ -1276,7 +1368,7 @@ class BeatPrompt:
             tui.addtext1(view, width, 0, header, header_ran)
 
             # draw cursor
-            if not result and cursor:
+            if cursor:
                 cursor_x = input_ran.start - input_offset + cursor_pos
                 cursor_ran = tui.select1(view, width, slice(cursor_x, cursor_x+1))
                 if hasattr(cursor, '__call__'):
@@ -1285,19 +1377,14 @@ class BeatPrompt:
                     tui.addtext1(view, width, cursor_ran.start, cursor, input_ran)
 
             # print error
-            err_text = ""
-            if isinstance(result, InputError):
-                err_text = "\n"
+            if moveback:
+                _, y = tui.pmove(width, 0, msg)
+                if y != 0:
+                    msg = msg + f"\x1b[{y}A"
+            if clear:
+                msg = "\n\x1b[J\x1b[A" + msg
 
-                if result.message is not None:
-                    trim_lines = 8
-                    msg = "\n".join(result.message.split("\n")[:trim_lines])
-                    if result.message.count("\n") >= trim_lines:
-                        msg += "\n…"
-
-                    err_text = "\n" + tui.add_attr(msg, error_message_attr) + err_text
-
-            output_text = "\r" + "".join(view) + "\r" + err_text
+            output_text = "\r" + "".join(view) + "\r" + msg
 
 def prompt(promptable, history=None):
     theme = PromptTheme()
