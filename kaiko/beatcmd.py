@@ -2,6 +2,7 @@ import os
 from enum import Enum
 from collections import OrderedDict
 import functools
+import itertools
 import re
 import queue
 import threading
@@ -13,28 +14,47 @@ from . import tui
 from . import cfg
 
 
-def fit_ratio(target, full):
-    if full == "" and target == "":
-        return 1.0
-    full = full.lower()
-    index = 0
-    n = 0.0
-    try:
-        for ch in target:
-            index_ = full.index(ch.lower(), index)
-            n += (1.0 if full[index_] == ch else 0.75) / (index_-index+1)
-            index = index_ + 1
+def masks_key(masks):
+    return tuple(slic.stop-slic.start for slic in masks), (-masks[-1].stop if masks else 0)
 
-        return n/len(full)
-    except ValueError:
-        return 0.0
+def fit_masks(part, full):
+    def substr_treeiter(part, full, start=0):
+        if part == "":
+            return
+        head = part[0]
+        tail = part[1:]
+        for i in range(start, len(full)):
+            if full[i] == head:
+                yield i, substr_treeiter(tail, full, i+1)
 
-def fit(target, options):
-    if target == "":
+    def subsec_treeiter(treeiter, index=0, sec=(slice(0,0),)):
+        for i, nextiter in treeiter:
+            if i == index:
+                sec_ = (*sec[:-1], slice(sec[-1].start, i+1))
+            else:
+                sec_ = (*sec, slice(i, i+1))
+            yield sec_, subsec_treeiter(nextiter, i+1, sec_)
+
+    def sorted_subsec_iter(treeiters, depth):
+        if depth == 0:
+            yield from sorted([sec for sec, _ in treeiters], key=masks_key)
+            return
+        treeiters_ = [item for _, nextiters in treeiters for item in nextiters]
+        treeiters_ = sorted(treeiters_, key=lambda e:masks_key(e[0]), reverse=True)
+        for _, nextiters in itertools.groupby(treeiters_, lambda e:masks_key(e[0])):
+            yield from sorted_subsec_iter(nextiters, depth-1)
+
+    return sorted_subsec_iter([((), subsec_treeiter(substr_treeiter(part, full)))], len(part))
+
+def fit(part, options):
+    if part == "":
         return options
-    weighted_options = [(fit_ratio(target, opt), opt) for opt in options]
-    sorted_options = sorted(weighted_options, reverse=True)
-    return [opt for weight, opt in sorted_options if weight != 0.0]
+
+    masked_options = [(next(fit_masks(part.lower(), opt.lower()), ()), opt) for opt in options]
+    masked_options = [(m, opt) for m, opt in masked_options if m != ()]
+
+    masked_options = sorted(masked_options, key=lambda e:(masks_key(e[0]), -len(e[1])), reverse=True)
+    return [opt for m, opt in masked_options]
 
 class SHLEXER_STATE(Enum):
     SPACED = " "
