@@ -565,6 +565,15 @@ class RootCommand(SubCommand):
                 cmd = UnknownCommand()
         return cmd.suggest(target)
 
+    def help_command(self, tokens, target):
+        cmd = self
+        for token in tokens:
+            try:
+                _, cmd = cmd.parse(token)
+            except TokenParseError as err:
+                cmd = UnknownCommand()
+        return cmd.help(target)
+
 
 class InputError:
     def __init__(self, index, message):
@@ -702,7 +711,7 @@ class BeatInput:
         return True
 
     def index(self):
-        for index, (_, _, slic, _) in enumerate(self.tokens):
+        for index, (_, _, slic, _) in reversed(list(enumerate(self.tokens))):
             if slic.start <= self.pos:
                 return index
         return None
@@ -746,6 +755,16 @@ class BeatInput:
                 return True
 
         return False
+
+    def help(self):
+        index = self.index()
+        if index is None:
+            return False
+        msg = self.command.help_command([token for token, _, _, _ in self.tokens[:index]], self.tokens[index])
+        if msg is None:
+            return False
+        self.message(msg, index)
+        return True
 
     def enter(self):
         if len(self.tokens) == 0:
@@ -1033,6 +1052,7 @@ default_keymap = {
           "End": lambda input: input.move_to_end(),
         "Enter": lambda input: input.enter(),
           "Esc": lambda input: input.cancel(),
+    "Alt+Enter": lambda input: input.help(),
          "Ctrl+Left": lambda input: input.move_to_word_start(),
         "Ctrl+Right": lambda input: input.move_to_word_end(),
     "Ctrl+Backspace": lambda input: input.delete_to_word_start(),
@@ -1269,9 +1289,8 @@ class BeatPrompt:
 
             # render message
             msg = result.message or ""
-            msg = "\n".join(msg.split("\n")[:message_trim_to_lines])
             if msg.count("\n") >= message_trim_to_lines:
-                msg += "\n…"
+                msg = "\n".join(msg.split("\n")[:message_trim_to_lines]) + "\n…"
             if isinstance(result, InputError):
                 msg = tui.add_attr(msg, error_message_attr)
             msg = "\n" + msg + ("\n" if msg else "")
