@@ -253,9 +253,10 @@ class LiteralParser:
         return None
 
 class OptionParser(LiteralParser):
-    def __init__(self, options, default):
+    def __init__(self, options, default=inspect.Parameter.empty, docs=None):
         self.options = options
         self.default = default
+        self.docs = docs
 
     def parse(self, token):
         if token not in self.options:
@@ -267,17 +268,20 @@ class OptionParser(LiteralParser):
         return [(val, False) for val in fit(token, self.options)]
 
     def help(self, token):
+        if self.docs:
+            return self.docs
         return "It should be one of:\n" + "\n".join("  " + shlexer_quoting(s) for s in self.options)
 
 class BoolParser(LiteralParser):
-    def __init__(self, default):
+    def __init__(self, default=inspect.Parameter.empty, docs=None):
         self.default = default
+        self.docs = docs
 
     def parse(self, token):
         if not re.fullmatch("True|False", token):
             help = self.help(token)
             raise TokenParseError("Invalid value" + ("\n" + help if help is not None else ""))
-        return bool(token)
+        return token == "True"
 
     def suggest(self, token):
         if self.default is inspect.Parameter.empty or self.default == True:
@@ -286,11 +290,14 @@ class BoolParser(LiteralParser):
             return [(val, False) for val in fit(token, ["False", "True"])]
 
     def help(self, token):
+        if self.docs:
+            return self.docs
         return "It should be bool literal"
 
 class IntParser(LiteralParser):
-    def __init__(self, default):
+    def __init__(self, default=inspect.Parameter.empty, docs=None):
         self.default = default
+        self.docs = docs
 
     def parse(self, token):
         if not re.fullmatch(r"[-+]?(0|[1-9][0-9]*)", token):
@@ -305,11 +312,14 @@ class IntParser(LiteralParser):
             return [(val, False) for val in fit(token, [str(self.default)])]
 
     def help(self, token):
+        if self.docs:
+            return self.docs
         return "It should be int literal"
 
 class FloatParser(LiteralParser):
-    def __init__(self, default):
+    def __init__(self, default=inspect.Parameter.empty, docs=None):
         self.default = default
+        self.docs = docs
 
     def parse(self, token):
         if not re.fullmatch(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)", token):
@@ -324,11 +334,14 @@ class FloatParser(LiteralParser):
             return [(val, False) for val in fit(token, [str(self.default)])]
 
     def help(self, token):
+        if self.docs:
+            return self.docs
         return "It should be float literal"
 
 class StrParser(LiteralParser):
-    def __init__(self, default):
+    def __init__(self, default=inspect.Parameter.empty, docs=None):
         self.default = default
+        self.docs = docs
 
     def parse(self, token):
         return token
@@ -340,11 +353,14 @@ class StrParser(LiteralParser):
             return [(val, False) for val in fit(token, [self.default])]
 
     def help(self, token):
+        if self.docs:
+            return self.docs
         return "It should be str literal"
 
 class PathParser(LiteralParser):
-    def __init__(self, default):
+    def __init__(self, default=inspect.Parameter.empty, docs=None):
         self.default = default
+        self.docs = docs
 
     def parse(self, token):
         try:
@@ -398,6 +414,8 @@ class PathParser(LiteralParser):
         return suggestions
 
     def help(self, token):
+        if self.docs:
+            return self.docs
         return "It should be Path literal"
 
 
