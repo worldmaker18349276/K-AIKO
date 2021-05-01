@@ -179,11 +179,58 @@ class KAIKOGame:
         print("bye~")
         raise KeyboardInterrupt
 
+    @staticmethod
+    def fit_screen(width, delay=1.0):
+        import time
+
+        @dn.datanode
+        def fit():
+            size = yield
+            current_width = 0
+
+            if size.columns < width:
+                t = time.time()
+
+                print("The screen size seems too small.")
+                print(f"Can you adjust the screen size to (or bigger than) {width}?")
+                print("Or you can try to fit the line below.")
+                print("━"*width)
+
+                while current_width < width or time.time() < t+delay:
+                    if current_width != size.columns:
+                        current_width = size.columns
+                        t = time.time()
+                        if current_width < width - 5:
+                            hint = "(too small!)"
+                        elif current_width < width:
+                            hint = "(very close!)"
+                        elif current_width == width:
+                            hint = "(perfect!)"
+                        else:
+                            hint = "(great!)"
+                        print(f"\r\x1b[KCurrent width: {current_width} {hint}", end="", flush=True)
+
+                    size = yield
+
+                print("\nThanks!\n")
+
+                # sleep
+                t = time.time()
+                while time.time() < t+delay:
+                    yield
+
+        dn.exhaust(dn.pipe(dn.terminal_size(), fit()), dt=0.1)
+
     @classmethod
     @contextlib.contextmanager
     def init(clz, theme_path=None):
+        screen_size = 80
+
         # print logo
         print(logo, flush=True)
+
+        # fit screen size
+        clz.fit_screen(screen_size)
 
         # load theme
         theme = KAIKOTheme()

@@ -1289,9 +1289,9 @@ class BeatPrompt:
 
             # render message
             msg = result.message or ""
-            if msg.count("\n") >= message_trim_to_lines:
-                msg = "\n".join(msg.split("\n")[:message_trim_to_lines]) + "\n…"
             if isinstance(result, InputError):
+                if msg.count("\n") >= message_trim_to_lines:
+                    msg = "\n".join(msg.split("\n")[:message_trim_to_lines]) + "\n…"
                 msg = tui.add_attr(msg, error_message_attr)
             msg = "\n" + msg + ("\n" if msg else "")
             moveback = isinstance(result, InputMessage)
