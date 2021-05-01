@@ -165,6 +165,21 @@ def shlexer_quoting(compreply, partial=False, state=SHLEXER_STATE.SPACED):
     return compreply if partial else compreply + " "
 
 def echo_str(escaped_str):
+    r"""
+    It interprets the following backslash-escaped characters like bash's echo:
+        \a     alert (bell)
+        \b     backspace
+        \c     suppress further output
+        \e     escape character
+        \f     form feed
+        \n     new line
+        \r     carriage return
+        \t     horizontal tab
+        \v     vertical tab
+        \\     backslash
+        \0nnn  the character whose ASCII code is NNN (octal).  NNN can be 0 to 3 octal digits
+        \xHH   the eight-bit character whose value is HH (hexadecimal).  HH can be one or two hex digits
+    """
     regex = r"\\c.*|\\[\\abefnrtv]|\\0[0-7]{0,3}|\\x[0-9a-fA-F]{1,2}|."
 
     escaped = {
@@ -209,73 +224,145 @@ class TOKEN_TYPE(Enum):
     UNKNOWN = "unknown"
 
 
-def function_command(proxy=None, **annotations):
-    if proxy is None:
-        return functools.partial(function_command, **annotations)
-    return FunctionCommandDescriptor(proxy, annotations)
-
-def subcommand(proxy):
-    return SubCommandDescriptor(proxy)
-
-class CommandDescriptor:
-    def __init__(self, proxy):
-        self.proxy = proxy
-
-    def __get__(self, instance, owner):
-        return self.proxy.__get__(instance, owner)
-
-    def __get_command__(self, instance, owner):
-        raise NotImplementedError
-
-class FunctionCommandDescriptor(CommandDescriptor):
-    def __init__(self, proxy, annotations):
-        super(FunctionCommandDescriptor, self).__init__(proxy)
-        self.annotations = annotations
-
-    def __get_command__(self, instance, owner):
-        func = self.proxy.__get__(instance, owner)
-        annotations = {key: value.__get__(instance, owner) for key, value in self.annotations.items()}
-
-        sig = inspect.signature(func)
-        args = OrderedDict()
-        kwargs = OrderedDict()
-        for param in sig.parameters.values():
-            type = annotations.get(param.name, param.annotation)
-            arg = (type, param.default)
-
-            if param.default is inspect.Parameter.empty:
-                args[param.name] = arg
-            else:
-                kwargs[param.name] = arg
-
-        return FunctionCommand(func, args, kwargs)
-
-class SubCommandDescriptor(CommandDescriptor):
-    def __get_command__(self, instance, owner):
-        parent = self.proxy.__get__(instance, owner)
-        fields = [k for k, v in type(parent).__dict__.items() if isinstance(v, CommandDescriptor)]
-        return SubCommand(parent, fields)
-
-class Command:
+class LiteralParser:
     @staticmethod
-    def parse_path(token):
+    def wrap(type, default=inspect.Parameter.empty):
+        if isinstance(type, (list, tuple)):
+            return OptionParser(type, default)
+        elif type == bool:
+            return BoolParser(default)
+        elif type == int:
+            return IntParser(default)
+        elif type == float:
+            return FloatParser(default)
+        elif type == str:
+            return StrParser(default)
+        elif type == Path:
+            return PathParser(default)
+        else:
+            return None
+
+    def parse(self, token):
+        help = self.help(token)
+        raise TokenParseError("Invalid value" + ("\n" + help if help is not None else ""))
+
+    def suggest(self, token):
+        return []
+
+    def help(self, token):
+        return None
+
+class OptionParser(LiteralParser):
+    def __init__(self, options, default):
+        self.options = options
+        self.default = default
+
+    def parse(self, token):
+        if token not in self.options:
+            help = self.help(token)
+            raise TokenParseError("Invalid value" + ("\n" + help if help is not None else ""))
+        return token
+
+    def suggest(self, token):
+        return [(val, False) for val in fit(token, self.options)]
+
+    def help(self, token):
+        return "It should be one of:\n" + "\n".join("  " + shlexer_quoting(s) for s in self.options)
+
+class BoolParser(LiteralParser):
+    def __init__(self, default):
+        self.default = default
+
+    def parse(self, token):
+        if not re.fullmatch("True|False", token):
+            help = self.help(token)
+            raise TokenParseError("Invalid value" + ("\n" + help if help is not None else ""))
+        return bool(token)
+
+    def suggest(self, token):
+        if self.default is inspect.Parameter.empty or self.default == True:
+            return [(val, False) for val in fit(token, ["True", "False"])]
+        else:
+            return [(val, False) for val in fit(token, ["False", "True"])]
+
+    def help(self, token):
+        return "It should be bool literal"
+
+class IntParser(LiteralParser):
+    def __init__(self, default):
+        self.default = default
+
+    def parse(self, token):
+        if not re.fullmatch(r"[-+]?(0|[1-9][0-9]*)", token):
+            help = self.help(token)
+            raise TokenParseError("Invalid value" + ("\n" + help if help is not None else ""))
+        return int(token)
+
+    def suggest(self, token):
+        if self.default is inspect.Parameter.empty:
+            return []
+        else:
+            return [(val, False) for val in fit(token, [str(self.default)])]
+
+    def help(self, token):
+        return "It should be int literal"
+
+class FloatParser(LiteralParser):
+    def __init__(self, default):
+        self.default = default
+
+    def parse(self, token):
+        if not re.fullmatch(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)", token):
+            help = self.help(token)
+            raise TokenParseError("Invalid value" + ("\n" + help if help is not None else ""))
+        return float(token)
+
+    def suggest(self, token):
+        if self.default is inspect.Parameter.empty:
+            return []
+        else:
+            return [(val, False) for val in fit(token, [str(self.default)])]
+
+    def help(self, token):
+        return "It should be float literal"
+
+class StrParser(LiteralParser):
+    def __init__(self, default):
+        self.default = default
+
+    def parse(self, token):
+        return token
+
+    def suggest(self, token):
+        if self.default is inspect.Parameter.empty:
+            return []
+        else:
+            return [(val, False) for val in fit(token, [self.default])]
+
+    def help(self, token):
+        return "It should be str literal"
+
+class PathParser(LiteralParser):
+    def __init__(self, default):
+        self.default = default
+
+    def parse(self, token):
         try:
             exists = os.path.exists(token or ".")
         except ValueError:
             exists = False
 
         if not exists:
-            help = Command.help_lit(token, Path)
+            help = self.help(token)
             raise TokenParseError("Path does not exist" + ("\n" + help if help is not None else ""))
 
         return Path(token)
 
-    @staticmethod
-    def suggest_path(token, default=inspect.Parameter.empty):
+    def suggest(self, token):
         suggestions = []
 
-        if default is not inspect.Parameter.empty:
-            suggestions.append((str(default), False))
+        if self.default is not inspect.Parameter.empty:
+            suggestions.append((str(self.default), False))
 
         # check path
         try:
@@ -310,95 +397,59 @@ class Command:
 
         return suggestions
 
+    def help(self, token):
+        return "It should be Path literal"
+
+
+class CommandDescriptor:
+    def __init__(self, proxy):
+        self.proxy = proxy
+
+    def __get__(self, instance, owner):
+        return self.proxy.__get__(instance, owner)
+
+    def __get_command__(self, instance, owner):
+        raise NotImplementedError
+
+class function_command(CommandDescriptor):
+    def __init__(self, proxy):
+        super(function_command, self).__init__(proxy)
+        self.parsers = {}
+
+    def __get_command__(self, instance, owner):
+        func = self.proxy.__get__(instance, owner)
+        parsers = {key: value.__get__(instance, owner) for key, value in self.parsers.items()}
+
+        sig = inspect.signature(func)
+        args = OrderedDict()
+        kwargs = OrderedDict()
+        for param in sig.parameters.values():
+            arg = parsers.get(param.name, LiteralParser.wrap(param.annotation, param.default))
+
+            if param.default is inspect.Parameter.empty:
+                args[param.name] = arg
+            else:
+                kwargs[param.name] = arg
+
+        return FunctionCommand(func, args, kwargs)
+
+    def arg_parser(self, name):
+        def arg_parser_dec(parser):
+            self.parsers[name] = parser
+            return parser
+        return arg_parser_dec
+
+class subcommand(CommandDescriptor):
+    def __get_command__(self, instance, owner):
+        parent = self.proxy.__get__(instance, owner)
+        fields = [k for k, v in type(parent).__dict__.items() if isinstance(v, CommandDescriptor)]
+        return SubCommand(parent, fields)
+
+
+class Command:
     @staticmethod
-    def parse_lit(token, type):
-        def raise_err():
-            help = Command.help_lit(token, type)
-            raise TokenParseError("Invalid value" + ("\n" + help if help is not None else ""))
-
-        if isinstance(type, (tuple, list)):
-            if token not in type:
-                raise_err()
-            return token
-
-        elif type == bool:
-            if not re.fullmatch("True|False", token):
-                raise_err()
-            return bool(token)
-
-        elif type == int:
-            if not re.fullmatch(r"[-+]?(0|[1-9][0-9]*)", token):
-                raise_err()
-            return int(token)
-
-        elif type == float:
-            if not re.fullmatch(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)", token):
-                raise_err()
-            return float(token)
-
-        elif type == str:
-            return token
-
-        elif type == Path:
-            return Command.parse_path(token)
-
-        elif hasattr(type, 'parse'):
-            return type.parse(token)
-
-        else:
-            raise_err()
-
-    @staticmethod
-    def suggest_lit(token, type, default=inspect.Parameter.empty):
-        if isinstance(type, (tuple, list)):
-            return [(val, False) for val in fit(token, type)]
-
-        elif type == bool:
-            if default is inspect.Parameter.empty or default == True:
-                return [(val, False) for val in fit(token, ["True", "False"])]
-            else:
-                return [(val, False) for val in fit(token, ["False", "True"])]
-
-        elif type == int:
-            if default is inspect.Parameter.empty:
-                return []
-            else:
-                return [(val, False) for val in fit(token, [str(default)])]
-
-        elif type == float:
-            if default is inspect.Parameter.empty:
-                return []
-            else:
-                return [(val, False) for val in fit(token, [str(default)])]
-
-        elif type == str:
-            if default is inspect.Parameter.empty:
-                return []
-            else:
-                return [(val, False) for val in fit(token, [default])]
-
-        elif type == Path:
-            return Command.suggest_path(token, default)
-
-        elif hasattr(type, 'suggest'):
-            return type.suggest(token, default)
-
-        else:
-            return []
-
-    @staticmethod
-    def help_lit(token, type):
-        if isinstance(type, (tuple, list)):
-            return "It should be one of:\n" + "\n".join("  " + shlexer_quoting(s) for s in type)
-
-        elif type in (bool, int, float, str, Path):
-            return f"It should be {type.__name__} literal"
-
-        elif hasattr(type, 'help'):
-            return type.help(token)
-
-        else:
-            return None
+    def help_option(token, options):
+        return "It should be one of:\n" + "\n".join("  " + shlexer_quoting(s) for s in options)
 
     def finish(self):
         raise NotImplementedError
@@ -433,8 +484,8 @@ class FunctionCommand(Command):
 
     def finish(self):
         if self.args:
-            type, default = next(iter(self.args.values()))
-            help = Command.help_lit(None, type)
+            parser = next(iter(self.args.values()))
+            help = parser.help(None)
             msg = "Missing value" + ("\n" + help if help is not None else "")
             raise TokenUnfinishError(msg)
 
@@ -444,8 +495,8 @@ class FunctionCommand(Command):
         # parse positional arguments
         if self.args:
             args = OrderedDict(self.args)
-            name, (type, default) = args.popitem(False)
-            value = Command.parse_lit(token, type)
+            name, parser = args.popitem(False)
+            value = parser.parse(token)
 
             func = functools.partial(self.func, **{name: value})
             return TOKEN_TYPE.LITERAL, FunctionCommand(func, args, self.kwargs)
@@ -457,7 +508,7 @@ class FunctionCommand(Command):
             arg = kwargs.pop(name, None)
 
             if arg is None:
-                help = Command.help_lit(None, ["--" + key for key in self.kwargs.keys()])
+                help = Command.help_option(None, ["--" + key for key in self.kwargs.keys()])
                 msg = f"Unknown argument {token!r}" + "\n" + help
                 raise TokenParseError(msg)
 
@@ -470,8 +521,8 @@ class FunctionCommand(Command):
     def suggest(self, token):
         # parse positional arguments
         if self.args:
-            type, default = next(iter(self.args.values()))
-            return Command.suggest_lit(token, type, default)
+            parser = next(iter(self.args.values()))
+            return parser.suggest(token)
 
         # parse keyword arguments
         if self.kwargs:
@@ -484,13 +535,13 @@ class FunctionCommand(Command):
     def help(self, token):
         # parse positional arguments
         if self.args:
-            type, default = next(iter(self.args.values()))
-            return Command.help_lit(token, type)
+            parser = next(iter(self.args.values()))
+            return parser.help(token)
 
         # parse keyword arguments
         if self.kwargs:
             keys = ["--" + key for key in self.kwargs.keys()]
-            return Command.help_lit(token, keys)
+            return Command.help_option(token, keys)
 
         # rest
         return None
@@ -505,12 +556,12 @@ class SubCommand(Command):
         return desc.__get_command__(self.parent, type(self.parent))
 
     def finish(self):
-        help = Command.help_lit(None, self.fields)
+        help = Command.help_option(None, self.fields)
         raise TokenUnfinishError("Unfinished command" + ("\n" + help if help is not None else ""))
 
     def parse(self, token):
         if token not in self.fields:
-            help = Command.help_lit(None, self.fields)
+            help = Command.help_option(None, self.fields)
             msg = "Unknown command" + ("\n" + help if help is not None else "")
             raise TokenParseError(msg)
 
@@ -524,7 +575,7 @@ class SubCommand(Command):
         return [(val, False) for val in fit(token, self.fields)]
 
     def help(self, token):
-        return Command.help_lit(token, self.fields)
+        return Command.help_option(token, self.fields)
 
 class RootCommand(SubCommand):
     def __init__(self, root):

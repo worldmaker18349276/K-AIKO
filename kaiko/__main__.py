@@ -159,13 +159,14 @@ class KAIKOGame:
 
         self.reload()
 
-    @property
-    def _play_beatmap_ann(self):
-        return [str(beatmap.relative_to(self._songs_dir)) for beatmap in self.beatmaps()]
-
-    @beatcmd.function_command(beatmap=_play_beatmap_ann)
+    @beatcmd.function_command
     def play(self, beatmap):
         return KAIKOPlay(self._songs_dir / beatmap)
+
+    @play.arg_parser("beatmap")
+    @property
+    def _play_beatmap_parser(self):
+        return beatcmd.LiteralParser.wrap([str(beatmap.relative_to(self._songs_dir)) for beatmap in self.beatmaps()])
 
     @beatcmd.function_command
     def say(self, message:str, escape:bool=False):
