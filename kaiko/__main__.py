@@ -90,13 +90,18 @@ class KAIKOSettings:
         self.gameplay = GameplaySettings()
 
 class KAIKOMenu:
-    def __init__(self, settings, data_dir, songs_dir, manager):
+    def __init__(self, settings, username, data_dir, songs_dir, manager):
         self.settings = settings
+        self._username = username
         self._data_dir = data_dir
         self._songs_dir = songs_dir
         self.manager = manager
         self._beatmaps = []
         self.songs_mtime = None
+
+    @beatcmd.function_command
+    def username(self):
+        return self._username
 
     @beatcmd.function_command
     def data_dir(self):
@@ -133,14 +138,15 @@ class KAIKOMenu:
         self._beatmaps = []
 
         for file in songs_dir.iterdir():
-            if file.is_dir() and file.suffix == ".osz":
+            if file.is_file() and file.suffix == ".osz":
                 distpath = file.parent / file.stem
                 if distpath.exists():
                     continue
-                print(f"{info_icon} Unzip file {tui.add_attr(filepath.as_uri(), emph_attr)}...")
+                print(f"{info_icon} Unzip file {tui.add_attr(file.as_uri(), emph_attr)}...")
                 distpath.mkdir()
-                zf = zipfile.ZipFile(str(filepath), 'r')
+                zf = zipfile.ZipFile(str(file), 'r')
                 zf.extractall(path=str(distpath))
+                file.unlink()
 
         for song in songs_dir.iterdir():
             if song.is_dir():
@@ -149,14 +155,14 @@ class KAIKOMenu:
                         self._beatmaps.append(beatmap)
 
         if len(self._beatmaps) == 0:
-            print("{info_icon} There is no song in the folder yet!")
+            print(f"{info_icon} There is no song in the folder yet!")
         print(flush=True)
 
         self.songs_mtime = os.stat(str(songs_dir)).st_mtime
 
     @beatcmd.function_command
     def add(self, beatmap:Path):
-        """Add beatmap to your songs folder.
+        """Add beatmap/beatmapset to your songs folder.
 
         usage: \x1b[94;2madd\x1b[;2m \x1b[92m{beatmap}\x1b[m
                         ╲
@@ -188,6 +194,50 @@ class KAIKOMenu:
         self.reload()
 
     @beatcmd.function_command
+    def remove(self, beatmap):
+        """Remove beatmap/beatmapset in your songs folder.
+
+        usage: \x1b[94;2mremove\x1b[;2m \x1b[92m{beatmap}\x1b[m
+                           ╲
+                 Path, the path to the
+               beatmap you want to remove.
+        """
+
+        info_icon = self.settings.menu.info_icon
+        emph_attr = self.settings.menu.emph_attr
+        warn_attr = self.settings.menu.warn_attr
+        songs_dir = self._songs_dir
+
+        beatmap_path = songs_dir / beatmap
+        if beatmap_path.is_file():
+            print(f"{info_icon} Removing the beatmap at {tui.add_attr(beatmap_path.as_uri(), emph_attr)}...")
+            beatmap_path.unlink()
+            self.reload()
+
+        elif beatmap_path.is_dir():
+            print(f"{info_icon} Removing the beatmapset at {tui.add_attr(beatmap_path.as_uri(), emph_attr)}...")
+            shutil.rmtree(str(beatmap_path))
+            self.reload()
+
+        else:
+            print(tui.add_attr(f"Not a file: {str(beatmap)}", warn_attr))
+
+    @remove.arg_parser("beatmap")
+    @property
+    def _remove_beatmap_parser(self):
+        songs_dir = self._songs_dir
+
+        options = []
+        for song in songs_dir.iterdir():
+            options.append(os.path.join(str(song.relative_to(songs_dir)), ""))
+            if song.is_dir():
+                for beatmap in song.iterdir():
+                    if beatmap.suffix in (".kaiko", ".ka", ".osu"):
+                        options.append(str(beatmap.relative_to(songs_dir)))
+
+        return beatcmd.OptionParser(options)
+
+    @beatcmd.function_command
     def play(self, beatmap):
         """Let's beat with the song!
 
@@ -204,7 +254,7 @@ class KAIKOMenu:
     @play.arg_parser("beatmap")
     @property
     def _play_beatmap_parser(self):
-        return beatcmd.LiteralParser.wrap([str(beatmap.relative_to(self._songs_dir)) for beatmap in self.beatmaps()])
+        return beatcmd.OptionParser([str(beatmap.relative_to(self._songs_dir)) for beatmap in self.beatmaps()])
 
     @beatcmd.function_command
     def say(self, message, escape=False):
@@ -286,7 +336,8 @@ class KAIKOMenu:
     @classmethod
     @contextlib.contextmanager
     def init(clz):
-        data_dir = Path(appdirs.user_data_dir("K-AIKO", psutil.Process().username()))
+        username = psutil.Process().username()
+        data_dir = Path(appdirs.user_data_dir("K-AIKO", username))
 
         # load settings
         settings = KAIKOSettings()
@@ -332,7 +383,7 @@ class KAIKOMenu:
             print("\x1b[m", flush=True)
 
         try:
-            yield clz(settings, data_dir, songs_dir, manager)
+            yield clz(settings, username, data_dir, songs_dir, manager)
         finally:
             manager.terminate()
 
