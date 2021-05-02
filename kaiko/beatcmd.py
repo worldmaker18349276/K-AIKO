@@ -596,6 +596,8 @@ class SubCommand(Command):
         if token in self.fields:
             desc = type(self.parent).__dict__[token]
             doc = desc.proxy.__doc__
+            if doc is None:
+                return None
             m = re.search("\\n[ ]*$", doc)
             indent = len(m.group(0)[1:]) if m else 0
             doc = re.sub("\\n[ ]{,%d}"%indent, "\\n", doc)
@@ -707,8 +709,9 @@ class BeatInput:
         # find the token to autocomplete
         tokens = []
         selection = slice(self.pos, self.pos)
+        selection_index = len(self.tokens)
         target = ""
-        for token, _, slic, _ in self.tokens:
+        for i, (token, _, slic, _) in enumerate(self.tokens):
             start, stop, _ = slic.indices(len(self.buffer))
             if stop < self.pos:
                 tokens.append(token)
@@ -716,6 +719,7 @@ class BeatInput:
                 break
             else:
                 selection = slic
+                selection_index = i
                 target = token
 
         # generate suggestions
@@ -736,6 +740,7 @@ class BeatInput:
             self.buffer[selection] = suggestions[index]
             self.pos = selection.start + len(suggestions[index])
             self.parse_syntax()
+            self.help(selection_index)
 
             action = yield
             if action == +1:
@@ -750,6 +755,7 @@ class BeatInput:
 
         else:
             self.parse_syntax()
+            self.cancel_message()
 
     def make_typeahead(self, suggest=True):
         if not suggest or self.pos != len(self.buffer):
@@ -833,14 +839,15 @@ class BeatInput:
 
         return False
 
-    def help(self):
+    def help(self, index=None):
         self.cancel_message()
 
-        for index, (_, _, slic, _) in enumerate(self.tokens):
-            if slic.stop is None or self.pos <= slic.stop:
-                break
-        else:
-            index = None
+        if index is None:
+            for index, (_, _, slic, _) in enumerate(self.tokens):
+                if slic.stop is None or self.pos <= slic.stop:
+                    break
+            else:
+                index = None
 
         prefix = [token for token, _, _, _ in self.tokens[:index]]
         target, _, _, _ = self.tokens[index] if index is not None else (None,None,None,None)

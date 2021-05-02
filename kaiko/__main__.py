@@ -106,6 +106,11 @@ class KAIKOGame:
 
     @beatcmd.function_command
     def reload(self):
+        """Reload your data.
+
+        usage: \x1b[94;2mreload\x1b[m
+        """
+
         info_icon = self.theme.info_icon
         emph_attr = self.theme.emph_attr
         songs_dir = self._songs_dir
@@ -138,6 +143,16 @@ class KAIKOGame:
 
     @beatcmd.function_command
     def add(self, beatmap:Path):
+        """Add beatmap to your songs folder.
+
+        usage: \x1b[94;2madd\x1b[;2m \x1b[92m{beatmap}\x1b[m
+                        ╲
+              Path, the path to the
+             beatmap you want to add.
+             You can drop the file to
+           the terminal to paste its path.
+        """
+
         info_icon = self.theme.info_icon
         emph_attr = self.theme.emph_attr
         warn_attr = self.theme.warn_attr
@@ -161,6 +176,16 @@ class KAIKOGame:
 
     @beatcmd.function_command
     def play(self, beatmap):
+        """Let's beat with the song!
+
+        usage: \x1b[94;2mplay\x1b[;2m \x1b[92m{beatmap}\x1b[m
+                         ╲
+               Path, the path to the
+              beatmap you want to play.
+              Only the beatmaps in your
+             songs folder can be accessed.
+        """
+
         return KAIKOPlay(self._songs_dir / beatmap)
 
     @play.arg_parser("beatmap")
@@ -170,15 +195,13 @@ class KAIKOGame:
 
     @beatcmd.function_command
     def say(self, message, escape=False):
-        r"""Say something and I will echo.
+        """Say something and I will echo.
 
-        usage: say message [--escape ESCAPE]
-
-        positional arguments:
-          message            str, the message to be printed.
-
-        optional arguments:
-          --escape ESCAPE    bool, use backslash escapes or not; the default is False.
+        usage: \x1b[94;2msay\x1b[;2m \x1b[92m{message}\x1b[;2m [\x1b[95m--escape\x1b[;2m \x1b[92m{ESCAPE}\x1b[;2m]\x1b[m
+                      ╱                    ╲
+            str, the message                ╲
+             to be printed.          bool, use backslash escapes
+                                    or not; the default is False.
         """
 
         if escape:
