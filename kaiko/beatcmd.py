@@ -826,10 +826,17 @@ class BeatInput:
         return False
 
     def help(self):
-        index = self.index()
-        if index is None:
-            return False
-        msg = self.command.help_command([token for token, _, _, _ in self.tokens[:index]], self.tokens[index])
+        self.cancel_message()
+
+        for index, (_, _, slic, _) in enumerate(self.tokens):
+            if slic.stop is None or self.pos <= slic.stop:
+                break
+        else:
+            index = None
+
+        prefix = [token for token, _, _, _ in self.tokens[:index]]
+        target = self.tokens[index] if index is not None else None
+        msg = self.command.help_command(prefix, target)
         if msg is None:
             return False
         self.message(msg, index)
@@ -1358,9 +1365,9 @@ class BeatPrompt:
 
             # render message
             msg = result.message or ""
+            if msg.count("\n") >= message_trim_to_lines:
+                msg = "\n".join(msg.split("\n")[:message_trim_to_lines]) + "\x1b[m\n…"
             if isinstance(result, InputError):
-                if msg.count("\n") >= message_trim_to_lines:
-                    msg = "\n".join(msg.split("\n")[:message_trim_to_lines]) + "\n…"
                 msg = tui.add_attr(msg, error_message_attr)
             msg = "\n" + msg + ("\n" if msg else "")
             moveback = isinstance(result, InputMessage)

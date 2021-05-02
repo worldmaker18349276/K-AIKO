@@ -169,11 +169,36 @@ class KAIKOGame:
         return beatcmd.LiteralParser.wrap([str(beatmap.relative_to(self._songs_dir)) for beatmap in self.beatmaps()])
 
     @beatcmd.function_command
-    def say(self, message:str, escape:bool=False):
+    def say(self, message, escape=False):
+        r"""Say something and I will echo.
+
+        usage: say message [--escape ESCAPE]
+
+        positional arguments:
+          message            str, the message to be printed.
+
+        optional arguments:
+          --escape ESCAPE    bool, use backslash escapes or not; the default is False.
+        """
+
         if escape:
             print(beatcmd.echo_str(message))
         else:
             print(message)
+
+    @say.arg_parser("message")
+    @property
+    def _say_message_parser(self):
+        return beatcmd.StrParser(docs="It should be str literal,"
+                                      " indicating the message to be printed.")
+
+    @say.arg_parser("escape")
+    @property
+    def _say_escape_parser(self):
+        return beatcmd.BoolParser(default=False,
+                                  docs="It should be bool literal,"
+                                       " indicating whether to use backslash escapes;"
+                                       " the default is False.")
 
     @beatcmd.function_command
     def exit(self):
