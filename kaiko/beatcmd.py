@@ -574,12 +574,12 @@ class SubCommand(Command):
         return desc.__get_command__(self.parent, type(self.parent))
 
     def finish(self):
-        help = Command.help_option(None, self.fields)
+        help = self.help(None)
         raise TokenUnfinishError("Unfinished command" + ("\n" + help if help is not None else ""))
 
     def parse(self, token):
         if token not in self.fields:
-            help = Command.help_option(None, self.fields)
+            help = self.help(token)
             msg = "Unknown command" + ("\n" + help if help is not None else "")
             raise TokenParseError(msg)
 
@@ -593,6 +593,14 @@ class SubCommand(Command):
         return [(val, False) for val in fit(token, self.fields)]
 
     def help(self, token):
+        if token in self.fields:
+            desc = type(self.parent).__dict__[token]
+            doc = desc.proxy.__doc__
+            m = re.search("\\n[ ]*$", doc)
+            indent = len(m.group(0)[1:]) if m else 0
+            doc = re.sub("\\n[ ]{,%d}"%indent, "\\n", doc)
+            return doc
+
         return Command.help_option(token, self.fields)
 
 class RootCommand(SubCommand):
@@ -835,7 +843,7 @@ class BeatInput:
             index = None
 
         prefix = [token for token, _, _, _ in self.tokens[:index]]
-        target = self.tokens[index] if index is not None else None
+        target, _, _, _ = self.tokens[index] if index is not None else (None,None,None,None)
         msg = self.command.help_command(prefix, target)
         if msg is None:
             return False
@@ -1252,7 +1260,7 @@ class PromptTheme(metaclass=cfg.Configurable):
     cursor_tab: str = "↹ "
 
     error_message_attr: str = "31"
-    message_trim_to_lines: int = 8
+    message_trim_to_lines: int = 16
 
     escape_attr: str = "2"
     typeahead_attr: str = "2"
