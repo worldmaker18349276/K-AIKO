@@ -1513,7 +1513,7 @@ class BeatPrompt:
             if clear:
                 msg = "\n\x1b[J\x1b[A" + msg
 
-            output_text = "\r" + "".join(view) + "\r" + msg
+            output_text = "\r\x1b[K" + "".join(view).rstrip() + "\r" + msg
 
 def prompt(promptable, history=None, settings=None):
     if settings is None:
