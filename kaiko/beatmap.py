@@ -502,10 +502,7 @@ class GameplaySettings(metaclass=cfg.Configurable):
 class BeatmapPlayer:
     def __init__(self, beatmap, settings=None):
         self.beatmap = beatmap
-
-        self.settings = GameplaySettings()
-        if settings is not None:
-            cfg.config_read(open(settings, 'r'), main=self.settings)
+        self.settings = settings or GameplaySettings()
 
     def prepare(self, output_samplerate, output_nchannels):
         # prepare events

@@ -13,22 +13,11 @@ from . import cfg
 from . import tui
 from . import kerminal
 from . import beatcmd
-from .beatmap import BeatmapPlayer
+from .beatcmd import BeatPromptSettings
+from .beatmap import BeatmapPlayer, GameplaySettings
 from .beatsheet import BeatmapDraft, BeatmapParseError
 from . import beatanalyzer
 
-
-logo = """
-
-  ██▀ ▄██▀   ▄██████▄ ▀██████▄ ██  ▄██▀ █▀▀▀▀▀▀█
-  ▀ ▄██▀  ▄▄▄▀█    ██    ██    ██▄██▀   █ ▓▓▓▓ █
-  ▄██▀██▄ ▀▀▀▄███████    ██    ███▀██▄  █ ▓▓▓▓ █
-  █▀   ▀██▄  ██    ██ ▀██████▄ ██   ▀██▄█▄▄▄▄▄▄█
-
-
-  🎧  Use headphones for the best experience 🎝 
-
-"""
 
 def print_pyaudio_info(manager):
     print()
@@ -71,7 +60,19 @@ def print_pyaudio_info(manager):
     print(f"default input device: {default_input_device_index}")
     print(f"default output device: {default_output_device_index}")
 
-class KAIKOTheme(metaclass=cfg.Configurable):
+class KAIKOMenuSettings(metaclass=cfg.Configurable):
+    logo: str = """
+
+  ██▀ ▄██▀   ▄██████▄ ▀██████▄ ██  ▄██▀ █▀▀▀▀▀▀█
+  ▀ ▄██▀  ▄▄▄▀█    ██    ██    ██▄██▀   █ ▓▓▓▓ █
+  ▄██▀██▄ ▀▀▀▄███████    ██    ███▀██▄  █ ▓▓▓▓ █
+  █▀   ▀██▄  ██    ██ ▀██████▄ ██   ▀██▄█▄▄▄▄▄▄█
+
+
+  🎧  Use headphones for the best experience 🎝 
+
+"""
+
     data_icon: str = "\x1b[92m🗀 \x1b[m"
     info_icon: str = "\x1b[94m🛠 \x1b[m"
     hint_icon: str = "\x1b[93m💡 \x1b[m"
@@ -80,9 +81,17 @@ class KAIKOTheme(metaclass=cfg.Configurable):
     emph_attr: str = "1"
     warn_attr: str = "31"
 
-class KAIKOGame:
-    def __init__(self, theme, data_dir, songs_dir, manager):
-        self.theme = theme
+    best_screen_size: int = 80
+
+class KAIKOSettings:
+    def __init__(self):
+        self.menu = KAIKOMenuSettings()
+        self.prompt = BeatPromptSettings()
+        self.gameplay = GameplaySettings()
+
+class KAIKOMenu:
+    def __init__(self, settings, data_dir, songs_dir, manager):
+        self.settings = settings
         self._data_dir = data_dir
         self._songs_dir = songs_dir
         self.manager = manager
@@ -92,6 +101,10 @@ class KAIKOGame:
     @beatcmd.function_command
     def data_dir(self):
         return self._data_dir
+
+    @beatcmd.function_command
+    def config_file(self):
+        return self._data_dir / "config.py"
 
     @beatcmd.function_command
     def songs_dir(self):
@@ -111,8 +124,8 @@ class KAIKOGame:
         usage: \x1b[94;2mreload\x1b[m
         """
 
-        info_icon = self.theme.info_icon
-        emph_attr = self.theme.emph_attr
+        info_icon = self.settings.menu.info_icon
+        emph_attr = self.settings.menu.emph_attr
         songs_dir = self._songs_dir
 
         print(f"{info_icon} Loading songs from {tui.add_attr(songs_dir.as_uri(), emph_attr)}...")
@@ -153,9 +166,9 @@ class KAIKOGame:
            the terminal to paste its path.
         """
 
-        info_icon = self.theme.info_icon
-        emph_attr = self.theme.emph_attr
-        warn_attr = self.theme.warn_attr
+        info_icon = self.settings.menu.info_icon
+        emph_attr = self.settings.menu.emph_attr
+        warn_attr = self.settings.menu.warn_attr
         songs_dir = self._songs_dir
 
         if not beatmap.exists():
@@ -186,7 +199,7 @@ class KAIKOGame:
              songs folder can be accessed.
         """
 
-        return KAIKOPlay(self._songs_dir / beatmap)
+        return KAIKOPlay(self._songs_dir / beatmap, self.settings.gameplay)
 
     @play.arg_parser("beatmap")
     @property
@@ -272,27 +285,30 @@ class KAIKOGame:
 
     @classmethod
     @contextlib.contextmanager
-    def init(clz, theme_path=None):
-        screen_size = 80
+    def init(clz):
+        data_dir = Path(appdirs.user_data_dir("K-AIKO", psutil.Process().username()))
+
+        # load settings
+        settings = KAIKOSettings()
+        config_path = data_dir / "config.py"
+        if config_path.exists():
+            cfg.config_read(open(config_path, 'r'),
+                            menu=settings.menu,
+                            prompt=settings.prompt,
+                            gameplay=settings.gameplay)
+
+        data_icon = settings.menu.data_icon
+        info_icon = settings.menu.info_icon
+        verb_attr = settings.menu.verb_attr
+        emph_attr = settings.menu.emph_attr
 
         # print logo
-        print(logo, flush=True)
+        print(settings.menu.logo, flush=True)
 
         # fit screen size
-        clz.fit_screen(screen_size)
-
-        # load theme
-        theme = KAIKOTheme()
-        if theme_path is not None:
-            cfg.config_read(open(theme_path, 'r'), main=theme)
-
-        data_icon = theme.data_icon
-        info_icon = theme.info_icon
-        verb_attr = theme.verb_attr
-        emph_attr = theme.emph_attr
+        clz.fit_screen(settings.menu.best_screen_size)
 
         # load user data
-        data_dir = Path(appdirs.user_data_dir("K-AIKO", psutil.Process().username()))
         songs_dir = data_dir / "songs"
 
         if not data_dir.exists():
@@ -316,20 +332,20 @@ class KAIKOGame:
             print("\x1b[m", flush=True)
 
         try:
-            yield clz(theme, data_dir, songs_dir, manager)
+            yield clz(settings, data_dir, songs_dir, manager)
         finally:
             manager.terminate()
 
     @staticmethod
     def main():
         try:
-            with KAIKOGame.init() as game:
+            with KAIKOMenu.init() as game:
                 # load songs
                 game.reload()
 
-                # play given beatmap
+                # execute given command
                 if len(sys.argv) > 1:
-                    res = beatcmd.SubCommand(game).build_command(sys.argv[1:])()
+                    res = beatcmd.RootCommand(game).build(sys.argv[1:])()
                     if hasattr(res, 'execute'):
                         res.execute(game.manager)
                     return
@@ -359,8 +375,9 @@ class KAIKOGame:
             print(f"\x1b[m", end="")
 
 class KAIKOPlay:
-    def __init__(self, filepath):
+    def __init__(self, filepath, settings):
         self.filepath = filepath
+        self.settings = settings
 
     @contextlib.contextmanager
     def execute(self, manager):
@@ -371,7 +388,7 @@ class KAIKOPlay:
             print(f"failed to read beatmap {str(self.filepath)}")
 
         else:
-            game = BeatmapPlayer(beatmap)
+            game = BeatmapPlayer(beatmap, self.settings)
             game.execute(manager)
 
             print()
@@ -379,4 +396,4 @@ class KAIKOPlay:
 
 
 if __name__ == '__main__':
-    KAIKOGame.main()
+    KAIKOMenu.main()
