@@ -1216,7 +1216,7 @@ class BeatPromptSettings(metaclass=cfg.Configurable):
         "Ctrl+Alt+PageDown"       : "\x1b[6;7~",
         "Ctrl+Alt+Shift+PageDown" : "\x1b[6;8~",
     }
-    keymap: Dict[str, Callable] = {
+    keymap = {
         "Backspace"     : lambda input: input.backspace(),
         "Delete"        : lambda input: input.delete(),
         "Left"          : lambda input: input.move_left(),

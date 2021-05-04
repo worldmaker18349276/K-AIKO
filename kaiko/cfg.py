@@ -242,26 +242,25 @@ class Configurable(type):
         self.__init__(instance, *args, **kwargs)
         return instance
 
-def get_configurable_fields(clz):
-    field_hints = {}
-    for field_name, field_type in clz.__configurable_fields__.items():
-        if not hasattr(field_type, '__configurable_fields__'):
-            field_hints[(field_name,)] = field_type
-        else:
-            subfield_hints = get_configurable_fields(field_type)
-            for subfield_names, subfield_type in subfield_hints.items():
-                field_hints[(field_name, *subfield_names)] = subfield_type
-    return field_hints
+    def get_configurable_fields(self):
+        field_hints = {}
+        for field_name, field_type in self.__configurable_fields__.items():
+            if not hasattr(field_type, '__configurable_fields__'):
+                field_hints[(field_name,)] = field_type
+            else:
+                subfield_hints = field_type.get_configurable_fields()
+                for subfield_names, subfield_type in subfield_hints.items():
+                    field_hints[(field_name, *subfield_names)] = subfield_type
+        return field_hints
 
-def config_read(file, strict=True, globals=globals(), **targets):
-    if isinstance(file, str):
-        file = open(file, 'r')
+def config_read(filename, strict=True, globals=globals(), **targets):
+    file = open(filename, 'r')
     config_str = file.read()
 
     if strict:
         field_parsers = []
         for target_name, target in targets.items():
-            field_hints = get_configurable_fields(target)
+            field_hints = type(target).get_configurable_fields()
             for names, hint in field_hints.items():
                 field_ref = fr" {sp}* \. {sp}* ".join(map(re.escape, [target_name, *names]))
                 value_parser = parser(hint)
@@ -275,12 +274,11 @@ def config_read(file, strict=True, globals=globals(), **targets):
 
     exec(config_str, globals, targets)
 
-def config_write(file, **targets):
-    if isinstance(file, str):
-        file = open(file, 'w')
+def config_write(filename, **targets):
+    file = open(filename, 'w')
 
     for target_name, target in targets.items():
-        field_hints = get_configurable_fields(target)
+        field_hints = type(target).get_configurable_fields()
 
         for names, hint in field_hints.items():
             value = target

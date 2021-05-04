@@ -89,6 +89,12 @@ class KAIKOSettings:
         self.prompt = BeatPromptSettings()
         self.gameplay = GameplaySettings()
 
+    def read(self, filename):
+        cfg.config_read(filename, menu=self.menu, prompt=self.prompt, gameplay=self.gameplay)
+
+    def write(self, filename):
+        cfg.config_write(filename, menu=self.menu, prompt=self.prompt, gameplay=self.gameplay)
+
 class KAIKOMenu:
     """Beat shell is a user friendly commandline shell for playing K-AIKO.
 
@@ -357,10 +363,7 @@ class KAIKOMenu:
         settings = KAIKOSettings()
         config_path = data_dir / "config.py"
         if config_path.exists():
-            cfg.config_read(open(config_path, 'r'),
-                            menu=settings.menu,
-                            prompt=settings.prompt,
-                            gameplay=settings.gameplay)
+            settings.read(config_path)
 
         data_icon = settings.menu.data_icon
         info_icon = settings.menu.info_icon
