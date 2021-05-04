@@ -90,6 +90,20 @@ class KAIKOSettings:
         self.gameplay = GameplaySettings()
 
 class KAIKOMenu:
+    """Beat shell is a user friendly commandline shell for playing K-AIKO.
+
+    Just type the commands followed by any arguments, and press \x1b[1mEnter\x1b[m to execute them!
+
+     beating prompt
+       │    the command you want to execute
+       │     ╱     ╭── argument of command
+    \x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;252m❯ \x1b[m\x1b[94msay\x1b[m \
+\x1b[92m'Welcome\x1b[2m⌴\x1b[m\x1b[92mto\x1b[2m⌴\x1b[m\x1b[92mK-AIKO!'\x1b[m \x1b[7;2m \x1b[m
+    Welcome to K-AIKO!    │         ╰─ beating caret
+         ╲                ╰─── quoted whitespace look like this!
+       output of command
+    """
+
     def __init__(self, settings, username, data_dir, songs_dir, manager):
         self.settings = settings
         self._username = username
@@ -126,7 +140,7 @@ class KAIKOMenu:
     def reload(self):
         """Reload your data.
 
-        usage: \x1b[94;2mreload\x1b[m
+        usage: \x1b[94mreload\x1b[m
         """
 
         info_icon = self.settings.menu.info_icon
@@ -164,7 +178,7 @@ class KAIKOMenu:
     def add(self, beatmap:Path):
         """Add beatmap/beatmapset to your songs folder.
 
-        usage: \x1b[94;2madd\x1b[;2m \x1b[92m{beatmap}\x1b[m
+        usage: \x1b[94madd\x1b[m \x1b[92m{beatmap}\x1b[m
                         ╲
               Path, the path to the
              beatmap you want to add.
@@ -197,7 +211,7 @@ class KAIKOMenu:
     def remove(self, beatmap):
         """Remove beatmap/beatmapset in your songs folder.
 
-        usage: \x1b[94;2mremove\x1b[;2m \x1b[92m{beatmap}\x1b[m
+        usage: \x1b[94mremove\x1b[m \x1b[92m{beatmap}\x1b[m
                            ╲
                  Path, the path to the
                beatmap you want to remove.
@@ -241,7 +255,7 @@ class KAIKOMenu:
     def play(self, beatmap):
         """Let's beat with the song!
 
-        usage: \x1b[94;2mplay\x1b[;2m \x1b[92m{beatmap}\x1b[m
+        usage: \x1b[94mplay\x1b[m \x1b[92m{beatmap}\x1b[m
                          ╲
                Path, the path to the
               beatmap you want to play.
@@ -260,7 +274,7 @@ class KAIKOMenu:
     def say(self, message, escape=False):
         """Say something and I will echo.
 
-        usage: \x1b[94;2msay\x1b[;2m \x1b[92m{message}\x1b[;2m [\x1b[95m--escape\x1b[;2m \x1b[92m{ESCAPE}\x1b[;2m]\x1b[m
+        usage: \x1b[94msay\x1b[m \x1b[92m{message}\x1b[m [\x1b[95m--escape\x1b[m \x1b[92m{ESCAPE}\x1b[m]\x1b[m
                       ╱                    ╲
             str, the message                ╲
              to be printed.          bool, use backslash escapes
@@ -391,6 +405,9 @@ class KAIKOMenu:
     def main():
         try:
             with KAIKOMenu.init() as game:
+                info_icon = game.settings.menu.info_icon
+                emph_attr = game.settings.menu.emph_attr
+
                 # load songs
                 game.reload()
 
@@ -400,6 +417,11 @@ class KAIKOMenu:
                     if hasattr(res, 'execute'):
                         res.execute(game.manager)
                     return
+
+                # tips
+                print(f"{info_icon} Use {tui.add_attr('Tab', emph_attr)} to autocomplete command.")
+                print(f"{info_icon} If you need help, press {tui.add_attr('Alt+Enter', emph_attr)}.")
+                print()
 
                 # prompt
                 history = []
