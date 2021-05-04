@@ -54,12 +54,6 @@ Or
 
     python -m kaiko
 
-You can play one beatmap directly
-
-::
-
-    kaiko <beatmap file path>
-
 Install PyAudio Without Using Conda
 -----------------------------------
 
