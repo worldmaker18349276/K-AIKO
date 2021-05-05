@@ -2,6 +2,7 @@ import re
 import typing
 import dataclasses
 import functools
+from collections import OrderedDict
 import enum
 
 
@@ -225,10 +226,14 @@ class Configurable(type):
     def __init__(self, name, supers, attrs):
         if not hasattr(self, '__configurable_excludes__'):
             self.__configurable_excludes__ = []
+        annotations = typing.get_type_hints(self)
 
-        fields = typing.get_type_hints(self)
-        for field in self.__configurable_excludes__:
-            del fields[field]
+        fields = OrderedDict()
+        for name in dir(self):
+            if name in annotations and name not in self.__configurable_excludes__:
+                fields[name] = annotations[name]
+            elif isinstance(getattr(self, name), Configurable):
+                fields[name] = getattr(self, name)
         self.__configurable_fields__ = fields
 
     def __configurable_init__(self, instance):

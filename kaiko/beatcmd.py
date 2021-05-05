@@ -1104,191 +1104,195 @@ class BeatStroke:
                     self.input.error(f"Unknown key: {key!r}")
 
 
-class BeatPromptSettings(metaclass=cfg.Configurable):
-    framerate: float = 60.0
-    t0: float = 0.0
-    tempo: float = 130.0
+class BeatShellSettings(metaclass=cfg.Configurable):
+    class input(metaclass=cfg.Configurable):
+        keycodes: Dict[str, str] = {
+            "Esc"       : "\x1b",
+            "Alt+Esc"   : "\x1b\x1b",
 
-    keycodes: Dict[str, str] = {
-        "Esc"       : "\x1b",
-        "Alt+Esc"   : "\x1b\x1b",
+            "Enter"     : "\n",
+            "Alt+Enter" : "\x1b\n",
 
-        "Enter"     : "\n",
-        "Alt+Enter" : "\x1b\n",
+            "Backspace"            : "\x7f",
+            "Ctrl+Backspace"       : "\x08",
+            "Alt+Backspace"        : "\x1b\x7f",
+            "Ctrl+Alt+Backspace"   : "\x1b\x08",
 
-        "Backspace"            : "\x7f",
-        "Ctrl+Backspace"       : "\x08",
-        "Alt+Backspace"        : "\x1b\x7f",
-        "Ctrl+Alt+Backspace"   : "\x1b\x08",
+            "Tab"                  : "\t",
+            "Shift+Tab"            : "\x1b[Z",
+            "Alt+Tab"              : "\x1b\t",
+            "Alt+Shift+Tab"        : "\x1b\x1b[Z",
 
-        "Tab"                  : "\t",
-        "Shift+Tab"            : "\x1b[Z",
-        "Alt+Tab"              : "\x1b\t",
-        "Alt+Shift+Tab"        : "\x1b\x1b[Z",
+            "Up"                   : "\x1b[A",
+            "Shift+Up"             : "\x1b[1;2A",
+            "Alt+Up"               : "\x1b[1;3A",
+            "Alt+Shift+Up"         : "\x1b[1;4A",
+            "Ctrl+Up"              : "\x1b[1;5A",
+            "Ctrl+Shift+Up"        : "\x1b[1;6A",
+            "Ctrl+Alt+Up"          : "\x1b[1;7A",
+            "Ctrl+Alt+Shift+Up"    : "\x1b[1;8A",
 
-        "Up"                   : "\x1b[A",
-        "Shift+Up"             : "\x1b[1;2A",
-        "Alt+Up"               : "\x1b[1;3A",
-        "Alt+Shift+Up"         : "\x1b[1;4A",
-        "Ctrl+Up"              : "\x1b[1;5A",
-        "Ctrl+Shift+Up"        : "\x1b[1;6A",
-        "Ctrl+Alt+Up"          : "\x1b[1;7A",
-        "Ctrl+Alt+Shift+Up"    : "\x1b[1;8A",
+            "Down"                 : "\x1b[B",
+            "Shift+Down"           : "\x1b[1;2B",
+            "Alt+Down"             : "\x1b[1;3B",
+            "Alt+Shift+Down"       : "\x1b[1;4B",
+            "Ctrl+Down"            : "\x1b[1;5B",
+            "Ctrl+Shift+Down"      : "\x1b[1;6B",
+            "Ctrl+Alt+Down"        : "\x1b[1;7B",
+            "Ctrl+Alt+Shift+Down"  : "\x1b[1;8B",
 
-        "Down"                 : "\x1b[B",
-        "Shift+Down"           : "\x1b[1;2B",
-        "Alt+Down"             : "\x1b[1;3B",
-        "Alt+Shift+Down"       : "\x1b[1;4B",
-        "Ctrl+Down"            : "\x1b[1;5B",
-        "Ctrl+Shift+Down"      : "\x1b[1;6B",
-        "Ctrl+Alt+Down"        : "\x1b[1;7B",
-        "Ctrl+Alt+Shift+Down"  : "\x1b[1;8B",
+            "Right"                : "\x1b[C",
+            "Shift+Right"          : "\x1b[1;2C",
+            "Alt+Right"            : "\x1b[1;3C",
+            "Alt+Shift+Right"      : "\x1b[1;4C",
+            "Ctrl+Right"           : "\x1b[1;5C",
+            "Ctrl+Shift+Right"     : "\x1b[1;6C",
+            "Ctrl+Alt+Right"       : "\x1b[1;7C",
+            "Ctrl+Alt+Shift+Right" : "\x1b[1;8C",
 
-        "Right"                : "\x1b[C",
-        "Shift+Right"          : "\x1b[1;2C",
-        "Alt+Right"            : "\x1b[1;3C",
-        "Alt+Shift+Right"      : "\x1b[1;4C",
-        "Ctrl+Right"           : "\x1b[1;5C",
-        "Ctrl+Shift+Right"     : "\x1b[1;6C",
-        "Ctrl+Alt+Right"       : "\x1b[1;7C",
-        "Ctrl+Alt+Shift+Right" : "\x1b[1;8C",
+            "Left"                 : "\x1b[D",
+            "Shift+Left"           : "\x1b[1;2D",
+            "Alt+Left"             : "\x1b[1;3D",
+            "Alt+Shift+Left"       : "\x1b[1;4D",
+            "Ctrl+Left"            : "\x1b[1;5D",
+            "Ctrl+Shift+Left"      : "\x1b[1;6D",
+            "Ctrl+Alt+Left"        : "\x1b[1;7D",
+            "Ctrl+Alt+Shift+Left"  : "\x1b[1;8D",
 
-        "Left"                 : "\x1b[D",
-        "Shift+Left"           : "\x1b[1;2D",
-        "Alt+Left"             : "\x1b[1;3D",
-        "Alt+Shift+Left"       : "\x1b[1;4D",
-        "Ctrl+Left"            : "\x1b[1;5D",
-        "Ctrl+Shift+Left"      : "\x1b[1;6D",
-        "Ctrl+Alt+Left"        : "\x1b[1;7D",
-        "Ctrl+Alt+Shift+Left"  : "\x1b[1;8D",
+            "End"                  : "\x1b[F",
+            "Shift+End"            : "\x1b[1;2F",
+            "Alt+End"              : "\x1b[1;3F",
+            "Alt+Shift+End"        : "\x1b[1;4F",
+            "Ctrl+End"             : "\x1b[1;5F",
+            "Ctrl+Shift+End"       : "\x1b[1;6F",
+            "Ctrl+Alt+End"         : "\x1b[1;7F",
+            "Ctrl+Alt+Shift+End"   : "\x1b[1;8F",
 
-        "End"                  : "\x1b[F",
-        "Shift+End"            : "\x1b[1;2F",
-        "Alt+End"              : "\x1b[1;3F",
-        "Alt+Shift+End"        : "\x1b[1;4F",
-        "Ctrl+End"             : "\x1b[1;5F",
-        "Ctrl+Shift+End"       : "\x1b[1;6F",
-        "Ctrl+Alt+End"         : "\x1b[1;7F",
-        "Ctrl+Alt+Shift+End"   : "\x1b[1;8F",
+            "Home"                 : "\x1b[H",
+            "Shift+Home"           : "\x1b[1;2H",
+            "Alt+Home"             : "\x1b[1;3H",
+            "Alt+Shift+Home"       : "\x1b[1;4H",
+            "Ctrl+Home"            : "\x1b[1;5H",
+            "Ctrl+Shift+Home"      : "\x1b[1;6H",
+            "Ctrl+Alt+Home"        : "\x1b[1;7H",
+            "Ctrl+Alt+Shift+Home"  : "\x1b[1;8H",
 
-        "Home"                 : "\x1b[H",
-        "Shift+Home"           : "\x1b[1;2H",
-        "Alt+Home"             : "\x1b[1;3H",
-        "Alt+Shift+Home"       : "\x1b[1;4H",
-        "Ctrl+Home"            : "\x1b[1;5H",
-        "Ctrl+Shift+Home"      : "\x1b[1;6H",
-        "Ctrl+Alt+Home"        : "\x1b[1;7H",
-        "Ctrl+Alt+Shift+Home"  : "\x1b[1;8H",
+            "Insert"                 : "\x1b[2~",
+            "Shift+Insert"           : "\x1b[2;2~",
+            "Alt+Insert"             : "\x1b[2;3~",
+            "Alt+Shift+Insert"       : "\x1b[2;4~",
+            "Ctrl+Insert"            : "\x1b[2;5~",
+            "Ctrl+Shift+Insert"      : "\x1b[2;6~",
+            "Ctrl+Alt+Insert"        : "\x1b[2;7~",
+            "Ctrl+Alt+Shift+Insert"  : "\x1b[2;8~",
 
-        "Insert"                 : "\x1b[2~",
-        "Shift+Insert"           : "\x1b[2;2~",
-        "Alt+Insert"             : "\x1b[2;3~",
-        "Alt+Shift+Insert"       : "\x1b[2;4~",
-        "Ctrl+Insert"            : "\x1b[2;5~",
-        "Ctrl+Shift+Insert"      : "\x1b[2;6~",
-        "Ctrl+Alt+Insert"        : "\x1b[2;7~",
-        "Ctrl+Alt+Shift+Insert"  : "\x1b[2;8~",
+            "Delete"                 : "\x1b[3~",
+            "Shift+Delete"           : "\x1b[3;2~",
+            "Alt+Delete"             : "\x1b[3;3~",
+            "Alt+Shift+Delete"       : "\x1b[3;4~",
+            "Ctrl+Delete"            : "\x1b[3;5~",
+            "Ctrl+Shift+Delete"      : "\x1b[3;6~",
+            "Ctrl+Alt+Delete"        : "\x1b[3;7~",
+            "Ctrl+Alt+Shift+Delete"  : "\x1b[3;8~",
 
-        "Delete"                 : "\x1b[3~",
-        "Shift+Delete"           : "\x1b[3;2~",
-        "Alt+Delete"             : "\x1b[3;3~",
-        "Alt+Shift+Delete"       : "\x1b[3;4~",
-        "Ctrl+Delete"            : "\x1b[3;5~",
-        "Ctrl+Shift+Delete"      : "\x1b[3;6~",
-        "Ctrl+Alt+Delete"        : "\x1b[3;7~",
-        "Ctrl+Alt+Shift+Delete"  : "\x1b[3;8~",
+            "PageUp"                  : "\x1b[5~",
+            "Shift+PageUp"            : "\x1b[5;2~",
+            "Alt+PageUp"              : "\x1b[5;3~",
+            "Alt+Shift+PageUp"        : "\x1b[5;4~",
+            "Ctrl+PageUp"             : "\x1b[5;5~",
+            "Ctrl+Shift+PageUp"       : "\x1b[5;6~",
+            "Ctrl+Alt+PageUp"         : "\x1b[5;7~",
+            "Ctrl+Alt+Shift+PageUp"   : "\x1b[5;8~",
 
-        "PageUp"                  : "\x1b[5~",
-        "Shift+PageUp"            : "\x1b[5;2~",
-        "Alt+PageUp"              : "\x1b[5;3~",
-        "Alt+Shift+PageUp"        : "\x1b[5;4~",
-        "Ctrl+PageUp"             : "\x1b[5;5~",
-        "Ctrl+Shift+PageUp"       : "\x1b[5;6~",
-        "Ctrl+Alt+PageUp"         : "\x1b[5;7~",
-        "Ctrl+Alt+Shift+PageUp"   : "\x1b[5;8~",
+            "PageDown"                : "\x1b[6~",
+            "Shift+PageDown"          : "\x1b[6;2~",
+            "Alt+PageDown"            : "\x1b[6;3~",
+            "Alt+Shift+PageDown"      : "\x1b[6;4~",
+            "Ctrl+PageDown"           : "\x1b[6;5~",
+            "Ctrl+Shift+PageDown"     : "\x1b[6;6~",
+            "Ctrl+Alt+PageDown"       : "\x1b[6;7~",
+            "Ctrl+Alt+Shift+PageDown" : "\x1b[6;8~",
+        }
 
-        "PageDown"                : "\x1b[6~",
-        "Shift+PageDown"          : "\x1b[6;2~",
-        "Alt+PageDown"            : "\x1b[6;3~",
-        "Alt+Shift+PageDown"      : "\x1b[6;4~",
-        "Ctrl+PageDown"           : "\x1b[6;5~",
-        "Ctrl+Shift+PageDown"     : "\x1b[6;6~",
-        "Ctrl+Alt+PageDown"       : "\x1b[6;7~",
-        "Ctrl+Alt+Shift+PageDown" : "\x1b[6;8~",
-    }
-    keymap = {
-        "Backspace"     : lambda input: input.backspace(),
-        "Delete"        : lambda input: input.delete(),
-        "Left"          : lambda input: input.move_left(),
-        "Right"         : lambda input: input.insert_typeahead() or input.move_right(),
-        "Up"            : lambda input: input.prev(),
-        "Down"          : lambda input: input.next(),
-        "Home"          : lambda input: input.move_to_start(),
-        "End"           : lambda input: input.move_to_end(),
-        "Enter"         : lambda input: input.enter(),
-        "Esc"           : lambda input: input.cancel(),
-        "Alt+Enter"     : lambda input: input.help(),
-        "Ctrl+Left"     : lambda input: input.move_to_word_start(),
-        "Ctrl+Right"    : lambda input: input.move_to_word_end(),
-        "Ctrl+Backspace": lambda input: input.delete_to_word_start(),
-        "Ctrl+Delete"   : lambda input: input.delete_to_word_end(),
-    }
+        keymap = {
+            "Backspace"     : lambda input: input.backspace(),
+            "Delete"        : lambda input: input.delete(),
+            "Left"          : lambda input: input.move_left(),
+            "Right"         : lambda input: input.insert_typeahead() or input.move_right(),
+            "Up"            : lambda input: input.prev(),
+            "Down"          : lambda input: input.next(),
+            "Home"          : lambda input: input.move_to_start(),
+            "End"           : lambda input: input.move_to_end(),
+            "Enter"         : lambda input: input.enter(),
+            "Esc"           : lambda input: input.cancel(),
+            "Alt+Enter"     : lambda input: input.help(),
+            "Ctrl+Left"     : lambda input: input.move_to_word_start(),
+            "Ctrl+Right"    : lambda input: input.move_to_word_end(),
+            "Ctrl+Backspace": lambda input: input.delete_to_word_start(),
+            "Ctrl+Delete"   : lambda input: input.delete_to_word_end(),
+        }
 
-    headers: List[str] = [
-        "\x1b[96;1m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;255m❯ \x1b[m",
-        "\x1b[96;1m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;255m❯ \x1b[m",
-        "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;254m❯ \x1b[m",
-        "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;254m❯ \x1b[m",
-        "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;253m❯ \x1b[m",
-        "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;253m❯ \x1b[m",
-        "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;252m❯ \x1b[m",
-        "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;252m❯ \x1b[m",
+    class prompt(metaclass=cfg.Configurable):
+        framerate: float = 60.0
+        t0: float = 0.0
+        tempo: float = 130.0
 
-        "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;251m❯ \x1b[m",
-        "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;251m❯ \x1b[m",
-        "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;250m❯ \x1b[m",
-        "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;250m❯ \x1b[m",
-        "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;249m❯ \x1b[m",
-        "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;249m❯ \x1b[m",
-        "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;248m❯ \x1b[m",
-        "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;248m❯ \x1b[m",
+        headers: List[str] = [
+            "\x1b[96;1m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;255m❯ \x1b[m",
+            "\x1b[96;1m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;255m❯ \x1b[m",
+            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;254m❯ \x1b[m",
+            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;254m❯ \x1b[m",
+            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;253m❯ \x1b[m",
+            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;253m❯ \x1b[m",
+            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;252m❯ \x1b[m",
+            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;252m❯ \x1b[m",
 
-        "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;247m❯ \x1b[m",
-        "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;247m❯ \x1b[m",
-        "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;246m❯ \x1b[m",
-        "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;246m❯ \x1b[m",
-        "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;245m❯ \x1b[m",
-        "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;245m❯ \x1b[m",
-        "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;244m❯ \x1b[m",
-        "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;244m❯ \x1b[m",
+            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;251m❯ \x1b[m",
+            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;251m❯ \x1b[m",
+            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;250m❯ \x1b[m",
+            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;250m❯ \x1b[m",
+            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;249m❯ \x1b[m",
+            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;249m❯ \x1b[m",
+            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;248m❯ \x1b[m",
+            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;248m❯ \x1b[m",
 
-        "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;243m❯ \x1b[m",
-        "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;243m❯ \x1b[m",
-        "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;242m❯ \x1b[m",
-        "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;242m❯ \x1b[m",
-        "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;241m❯ \x1b[m",
-        "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;241m❯ \x1b[m",
-        "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;240m❯ \x1b[m",
-        "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;240m❯ \x1b[m",
-    ]
-    header_width: int = 7
+            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;247m❯ \x1b[m",
+            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;247m❯ \x1b[m",
+            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;246m❯ \x1b[m",
+            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;246m❯ \x1b[m",
+            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;245m❯ \x1b[m",
+            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;245m❯ \x1b[m",
+            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;244m❯ \x1b[m",
+            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;244m❯ \x1b[m",
 
-    cursor_attr: Tuple[str, str] = ("7;2", "7;1")
-    cursor_blink_ratio: float = 0.3
+            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;243m❯ \x1b[m",
+            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;243m❯ \x1b[m",
+            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;242m❯ \x1b[m",
+            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;242m❯ \x1b[m",
+            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;241m❯ \x1b[m",
+            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;241m❯ \x1b[m",
+            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;240m❯ \x1b[m",
+            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;240m❯ \x1b[m",
+        ]
+        header_width: int = 7
 
-    error_message_attr: str = "31"
-    info_message_attr: str = "2"
-    message_max_lines: int = 16
+        cursor_attr: Tuple[str, str] = ("7;2", "7;1")
+        cursor_blink_ratio: float = 0.3
 
-    escape_attr: str = "2"
-    typeahead_attr: str = "2"
-    whitespace: str = "\x1b[2m⌴\x1b[m"
+    class text(metaclass=cfg.Configurable):
+        error_message_attr: str = "31"
+        info_message_attr: str = "2"
+        message_max_lines: int = 16
 
-    token_unknown_attr: str = "31"
-    token_command_attr: str = "94"
-    token_argument_attr: str = "95"
-    token_literal_attr: str = "92"
-    token_highlight_attr: str = "4"
+        escape_attr: str = "2"
+        typeahead_attr: str = "2"
+        whitespace: str = "\x1b[2m⌴\x1b[m"
+
+        token_unknown_attr: str = "31"
+        token_command_attr: str = "94"
+        token_argument_attr: str = "95"
+        token_literal_attr: str = "92"
+        token_highlight_attr: str = "4"
 
 class BeatPrompt:
     def __init__(self, stroke, input, settings):
@@ -1336,14 +1340,14 @@ class BeatPrompt:
 
     @dn.datanode
     def header_node(self):
-        t0 = self.settings.t0
-        tempo = self.settings.tempo
-        framerate = self.settings.framerate
+        t0 = self.settings.prompt.t0
+        tempo = self.settings.prompt.tempo
+        framerate = self.settings.prompt.framerate
 
-        headers = self.settings.headers
+        headers = self.settings.prompt.headers
 
-        cursor_attr = self.settings.cursor_attr
-        cursor_blink_ratio = self.settings.cursor_blink_ratio
+        cursor_attr = self.settings.prompt.cursor_attr
+        cursor_blink_ratio = self.settings.prompt.cursor_blink_ratio
 
         clean = yield
         t = t0/(60/tempo)
@@ -1372,9 +1376,9 @@ class BeatPrompt:
 
     @dn.datanode
     def message_node(self):
-        message_max_lines = self.settings.message_max_lines
-        error_message_attr = self.settings.error_message_attr
-        info_message_attr = self.settings.info_message_attr
+        message_max_lines = self.settings.text.message_max_lines
+        error_message_attr = self.settings.text.error_message_attr
+        info_message_attr = self.settings.text.info_message_attr
         clear = False
 
         result = yield
@@ -1409,15 +1413,15 @@ class BeatPrompt:
 
     @dn.datanode
     def text_node(self):
-        escape_attr     = self.settings.escape_attr
-        typeahead_attr  = self.settings.typeahead_attr
-        whitespace      = self.settings.whitespace
+        escape_attr     = self.settings.text.escape_attr
+        typeahead_attr  = self.settings.text.typeahead_attr
+        whitespace      = self.settings.text.whitespace
 
-        token_unknown_attr  = self.settings.token_unknown_attr
-        token_command_attr  = self.settings.token_command_attr
-        token_argument_attr = self.settings.token_argument_attr
-        token_literal_attr  = self.settings.token_literal_attr
-        token_highlight_attr = self.settings.token_highlight_attr
+        token_unknown_attr  = self.settings.text.token_unknown_attr
+        token_command_attr  = self.settings.text.token_command_attr
+        token_argument_attr = self.settings.text.token_argument_attr
+        token_literal_attr  = self.settings.text.token_literal_attr
+        token_highlight_attr = self.settings.text.token_highlight_attr
 
         clean, highlighted = yield
         while True:
@@ -1474,7 +1478,7 @@ class BeatPrompt:
 
     @dn.datanode
     def render_node(self):
-        header_width = self.settings.header_width
+        header_width = self.settings.prompt.header_width
         header_ran = slice(None, header_width)
         input_ran = slice(header_width, None)
 
@@ -1525,15 +1529,15 @@ class BeatPrompt:
 
 def prompt(promptable, history=None, settings=None):
     if settings is None:
-        settings = BeatPromptSettings()
+        settings = BeatShellSettings()
 
     command = RootCommand(promptable)
     input = BeatInput(command, history)
-    stroke = BeatStroke(input, settings.keymap, settings.keycodes)
+    stroke = BeatStroke(input, settings.input.keymap, settings.input.keycodes)
     prompt = BeatPrompt(stroke, input, settings)
 
     input_knot = dn.input(stroke.input_handler())
-    display_knot = dn.show(prompt.output_handler(), 1/settings.framerate, hide_cursor=True)
+    display_knot = dn.show(prompt.output_handler(), 1/settings.prompt.framerate, hide_cursor=True)
 
     # `dn.show`, `dn.input` will fight each other...
     @dn.datanode

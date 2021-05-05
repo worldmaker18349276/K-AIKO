@@ -13,7 +13,7 @@ from . import cfg
 from . import tui
 from . import kerminal
 from . import beatcmd
-from .beatcmd import BeatPromptSettings
+from .beatcmd import BeatShellSettings
 from .beatmap import BeatmapPlayer, GameplaySettings
 from .beatsheet import BeatmapDraft, BeatmapParseError
 from . import beatanalyzer
@@ -86,14 +86,14 @@ class KAIKOMenuSettings(metaclass=cfg.Configurable):
 class KAIKOSettings:
     def __init__(self):
         self.menu = KAIKOMenuSettings()
-        self.prompt = BeatPromptSettings()
+        self.shell = BeatShellSettings()
         self.gameplay = GameplaySettings()
 
     def read(self, filename):
-        cfg.config_read(filename, menu=self.menu, prompt=self.prompt, gameplay=self.gameplay)
+        cfg.config_read(filename, menu=self.menu, shell=self.shell, gameplay=self.gameplay)
 
     def write(self, filename):
-        cfg.config_write(filename, menu=self.menu, prompt=self.prompt, gameplay=self.gameplay)
+        cfg.config_write(filename, menu=self.menu, shell=self.shell, gameplay=self.gameplay)
 
 class KAIKOMenu:
     """Beat shell is a user friendly commandline shell for playing K-AIKO.
@@ -468,7 +468,7 @@ class KAIKOPlay:
             game.execute(manager)
 
             print()
-            beatanalyzer.show_analyze(beatmap.settings.performance_tolerance, game.perfs)
+            beatanalyzer.show_analyze(beatmap.settings.difficulty.performance_tolerance, game.perfs)
 
 
 if __name__ == '__main__':

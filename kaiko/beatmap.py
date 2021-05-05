@@ -138,7 +138,7 @@ class OneshotTarget(Target):
     # hit(field, time, strength)
 
     def __init__(self, beatmap, beat=None, *, speed=1.0, volume=0.0):
-        self.performance_tolerance = beatmap.settings.performance_tolerance
+        self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
 
         self.time = beatmap.time(beat)
         self.speed = speed
@@ -147,10 +147,10 @@ class OneshotTarget(Target):
 
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.time + travel_time)
-        tol = beatmap.settings.failed_tolerance
+        tol = beatmap.settings.difficulty.failed_tolerance
         self.range = (self.time-tol, self.time+tol)
-        self._scores = beatmap.settings.performances_scores
-        self.full_score = beatmap.settings.performances_max_score
+        self._scores = beatmap.settings.scores.performances_scores
+        self.full_score = beatmap.settings.scores.performances_max_score
 
     def pos(self, time):
         return (self.time-time) * 0.5 * self.speed
@@ -196,10 +196,10 @@ class OneshotTarget(Target):
 class Soft(OneshotTarget):
     def __init__(self, beatmap, beat=None, *, speed=1.0, volume=0.0):
         super().__init__(beatmap, beat=beat, speed=speed, volume=volume)
-        self.approach_appearance = beatmap.settings.soft_approach_appearance
-        self.wrong_appearance = beatmap.settings.soft_wrong_appearance
-        self.sound = beatmap.settings.soft_sound
-        self.threshold = beatmap.settings.soft_threshold
+        self.approach_appearance = beatmap.settings.notes.soft_approach_appearance
+        self.wrong_appearance = beatmap.settings.notes.soft_wrong_appearance
+        self.sound = beatmap.settings.notes.soft_sound
+        self.threshold = beatmap.settings.difficulty.soft_threshold
 
     def hit(self, field, time, strength):
         super().hit(field, time, strength, strength < self.threshold)
@@ -207,10 +207,10 @@ class Soft(OneshotTarget):
 class Loud(OneshotTarget):
     def __init__(self, beatmap, beat=None, *, speed=1.0, volume=0.0):
         super().__init__(beatmap, beat=beat, speed=speed, volume=volume)
-        self.approach_appearance = beatmap.settings.loud_approach_appearance
-        self.wrong_appearance = beatmap.settings.loud_wrong_appearance
-        self.sound = beatmap.settings.loud_sound
-        self.threshold = beatmap.settings.loud_threshold
+        self.approach_appearance = beatmap.settings.notes.loud_approach_appearance
+        self.wrong_appearance = beatmap.settings.notes.loud_wrong_appearance
+        self.sound = beatmap.settings.notes.loud_sound
+        self.threshold = beatmap.settings.difficulty.loud_threshold
 
     def hit(self, field, time, strength):
         super().hit(field, time, strength, strength >= self.threshold)
@@ -228,10 +228,10 @@ class Incr(OneshotTarget):
     def __init__(self, beatmap, group=None, beat=None, *, context, speed=1.0, volume=0.0):
         super().__init__(beatmap, beat=beat, speed=speed)
 
-        self.approach_appearance = beatmap.settings.incr_approach_appearance
-        self.wrong_appearance = beatmap.settings.incr_wrong_appearance
-        self.sound = beatmap.settings.incr_sound
-        self.incr_threshold = beatmap.settings.incr_threshold
+        self.approach_appearance = beatmap.settings.notes.incr_approach_appearance
+        self.wrong_appearance = beatmap.settings.notes.incr_wrong_appearance
+        self.sound = beatmap.settings.notes.incr_sound
+        self.incr_threshold = beatmap.settings.difficulty.incr_threshold
 
         if '_incrs' not in context:
             context['_incrs'] = OrderedDict()
@@ -274,11 +274,11 @@ class Incr(OneshotTarget):
 
 class Roll(Target):
     def __init__(self, beatmap, density=2, beat=None, length=None, *, speed=1.0, volume=0.0):
-        self.performance_tolerance = beatmap.settings.performance_tolerance
-        self.tolerance = beatmap.settings.roll_tolerance
-        self.rock_appearance = beatmap.settings.roll_rock_appearance
-        self.sound = beatmap.settings.roll_rock_sound
-        self.rock_score = beatmap.settings.roll_rock_score
+        self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
+        self.tolerance = beatmap.settings.difficulty.roll_tolerance
+        self.rock_appearance = beatmap.settings.notes.roll_rock_appearance
+        self.sound = beatmap.settings.notes.roll_rock_sound
+        self.rock_score = beatmap.settings.scores.roll_rock_score
 
         self.time = beatmap.time(beat)
         self.end = beatmap.time(beat+length)
@@ -333,12 +333,12 @@ class Roll(Target):
 
 class Spin(Target):
     def __init__(self, beatmap, density=2, beat=None, length=None, *, speed=1.0, volume=0.0):
-        self.tolerance = beatmap.settings.spin_tolerance
-        self.disk_appearances = beatmap.settings.spin_disk_appearances
-        self.finishing_appearance = beatmap.settings.spin_finishing_appearance
-        self.finish_sustain_time = beatmap.settings.spin_finish_sustain_time
-        self.sound = beatmap.settings.spin_disk_sound
-        self.full_score = beatmap.settings.spin_score
+        self.tolerance = beatmap.settings.difficulty.spin_tolerance
+        self.disk_appearances = beatmap.settings.notes.spin_disk_appearances
+        self.finishing_appearance = beatmap.settings.notes.spin_finishing_appearance
+        self.finish_sustain_time = beatmap.settings.notes.spin_finish_sustain_time
+        self.sound = beatmap.settings.notes.spin_disk_sound
+        self.full_score = beatmap.settings.scores.spin_score
 
         self.time = beatmap.time(beat)
         self.end = beatmap.time(beat+length)
@@ -398,64 +398,64 @@ class Spin(Target):
 
 # Game
 class BeatmapSettings(metaclass=cfg.Configurable):
-    ## Difficulty:
-    performance_tolerance: float = 0.02
-    soft_threshold: float = 0.5
-    loud_threshold: float = 0.5
-    incr_threshold: float = -0.1
-    roll_tolerance: float = 0.10
-    spin_tolerance: float = 0.10
+    class difficulty(metaclass=cfg.Configurable):
+        performance_tolerance: float = 0.02
+        soft_threshold: float = 0.5
+        loud_threshold: float = 0.5
+        incr_threshold: float = -0.1
+        roll_tolerance: float = 0.10
+        spin_tolerance: float = 0.10
 
-    perfect_tolerance = property(lambda self: self.performance_tolerance*1)
-    good_tolerance    = property(lambda self: self.performance_tolerance*3)
-    bad_tolerance     = property(lambda self: self.performance_tolerance*5)
-    failed_tolerance  = property(lambda self: self.performance_tolerance*7)
+        perfect_tolerance = property(lambda self: self.performance_tolerance*1)
+        good_tolerance    = property(lambda self: self.performance_tolerance*3)
+        bad_tolerance     = property(lambda self: self.performance_tolerance*5)
+        failed_tolerance  = property(lambda self: self.performance_tolerance*7)
 
-    ## Scores:
-    performances_scores: Dict[PerformanceGrade, int] = {
-        PerformanceGrade.MISS               : 0,
+    class scores(metaclass=cfg.Configurable):
+        performances_scores: Dict[PerformanceGrade, int] = {
+            PerformanceGrade.MISS               : 0,
 
-        PerformanceGrade.LATE_FAILED        : 0,
-        PerformanceGrade.LATE_BAD           : 2,
-        PerformanceGrade.LATE_GOOD          : 8,
-        PerformanceGrade.PERFECT            : 16,
-        PerformanceGrade.EARLY_GOOD         : 8,
-        PerformanceGrade.EARLY_BAD          : 2,
-        PerformanceGrade.EARLY_FAILED       : 0,
+            PerformanceGrade.LATE_FAILED        : 0,
+            PerformanceGrade.LATE_BAD           : 2,
+            PerformanceGrade.LATE_GOOD          : 8,
+            PerformanceGrade.PERFECT            : 16,
+            PerformanceGrade.EARLY_GOOD         : 8,
+            PerformanceGrade.EARLY_BAD          : 2,
+            PerformanceGrade.EARLY_FAILED       : 0,
 
-        PerformanceGrade.LATE_FAILED_WRONG  : 0,
-        PerformanceGrade.LATE_BAD_WRONG     : 1,
-        PerformanceGrade.LATE_GOOD_WRONG    : 4,
-        PerformanceGrade.PERFECT_WRONG      : 8,
-        PerformanceGrade.EARLY_GOOD_WRONG   : 4,
-        PerformanceGrade.EARLY_BAD_WRONG    : 1,
-        PerformanceGrade.EARLY_FAILED_WRONG : 0,
-        }
+            PerformanceGrade.LATE_FAILED_WRONG  : 0,
+            PerformanceGrade.LATE_BAD_WRONG     : 1,
+            PerformanceGrade.LATE_GOOD_WRONG    : 4,
+            PerformanceGrade.PERFECT_WRONG      : 8,
+            PerformanceGrade.EARLY_GOOD_WRONG   : 4,
+            PerformanceGrade.EARLY_BAD_WRONG    : 1,
+            PerformanceGrade.EARLY_FAILED_WRONG : 0,
+            }
 
-    performances_max_score = property(lambda self: max(self.performances_scores.values()))
+        performances_max_score = property(lambda self: max(self.performances_scores.values()))
 
-    roll_rock_score: int = 2
-    spin_score: int = 16
+        roll_rock_score: int = 2
+        spin_score: int = 16
 
-    ## NoteSkin:
-    soft_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[96m□\x1b[m"
-    soft_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[96m⬚\x1b[m"
-    soft_sound: str = f"{BASE_DIR}/samples/soft.wav" # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
-    loud_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[94m■\x1b[m"
-    loud_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[94m⬚\x1b[m"
-    loud_sound: str = f"{BASE_DIR}/samples/loud.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
-    incr_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[94m⬒\x1b[m"
-    incr_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[94m⬚\x1b[m"
-    incr_sound: str = f"{BASE_DIR}/samples/incr.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
-    roll_rock_appearance:      Union[str, Tuple[str, str]] = "\x1b[96m◎\x1b[m"
-    roll_rock_sound: str = f"{BASE_DIR}/samples/rock.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
-    spin_disk_appearances:     Union[List[str], List[Tuple[str, str]]] = ["\x1b[94m◴\x1b[m",
-                                                                          "\x1b[94m◵\x1b[m",
-                                                                          "\x1b[94m◶\x1b[m",
-                                                                          "\x1b[94m◷\x1b[m"]
-    spin_finishing_appearance: Union[str, Tuple[str, str]] = "\x1b[94m☺\x1b[m"
-    spin_finish_sustain_time: float = 0.1
-    spin_disk_sound: str = f"{BASE_DIR}/samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
+    class notes(metaclass=cfg.Configurable):
+        soft_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[96m□\x1b[m"
+        soft_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[96m⬚\x1b[m"
+        soft_sound: str = f"{BASE_DIR}/samples/soft.wav" # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
+        loud_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[94m■\x1b[m"
+        loud_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[94m⬚\x1b[m"
+        loud_sound: str = f"{BASE_DIR}/samples/loud.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
+        incr_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[94m⬒\x1b[m"
+        incr_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[94m⬚\x1b[m"
+        incr_sound: str = f"{BASE_DIR}/samples/incr.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
+        roll_rock_appearance:      Union[str, Tuple[str, str]] = "\x1b[96m◎\x1b[m"
+        roll_rock_sound: str = f"{BASE_DIR}/samples/rock.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
+        spin_disk_appearances:     Union[List[str], List[Tuple[str, str]]] = ["\x1b[94m◴\x1b[m",
+                                                                              "\x1b[94m◵\x1b[m",
+                                                                              "\x1b[94m◶\x1b[m",
+                                                                              "\x1b[94m◷\x1b[m"]
+        spin_finishing_appearance: Union[str, Tuple[str, str]] = "\x1b[94m☺\x1b[m"
+        spin_finish_sustain_time: float = 0.1
+        spin_disk_sound: str = f"{BASE_DIR}/samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
 
 class Beatmap:
     def __init__(self, path=".", info="", audio=None, volume=0.0, offset=0.0, tempo=60.0):
@@ -480,24 +480,23 @@ class Beatmap:
         raise NotImplementedError
 
 class GameplaySettings(metaclass=cfg.Configurable):
-    beatbar: BeatbarSettings
+    class controls(metaclass=cfg.Configurable):
+        leadin_time: float = 1.0
+        skip_time: float = 8.0
+        load_time: float = 0.5
+        prepare_time: float = 0.1
+        tickrate: float = 60.0
 
-    ## Controls:
-    leadin_time: float = 1.0
-    skip_time: float = 8.0
-    load_time: float = 0.5
-    prepare_time: float = 0.1
-    tickrate: float = 60.0
+    class beatbar(BeatbarSettings):
+        class widgets(metaclass=cfg.Configurable):
+            icon_templates: List[str] = ["\x1b[95m{spectrum:^8s}\x1b[m"]
+            header_templates: List[str] = ["\x1b[38;5;93m{score:05d}\x1b[1m/\x1b[21m{full_score:05d}\x1b[m"]
+            footer_templates: List[str] = ["\x1b[38;5;93m{progress:>6.1%}\x1b[1m|\x1b[21m{time:%M:%S}\x1b[m"]
 
-    # PlayFieldSkin:
-    icon_templates: List[str] = ["\x1b[95m{spectrum:^8s}\x1b[m"]
-    header_templates: List[str] = ["\x1b[38;5;93m{score:05d}\x1b[1m/\x1b[21m{full_score:05d}\x1b[m"]
-    footer_templates: List[str] = ["\x1b[38;5;93m{progress:>6.1%}\x1b[1m|\x1b[21m{time:%M:%S}\x1b[m"]
-
-    spec_width: int = 6
-    spec_decay_time: float = 0.01
-    spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
-    spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
+            spec_width: int = 6
+            spec_decay_time: float = 0.01
+            spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
+            spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
 
 class BeatmapPlayer:
     def __init__(self, beatmap, settings=None):
@@ -509,7 +508,7 @@ class BeatmapPlayer:
         self.events = self.beatmap.build_events()
         self.events.sort(key=lambda e: e.lifespan[0])
 
-        leadin_time = self.settings.leadin_time
+        leadin_time = self.settings.controls.leadin_time
         events_start_time = min((event.lifespan[0] - leadin_time for event in self.events), default=0.0)
         events_end_time   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
 
@@ -537,12 +536,12 @@ class BeatmapPlayer:
 
         self.perfs = []
         self.time = datetime.time(0, 0, 0)
-        self.spectrum = "\u2800"*self.settings.spec_width
+        self.spectrum = "\u2800"*self.settings.beatbar.widgets.spec_width
 
         # icon/header/footer handlers
-        icon_templates = self.settings.icon_templates
-        header_templates = self.settings.header_templates
-        footer_templates = self.settings.footer_templates
+        icon_templates = self.settings.beatbar.widgets.icon_templates
+        header_templates = self.settings.beatbar.widgets.header_templates
+        footer_templates = self.settings.beatbar.widgets.footer_templates
 
         def fit(templates, ran):
             status = self.get_status()
@@ -561,11 +560,11 @@ class BeatmapPlayer:
 
     @contextlib.contextmanager
     def execute(self, manager):
-        tickrate = self.settings.tickrate
+        tickrate = self.settings.controls.tickrate
         samplerate = self.settings.beatbar.mixer.output_samplerate
         nchannels = self.settings.beatbar.mixer.output_channels
         time_shift = self.prepare(samplerate, nchannels)
-        load_time = self.settings.load_time
+        load_time = self.settings.controls.load_time
         ref_time = load_time + time_shift
 
         beatbar_knot, self.beatbar = Beatbar.create(self.settings.beatbar, manager, ref_time)
@@ -592,8 +591,8 @@ class BeatmapPlayer:
         event = next(events_iter, None)
 
         start_time = self.start_time
-        tickrate = self.settings.tickrate
-        prepare_time = self.settings.prepare_time
+        tickrate = self.settings.controls.tickrate
+        prepare_time = self.settings.controls.prepare_time
 
         yield
         index = 0
@@ -625,11 +624,11 @@ class BeatmapPlayer:
             )
 
     def _spec_handler(self):
-        spec_width = self.settings.spec_width
+        spec_width = self.settings.beatbar.widgets.spec_width
         samplerate = self.settings.beatbar.mixer.output_samplerate
         nchannels = self.settings.beatbar.mixer.output_channels
-        hop_length = round(samplerate * self.settings.spec_time_res)
-        win_length = round(samplerate / self.settings.spec_freq_res)
+        hop_length = round(samplerate * self.settings.beatbar.widgets.spec_time_res)
+        win_length = round(samplerate / self.settings.beatbar.widgets.spec_freq_res)
 
         df = samplerate/win_length
         n_fft = win_length//2+1
@@ -638,7 +637,7 @@ class BeatmapPlayer:
         sec = numpy.minimum(n_fft-1, (f/df).round().astype(int))
         slices = [slice(start, stop) for start, stop in zip(sec[:-1], (sec+1)[1:])]
 
-        decay = hop_length / samplerate / self.settings.spec_decay_time / 4
+        decay = hop_length / samplerate / self.settings.beatbar.widgets.spec_decay_time / 4
         volume_of = lambda J: dn.power2db(J.mean() * samplerate / 2, scale=(1e-5, 1e6)) / 60.0
 
         A = numpy.cumsum([0, 2**6, 2**2, 2**1, 2**0])

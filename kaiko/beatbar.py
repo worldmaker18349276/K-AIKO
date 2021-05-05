@@ -88,54 +88,53 @@ class Performance:
         return self.descriptions[self.grade]
 
 class BeatbarSettings(metaclass=cfg.Configurable):
-    mixer: MixerSettings
-    detector: DetectorSettings
-    renderer: RendererSettings
+    mixer = MixerSettings
+    detector = DetectorSettings
+    renderer = RendererSettings
 
-    # BeatbarLayout:
-    icon_width: int = 8
-    header_width: int = 11
-    footer_width: int = 12
+    class layout(metaclass=cfg.Configurable):
+        icon_width: int = 8
+        header_width: int = 11
+        footer_width: int = 12
 
-    bar_shift: float = 0.1
-    bar_flip: bool = False
+        bar_shift: float = 0.1
+        bar_flip: bool = False
 
-    header_quotes: Tuple[str, str] = ("\b\x1b[38;5;93;1m[\x1b[m", "\x1b[38;5;93;1m]\x1b[m")
-    footer_quotes: Tuple[str, str] = ("\b\x1b[38;5;93;1m[\x1b[m", "\x1b[38;5;93;1m]\x1b[m")
+        header_quotes: Tuple[str, str] = ("\b\x1b[38;5;93;1m[\x1b[m", "\x1b[38;5;93;1m]\x1b[m")
+        footer_quotes: Tuple[str, str] = ("\b\x1b[38;5;93;1m[\x1b[m", "\x1b[38;5;93;1m]\x1b[m")
 
-    # PerformanceSkin:
-    performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
-        PerformanceGrade.MISS               : (""   , ""     ),
 
-        PerformanceGrade.LATE_FAILED        : ("\b\x1b[95m⟪\x1b[m", "\t\t\x1b[95m⟫\x1b[m"),
-        PerformanceGrade.LATE_BAD           : ("\b\x1b[95m⟨\x1b[m", "\t\t\x1b[95m⟩\x1b[m"),
-        PerformanceGrade.LATE_GOOD          : ("\b\x1b[95m‹\x1b[m", "\t\t\x1b[95m›\x1b[m"),
-        PerformanceGrade.PERFECT            : (""   , ""     ),
-        PerformanceGrade.EARLY_GOOD         : ("\t\t\x1b[95m›\x1b[m", "\b\x1b[95m‹\x1b[m"),
-        PerformanceGrade.EARLY_BAD          : ("\t\t\x1b[95m⟩\x1b[m", "\b\x1b[95m⟨\x1b[m"),
-        PerformanceGrade.EARLY_FAILED       : ("\t\t\x1b[95m⟫\x1b[m", "\b\x1b[95m⟪\x1b[m"),
+    class scrollingbar(metaclass=cfg.Configurable):
+        performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
+            PerformanceGrade.MISS               : (""   , ""     ),
 
-        PerformanceGrade.LATE_FAILED_WRONG  : ("\b\x1b[95m⟪\x1b[m", "\t\t\x1b[95m⟫\x1b[m"),
-        PerformanceGrade.LATE_BAD_WRONG     : ("\b\x1b[95m⟨\x1b[m", "\t\t\x1b[95m⟩\x1b[m"),
-        PerformanceGrade.LATE_GOOD_WRONG    : ("\b\x1b[95m‹\x1b[m", "\t\t\x1b[95m›\x1b[m"),
-        PerformanceGrade.PERFECT_WRONG      : (""   , ""     ),
-        PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t\x1b[95m›\x1b[m", "\b\x1b[95m‹\x1b[m"),
-        PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t\x1b[95m⟩\x1b[m", "\b\x1b[95m⟨\x1b[m"),
-        PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t\x1b[95m⟫\x1b[m", "\b\x1b[95m⟪\x1b[m"),
-        }
+            PerformanceGrade.LATE_FAILED        : ("\b\x1b[95m⟪\x1b[m", "\t\t\x1b[95m⟫\x1b[m"),
+            PerformanceGrade.LATE_BAD           : ("\b\x1b[95m⟨\x1b[m", "\t\t\x1b[95m⟩\x1b[m"),
+            PerformanceGrade.LATE_GOOD          : ("\b\x1b[95m‹\x1b[m", "\t\t\x1b[95m›\x1b[m"),
+            PerformanceGrade.PERFECT            : (""   , ""     ),
+            PerformanceGrade.EARLY_GOOD         : ("\t\t\x1b[95m›\x1b[m", "\b\x1b[95m‹\x1b[m"),
+            PerformanceGrade.EARLY_BAD          : ("\t\t\x1b[95m⟩\x1b[m", "\b\x1b[95m⟨\x1b[m"),
+            PerformanceGrade.EARLY_FAILED       : ("\t\t\x1b[95m⟫\x1b[m", "\b\x1b[95m⟪\x1b[m"),
 
-    performance_sustain_time: float = 0.1
+            PerformanceGrade.LATE_FAILED_WRONG  : ("\b\x1b[95m⟪\x1b[m", "\t\t\x1b[95m⟫\x1b[m"),
+            PerformanceGrade.LATE_BAD_WRONG     : ("\b\x1b[95m⟨\x1b[m", "\t\t\x1b[95m⟩\x1b[m"),
+            PerformanceGrade.LATE_GOOD_WRONG    : ("\b\x1b[95m‹\x1b[m", "\t\t\x1b[95m›\x1b[m"),
+            PerformanceGrade.PERFECT_WRONG      : (""   , ""     ),
+            PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t\x1b[95m›\x1b[m", "\b\x1b[95m‹\x1b[m"),
+            PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t\x1b[95m⟩\x1b[m", "\b\x1b[95m⟨\x1b[m"),
+            PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t\x1b[95m⟫\x1b[m", "\b\x1b[95m⟪\x1b[m"),
+            }
+        performance_sustain_time: float = 0.1
 
-    # ScrollingBarSkin:
-    sight_appearances: Union[List[str], List[Tuple[str, str]]] = ["\x1b[95m⛶\x1b[m",
-                                                                  "\x1b[38;5;201m🞎\x1b[m",
-                                                                  "\x1b[38;5;200m🞏\x1b[m",
-                                                                  "\x1b[38;5;199m🞐\x1b[m",
-                                                                  "\x1b[38;5;198m🞑\x1b[m",
-                                                                  "\x1b[38;5;197m🞒\x1b[m",
-                                                                  "\x1b[38;5;196m🞓\x1b[m"]
-    hit_decay_time: float = 0.4
-    hit_sustain_time: float = 0.1
+        sight_appearances: Union[List[str], List[Tuple[str, str]]] = ["\x1b[95m⛶\x1b[m",
+                                                                      "\x1b[38;5;201m🞎\x1b[m",
+                                                                      "\x1b[38;5;200m🞏\x1b[m",
+                                                                      "\x1b[38;5;199m🞐\x1b[m",
+                                                                      "\x1b[38;5;198m🞑\x1b[m",
+                                                                      "\x1b[38;5;197m🞒\x1b[m",
+                                                                      "\x1b[38;5;196m🞓\x1b[m"]
+        hit_decay_time: float = 0.4
+        hit_sustain_time: float = 0.1
 
 class Beatbar:
     def __init__(self, mixer, detector, renderer,
@@ -166,13 +165,13 @@ class Beatbar:
 
     @classmethod
     def create(clz, settings, manager, ref_time):
-        icon_width = settings.icon_width
-        header_width = settings.header_width
-        footer_width = settings.footer_width
-        bar_shift = settings.bar_shift
-        bar_flip = settings.bar_flip
-        header_quotes = settings.header_quotes
-        footer_quotes = settings.footer_quotes
+        icon_width = settings.layout.icon_width
+        header_width = settings.layout.header_width
+        footer_width = settings.layout.footer_width
+        bar_shift = settings.layout.bar_shift
+        bar_flip = settings.layout.bar_flip
+        header_quotes = settings.layout.header_quotes
+        footer_quotes = settings.layout.footer_quotes
 
         icon_mask = slice(None, icon_width)
         header_mask = slice(icon_width+1, icon_width+1+header_width)
@@ -189,11 +188,11 @@ class Beatbar:
         footer_drawer = clz._masked_node(current_footer, footer_mask, footer_quotes)
 
         # sight
-        hit_decay_time = settings.hit_decay_time
-        hit_sustain_time = settings.hit_sustain_time
-        perf_appearances = settings.performances_appearances
-        sight_appearances = settings.sight_appearances
-        perf_sustain_time = settings.performance_sustain_time
+        hit_decay_time = settings.scrollingbar.hit_decay_time
+        hit_sustain_time = settings.scrollingbar.hit_sustain_time
+        perf_appearances = settings.scrollingbar.performances_appearances
+        sight_appearances = settings.scrollingbar.sight_appearances
+        perf_sustain_time = settings.scrollingbar.performance_sustain_time
         hit_hint_duration = max(hit_decay_time, hit_sustain_time)
 
         default_sight = clz._get_default_sight(hit_decay_time, hit_sustain_time,
