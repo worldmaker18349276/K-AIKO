@@ -227,7 +227,7 @@ class TokenParseError(Exception):
 class TOKEN_TYPE(Enum):
     COMMAND = "command"
     ARGUMENT = "argument"
-    LITERAL = "literal"
+    KEYWORD = "keyword"
     UNKNOWN = "unknown"
 
 
@@ -524,7 +524,7 @@ class FunctionCommand(Command):
             value = parser.parse(token)
 
             func = functools.partial(self.func, **{name: value})
-            return TOKEN_TYPE.LITERAL, FunctionCommand(func, args, self.kwargs)
+            return TOKEN_TYPE.ARGUMENT, FunctionCommand(func, args, self.kwargs)
 
         # parse keyword arguments
         if self.kwargs:
@@ -538,7 +538,7 @@ class FunctionCommand(Command):
                 raise TokenParseError(msg)
 
             args = OrderedDict([(name, arg)])
-            return TOKEN_TYPE.ARGUMENT, FunctionCommand(self.func, args, kwargs)
+            return TOKEN_TYPE.KEYWORD, FunctionCommand(self.func, args, kwargs)
 
         # rest
         raise TokenParseError("Too many arguments")
@@ -1450,12 +1450,12 @@ class BeatPrompt:
                         rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_command_attr)
 
                 # render argument token
-                elif type is TOKEN_TYPE.ARGUMENT:
+                elif type is TOKEN_TYPE.KEYWORD:
                     for index in range(len(rendered_buffer))[slic]:
                         rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_argument_attr)
 
                 # render literal token
-                elif type is TOKEN_TYPE.LITERAL:
+                elif type is TOKEN_TYPE.ARGUMENT:
                     for index in range(len(rendered_buffer))[slic]:
                         rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_literal_attr)
 
