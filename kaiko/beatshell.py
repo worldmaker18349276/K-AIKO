@@ -4,6 +4,7 @@ from collections import OrderedDict
 import functools
 import itertools
 import re
+import ast
 import queue
 import threading
 import inspect
@@ -232,22 +233,8 @@ class TOKEN_TYPE(Enum):
 
 
 class ArgumentParser:
-    @staticmethod
-    def wrap(type, default=inspect.Parameter.empty):
-        if type == bool:
-            return BoolParser(default)
-        elif type == int:
-            return IntParser(default)
-        elif type == float:
-            return FloatParser(default)
-        elif type == str:
-            return StrParser(default)
-        else:
-            return None
-
     def parse(self, token):
-        help = self.help(token)
-        raise TokenParseError("Invalid value" + ("\n" + help if help is not None else ""))
+        raise TokenParseError("Invalid value")
 
     def suggest(self, token):
         return []
@@ -362,16 +349,47 @@ class PathParser(ArgumentParser):
             return self.docs
         return "It should be Path literal"
 
-class BoolParser(ArgumentParser):
+class LiteralParser(ArgumentParser):
+    @staticmethod
+    def wrap(type, default=inspect.Parameter.empty, docs=None):
+        if type == bool:
+            return BoolParser(default, docs)
+        elif type == int:
+            return IntParser(default, docs)
+        elif type == float:
+            return FloatParser(default, docs)
+        elif type == str:
+            return StrParser(default, docs)
+        else:
+            return None
+
     def __init__(self, default=inspect.Parameter.empty, docs=None):
         self.default = default
         self.docs = docs
 
     def parse(self, token):
-        if not re.fullmatch("True|False", token):
+        if not re.fullmatch(self.regex, token):
             help = self.help(token)
             raise TokenParseError("Invalid value" + ("\n" + help if help is not None else ""))
-        return token == "True"
+        return ast.literal_eval(token)
+
+    def suggest(self, token):
+        if self.default is inspect.Parameter.empty:
+            return []
+        else:
+            return [(val, False) for val in fit(token, [self.repr(self.default)])]
+
+    def help(self, token):
+        if self.docs:
+            return self.docs
+        return f"It should be {self.name}"
+
+    def repr(self, value):
+        return repr(value)
+
+class BoolParser(LiteralParser):
+    regex = "True|False"
+    name = "bool"
 
     def suggest(self, token):
         if self.default is inspect.Parameter.empty or self.default == True:
@@ -379,76 +397,24 @@ class BoolParser(ArgumentParser):
         else:
             return [(val, False) for val in fit(token, ["False", "True"])]
 
-    def help(self, token):
-        if self.docs:
-            return self.docs
-        return "It should be bool literal"
+class IntParser(LiteralParser):
+    regex = r"[-+]?(0|[1-9][0-9]*)"
+    name = "int"
 
-class IntParser(ArgumentParser):
-    def __init__(self, default=inspect.Parameter.empty, docs=None):
-        self.default = default
-        self.docs = docs
+class FloatParser(LiteralParser):
+    regex = r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)"
+    name = "float"
 
-    def parse(self, token):
-        if not re.fullmatch(r"[-+]?(0|[1-9][0-9]*)", token):
-            help = self.help(token)
-            raise TokenParseError("Invalid value" + ("\n" + help if help is not None else ""))
-        return int(token)
+class StrParser(LiteralParser):
+    regex = r'"([^\\"]|\\.)*"'
+    name = "str"
 
-    def suggest(self, token):
-        if self.default is inspect.Parameter.empty:
-            return []
-        else:
-            return [(val, False) for val in fit(token, [str(self.default)])]
-
-    def help(self, token):
-        if self.docs:
-            return self.docs
-        return "It should be int literal"
-
-class FloatParser(ArgumentParser):
-    def __init__(self, default=inspect.Parameter.empty, docs=None):
-        self.default = default
-        self.docs = docs
-
-    def parse(self, token):
-        if not re.fullmatch(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)", token):
-            help = self.help(token)
-            raise TokenParseError("Invalid value" + ("\n" + help if help is not None else ""))
-        return float(token)
-
-    def suggest(self, token):
-        if self.default is inspect.Parameter.empty:
-            return []
-        else:
-            return [(val, False) for val in fit(token, [str(self.default)])]
-
-    def help(self, token):
-        if self.docs:
-            return self.docs
-        return "It should be float literal"
-
-class StrParser(ArgumentParser):
-    def __init__(self, default=inspect.Parameter.empty, docs=None):
-        self.default = default
-        self.docs = docs
-
-    def parse(self, token):
-        if not re.fullmatch(r'"([^\\"]|\\.)*"', token):
-            help = self.help(token)
-            raise TokenParseError("Invalid value" + ("\n" + help if help is not None else ""))
-        return eval(token)
-
-    def suggest(self, token):
-        if self.default is inspect.Parameter.empty:
-            return []
-        else:
-            return [(val, False) for val in fit(token, [self.default])]
-
-    def help(self, token):
-        if self.docs:
-            return self.docs
-        return "It should be str literal"
+    def repr(self, value):
+        value_ = value.replace("'", "'1").replace('"', "'2") + "'0"
+        repr_value_ = repr(value_)
+        # assert repr_value_[0] == '"'
+        repr_value = repr_value_.replace("'0", "").replace("'2", '"').replace("'1", "'")
+        return repr_value
 
 
 class CommandDescriptor:
@@ -474,7 +440,7 @@ class function_command(CommandDescriptor):
         args = OrderedDict()
         kwargs = OrderedDict()
         for param in sig.parameters.values():
-            arg = parsers.get(param.name, ArgumentParser.wrap(param.annotation, param.default))
+            arg = parsers.get(param.name, LiteralParser.wrap(param.annotation, param.default))
 
             if param.default is inspect.Parameter.empty:
                 args[param.name] = arg
