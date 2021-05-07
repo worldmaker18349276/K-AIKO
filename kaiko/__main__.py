@@ -12,8 +12,8 @@ from . import datanodes as dn
 from . import cfg
 from . import tui
 from . import kerminal
-from . import beatcmd
-from .beatcmd import BeatShellSettings
+from . import beatshell
+from .beatshell import BeatShellSettings
 from .beatmap import BeatmapPlayer, GameplaySettings
 from .beatsheet import BeatmapDraft, BeatmapParseError
 from . import beatanalyzer
@@ -119,30 +119,30 @@ class KAIKOMenu:
         self._beatmaps = []
         self.songs_mtime = None
 
-    @beatcmd.function_command
+    @beatshell.function_command
     def username(self):
         return self._username
 
-    @beatcmd.function_command
+    @beatshell.function_command
     def data_dir(self):
         return self._data_dir
 
-    @beatcmd.function_command
+    @beatshell.function_command
     def config_file(self):
         return self._data_dir / "config.py"
 
-    @beatcmd.function_command
+    @beatshell.function_command
     def songs_dir(self):
         return self._songs_dir
 
-    @beatcmd.function_command
+    @beatshell.function_command
     def beatmaps(self):
         if self.songs_mtime != os.stat(str(self._songs_dir)).st_mtime:
             self.reload()
 
         return self._beatmaps
 
-    @beatcmd.function_command
+    @beatshell.function_command
     def reload(self):
         """Reload your data.
 
@@ -180,7 +180,7 @@ class KAIKOMenu:
 
         self.songs_mtime = os.stat(str(songs_dir)).st_mtime
 
-    @beatcmd.function_command
+    @beatshell.function_command
     def add(self, beatmap:Path):
         """Add beatmap/beatmapset to your songs folder.
 
@@ -213,7 +213,7 @@ class KAIKOMenu:
 
         self.reload()
 
-    @beatcmd.function_command
+    @beatshell.function_command
     def remove(self, beatmap):
         """Remove beatmap/beatmapset in your songs folder.
 
@@ -255,9 +255,9 @@ class KAIKOMenu:
                     if beatmap.suffix in (".kaiko", ".ka", ".osu"):
                         options.append(str(beatmap.relative_to(songs_dir)))
 
-        return beatcmd.OptionParser(options)
+        return beatshell.OptionParser(options)
 
-    @beatcmd.function_command
+    @beatshell.function_command
     def play(self, beatmap):
         """Let's beat with the song!
 
@@ -274,39 +274,39 @@ class KAIKOMenu:
     @play.arg_parser("beatmap")
     @property
     def _play_beatmap_parser(self):
-        return beatcmd.OptionParser([str(beatmap.relative_to(self._songs_dir)) for beatmap in self.beatmaps()])
+        return beatshell.OptionParser([str(beatmap.relative_to(self._songs_dir)) for beatmap in self.beatmaps()])
 
-    @beatcmd.function_command
+    @beatshell.function_command
     def say(self, message, escape=False):
         """Say something and I will echo.
 
         usage: \x1b[94msay\x1b[m \x1b[92m{message}\x1b[m [\x1b[95m--escape\x1b[m \x1b[92m{ESCAPE}\x1b[m]\x1b[m
                       ╱                    ╲
-            str, the message                ╲
+            text, the message               ╲
              to be printed.          bool, use backslash escapes
                                     or not; the default is False.
         """
 
         if escape:
-            print(beatcmd.echo_str(message))
+            print(beatshell.echo_str(message))
         else:
             print(message)
 
     @say.arg_parser("message")
     @property
     def _say_message_parser(self):
-        return beatcmd.StrParser(docs="It should be str literal,"
+        return beatshell.RawParser(docs="It should be some text,"
                                       " indicating the message to be printed.")
 
     @say.arg_parser("escape")
     @property
     def _say_escape_parser(self):
-        return beatcmd.BoolParser(default=False,
+        return beatshell.BoolParser(default=False,
                                   docs="It should be bool literal,"
                                        " indicating whether to use backslash escapes;"
                                        " the default is False.")
 
-    @beatcmd.function_command
+    @beatshell.function_command
     def exit(self):
         print("bye~")
         raise KeyboardInterrupt
@@ -416,7 +416,7 @@ class KAIKOMenu:
 
                 # execute given command
                 if len(sys.argv) > 1:
-                    res = beatcmd.RootCommand(game).build(sys.argv[1:])()
+                    res = beatshell.RootCommand(game).build(sys.argv[1:])()
                     if hasattr(res, 'execute'):
                         res.execute(game.manager)
                     return
@@ -429,7 +429,7 @@ class KAIKOMenu:
                 # prompt
                 history = []
                 while True:
-                    result = beatcmd.prompt(game, history)
+                    result = beatshell.prompt(game, history)
 
                     if hasattr(result, 'execute'):
                         result.execute(game.manager)

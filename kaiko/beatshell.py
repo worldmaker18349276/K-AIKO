@@ -231,7 +231,7 @@ class TOKEN_TYPE(Enum):
     UNKNOWN = "unknown"
 
 
-class LiteralParser:
+class ArgumentParser:
     @staticmethod
     def wrap(type, default=inspect.Parameter.empty):
         if isinstance(type, (list, tuple)):
@@ -259,7 +259,26 @@ class LiteralParser:
     def help(self, token):
         return None
 
-class OptionParser(LiteralParser):
+class RawParser(ArgumentParser):
+    def __init__(self, default=inspect.Parameter.empty, docs=None):
+        self.default = default
+        self.docs = docs
+
+    def parse(self, token):
+        return token
+
+    def suggest(self, token):
+        if self.default is inspect.Parameter.empty:
+            return []
+        else:
+            return [(val, False) for val in fit(token, [self.default])]
+
+    def help(self, token):
+        if self.docs:
+            return self.docs
+        return None
+
+class OptionParser(ArgumentParser):
     def __init__(self, options, default=inspect.Parameter.empty, docs=None):
         self.options = options
         self.default = default
@@ -279,7 +298,7 @@ class OptionParser(LiteralParser):
             return self.docs
         return "It should be one of:\n" + "\n".join("  " + shlexer_quoting(s) for s in self.options)
 
-class BoolParser(LiteralParser):
+class BoolParser(ArgumentParser):
     def __init__(self, default=inspect.Parameter.empty, docs=None):
         self.default = default
         self.docs = docs
@@ -301,7 +320,7 @@ class BoolParser(LiteralParser):
             return self.docs
         return "It should be bool literal"
 
-class IntParser(LiteralParser):
+class IntParser(ArgumentParser):
     def __init__(self, default=inspect.Parameter.empty, docs=None):
         self.default = default
         self.docs = docs
@@ -323,7 +342,7 @@ class IntParser(LiteralParser):
             return self.docs
         return "It should be int literal"
 
-class FloatParser(LiteralParser):
+class FloatParser(ArgumentParser):
     def __init__(self, default=inspect.Parameter.empty, docs=None):
         self.default = default
         self.docs = docs
@@ -345,13 +364,16 @@ class FloatParser(LiteralParser):
             return self.docs
         return "It should be float literal"
 
-class StrParser(LiteralParser):
+class StrParser(ArgumentParser):
     def __init__(self, default=inspect.Parameter.empty, docs=None):
         self.default = default
         self.docs = docs
 
     def parse(self, token):
-        return token
+        if not re.fullmatch(r'"([^\\"]|\\.)*"', token):
+            help = self.help(token)
+            raise TokenParseError("Invalid value" + ("\n" + help if help is not None else ""))
+        return eval(token)
 
     def suggest(self, token):
         if self.default is inspect.Parameter.empty:
@@ -364,7 +386,7 @@ class StrParser(LiteralParser):
             return self.docs
         return "It should be str literal"
 
-class PathParser(LiteralParser):
+class PathParser(ArgumentParser):
     def __init__(self, default=inspect.Parameter.empty, docs=None):
         self.default = default
         self.docs = docs
@@ -449,7 +471,7 @@ class function_command(CommandDescriptor):
         args = OrderedDict()
         kwargs = OrderedDict()
         for param in sig.parameters.values():
-            arg = parsers.get(param.name, LiteralParser.wrap(param.annotation, param.default))
+            arg = parsers.get(param.name, ArgumentParser.wrap(param.annotation, param.default))
 
             if param.default is inspect.Parameter.empty:
                 args[param.name] = arg
