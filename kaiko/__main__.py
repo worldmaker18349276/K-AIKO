@@ -98,7 +98,7 @@ class KAIKOSettings:
 class KAIKOMenu:
     """Beat shell is a user friendly commandline shell for playing K-AIKO.
 
-    Just type the commands followed by any arguments, and press \x1b[1mEnter\x1b[m to execute them!
+    Just type a command followed by any arguments, and press \x1b[1mEnter\x1b[m to execute!
 
      beating prompt
        │    the command you want to execute
@@ -181,7 +181,7 @@ class KAIKOMenu:
         self.songs_mtime = os.stat(str(songs_dir)).st_mtime
 
     @beatshell.function_command
-    def add(self, beatmap:Path):
+    def add(self, beatmap):
         """Add beatmap/beatmapset to your songs folder.
 
         usage: \x1b[94madd\x1b[m \x1b[92m{beatmap}\x1b[m
@@ -212,6 +212,11 @@ class KAIKOMenu:
             return
 
         self.reload()
+
+    @add.arg_parser("beatmap")
+    @property
+    def _add_beatmap_parser(self):
+        return beatshell.PathParser()
 
     @beatshell.function_command
     def remove(self, beatmap):

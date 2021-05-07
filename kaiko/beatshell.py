@@ -234,9 +234,7 @@ class TOKEN_TYPE(Enum):
 class ArgumentParser:
     @staticmethod
     def wrap(type, default=inspect.Parameter.empty):
-        if isinstance(type, (list, tuple)):
-            return OptionParser(type, default)
-        elif type == bool:
+        if type == bool:
             return BoolParser(default)
         elif type == int:
             return IntParser(default)
@@ -244,8 +242,6 @@ class ArgumentParser:
             return FloatParser(default)
         elif type == str:
             return StrParser(default)
-        elif type == Path:
-            return PathParser(default)
         else:
             return None
 
@@ -297,6 +293,74 @@ class OptionParser(ArgumentParser):
         if self.docs:
             return self.docs
         return "It should be one of:\n" + "\n".join("  " + shlexer_quoting(s) for s in self.options)
+
+class PathParser(ArgumentParser):
+    def __init__(self, root=".", default=inspect.Parameter.empty, docs=None):
+        self.root = root
+        self.default = default
+        self.docs = docs
+
+    def parse(self, token):
+        try:
+            exists = os.path.exists(os.path.join(self.root, token or "."))
+        except ValueError:
+            exists = False
+
+        if not exists:
+            help = self.help(token)
+            raise TokenParseError("Path does not exist" + ("\n" + help if help is not None else ""))
+
+        return Path(token)
+
+    def suggest(self, token):
+        if not token:
+            token = "."
+
+        suggestions = []
+
+        if self.default is not inspect.Parameter.empty:
+            suggestions.append((str(self.default), False))
+
+        # check path
+        currpath = os.path.join(self.root, token)
+        try:
+            is_dir = os.path.isdir(currpath)
+            is_file = os.path.isfile(currpath)
+        except ValueError:
+            return suggestions
+
+        if is_file:
+            suggestions.append((token, False))
+            return suggestions
+
+        # separate parent and partial name
+        if is_dir:
+            suggestions.append((os.path.join(token, ""), True))
+            target = ""
+        else:
+            token, target = os.path.split(token)
+
+        # explore directory
+        currdir = os.path.join(self.root, token)
+        if os.path.isdir(currdir):
+            names = fit(target, [name for name in os.listdir(currdir) if not name.startswith(".")])
+            for name in names:
+                subpath = os.path.join(currdir, name)
+                sugg = os.path.join(token, name)
+
+                if os.path.isdir(subpath):
+                    sugg = os.path.join(sugg, "")
+                    suggestions.append((sugg, True))
+
+                elif os.path.isfile(subpath):
+                    suggestions.append((sugg, False))
+
+        return suggestions
+
+    def help(self, token):
+        if self.docs:
+            return self.docs
+        return "It should be Path literal"
 
 class BoolParser(ArgumentParser):
     def __init__(self, default=inspect.Parameter.empty, docs=None):
@@ -385,67 +449,6 @@ class StrParser(ArgumentParser):
         if self.docs:
             return self.docs
         return "It should be str literal"
-
-class PathParser(ArgumentParser):
-    def __init__(self, default=inspect.Parameter.empty, docs=None):
-        self.default = default
-        self.docs = docs
-
-    def parse(self, token):
-        try:
-            exists = os.path.exists(token or ".")
-        except ValueError:
-            exists = False
-
-        if not exists:
-            help = self.help(token)
-            raise TokenParseError("Path does not exist" + ("\n" + help if help is not None else ""))
-
-        return Path(token)
-
-    def suggest(self, token):
-        suggestions = []
-
-        if self.default is not inspect.Parameter.empty:
-            suggestions.append((str(self.default), False))
-
-        # check path
-        try:
-            is_dir = os.path.isdir(token or ".")
-            is_file = os.path.isfile(token or ".")
-        except ValueError:
-            return suggestions
-
-        if is_file:
-            suggestions.append((token, False))
-            return suggestions
-
-        # separate parent and partial name
-        if is_dir:
-            suggestions.append((os.path.join(token or ".", ""), True))
-            target = ""
-        else:
-            token, target = os.path.split(token)
-
-        # explore directory
-        if os.path.isdir(token or "."):
-            names = fit(target, [name for name in os.listdir(token or ".") if not name.startswith(".")])
-            for name in names:
-                subpath = os.path.join(token, name)
-
-                if os.path.isdir(subpath):
-                    subpath = os.path.join(subpath, "")
-                    suggestions.append((subpath, True))
-
-                elif os.path.isfile(subpath):
-                    suggestions.append((subpath, False))
-
-        return suggestions
-
-    def help(self, token):
-        if self.docs:
-            return self.docs
-        return "It should be Path literal"
 
 
 class CommandDescriptor:
