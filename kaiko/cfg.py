@@ -119,12 +119,26 @@ def make_basic_parser_full():
             list = fr" {msp} , {msp} ".join(args)
             return fr"( {name} {sp}* \( {msp} {list} {msp} ( , {msp} )? \) )"
 
-    atomic_types = dict(nonetype=none_parser, bool=bool_parser,
-                        int=int_parser, float=float_parser, complex=complex_parser,
-                        str=str_parser, bytes=bytes_parser)
-    composite_types = dict(list=list_parser, set=set_parser, dict=dict_parser,
-                           tuple=TupleParser(), union=UnionParser())
-    custom_types = dict(enum=Enum_parser, dataclass=dataclass_parser)
+    atomic_types = {}
+    composite_types = {}
+    custom_types = {}
+
+    atomic_types[type(None)] = none_parser
+    atomic_types[bool]       = bool_parser
+    atomic_types[int]        = int_parser
+    atomic_types[float]      = float_parser
+    atomic_types[complex]    = complex_parser
+    atomic_types[str]        = str_parser
+    atomic_types[bytes]      = bytes_parser
+
+    composite_types[typing.List]  = list_parser
+    composite_types[typing.Set]   = set_parser
+    composite_types[typing.Dict]  = dict_parser
+    composite_types[typing.Tuple] = TupleParser()
+    composite_types[typing.Union] = UnionParser()
+
+    custom_types['enum'] = Enum_parser
+    custom_types['dataclass'] = dataclass_parser
 
     return atomic_types, composite_types, custom_types
 
@@ -180,12 +194,26 @@ def make_basic_parser_simple():
             list = fr" , [ ]".join(args)
             return fr"( {name} \( {list} \) )"
 
-    atomic_types = dict(nonetype=none_parser, bool=bool_parser,
-                        int=int_parser, float=float_parser,
-                        str=str_parser, bytes=bytes_parser)
-    composite_types = dict(list=list_parser, set=set_parser, dict=dict_parser,
-                           tuple=TupleParser(), union=UnionParser())
-    custom_types = dict(enum=Enum_parser, dataclass=dataclass_parser)
+    atomic_types = {}
+    composite_types = {}
+    custom_types = {}
+
+    atomic_types[type(None)] = none_parser
+    atomic_types[bool]       = bool_parser
+    atomic_types[int]        = int_parser
+    atomic_types[float]      = float_parser
+    atomic_types[complex]    = complex_parser
+    atomic_types[str]        = str_parser
+    atomic_types[bytes]      = bytes_parser
+
+    composite_types[typing.List]  = list_parser
+    composite_types[typing.Set]   = set_parser
+    composite_types[typing.Dict]  = dict_parser
+    composite_types[typing.Tuple] = TupleParser()
+    composite_types[typing.Union] = UnionParser()
+
+    custom_types['enum'] = Enum_parser
+    custom_types['dataclass'] = dataclass_parser
 
     return atomic_types, composite_types, custom_types
 
@@ -196,23 +224,19 @@ def parser(clz):
     if clz is None:
         clz = type(None)
 
-    if not isinstance(clz, (type, typing._Union)):
-        raise ValueError(repr(clz) + " is not a type")
+    if isinstance(clz, type) and clz in atomic_types:
+        return atomic_types[clz]
 
-    name = (clz.__name__ if not isinstance(clz, typing._Union) else 'union').lower()
-
-    if name in atomic_types:
-        return atomic_types[name]
-
-    elif name in composite_types:
-        args = [parser(arg) for arg in clz.__args__]
-        return composite_types[name].format(*args)
-
-    elif issubclass(clz, enum.Enum):
+    elif isinstance(clz, type) and issubclass(clz, enum.Enum):
         return custom_types['enum'](clz, parser)
 
     elif dataclasses.is_dataclass(clz):
         return custom_types['dataclass'](clz, parser)
+
+    elif hasattr(clz, '__origin__') and getattr(clz, '__origin__') in composite_types:
+        comp = composite_types[getattr(clz, '__origin__')]
+        args = [parser(arg) for arg in clz.__args__]
+        return comp.format(*args)
 
     else:
         raise ValueError("Unable to unrepr type " + clz.__name__)
