@@ -1,15 +1,15 @@
 import os
 from enum import Enum
+import dataclasses
 from collections import OrderedDict
 import functools
 import itertools
 import re
-import ast
 import queue
 import threading
 import inspect
 from pathlib import Path
-from typing import List, Tuple, Dict, Callable
+from typing import List, Set, Tuple, Dict, Union
 from . import datanodes as dn
 from . import tui
 from . import cfg
@@ -350,20 +350,61 @@ class PathParser(ArgumentParser):
         return "It should be Path literal"
 
 class LiteralParser(ArgumentParser):
-    @staticmethod
-    def wrap(type, default=inspect.Parameter.empty, docs=None):
-        if type == bool:
-            return BoolParser(default, docs)
-        elif type == int:
-            return IntParser(default, docs)
-        elif type == float:
-            return FloatParser(default, docs)
-        elif type == str:
-            return StrParser(default, docs)
-        else:
-            return None
+    regex = r"[^\s\S]+"
+    name = "Void"
 
-    def __init__(self, default=inspect.Parameter.empty, docs=None):
+    @staticmethod
+    def wrap(clz, default=inspect.Parameter.empty, docs=None):
+        if clz is None:
+            clz = type(None)
+
+        if clz == type(None):
+            return NoneParser(clz, default, docs)
+
+        elif clz == bool:
+            return BoolParser(clz, default, docs)
+
+        elif clz == int:
+            return IntParser(clz, default, docs)
+
+        elif clz == float:
+            return FloatParser(clz, default, docs)
+
+        elif clz == complex:
+            return ComplexParser(clz, default, docs)
+
+        elif clz == str:
+            return StrParser(clz, default, docs)
+
+        elif clz == bytes:
+            return BytesParser(clz, default, docs)
+
+        elif isinstance(clz, type) and issubclass(clz, Enum):
+            return EnumParser(clz, default, docs)
+
+        elif dataclasses.is_dataclass(clz):
+            return DataclassParser(clz, default, docs)
+
+        elif getattr(clz, '__origin__', None) == List:
+            return ListParser(clz, default, docs)
+
+        elif getattr(clz, '__origin__', None) == Set:
+            return SetParser(clz, default, docs)
+
+        elif getattr(clz, '__origin__', None) == Tuple:
+            return TupleParser(clz, default, docs)
+
+        elif getattr(clz, '__origin__', None) == Dict:
+            return DictParser(clz, default, docs)
+
+        elif getattr(clz, '__origin__', None) == Union:
+            return UnionParser(clz, default, docs)
+
+        else:
+            raise ValueError("No parser for type: " + repr(clz))
+
+    def __init__(self, clz, default=inspect.Parameter.empty, docs=None):
+        self.clz = clz
         self.default = default
         self.docs = docs
 
@@ -371,7 +412,8 @@ class LiteralParser(ArgumentParser):
         if not re.fullmatch(self.regex, token):
             help = self.help(token)
             raise TokenParseError("Invalid value" + ("\n" + help if help is not None else ""))
-        return ast.literal_eval(token)
+
+        return eval(token)
 
     def suggest(self, token):
         if self.default is inspect.Parameter.empty:
@@ -387,8 +429,21 @@ class LiteralParser(ArgumentParser):
     def repr(self, value):
         return repr(value)
 
+    def isinstance(self, value):
+        return False
+
+class NoneParser(LiteralParser):
+    regex = "(None)"
+    name = "NoneType"
+
+    def suggest(self, token):
+        return [("None", False)]
+
+    def isinstance(self, value):
+        return value is None
+
 class BoolParser(LiteralParser):
-    regex = "True|False"
+    regex = "(True|False)"
     name = "bool"
 
     def suggest(self, token):
@@ -397,16 +452,33 @@ class BoolParser(LiteralParser):
         else:
             return [(val, False) for val in fit(token, ["False", "True"])]
 
+    def isinstance(self, value):
+        return isinstance(value, bool)
+
 class IntParser(LiteralParser):
-    regex = r"[-+]?(0|[1-9][0-9]*)"
+    regex = r"([-+]?(0|[1-9][0-9]*))"
     name = "int"
 
+    def isinstance(self, value):
+        return isinstance(value, int)
+
 class FloatParser(LiteralParser):
-    regex = r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)"
+    regex = r"([-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+))"
     name = "float"
 
+    def isinstance(self, value):
+        return isinstance(value, float)
+
+class ComplexParser(LiteralParser):
+    _number = r"(0|[1-9][0-9]*|[0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)"
+    regex = fr"([-+]?{_number}j|\([-+]?{_number}[-+]{_number}j\))"
+    name = "complex"
+
+    def isinstance(self, value):
+        return isinstance(value, complex)
+
 class StrParser(LiteralParser):
-    regex = r'"([^\\"]|\\.)*"'
+    regex = r'("([^\\"]|\\.)*")'
     name = "str"
 
     def repr(self, value):
@@ -415,6 +487,155 @@ class StrParser(LiteralParser):
         # assert repr_value_[0] == '"'
         repr_value = repr_value_.replace("'0", "").replace("'2", '"').replace("'1", "'")
         return repr_value
+
+    def isinstance(self, value):
+        return isinstance(value, str)
+
+class BytesParser(LiteralParser):
+    regex = r'(b"((?!\\")[\x00-\x7f]|\\[\x00-\x7f])*")'
+    name = "bytes"
+
+    def repr(self, value):
+        value_ = value.replace("'", "'1").replace('"', "'2") + "'0"
+        repr_value_ = repr(value_)
+        # assert repr_value_[1] == '"'
+        repr_value = repr_value_.replace("'0", "").replace("'2", '"').replace("'1", "'")
+        return repr_value
+
+    def isinstance(self, value):
+        return isinstance(value, bytes)
+
+class ListParser(LiteralParser):
+    def __init__(self, clz, default=inspect.Parameter.empty, docs=None):
+        super(ListParser, self).__init__(clz, default, docs)
+
+        self.item = self.wrap(clz.__args__[0])
+        self.regex = r"(\[\]|\[({0}, )*{0}\])".format(self.item.regex)
+        self.name = f"List[{self.item.name}]"
+
+    def repr(self, value):
+        return "[" + ", ".join(self.item.repr(item) for item in value) + "]"
+
+    def isinstance(self, value):
+        return isinstance(value, list) and all(self.item.isinstance(item) for item in value)
+
+class SetParser(LiteralParser):
+    def __init__(self, clz, default=inspect.Parameter.empty, docs=None):
+        super(SetParser, self).__init__(clz, default, docs)
+
+        self.item = self.wrap(clz.__args__[0])
+        self.regex = r"(set\(\)|\x7b({0}, )*{0}\x7d)".format(self.item.regex)
+        self.name = f"Set[{self.item.name}]"
+
+    def repr(self, value):
+        if len(value) == 0:
+            return "set()"
+        else:
+            return "{" + ", ".join(self.item.repr(item) for item in value) + "}"
+
+    def isinstance(self, value):
+        return isinstance(value, set) and all(self.item.isinstance(item) for item in value)
+
+class DictParser(LiteralParser):
+    def __init__(self, clz, default=inspect.Parameter.empty, docs=None):
+        super(DictParser, self).__init__(clz, default, docs)
+
+        self.key = self.wrap(clz.__args__[0])
+        self.value = self.wrap(clz.__args__[1])
+        self.regex = r"(\x7b\x7d|\x7b({0}: {1}, )*{0}: {1}\x7d)".format(self.key.regex, self.value.regex)
+        self.name = f"Dict[{self.key.name}, {self.value.name}]"
+
+    def repr(self, value):
+        return "{" + ", ".join(self.key.repr(k) + ": " + self.value.repr(v)
+                               for k, v in value.items()) + "}"
+
+    def isinstance(self, value):
+        return isinstance(value, dict) and all(self.key.isinstance(k)
+                                               and self.value.isinstance(v)
+                                               for k, v in value.items())
+
+class TupleParser(LiteralParser):
+    def __init__(self, clz, default=inspect.Parameter.empty, docs=None):
+        super(TupleParser, self).__init__(clz, default, docs)
+
+        if len(clz.__args__) == 1 and clz.__args__[0] == ():
+            self.items = []
+        else:
+            self.items = [self.wrap(arg) for arg in clz.__args__]
+
+        length = len(self.items)
+        if length == 0:
+            self.regex = fr"(\(\))"
+        elif length == 1:
+            self.regex = fr"(\({self.items[0].regex},\))"
+        else:
+            self.regex = fr"(\({', '.join(arg.regex for arg in self.items)}\))"
+
+        if length == 0:
+            self.name = "Tuple[()]"
+        else:
+            self.name = f"Tuple[{', '.join(arg.name for arg in self.items)}]"
+
+    def repr(self, value):
+        if len(self.items) == 1:
+            return f"({self.items[0].repr(value[0])},)"
+        else:
+            return "(" + ", ".join(arg.repr(item) for item, arg in zip(value, self.items)) + ")"
+
+    def isinstance(self, value):
+        return (isinstance(value, tuple)
+                and len(self.items) == len(value)
+                and all(arg.isinstance(item) for arg, item in zip(self.items, value)))
+
+class UnionParser(LiteralParser):
+    def __init__(self, clz, default=inspect.Parameter.empty, docs=None):
+        super(UnionParser, self).__init__(clz, default, docs)
+
+        self.args = [self.wrap(arg) for arg in clz.__args__]
+        self.regex = "(" + "|".join(arg.regex for arg in self.args) + ")"
+        self.name = f"Union[{', '.join(arg.name for arg in self.args)}]"
+
+    def repr(self, value):
+        for arg in self.args:
+            if arg.isinstance(value):
+                return arg.repr(value)
+
+    def isinstance(self, value):
+        for arg in self.args:
+            if arg.isinstance(value):
+                return True
+        else:
+            return False
+
+class EnumParser(LiteralParser):
+    def __init__(self, clz, default=inspect.Parameter.empty, docs=None):
+        super(EnumParser, self).__init__(clz, default, docs)
+
+        self.regex = "(" + "|".join(self.clz.__name__ + "\." + e.name for e in self.clz) + ")"
+        self.name = self.clz.__name__
+
+    def repr(self, value):
+        return self.clz.__name__ + "." + e.name
+
+    def isinstance(self, value):
+        return isinstance(value, self.clz)
+
+class DataclassParser(LiteralParser):
+    def __init__(self, clz, default=inspect.Parameter.empty, docs=None):
+        super(DataclassParser, self).__init__(clz, default, docs)
+
+        self.fields = {field.name : self.wrap(field.type) for field in self.clz.__dataclass_fields__.values()}
+        self.name = f"{self.clz.__name__}(" + ", ".join(key + ":" + value.name
+                                                        for key, value in self.fields.items()) + ")"
+        entries = ", ".join(fr"{re.escape(key)}={value.regex}" for key, value in self.fields.items())
+        self.regex = fr"({self.clz.__name__}\({entries}\))"
+
+    def repr(self, value):
+        entries = [key + "=" + arg.repr(getattr(value, key)) for key, arg in self.fields.items()]
+        return f"{self.clz.__name__}(" + ", ".join(entries) + ")"
+
+    def isinstance(self, value):
+        return isinstance(value, self.clz)
 
 
 class CommandDescriptor:
@@ -440,7 +661,10 @@ class function_command(CommandDescriptor):
         args = OrderedDict()
         kwargs = OrderedDict()
         for param in sig.parameters.values():
-            arg = parsers.get(param.name, LiteralParser.wrap(param.annotation, param.default))
+            if param.annotation is inspect.Signature.empty:
+                arg = parsers.get(param.name)
+            else:
+                arg = parsers.get(param.name, LiteralParser.wrap(param.annotation, param.default))
 
             if param.default is inspect.Parameter.empty:
                 args[param.name] = arg
