@@ -243,6 +243,9 @@ class ArgumentParser:
     def help(self, token):
         return None
 
+    def info(self, value):
+        return None
+
 class RawParser(ArgumentParser):
     def __init__(self, default=inspect.Parameter.empty, docs=None):
         self.default = default
@@ -460,6 +463,9 @@ class Command:
     def help(self, token):
         raise NotImplementedError
 
+    def info(self, token):
+        raise NotImplementedError
+
 class UnknownCommand(Command):
     def finish(self):
         raise TokenParseError("Unknown command")
@@ -471,6 +477,9 @@ class UnknownCommand(Command):
         return []
 
     def help(self, token):
+        return None
+
+    def info(self, token):
         return None
 
 class FunctionCommand(Command):
@@ -543,6 +552,19 @@ class FunctionCommand(Command):
         # rest
         return None
 
+    def info(self, token):
+        # parse positional arguments
+        if self.args:
+            parser = next(iter(self.args.values()))
+            return parser.info(token)
+
+        # parse keyword arguments
+        if self.kwargs:
+            return None
+
+        # rest
+        return None
+
 class SubCommand(Command):
     def __init__(self, parent, fields):
         self.parent = parent
@@ -572,11 +594,12 @@ class SubCommand(Command):
         return [(val, False) for val in fit(token, self.fields)]
 
     def help(self, token):
-        if token in self.fields:
-            desc = type(self.parent).__dict__[token]
-            return outdent(desc.proxy.__doc__)
-
         return Command.help_option(token, self.fields)
+
+    def info(self, token):
+        # assert token in self.fields
+        desc = type(self.parent).__dict__[token]
+        return outdent(desc.proxy.__doc__)
 
 class RootCommand(SubCommand):
     def __init__(self, root):
@@ -590,6 +613,9 @@ class RootCommand(SubCommand):
             raise res
         else:
             return res
+
+    def doc(self):
+        return outdent(self.parent.__doc__)
 
     def parse_command(self, tokens):
         cmd = self
@@ -626,9 +652,6 @@ class RootCommand(SubCommand):
         return cmd.suggest(target)
 
     def help_command(self, tokens, target):
-        if not tokens and target is None:
-            return outdent(self.parent.__doc__)
-
         cmd = self
         for token in tokens:
             try:
@@ -636,6 +659,15 @@ class RootCommand(SubCommand):
             except TokenParseError as err:
                 cmd = UnknownCommand()
         return cmd.help(target)
+
+    def info_command(self, tokens, target):
+        cmd = self
+        for token in tokens:
+            try:
+                _, cmd = cmd.parse(token)
+            except TokenParseError as err:
+                cmd = UnknownCommand()
+        return cmd.info(target)
 
 
 class InputError:
@@ -826,6 +858,11 @@ class BeatInput:
     def help(self, index=None):
         self.cancel_message()
 
+        if len(self.tokens) == 0:
+            msg = self.command.doc()
+            self.message(msg, None)
+            return True
+
         if index is None:
             for index, (_, _, slic, _) in enumerate(self.tokens):
                 if slic.stop is None or self.pos <= slic.stop:
@@ -834,12 +871,18 @@ class BeatInput:
                 index = None
 
         prefix = [token for token, _, _, _ in self.tokens[:index]]
-        target = self.tokens[index][0] if index is not None else None
-        msg = self.command.help_command(prefix, target)
+        target, token_type = self.tokens[index][:2] if index is not None else (None, TOKEN_TYPE.UNKNOWN)
+
+        if token_type == TOKEN_TYPE.UNKNOWN:
+            msg = self.command.help_command(prefix, target)
+        else:
+            msg = self.command.info_command(prefix, target)
+
         if msg is None:
             return False
-        self.message(msg, index)
-        return True
+        else:
+            self.message(msg, index)
+            return True
 
     def enter(self):
         if len(self.tokens) == 0:
