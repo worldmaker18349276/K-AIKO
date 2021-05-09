@@ -598,9 +598,6 @@ class RootCommandParser(SubCommandParser):
         else:
             return res
 
-    def doc(self):
-        return outdent(self.parent.__doc__)
-
     def parse_command(self, tokens):
         cmd = self
         types = []
@@ -837,11 +834,6 @@ class BeatInput:
 
     def help(self, index=None):
         self.cancel_result()
-
-        # if len(self.tokens) == 0:
-        #     msg = self.command.doc()
-        #     self.set_result(InputMessage, msg, None)
-        #     return True
 
         if index is None:
             for index, (_, _, slic, _) in enumerate(self.tokens):

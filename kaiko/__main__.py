@@ -96,20 +96,6 @@ class KAIKOSettings:
         cfg.config_write(filename, menu=self.menu, shell=self.shell, gameplay=self.gameplay)
 
 class KAIKOMenu:
-    """Beat shell is a user friendly commandline shell for playing K-AIKO.
-
-    Just type a command followed by any arguments, and press \x1b[1mEnter\x1b[m to execute!
-
-     beating prompt
-       │    the command you want to execute
-       │     ╱     ╭── argument of command
-    \x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;252m❯ \x1b[m\x1b[94msay\x1b[m \
-\x1b[92m'Welcome\x1b[2m⌴\x1b[m\x1b[92mto\x1b[2m⌴\x1b[m\x1b[92mK-AIKO!'\x1b[m \x1b[7;2m \x1b[m
-    Welcome to K-AIKO!    │         ╰─ beating caret
-         ╲                ╰─── quoted whitespace look like this!
-       output of command
-    """
-
     def __init__(self, settings, username, data_dir, songs_dir, manager):
         self.settings = settings
         self._username = username
@@ -141,6 +127,22 @@ class KAIKOMenu:
             self.reload()
 
         return self._beatmaps
+
+    @beatshell.function_command
+    def intro(self):
+        print(
+"""Beat shell is a user friendly commandline shell for playing K-AIKO.
+
+Just type a command followed by any arguments, and press \x1b[1mEnter\x1b[m to execute!
+
+ \x1b[2mbeating prompt\x1b[m
+   \x1b[2m│\x1b[m    \x1b[2mthe command you want to execute\x1b[m
+   \x1b[2m│\x1b[m     \x1b[2m╱\x1b[m     \x1b[2m╭──\x1b[m \x1b[2margument of command\x1b[m
+\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;252m❯ \x1b[m\x1b[94msay\x1b[m \x1b[92m'Welcome\x1b[2m⌴\x1b[m\x1b[92mto\x1b[2m⌴\x1b[m\x1b[92mK-AIKO!'\x1b[m \x1b[7;2m \x1b[m
+Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeating caret\x1b[m
+     \x1b[2m╲\x1b[m                \x1b[2m╰───\x1b[m \x1b[2mquoted whitespace look like this!\x1b[m
+   \x1b[2moutput of command\x1b[m
+""")
 
     @beatshell.function_command
     def reload(self):
