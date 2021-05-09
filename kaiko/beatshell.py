@@ -675,6 +675,11 @@ class InputError:
         self.index = index
         self.message = message
 
+class InputWarn:
+    def __init__(self, index, message):
+        self.index = index
+        self.message = message
+
 class InputMessage:
     def __init__(self, index, message):
         self.index = index
@@ -771,7 +776,7 @@ class BeatInput:
 
         else:
             self.parse_syntax()
-            self.cancel_message()
+            self.cancel_result()
 
     def make_typeahead(self, suggest=True):
         if not suggest or self.pos != len(self.buffer):
@@ -815,30 +820,21 @@ class BeatInput:
                 return index
         return None
 
-    def error(self, message, index=None):
+    def set_result(self, result_type, message, index=None):
         if index is not None:
             self.resulted_tokens = self.tokens[:index+1]
-            self.result = InputError(index, message)
+            self.result = result_type(index, message)
         else:
             self.resulted_tokens = self.tokens[:]
-            self.result = InputError(None, message)
+            self.result = result_type(None, message)
         return True
 
-    def message(self, message, index=None):
-        if index is not None:
-            self.resulted_tokens = self.tokens[:index+1]
-            self.result = InputMessage(index, message)
-        else:
-            self.resulted_tokens = self.tokens[:]
-            self.result = InputMessage(None, message)
-        return True
-
-    def cancel_message(self):
+    def cancel_result(self):
         self.resulted_tokens = None
         self.result = None
         return True
 
-    def update_message(self):
+    def update_result(self):
         if self.resulted_tokens is None:
             return False
 
@@ -856,11 +852,11 @@ class BeatInput:
         return False
 
     def help(self, index=None):
-        self.cancel_message()
+        self.cancel_result()
 
         if len(self.tokens) == 0:
             msg = self.command.doc()
-            self.message(msg, None)
+            self.set_result(InputMessage, msg, None)
             return True
 
         if index is None:
@@ -868,26 +864,33 @@ class BeatInput:
                 if slic.stop is None or self.pos <= slic.stop:
                     break
             else:
-                index = None
+                index = len(self.tokens)
 
         prefix = [token for token, _, _, _ in self.tokens[:index]]
-        target, token_type = self.tokens[index][:2] if index is not None else (None, TOKEN_TYPE.UNKNOWN)
+        target, token_type = self.tokens[index][:2] if index < len(self.tokens) else (None, TOKEN_TYPE.UNKNOWN)
 
         if token_type == TOKEN_TYPE.UNKNOWN:
             msg = self.command.help_command(prefix, target)
+
+            if msg is None:
+                return False
+            else:
+                self.set_result(InputWarn, msg, index)
+                return True
+
         else:
             msg = self.command.info_command(prefix, target)
 
-        if msg is None:
-            return False
-        else:
-            self.message(msg, index)
-            return True
+            if msg is None:
+                return False
+            else:
+                self.set_result(InputMessage, msg, index)
+                return True
 
     def enter(self):
         if len(self.tokens) == 0:
             self.delete_range(None, None)
-            self.error(None)
+            self.set_result(InputError, None)
             return False
 
         if self.state == SHLEXER_STATE.BACKSLASHED:
@@ -898,10 +901,10 @@ class BeatInput:
             _, res, index = self.command.parse_command(token for token, _, _, _ in self.tokens)
 
         if isinstance(res, TokenUnfinishError):
-            self.error(res.args[0])
+            self.set_result(InputError, res.args[0])
             return False
         elif isinstance(res, TokenParseError):
-            self.error(res.args[0], index)
+            self.set_result(InputError, res.args[0], index)
             return False
         else:
             self.history.append("".join(self.buffer))
@@ -910,7 +913,7 @@ class BeatInput:
 
     def cancel(self):
         self.typeahead = ""
-        self.cancel_message()
+        self.cancel_result()
         return False
 
     def input(self, text):
@@ -929,7 +932,7 @@ class BeatInput:
         self.parse_syntax()
 
         self.make_typeahead(True)
-        self.update_message()
+        self.update_result()
 
         return True
 
@@ -941,7 +944,7 @@ class BeatInput:
         del self.buffer[self.pos]
         self.parse_syntax()
         self.make_typeahead(False)
-        self.update_message()
+        self.update_result()
 
         return True
 
@@ -952,7 +955,7 @@ class BeatInput:
         del self.buffer[self.pos]
         self.parse_syntax()
         self.make_typeahead(False)
-        self.update_message()
+        self.update_result()
 
         return True
 
@@ -967,7 +970,7 @@ class BeatInput:
         self.pos = start
         self.parse_syntax()
         self.make_typeahead(False)
-        self.update_message()
+        self.update_result()
 
         return True
 
@@ -1033,7 +1036,7 @@ class BeatInput:
         self.pos = len(self.buffer)
         self.parse_syntax()
         self.make_typeahead(False)
-        self.cancel_message()
+        self.cancel_result()
 
         return True
 
@@ -1046,7 +1049,7 @@ class BeatInput:
         self.pos = len(self.buffer)
         self.parse_syntax()
         self.make_typeahead(False)
-        self.cancel_message()
+        self.cancel_result()
 
         return True
 
@@ -1116,7 +1119,7 @@ class BeatStroke:
                 if key.isprintable():
                     self.input.input(key)
                 else:
-                    self.input.error(f"Unknown key: {key!r}")
+                    self.input.set_result(InputError, f"Unknown key: {key!r}")
 
 
 class BeatShellSettings(metaclass=cfg.Configurable):
@@ -1400,7 +1403,7 @@ class BeatPrompt:
         while True:
             clean = isinstance(result, (InputError, InputResult))
 
-            if not isinstance(result, (InputError, InputMessage)):
+            if not isinstance(result, (InputError, InputWarn, InputMessage)):
                 result = yield ("", clear, False), clean, None
                 clear = False
                 continue
@@ -1409,12 +1412,13 @@ class BeatPrompt:
             msg = result.message or ""
             if msg.count("\n") >= message_max_lines:
                 msg = "\n".join(msg.split("\n")[:message_max_lines]) + "\x1b[m\n…"
-            if isinstance(result, InputError):
-                msg = tui.add_attr(msg, error_message_attr)
-            elif msg:
-                msg = tui.add_attr(msg, info_message_attr)
+            if msg:
+                if isinstance(result, (InputError, InputWarn)):
+                    msg = tui.add_attr(msg, error_message_attr)
+                if isinstance(result, (InputMessage, InputWarn)):
+                    msg = tui.add_attr(msg, info_message_attr)
             msg = "\n" + msg + ("\n" if msg else "")
-            moveback = isinstance(result, InputMessage)
+            moveback = isinstance(result, (InputWarn, InputMessage))
 
             # track changes of the result
             shown_result = result
@@ -1423,7 +1427,7 @@ class BeatPrompt:
             while shown_result == result:
                 result = yield ("", False, False), False, shown_result.index
 
-            if isinstance(shown_result, InputMessage):
+            if isinstance(shown_result, (InputWarn, InputMessage)):
                 clear = True
 
     @dn.datanode
