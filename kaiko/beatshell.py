@@ -280,7 +280,7 @@ class OptionParser(ArgumentParser):
     def help(self, token):
         if self.docs:
             return self.docs
-        return "It should be one of:\n" + "\n".join("  " + shlexer_quoting(s) for s in self.options)
+        return "It should be one of:\n" + "\n".join("• " + shlexer_quoting(s) for s in self.options)
 
 class PathParser(ArgumentParser):
     def __init__(self, root=".", default=inspect.Parameter.empty, docs=None):
@@ -348,7 +348,7 @@ class PathParser(ArgumentParser):
     def help(self, token):
         if self.docs:
             return self.docs
-        return "It should be Path literal"
+        return "It should be a path"
 
 class LiteralParser(ArgumentParser):
     def __init__(self, type_hint, default=inspect.Parameter.empty, docs=None):
@@ -392,7 +392,7 @@ class LiteralParser(ArgumentParser):
     def help(self, token):
         if self.docs:
             return self.docs
-        return f"It should be {self.biparser.name}"
+        return f"It should be an instance of {self.biparser.name}"
 
 
 class CommandDescriptor:
@@ -446,7 +446,7 @@ class subcommand(CommandDescriptor):
 class Command:
     @staticmethod
     def help_option(token, options):
-        return "It should be one of:\n" + "\n".join("  " + shlexer_quoting(s) for s in options)
+        return "It should be one of:\n" + "\n".join("• " + shlexer_quoting(s) for s in options)
 
     def finish(self):
         raise NotImplementedError
@@ -834,7 +834,7 @@ class BeatInput:
                 index = None
 
         prefix = [token for token, _, _, _ in self.tokens[:index]]
-        target, _, _, _ = self.tokens[index] if index is not None else (None,None,None,None)
+        target = self.tokens[index][0] if index is not None else None
         msg = self.command.help_command(prefix, target)
         if msg is None:
             return False
