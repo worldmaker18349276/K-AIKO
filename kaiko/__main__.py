@@ -306,10 +306,10 @@ class KAIKOMenu:
     @say.arg_parser("escape")
     @property
     def _say_escape_parser(self):
-        return beatshell.BoolParser(bool, default=False,
-                                    docs="It should be bool literal,"
-                                         " indicating whether to use backslash escapes;"
-                                         " the default is False.")
+        return beatshell.LiteralParser(bool, default=False,
+                                       docs="It should be bool literal,"
+                                            " indicating whether to use backslash escapes;"
+                                            " the default is False.")
 
     @beatshell.function_command
     def exit(self):
