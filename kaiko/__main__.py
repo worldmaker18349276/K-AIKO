@@ -300,16 +300,16 @@ class KAIKOMenu:
     @say.arg_parser("message")
     @property
     def _say_message_parser(self):
-        return beatshell.RawParser(docs="It should be some text,"
-                                        " indicating the message to be printed.")
+        return beatshell.RawParser(expected="It should be some text,"
+                                            " indicating the message to be printed.")
 
     @say.arg_parser("escape")
     @property
     def _say_escape_parser(self):
         return beatshell.LiteralParser(bool, default=False,
-                                       docs="It should be bool literal,"
-                                            " indicating whether to use backslash escapes;"
-                                            " the default is False.")
+                                       expected="It should be bool,"
+                                                " indicating whether to use backslash escapes;"
+                                                " the default is False.")
 
     @beatshell.function_command
     def exit(self):
