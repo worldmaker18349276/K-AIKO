@@ -357,27 +357,16 @@ class LiteralParser(ArgumentParser):
             raise TokenParseError("Invalid value" + ("\n" + expected if expected is not None else ""))
 
     def suggest(self, token):
-        if self.type_hint is None:
-            return [("None", False)]
-
-        elif self.type_hint == bool:
-            if self.default is inspect.Parameter.empty or self.default == True:
-                options = ["True", "False"]
-            else:
-                options = ["False", "True"]
-            return [(val, False) for val in fit(token, options)]
-
+        try:
+            self.biparser.decode(token)
+        except biparser.DecodeError as e:
+            sugg = [(token[:e.index] + ex, part) for ex, part in e.expected]
+            if self.default is not inspect.Parameter.empty:
+                sugg.insert(0, (self.biparser.encode(self.default), False))
         else:
-            try:
-                self.biparser.decode(token)
-            except biparser.DecodeError as e:
-                sugg = [(token[:e.index] + ex, part) for ex, part in e.expected]
-                if self.default is not inspect.Parameter.empty:
-                    sugg.insert(0, (self.biparser.encode(self.default), False))
-            else:
-                sugg = []
+            sugg = []
 
-            return sugg
+        return sugg
 
 
 class CommandDescriptor:
