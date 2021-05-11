@@ -24,7 +24,7 @@ def outdent(doc):
     return re.sub("\\n[ ]{,%d}"%level, "\\n", doc)
 
 def expected_options(options):
-    return "It should be one of:\n" + "\n".join("• " + shlexer_quoting(s) for s in options)
+    return "It should be one of:\n" + "\n".join("• " + shlexer_quoting(s + "\000") for s in options)
 
 def masks_key(masks):
     return tuple(slic.stop-slic.start for slic in masks), (-masks[-1].stop if masks else 0)
@@ -140,7 +140,11 @@ def shlexer_tokenize(raw, partial=False):
                 yield "".join(token), slice(start, None), ignored
                 return SHLEXER_STATE.PLAIN
 
-def shlexer_quoting(compreply, partial=False, state=SHLEXER_STATE.SPACED):
+def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
+    partial = not compreply.endswith("\000")
+    if not partial:
+        compreply = compreply[:-1]
+
     if state == SHLEXER_STATE.PLAIN:
         compreply = re.sub(r"([ \\'])", r"\\\1", compreply)
 
@@ -260,7 +264,7 @@ class RawParser(ArgumentParser):
         if self.default is inspect.Parameter.empty:
             return []
         else:
-            return [(val, False) for val in fit(token, [self.default])]
+            return [val + "\000" for val in fit(token, [self.default])]
 
 class OptionParser(ArgumentParser):
     def __init__(self, options, default=inspect.Parameter.empty, expected=None):
@@ -277,7 +281,7 @@ class OptionParser(ArgumentParser):
         return token
 
     def suggest(self, token):
-        return [(val, False) for val in fit(token, self.options)]
+        return [val + "\000" for val in fit(token, self.options)]
 
 class PathParser(ArgumentParser):
     def __init__(self, root=".", default=inspect.Parameter.empty, expected=None):
@@ -304,7 +308,7 @@ class PathParser(ArgumentParser):
         suggestions = []
 
         if self.default is not inspect.Parameter.empty:
-            suggestions.append((str(self.default), False))
+            suggestions.append(str(self.default) + "\000")
 
         # check path
         currpath = os.path.join(self.root, token)
@@ -315,12 +319,12 @@ class PathParser(ArgumentParser):
             return suggestions
 
         if is_file:
-            suggestions.append((token, False))
+            suggestions.append(token + "\000")
             return suggestions
 
         # separate parent and partial name
         if is_dir:
-            suggestions.append((os.path.join(token, ""), True))
+            suggestions.append(os.path.join(token, ""))
             target = ""
         else:
             token, target = os.path.split(token)
@@ -335,10 +339,10 @@ class PathParser(ArgumentParser):
 
                 if os.path.isdir(subpath):
                     sugg = os.path.join(sugg, "")
-                    suggestions.append((sugg, True))
+                    suggestions.append(sugg)
 
                 elif os.path.isfile(subpath):
-                    suggestions.append((sugg, False))
+                    suggestions.append(sugg + "\000")
 
         return suggestions
 
@@ -360,9 +364,11 @@ class LiteralParser(ArgumentParser):
         try:
             self.biparser.decode(token)
         except biparser.DecodeError as e:
-            sugg = [(token[:e.index] + ex, part) for ex, part in e.expected]
+            sugg = [token[:e.index] + ex for ex in e.expected]
             if self.default is not inspect.Parameter.empty:
-                sugg.insert(0, (self.biparser.encode(self.default), False))
+                default = self.biparser.encode(self.default) + "\000"
+                sugg.remove(default)
+                sugg.insert(0, default)
         else:
             sugg = []
 
@@ -502,7 +508,7 @@ class FunctionCommandParser(CommandParser):
         # parse keyword arguments
         if self.kwargs:
             keys = ["--" + key for key in self.kwargs.keys()]
-            return [(key, False) for key in fit(token, keys)]
+            return [key + "\000" for key in fit(token, keys)]
 
         # rest
         return []
@@ -561,7 +567,7 @@ class SubCommandParser(CommandParser):
         return TOKEN_TYPE.COMMAND, field
 
     def suggest(self, token):
-        return [(val, False) for val in fit(token, self.fields)]
+        return [val + "\000" for val in fit(token, self.fields)]
 
     @property
     def expected(self):
@@ -712,7 +718,7 @@ class BeatInput:
                 target = token
 
         # generate suggestions
-        suggestions = [shlexer_quoting(sugg, part) for sugg, part in self.command.suggest_command(tokens, target)]
+        suggestions = [shlexer_quoting(sugg) for sugg in self.command.suggest_command(tokens, target)]
         length = len(suggestions)
 
         original_buffer = list(self.buffer)
@@ -758,17 +764,17 @@ class BeatInput:
             tokens = [token for token, _, _, _ in self.tokens[:-1]]
             target, _, _, _ = self.tokens[-1]
 
-        compreply, partial = None, False
-        for suggestion, partial_ in self.command.suggest_command(tokens, target):
+        compreply = None
+        for suggestion in self.command.suggest_command(tokens, target):
             if suggestion.startswith(target):
-                compreply, partial = suggestion[len(target):], partial_
+                compreply = suggestion[len(target):]
                 break
 
         if compreply is None:
             self.typeahead = ""
             return False
         else:
-            self.typeahead = shlexer_quoting(compreply, partial, self.state)
+            self.typeahead = shlexer_quoting(compreply, self.state)
             return True
 
     def insert_typeahead(self):

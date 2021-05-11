@@ -34,18 +34,17 @@ def eof(text, start, optional=False):
     else:
         if optional:
             return False, start
-        raise DecodeError(text, start, [("", False)])
+        raise DecodeError(text, start, ["\000"])
 
 def startswith(prefixes, text, start, optional=False, partial=True):
-    prefixes = sorted(prefixes, reverse=True)
-    regex = re.compile("|".join(re.escape(prefix) for prefix in prefixes))
+    regex = re.compile("|".join(re.escape(prefix) for prefix in sorted(prefixes, reverse=True)))
     m = regex.match(text, start)
     if not m:
         if optional:
             return "", start
-        raise DecodeError(text, start, [(prefix, partial) for prefix in prefixes])
+        raise DecodeError(text, start, [prefix + ("" if partial else "\000") for prefix in prefixes])
     if not partial and m.end() != len(text):
-        raise DecodeError(text, start, [(prefix, partial) for prefix in prefixes])
+        raise DecodeError(text, start, [prefix + ("" if partial else "\000") for prefix in prefixes])
     return m.group(), m.end()
 
 def match(regex, expected, text, start, optional=False, partial=True):
@@ -53,9 +52,9 @@ def match(regex, expected, text, start, optional=False, partial=True):
     if not m:
         if optional:
             return m, start
-        raise DecodeError(text, start, [(ex, partial) for ex in expected])
+        raise DecodeError(text, start, [ex + ("" if partial else "\000") for ex in expected])
     if not partial and m.end() != len(text):
-        raise DecodeError(text, start, [(ex, partial) for ex in expected])
+        raise DecodeError(text, start, [ex + ("" if partial else "\000") for ex in expected])
     return m, m.end()
 
 
