@@ -34,23 +34,26 @@ def eof(text, start, optional=False):
     else:
         if optional:
             return False, start
-        raise DecodeError(text, start, "EOF")
+        raise DecodeError(text, start, [("", False)])
 
-def startswith(prefix, text, start, optional=False):
+def startswith(prefix, text, start, optional=False, partial=True):
     end = start + len(prefix)
-    if text[start:end] == prefix:
-        return prefix, end
-    else:
+    if text[start:end] != prefix:
         if optional:
             return "", start
-        raise DecodeError(text, start, prefix)
+        raise DecodeError(text, start, [(prefix, partial)])
+    if not partial and end != len(text):
+        raise DecodeError(text, start, [(prefix, partial)])
+    return prefix, end
 
-def match(regex, desc, text, start, optional=False):
+def match(regex, expected, text, start, optional=False, partial=True):
     m = re.compile(regex).match(text, start)
     if not m:
         if optional:
             return m, start
-        raise DecodeError(text, start, desc)
+        raise DecodeError(text, start, [(expected, partial)])
+    if not partial and m.end() != len(text):
+        raise DecodeError(text, start, [(expected, partial)])
     return m, m.end()
 
 
@@ -65,30 +68,33 @@ class LiteralBiparser(Biparser):
         return repr(value)
 
     def decode(self, text, index=0, partial=False):
-        res, index = match(self.regex, self.name, text, index)
-        if not partial:
-            eof(text, index)
+        res, index = match(self.regex, self.expected, text, index, partial=partial)
         return ast.literal_eval(res.group()), index
 
 class NoneBiparser(LiteralBiparser):
     regex = "None"
+    expected = "None"
     name = "None"
     type = type(None)
 
 class BoolBiparser(LiteralBiparser):
     regex = "True|False"
+    expected = "False"
     type = bool
 
 class IntBiparser(LiteralBiparser):
     regex = r"[-+]?(0|[1-9][0-9]*)(?![0-9\.\+eEjJ])"
+    expected = "0"
     type = int
 
 class FloatBiparser(LiteralBiparser):
     regex = r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+[eE][-+]?[0-9]+)(?![0-9\+jJ])"
+    expected = "0.0"
     type = float
 
 class ComplexBiparser(LiteralBiparser):
     regex = r"[-+]?({0}[-+])?{0}[jJ]".format(r"(0|[1-9][0-9]*|[0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)")
+    expected = "0j"
     type = complex
 
     def encode(self, value):
@@ -108,6 +114,7 @@ class StrBiparser(LiteralBiparser):
              r'|\\U[0-9a-fA-F]{8}'
              r'|\\(?![xuUN]).'
              r')*"')
+    expected = '""'
     type = str
 
     def encode(self, value):
@@ -128,6 +135,7 @@ class BytesBiparser(LiteralBiparser):
              r'|\\U[0-9a-fA-F]{8}'
              r'|\\(?![xuUN])[\x00-\x7f]'
              r')*"')
+    expected = 'b""'
     type = bytes
 
     def encode(self, value):
@@ -153,26 +161,21 @@ class ListBiparser(Biparser):
         return f"List[{self.elem_biparser.name}]"
 
     def decode(self, text, index=0, partial=False):
-        _, index = match(self.start, "[", text, index)
-
         res = []
+
+        _, index = match(self.start, "[", text, index, partial=True)
+
         while True:
-            m, index = match(self.end, "]", text, index, optional=True)
-            if m:
-                if not partial:
-                    eof(text, index)
-                return res, index
+            m, index = match(self.end, "]", text, index, optional=True, partial=partial)
+            if m: return res, index
 
             value, index = self.elem_biparser.decode(text, index, partial=True)
             res.append(value)
 
-            m, index = match(f"({self.delimiter})?{self.end}", "]", text, index, optional=True)
-            if m:
-                if not partial:
-                    eof(text, index)
-                return res, index
+            m, index = match(f"({self.delimiter})?{self.end}", "]", text, index, optional=True, partial=partial)
+            if m: return res, index
 
-            _, index = match(self.delimiter, ",", text, index)
+            _, index = match(self.delimiter, ",", text, index, partial=True)
 
     def encode(self, value):
         if not isinstance(value, list):
@@ -203,26 +206,21 @@ class SetBiparser(Biparser):
         return f"Set[{self.elem_biparser.name}]"
 
     def decode(self, text, index=0, partial=False):
-        m, index = match(self.empty, "set()", text, index, optional=True)
-        if m:
-            if not partial:
-                eof(text, index)
-            return set(), index
-
-        _, index = match(self.start, "{", text, index)
-
         res = set()
+
+        m, index = match(self.empty, "set()", text, index, optional=True, partial=partial)
+        if m: return res, index
+
+        _, index = match(self.start, "{", text, index, partial=True)
+
         while True:
             value, index = self.elem_biparser.decode(text, index, partial=True)
             res.add(value)
 
-            m, index = match(f"({self.delimiter})?{self.end}", "}", text, index, optional=True)
-            if m:
-                if not partial:
-                    eof(text, index)
-                return res, index
+            m, index = match(f"({self.delimiter})?{self.end}", "}", text, index, optional=True, partial=partial)
+            if m: return res, index
 
-            _, index = match(self.delimiter, ",", text, index)
+            _, index = match(self.delimiter, ",", text, index, partial=True)
 
     def encode(self, value):
         if not isinstance(value, set):
@@ -257,28 +255,23 @@ class DictBiparser(Biparser):
         return f"Dict[{self.key_biparser.name}, {self.value_biparser.name}]"
 
     def decode(self, text, index=0, partial=False):
-        _, index = match(self.start, "{", text, index)
-
         res = dict()
+
+        _, index = match(self.start, "{", text, index, partial=True)
+
         while True:
-            m, index = match(self.end, "}", text, index, optional=True)
-            if m:
-                if not partial:
-                    eof(text, index)
-                return res, index
+            m, index = match(self.end, "}", text, index, optional=True, partial=partial)
+            if m: return res, index
 
             key, index = self.key_biparser.decode(text, index, partial=True)
-            _, index = match(self.colon, ":", text, index)
+            _, index = match(self.colon, ":", text, index, partial=True)
             value, index = self.value_biparser.decode(text, index, partial=True)
             res[key] = value
 
-            m, index = match(f"({self.delimiter})?{self.end}", "}", text, index, optional=True)
-            if m:
-                if not partial:
-                    eof(text, index)
-                return res, index
+            m, index = match(f"({self.delimiter})?{self.end}", "}", text, index, optional=True, partial=partial)
+            if m: return res, index
 
-            _, index = match(self.delimiter, ",", text, index)
+            _, index = match(self.delimiter, ",", text, index, partial=True)
 
     def encode(self, value):
         if not isinstance(value, dict):
@@ -316,22 +309,19 @@ class TupleBiparser(Biparser):
         return f"Tuple[{', '.join(biparser.name for biparser in self.elems_biparsers)}]"
 
     def decode(self, text, index=0, partial=False):
-        length = len(self.elems_biparsers)
-
-        _, index = match(self.start, "(", text, index)
-
         res = []
+
+        _, index = match(self.start, "(", text, index, partial=True)
+
+        length = len(self.elems_biparsers)
         if length > 0:
             for n, elem_biparser in enumerate(self.elems_biparsers):
                 value, index = elem_biparser.decode(text, index, partial=True)
                 res.append(value)
 
-                _, index = match(self.delimiter, ",", text, index, optional=(n == length-1 > 0))
+                _, index = match(self.delimiter, ",", text, index, optional=(n == length-1 > 0), partial=True)
 
-        _, index = match(self.end, ")", text, index)
-
-        if not partial:
-            eof(text, index)
+        _, index = match(self.end, ")", text, index, partial=partial)
         return tuple(res), index
 
     def encode(self, value):
@@ -357,7 +347,7 @@ class TupleBiparser(Biparser):
 
 class DataclassBiparser(Biparser):
     start = r"\(\s*"
-    equal = r"\s*=\s*"
+    keyequal = r"\s*{}\s*=\s*"
     delimiter = r"\s*,\s*"
     end = r"\s*\)"
 
@@ -371,24 +361,20 @@ class DataclassBiparser(Biparser):
         return f"{self.clz.__name__}({fields})"
 
     def decode(self, text, index=0, partial=False):
-        _, index = startswith(self.clz.__name__, text, index)
-        _, index = match(self.start, "(", text, index)
-
         res = dict()
+
+        _, index = startswith(self.clz.__name__ + "(", text, index, partial=True)
+
         length = len(self.fields_biparsers)
         if length > 0:
             for i, (name, biparser) in enumerate(self.fields_biparsers.items()):
-                _, index = startswith(name, text, index)
-                _, index = match(self.equal, "=", text, index)
+                _, index = match(self.keyequal.format(name), name + "=", text, index, partial=True)
                 value, index = biparser.decode(text, index, partial=True)
                 res[name] = value
 
-                _, index = match(self.delimiter, ",", text, index, optional=(i==length-1))
+                _, index = match(self.delimiter, ",", text, index, optional=(i==length-1), partial=True)
 
-        _, index = match(self.end, ")", text, index)
-
-        if not partial:
-            eof(text, index)
+        _, index = match(self.end, ")", text, index, partial=partial)
         return self.clz(**res), index
 
     def encode(self, value):
@@ -417,13 +403,18 @@ class UnionBiparser(Biparser):
         return f"Union[{', '.join(biparser.name for biparser in self.options_biparsers)}]"
 
     def decode(self, text, index=0, partial=False):
+        expected = []
+        final_index = index
         for option_biparser in self.options_biparsers:
             try:
                 return option_biparser.decode(text, index, partial=partial)
-            except DecodeError:
-                pass
+            except DecodeError as e:
+                if e.index > final_index:
+                    expected = list(e.expected)
+                elif e.index == final_index:
+                    expected.extend(e.expected)
 
-        raise DecodeError(text, index, [biparser.name for biparser in self.options_biparsers])
+        raise DecodeError(text, final_index, expected)
 
     def encode(self, value):
         for biparser in self.options_biparsers:
@@ -435,7 +426,7 @@ class UnionBiparser(Biparser):
         raise EncodeError(value, "", [biparser.name for biparser in self.options_biparsers])
 
 class EnumBiparser(Biparser):
-    period = r"\."
+    nameperiod = r"{}\."
 
     def __init__(self, enum_class):
         self.enum_class = enum_class
@@ -446,17 +437,14 @@ class EnumBiparser(Biparser):
         return self.enum_class.__name__
 
     def decode(self, text, index=0, partial=False):
-        _, index = startswith(self.enum_class.__name__, text, index)
-        _, index = match(self.period, ".", text, index)
+        name = self.enum_class.__name__
+        _, index = match(nameperiod.format(name), name + ".", text, index, partial=True)
 
         for option in self.options:
-            m, index = startswith(option.name, text, index, optional=True)
-            if m:
-                if not partial:
-                    eof(text, index)
-                return option, index
+            m, index = startswith(option.name, text, index, optional=True, partial=False)
+            if m: return option, index
 
-        raise DecodeError(text, index, self.enum_class)
+        raise DecodeError(text, index, [(option.name, partial) for option in self.options])
 
     def encode(self, value):
         if not isinstance(value, self.enum_class):
