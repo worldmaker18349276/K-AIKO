@@ -11,6 +11,18 @@ class DecodeError(Exception):
         self.index = index
         self.expected = expected
 
+    def __str__(self):
+        if self.index > len(self.text):
+            loc = f"<out of bounds index {self.index}>"
+
+        else:
+            line = self.text.count("\n", 0, self.index)
+            last_ln = self.text.rfind("\n", 0, self.index)
+            col = self.index - (last_ln + 1)
+            loc = f"{line}:{col}"
+
+        return f"parse failed at {loc}, expect: {self.expected!r}"
+
 class EncodeError(Exception):
     def __init__(self, value, pos, expected):
         self.value = value
