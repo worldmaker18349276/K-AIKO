@@ -367,19 +367,17 @@ class LiteralParser(ArgumentParser):
                 options = ["False", "True"]
             return [(val, False) for val in fit(token, options)]
 
-        elif isinstance(self.type_hint, type) and issubclass(self.type_hint, Enum):
-            options = list(self.type_hint)
-            if self.default is not inspect.Parameter.empty:
-                options.remove(self.default)
-                options.insert(0, self.default)
-            options = fit(token, [self.biparser.encode(option) for option in options])
-            return [(option, False) for option in options]
-
         else:
-            if self.default is inspect.Parameter.empty:
-                return []
+            try:
+                self.biparser.decode(token)
+            except biparser.DecodeError as e:
+                sugg = [(token[:e.index] + ex, part) for ex, part in e.expected]
+                if self.default is not inspect.Parameter.empty:
+                    sugg.insert(0, (self.biparser.encode(self.default), False))
             else:
-                return [(val, False) for val in fit(token, [self.biparser.encode(self.default)])]
+                sugg = []
+
+            return sugg
 
 
 class CommandDescriptor:
@@ -803,7 +801,10 @@ class BeatInput:
 
     def set_result(self, result_type, message, index=None):
         if index is not None:
-            self.resulted_tokens = self.tokens[:index+1]
+            if result_type == InputWarn:
+                self.resulted_tokens = self.tokens[:index]
+            else:
+                self.resulted_tokens = self.tokens[:index+1]
             self.result = result_type(index, message)
         else:
             self.resulted_tokens = self.tokens[:]
