@@ -659,7 +659,7 @@ class InputMessage:
         self.index = index
         self.message = message
 
-class InputResult:
+class InputComplete:
     def __init__(self, value):
         self.value = value
 
@@ -875,7 +875,7 @@ class BeatInput:
             return False
         else:
             self.history.append("".join(self.buffer))
-            self.result = InputResult(res)
+            self.result = InputComplete(res)
             return True
 
     def cancel(self):
@@ -1319,7 +1319,7 @@ class BeatPrompt:
                 yield output_text
 
                 # end
-                if isinstance(result, InputResult):
+                if isinstance(result, InputComplete):
                     self.result = result.value
                     return
 
@@ -1368,7 +1368,7 @@ class BeatPrompt:
 
         result = yield
         while True:
-            clean = isinstance(result, (InputError, InputResult))
+            clean = isinstance(result, (InputError, InputComplete))
 
             if not isinstance(result, (InputError, InputWarn, InputMessage)):
                 result = yield ("", clear, False), clean, None
