@@ -1298,6 +1298,8 @@ def input(node, stream=None):
                         node.send((time.time()-ref_time, key))
                     except StopIteration:
                         return
+                    if len(key) == MAX_KEY_LEN:
+                        io_event.set()
 
         except Exception as e:
             error = e
