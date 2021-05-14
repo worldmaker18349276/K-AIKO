@@ -367,7 +367,8 @@ class LiteralParser(ArgumentParser):
             sugg = [token[:e.index] + ex for ex in e.expected]
             if self.default is not inspect.Parameter.empty:
                 default = self.biparser.encode(self.default) + "\000"
-                sugg.remove(default)
+                if default in sugg:
+                    sugg.remove(default)
                 sugg.insert(0, default)
         else:
             sugg = []
@@ -392,21 +393,23 @@ class function_command(CommandDescriptor):
 
     def __get_command__(self, instance, owner):
         func = self.proxy.__get__(instance, owner)
-        parsers = {key: value.__get__(instance, owner) for key, value in self.parsers.items()}
+
+        def get_parser_func(param):
+            if param.name in self.parsers:
+                return self.parsers[param.name].__get__(instance, owner)
+            elif param.annotation is not inspect.Signature.empty:
+                return lambda *_, **__: LiteralParser(param.annotation, param.default)
+            else:
+                raise ValueError(f"No parser for argument {param.name} in {self.proxy.__name__}")
 
         sig = inspect.signature(func)
         args = OrderedDict()
         kwargs = OrderedDict()
         for param in sig.parameters.values():
-            if param.annotation is inspect.Signature.empty:
-                arg = parsers.get(param.name)
-            else:
-                arg = parsers.get(param.name, LiteralParser(param.annotation, param.default))
-
             if param.default is inspect.Parameter.empty:
-                args[param.name] = arg
+                args[param.name] = get_parser_func(param)
             else:
-                kwargs[param.name] = arg
+                kwargs[param.name] = get_parser_func(param)
 
         return FunctionCommandParser(func, args, kwargs)
 
@@ -458,43 +461,47 @@ class UnknownCommandParser(CommandParser):
         return None
 
 class FunctionCommandParser(CommandParser):
-    def __init__(self, func, args, kwargs):
+    def __init__(self, func, args, kwargs, values=None):
         self.func = func
         self.args = args
         self.kwargs = kwargs
+        self.values = values or {}
 
     def finish(self):
         if self.args:
-            parser = next(iter(self.args.values()))
+            parser_func = next(iter(self.args.values()))
+            parser = parser_func(**self.values)
             expected = parser.expected
             msg = "Missing value" + ("\n" + expected if expected is not None else "")
             raise TokenUnfinishError(msg)
 
-        return self.func
+        return functools.partial(self.func, **self.values)
 
     def parse(self, token):
         # parse positional arguments
         if self.args:
             args = OrderedDict(self.args)
-            name, parser = args.popitem(False)
-            value = parser.parse(token)
+            name, parser_func = args.popitem(False)
 
-            func = functools.partial(self.func, **{name: value})
-            return TOKEN_TYPE.ARGUMENT, FunctionCommandParser(func, args, self.kwargs)
+            parser = parser_func(**self.values)
+            value = parser.parse(token)
+            values = {**self.values, name: value}
+
+            return TOKEN_TYPE.ARGUMENT, FunctionCommandParser(self.func, args, self.kwargs, values)
 
         # parse keyword arguments
         if self.kwargs:
             kwargs = OrderedDict(self.kwargs)
             name = token[2:] if token.startswith("--") else None
-            arg = kwargs.pop(name, None)
+            parser_func = kwargs.pop(name, None)
 
-            if arg is None:
+            if parser_func is None:
                 expected = expected_options(["--" + key for key in self.kwargs.keys()])
                 msg = f"Unknown argument {token!r}" + "\n" + expected
                 raise TokenParseError(msg)
 
-            args = OrderedDict([(name, arg)])
-            return TOKEN_TYPE.KEYWORD, FunctionCommandParser(self.func, args, kwargs)
+            args = OrderedDict([(name, parser_func)])
+            return TOKEN_TYPE.KEYWORD, FunctionCommandParser(self.func, args, kwargs, self.values)
 
         # rest
         raise TokenParseError("Too many arguments")
@@ -502,7 +509,8 @@ class FunctionCommandParser(CommandParser):
     def suggest(self, token):
         # parse positional arguments
         if self.args:
-            parser = next(iter(self.args.values()))
+            parser_func = next(iter(self.args.values()))
+            parser = parser_func(**self.values)
             return parser.suggest(token)
 
         # parse keyword arguments
@@ -517,7 +525,8 @@ class FunctionCommandParser(CommandParser):
     def expected(self):
         # parse positional arguments
         if self.args:
-            parser = next(iter(self.args.values()))
+            parser_func = next(iter(self.args.values()))
+            parser = parser_func(**self.values)
             return parser.expected
 
         # parse keyword arguments
@@ -531,7 +540,8 @@ class FunctionCommandParser(CommandParser):
     def info(self, token):
         # parse positional arguments
         if self.args:
-            parser = next(iter(self.args.values()))
+            parser_func = next(iter(self.args.values()))
+            parser = parser_func(**self.values)
             return parser.info(token)
 
         # parse keyword arguments

@@ -210,7 +210,6 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         self.reload()
 
     @add.arg_parser("beatmap")
-    @property
     def _add_beatmap_parser(self):
         return beatshell.PathParser()
 
@@ -244,7 +243,6 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             print(tui.add_attr(f"Not a file: {str(beatmap)}", warn_attr))
 
     @remove.arg_parser("beatmap")
-    @property
     def _remove_beatmap_parser(self):
         songs_dir = self._songs_dir
 
@@ -273,7 +271,6 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         return KAIKOPlay(self._songs_dir / beatmap, self.settings.gameplay)
 
     @play.arg_parser("beatmap")
-    @property
     def _play_beatmap_parser(self):
         return beatshell.OptionParser([str(beatmap.relative_to(self._songs_dir)) for beatmap in self.beatmaps()])
 
@@ -299,14 +296,12 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             print(message)
 
     @say.arg_parser("message")
-    @property
     def _say_message_parser(self):
         return beatshell.RawParser(expected="It should be some text,"
                                             " indicating the message to be printed.")
 
     @say.arg_parser("escape")
-    @property
-    def _say_escape_parser(self):
+    def _say_escape_parser(self, message):
         return beatshell.LiteralParser(bool, default=False,
                                        expected="It should be bool,"
                                                 " indicating whether to use backslash escapes;"
@@ -487,14 +482,14 @@ class ConfigCommand:
     @has.arg_parser("field")
     @unset.arg_parser("field")
     @set.arg_parser("field")
-    @property
     def _field_parser(self):
         return FieldParser(type(self.settings))
 
     @set.arg_parser("value")
-    @property
-    def _set_value_parser(self):
-        return beatshell.RawParser()
+    def _set_value_parser(self, field):
+        annotation = type(self.settings).get_configurable_fields()[field]
+        default = self.settings.get(field)
+        return beatshell.LiteralParser(annotation, default)
 
 class FieldParser(beatshell.ArgumentParser):
     def __init__(self, config_type):
