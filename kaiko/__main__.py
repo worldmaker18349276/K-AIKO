@@ -13,6 +13,7 @@ from . import cfg
 from . import tui
 from . import kerminal
 from . import beatshell
+from . import biparser
 from .beatshell import BeatShellSettings
 from .beatmap import BeatmapPlayer, GameplaySettings
 from .beatsheet import BeatmapDraft, BeatmapParseError
@@ -139,7 +140,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @beatshell.function_command
     def reload(self):
-        """Reload your data.
+        """Reload your songs.
 
         usage: \x1b[94mreload\x1b[m
         """
@@ -275,6 +276,11 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
     @property
     def _play_beatmap_parser(self):
         return beatshell.OptionParser([str(beatmap.relative_to(self._songs_dir)) for beatmap in self.beatmaps()])
+
+    @beatshell.subcommand
+    @property
+    def config(self):
+        return ConfigCommand(self.settings, self.config_file())
 
     @beatshell.function_command
     def say(self, message, escape=False):
@@ -447,6 +453,70 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             print("\x1b[31m", end="")
             traceback.print_exc(file=sys.stdout)
             print(f"\x1b[m", end="")
+
+class ConfigCommand:
+    def __init__(self, settings, path):
+        self.settings = settings
+        self.path = path
+
+    @beatshell.function_command
+    def reload(self):
+        self.settings = KAIKOSettings.read(self.path)
+
+    @beatshell.function_command
+    def show(self):
+        print(str(self.settings))
+
+    @beatshell.function_command
+    def get(self, field):
+        return self.settings.get(field)
+
+    @beatshell.function_command
+    def has(self, field):
+        return self.settings.has(field)
+
+    @beatshell.function_command
+    def unset(self, field):
+        self.settings.unset(field)
+
+    @beatshell.function_command
+    def set(self, field, value):
+        self.settings.set(field, value)
+
+    @get.arg_parser("field")
+    @has.arg_parser("field")
+    @unset.arg_parser("field")
+    @set.arg_parser("field")
+    @property
+    def _field_parser(self):
+        return FieldParser(type(self.settings))
+
+    @set.arg_parser("value")
+    @property
+    def _set_value_parser(self):
+        return beatshell.RawParser()
+
+class FieldParser(beatshell.ArgumentParser):
+    def __init__(self, config_type):
+        self.config_type = config_type
+        self.biparser = cfg.FieldBiparser(config_type)
+
+    def parse(self, token):
+        try:
+            return self.biparser.decode(token)[0]
+        except biparser.DecodeError:
+            raise beatshell.TokenParseError("No such field")
+
+    def suggest(self, token):
+        try:
+            self.biparser.decode(token)
+        except biparser.DecodeError as e:
+            sugg = [token[:e.index] + ex for ex in e.expected]
+        else:
+            sugg = []
+
+        return sugg
+
 
 class KAIKOPlay:
     def __init__(self, filepath, settings):

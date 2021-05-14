@@ -150,9 +150,7 @@ class Configurable(metaclass=ConfigurableMeta):
             parent, curr = curr, curr.__dict__.get(field, None)
 
         else:
-            old = getattr(parent, field)
             parent.__dict__[field] = value
-            return old
 
     def unset(self, fields):
         if len(fields) == 0:
@@ -171,10 +169,8 @@ class Configurable(metaclass=ConfigurableMeta):
             parent, curr = curr, curr.__dict__.get(field, None)
 
         else:
-            old = getattr(parent, field)
-            if field in curr.__dict__:
+            if field in parent.__dict__:
                 del parent.__dict__[field]
-            return old
 
     def get(self, fields):
         if len(fields) == 0:
@@ -223,6 +219,10 @@ class Configurable(metaclass=ConfigurableMeta):
         biparser = ConfigurationBiparser(clz)
         res, _ = biparser.decode(open(path, 'r').read())
         return res
+
+    def __str__(self):
+        biparser = ConfigurationBiparser(type(self))
+        return biparser.encode(self)
 
     def write(self, path):
         if isinstance(path, str):

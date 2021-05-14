@@ -355,7 +355,7 @@ class LiteralParser(ArgumentParser):
 
     def parse(self, token):
         try:
-            return self.biparser.decode(token)
+            return self.biparser.decode(token)[0]
         except biparser.DecodeError:
             expected = self.expected
             raise TokenParseError("Invalid value" + ("\n" + expected if expected is not None else ""))
