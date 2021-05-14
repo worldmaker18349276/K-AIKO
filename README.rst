@@ -149,7 +149,8 @@ Publish
 
 ::
 
-    python setup.py sdist bdist_wheel upload
+    python -m build --sdist --wheel .
+    twine upload dist/*
     git push origin master --tags
 
 Compatibilities

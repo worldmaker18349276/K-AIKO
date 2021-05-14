@@ -13,7 +13,7 @@ from . import datanodes as dn
 from . import tui
 
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class Event:
     # lifespan
