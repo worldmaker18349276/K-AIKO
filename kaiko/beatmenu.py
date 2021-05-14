@@ -200,10 +200,18 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
         print(f"{info_icon} Adding new song from {tui.add_attr(beatmap.as_uri(), emph_attr)}...")
 
+        distpath = songs_dir / beatmap.name
+        n = 1
+        while distpath.exists():
+            distpath = songs_dir / (beatmap.name + f" ({n})")
+            n += 1
+        if n != 1:
+            print(f"{info_icon} Name conflict! rename to {tui.add_attr(distpath.name, emph_attr)}")
+
         if beatmap.is_file():
             shutil.copy(str(beatmap), str(songs_dir))
         elif beatmap.is_dir():
-            shutil.copytree(str(beatmap), str(songs_dir))
+            shutil.copytree(str(beatmap), str(distpath))
         else:
             print(tui.add_attr(f"Not a file: {str(beatmap)}", warn_attr))
             return
