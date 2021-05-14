@@ -490,8 +490,8 @@ class GameplaySettings(cfg.Configurable):
     class beatbar(BeatbarSettings):
         class widgets(cfg.Configurable):
             icon_templates: List[str] = ["\x1b[95m{spectrum:^8s}\x1b[m"]
-            header_templates: List[str] = ["\x1b[38;5;93m{score:05d}\x1b[1m/\x1b[21m{full_score:05d}\x1b[m"]
-            footer_templates: List[str] = ["\x1b[38;5;93m{progress:>6.1%}\x1b[1m|\x1b[21m{time:%M:%S}\x1b[m"]
+            header_templates: List[str] = ["\x1b[38;5;93m{score:05d}\x1b[1m/\x1b[22m{full_score:05d}\x1b[m"]
+            footer_templates: List[str] = ["\x1b[38;5;93m{progress:>6.1%}\x1b[1m|\x1b[22m{time:%M:%S}\x1b[m"]
 
             spec_width: int = 6
             spec_decay_time: float = 0.01
