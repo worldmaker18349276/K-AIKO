@@ -1089,8 +1089,8 @@ class BeatStroke:
                     self.input.set_result(InputError, f"Unknown key: {key!r}")
 
 
-class BeatShellSettings(metaclass=cfg.Configurable):
-    class input(metaclass=cfg.Configurable):
+class BeatShellSettings(cfg.Configurable):
+    class input(cfg.Configurable):
         keycodes: Dict[str, str] = {
             "Esc"       : "\x1b",
             "Alt+Esc"   : "\x1b\x1b",
@@ -1217,7 +1217,7 @@ class BeatShellSettings(metaclass=cfg.Configurable):
             "Ctrl+Delete"   : lambda input: input.delete_to_word_end(),
         }
 
-    class prompt(metaclass=cfg.Configurable):
+    class prompt(cfg.Configurable):
         framerate: float = 60.0
         t0: float = 0.0
         tempo: float = 130.0
@@ -1264,7 +1264,7 @@ class BeatShellSettings(metaclass=cfg.Configurable):
         cursor_attr: Tuple[str, str] = ("7;2", "7;1")
         cursor_blink_ratio: float = 0.3
 
-    class text(metaclass=cfg.Configurable):
+    class text(cfg.Configurable):
         error_message_attr: str = "31"
         info_message_attr: str = "2"
         message_max_lines: int = 16

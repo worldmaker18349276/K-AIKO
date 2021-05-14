@@ -397,8 +397,8 @@ class Spin(Target):
 
 
 # Game
-class BeatmapSettings(metaclass=cfg.Configurable):
-    class difficulty(metaclass=cfg.Configurable):
+class BeatmapSettings(cfg.Configurable):
+    class difficulty(cfg.Configurable):
         performance_tolerance: float = 0.02
         soft_threshold: float = 0.5
         loud_threshold: float = 0.5
@@ -411,7 +411,7 @@ class BeatmapSettings(metaclass=cfg.Configurable):
         bad_tolerance     = property(lambda self: self.performance_tolerance*5)
         failed_tolerance  = property(lambda self: self.performance_tolerance*7)
 
-    class scores(metaclass=cfg.Configurable):
+    class scores(cfg.Configurable):
         performances_scores: Dict[PerformanceGrade, int] = {
             PerformanceGrade.MISS               : 0,
 
@@ -437,7 +437,7 @@ class BeatmapSettings(metaclass=cfg.Configurable):
         roll_rock_score: int = 2
         spin_score: int = 16
 
-    class notes(metaclass=cfg.Configurable):
+    class notes(cfg.Configurable):
         soft_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[96m□\x1b[m"
         soft_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[96m⬚\x1b[m"
         soft_sound: str = f"{BASE_DIR}/samples/soft.wav" # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
@@ -479,8 +479,8 @@ class Beatmap:
     def build_events(self):
         raise NotImplementedError
 
-class GameplaySettings(metaclass=cfg.Configurable):
-    class controls(metaclass=cfg.Configurable):
+class GameplaySettings(cfg.Configurable):
+    class controls(cfg.Configurable):
         leadin_time: float = 1.0
         skip_time: float = 8.0
         load_time: float = 0.5
@@ -488,7 +488,7 @@ class GameplaySettings(metaclass=cfg.Configurable):
         tickrate: float = 60.0
 
     class beatbar(BeatbarSettings):
-        class widgets(metaclass=cfg.Configurable):
+        class widgets(cfg.Configurable):
             icon_templates: List[str] = ["\x1b[95m{spectrum:^8s}\x1b[m"]
             header_templates: List[str] = ["\x1b[38;5;93m{score:05d}\x1b[1m/\x1b[21m{full_score:05d}\x1b[m"]
             footer_templates: List[str] = ["\x1b[38;5;93m{progress:>6.1%}\x1b[1m|\x1b[21m{time:%M:%S}\x1b[m"]

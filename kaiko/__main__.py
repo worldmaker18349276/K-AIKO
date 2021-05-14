@@ -60,7 +60,7 @@ def print_pyaudio_info(manager):
     print(f"default input device: {default_input_device_index}")
     print(f"default output device: {default_output_device_index}")
 
-class KAIKOMenuSettings(metaclass=cfg.Configurable):
+class KAIKOMenuSettings(cfg.Configurable):
     logo: str = """
 
   ██▀ ▄██▀   ▄██████▄ ▀██████▄ ██  ▄██▀ █▀▀▀▀▀▀█
@@ -83,17 +83,10 @@ class KAIKOMenuSettings(metaclass=cfg.Configurable):
 
     best_screen_size: int = 80
 
-class KAIKOSettings:
-    def __init__(self):
-        self.menu = KAIKOMenuSettings()
-        self.shell = BeatShellSettings()
-        self.gameplay = GameplaySettings()
-
-    def read(self, filename):
-        cfg.config_read(filename, menu=self.menu, shell=self.shell, gameplay=self.gameplay)
-
-    def write(self, filename):
-        cfg.config_write(filename, menu=self.menu, shell=self.shell, gameplay=self.gameplay)
+class KAIKOSettings(cfg.Configurable):
+    menu = KAIKOMenuSettings
+    shell = BeatShellSettings
+    gameplay = GameplaySettings
 
 class KAIKOMenu:
     def __init__(self, settings, username, data_dir, songs_dir, manager):
@@ -367,10 +360,8 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         data_dir = Path(appdirs.user_data_dir("K-AIKO", username))
 
         # load settings
-        settings = KAIKOSettings()
         config_path = data_dir / "config.py"
-        if config_path.exists():
-            settings.read(config_path)
+        settings = KAIKOSettings.read(config_path)
 
         data_icon = settings.menu.data_icon
         info_icon = settings.menu.info_icon

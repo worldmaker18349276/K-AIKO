@@ -87,12 +87,12 @@ class Performance:
     def description(self):
         return self.descriptions[self.grade]
 
-class BeatbarSettings(metaclass=cfg.Configurable):
+class BeatbarSettings(cfg.Configurable):
     mixer = MixerSettings
     detector = DetectorSettings
     renderer = RendererSettings
 
-    class layout(metaclass=cfg.Configurable):
+    class layout(cfg.Configurable):
         icon_width: int = 8
         header_width: int = 11
         footer_width: int = 12
@@ -104,7 +104,7 @@ class BeatbarSettings(metaclass=cfg.Configurable):
         footer_quotes: Tuple[str, str] = ("\b\x1b[38;5;93;1m[\x1b[m", "\x1b[38;5;93;1m]\x1b[m")
 
 
-    class scrollingbar(metaclass=cfg.Configurable):
+    class scrollingbar(cfg.Configurable):
         performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
             PerformanceGrade.MISS               : (""   , ""     ),
 
