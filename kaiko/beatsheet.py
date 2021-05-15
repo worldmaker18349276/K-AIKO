@@ -19,11 +19,12 @@ class BeatmapParseError(Exception):
     pass
 
 class BeatmapDraft(Beatmap):
-    def __init__(self, root=".", info="", audio=None, volume=0.0, offset=0.0, tempo=60.0):
+    def __init__(self, root=".", info="", audio=None, volume=0.0, preview=0.0, offset=0.0, tempo=60.0):
         super().__init__(None, volume, offset, tempo)
         self.root = root
         self.info = info
         self.audio = audio
+        self.preview = preview
 
         self.notations = self.NotationDict()
         self.chart = self.NoteChart(self.notations)
@@ -227,6 +228,7 @@ class Note:
 # '''
 # beatmap.audio = '...'
 # beatmap.volume = -20.0
+# beatmap.preview = 34.5
 # beatmap.offset = 2.44
 # beatmap.tempo = 140.0
 # beatmap.chart += r'''
@@ -275,13 +277,14 @@ header: "#K-AIKO-std-" version
 info:   [_n "beatmap.info"   " = " mstr]
 audio:  [_n "beatmap.audio"  " = " str]
 volume: [_n "beatmap.volume" " = " float]
+preview: [_n "beatmap.preview" " = " float]
 offset: [_n "beatmap.offset" " = " float]
 tempo:  [_n "beatmap.tempo"  " = " float]
 chart: (_n "beatmap.chart"  " += " _MSTR_PREFIX track _MSTR_POSTFIX)*
 _MSTR_PREFIX: /r'''(?=\r\n?|\n)/
 _MSTR_POSTFIX: /((?<=\r\n)|(?<=\r)|(?<=\n))'''/
 
-contents: info audio volume offset tempo chart _e
+contents: info audio volume preview offset tempo chart _e
 std: header contents
 
 contents_str: (/[\s\S]+/)?
@@ -289,7 +292,7 @@ std_header: header contents_str
 
 track_str: /(\r\n?|\n)((?!''')[\s\S])*/
 track_strs: (_n "beatmap.chart"  " += " _MSTR_PREFIX track_str _MSTR_POSTFIX)*
-std_metadata: info audio volume offset tempo track_strs _e
+std_metadata: info audio volume preview offset tempo track_strs _e
 """
 
 class K_AIKO_STD_Transformer(Transformer):
@@ -298,7 +301,7 @@ class K_AIKO_STD_Transformer(Transformer):
     chart = pattern = track_strs = lambda self, args: args
     version = symbol = key = value = mod = track_str = lambda self, args: args[0]
     contents_str = lambda self, args: "" if len(args) == 0 else args[0]
-    info = audio = volume = offset = tempo = lambda self, args: None if len(args) == 0 else args[0]
+    info = audio = volume = preview = offset = tempo = lambda self, args: None if len(args) == 0 else args[0]
     none = bool = int = float = str = mstr = lambda self, args: literal_eval(args[0])
     frac = lambda self, args: Fraction(args[0])
     pos = lambda self, args: (None, args[0])
@@ -348,7 +351,7 @@ class K_AIKO_STD:
 
         # parse metadata
         contents = self.transformer.transform(self.std_metadata_parser.parse(contents_str))
-        info, audio, volume, offset, tempo, track_strs = contents.children
+        info, audio, volume, preview, offset, tempo, track_strs = contents.children
 
         beatmap = BeatmapDraft()
 
@@ -360,6 +363,8 @@ class K_AIKO_STD:
             beatmap.audiopath = os.path.join(beatmap.root, beatmap.audio)
         if volume is not None:
             beatmap.volume = volume
+        if preview is not None:
+            beatmap.preview = preview
         if offset is not None:
             beatmap.offset = offset
         if tempo is not None:
@@ -522,6 +527,8 @@ class OSU:
         if option == 'AudioFilename':
             beatmap.audio = value.rstrip("\n")
             beatmap.audiopath = os.path.join(beatmap.root, beatmap.audio)
+        elif option == 'PreviewTime':
+            beatmap.preview = int(value)/1000
 
     def parse_editor(self, beatmap, context, line): pass
 
