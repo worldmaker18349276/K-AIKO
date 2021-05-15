@@ -461,21 +461,21 @@ class UnknownCommandParser(CommandParser):
         return None
 
 class FunctionCommandParser(CommandParser):
-    def __init__(self, func, args, kwargs, values=None):
+    def __init__(self, func, args, kwargs, bound=None):
         self.func = func
         self.args = args
         self.kwargs = kwargs
-        self.values = values or {}
+        self.bound = bound or {}
 
     def finish(self):
         if self.args:
             parser_func = next(iter(self.args.values()))
-            parser = parser_func(**self.values)
+            parser = parser_func(**self.bound)
             expected = parser.expected
             msg = "Missing value" + ("\n" + expected if expected is not None else "")
             raise TokenUnfinishError(msg)
 
-        return functools.partial(self.func, **self.values)
+        return functools.partial(self.func, **self.bound)
 
     def parse(self, token):
         # parse positional arguments
@@ -483,11 +483,11 @@ class FunctionCommandParser(CommandParser):
             args = OrderedDict(self.args)
             name, parser_func = args.popitem(False)
 
-            parser = parser_func(**self.values)
+            parser = parser_func(**self.bound)
             value = parser.parse(token)
-            values = {**self.values, name: value}
+            bound = {**self.bound, name: value}
 
-            return TOKEN_TYPE.ARGUMENT, FunctionCommandParser(self.func, args, self.kwargs, values)
+            return TOKEN_TYPE.ARGUMENT, FunctionCommandParser(self.func, args, self.kwargs, bound)
 
         # parse keyword arguments
         if self.kwargs:
@@ -501,7 +501,7 @@ class FunctionCommandParser(CommandParser):
                 raise TokenParseError(msg)
 
             args = OrderedDict([(name, parser_func)])
-            return TOKEN_TYPE.KEYWORD, FunctionCommandParser(self.func, args, kwargs, self.values)
+            return TOKEN_TYPE.KEYWORD, FunctionCommandParser(self.func, args, kwargs, self.bound)
 
         # rest
         raise TokenParseError("Too many arguments")
@@ -510,7 +510,7 @@ class FunctionCommandParser(CommandParser):
         # parse positional arguments
         if self.args:
             parser_func = next(iter(self.args.values()))
-            parser = parser_func(**self.values)
+            parser = parser_func(**self.bound)
             return parser.suggest(token)
 
         # parse keyword arguments
@@ -526,7 +526,7 @@ class FunctionCommandParser(CommandParser):
         # parse positional arguments
         if self.args:
             parser_func = next(iter(self.args.values()))
-            parser = parser_func(**self.values)
+            parser = parser_func(**self.bound)
             return parser.expected
 
         # parse keyword arguments
@@ -541,7 +541,7 @@ class FunctionCommandParser(CommandParser):
         # parse positional arguments
         if self.args:
             parser_func = next(iter(self.args.values()))
-            parser = parser_func(**self.values)
+            parser = parser_func(**self.bound)
             return parser.info(token)
 
         # parse keyword arguments
