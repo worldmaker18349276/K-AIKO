@@ -26,10 +26,15 @@ class BeatmapDraft(Beatmap):
         self.chart = self.NoteChart(self.notations)
 
         self.notations['x'] = Soft
+        self.notations['soft'] = Soft
         self.notations['o'] = Loud
+        self.notations['loud'] = Loud
         self.notations['<'] = Incr
+        self.notations['incr'] = Incr
         self.notations['%'] = Roll
+        self.notations['roll'] = Roll
         self.notations['@'] = Spin
+        self.notations['spin'] = Spin
         self.notations['TEXT'] = Text
         self.notations['CONTEXT'] = set_context
         self.notations['FLIP'] = Flip
