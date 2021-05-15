@@ -458,10 +458,8 @@ class BeatmapSettings(cfg.Configurable):
         spin_disk_sound: str = f"{BASE_DIR}/samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
 
 class Beatmap:
-    def __init__(self, path=".", info="", audio=None, volume=0.0, offset=0.0, tempo=60.0):
-        self.path = path
-        self.info = info
-        self.audio = audio
+    def __init__(self, audiopath=None, volume=0.0, offset=0.0, tempo=60.0):
+        self.audiopath = audiopath
         self.volume = volume
         self.offset = offset
         self.tempo = tempo
@@ -518,11 +516,11 @@ class BeatmapPlayer:
             self.duration = 0.0
             self.volume = 0.0
         else:
-            audiopath = os.path.join(self.beatmap.path, self.beatmap.audio)
-            with audioread.audio_open(audiopath) as file:
+            with audioread.audio_open(self.beatmap.audiopath) as file:
                 self.duration = file.duration
-            self.audionode = dn.DataNode.wrap(dn.load_sound(audiopath, samplerate=output_samplerate,
-                                                                       channels=output_nchannels))
+            self.audionode = dn.DataNode.wrap(dn.load_sound(self.beatmap.audiopath,
+                                                            samplerate=output_samplerate,
+                                                            channels=output_nchannels))
             self.volume = self.beatmap.volume
 
         self.start_time = min(events_start_time, 0.0)

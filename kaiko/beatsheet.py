@@ -19,8 +19,11 @@ class BeatmapParseError(Exception):
     pass
 
 class BeatmapDraft(Beatmap):
-    def __init__(self, path=".", info="", audio=None, volume=0.0, offset=0.0, tempo=60.0):
-        super().__init__(path, info, audio, volume, offset, tempo)
+    def __init__(self, root=".", info="", audio=None, volume=0.0, offset=0.0, tempo=60.0):
+        super().__init__(None, volume, offset, tempo)
+        self.root = root
+        self.info = info
+        self.audio = audio
 
         self.notations = self.NotationDict()
         self.chart = self.NoteChart(self.notations)
@@ -55,7 +58,7 @@ class BeatmapDraft(Beatmap):
         if filename.endswith((".kaiko", ".ka")):
             if hack:
                 beatmap = BeatmapDraft()
-                beatmap.path = os.path.dirname(filename)
+                beatmap.root = os.path.dirname(filename)
                 exec(open(filename).read(), dict(), dict(beatmap=beatmap))
                 return beatmap
 
@@ -349,11 +352,12 @@ class K_AIKO_STD:
 
         beatmap = BeatmapDraft()
 
-        beatmap.path = path
+        beatmap.root = path
         if info is not None:
             beatmap.info = info
         if audio is not None:
             beatmap.audio = audio
+            beatmap.audiopath = os.path.join(beatmap.root, beatmap.audio)
         if volume is not None:
             beatmap.volume = volume
         if offset is not None:
@@ -476,7 +480,7 @@ class OSU:
             #     raise BeatmapParseError(f"invalid file format: {repr(format)}")
 
             beatmap = BeatmapDraft()
-            beatmap.path = path
+            beatmap.root = path
             beatmap.chart.tracks.append(NoteTrack())
             context = {}
 
@@ -517,6 +521,7 @@ class OSU:
         option, value = line.split(": ", maxsplit=1)
         if option == 'AudioFilename':
             beatmap.audio = value.rstrip("\n")
+            beatmap.audiopath = os.path.join(beatmap.root, beatmap.audio)
 
     def parse_editor(self, beatmap, context, line): pass
 
