@@ -16,14 +16,15 @@ from . import tui
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 class Event:
-    # lifespan
-    # __init__(beatmap, *args, **kwargs)
-    # register(field)
+    def register(self, field):
+        raise NotImplementedError
+
+    lifespan = (float('inf'), float('inf'))
     is_subject = False
     full_score = 0
 
 class Text(Event):
-    def __init__(self, beatmap, text=None, sound=None, beat=None, *, speed=1.0):
+    def __init__(self, text=None, sound=None, *, speed=1.0, beatmap, beat):
         if sound is not None:
             sound = os.path.join(beatmap.path, sound)
 
@@ -49,7 +50,7 @@ class Text(Event):
 
 # scripts
 class Flip(Event):
-    def __init__(self, beatmap, flip=None, beat=None):
+    def __init__(self, flip=None, *, beatmap, beat):
         self.time = beatmap.time(beat)
         self.flip = flip
         self.lifespan = (self.time, self.time)
@@ -72,7 +73,7 @@ class Flip(Event):
         time, width = yield
 
 class Shift(Event):
-    def __init__(self, beatmap, shift, beat=None, length=None):
+    def __init__(self, shift, *, beatmap, beat, length):
         self.time = beatmap.time(beat)
         self.end = beatmap.time(beat+length)
         self.shift = shift
@@ -99,13 +100,13 @@ class Shift(Event):
 
         time, width = yield
 
-def set_context(beatmap, *, context, **kw):
+def set_context(*, context, **kw):
     context.update(**kw)
 
 # targets
 class Target(Event):
     # lifespan, range, is_finished
-    # __init__(beatmap, *args, **kwargs)
+    # __init__(*args, **kwargs)
     # approach(field)
     # hit(field, time, strength)
     # finish(field)
@@ -137,7 +138,7 @@ class OneshotTarget(Target):
     # approach_appearance, wrong_appearance
     # hit(field, time, strength)
 
-    def __init__(self, beatmap, beat=None, *, speed=1.0, volume=0.0):
+    def __init__(self, *, speed=1.0, volume=0.0, beatmap, beat):
         self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
 
         self.time = beatmap.time(beat)
@@ -194,8 +195,8 @@ class OneshotTarget(Target):
         field.add_score(self.score)
 
 class Soft(OneshotTarget):
-    def __init__(self, beatmap, beat=None, *, speed=1.0, volume=0.0):
-        super().__init__(beatmap, beat=beat, speed=speed, volume=volume)
+    def __init__(self, *, speed=1.0, volume=0.0, beatmap, beat):
+        super().__init__(speed=speed, volume=volume, beatmap=beatmap, beat=beat)
         self.approach_appearance = beatmap.settings.notes.soft_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.soft_wrong_appearance
         self.sound = beatmap.settings.notes.soft_sound
@@ -205,8 +206,8 @@ class Soft(OneshotTarget):
         super().hit(field, time, strength, strength < self.threshold)
 
 class Loud(OneshotTarget):
-    def __init__(self, beatmap, beat=None, *, speed=1.0, volume=0.0):
-        super().__init__(beatmap, beat=beat, speed=speed, volume=volume)
+    def __init__(self, *, speed=1.0, volume=0.0, beatmap, beat):
+        super().__init__(speed=speed, volume=volume, beatmap=beatmap, beat=beat)
         self.approach_appearance = beatmap.settings.notes.loud_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.loud_wrong_appearance
         self.sound = beatmap.settings.notes.loud_sound
@@ -225,17 +226,17 @@ class IncrGroup:
         self.threshold = max(self.threshold, strength)
 
 class Incr(OneshotTarget):
-    def __init__(self, beatmap, group=None, beat=None, *, context, speed=1.0, volume=0.0):
-        super().__init__(beatmap, beat=beat, speed=speed)
+    def __init__(self, group=None, *, speed=1.0, volume=0.0, beatmap, beat, context):
+        super().__init__(speed=speed, volume=volume, beatmap=beatmap, beat=beat)
 
         self.approach_appearance = beatmap.settings.notes.incr_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.incr_wrong_appearance
         self.sound = beatmap.settings.notes.incr_sound
         self.incr_threshold = beatmap.settings.difficulty.incr_threshold
 
-        if '_incrs' not in context:
-            context['_incrs'] = OrderedDict()
-        incrs = context['_incrs']
+        if '<incrs>' not in context:
+            context['<incrs>'] = OrderedDict()
+        incrs = context['<incrs>']
 
         group_key = group
         if group_key is None:
@@ -273,7 +274,7 @@ class Incr(OneshotTarget):
         self.group.hit(strength)
 
 class Roll(Target):
-    def __init__(self, beatmap, density=2, beat=None, length=None, *, speed=1.0, volume=0.0):
+    def __init__(self, density=2, *, speed=1.0, volume=0.0, beatmap, beat, length):
         self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
         self.tolerance = beatmap.settings.difficulty.roll_tolerance
         self.rock_appearance = beatmap.settings.notes.roll_rock_appearance
@@ -332,7 +333,7 @@ class Roll(Target):
             field.add_perf(perf, False)
 
 class Spin(Target):
-    def __init__(self, beatmap, density=2, beat=None, length=None, *, speed=1.0, volume=0.0):
+    def __init__(self, density=2, *, speed=1.0, volume=0.0, beatmap, beat, length):
         self.tolerance = beatmap.settings.difficulty.spin_tolerance
         self.disk_appearances = beatmap.settings.notes.spin_disk_appearances
         self.finishing_appearance = beatmap.settings.notes.spin_finishing_appearance
