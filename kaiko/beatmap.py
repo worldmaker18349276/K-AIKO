@@ -1,6 +1,7 @@
 import os
 import datetime
 import contextlib
+from dataclasses import dataclass
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
 import threading
@@ -13,25 +14,58 @@ from . import datanodes as dn
 from . import tui
 
 
+def sort_merge(*iters, key=lambda a:a):
+    iters = [iter(it) for it in iters]
+    _EXHAUSTED = object()
+    waited = [next(it, _EXHAUSTED) for it in iters]
+    while True:
+        indices = [i for i, value in enumerate(waited) if value is not _EXHAUSTED]
+        if not indices:
+            return
+        i = min(indices, key=lambda i: key(waited[i]))
+        yield waited[i]
+        waited[i] = next(iters[i], _EXHAUSTED)
+
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
+@dataclass
+class UpdateContext:
+    update: Dict[str, Union[None, bool, int, Fraction, float, str]]
+
+    def prepare(self, beatmap, context):
+        context.update(**self.update)
+
+@dataclass
 class Event:
+    beat: Fraction = Fraction(0, 1)
+    length: Fraction = Fraction(1, 1)
+
+    def prepare(self, beatmap, context):
+        raise NotImplementedError
+
     def register(self, field):
         raise NotImplementedError
 
-    lifespan = (float('inf'), float('inf'))
+    lifespan = (float('-inf'), float('-inf'))
     is_subject = False
     full_score = 0
+    has_length = True
 
+
+# scripts
+@dataclass
 class Text(Event):
-    def __init__(self, text=None, sound=None, *, speed=1.0, beatmap, beat):
-        if sound is not None:
-            sound = os.path.join(beatmap.path, sound)
+    has_length = False
 
-        self.time = beatmap.time(beat)
-        self.speed = speed
-        self.text = text
-        self.sound = sound
+    text: Optional[str] = None
+    sound: Optional[str] = None
+    speed: Optional[float] = None
+
+    def prepare(self, beatmap, context):
+        self.sound_root = beatmap.path
+        self.time = beatmap.time(self.beat)
+        if self.speed is None:
+            self.speed = context.get('speed', 1.0)
 
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.time + travel_time)
@@ -42,17 +76,21 @@ class Text(Event):
 
     def register(self, field):
         if self.sound is not None:
-            field.play(self.sound, time=self.time)
+            sound_path = os.path.join(self.sound_root, self.sound)
+            field.play(sound_path, time=self.time)
 
         if self.text is not None:
             field.draw_content(self.pos, self.text, zindex=self.zindex,
                                start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
 
-# scripts
+@dataclass
 class Flip(Event):
-    def __init__(self, flip=None, *, beatmap, beat):
-        self.time = beatmap.time(beat)
-        self.flip = flip
+    has_length = False
+
+    flip: Optional[bool] = None
+
+    def prepare(self, beatmap, context):
+        self.time = beatmap.time(self.beat)
         self.lifespan = (self.time, self.time)
 
     def register(self, field):
@@ -72,11 +110,13 @@ class Flip(Event):
 
         time, width = yield
 
+@dataclass
 class Shift(Event):
-    def __init__(self, shift, *, beatmap, beat, length):
-        self.time = beatmap.time(beat)
-        self.end = beatmap.time(beat+length)
-        self.shift = shift
+    shift: float = 0.0
+
+    def prepare(self, beatmap, context):
+        self.time = beatmap.time(self.beat)
+        self.end = beatmap.time(self.beat+self.length)
         self.lifespan = (self.time, self.end)
 
     def register(self, field):
@@ -99,9 +139,6 @@ class Shift(Event):
         field.beatbar.bar_shift = self.shift
 
         time, width = yield
-
-def set_context(*, context, **kw):
-    context.update(**kw)
 
 # targets
 class Target(Event):
@@ -133,17 +170,25 @@ class Target(Event):
         self.approach(field)
         field.listen(self.listen(field), start=self.range[0], duration=self.range[1]-self.range[0])
 
+@dataclass
 class OneshotTarget(Target):
     # time, speed, volume, perf, sound
     # approach_appearance, wrong_appearance
     # hit(field, time, strength)
 
-    def __init__(self, *, speed=1.0, volume=0.0, beatmap, beat):
-        self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
+    has_length = False
 
-        self.time = beatmap.time(beat)
-        self.speed = speed
-        self.volume = volume
+    speed: Optional[float] = None
+    volume: Optional[float] = None
+
+    def prepare(self, beatmap, context):
+        self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
+        if self.speed is None:
+            self.speed = context.get('speed', 1.0)
+        if self.volume is None:
+            self.volume = context.get('volume', 0.0)
+
+        self.time = beatmap.time(self.beat)
         self.perf = None
 
         travel_time = 1.0 / abs(0.5 * self.speed)
@@ -176,7 +221,8 @@ class OneshotTarget(Target):
 
     def approach(self, field):
         if self.sound is not None:
-            field.play(self.sound, time=self.time, volume=self.volume)
+            sound_path = os.path.join(self.sound_root, self.sound)
+            field.play(sound_path, time=self.time, volume=self.volume)
 
         field.draw_content(self.pos, self.appearance, zindex=self.zindex,
                            start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
@@ -194,23 +240,27 @@ class OneshotTarget(Target):
         field.add_full_score(self.full_score)
         field.add_score(self.score)
 
+@dataclass
 class Soft(OneshotTarget):
-    def __init__(self, *, speed=1.0, volume=0.0, beatmap, beat):
-        super().__init__(speed=speed, volume=volume, beatmap=beatmap, beat=beat)
+    def prepare(self, beatmap, context):
+        super().prepare(beatmap, context)
         self.approach_appearance = beatmap.settings.notes.soft_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.soft_wrong_appearance
         self.sound = beatmap.settings.notes.soft_sound
+        self.sound_root = beatmap.path
         self.threshold = beatmap.settings.difficulty.soft_threshold
 
     def hit(self, field, time, strength):
         super().hit(field, time, strength, strength < self.threshold)
 
+@dataclass
 class Loud(OneshotTarget):
-    def __init__(self, *, speed=1.0, volume=0.0, beatmap, beat):
-        super().__init__(speed=speed, volume=volume, beatmap=beatmap, beat=beat)
+    def prepare(self, beatmap, context):
+        super().prepare(beatmap, context)
         self.approach_appearance = beatmap.settings.notes.loud_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.loud_wrong_appearance
         self.sound = beatmap.settings.notes.loud_sound
+        self.sound_root = beatmap.path
         self.threshold = beatmap.settings.difficulty.loud_threshold
 
     def hit(self, field, time, strength):
@@ -221,76 +271,96 @@ class IncrGroup:
         self.threshold = threshold
         self.total = total
         self.volume = 0.0
+        self.last_beat = None
 
     def hit(self, strength):
         self.threshold = max(self.threshold, strength)
 
+@dataclass
 class Incr(OneshotTarget):
-    def __init__(self, group=None, *, speed=1.0, volume=0.0, beatmap, beat, context):
-        super().__init__(speed=speed, volume=volume, beatmap=beatmap, beat=beat)
+    group: Optional[str] = None
+
+    def prepare(self, beatmap, context):
+        super().prepare(beatmap, context)
 
         self.approach_appearance = beatmap.settings.notes.incr_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.incr_wrong_appearance
         self.sound = beatmap.settings.notes.incr_sound
+        self.sound_root = beatmap.path
         self.incr_threshold = beatmap.settings.difficulty.incr_threshold
 
         if '<incrs>' not in context:
             context['<incrs>'] = OrderedDict()
-        incrs = context['<incrs>']
+        self.groups = context['<incrs>']
 
-        group_key = group
-        if group_key is None:
+        if self.group is None:
             # determine group of incr note according to the context
-            for key, (_, last_beat) in reversed(incrs.items()):
-                if beat - 1 <= last_beat <= beat:
-                    group_key = key
+            for group, group_obj in reversed(self.groups.items()):
+                if self.beat - 1 <= group_obj.last_beat <= self.beat:
+                    self.group = group
                     break
             else:
-                group_key = 0
-                while group_key in incrs:
-                    group_key += 1
+                group_num = 0
+                while f"#{group_num}" in self.groups:
+                    group_num += 1
+                self.group = f"#{group_num}"
 
-        group, _ = incrs.get(group_key, (IncrGroup(), beat))
-        if group_key not in incrs:
-            group.volume = volume
-        incrs[group_key] = group, beat
-        incrs.move_to_end(group_key)
+        if self.group not in self.groups:
+            group_obj = IncrGroup()
+            group_obj.volume = self.volume
+            self.groups[self.group] = group_obj
 
-        group.total += 1
-        self.count = group.total
-        self.group = group
+        group_obj = self.groups[self.group]
+        group_obj.last_beat = self.beat
+        self.groups.move_to_end(self.group)
 
-    @property
-    def volume(self):
-        return self.group.volume + numpy.log10(0.2 + 0.8 * (self.count-1)/self.group.total) * 20
+        group_obj.total += 1
+        self.count = group_obj.total
 
-    @volume.setter
-    def volume(self, value):
-        pass
+    def approach(self, field):
+        if self.sound is not None:
+            sound_path = os.path.join(self.sound_root, self.sound)
+            group_obj = self.groups[self.group]
+            volume = group_obj.volume + numpy.log10(0.2 + 0.8 * (self.count-1)/group_obj.total) * 20
+            field.play(sound_path, time=self.time, volume=volume)
+
+        field.draw_content(self.pos, self.appearance, zindex=self.zindex,
+                           start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
+        field.reset_sight(start=self.range[0])
 
     def hit(self, field, time, strength):
-        threshold = max(0.0, min(1.0, self.group.threshold + self.incr_threshold))
+        group_obj = self.groups[self.group]
+        threshold = max(0.0, min(1.0, group_obj.threshold + self.incr_threshold))
         super().hit(field, time, strength, strength >= threshold)
-        self.group.hit(strength)
+        group_obj.hit(strength)
 
+@dataclass
 class Roll(Target):
-    def __init__(self, density=2, *, speed=1.0, volume=0.0, beatmap, beat, length):
+    density: Union[int, Fraction, float] = 2
+    speed: Optional[float] = None
+    volume: Optional[float] = None
+
+    def prepare(self, beatmap, context):
         self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
         self.tolerance = beatmap.settings.difficulty.roll_tolerance
         self.rock_appearance = beatmap.settings.notes.roll_rock_appearance
         self.sound = beatmap.settings.notes.roll_rock_sound
+        self.sound_root = beatmap.path
         self.rock_score = beatmap.settings.scores.roll_rock_score
 
-        self.time = beatmap.time(beat)
-        self.end = beatmap.time(beat+length)
-        self.speed = speed
-        self.volume = volume
+        if self.speed is None:
+            self.speed = context.get('speed', 1.0)
+        if self.volume is None:
+            self.volume = context.get('volume', 0.0)
+
+        self.time = beatmap.time(self.beat)
+        self.end = beatmap.time(self.beat+self.length)
         self.roll = 0
-        self.number = max(int(length * density), 1)
+        self.number = max(int(self.length * self.density), 1)
         self.is_finished = False
         self.score = 0
 
-        self.times = [beatmap.time(beat+i/density) for i in range(self.number)]
+        self.times = [beatmap.time(self.beat+i/self.density) for i in range(self.number)]
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.end + travel_time)
         self.range = (self.time - self.tolerance, self.end - self.tolerance)
@@ -305,7 +375,8 @@ class Roll(Target):
     def approach(self, field):
         for i, time in enumerate(self.times):
             if self.sound is not None:
-                field.play(self.sound, time=time, volume=self.volume)
+                sound_path = os.path.join(self.sound_root, self.sound)
+                field.play(sound_path, time=time, volume=self.volume)
             field.draw_content(self.pos_of(i), self.appearance_of(i), zindex=self.zindex,
                                start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
         field.reset_sight(start=self.range[0])
@@ -332,25 +403,34 @@ class Roll(Target):
             perf = Performance.judge(self.performance_tolerance, time)
             field.add_perf(perf, False)
 
+@dataclass
 class Spin(Target):
-    def __init__(self, density=2, *, speed=1.0, volume=0.0, beatmap, beat, length):
+    density: Union[int, Fraction, float] = 2
+    speed: Optional[float] = None
+    volume: Optional[float] = None
+
+    def prepare(self, beatmap, context):
         self.tolerance = beatmap.settings.difficulty.spin_tolerance
         self.disk_appearances = beatmap.settings.notes.spin_disk_appearances
         self.finishing_appearance = beatmap.settings.notes.spin_finishing_appearance
         self.finish_sustain_time = beatmap.settings.notes.spin_finish_sustain_time
         self.sound = beatmap.settings.notes.spin_disk_sound
+        self.sound_root = beatmap.path
         self.full_score = beatmap.settings.scores.spin_score
 
-        self.time = beatmap.time(beat)
-        self.end = beatmap.time(beat+length)
-        self.speed = speed
-        self.volume = volume
+        if self.speed is None:
+            self.speed = context.get('speed', 1.0)
+        if self.volume is None:
+            self.volume = context.get('volume', 0.0)
+
+        self.time = beatmap.time(self.beat)
+        self.end = beatmap.time(self.beat+self.length)
         self.charge = 0.0
-        self.capacity = length * density
+        self.capacity = self.length * self.density
         self.is_finished = False
         self.score = 0
 
-        self.times = [beatmap.time(beat+i/density) for i in range(int(self.capacity))]
+        self.times = [beatmap.time(self.beat+i/self.density) for i in range(int(self.capacity))]
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.end + travel_time)
         self.range = (self.time - self.tolerance, self.end + self.tolerance)
@@ -364,7 +444,8 @@ class Spin(Target):
     def approach(self, field):
         for time in self.times:
             if self.sound is not None:
-                field.play(self.sound, time=time, volume=self.volume)
+                sound_path = os.path.join(self.sound_root, self.sound)
+                field.play(sound_path, time=time, volume=self.volume)
 
         field.draw_content(self.pos, self.appearance, zindex=self.zindex,
                            start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
@@ -459,12 +540,18 @@ class BeatmapSettings(cfg.Configurable):
         spin_disk_sound: str = f"{BASE_DIR}/samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
 
 class Beatmap:
-    def __init__(self, audiopath=None, volume=0.0, offset=0.0, tempo=60.0):
-        self.audiopath = audiopath
+    def __init__(self, root=".", audio=None, volume=0.0, offset=0.0, tempo=60.0):
+        self.root = root
+        self.audio = audio
         self.volume = volume
         self.offset = offset
         self.tempo = tempo
         self.settings = BeatmapSettings()
+
+        self.event_sequences = []
+        self.events_start_time = None
+        self.events_end_time = None
+        self.total_subjects = 0
 
     def time(self, beat):
         return self.offset + beat*60/self.tempo
@@ -475,8 +562,26 @@ class Beatmap:
     def dtime(self, beat, length):
         return self.time(beat+length) - self.time(beat)
 
-    def build_events(self):
-        raise NotImplementedError
+    def prepare_events(self):
+        total_events = []
+        for sequence in self.event_sequences:
+            events = []
+            context = {}
+            for event in sequence:
+                event.prepare(self, context)
+                if not isinstance(event, Event):
+                    continue
+                if event.is_subject:
+                    self.total_subjects += 1
+                if self.events_start_time is None or event.lifespan[0] < self.events_start_time:
+                    self.events_start_time = event.lifespan[0]
+                if self.events_end_time is None or event.lifespan[1] > self.events_end_time:
+                    self.events_end_time = event.lifespan[1]
+                events.append(event)
+            total_events.append(events)
+
+        return sort_merge(*total_events, key=lambda e: e.beat)
+
 
 class GameplaySettings(cfg.Configurable):
     class controls(cfg.Configurable):
@@ -504,12 +609,7 @@ class BeatmapPlayer:
 
     def prepare(self, output_samplerate, output_nchannels):
         # prepare events
-        self.events = self.beatmap.build_events()
-        self.events.sort(key=lambda e: e.lifespan[0])
-
-        leadin_time = self.settings.controls.leadin_time
-        events_start_time = min((event.lifespan[0] - leadin_time for event in self.events), default=0.0)
-        events_end_time   = max((event.lifespan[1] + leadin_time for event in self.events), default=0.0)
+        self.events = self.beatmap.prepare_events()
 
         # prepare music
         if self.beatmap.audio is None:
@@ -517,18 +617,24 @@ class BeatmapPlayer:
             self.duration = 0.0
             self.volume = 0.0
         else:
-            with audioread.audio_open(self.beatmap.audiopath) as file:
+            audio_path = os.path.join(self.beatmap.root, self.beatmap.audio)
+            with audioread.audio_open(audio_path) as file:
                 self.duration = file.duration
-            self.audionode = dn.DataNode.wrap(dn.load_sound(self.beatmap.audiopath,
+            self.audionode = dn.DataNode.wrap(dn.load_sound(audio_path,
                                                             samplerate=output_samplerate,
                                                             channels=output_nchannels))
             self.volume = self.beatmap.volume
 
-        self.start_time = min(events_start_time, 0.0)
-        self.end_time = max(events_end_time, self.duration)
+        leadin_time = self.settings.controls.leadin_time
+        self.start_time = 0.0
+        self.end_time = self.duration
+        if self.beatmap.events_start_time is not None:
+            self.start_time = min(self.beatmap.events_start_time - leadin_time, self.start_time)
+        if self.beatmap.events_end_time is not None:
+            self.end_time = max(self.beatmap.events_end_time + leadin_time, self.end_time)
 
         # initialize game state
-        self.total_subjects = sum(event.is_subject for event in self.events)
+        self.total_subjects = self.beatmap.total_subjects
         self.finished_subjects = 0
         self.full_score = 0
         self.score = 0
