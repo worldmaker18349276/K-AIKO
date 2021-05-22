@@ -539,19 +539,32 @@ class BeatmapSettings(cfg.Configurable):
         spin_finish_sustain_time: float = 0.1
         spin_disk_sound: str = f"{BASE_DIR}/samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
 
-class Beatmap:
-    def __init__(self, root=".", audio=None, volume=0.0, offset=0.0, tempo=60.0):
+class Playable:
+    def __init__(self):
+        self.events_start_time = None
+        self.events_end_time = None
+        self.total_subjects = 0
+        self.duration = 0.0
+
+    def get_audionode(self):
+        raise NotImplementedError
+
+    def prepare_events(self):
+        raise NotImplementedError
+
+class Beatmap(Playable):
+    def __init__(self, root=".", audio=None, duration=0.0, volume=0.0, offset=0.0, tempo=60.0):
+        super().__init__()
+
         self.root = root
         self.audio = audio
+        self.duration = duration
         self.volume = volume
         self.offset = offset
         self.tempo = tempo
         self.settings = BeatmapSettings()
 
         self.event_sequences = []
-        self.events_start_time = None
-        self.events_end_time = None
-        self.total_subjects = 0
 
     def time(self, beat):
         return self.offset + beat*60/self.tempo
@@ -561,6 +574,18 @@ class Beatmap:
 
     def dtime(self, beat, length):
         return self.time(beat+length) - self.time(beat)
+
+    def get_audionode(self):
+        if self.audio is None:
+            return None
+
+        else:
+            audio_path = os.path.join(self.beatmap.root, self.beatmap.audio)
+            audionode = dn.DataNode.wrap(dn.load_sound(audio_path,
+                                                       samplerate=output_samplerate,
+                                                       channels=output_nchannels,
+                                                       volume = self.beatmap.volume))
+            return audionode
 
     def prepare_events(self):
         total_events = []
@@ -608,22 +633,12 @@ class BeatmapPlayer:
         self.settings = settings or GameplaySettings()
 
     def prepare(self, output_samplerate, output_nchannels):
+        # prepare music
+        self.audionode = self.beatmap.get_audionode()
+        self.duration = self.beatmap.duration
+
         # prepare events
         self.events = self.beatmap.prepare_events()
-
-        # prepare music
-        if self.beatmap.audio is None:
-            self.audionode = None
-            self.duration = 0.0
-            self.volume = 0.0
-        else:
-            audio_path = os.path.join(self.beatmap.root, self.beatmap.audio)
-            with audioread.audio_open(audio_path) as file:
-                self.duration = file.duration
-            self.audionode = dn.DataNode.wrap(dn.load_sound(audio_path,
-                                                            samplerate=output_samplerate,
-                                                            channels=output_nchannels))
-            self.volume = self.beatmap.volume
 
         leadin_time = self.settings.controls.leadin_time
         self.start_time = 0.0
@@ -676,7 +691,7 @@ class BeatmapPlayer:
 
         # play music
         if self.audionode is not None:
-            self.beatbar.mixer.play(self.audionode, volume=self.volume, time=0.0, zindex=(-3,))
+            self.beatbar.mixer.play(self.audionode, time=0.0, zindex=(-3,))
 
         # register handlers
         self.beatbar.mixer.add_effect(self._spec_handler(), zindex=(-1,))
