@@ -4,10 +4,7 @@ import contextlib
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
-import threading
 import numpy
-import audioread
-from . import beatbar
 from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings
 from . import cfg
 from . import datanodes as dn
@@ -546,14 +543,15 @@ class Playable:
         self.total_subjects = 0
         self.duration = 0.0
 
-    def get_audionode(self):
+    def get_audionode(self, output_samplerate, output_nchannels):
         raise NotImplementedError
 
     def prepare_events(self):
         raise NotImplementedError
 
 class Beatmap(Playable):
-    def __init__(self, root=".", audio=None, duration=0.0, volume=0.0, offset=0.0, tempo=60.0):
+    def __init__(self, root=".", audio=None, duration=0.0, volume=0.0,
+                 offset=0.0, tempo=60.0, info="", preview=None, settings=None):
         super().__init__()
 
         self.root = root
@@ -562,7 +560,9 @@ class Beatmap(Playable):
         self.volume = volume
         self.offset = offset
         self.tempo = tempo
-        self.settings = BeatmapSettings()
+        self.info = info
+        self.preview = preview
+        self.settings = settings or BeatmapSettings()
 
         self.event_sequences = []
 
@@ -575,7 +575,7 @@ class Beatmap(Playable):
     def dtime(self, beat, length):
         return self.time(beat+length) - self.time(beat)
 
-    def get_audionode(self):
+    def get_audionode(self, output_samplerate, output_nchannels):
         if self.audio is None:
             return None
 
@@ -634,7 +634,7 @@ class BeatmapPlayer:
 
     def prepare(self, output_samplerate, output_nchannels):
         # prepare music
-        self.audionode = self.beatmap.get_audionode()
+        self.audionode = self.beatmap.get_audionode(output_samplerate, output_nchannels)
         self.duration = self.beatmap.duration
 
         # prepare events
