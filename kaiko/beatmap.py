@@ -169,21 +169,14 @@ class Target(Event):
 
 @dataclass
 class OneshotTarget(Target):
-    # time, speed, volume, perf, sound
+    # time, speed, volume, perf, sound, sound_root
     # approach_appearance, wrong_appearance
     # hit(field, time, strength)
 
     has_length = False
 
-    speed: Optional[float] = None
-    volume: Optional[float] = None
-
     def prepare(self, beatmap, context):
         self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
-        if self.speed is None:
-            self.speed = context.get('speed', 1.0)
-        if self.volume is None:
-            self.volume = context.get('volume', 0.0)
 
         self.time = beatmap.time(self.beat)
         self.perf = None
@@ -239,6 +232,9 @@ class OneshotTarget(Target):
 
 @dataclass
 class Soft(OneshotTarget):
+    speed: Optional[float] = None
+    volume: Optional[float] = None
+
     def prepare(self, beatmap, context):
         super().prepare(beatmap, context)
         self.approach_appearance = beatmap.settings.notes.soft_approach_appearance
@@ -247,11 +243,19 @@ class Soft(OneshotTarget):
         self.sound_root = beatmap.path
         self.threshold = beatmap.settings.difficulty.soft_threshold
 
+        if self.speed is None:
+            self.speed = context.get('speed', 1.0)
+        if self.volume is None:
+            self.volume = context.get('volume', 0.0)
+
     def hit(self, field, time, strength):
         super().hit(field, time, strength, strength < self.threshold)
 
 @dataclass
 class Loud(OneshotTarget):
+    speed: Optional[float] = None
+    volume: Optional[float] = None
+
     def prepare(self, beatmap, context):
         super().prepare(beatmap, context)
         self.approach_appearance = beatmap.settings.notes.loud_approach_appearance
@@ -259,6 +263,11 @@ class Loud(OneshotTarget):
         self.sound = beatmap.settings.notes.loud_sound
         self.sound_root = beatmap.path
         self.threshold = beatmap.settings.difficulty.loud_threshold
+
+        if self.speed is None:
+            self.speed = context.get('speed', 1.0)
+        if self.volume is None:
+            self.volume = context.get('volume', 0.0)
 
     def hit(self, field, time, strength):
         super().hit(field, time, strength, strength >= self.threshold)
@@ -276,6 +285,8 @@ class IncrGroup:
 @dataclass
 class Incr(OneshotTarget):
     group: Optional[str] = None
+    speed: Optional[float] = None
+    group_volume: Optional[float] = None
 
     def prepare(self, beatmap, context):
         super().prepare(beatmap, context)
@@ -285,6 +296,11 @@ class Incr(OneshotTarget):
         self.sound = beatmap.settings.notes.incr_sound
         self.sound_root = beatmap.path
         self.incr_threshold = beatmap.settings.difficulty.incr_threshold
+
+        if self.speed is None:
+            self.speed = context.get('speed', 1.0)
+        if self.group_volume is None:
+            self.group_volume = context.get('volume', 0.0)
 
         if '<incrs>' not in context:
             context['<incrs>'] = OrderedDict()
@@ -304,7 +320,7 @@ class Incr(OneshotTarget):
 
         if self.group not in self.groups:
             group_obj = IncrGroup()
-            group_obj.volume = self.volume
+            group_obj.volume = self.group_volume
             self.groups[self.group] = group_obj
 
         group_obj = self.groups[self.group]
@@ -314,16 +330,10 @@ class Incr(OneshotTarget):
         group_obj.total += 1
         self.count = group_obj.total
 
-    def approach(self, field):
-        if self.sound is not None:
-            sound_path = os.path.join(self.sound_root, self.sound)
-            group_obj = self.groups[self.group]
-            volume = group_obj.volume + numpy.log10(0.2 + 0.8 * (self.count-1)/group_obj.total) * 20
-            field.play(sound_path, time=self.time, volume=volume)
-
-        field.draw_content(self.pos, self.appearance, zindex=self.zindex,
-                           start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
-        field.reset_sight(start=self.range[0])
+    @property
+    def volume(self):
+        group_obj = self.groups[self.group]
+        return group_obj.volume + numpy.log10(0.2 + 0.8 * (self.count-1)/group_obj.total) * 20
 
     def hit(self, field, time, strength):
         group_obj = self.groups[self.group]
