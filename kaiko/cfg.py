@@ -9,10 +9,6 @@ class FieldBiparser(biparser.Biparser):
     def __init__(self, config_type):
         self.config_type = config_type
 
-    @property
-    def name(self):
-        return f"Field[{config_type.__name__}]"
-
     def decode(self, text, index=0, partial=False):
         current_fields = []
         current_type = self.config_type
@@ -25,8 +21,7 @@ class FieldBiparser(biparser.Biparser):
                     field_key = field_key + "."
                 fields[field_key] = (field_name, field_type)
 
-            options = sorted(list(fields.keys()), reverse=True)
-            option, index = biparser.startswith(options, text, index, partial=True)
+            option, index = biparser.startswith(list(fields.keys()), text, index, partial=True)
 
             current_field, current_type = fields[option]
             current_fields.append(current_field)
@@ -57,10 +52,6 @@ class ConfigurationBiparser(biparser.Biparser):
     def __init__(self, config_type):
         self.config_type = config_type
         self.field_biparser = FieldBiparser(config_type)
-
-    @property
-    def name(self):
-        return f"Configuration[{config_type.__name__}]"
 
     def decode(self, text, index=0, partial=False):
         # exec(text, globals(), config.__dict__)

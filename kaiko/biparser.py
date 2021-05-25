@@ -6,10 +6,11 @@ import typing
 
 
 class DecodeError(Exception):
-    def __init__(self, text, index, expected):
+    def __init__(self, text, index, expected, info=None):
         self.text = text
         self.index = index
         self.expected = expected
+        self.info = info
 
     def __str__(self):
         if self.index > len(self.text):
@@ -21,19 +22,19 @@ class DecodeError(Exception):
             col = self.index - (last_ln + 1)
             loc = f"{line}:{col}"
 
-        return f"parse failed at {loc}, expect: {self.expected!r}"
+        if self.info:
+            return f"parse failed at {loc}: {self.info}"
+        else:
+            return f"parse failed at {loc}, expect: {self.expected!r}"
 
 class EncodeError(Exception):
-    def __init__(self, value, pos, expected):
+    def __init__(self, value, pos, expected, info=None):
         self.value = value
         self.pos = pos
         self.expected = expected
+        self.info = info
 
 class Biparser:
-    @property
-    def name(self):
-        raise NotImplementedError
-
     def decode(self, text, index=0, partial=False):
         raise NotImplementedError
 
@@ -71,10 +72,6 @@ def match(regex, expected, text, start, optional=False, partial=True):
 
 
 class LiteralBiparser(Biparser):
-    @property
-    def name(self):
-        return self.type.__name__
-
     def encode(self, value):
         if not isinstance(value, self.type):
             raise EncodeError(value, "", self.type)
@@ -87,7 +84,6 @@ class LiteralBiparser(Biparser):
 class NoneBiparser(LiteralBiparser):
     regex = "None"
     expected = ["None"]
-    name = "None"
     type = type(None)
 
 class BoolBiparser(LiteralBiparser):
@@ -169,10 +165,6 @@ class ListBiparser(Biparser):
     def __init__(self, elem_biparser):
         self.elem_biparser = elem_biparser
 
-    @property
-    def name(self):
-        return f"List[{self.elem_biparser.name}]"
-
     def decode(self, text, index=0, partial=False):
         res = []
 
@@ -213,10 +205,6 @@ class SetBiparser(Biparser):
 
     def __init__(self, elem_biparser):
         self.elem_biparser = elem_biparser
-
-    @property
-    def name(self):
-        return f"Set[{self.elem_biparser.name}]"
 
     def decode(self, text, index=0, partial=False):
         res = set()
@@ -262,10 +250,6 @@ class DictBiparser(Biparser):
     def __init__(self, key_biparser, value_biparser):
         self.key_biparser = key_biparser
         self.value_biparser = value_biparser
-
-    @property
-    def name(self):
-        return f"Dict[{self.key_biparser.name}, {self.value_biparser.name}]"
 
     def decode(self, text, index=0, partial=False):
         res = dict()
@@ -315,12 +299,6 @@ class TupleBiparser(Biparser):
     def __init__(self, elems_biparsers):
         self.elems_biparsers = elems_biparsers
 
-    @property
-    def name(self):
-        if not self.elems_biparsers:
-            return "Tuple[()]"
-        return f"Tuple[{', '.join(biparser.name for biparser in self.elems_biparsers)}]"
-
     def decode(self, text, index=0, partial=False):
         res = []
 
@@ -368,11 +346,6 @@ class DataclassBiparser(Biparser):
         self.clz = clz
         self.fields_biparsers = fields_biparsers
 
-    @property
-    def name(self):
-        fields = ", ".join(name + ":" + biparser.name for name, biparser in self.fields_biparsers.items())
-        return f"{self.clz.__name__}({fields})"
-
     def decode(self, text, index=0, partial=False):
         res = dict()
 
@@ -411,10 +384,6 @@ class UnionBiparser(Biparser):
     def __init__(self, options_biparsers):
         self.options_biparsers = options_biparsers
 
-    @property
-    def name(self):
-        return f"Union[{', '.join(biparser.name for biparser in self.options_biparsers)}]"
-
     def decode(self, text, index=0, partial=False):
         expected = []
         final_index = index
@@ -436,7 +405,7 @@ class UnionBiparser(Biparser):
             except EncodeError:
                 pass
 
-        raise EncodeError(value, "", [biparser.name for biparser in self.options_biparsers])
+        raise EncodeError(value, "", [])
 
 class EnumBiparser(Biparser):
     nameperiod = r"{}\."
@@ -444,10 +413,6 @@ class EnumBiparser(Biparser):
     def __init__(self, enum_class):
         self.enum_class = enum_class
         self.options = sorted(list(enum_class), key=lambda e:e.name, reverse=True)
-
-    @property
-    def name(self):
-        return self.enum_class.__name__
 
     def decode(self, text, index=0, partial=False):
         name = self.enum_class.__name__
