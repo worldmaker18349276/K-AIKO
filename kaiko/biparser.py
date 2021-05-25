@@ -116,45 +116,48 @@ class ComplexBiparser(LiteralBiparser):
 
 class StrBiparser(LiteralBiparser):
     regex = (r'"('
-             r'[^\\"]'
+             r'[^\r\n\\"\x00]'
              r'|\\[0-7]{1,3}'
              r'|\\x[0-9a-fA-F]{2}'
              r'|\\u[0-9a-fA-F]{4}'
              r'|\\U[0-9a-fA-F]{8}'
-             r'|\\(?![xuUN]).'
+             r'|\\(?![xuUN\x00]).'
              r')*"')
     expected = ['""']
     type = str
 
     def encode(self, value):
-        if not isinstance(value, self.type):
-            raise EncodeError(value, "", self.type)
-        value_ = value.replace("'", "'1").replace('"', "'2") + "'0"
-        repr_value_ = repr(value_)
-        # assert repr_value_[0] == '"'
-        repr_value = repr_value_.replace("'0", "").replace("'2", '"').replace("'1", "'")
-        return repr_value
+        return '"' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
 
 class BytesBiparser(LiteralBiparser):
     regex = (r'b"('
-             r'(?!\\")[\x00-\x7f]'
+             r'(?![\r\n\\"])[\x01-\x7f]'
              r'|\\[0-7]{1,3}'
              r'|\\x[0-9a-fA-F]{2}'
              r'|\\u[0-9a-fA-F]{4}'
              r'|\\U[0-9a-fA-F]{8}'
-             r'|\\(?![xuUN])[\x00-\x7f]'
+             r'|\\(?![xuUN])[\x01-\x7f]'
              r')*"')
     expected = ['b""']
     type = bytes
 
     def encode(self, value):
-        if not isinstance(value, self.type):
-            raise EncodeError(value, "", self.type)
-        value_ = value.replace(b"'", b"'1").replace(b'"', b"'2") + b"'0"
-        repr_value_ = repr(value_)
-        # assert repr_value_[1] == '"'
-        repr_value = repr_value_.replace(b"'0", b"").replace(b"'2", b'"').replace(b"'1", b"'")
-        return repr_value
+        return 'b"' + repr(value + b'"')[2:-2].replace(b'"', rb'\"').replace(rb"\'", b"'") + '"'
+
+class SStrBiparser(LiteralBiparser):
+    regex = (r"'("
+             r"[^\r\n\\']"
+             r"|\\[0-7]{1,3}"
+             r"|\\x[0-9a-fA-F]{2}"
+             r"|\\u[0-9a-fA-F]{4}"
+             r"|\\U[0-9a-fA-F]{8}"
+             r"|\\(?![xuUN])."
+             r")*'")
+    expected = ["''"]
+    type = str
+
+    def encode(self, value):
+        return repr(value + '"')[:-2] + "'"
 
 
 class ListBiparser(Biparser):
