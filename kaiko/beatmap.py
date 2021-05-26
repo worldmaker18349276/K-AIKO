@@ -547,11 +547,10 @@ class BeatmapSettings(cfg.Configurable):
         spin_disk_sound: str = f"{BASE_DIR}/samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
 
 class Playable:
-    def __init__(self):
-        self.events_start_time = None
-        self.events_end_time = None
-        self.total_subjects = 0
-        self.duration = 0.0
+    # events_start_time: Optional[float]
+    # events_end_time: Optional[float]
+    # total_subjects: int
+    # duration: float
 
     def get_audionode(self, output_samplerate, output_nchannels):
         raise NotImplementedError
@@ -560,13 +559,10 @@ class Playable:
         raise NotImplementedError
 
 class Beatmap(Playable):
-    def __init__(self, root=".", audio=None, duration=0.0, volume=0.0,
+    def __init__(self, root=".", audio=None, volume=0.0,
                  offset=0.0, tempo=60.0, info="", preview=None, settings=None):
-        super().__init__()
-
         self.root = root
         self.audio = audio
-        self.duration = duration
         self.volume = volume
         self.offset = offset
         self.tempo = tempo
@@ -574,7 +570,18 @@ class Beatmap(Playable):
         self.preview = preview
         self.settings = settings or BeatmapSettings()
 
+        self.events_start_time = None
+        self.events_end_time = None
+        self.total_subjects = 0
         self.event_sequences = []
+
+    @property
+    def duration(self):
+        if self.audio is None:
+            return 0.0
+
+        with audioread.audio_open(os.path.join(self.root, self.audio)) as file:
+            return file.duration
 
     def time(self, beat):
         return self.offset + beat*60/self.tempo
@@ -594,7 +601,7 @@ class Beatmap(Playable):
             audionode = dn.DataNode.wrap(dn.load_sound(audio_path,
                                                        samplerate=output_samplerate,
                                                        channels=output_nchannels,
-                                                       volume = self.beatmap.volume))
+                                                       volume=self.beatmap.volume))
             return audionode
 
     def prepare_events(self):

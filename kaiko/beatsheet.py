@@ -2,72 +2,130 @@ import os
 import math
 from collections import OrderedDict, namedtuple
 from fractions import Fraction
-import operator
-import inspect
+from dataclasses import dataclass, field
+from typing import List, Tuple, Dict, Union
 from ast import literal_eval
-from lark import Lark, Transformer
+from . import biparser
 from .beatmap import (
     Beatmap,
-    Text, Flip, Shift, set_context,
+    UpdateContext, Text, Flip, Shift,
     Soft, Loud, Incr, Roll, Spin,
     )
 
-Rest = lambda: None
-Divisor = lambda divisor=2: divisor
+def Context(beat, length, **update):
+    return UpdateContext(update)
 
 class BeatmapParseError(Exception):
     pass
 
-class BeatmapDraft(Beatmap):
-    def __init__(self, root=".", info="", audio=None, volume=0.0, preview=0.0, offset=0.0, tempo=60.0):
-        super().__init__(None, volume, offset, tempo)
-        self.root = root
-        self.info = info
-        self.audio = audio
-        self.preview = preview
+class BeatSheet(Beatmap):
+    _notations = {
+        'x': Soft,
+        'o': Loud,
+        '<': Incr,
+        '%': Roll,
+        '@': Spin,
+        'Context': Context,
+        'Text': Text,
+        'Flip': Flip,
+        'Shift': Shift,
+    }
 
-        self.notations = self.NotationDict()
-        self.chart = self.NoteChart(self.notations)
+    audio: str
+    volume: float
+    offset: float
+    tempo: float
+    info: str
+    preview: float
+    chart: str
 
-        self.notations['x'] = Soft
-        self.notations['soft'] = Soft
-        self.notations['o'] = Loud
-        self.notations['loud'] = Loud
-        self.notations['<'] = Incr
-        self.notations['incr'] = Incr
-        self.notations['%'] = Roll
-        self.notations['roll'] = Roll
-        self.notations['@'] = Spin
-        self.notations['spin'] = Spin
-        self.notations['TEXT'] = Text
-        self.notations['CONTEXT'] = set_context
-        self.notations['FLIP'] = Flip
-        self.notations['SHIFT'] = Shift
+    def to_events(self, track):
+        if track.hide:
+            return
 
-    def build_events(self):
-        events = []
+        notations = self._notations
 
-        for track in self.chart.tracks:
-            for event in track.build_events(self):
-                events.append(event)
+        def build(beat, length, last_event):
+            for note in track.patterns:
+                if isinstance(note, Note):
+                    if note.symbol == "~":
+                        if note.arguments[0] or note.arguments[1]:
+                            raise BeatmapParseError("lengthen note don't accept any argument")
 
-        return events
+                        if last_event is not None:
+                            last_event.length += length
+                        beat += length
+
+                    elif note.symbol == "|":
+                        if note.arguments[0] or note.arguments[1]:
+                            raise BeatmapParseError("measure note don't accept any argument")
+
+                        if (beat - track.beat) % track.meter != 0:
+                            raise BeatmapParseError("wrong measure")
+
+                    elif note.symbol == "_":
+                        if note.arguments[0] or note.arguments[1]:
+                            raise BeatmapParseError("rest note don't accept any argument")
+
+                        last_event = None
+                        beat += length
+
+                    else:
+                        if note.symbol not in notations:
+                            raise BeatmapParseError("unknown symbol: " + note.symbol)
+                        event_type = notations[note.symbol]
+                        last_event = event_type(beat, length, *note.arguments[0], **note.arguments[1])
+                        beat += length
+
+                elif isinstance(note, Division):
+                    beat, last_event = yield from build(beat, length / note.divisor, last_event)
+
+                elif isinstance(note, Instant):
+                    if last_event is not None:
+                        yield last_event
+                    last_event = None
+
+                    if note.update:
+                        yield UpdateContext(note.update)
+                    beat, last_event = yield from build(beat, Fraction(0, 1), last_event)
+
+            return beat, last_event
+
+        beat = Fraction(1, 1) * track.beat
+        length = Fraction(1, 1) * track.length
+        return build(beat, length, None)
+
+    def to_track(self, sequence):
+        raise NotImplementedError
+
+    @property
+    def chart(self):
+        tracks = [self.to_track(seq) for seq in self.event_sequences]
+        return chart_biparser.encode(tracks)
+
+    @chart.setter
+    def chart(self, value):
+        tracks = chart_biparser.decode(value)
+        self.event_sequences = [list(self.to_events(track)) for track in tracks]
 
     @staticmethod
     def read(filename, hack=False):
         filename = os.path.abspath(filename)
         if filename.endswith((".kaiko", ".ka")):
-            if hack:
-                beatmap = BeatmapDraft()
-                beatmap.root = os.path.dirname(filename)
-                exec(open(filename).read(), dict(), dict(beatmap=beatmap))
-                return beatmap
+            sheet = open(filename).read()
 
-            else:
-                try:
-                    return K_AIKO_STD_FORMAT.read(filename)
-                except Exception as e:
-                    raise BeatmapParseError(f"failed to read beatmap {filename}") from e
+            try:
+                if hack:
+                    beatmap = BeatSheet()
+                    exec(sheet, dict(), dict(beatmap=beatmap))
+                else:
+                    beatmap = beatsheet_biparser.decode(sheet)
+            except Exception as e:
+                raise BeatmapParseError(f"failed to read beatmap {filename}") from e
+
+            beatmap.root = os.path.dirname(filename)
+            beatmap.build_event_sequences()
+            return beatmap
 
         elif filename.endswith(".osu"):
             try:
@@ -78,400 +136,393 @@ class BeatmapDraft(Beatmap):
         else:
             raise ValueError(f"unknown file extension: {filename}")
 
-    class NotationDict:
-        def __init__(self):
-            self.definitions = {}
 
-        def __setitem__(self, symbol, builder):
-            if any(c in symbol for c in " \b\t\n\r\f\v()[]{}\'\"\\#|~") or symbol == '_':
-                raise ValueError(f"invalid symbol `{symbol}`")
-            if symbol in self.definitions:
-                raise ValueError(f"symbol `{symbol}` is already defined")
-            self.definitions[symbol] = NoteType(symbol, builder)
+Value = Union[None, bool, int, Fraction, float, str]
+Arguments = Tuple[List[Value], Dict[str, Value]]
 
-        def __delitem__(self, symbol):
-            del self.definitions[symbol]
+class Pattern:
+    pass
 
-        def __getitem__(self, symbol):
-            return self.definitions[symbol].builder
+@dataclass
+class Track:
+    # TRACK(beat=0, length=1/2):
+    #     ...
 
-    class NoteChart:
-        def __init__(self, notations):
-            self.notations = notations
-            self.tracks = []
+    beat: Union[int, Fraction] = 0
+    length: Union[int, Fraction] = 1
+    meter: Union[int, Fraction] = 4
+    hide: bool = False
+    patterns: List[Pattern] = default_factory(default_factory=list)
 
-        def __iadd__(self, track_str):
-            try:
-                track = K_AIKO_STD_FORMAT.parse_track(track_str, self.notations.definitions)
-            except Exception as e:
-                raise BeatmapParseError("failed to read track") from e
-
-            self.tracks.append(track)
-            return self
-
-class NoteTrack:
-    def __init__(self, *, beat=0, length=1, meter=4, hide=False):
+    def set_arguments(self, beat=0, length=1, meter=4, hide=False):
         self.beat = beat
         self.length = length
         self.meter = meter
         self.hide = hide
-        self.notes = []
 
-    def build_events(self, beatmap):
-        if self.hide:
-            return
-        context = dict()
-        for note in self.notes:
-            event = note.create(beatmap, context)
-            if event is not None:
-                yield event
+    def get_arguments(self):
+        return dict(beat=self.beat, length=self.length, meter=self.meter, hide=self.hide)
 
-def NoteType(symbol, builder):
-    # builder(beatmap, *args, context, **kwargs) -> Event | None
-    # => Note(*args, **kwargs)
-    signature = inspect.signature(builder)
-    parameters = list(signature.parameters.values())[1:]
-    contextual = [param.name for param in parameters if param.kind == inspect.Parameter.KEYWORD_ONLY]
-    if 'context' in contextual:
-        parameters.remove(signature.parameters['context'])
-    signature = signature.replace(parameters=parameters)
-    attrs = dict(symbol=symbol, builder=staticmethod(builder), signature=signature, contextual=contextual)
-    return type(builder.__name__+"Note", (Note,), attrs)
+@dataclass
+class Note(Pattern):
+    #    event note: XXX(arg=...)
+    #     text note: 'ABC'(arg=...)
+    # lengthen note: ~
+    #  measure note: |
+    #     rest note: _
 
-class Note:
-    modifiers = {
-        '+': operator.add,
-        '-': operator.sub,
-        '*': operator.mul,
-        '/': operator.truediv,
-        '&': operator.and_,
-        '|': operator.or_,
-        '^': operator.xor,
-        }
+    symbol: str
+    arguments: Arguments
 
-    def __init__(self, *psargs, **kwargs):
-        self.mods = dict()
+@dataclass
+class Division(Pattern):
+    # [x o]
+    # [x x o]/3
 
-        # find modified assignments: pretend `f(key+=value)` by `f(**{'key+': value})`
-        for key, value in list(kwargs.items()):
-            for mod in self.modifiers.keys():
-                if key.endswith(mod):
-                    # get original key
-                    key_ = key[:-len(mod)]
-                    if key_ in kwargs:
-                        raise ValueError("keyword argument repeated")
-                    if key_ not in self.contextual:
-                        raise ValueError("unable to modify non-contextual argument")
+    divisor: int = 2
+    patterns: List[Pattern] = default_factory(default_factory=list)
 
-                    # extract out modifier
-                    self.mods[key_] = mod
-                    del kwargs[key]
-                    kwargs[key_] = value
-
-                    break
-
-        # bind arguments, it allows missing contextual arguments until obtaining context
-        self.bound = self.signature.bind_partial(*psargs, **kwargs)
-
-        # check non-contextual arguments
-        for key, param in self.signature.parameters.items():
-            if key not in self.contextual:
-                if key not in self.bound.arguments and param.default == inspect.Parameter.empty:
-                    raise ValueError("missing required arguments")
-
-    def __repr__(self):
-        return self.__str__()
-
-    def __str__(self):
-        psargs_str = [repr(value) for value in self.bound.args]
-        kwargs_str = [key+self.mods.get(key, "")+"="+repr(value) for key, value in self.bound.kwargs.items()]
-        args_str = ", ".join([*psargs_str, *kwargs_str])
-        return f"{self.symbol}({args_str})"
-
-    def create(self, beatmap, context):
-        args = self.bound.args
-        kwargs = dict(self.bound.kwargs)
-        ikwargs = dict()
-
-        # separate modified contextual arguments
-        for key in self.contextual:
-            if key in kwargs and key in self.mods:
-                ikwargs[key] = kwargs[key]
-                del kwargs[key]
-
-        # fill in missing contextual arguments by context
-        for key in self.contextual:
-            if key != 'context' and key not in kwargs and key in context:
-                kwargs[key] = context[key]
-
-        # bind unmodified arguments. it will raise error for missing contextual arguments
-        bound = self.signature.bind(*args, **kwargs)
-        bound.apply_defaults()
-        args = bound.args
-        kwargs = dict(bound.kwargs)
-
-        # modify contextual arguments if needed
-        for key in self.contextual:
-            if key in self.mods:
-                mod = self.mods[key]
-                kwargs[key] = self.modifiers[mod](kwargs[key], ikwargs[key])
-
-        # build
-        if 'context' in self.contextual:
-            kwargs['context'] = context
-        return self.builder(beatmap, *args, **kwargs)
+@dataclass
+class Instant(Pattern):
+    # {x x o}
+    patterns: List[Pattern] = default_factory(default_factory=list)
 
 
-# #K-AIKO-std-1.1.0
-# beatmap.info = '''
-# ...
-# '''
-# beatmap.audio = '...'
-# beatmap.volume = -20.0
-# beatmap.preview = 34.5
-# beatmap.offset = 2.44
-# beatmap.tempo = 140.0
-# beatmap.chart += r'''
-# (beat=0, length=1, meter=4)
-# x x o x | x x [x x] o | x x [x x] x | [x x x x] [_ x] x |
-# %(2) ~ ~ ~ | < < < < | < < < < | @(2) ~ ~ ~ |
-# '''
+class MStrBiparser(biparser.LiteralBiparser):
+    # always start/end with newline => easy to parse
+    # no named escape sequence '\N{...}'
 
-k_aiko_grammar = r"""
-_NEWLINE: /\r\n?|\n/
-_WHITESPACE: /[ \t]+/
-_COMMENT: /#[^\r\n]*/
-_MCOMMENT: /#((?!''')[^\r\n])*/
-_n: (_NEWLINE _COMMENT?)* _NEWLINE
-_e: (_NEWLINE _COMMENT?)*
-_s: (_WHITESPACE | (_NEWLINE _MCOMMENT?)* _NEWLINE)*
+    regex = (r'"""(?=\n)('
+             r'(?!""")[^\\\x00]'
+             r'|\\[0-7]{1,3}'
+             r'|\\x[0-9a-fA-F]{2}'
+             r'|\\u[0-9a-fA-F]{4}'
+             r'|\\U[0-9a-fA-F]{8}'
+             r'|\\(?![xuUN\x00]).'
+             r')*(?<=\n)"""')
+    expected = ['"""\n"""']
+    type = str
 
-none:  /None/
-bool:  /True|False/
-int:   /[-+]?(0|[1-9][0-9]*)/
-frac:  /[-+]?(0|[1-9][0-9]*)\/[1-9][0-9]*/
-float: /[-+]?[0-9]+\.[0-9]+/
-str:   /'([^\r\n\\']|\\[\\'btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*'/
-mstr:  /'''(\r\n?|\n)((?!''')[\s\S])*((?<=\r\n)|(?<=\r)|(?<=\n))'''/
+    def encode(self, value):
+        if not value.startswith("\n") or not value.endswith("\n"):
+            raise biparser.EncodeError(value, "", [], info="it should start and end with newline")
+        return '"""' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'").replace(r"\n", "\n") + '"""'
 
-value: none | bool | float | frac | int | str
-key: /[a-zA-Z_][a-zA-Z0-9_]*/
-mod: /[-+*\/&|^]/
-arg:             value  ->  pos
-   | key     "=" value  ->  kw
-   | key mod "=" value  ->  ikw
-arguments: ["(" [ arg (", " arg)* ] ")"]
+class RMStrBiparser(biparser.LiteralBiparser):
+    regex = (r'r"""(?=\n)('
+             r'(?!""")[^\\\x00]'
+             r'|\\[^\x00]'
+             r')*(?<=\n)"""')
+    expected = ['r"""\n"""']
+    type = str
 
-symbol: /[^ \b\t\n\r\f\v()[\]{}'"\\#|~]+/
-note: symbol arguments
-text: str arguments
-lengthen: "~"
-measure: "|"
-division: "[" arguments pattern "]"
-instant: "{" arguments pattern "}"
-pattern: _s ((lengthen | measure | note | text | division | instant) _s)*
-track: _s arguments pattern
+    def encode(self, value):
+        if not value.startswith("\n") or not value.endswith("\n"):
+            raise biparser.EncodeError(value, "", [], info="it should start and end with newline")
 
-version: /[0-9]+\.[0-9]+\.[0-9]+(?=\r\n?|\n|$)/
-header: "#K-AIKO-std-" version
-info:   [_n "beatmap.info"   " = " mstr]
-audio:  [_n "beatmap.audio"  " = " str]
-volume: [_n "beatmap.volume" " = " float]
-preview: [_n "beatmap.preview" " = " float]
-offset: [_n "beatmap.offset" " = " float]
-tempo:  [_n "beatmap.tempo"  " = " float]
-chart: (_n "beatmap.chart"  " += " _MSTR_PREFIX track _MSTR_POSTFIX)*
-_MSTR_PREFIX: /r'''(?=\r\n?|\n)/
-_MSTR_POSTFIX: /((?<=\r\n)|(?<=\r)|(?<=\n))'''/
+        m = re.search(r'\x00|\r|"""|\\$', value)
+        if m:
+            raise EncodeError(value, f"[{m.start()}]", [],
+                info="unable to repr '\\x00', '\\r', '\"\"\"' and single '\\' as raw string")
 
-contents: info audio volume preview offset tempo chart _e
-std: header contents
+        return 'r"""' + value + '"""'
 
-contents_str: (/[\s\S]+/)?
-std_header: header contents_str
 
-track_str: /(\r\n?|\n)((?!''')[\s\S])*/
-track_strs: (_n "beatmap.chart"  " += " _MSTR_PREFIX track_str _MSTR_POSTFIX)*
-std_metadata: info audio volume preview offset tempo track_strs _e
-"""
+class ValueBiparser(biparser.Biparser):
+    none  = r"None"
+    bool  = r"True|False"
+    int   = r"[-+]?(0|[1-9][0-9]*)"
+    frac  = r"[-+]?(0|[1-9][0-9]*)\/[1-9][0-9]*"
+    float = r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+[eE][-+]?[0-9]+)"
+    str   = r'"([^\r\n\\"]|\\[\\"btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*"'
 
-class K_AIKO_STD_Transformer(Transformer):
-    # defaults: std, header, contents, std_header, std_metadata,
-    #           track, note, text, lengthen, measure, division, instant
-    chart = pattern = track_strs = lambda self, args: args
-    version = symbol = key = value = mod = track_str = lambda self, args: args[0]
-    contents_str = lambda self, args: "" if len(args) == 0 else args[0]
-    info = audio = volume = preview = offset = tempo = lambda self, args: None if len(args) == 0 else args[0]
-    none = bool = int = float = str = mstr = lambda self, args: literal_eval(args[0])
-    frac = lambda self, args: Fraction(args[0])
-    pos = lambda self, args: (None, args[0])
-    kw = lambda self, args: (args[0], args[1])
-    ikw = lambda self, args: (args[0]+args[1], args[2])
+    def encode(self, value):
+        if value is None:
+            return "None"
+        elif isinstance(value, (bool, int, float)):
+            return repr(value)
+        elif isinstance(value, Fraction):
+            return str(value)
+        elif isinstance(value, str):
+            return '"' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
+        else:
+            raise biparser.EncodeError(value, "", (None, bool, int, float, Fraction, str))
 
-    def arguments(self, args):
+    def decode(self, text, index=0, partial=False):
+        for regex in [self.none, self.bool, self.str, self.float, self.frac, self.int]:
+            res, index = biparser.match(regex, ["None"], text, index, optional=True, partial=partial)
+            if res:
+                if regex == self.frac:
+                    return Fraction(res.group()), index
+                else:
+                    return literal_eval(res.group()), index
+
+        raise biparser.DecodeError(text, index, ["None"])
+value_biparser = ValueBiparser()
+
+class ArgumentsBiparser(biparser.Biparser):
+    key = r"([a-zA-Z_][a-zA-Z0-9_]*)="
+
+    def encode(self, value):
+        psargs, kwargs = value
+
+        psargs_str = [value_biparser.encode(value) for value in psargs]
+        kwargs_str = [key+"="+value_biparser.encode(value) for key, value in kwargs.items()]
+
+        if len(psargs_str) + len(kwargs_str) == 0:
+            return ""
+
+        return "(" + ", ".join([*psargs_str, *kwargs_str]) + ")"
+
+    def decode(self, text, index=0, partial=False):
         psargs = []
-        kwargs = dict()
+        kwargs = {}
+        keyworded = False
 
-        for key, value in args:
-            if key is None:
-                if len(kwargs) > 0:
-                    raise ValueError("positional argument follows keyword argument")
-                psargs.append(value)
+        m, index = biparser.startswith(["("], text, index, optional=True, partial=True)
+        if not m: return (psargs, kwargs), index
+        m, index = biparser.startswith([")"], text, index, optional=True, partial=partial)
+        if m: return (psargs, kwargs), index
+
+        while True:
+            key, index = biparser.match(self.key, ["k="], text, index, optional=not keyworded, partial=True)
+            value, index = value_biparser.decode(text, index, partial=True)
+            if key:
+                keyworded = True
+                kwargs[key.group(1)] = value
             else:
-                if key in kwargs:
-                    raise ValueError("keyword argument repeated")
-                kwargs[key] = value
+                psargs.append(value)
 
-        return psargs, kwargs
+            m, index = biparser.startswith([")"], text, index, optional=True, partial=partial)
+            if m: return (psargs, kwargs), index
 
-class K_AIKO_STD:
-    version = "0.1.0"
-    std_parser = Lark(k_aiko_grammar, start='std')
-    std_header_parser = Lark(k_aiko_grammar, start='std_header')
-    std_metadata_parser = Lark(k_aiko_grammar, start='std_metadata')
-    std_track_parser = Lark(k_aiko_grammar, start='track')
-    transformer = K_AIKO_STD_Transformer()
+            _, index = biparser.startswith([", "], text, index, partial=True)
+arguments_biparser = ArgumentsBiparser()
 
-    def read(self, filename):
-        path = os.path.dirname(filename)
-        str = open(filename, newline="").read()
-        beatmap = self.parse_beatmap(str, path)
-        return beatmap
+class NoteBiparser(biparser.Biparser):
+    symbol = (r"[^ \b\t\n\r\f\v()[]{}\'\"\\#]+"
+              r"|'([^\r\n\\']|\\[\\'btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*'")
 
-    def parse_beatmap(self, str, path):
-        # parse header
-        node = self.transformer.transform(self.std_header_parser.parse(str))
-        header, contents_str = node.children
-        version, = header.children
+    def encode(self, value):
+        return value.symbol + arguments_biparser.encode(value.arguments)
+
+    def decode(self, text, index=0, partial=False):
+        m, index = biparser.match(self.symbol, [], text, index, partial=True)
+        symbol = m.group(0)
+        arguments, index = arguments_biparser.decode(text, index, partial=partial)
+
+        if symbol.startswith("'"):
+            arguments = ([literal_eval(symbol), *arguments[0]], arguments[1])
+            symbol = 'Text'
+
+        return Note(symbol, arguments), index
+note_biparser = NoteBiparser()
+
+def parse_msp(text, index, indent=0, optional=False):
+    # return None  ->  no match
+    # return ""    ->  end of block
+    # return " "   ->  whitespace between token
+    # return "\n"  ->  newline between token (including comments)
+
+    sp = r"[ \t]+"
+    eol = r"(?=\n|$)"
+    nl = r"\n+([ ]{" + str(indent) + r",})"
+    cmt = r"#[^\n]*"
+
+    # whitespace
+    m_sp, index = biparser.match(sp, [], text, index, optional=True, partial=True)
+    if m_sp:
+        m_cmt, _ = biparser.match(cmt, [], text, index, optional=True, partial=True)
+        if m_cmt:
+            raise biparser.DecodeError(text, index, [], info="comment should occupy a whole line")
+
+    # end of line
+    m_eol, index = biparser.match(eol, [], text, index, optional=True, partial=True)
+    if not m_eol:
+        if m_sp:
+            return " ", index
+        elif optional:
+            return None, index
+        else:
+            raise biparser.DecodeError(text, index, [])
+
+    # newline
+    m_cmt = None
+    m_nl, index = biparser.match(nl, [], text, index, optional=True, partial=True)
+    while m_nl:
+        if m_nl.group(1) != " "*indent:
+            raise biparser.DecodeError(text, index, [], info="wrong indentation level")
+
+        m_eol, index = biparser.match(eol, [], text, index, optional=True, partial=True)
+        m_cmt, index = biparser.match(cmt, [], text, index, optional=True, partial=True)
+        if not m_eol and not m_cmt:
+            return "\n", index
+
+        m_nl, index = biparser.match(nl, [], text, index, optional=True, partial=True)
+
+    else:
+        return "", index
+
+class PatternsBiparser(biparser.Biparser):
+    def encode(self, value):
+        patterns_str = []
+        for pattern in value:
+            if isinstance(pattern, Instant):
+                pattern_str = "{" + self.encode(value.patterns) + "}"
+
+            elif isinstance(pattern, Division):
+                div = "" if value.divisor == 2 else f"/{value.divisor}"
+                pattern_str = "[" + self.encode(value.patterns) + "]" + div
+
+            elif isinstance(pattern, Note):
+                pattern_str = note_biparser.encode(pattern)
+
+            patterns_str.append(pattern_str)
+
+        return " ".join(patterns_str)
+
+    def decode(self, text, index=0, partial=False, closed_by=None, indent=0):
+        sp = " "
+        patterns = []
+
+        while True:
+            # end of block
+            if sp == "":
+                if closed_by:
+                    raise biparser.DecodeError(text, index, [])
+                else:
+                    return patterns, index
+
+            # closing bracket
+            if closed_by:
+                closed, index = biparser.match(closed_by, [], text, index, optional=True, partial=partial)
+                if closed:
+                    return patterns, index
+
+            # no space
+            if sp is None:
+                raise biparser.DecodeError(text, index, [])
+
+            # pattern
+            opened, index = biparser.startswith(["{", "["], text, index, optional=True, partial=True)
+            if opened == "{":
+                _, index = parse_msp(text, index, indent=indent, optional=True)
+                subpatterns, index = self.decode(text, index, partial=True, closed_by=r"\}", indent=indent)
+                pattern = Instant(subpatterns)
+
+            elif opened == "[":
+                _, index = parse_msp(text, index, indent=indent, optional=True)
+                subpatterns, index = self.decode(text, index, partial=True, closed_by=r"\]", indent=indent)
+                m, index = self.match(r"/(\d+)", [""], text, index, optional=True, partial=True)
+                divisor = int(m.group(1)) if m else 2
+                pattern = Division(divisor, subpatterns)
+
+            else:
+                pattern, index = note_biparser.decode(text, index, partial=True)
+
+            # spacing
+            sp, index = parse_msp(text, index, indent=indent, optional=True)
+patterns_biparser = PatternsBiparser()
+
+class ChartBiparser(biparser.Biparser):
+    def encode(self, value):
+        res = ""
+        for track in value:
+            kwargs = track.get_arguments()
+            res += "\nTRACK" + arguments_biparser.encode(([], kwargs)) + ":\n"
+            res += "    " + patterns_biparser.encode(track.patterns) + "\n"
+
+    def decode(self, text, index=0, partial=False):
+        tracks = []
+
+        while True:
+            sp, index = parse_msp(text, index, indent=0)
+
+            if sp == "":
+                return tracks, index
+
+            elif sp == "\n":
+                _, index = biparser.startswith(["TRACK"], text, index, partial=True)
+                arguments, index = arguments_biparser.decode(text, index, partial=True)
+                _, index = biparser.match(r":(?=\n)", [":"], text, index, partial=True)
+
+                track = Track()
+                try:
+                    track.set_arguments(*arguments[0], **arguments[1])
+                except Exception:
+                    raise biparser.DecodeError(text, index, [])
+
+                patterns, index = patterns_biparser.decode(text, index, partial=True, indent=4)
+                tracks.patterns = patterns
+
+                tracks.append(track)
+
+            else:
+                raise ValueError("impossible condition")
+chart_biparser = ChartBiparser()
+
+class BeatSheetBiparser(biparser.Biparser):
+    version = "0.2.0"
+
+    def encode(self, value):
+        fields = BeatSheet.__annotations__
+
+        sheet = ""
+        sheet += "#K-AIKO-std-" + self.version + "\n"
+
+        for name, type_hint in fields.items():
+            if name == "info":
+                field_biparser = MStrBiparser()
+            elif name == "chart":
+                field_biparser = RMStrBiparser()
+            else:
+                field_biparser = biparser.from_type_hint(fields[name])
+
+            sheet += "beatmap." + name + " = " + field_biparser.encode(getattr(value, name)) + "\n"
+
+    def decode(self, text, index=0, partial=False):
+        m, index = biparser.match(r"#K-AIKO-std-(\d+\.\d+\.\d+)(?=\n|$)",
+                                  ["#K-AIKO-std-" + self.version],
+                                  text, index, partial=True)
+        version = m.group(1)
 
         vernum = version.split(".")
         vernum0 = self.version.split(".")
         if vernum[0] != vernum0[0] or vernum[1:] > vernum0[1:]:
             raise BeatmapParseError("incompatible version")
 
-        # parse metadata
-        contents = self.transformer.transform(self.std_metadata_parser.parse(contents_str))
-        info, audio, volume, preview, offset, tempo, track_strs = contents.children
+        beatsheet = BeatSheet()
+        fields = BeatSheet.__annotations__
+        is_set = []
 
-        beatmap = BeatmapDraft()
+        while True:
+            prev_index = index
+            sp, index = parse_msp(text, index, indent=0)
+            if sp == "":
+                return beatsheet
+            if sp == " ":
+                raise biparser.DecodeError(text, prev_index, ["\n"])
 
-        beatmap.root = path
-        if info is not None:
-            beatmap.info = info
-        if audio is not None:
-            beatmap.audio = audio
-            beatmap.audiopath = os.path.join(beatmap.root, beatmap.audio)
-        if volume is not None:
-            beatmap.volume = volume
-        if preview is not None:
-            beatmap.preview = preview
-        if offset is not None:
-            beatmap.offset = offset
-        if tempo is not None:
-            beatmap.tempo = tempo
+            m, index = biparser.match(r"beatmap\.([_a-zA-Z][_a-zA-Z0-9]*) = ", [], text, index, partial=True)
+            name = m.group(1)
+            if name not in fields:
+                raise DecodeError(text, index, [], info=f"unknown field {name}")
+            if name in is_set:
+                raise DecodeError(text, index, [], info=f"field {name} has been set")
+            is_set.append(name)
 
-        # parse chart
-        for track_str in track_strs:
-            track = self.parse_track(track_str, beatmap.notations.definitions)
-            beatmap.chart.tracks.append(track)
-
-        return beatmap
-
-    def parse_track(self, str, definitions):
-        node = self.transformer.transform(self.std_track_parser.parse(str))
-        (args, kwargs), pattern = node.children
-
-        track = NoteTrack(*args, **kwargs)
-        self.load_pattern(pattern, track, track.beat, track.length, None, definitions)
-
-        return track
-
-    def _make_note(self, notetype, args, kwargs, beat, length):
-        # modify beat and length if needed
-        modifiers = notetype.modifiers
-        for mod in modifiers.keys():
-            if 'beat'+mod in kwargs:
-                if 'beat' in kwargs:
-                    raise ValueError("keyword argument repeated")
-                kwargs['beat'] = modifiers[mod](beat, kwargs['beat'+mod])
-                del kwargs['beat'+mod]
-
-            if 'length'+mod in kwargs:
-                if 'length' in kwargs:
-                    raise ValueError("keyword argument repeated")
-                kwargs['length'] = modifiers[mod](length, kwargs['length'+mod])
-                del kwargs['length'+mod]
-
-        # make note
-        note = notetype(*args, **kwargs)
-
-        # assign missing beat/length
-        if 'beat' not in note.bound.arguments:
-            note.bound.arguments['beat'] = beat
-        if 'length' not in note.bound.arguments:
-            note.bound.arguments['length'] = length
-
-        return note
-
-    def load_pattern(self, pattern, track, beat, length, note, definitions):
-        for node in pattern:
-            if node.data == 'note':
-                symbol, (args, kwargs) = node.children
-
-                if symbol == '_':
-                    note = Rest(*args, **kwargs)
-
-                elif symbol in definitions:
-                    note = self._make_note(definitions[symbol], args, kwargs, beat, length)
-                    track.notes.append(note)
-
-                else:
-                    raise BeatmapParseError(f"undefined symbol {symbol}")
-
-                beat = beat + length
-
-            elif node.data == 'text':
-                text, (args, kwargs) = node.children
-                args.insert(0, text)
-
-                note = self._make_note(definitions['TEXT'], args, kwargs, beat, length)
-                track.notes.append(note)
-
-                beat = beat + length
-
-            elif node.data == 'lengthen':
-                if note is not None and 'length' in note.bound.arguments:
-                    note.bound.arguments['length'] = note.bound.arguments['length'] + length
-
-                beat = beat + length
-
-            elif node.data == 'measure':
-                if (beat - track.beat) % track.meter != 0:
-                    raise BeatmapParseError("wrong measure")
-
-            elif node.data == 'division':
-                (args, kwargs), pattern = node.children
-
-                divisor = Divisor(*args, **kwargs)
-                divided_length = Fraction(1, 1) * length / divisor
-
-                track, beat, _, note = self.load_pattern(pattern, track, beat, divided_length, note, definitions)
-
-            elif node.data == 'instant':
-                (args, kwargs), pattern = node.children
-
-                if len(args) + len(kwargs) > 0:
-                    note = definitions['CONTEXT'](*args, **kwargs)
-                    track.notes.append(note)
-
-                track, beat, _, note = self.load_pattern(pattern, track, beat, 0, note, definitions)
-
+            if name == "info":
+                field_biparser = MStrBiparser()
+            elif name == "chart":
+                field_biparser = RMStrBiparser()
             else:
-                raise BeatmapParseError(f"unknown node {str(node)}")
+                field_biparser = biparser.from_type_hint(fields[name])
 
-        return track, beat, length, note
+            value = field_biparser.decode(text, index, partial=True)
 
-K_AIKO_STD_FORMAT = K_AIKO_STD()
+            setattr(beatsheet, name, value)
+beatsheet_biparser = BeatSheetBiparser()
+
 
 class OSU:
     def read(self, filename):
@@ -484,9 +535,8 @@ class OSU:
             # if format != "osu file format v14\n":
             #     raise BeatmapParseError(f"invalid file format: {repr(format)}")
 
-            beatmap = BeatmapDraft()
-            beatmap.root = path
-            beatmap.chart.tracks.append(NoteTrack())
+            beatmap = Beatmap()
+            beatmap.event_sequences = [[]]
             context = {}
 
             parse = None
@@ -520,13 +570,13 @@ class OSU:
                 line = file.readline()
                 index += 1
 
+        beatmap.root = path
         return beatmap
 
     def parse_general(self, beatmap, context, line):
         option, value = line.split(": ", maxsplit=1)
         if option == 'AudioFilename':
             beatmap.audio = value.rstrip("\n")
-            beatmap.audiopath = os.path.join(beatmap.root, beatmap.audio)
         elif option == 'PreviewTime':
             beatmap.preview = int(value)/1000
 
@@ -556,7 +606,6 @@ class OSU:
             context['beatLength0'] = beatLength
             beatmap.offset = time/1000
             beatmap.tempo = 60 / (beatLength/1000)
-            beatmap.chart.tracks[0].meter = meter
 
         if uninherited == "0":
             multiplier = multiplier / (-0.01 * beatLength)
@@ -573,8 +622,6 @@ class OSU:
     def parse_colours(self, beatmap, context, line): pass
 
     def parse_hitobjects(self, beatmap, context, line):
-        definitions = beatmap.notations.definitions
-
         x,y,time,type,hitSound,*objectParams,hitSample = line.rstrip("\n").split(",")
         time = float(time)
         type = int(type)
@@ -588,12 +635,12 @@ class OSU:
 
         if type & 1: # circle
             if hitSound == 0 or hitSound & 1: # don
-                note = definitions['x'](beat=beat, speed=speed, volume=volume)
-                beatmap.chart.tracks[0].notes.append(note)
+                event = Soft(beat=beat, length=0, speed=speed, volume=volume)
+                beatmap.event_sequences[0].append(event)
 
             elif hitSound & 10: # kat
-                note = definitions['o'](beat=beat, speed=speed, volume=volume)
-                beatmap.chart.tracks[0].notes.append(note)
+                event = Loud(beat=beat, length=0, speed=speed, volume=volume)
+                beatmap.event_sequences[0].append(event)
 
         elif type & 2: # slider
             # curve,slides,sliderLength,edgeSounds,edgeSets = objectParams
@@ -601,15 +648,15 @@ class OSU:
             sliderLength = float(sliderLength)
             length = sliderLength / sliderVelocity
 
-            note = definitions['%'](density=density, beat=beat, length=length, speed=speed, volume=volume)
-            beatmap.chart.tracks[0].notes.append(note)
+            event = Roll(beat=beat, length=length, density=density, speed=speed, volume=volume)
+            beatmap.event_sequences[0].append(event)
 
         elif type & 8: # spinner
             end_time, = objectParams
             end_time = float(end_time)
             length = (end_time - time)/context['beatLength0']
 
-            note = definitions['@'](density=density, beat=beat, length=length, speed=speed, volume=volume)
-            beatmap.chart.tracks[0].notes.append(note)
+            event = Spin(beat=beat, length=length, density=density, speed=speed, volume=volume)
+            beatmap.event_sequences[0].append(event)
 
 OSU_FORMAT = OSU()
