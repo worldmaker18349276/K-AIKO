@@ -16,7 +16,7 @@ from . import beatshell
 from . import biparser
 from .beatshell import BeatShellSettings
 from .beatmap import BeatmapPlayer, GameplaySettings
-from .beatsheet import BeatmapDraft, BeatmapParseError
+from .beatsheet import BeatSheet, BeatmapParseError
 from . import beatanalyzer
 
 
@@ -530,7 +530,7 @@ class KAIKOPlay:
     @contextlib.contextmanager
     def execute(self, manager):
         try:
-            beatmap = BeatmapDraft.read(str(self.filepath))
+            beatmap = BeatSheet.read(str(self.filepath))
 
         except BeatmapParseError:
             print(f"failed to read beatmap {str(self.filepath)}")

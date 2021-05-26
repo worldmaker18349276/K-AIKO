@@ -4,7 +4,9 @@ import contextlib
 from dataclasses import dataclass
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
+from fractions import Fraction
 import numpy
+import audioread
 from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings
 from . import cfg
 from . import datanodes as dn

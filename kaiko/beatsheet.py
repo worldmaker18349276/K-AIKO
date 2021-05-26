@@ -39,61 +39,70 @@ class BeatSheet(Beatmap):
     preview: float
     chart: str
 
-    def to_events(self, track):
+    def _to_events(self, track):
         if track.hide:
             return
 
         notations = self._notations
 
-        def build(beat, length, last_event):
-            for note in track.patterns:
-                if isinstance(note, Note):
-                    if note.symbol == "~":
-                        if note.arguments[0] or note.arguments[1]:
-                            raise BeatmapParseError("lengthen note don't accept any argument")
+        def build(beat, length, last_event, patterns):
+            for pattern in patterns:
+                if isinstance(pattern, Division):
+                    beat, last_event = yield from build(beat, length / pattern.divisor, last_event, pattern.patterns)
 
-                        if last_event is not None:
-                            last_event.length += length
-                        beat += length
-
-                    elif note.symbol == "|":
-                        if note.arguments[0] or note.arguments[1]:
-                            raise BeatmapParseError("measure note don't accept any argument")
-
-                        if (beat - track.beat) % track.meter != 0:
-                            raise BeatmapParseError("wrong measure")
-
-                    elif note.symbol == "_":
-                        if note.arguments[0] or note.arguments[1]:
-                            raise BeatmapParseError("rest note don't accept any argument")
-
-                        last_event = None
-                        beat += length
-
-                    else:
-                        if note.symbol not in notations:
-                            raise BeatmapParseError("unknown symbol: " + note.symbol)
-                        event_type = notations[note.symbol]
-                        last_event = event_type(beat, length, *note.arguments[0], **note.arguments[1])
-                        beat += length
-
-                elif isinstance(note, Division):
-                    beat, last_event = yield from build(beat, length / note.divisor, last_event)
-
-                elif isinstance(note, Instant):
+                elif isinstance(pattern, Instant):
                     if last_event is not None:
                         yield last_event
                     last_event = None
 
-                    if note.update:
-                        yield UpdateContext(note.update)
-                    beat, last_event = yield from build(beat, Fraction(0, 1), last_event)
+                    beat, last_event = yield from build(beat, Fraction(0, 1), last_event, pattern.patterns)
+
+                elif pattern.symbol == "~":
+                    if pattern.arguments[0] or pattern.arguments[1]:
+                        raise BeatmapParseError("lengthen note don't accept any argument")
+
+                    if last_event is not None:
+                        last_event.length += length
+                    beat += length
+
+                elif pattern.symbol == "|":
+                    if pattern.arguments[0] or pattern.arguments[1]:
+                        raise BeatmapParseError("measure note don't accept any argument")
+
+                    if (beat - track.beat) % track.meter != 0:
+                        raise BeatmapParseError("wrong measure")
+
+                elif pattern.symbol == "_":
+                    if pattern.arguments[0] or pattern.arguments[1]:
+                        raise BeatmapParseError("rest note don't accept any argument")
+
+                    if last_event is not None:
+                        yield last_event
+                    last_event = None
+                    beat += length
+
+                else:
+                    if pattern.symbol not in notations:
+                        raise BeatmapParseError("unknown symbol: " + pattern.symbol)
+
+                    if last_event is not None:
+                        yield last_event
+                    event_type = notations[pattern.symbol]
+                    last_event = event_type(beat, length, *pattern.arguments[0], **pattern.arguments[1])
+                    beat += length
 
             return beat, last_event
 
         beat = Fraction(1, 1) * track.beat
         length = Fraction(1, 1) * track.length
-        return build(beat, length, None)
+        last_event = None
+        beat, last_event = yield from build(beat, length, last_event, track.patterns)
+
+        if last_event is not None:
+            yield last_event
+
+    def to_events(self, track):
+        return list(self._to_events(track))
 
     def to_track(self, sequence):
         raise NotImplementedError
@@ -105,8 +114,8 @@ class BeatSheet(Beatmap):
 
     @chart.setter
     def chart(self, value):
-        tracks = chart_biparser.decode(value)
-        self.event_sequences = [list(self.to_events(track)) for track in tracks]
+        tracks, _ = chart_biparser.decode(value)
+        self.event_sequences = [self.to_events(track) for track in tracks]
 
     @staticmethod
     def read(filename, hack=False):
@@ -119,7 +128,7 @@ class BeatSheet(Beatmap):
                     beatmap = BeatSheet()
                     exec(sheet, dict(), dict(beatmap=beatmap))
                 else:
-                    beatmap = beatsheet_biparser.decode(sheet)
+                    beatmap, _ = beatsheet_biparser.decode(sheet)
             except Exception as e:
                 raise BeatmapParseError(f"failed to read beatmap {filename}") from e
 
@@ -152,7 +161,7 @@ class Track:
     length: Union[int, Fraction] = 1
     meter: Union[int, Fraction] = 4
     hide: bool = False
-    patterns: List[Pattern] = default_factory(default_factory=list)
+    patterns: List[Pattern] = field(default_factory=list)
 
     def set_arguments(self, beat=0, length=1, meter=4, hide=False):
         self.beat = beat
@@ -180,12 +189,12 @@ class Division(Pattern):
     # [x x o]/3
 
     divisor: int = 2
-    patterns: List[Pattern] = default_factory(default_factory=list)
+    patterns: List[Pattern] = field(default_factory=list)
 
 @dataclass
 class Instant(Pattern):
     # {x x o}
-    patterns: List[Pattern] = default_factory(default_factory=list)
+    patterns: List[Pattern] = field(default_factory=list)
 
 
 class MStrBiparser(biparser.LiteralBiparser):
@@ -300,8 +309,8 @@ class ArgumentsBiparser(biparser.Biparser):
 arguments_biparser = ArgumentsBiparser()
 
 class NoteBiparser(biparser.Biparser):
-    symbol = (r"[^ \b\t\n\r\f\v()[]{}\'\"\\#]+"
-              r"|'([^\r\n\\']|\\[\\'btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*'")
+    symbol = (r"[^ \b\t\n\r\f\v()[\]{}\'\"\\#]+"
+              r'|"([^\r\n\\"\x00]|\\[\\"btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*"')
 
     def encode(self, value):
         return value.symbol + arguments_biparser.encode(value.arguments)
@@ -311,7 +320,7 @@ class NoteBiparser(biparser.Biparser):
         symbol = m.group(0)
         arguments, index = arguments_biparser.decode(text, index, partial=partial)
 
-        if symbol.startswith("'"):
+        if symbol.startswith('"'):
             arguments = ([literal_eval(symbol), *arguments[0]], arguments[1])
             symbol = 'Text'
 
@@ -413,12 +422,14 @@ class PatternsBiparser(biparser.Biparser):
             elif opened == "[":
                 _, index = parse_msp(text, index, indent=indent, optional=True)
                 subpatterns, index = self.decode(text, index, partial=True, closed_by=r"\]", indent=indent)
-                m, index = self.match(r"/(\d+)", [""], text, index, optional=True, partial=True)
+                m, index = biparser.match(r"/(\d+)", [""], text, index, optional=True, partial=True)
                 divisor = int(m.group(1)) if m else 2
                 pattern = Division(divisor, subpatterns)
 
             else:
                 pattern, index = note_biparser.decode(text, index, partial=True)
+
+            patterns.append(pattern)
 
             # spacing
             sp, index = parse_msp(text, index, indent=indent, optional=True)
@@ -452,8 +463,12 @@ class ChartBiparser(biparser.Biparser):
                 except Exception:
                     raise biparser.DecodeError(text, index, [])
 
+                sp, index = parse_msp(text, index, indent=4, optional=True)
+                if sp != "\n":
+                    raise DecodeError(text, index, ["\n    "])
+
                 patterns, index = patterns_biparser.decode(text, index, partial=True, indent=4)
-                tracks.patterns = patterns
+                track.patterns = patterns
 
                 tracks.append(track)
 
@@ -499,7 +514,7 @@ class BeatSheetBiparser(biparser.Biparser):
             prev_index = index
             sp, index = parse_msp(text, index, indent=0)
             if sp == "":
-                return beatsheet
+                return beatsheet, index
             if sp == " ":
                 raise biparser.DecodeError(text, prev_index, ["\n"])
 
@@ -518,7 +533,7 @@ class BeatSheetBiparser(biparser.Biparser):
             else:
                 field_biparser = biparser.from_type_hint(fields[name])
 
-            value = field_biparser.decode(text, index, partial=True)
+            value, index = field_biparser.decode(text, index, partial=True)
 
             setattr(beatsheet, name, value)
 beatsheet_biparser = BeatSheetBiparser()
