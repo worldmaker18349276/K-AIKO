@@ -534,6 +534,9 @@ class KAIKOPlay:
 
         except BeatmapParseError:
             print(f"failed to read beatmap {str(self.filepath)}")
+            print("\x1b[31m", end="")
+            traceback.print_exc(file=sys.stdout)
+            print(f"\x1b[m", end="")
 
         else:
             game = BeatmapPlayer(beatmap, self.settings)

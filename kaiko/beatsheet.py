@@ -140,8 +140,7 @@ class BeatSheet(Beatmap):
                 else:
                     beatmap, _ = beatsheet_biparser.decode(sheet)
             except Exception as e:
-                raise
-                # raise BeatmapParseError(f"failed to read beatmap {filename}") from e
+                raise BeatmapParseError(f"failed to read beatmap {filename}") from e
 
             beatmap.root = os.path.dirname(filename)
             return beatmap
