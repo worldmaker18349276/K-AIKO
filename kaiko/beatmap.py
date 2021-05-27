@@ -61,7 +61,7 @@ class Text(Event):
     speed: Optional[float] = None
 
     def prepare(self, beatmap, context):
-        self.sound_root = beatmap.path
+        self.sound_root = beatmap.root
         self.time = beatmap.time(self.beat)
         if self.speed is None:
             self.speed = context.get('speed', 1.0)
@@ -238,17 +238,18 @@ class Soft(OneshotTarget):
     volume: Optional[float] = None
 
     def prepare(self, beatmap, context):
-        super().prepare(beatmap, context)
         self.approach_appearance = beatmap.settings.notes.soft_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.soft_wrong_appearance
         self.sound = beatmap.settings.notes.soft_sound
-        self.sound_root = beatmap.path
+        self.sound_root = beatmap.root
         self.threshold = beatmap.settings.difficulty.soft_threshold
 
         if self.speed is None:
             self.speed = context.get('speed', 1.0)
         if self.volume is None:
             self.volume = context.get('volume', 0.0)
+
+        super().prepare(beatmap, context)
 
     def hit(self, field, time, strength):
         super().hit(field, time, strength, strength < self.threshold)
@@ -259,17 +260,18 @@ class Loud(OneshotTarget):
     volume: Optional[float] = None
 
     def prepare(self, beatmap, context):
-        super().prepare(beatmap, context)
         self.approach_appearance = beatmap.settings.notes.loud_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.loud_wrong_appearance
         self.sound = beatmap.settings.notes.loud_sound
-        self.sound_root = beatmap.path
+        self.sound_root = beatmap.root
         self.threshold = beatmap.settings.difficulty.loud_threshold
 
         if self.speed is None:
             self.speed = context.get('speed', 1.0)
         if self.volume is None:
             self.volume = context.get('volume', 0.0)
+
+        super().prepare(beatmap, context)
 
     def hit(self, field, time, strength):
         super().hit(field, time, strength, strength >= self.threshold)
@@ -291,18 +293,18 @@ class Incr(OneshotTarget):
     group_volume: Optional[float] = None
 
     def prepare(self, beatmap, context):
-        super().prepare(beatmap, context)
-
         self.approach_appearance = beatmap.settings.notes.incr_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.incr_wrong_appearance
         self.sound = beatmap.settings.notes.incr_sound
-        self.sound_root = beatmap.path
+        self.sound_root = beatmap.root
         self.incr_threshold = beatmap.settings.difficulty.incr_threshold
 
         if self.speed is None:
             self.speed = context.get('speed', 1.0)
         if self.group_volume is None:
             self.group_volume = context.get('volume', 0.0)
+
+        super().prepare(beatmap, context)
 
         if '<incrs>' not in context:
             context['<incrs>'] = OrderedDict()
@@ -354,7 +356,7 @@ class Roll(Target):
         self.tolerance = beatmap.settings.difficulty.roll_tolerance
         self.rock_appearance = beatmap.settings.notes.roll_rock_appearance
         self.sound = beatmap.settings.notes.roll_rock_sound
-        self.sound_root = beatmap.path
+        self.sound_root = beatmap.root
         self.rock_score = beatmap.settings.scores.roll_rock_score
 
         if self.speed is None:
@@ -424,7 +426,7 @@ class Spin(Target):
         self.finishing_appearance = beatmap.settings.notes.spin_finishing_appearance
         self.finish_sustain_time = beatmap.settings.notes.spin_finish_sustain_time
         self.sound = beatmap.settings.notes.spin_disk_sound
-        self.sound_root = beatmap.path
+        self.sound_root = beatmap.root
         self.full_score = beatmap.settings.scores.spin_score
 
         if self.speed is None:
@@ -599,11 +601,11 @@ class Beatmap(Playable):
             return None
 
         else:
-            audio_path = os.path.join(self.beatmap.root, self.beatmap.audio)
+            audio_path = os.path.join(self.root, self.audio)
             audionode = dn.DataNode.wrap(dn.load_sound(audio_path,
                                                        samplerate=output_samplerate,
                                                        channels=output_nchannels,
-                                                       volume=self.beatmap.volume))
+                                                       volume=self.volume))
             return audionode
 
     def prepare_events(self):
@@ -618,12 +620,12 @@ class Beatmap(Playable):
                 events.append(event)
             total_events.append(events)
 
-        events = sort_merge(*total_events, key=lambda e: e.beat)
+        events = list(sort_merge(*total_events, key=lambda e: e.beat))
 
         event_leadin_time = self.settings.notes.event_leadin_time
         self.total_subjects = sum([1 for event in events if event.is_subject], 0)
-        self.start_time = min([event.lifespan[0] - event_leadin_time for event in events], 0.0)
-        self.end_time = max([event.lifespan[1] + event_leadin_time for event in events], self.duration)
+        self.start_time = min([event.lifespan[0] - event_leadin_time for event in events], default=0.0)
+        self.end_time = max([event.lifespan[1] + event_leadin_time for event in events], default=self.duration)
 
         return events
 
