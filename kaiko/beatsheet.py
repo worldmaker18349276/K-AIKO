@@ -37,7 +37,6 @@ class BeatSheet(Beatmap):
     tempo: float
     info: str
     preview: float
-    chart: str
 
     def _to_events(self, track):
         if track.hide:
@@ -133,7 +132,6 @@ class BeatSheet(Beatmap):
                 raise BeatmapParseError(f"failed to read beatmap {filename}") from e
 
             beatmap.root = os.path.dirname(filename)
-            beatmap.build_event_sequences()
             return beatmap
 
         elif filename.endswith(".osu"):
@@ -488,12 +486,13 @@ class BeatSheetBiparser(biparser.Biparser):
         for name, type_hint in fields.items():
             if name == "info":
                 field_biparser = MStrBiparser()
-            elif name == "chart":
-                field_biparser = RMStrBiparser()
             else:
                 field_biparser = biparser.from_type_hint(fields[name])
 
             sheet += "beatmap." + name + " = " + field_biparser.encode(getattr(value, name)) + "\n"
+
+        field_biparser = RMStrBiparser()
+        sheet += "beatmap.chart = " + field_biparser.encode(getattr(value, 'chart')) + "\n"
 
     def decode(self, text, index=0, partial=False):
         m, index = biparser.match(r"#K-AIKO-std-(\d+\.\d+\.\d+)(?=\n|$)",
@@ -509,6 +508,7 @@ class BeatSheetBiparser(biparser.Biparser):
         beatsheet = BeatSheet()
         fields = BeatSheet.__annotations__
         is_set = []
+        after_chart = False
 
         while True:
             prev_index = index
@@ -524,12 +524,15 @@ class BeatSheetBiparser(biparser.Biparser):
                 raise DecodeError(text, index, [], info=f"unknown field {name}")
             if name in is_set:
                 raise DecodeError(text, index, [], info=f"field {name} has been set")
+            if name != "chart" and after_chart:
+                raise DecodeError(text, index, [], info=f"field {name} should be set before chart")
             is_set.append(name)
 
             if name == "info":
                 field_biparser = MStrBiparser()
             elif name == "chart":
                 field_biparser = RMStrBiparser()
+                after_chart = True
             else:
                 field_biparser = biparser.from_type_hint(fields[name])
 
