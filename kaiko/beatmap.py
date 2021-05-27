@@ -547,12 +547,12 @@ class BeatmapSettings(cfg.Configurable):
         spin_finishing_appearance: Union[str, Tuple[str, str]] = "\x1b[94m☺\x1b[m"
         spin_finish_sustain_time: float = 0.1
         spin_disk_sound: str = f"{BASE_DIR}/samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
+        event_leadin_time: float = 1.0
 
 class Playable:
-    # events_start_time: Optional[float]
-    # events_end_time: Optional[float]
     # total_subjects: int
-    # duration: float
+    # start_time: float
+    # end_time: float
 
     def get_audionode(self, output_samplerate, output_nchannels):
         raise NotImplementedError
@@ -615,21 +615,21 @@ class Beatmap(Playable):
                 event.prepare(self, context)
                 if not isinstance(event, Event):
                     continue
-                if event.is_subject:
-                    self.total_subjects += 1
-                if self.events_start_time is None or event.lifespan[0] < self.events_start_time:
-                    self.events_start_time = event.lifespan[0]
-                if self.events_end_time is None or event.lifespan[1] > self.events_end_time:
-                    self.events_end_time = event.lifespan[1]
                 events.append(event)
             total_events.append(events)
 
-        return sort_merge(*total_events, key=lambda e: e.beat)
+        events = sort_merge(*total_events, key=lambda e: e.beat)
+
+        event_leadin_time = self.settings.notes.event_leadin_time
+        self.total_subjects = sum([1 for event in events if event.is_subject], 0)
+        self.start_time = min([event.lifespan[0] - event_leadin_time for event in events], 0.0)
+        self.end_time = max([event.lifespan[1] + event_leadin_time for event in events], self.duration)
+
+        return events
 
 
 class GameplaySettings(cfg.Configurable):
     class controls(cfg.Configurable):
-        leadin_time: float = 1.0
         skip_time: float = 8.0
         load_time: float = 0.5
         prepare_time: float = 0.1
@@ -654,18 +654,11 @@ class BeatmapPlayer:
     def prepare(self, output_samplerate, output_nchannels):
         # prepare music
         self.audionode = self.beatmap.get_audionode(output_samplerate, output_nchannels)
-        self.duration = self.beatmap.duration
 
         # prepare events
         self.events = self.beatmap.prepare_events()
-
-        leadin_time = self.settings.controls.leadin_time
-        self.start_time = 0.0
-        self.end_time = self.duration
-        if self.beatmap.events_start_time is not None:
-            self.start_time = min(self.beatmap.events_start_time - leadin_time, self.start_time)
-        if self.beatmap.events_end_time is not None:
-            self.end_time = max(self.beatmap.events_end_time + leadin_time, self.end_time)
+        self.start_time = self.beatmap.start_time
+        self.end_time = self.beatmap.end_time
 
         # initialize game state
         self.total_subjects = self.beatmap.total_subjects
