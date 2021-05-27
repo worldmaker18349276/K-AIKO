@@ -97,9 +97,6 @@ class BeatbarSettings(cfg.Configurable):
         header_width: int = 11
         footer_width: int = 12
 
-        bar_shift: float = 0.1
-        bar_flip: bool = False
-
         header_quotes: Tuple[str, str] = ("\b\x1b[38;5;93;1m[\x1b[m", "\x1b[38;5;93;1m]\x1b[m")
         footer_quotes: Tuple[str, str] = ("\b\x1b[38;5;93;1m[\x1b[m", "\x1b[38;5;93;1m]\x1b[m")
 
@@ -164,12 +161,10 @@ class Beatbar:
         self.target_queue = target_queue
 
     @classmethod
-    def create(clz, settings, manager, ref_time):
+    def create(clz, settings, manager, ref_time, bar_shift, bar_flip):
         icon_width = settings.layout.icon_width
         header_width = settings.layout.header_width
         footer_width = settings.layout.footer_width
-        bar_shift = settings.layout.bar_shift
-        bar_flip = settings.layout.bar_flip
         header_quotes = settings.layout.header_quotes
         footer_quotes = settings.layout.footer_quotes
 

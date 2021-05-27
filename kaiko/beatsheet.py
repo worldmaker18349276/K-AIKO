@@ -36,12 +36,18 @@ class BeatSheet(Beatmap):
         'Shift': Shift,
     }
 
+    # audio
     audio: str
     volume: float
-    offset: float
-    tempo: float
+    # info
     info: str
     preview: float
+    # timings
+    offset: float
+    tempo: float
+    # playfield
+    bar_shift: float
+    bar_flip: bool
 
     def _to_events(self, track):
         if track.hide:

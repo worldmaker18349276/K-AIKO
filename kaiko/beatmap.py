@@ -564,14 +564,20 @@ class Playable:
 
 class Beatmap(Playable):
     def __init__(self, root=".", audio=None, volume=0.0,
-                 offset=0.0, tempo=60.0, info="", preview=None, settings=None):
+                 info="", preview=None,
+                 offset=0.0, tempo=60.0,
+                 bar_shift=0.1, bar_flip=False,
+                 settings=None):
         self.root = root
         self.audio = audio
         self.volume = volume
-        self.offset = offset
-        self.tempo = tempo
         self.info = info
         self.preview = preview
+        self.offset = offset
+        self.tempo = tempo
+        self.bar_shift = bar_shift
+        self.bar_flip = bar_flip
+
         self.settings = settings or BeatmapSettings()
 
         self.events_start_time = None
@@ -701,7 +707,10 @@ class BeatmapPlayer:
         load_time = self.settings.controls.load_time
         ref_time = load_time + time_shift
 
-        beatbar_knot, self.beatbar = Beatbar.create(self.settings.beatbar, manager, ref_time)
+        bar_shift = self.beatmap.bar_shift
+        bar_flip = self.beatmap.bar_flip
+
+        beatbar_knot, self.beatbar = Beatbar.create(self.settings.beatbar, manager, ref_time, bar_shift, bar_flip)
 
         # play music
         if self.audionode is not None:
