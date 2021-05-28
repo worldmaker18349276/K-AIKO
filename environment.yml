@@ -9,7 +9,6 @@ dependencies:
   - audioread
   - nwani::portaudio
   - nwani::pyaudio
-  - lark-parser
   - wcwidth
   - psutil
   - appdirs
