@@ -13,7 +13,7 @@ from . import cfg
 from . import tui
 from . import kerminal
 from . import beatshell
-from . import biparser
+from . import biparsers as bp
 from .beatshell import BeatShellSettings
 from .beatmap import BeatmapPlayer, GameplaySettings
 from .beatsheet import BeatSheet, BeatmapParseError
@@ -507,13 +507,13 @@ class FieldParser(beatshell.ArgumentParser):
     def parse(self, token):
         try:
             return self.biparser.decode(token)[0]
-        except biparser.DecodeError:
+        except bp.DecodeError:
             raise beatshell.TokenParseError("No such field")
 
     def suggest(self, token):
         try:
             self.biparser.decode(token)
-        except biparser.DecodeError as e:
+        except bp.DecodeError as e:
             sugg = beatshell.fit(token, [token[:e.index] + ex for ex in e.expected])
         else:
             sugg = []

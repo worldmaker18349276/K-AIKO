@@ -11,7 +11,7 @@ import inspect
 from pathlib import Path
 from typing import List, Set, Tuple, Dict, Union
 from . import datanodes as dn
-from . import biparser
+from . import biparsers as bp
 from . import tui
 from . import cfg
 
@@ -349,21 +349,21 @@ class PathParser(ArgumentParser):
 class LiteralParser(ArgumentParser):
     def __init__(self, type_hint, default=inspect.Parameter.empty, expected=None):
         self.type_hint = type_hint
-        self.biparser = biparser.from_type_hint(type_hint)
+        self.biparser = bp.from_type_hint(type_hint)
         self.default = default
         self.expected = expected or f"It should be {type_hint}"
 
     def parse(self, token):
         try:
             return self.biparser.decode(token)[0]
-        except biparser.DecodeError:
+        except bp.DecodeError:
             expected = self.expected
             raise TokenParseError("Invalid value" + ("\n" + expected if expected is not None else ""))
 
     def suggest(self, token):
         try:
             self.biparser.decode(token)
-        except biparser.DecodeError as e:
+        except bp.DecodeError as e:
             sugg = [token[:e.index] + ex for ex in e.expected]
             if self.default is not inspect.Parameter.empty:
                 default = self.biparser.encode(self.default) + "\000"

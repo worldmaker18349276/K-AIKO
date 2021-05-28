@@ -2,10 +2,10 @@ import re
 import typing
 from collections import OrderedDict
 from pathlib import Path
-from . import biparser
+from . import biparsers as bp
 
 
-class FieldBiparser(biparser.Biparser):
+class FieldBiparser(bp.Biparser):
     def __init__(self, config_type):
         self.config_type = config_type
 
@@ -21,13 +21,13 @@ class FieldBiparser(biparser.Biparser):
                     field_key = field_key + "."
                 fields[field_key] = (field_name, field_type)
 
-            option, index = biparser.startswith(list(fields.keys()), text, index, partial=True)
+            option, index = bp.startswith(list(fields.keys()), text, index, partial=True)
 
             current_field, current_type = fields[option]
             current_fields.append(current_field)
 
         if not partial:
-            biparser.eof(text, index)
+            bp.eof(text, index)
 
         return tuple(current_fields), index
 
@@ -44,7 +44,7 @@ class FieldBiparser(biparser.Biparser):
 
         return ".".join(value)
 
-class ConfigurationBiparser(biparser.Biparser):
+class ConfigurationBiparser(bp.Biparser):
     vindent = r"(\#[^\r\n]*|[ ]*)(\n|$)"
     equal = r"[ ]*=[ ]*"
     nl = r"[ ]*(\n|$)"
@@ -60,18 +60,18 @@ class ConfigurationBiparser(biparser.Biparser):
         field_hints = self.config_type.get_configurable_fields()
 
         while index < len(text):
-            m, index = biparser.match(self.vindent, ["\n"], text, index, optional=True, partial=True)
+            m, index = bp.match(self.vindent, ["\n"], text, index, optional=True, partial=True)
             if m: continue
 
             field, index = self.field_biparser.decode(text, index, partial=True)
 
-            _, index = biparser.match(self.equal, [" = "], text, index, partial=True)
+            _, index = bp.match(self.equal, [" = "], text, index, partial=True)
 
-            value_biparser = biparser.from_type_hint(field_hints[field])
+            value_biparser = bp.from_type_hint(field_hints[field])
             value, index = value_biparser.decode(text, index, partial=True)
             config.set(field, value)
 
-            _, index = biparser.match(self.nl, ["\n"], text, index, partial=True)
+            _, index = bp.match(self.nl, ["\n"], text, index, partial=True)
 
         return config, index
 
@@ -79,7 +79,7 @@ class ConfigurationBiparser(biparser.Biparser):
         res = ""
         for field_key, field_type in self.config_type.get_configurable_fields().items():
             field_name = self.field_biparser.encode(field_key)
-            value_biparser = biparser.from_type_hint(field_type)
+            value_biparser = bp.from_type_hint(field_type)
             if not value.has(field_key):
                 continue
             field_value = value.get(field_key)

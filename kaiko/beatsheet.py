@@ -5,7 +5,7 @@ from fractions import Fraction
 from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Union
 from ast import literal_eval
-from .biparser import (
+from .biparsers import (
     startswith, match,
     EncodeError, DecodeError,
     Biparser, LiteralBiparser,
