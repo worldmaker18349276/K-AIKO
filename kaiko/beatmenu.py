@@ -286,7 +286,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
     @beatshell.subcommand
     @property
     def config(self):
-        return ConfigCommand(self.settings, self.config_file())
+        return ConfigCommand(self)
 
     @beatshell.function_command
     def say(self, message, escape=False):
@@ -459,45 +459,44 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             print(f"\x1b[m", end="")
 
 class ConfigCommand:
-    def __init__(self, settings, path):
-        self.settings = settings
-        self.path = path
+    def __init__(self, menu):
+        self.menu = menu
 
     @beatshell.function_command
     def reload(self):
-        self.settings = KAIKOSettings.read(self.path)
+        self.menu.settings = KAIKOSettings.read(self.menu.config_file())
 
     @beatshell.function_command
     def show(self):
-        print(str(self.settings))
+        print(str(self.menu.settings))
 
     @beatshell.function_command
     def get(self, field):
-        return self.settings.get(field)
+        return self.menu.settings.get(field)
 
     @beatshell.function_command
     def has(self, field):
-        return self.settings.has(field)
+        return self.menu.settings.has(field)
 
     @beatshell.function_command
     def unset(self, field):
-        self.settings.unset(field)
+        self.menu.settings.unset(field)
 
     @beatshell.function_command
     def set(self, field, value):
-        self.settings.set(field, value)
+        self.menu.settings.set(field, value)
 
     @get.arg_parser("field")
     @has.arg_parser("field")
     @unset.arg_parser("field")
     @set.arg_parser("field")
     def _field_parser(self):
-        return FieldParser(type(self.settings))
+        return FieldParser(type(self.menu.settings))
 
     @set.arg_parser("value")
     def _set_value_parser(self, field):
-        annotation = type(self.settings).get_configurable_fields()[field]
-        default = self.settings.get(field)
+        annotation = type(self.menu.settings).get_configurable_fields()[field]
+        default = self.menu.settings.get(field)
         return beatshell.LiteralParser(annotation, default)
 
 class FieldParser(beatshell.ArgumentParser):
