@@ -351,7 +351,7 @@ class LiteralParser(ArgumentParser):
         self.type_hint = type_hint
         self.biparser = biparser.from_type_hint(type_hint)
         self.default = default
-        self.expected = expected or f"It should be {self.biparser.name}"
+        self.expected = expected or f"It should be {type_hint}"
 
     def parse(self, token):
         try:

@@ -515,7 +515,7 @@ class FieldParser(beatshell.ArgumentParser):
         try:
             self.biparser.decode(token)
         except biparser.DecodeError as e:
-            sugg = [token[:e.index] + ex for ex in e.expected]
+            sugg = beatshell.fit(token, [token[:e.index] + ex for ex in e.expected])
         else:
             sugg = []
 
