@@ -13,18 +13,6 @@ from . import datanodes as dn
 from . import tui
 
 
-def sort_merge(*iters, key=lambda a:a):
-    iters = [iter(it) for it in iters]
-    _EXHAUSTED = object()
-    waited = [next(it, _EXHAUSTED) for it in iters]
-    while True:
-        indices = [i for i, value in enumerate(waited) if value is not _EXHAUSTED]
-        if not indices:
-            return
-        i = min(indices, key=lambda i: key(waited[i]))
-        yield waited[i]
-        waited[i] = next(iters[i], _EXHAUSTED)
-
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 @dataclass
@@ -615,18 +603,16 @@ class Beatmap(Playable):
             return audionode
 
     def prepare_events(self):
-        total_events = []
+        events = []
         for sequence in self.event_sequences:
-            events = []
             context = {}
             for event in sequence:
                 event.prepare(self, context)
                 if not isinstance(event, Event):
                     continue
                 events.append(event)
-            total_events.append(events)
 
-        events = list(sort_merge(*total_events, key=lambda e: e.beat))
+        events = sorted(events, key=lambda e: e.lifespan[0])
 
         event_leadin_time = self.settings.notes.event_leadin_time
         self.total_subjects = sum([1 for event in events if event.is_subject], 0)
