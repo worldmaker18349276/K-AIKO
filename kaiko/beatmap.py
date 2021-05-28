@@ -100,10 +100,11 @@ class Flip(Event):
 @dataclass
 class Shift(Event):
     shift: float = 0.0
+    span: Union[int, Fraction, float] = 0
 
     def prepare(self, beatmap, context):
         self.time = beatmap.time(self.beat)
-        self.end = beatmap.time(self.beat+self.length)
+        self.end = beatmap.time(self.beat+self.span)
         self.lifespan = (self.time, self.end)
 
     def register(self, field):
