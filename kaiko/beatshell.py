@@ -249,7 +249,7 @@ class ArgumentParser:
     def suggest(self, token):
         return []
 
-    def info(self, value):
+    def info(self, token):
         return None
 
 class RawParser(ArgumentParser):
@@ -272,16 +272,22 @@ class OptionParser(ArgumentParser):
         self.default = default
 
         if expected is None:
+            options = list(self.options.keys()) if isinstance(self.options, dict) else self.options
             self.expected = expected_options(self.options)
 
     def parse(self, token):
         if token not in self.options:
             expected = self.expected
             raise TokenParseError("Invalid value" + ("\n" + expected if expected is not None else ""))
-        return token
+
+        if isinstance(self.options, dict):
+            return self.options[token]
+        else:
+            return token
 
     def suggest(self, token):
-        return [val + "\000" for val in fit(token, self.options)]
+        options = list(self.options.keys()) if isinstance(self.options, dict) else self.options
+        return [val + "\000" for val in fit(token, options)]
 
 class PathParser(ArgumentParser):
     def __init__(self, root=".", default=inspect.Parameter.empty, expected=None):
