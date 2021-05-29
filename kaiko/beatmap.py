@@ -7,6 +7,7 @@ from collections import OrderedDict
 from fractions import Fraction
 import numpy
 import audioread
+from .kerminal import Mixer, MixerSettings, Detector, DetectorSettings, Renderer, RendererSettings
 from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings
 from . import cfg
 from . import datanodes as dn
@@ -625,6 +626,10 @@ class Beatmap(Playable):
 
 
 class GameplaySettings(cfg.Configurable):
+    mixer = MixerSettings
+    detector = DetectorSettings
+    renderer = RendererSettings
+
     class controls(cfg.Configurable):
         skip_time: float = 8.0
         load_time: float = 0.5
@@ -689,8 +694,8 @@ class BeatmapPlayer:
     @contextlib.contextmanager
     def execute(self, manager):
         tickrate = self.settings.controls.tickrate
-        samplerate = self.settings.beatbar.mixer.output_samplerate
-        nchannels = self.settings.beatbar.mixer.output_channels
+        samplerate = self.settings.mixer.output_samplerate
+        nchannels = self.settings.mixer.output_channels
         time_shift = self.prepare(samplerate, nchannels)
         load_time = self.settings.controls.load_time
         ref_time = load_time + time_shift
@@ -698,7 +703,12 @@ class BeatmapPlayer:
         bar_shift = self.beatmap.bar_shift
         bar_flip = self.beatmap.bar_flip
 
-        beatbar_knot, self.beatbar = Beatbar.create(self.settings.beatbar, manager, ref_time, bar_shift, bar_flip)
+        mixer_knot, mixer = Mixer.create(self.settings.mixer, manager, ref_time)
+        detector_knot, detector = Detector.create(self.settings.detector, manager, ref_time)
+        renderer_knot, renderer = Renderer.create(self.settings.renderer, ref_time)
+        beatbar_knot = dn.pipe(mixer_knot, detector_knot, renderer_knot)
+
+        self.beatbar = Beatbar.create(self.settings.beatbar, mixer, detector, renderer, bar_shift, bar_flip)
 
         # play music
         if self.audionode is not None:
@@ -756,8 +766,8 @@ class BeatmapPlayer:
 
     def _spec_handler(self):
         spec_width = self.settings.beatbar.widgets.spec_width
-        samplerate = self.settings.beatbar.mixer.output_samplerate
-        nchannels = self.settings.beatbar.mixer.output_channels
+        samplerate = self.settings.mixer.output_samplerate
+        nchannels = self.settings.mixer.output_channels
         hop_length = round(samplerate * self.settings.beatbar.widgets.spec_time_res)
         win_length = round(samplerate / self.settings.beatbar.widgets.spec_freq_res)
 

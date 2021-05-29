@@ -298,9 +298,9 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         if pa_device == -1:
             pa_device = self.manager.get_default_input_device_info()['index']
         if pa_samplerate is None:
-            pa_samplerate = self.settings.gameplay.beatbar.detector.input_samplerate
+            pa_samplerate = self.settings.gameplay.detector.input_samplerate
         if pa_channels is None:
-            pa_channels = self.settings.gameplay.beatbar.detector.input_channels
+            pa_channels = self.settings.gameplay.detector.input_channels
 
         pa_format = {
             'f4': pyaudio.paFloat32,
@@ -308,7 +308,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             'i2': pyaudio.paInt16,
             'i1': pyaudio.paInt8,
             'u1': pyaudio.paUInt8,
-        }[format or self.settings.gameplay.beatbar.detector.input_format]
+        }[format or self.settings.gameplay.detector.input_format]
 
         try:
             self.manager.is_format_supported(pa_samplerate,
@@ -319,13 +319,13 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             print(tui.add_attr(info, warn_attr))
 
         else:
-            self.settings.gameplay.beatbar.detector.input_device = device
+            self.settings.gameplay.detector.input_device = device
             if samplerate is not None:
-                self.settings.gameplay.beatbar.detector.input_samplerate = samplerate
+                self.settings.gameplay.detector.input_samplerate = samplerate
             if channels is not None:
-                self.settings.gameplay.beatbar.detector.input_channels = channels
+                self.settings.gameplay.detector.input_channels = channels
             if format is not None:
-                self.settings.gameplay.beatbar.detector.input_format = format
+                self.settings.gameplay.detector.input_format = format
 
     @beatshell.function_command
     def audio_output(self, device, samplerate=None, channels=None, format=None):
@@ -338,9 +338,9 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         if pa_device == -1:
             pa_device = self.manager.get_default_output_device_info()['index']
         if pa_samplerate is None:
-            pa_samplerate = self.settings.gameplay.beatbar.mixer.output_samplerate
+            pa_samplerate = self.settings.gameplay.mixer.output_samplerate
         if pa_channels is None:
-            pa_channels = self.settings.gameplay.beatbar.mixer.output_channels
+            pa_channels = self.settings.gameplay.mixer.output_channels
 
         pa_format = {
             'f4': pyaudio.paFloat32,
@@ -348,7 +348,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             'i2': pyaudio.paInt16,
             'i1': pyaudio.paInt8,
             'u1': pyaudio.paUInt8,
-        }[format or self.settings.gameplay.beatbar.mixer.output_format]
+        }[format or self.settings.gameplay.mixer.output_format]
 
         try:
             self.manager.is_format_supported(pa_samplerate,
@@ -359,13 +359,13 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             print(tui.add_attr(info, warn_attr))
 
         else:
-            self.settings.gameplay.beatbar.mixer.output_device = device
+            self.settings.gameplay.mixer.output_device = device
             if samplerate is not None:
-                self.settings.gameplay.beatbar.mixer.output_samplerate = samplerate
+                self.settings.gameplay.mixer.output_samplerate = samplerate
             if channels is not None:
-                self.settings.gameplay.beatbar.mixer.output_channels = channels
+                self.settings.gameplay.mixer.output_channels = channels
             if format is not None:
-                self.settings.gameplay.beatbar.mixer.output_format = format
+                self.settings.gameplay.mixer.output_format = format
 
     @audio_input.arg_parser("device")
     def _audio_input_device_parser(self):

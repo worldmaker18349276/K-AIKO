@@ -7,7 +7,6 @@ import threading
 from . import cfg
 from . import datanodes as dn
 from . import tui
-from .kerminal import Mixer, MixerSettings, Detector, DetectorSettings, Renderer, RendererSettings
 
 
 class PerformanceGrade(Enum):
@@ -88,10 +87,6 @@ class Performance:
         return self.descriptions[self.grade]
 
 class BeatbarSettings(cfg.Configurable):
-    mixer = MixerSettings
-    detector = DetectorSettings
-    renderer = RendererSettings
-
     class layout(cfg.Configurable):
         icon_width: int = 8
         header_width: int = 11
@@ -99,7 +94,6 @@ class BeatbarSettings(cfg.Configurable):
 
         header_quotes: Tuple[str, str] = ("\b\x1b[38;5;93;1m[\x1b[m", "\x1b[38;5;93;1m]\x1b[m")
         footer_quotes: Tuple[str, str] = ("\b\x1b[38;5;93;1m[\x1b[m", "\x1b[38;5;93;1m]\x1b[m")
-
 
     class scrollingbar(cfg.Configurable):
         performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
@@ -161,7 +155,7 @@ class Beatbar:
         self.target_queue = target_queue
 
     @classmethod
-    def create(clz, settings, manager, ref_time, bar_shift, bar_flip):
+    def create(clz, settings, mixer, detector, renderer, bar_shift, bar_flip):
         icon_width = settings.layout.icon_width
         header_width = settings.layout.header_width
         footer_width = settings.layout.footer_width
@@ -201,13 +195,6 @@ class Beatbar:
         target_queue = queue.Queue()
         hit_handler = clz._hit_handler(current_hit_hint, target_queue)
 
-        # build mixer, detector, renderer
-        mixer_knot, mixer = Mixer.create(settings.mixer, manager, ref_time)
-        detector_knot, detector = Detector.create(settings.detector, manager, ref_time)
-        renderer_knot, renderer = Renderer.create(settings.renderer, ref_time)
-
-        beatbar_knot = dn.pipe(mixer_knot, detector_knot, renderer_knot)
-
         # register handlers
         renderer.add_drawer(content_scheduler, zindex=(0,))
         renderer.add_drawer(icon_drawer, zindex=(1,))
@@ -222,7 +209,7 @@ class Beatbar:
 
         self.draw_content(0.0, self._sight_drawer, zindex=(2,))
 
-        return beatbar_knot, self
+        return self
 
     @staticmethod
     @dn.datanode
