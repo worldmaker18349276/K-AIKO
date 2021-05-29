@@ -91,14 +91,18 @@ class KAIKOSettings(cfg.Configurable):
 
 
 class KAIKOMenu:
-    def __init__(self, settings, username, data_dir, songs_dir, manager):
-        self.settings = settings
+    def __init__(self, config, username, data_dir, songs_dir, manager):
+        self._config = config
         self._username = username
         self._data_dir = data_dir
         self._songs_dir = songs_dir
         self.manager = manager
         self._beatmaps = []
         self.songs_mtime = None
+
+    @property
+    def settings(self):
+        return self._config.current
 
     @beatshell.function_command
     def username(self):
@@ -286,7 +290,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
     @beatshell.subcommand
     @property
     def config(self):
-        return ConfigCommand(self)
+        return ConfigCommand(self._config, self.config_file())
 
     @beatshell.function_command
     def say(self, message, escape=False):
@@ -371,7 +375,10 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
         # load settings
         config_path = data_dir / "config.py"
-        settings = KAIKOSettings.read(config_path)
+        config = cfg.Configuration(KAIKOSettings)
+        if config_path.exists():
+            config.read(config_path)
+        settings = config.current
 
         data_icon = settings.menu.data_icon
         info_icon = settings.menu.info_icon
@@ -392,6 +399,8 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             print(f"{data_icon} preparing your profile...")
             data_dir.mkdir(exist_ok=True)
             songs_dir.mkdir(exist_ok=True)
+            if not config_path.exists():
+                config.write(config_path)
             print(f"{data_icon} your data will be stored in "
                   f"{tui.add_attr(data_dir.as_uri(), emph_attr)}")
             print(flush=True)
@@ -408,7 +417,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             print("\x1b[m", flush=True)
 
         try:
-            yield clz(settings, username, data_dir, songs_dir, manager)
+            yield clz(config, username, data_dir, songs_dir, manager)
         finally:
             manager.terminate()
 
@@ -459,45 +468,102 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             print(f"\x1b[m", end="")
 
 class ConfigCommand:
-    def __init__(self, menu):
-        self.menu = menu
+    def __init__(self, config, path):
+        self.config = config
+        self.path = path
 
     @beatshell.function_command
     def reload(self):
-        self.menu.settings = KAIKOSettings.read(self.menu.config_file())
+        self.config.read(self.path)
+
+    @beatshell.function_command
+    def save(self):
+        self.config.write(self.path)
 
     @beatshell.function_command
     def show(self):
-        print(str(self.menu.settings))
+        print(str(self.config))
 
     @beatshell.function_command
     def get(self, field):
-        return self.menu.settings.get(field)
+        return self.config.get(field)
 
     @beatshell.function_command
     def has(self, field):
-        return self.menu.settings.has(field)
+        return self.config.has(field)
 
     @beatshell.function_command
     def unset(self, field):
-        self.menu.settings.unset(field)
+        self.config.unset(field)
 
     @beatshell.function_command
     def set(self, field, value):
-        self.menu.settings.set(field, value)
+        self.config.set(field, value)
 
     @get.arg_parser("field")
     @has.arg_parser("field")
     @unset.arg_parser("field")
     @set.arg_parser("field")
     def _field_parser(self):
-        return FieldParser(type(self.menu.settings))
+        return FieldParser(self.config.config_type)
 
     @set.arg_parser("value")
     def _set_value_parser(self, field):
-        annotation = type(self.menu.settings).get_configurable_fields()[field]
-        default = self.menu.settings.get(field)
+        annotation = self.config.config_type.get_configurable_fields()[field]
+        default = self.config.get(field)
         return beatshell.LiteralParser(annotation, default)
+
+    @beatshell.function_command
+    def rename(self, profile):
+        if "\n" in profile or "\r" in profile:
+            warn_attr = self.config.current.menu.warn_attr
+            print(tui.add_attr("Invalid profile name.", warn_attr))
+            return
+
+        if profile in self.config.profiles:
+            warn_attr = self.config.current.menu.warn_attr
+            print(tui.add_attr("This profile name already exists.", warn_attr))
+            return
+
+        self.config.name = profile
+
+    @beatshell.function_command
+    def new(self, profile, clone=None):
+        if "\n" in profile or "\r" in profile:
+            warn_attr = self.config.current.menu.warn_attr
+            print(tui.add_attr("Invalid profile name.", warn_attr))
+            return
+
+        if profile == self.config.name or profile in self.config.profiles:
+            warn_attr = self.config.current.menu.warn_attr
+            print(tui.add_attr("This profile name already exists.", warn_attr))
+            return
+
+        self.config.new(profile, clone)
+
+    @rename.arg_parser("profile")
+    @new.arg_parser("profile")
+    def _new_profile_parser(self):
+        return beatshell.RawParser()
+
+    @new.arg_parser("clone")
+    def _new_clone_parser(self, profile):
+        options = list(self.config.profiles.keys())
+        options.insert(0, self.config.name)
+        return beatshell.OptionParser(options)
+
+    @beatshell.function_command
+    def use(self, profile):
+        self.config.use(profile)
+
+    @beatshell.function_command
+    def delete(self, profile):
+        del self.config.profiles[profile]
+
+    @use.arg_parser("profile")
+    @delete.arg_parser("profile")
+    def _profile_parser(self):
+        return beatshell.OptionParser(list(self.config.profiles.keys()))
 
 class FieldParser(beatshell.ArgumentParser):
     def __init__(self, config_type):
