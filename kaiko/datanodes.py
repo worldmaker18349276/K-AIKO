@@ -1472,7 +1472,7 @@ def load_sound(filepath, samplerate=None, channels=None, volume=0.0, start=None,
 
     # resample
     if samplerate is not None and file_samplerate != samplerate:
-        length = sound.shape[0] * samplerate/file_samplerate
+        length = int(sound.shape[0] * samplerate/file_samplerate)
         sound = scipy.signal.resample(sound, length, axis=0)
 
     # rechannel

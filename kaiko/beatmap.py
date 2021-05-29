@@ -1,7 +1,7 @@
 import os
 import datetime
 import contextlib
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
 from fractions import Fraction
@@ -608,6 +608,7 @@ class Beatmap(Playable):
         for sequence in self.event_sequences:
             context = {}
             for event in sequence:
+                event = replace(event)
                 event.prepare(self, context)
                 if not isinstance(event, Event):
                     continue
