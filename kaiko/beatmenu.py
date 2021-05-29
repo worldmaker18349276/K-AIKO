@@ -287,6 +287,110 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
     def _play_beatmap_parser(self):
         return beatshell.OptionParser([str(beatmap.relative_to(self._songs_dir)) for beatmap in self.beatmaps()])
 
+    @beatshell.function_command
+    def audio_input(self, device, samplerate=None, channels=None, format=None):
+        warn_attr = self.settings.menu.warn_attr
+
+        pa_device = device
+        pa_samplerate = samplerate
+        pa_channels = channels
+
+        if pa_device == -1:
+            pa_device = self.manager.get_default_input_device_info()['index']
+        if pa_samplerate is None:
+            pa_samplerate = self.settings.gameplay.beatbar.detector.input_samplerate
+        if pa_channels is None:
+            pa_channels = self.settings.gameplay.beatbar.detector.input_channels
+
+        pa_format = {
+            'f4': pyaudio.paFloat32,
+            'i4': pyaudio.paInt32,
+            'i2': pyaudio.paInt16,
+            'i1': pyaudio.paInt8,
+            'u1': pyaudio.paUInt8,
+        }[format or self.settings.gameplay.beatbar.detector.input_format]
+
+        try:
+            self.manager.is_format_supported(pa_samplerate,
+                input_device=pa_device, input_channels=pa_channels, input_format=pa_format)
+
+        except ValueError as e:
+            info = e.args[0]
+            print(tui.add_attr(info, warn_attr))
+
+        else:
+            self.settings.gameplay.beatbar.detector.input_device = device
+            if samplerate is not None:
+                self.settings.gameplay.beatbar.detector.input_samplerate = samplerate
+            if channels is not None:
+                self.settings.gameplay.beatbar.detector.input_channels = channels
+            if format is not None:
+                self.settings.gameplay.beatbar.detector.input_format = format
+
+    @beatshell.function_command
+    def audio_output(self, device, samplerate=None, channels=None, format=None):
+        warn_attr = self.settings.menu.warn_attr
+
+        pa_device = device
+        pa_samplerate = samplerate
+        pa_channels = channels
+
+        if pa_device == -1:
+            pa_device = self.manager.get_default_output_device_info()['index']
+        if pa_samplerate is None:
+            pa_samplerate = self.settings.gameplay.beatbar.mixer.output_samplerate
+        if pa_channels is None:
+            pa_channels = self.settings.gameplay.beatbar.mixer.output_channels
+
+        pa_format = {
+            'f4': pyaudio.paFloat32,
+            'i4': pyaudio.paInt32,
+            'i2': pyaudio.paInt16,
+            'i1': pyaudio.paInt8,
+            'u1': pyaudio.paUInt8,
+        }[format or self.settings.gameplay.beatbar.mixer.output_format]
+
+        try:
+            self.manager.is_format_supported(pa_samplerate,
+                output_device=pa_device, output_channels=pa_channels, output_format=pa_format)
+
+        except ValueError as e:
+            info = e.args[0]
+            print(tui.add_attr(info, warn_attr))
+
+        else:
+            self.settings.gameplay.beatbar.mixer.output_device = device
+            if samplerate is not None:
+                self.settings.gameplay.beatbar.mixer.output_samplerate = samplerate
+            if channels is not None:
+                self.settings.gameplay.beatbar.mixer.output_channels = channels
+            if format is not None:
+                self.settings.gameplay.beatbar.mixer.output_format = format
+
+    @audio_input.arg_parser("device")
+    def _audio_input_device_parser(self):
+        return PyAudioDeviceParser(self.manager, True)
+
+    @audio_output.arg_parser("device")
+    def _audio_output_device_parser(self):
+        return PyAudioDeviceParser(self.manager, False)
+
+    @audio_input.arg_parser("samplerate")
+    @audio_output.arg_parser("samplerate")
+    def _audio_samplerate_parser(self, device, **__):
+        options = [44100, 48000, 88200, 96000, 32000, 22050, 11025, 8000]
+        return beatshell.OptionParser({str(rate): rate for rate in options})
+
+    @audio_input.arg_parser("channels")
+    @audio_output.arg_parser("channels")
+    def _audio_channels_parser(self, device, **__):
+        return beatshell.OptionParser({'2': 2, '1': 1})
+
+    @audio_input.arg_parser("format")
+    @audio_output.arg_parser("format")
+    def _audio_format_parser(self, device, **__):
+        return beatshell.OptionParser(['f4', 'i4', 'i2', 'i1', 'u1'])
+
     @beatshell.subcommand
     @property
     def config(self):
@@ -585,6 +689,40 @@ class FieldParser(beatshell.ArgumentParser):
             sugg = []
 
         return sugg
+
+class PyAudioDeviceParser(beatshell.ArgumentParser):
+    def __init__(self, manager, is_input):
+        self.manager = manager
+        self.is_input = is_input
+        self.options = ["-1"]
+        for index in range(manager.get_device_count()):
+            self.options.append(str(index))
+
+    def parse(self, token):
+        if token not in self.options:
+            raise beatshell.TokenParseError("Invalid device index")
+        return int(token)
+
+    def suggest(self, token):
+        return [val + "\000" for val in beatshell.fit(token, self.options)]
+
+    def info(self, token):
+        value = int(token)
+        if value == -1:
+            if self.is_input:
+                value = self.manager.get_default_input_device_info()['index']
+            else:
+                value = self.manager.get_default_output_device_info()['index']
+
+        device_info = self.manager.get_device_info_by_index(value)
+
+        name = device_info['name']
+        api = self.manager.get_host_api_info_by_index(device_info['hostApi'])['name']
+        freq = device_info['defaultSampleRate']/1000
+        ch_in = device_info['maxInputChannels']
+        ch_out = device_info['maxOutputChannels']
+
+        return f"{name} by {api} ({freq} kHz, in: {ch_in}, out: {ch_out})"
 
 
 class KAIKOPlay:
