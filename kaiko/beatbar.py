@@ -89,11 +89,8 @@ class Performance:
 class BeatbarSettings(cfg.Configurable):
     class layout(cfg.Configurable):
         icon_width: int = 8
-        header_width: int = 11
-        footer_width: int = 12
-
-        header_quotes: Tuple[str, str] = ("\b\x1b[38;5;93;1m[\x1b[m", "\x1b[38;5;93;1m]\x1b[m")
-        footer_quotes: Tuple[str, str] = ("\b\x1b[38;5;93;1m[\x1b[m", "\x1b[38;5;93;1m]\x1b[m")
+        header_width: int = 13
+        footer_width: int = 14
 
     class scrollingbar(cfg.Configurable):
         performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
@@ -159,13 +156,11 @@ class Beatbar:
         icon_width = settings.layout.icon_width
         header_width = settings.layout.header_width
         footer_width = settings.layout.footer_width
-        header_quotes = settings.layout.header_quotes
-        footer_quotes = settings.layout.footer_quotes
 
         icon_mask = slice(None, icon_width)
-        header_mask = slice(icon_width+1, icon_width+1+header_width)
-        content_mask = slice(icon_width+1+header_width+1, -1-footer_width-1)
-        footer_mask = slice(-footer_width-1, -1)
+        header_mask = slice(icon_width, icon_width+header_width)
+        content_mask = slice(icon_width+header_width, -footer_width)
+        footer_mask = slice(-footer_width, None)
 
         content_scheduler = dn.Scheduler()
         current_icon = dn.TimedVariable(value=lambda time, ran: "")
@@ -173,8 +168,8 @@ class Beatbar:
         current_footer = dn.TimedVariable(value=lambda time, ran: "")
 
         icon_drawer = clz._masked_node(current_icon, icon_mask)
-        header_drawer = clz._masked_node(current_header, header_mask, header_quotes)
-        footer_drawer = clz._masked_node(current_footer, footer_mask, footer_quotes)
+        header_drawer = clz._masked_node(current_header, header_mask)
+        footer_drawer = clz._masked_node(current_footer, footer_mask)
 
         # sight
         hit_decay_time = settings.scrollingbar.hit_decay_time
@@ -213,7 +208,7 @@ class Beatbar:
 
     @staticmethod
     @dn.datanode
-    def _masked_node(variable, mask, enclosed_by=None):
+    def _masked_node(variable, mask):
         view, time, width = yield
 
         while True:
@@ -222,20 +217,8 @@ class Beatbar:
             text = func(time, mask_ran)
             start = mask_ran.start
 
-            text_ran, _ = wcb.textrange1(start, text)
-
             view = wcb.clear1(view, width, xmask=mask)
             view, _ = wcb.addtext1(view, width, start, text, xmask=mask)
-
-            if text_ran.start < mask_ran.start:
-                view, _ = wcb.addtext1(view, width, mask_ran.start, "…")
-
-            if text_ran.stop > mask_ran.stop:
-                view, _ = wcb.addtext1(view, width, mask_ran.stop-1, "…")
-
-            if enclosed_by is not None:
-                view, _ = wcb.addtext1(view, width, mask_ran.start, enclosed_by[0])
-                view, _ = wcb.addtext1(view, width, mask_ran.stop, enclosed_by[1])
 
             view, time, width = yield view
 

@@ -638,9 +638,9 @@ class GameplaySettings(cfg.Configurable):
         tickrate: float = 60.0
 
     class widgets(cfg.Configurable):
-        icon_templates: List[str] = ["\x1b[95m{spectrum:^8s}\x1b[m"]
-        header_templates: List[str] = ["\x1b[38;5;93m{score:05d}\x1b[1m/\x1b[22m{full_score:05d}\x1b[m"]
-        footer_templates: List[str] = ["\x1b[38;5;93m{progress:>6.1%}\x1b[1m|\x1b[22m{time:%M:%S}\x1b[m"]
+        icon_template: str = "\x1b[95m{spectrum:^8s}\x1b[m"
+        header_template: str = "\x1b[38;5;93;1m[\x1b[22m{score:05d}\x1b[1m/\x1b[22m{full_score:05d}\x1b[1m]"
+        footer_template: str = "\x1b[38;5;93;1m[\x1b[22m{progress:>6.1%}\x1b[1m|\x1b[22m{time:%M:%S}\x1b[1m]"
         use: List[str] = ["spectrum"]
 
         class spectrum(cfg.Configurable):
@@ -674,22 +674,16 @@ class BeatmapPlayer:
         self.time = datetime.time(0, 0, 0)
 
         # icon/header/footer handlers
-        icon_templates = self.settings.widgets.icon_templates
-        header_templates = self.settings.widgets.header_templates
-        footer_templates = self.settings.widgets.footer_templates
+        icon_template = self.settings.widgets.icon_template
+        header_template = self.settings.widgets.header_template
+        footer_template = self.settings.widgets.footer_template
 
-        def fit(templates, ran):
-            status = {name: getattr(self, name) for name in self.widgets}
-            for template in templates:
-                text = template.format(**status)
-                text_ran, _ = wcb.textrange1(ran.start, text)
-                if ran.start <= text_ran.start and text_ran.stop <= ran.stop:
-                    break
-            return text
-
-        self.icon_func = lambda time, ran: fit(icon_templates, ran)
-        self.header_func = lambda time, ran: fit(header_templates, ran)
-        self.footer_func = lambda time, ran: fit(footer_templates, ran)
+        self.icon_func = lambda time, ran: icon_template.format(
+            **{name: getattr(self, name) for name in self.widgets})
+        self.header_func = lambda time, ran: header_template.format(
+            **{name: getattr(self, name) for name in self.widgets})
+        self.footer_func = lambda time, ran: footer_template.format(
+            **{name: getattr(self, name) for name in self.widgets})
 
         return abs(self.start_time)
 
