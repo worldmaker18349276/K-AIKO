@@ -629,6 +629,7 @@ class GameplaySettings(cfg.Configurable):
     mixer = MixerSettings
     detector = DetectorSettings
     renderer = RendererSettings
+    beatbar = BeatbarSettings
 
     class controls(cfg.Configurable):
         skip_time: float = 8.0
@@ -636,12 +637,13 @@ class GameplaySettings(cfg.Configurable):
         prepare_time: float = 0.1
         tickrate: float = 60.0
 
-    class beatbar(BeatbarSettings):
-        class widgets(cfg.Configurable):
-            icon_templates: List[str] = ["\x1b[95m{spectrum:^8s}\x1b[m"]
-            header_templates: List[str] = ["\x1b[38;5;93m{score:05d}\x1b[1m/\x1b[22m{full_score:05d}\x1b[m"]
-            footer_templates: List[str] = ["\x1b[38;5;93m{progress:>6.1%}\x1b[1m|\x1b[22m{time:%M:%S}\x1b[m"]
+    class widgets(cfg.Configurable):
+        icon_templates: List[str] = ["\x1b[95m{spectrum:^8s}\x1b[m"]
+        header_templates: List[str] = ["\x1b[38;5;93m{score:05d}\x1b[1m/\x1b[22m{full_score:05d}\x1b[m"]
+        footer_templates: List[str] = ["\x1b[38;5;93m{progress:>6.1%}\x1b[1m|\x1b[22m{time:%M:%S}\x1b[m"]
+        use: List[str] = ["spectrum"]
 
+        class spectrum(cfg.Configurable):
             spec_width: int = 6
             spec_decay_time: float = 0.01
             spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
@@ -651,6 +653,7 @@ class BeatmapPlayer:
     def __init__(self, beatmap, settings=None):
         self.beatmap = beatmap
         self.settings = settings or GameplaySettings()
+        self.widgets = ["full_score", "score", "total_subjects", "finished_subjects", "progress", "time"]
 
     def prepare(self, output_samplerate, output_nchannels):
         # prepare music
@@ -669,15 +672,14 @@ class BeatmapPlayer:
 
         self.perfs = []
         self.time = datetime.time(0, 0, 0)
-        self.spectrum = "\u2800"*self.settings.beatbar.widgets.spec_width
 
         # icon/header/footer handlers
-        icon_templates = self.settings.beatbar.widgets.icon_templates
-        header_templates = self.settings.beatbar.widgets.header_templates
-        footer_templates = self.settings.beatbar.widgets.footer_templates
+        icon_templates = self.settings.widgets.icon_templates
+        header_templates = self.settings.widgets.header_templates
+        footer_templates = self.settings.widgets.footer_templates
 
         def fit(templates, ran):
-            status = self.get_status()
+            status = {name: getattr(self, name) for name in self.widgets}
             for template in templates:
                 text = template.format(**status)
                 text_ran, _ = wcb.textrange1(ran.start, text)
@@ -715,7 +717,10 @@ class BeatmapPlayer:
             self.beatbar.mixer.play(self.audionode, time=0.0, zindex=(-3,))
 
         # register handlers
-        self.beatbar.mixer.add_effect(self._spec_handler(), zindex=(-1,))
+        for widget in self.settings.widgets.use:
+            if widget == "spectrum":
+                self.add_spectrum()
+
         self.beatbar.current_icon.set(self.icon_func)
         self.beatbar.current_header.set(self.header_func)
         self.beatbar.current_footer.set(self.footer_func)
@@ -754,22 +759,17 @@ class BeatmapPlayer:
             yield
             index += 1
 
+    @property
+    def progress(self):
+        return self.finished_subjects/self.total_subjects if self.total_subjects>0 else 1.0
 
-    def get_status(self):
-        return dict(
-            full_score=self.full_score,
-            score=self.score,
-            progress=self.finished_subjects/self.total_subjects if self.total_subjects>0 else 1.0,
-            time=self.time,
-            spectrum=self.spectrum,
-            )
-
-    def _spec_handler(self):
-        spec_width = self.settings.beatbar.widgets.spec_width
+    def add_spectrum(self):
+        spec_width = self.settings.widgets.spectrum.spec_width
         samplerate = self.settings.mixer.output_samplerate
         nchannels = self.settings.mixer.output_channels
-        hop_length = round(samplerate * self.settings.beatbar.widgets.spec_time_res)
-        win_length = round(samplerate / self.settings.beatbar.widgets.spec_freq_res)
+        hop_length = round(samplerate * self.settings.widgets.spectrum.spec_time_res)
+        win_length = round(samplerate / self.settings.widgets.spectrum.spec_freq_res)
+        spec_decay_time = self.settings.widgets.spectrum.spec_decay_time
 
         df = samplerate/win_length
         n_fft = win_length//2+1
@@ -778,7 +778,7 @@ class BeatmapPlayer:
         sec = numpy.minimum(n_fft-1, (f/df).round().astype(int))
         slices = [slice(start, stop) for start, stop in zip(sec[:-1], (sec+1)[1:])]
 
-        decay = hop_length / samplerate / self.settings.beatbar.widgets.spec_decay_time / 4
+        decay = hop_length / samplerate / spec_decay_time / 4
         volume_of = lambda J: dn.power2db(J.mean() * samplerate / 2, scale=(1e-5, 1e6)) / 60.0
 
         A = numpy.cumsum([0, 2**6, 2**2, 2**1, 2**0])
@@ -803,7 +803,10 @@ class BeatmapPlayer:
                             for slic, prev in zip(slices, vols)]
                     self.spectrum = "".join(map(draw_bar, vols[0::2], vols[1::2]))
 
-        return dn.pipe(lambda a:a[0], dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels))))
+        handler = dn.pipe(lambda a:a[0], dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels))))
+        self.spectrum = "\u2800"*spec_width
+        self.widgets.append("spectrum")
+        self.beatbar.mixer.add_effect(handler, zindex=(-1,))
 
 
     def add_score(self, score):
