@@ -16,13 +16,6 @@ from . import wcbuffers as wcb
 from . import config as cfg
 
 
-def outdent(doc):
-    if doc is None:
-        return None
-    m = re.search("\\n[ ]*$", doc)
-    level = len(m.group(0)[1:]) if m else 0
-    return re.sub("\\n[ ]{,%d}"%level, "\\n", doc)
-
 def expected_options(options):
     return "It should be one of:\n" + "\n".join("• " + shlexer_quoting(s + "\000") for s in options)
 
@@ -225,6 +218,48 @@ def echo_str(escaped_str):
             return matched
 
     return re.sub(regex, repl, escaped_str)
+
+def pmove(width, x, text, tabsize=8):
+    y = 0
+
+    for ch, w in wcb.parse_attr(text):
+        if ch == "\t":
+            if tabsize > 0:
+                x += 1
+                if x > width:
+                    y += 1
+                    x = 0
+                x = min(x // -tabsize * -tabsize, width-1)
+
+        elif ch == "\b":
+            x = max(min(x, width-1)-1, 0)
+
+        elif ch == "\r":
+            x = 0
+
+        elif ch == "\n":
+            y += 1
+            x = 0
+
+        elif ch == "\v":
+            y += 1
+
+        elif ch == "\f":
+            y += 1
+
+        elif ch == "\x00":
+            pass
+
+        elif ch[0] == "\x1b":
+            pass
+
+        else:
+            x += w
+            if x > width:
+                y += 1
+                x = w
+
+    return x, y
 
 
 class TokenUnfinishError(Exception):
@@ -592,7 +627,14 @@ class SubCommandParser(CommandParser):
     def info(self, token):
         # assert token in self.fields
         desc = type(self.parent).__dict__[token]
-        return outdent(desc.proxy.__doc__)
+        doc = desc.proxy.__doc__
+        if doc is None:
+            return None
+
+        # outdent docstring
+        m = re.search("\\n[ ]*", doc)
+        level = len(m.group(0)[1:]) if m else 0
+        return re.sub("\\n[ ]{,%d}"%level, "\\n", doc)
 
 class RootCommandParser(SubCommandParser):
     def __init__(self, root):
@@ -1521,7 +1563,7 @@ class BeatPrompt:
 
             # print error
             if moveback:
-                _, y = wcb.pmove(width, 0, msg)
+                _, y = pmove(width, 0, msg)
                 if y != 0:
                     msg = msg + f"\x1b[{y}A"
             if clear:

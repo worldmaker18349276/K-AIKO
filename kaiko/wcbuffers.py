@@ -51,48 +51,6 @@ def clamp(ran, ran_):
     stop = max(min(ran.stop, ran_.stop), ran.start)
     return range(start, stop)
 
-def pmove(width, x, text, tabsize=8):
-    y = 0
-
-    for ch, w in parse_attr(text):
-        if ch == "\t":
-            if tabsize > 0:
-                x += 1
-                if x > width:
-                    y += 1
-                    x = 0
-                x = min(x // -tabsize * -tabsize, width-1)
-
-        elif ch == "\b":
-            x = max(min(x, width-1)-1, 0)
-
-        elif ch == "\r":
-            x = 0
-
-        elif ch == "\n":
-            y += 1
-            x = 0
-
-        elif ch == "\v":
-            y += 1
-
-        elif ch == "\f":
-            y += 1
-
-        elif ch == "\x00":
-            pass
-
-        elif ch[0] == "\x1b":
-            pass
-
-        else:
-            x += w
-            if x > width:
-                y += 1
-                x = w
-
-    return x, y
-
 
 def addtext1(view, width, x, text, xmask=slice(None,None)):
     xran = range(width)
