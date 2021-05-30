@@ -11,7 +11,6 @@ import pyaudio
 from . import datanodes as dn
 from . import config as cfg
 from . import wcbuffers as wcb
-from . import kerminal
 from . import beatshell
 from . import biparsers as bp
 from .beatshell import BeatShellSettings

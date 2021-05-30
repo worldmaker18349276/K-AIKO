@@ -7,7 +7,7 @@ from collections import OrderedDict
 from fractions import Fraction
 import numpy
 import audioread
-from .kerminal import Mixer, MixerSettings, Detector, DetectorSettings, Renderer, RendererSettings
+from .engines import Mixer, MixerSettings, Detector, DetectorSettings, Renderer, RendererSettings
 from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings
 from . import config as cfg
 from . import datanodes as dn
