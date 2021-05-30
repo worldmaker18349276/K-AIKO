@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Set, Tuple, Dict, Union
 from . import datanodes as dn
 from . import biparsers as bp
-from . import tui
+from . import wcbuffers as wcb
 from . import cfg
 
 
@@ -1362,9 +1362,9 @@ class BeatPrompt:
             # render cursor
             if not clean and (t-tr < 0 or (t-tr) % 1 < cursor_blink_ratio):
                 if t % 4 < cursor_blink_ratio:
-                    cursor = lambda s: tui.add_attr(s, cursor_attr[1])
+                    cursor = lambda s: wcb.add_attr(s, cursor_attr[1])
                 else:
-                    cursor = lambda s: tui.add_attr(s, cursor_attr[0])
+                    cursor = lambda s: wcb.add_attr(s, cursor_attr[0])
             else:
                 cursor = None
 
@@ -1397,9 +1397,9 @@ class BeatPrompt:
                 msg = "\n".join(msg.split("\n")[:message_max_lines]) + "\x1b[m\n…"
             if msg:
                 if isinstance(result, (InputError, InputWarn)):
-                    msg = tui.add_attr(msg, error_message_attr)
+                    msg = wcb.add_attr(msg, error_message_attr)
                 if isinstance(result, (InputMessage, InputWarn)):
-                    msg = tui.add_attr(msg, info_message_attr)
+                    msg = wcb.add_attr(msg, info_message_attr)
             msg = "\n" + msg + ("\n" if msg else "")
             moveback = isinstance(result, (InputWarn, InputMessage))
 
@@ -1433,7 +1433,7 @@ class BeatPrompt:
             for token, type, slic, ignored in self.input.tokens:
                 # render escape
                 for index in ignored:
-                    rendered_buffer[index] = tui.add_attr(rendered_buffer[index], escape_attr)
+                    rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], escape_attr)
 
                 # render whitespace
                 for index in range(len(rendered_buffer))[slic]:
@@ -1444,37 +1444,37 @@ class BeatPrompt:
                 if type is TOKEN_TYPE.UNKNOWN:
                     if slic.stop is not None or clean:
                         for index in range(len(rendered_buffer))[slic]:
-                            rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_unknown_attr)
+                            rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_unknown_attr)
 
                 # render command token
                 if type is TOKEN_TYPE.COMMAND:
                     for index in range(len(rendered_buffer))[slic]:
-                        rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_command_attr)
+                        rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_command_attr)
 
                 # render argument token
                 elif type is TOKEN_TYPE.KEYWORD:
                     for index in range(len(rendered_buffer))[slic]:
-                        rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_argument_attr)
+                        rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_argument_attr)
 
                 # render literal token
                 elif type is TOKEN_TYPE.ARGUMENT:
                     for index in range(len(rendered_buffer))[slic]:
-                        rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_literal_attr)
+                        rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_literal_attr)
 
             if highlighted in range(len(self.input.tokens)):
                 # render highlighted token
                 _, _, slic, _ = self.input.tokens[highlighted]
                 for index in range(len(rendered_buffer))[slic]:
-                    rendered_buffer[index] = tui.add_attr(rendered_buffer[index], token_highlight_attr)
+                    rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_highlight_attr)
 
             rendered_text = "".join(rendered_buffer)
 
             # render typeahead
             if self.input.typeahead and not clean:
-                rendered_text += tui.add_attr(self.input.typeahead, typeahead_attr)
+                rendered_text += wcb.add_attr(self.input.typeahead, typeahead_attr)
 
             # compute cursor position
-            _, cursor_pos = tui.textrange1(0, "".join(rendered_buffer[:self.input.pos]))
+            _, cursor_pos = wcb.textrange1(0, "".join(rendered_buffer[:self.input.pos]))
 
             clean, highlighted = yield rendered_text, cursor_pos
 
@@ -1490,11 +1490,11 @@ class BeatPrompt:
         while True:
             result, (header, cursor), (text, cursor_pos), (msg, clear, moveback), size = yield output_text
             width = size.columns
-            view = tui.newwin1(width)
+            view = wcb.newwin1(width)
 
             # adjust input offset
             input_width = len(range(width)[input_ran])
-            _, text_length = tui.textrange1(0, text)
+            _, text_length = wcb.textrange1(0, text)
 
             if cursor_pos - input_offset >= input_width:
                 input_offset = cursor_pos - input_width + 1
@@ -1504,24 +1504,24 @@ class BeatPrompt:
                 input_offset = max(0, text_length-input_width+1)
 
             # draw input
-            tui.addtext1(view, width, input_ran.start-input_offset, text, input_ran)
+            wcb.addtext1(view, width, input_ran.start-input_offset, text, input_ran)
             if input_offset > 0:
-                tui.addtext1(view, width, input_ran.start, "…", input_ran)
+                wcb.addtext1(view, width, input_ran.start, "…", input_ran)
             if text_length-input_offset >= input_width:
-                tui.addtext1(view, width, input_ran.start+input_width-1, "…", input_ran)
+                wcb.addtext1(view, width, input_ran.start+input_width-1, "…", input_ran)
 
             # draw header
-            tui.addtext1(view, width, 0, header, header_ran)
+            wcb.addtext1(view, width, 0, header, header_ran)
 
             # draw cursor
             if cursor:
                 cursor_x = input_ran.start - input_offset + cursor_pos
-                cursor_ran = tui.select1(view, width, slice(cursor_x, cursor_x+1))
+                cursor_ran = wcb.select1(view, width, slice(cursor_x, cursor_x+1))
                 view[cursor_ran.start] = cursor(view[cursor_ran.start])
 
             # print error
             if moveback:
-                _, y = tui.pmove(width, 0, msg)
+                _, y = wcb.pmove(width, 0, msg)
                 if y != 0:
                     msg = msg + f"\x1b[{y}A"
             if clear:

@@ -6,7 +6,7 @@ import queue
 import threading
 from . import cfg
 from . import datanodes as dn
-from . import tui
+from . import wcbuffers as wcb
 
 
 class PerformanceGrade(Enum):
@@ -222,20 +222,20 @@ class Beatbar:
             text = func(time, mask_ran)
             start = mask_ran.start
 
-            text_ran, _ = tui.textrange1(start, text)
+            text_ran, _ = wcb.textrange1(start, text)
 
-            view = tui.clear1(view, width, xmask=mask)
-            view, _ = tui.addtext1(view, width, start, text, xmask=mask)
+            view = wcb.clear1(view, width, xmask=mask)
+            view, _ = wcb.addtext1(view, width, start, text, xmask=mask)
 
             if text_ran.start < mask_ran.start:
-                view, _ = tui.addtext1(view, width, mask_ran.start, "…")
+                view, _ = wcb.addtext1(view, width, mask_ran.start, "…")
 
             if text_ran.stop > mask_ran.stop:
-                view, _ = tui.addtext1(view, width, mask_ran.stop-1, "…")
+                view, _ = wcb.addtext1(view, width, mask_ran.stop-1, "…")
 
             if enclosed_by is not None:
-                view, _ = tui.addtext1(view, width, mask_ran.start, enclosed_by[0])
-                view, _ = tui.addtext1(view, width, mask_ran.stop, enclosed_by[1])
+                view, _ = wcb.addtext1(view, width, mask_ran.start, enclosed_by[0])
+                view, _ = wcb.addtext1(view, width, mask_ran.stop, enclosed_by[1])
 
             view, time, width = yield view
 
@@ -267,7 +267,7 @@ class Beatbar:
         if isinstance(text, tuple):
             text = text[self.bar_flip]
 
-        return tui.addtext1(view, width, index, text, xmask=mask)
+        return wcb.addtext1(view, width, index, text, xmask=mask)
 
     def draw_content(self, pos, text, start=None, duration=None, zindex=(0,)):
         pos_func = pos if hasattr(pos, '__call__') else lambda time: pos

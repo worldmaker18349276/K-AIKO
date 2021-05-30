@@ -11,7 +11,7 @@ from .kerminal import Mixer, MixerSettings, Detector, DetectorSettings, Renderer
 from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings
 from . import cfg
 from . import datanodes as dn
-from . import tui
+from . import wcbuffers as wcb
 
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -680,7 +680,7 @@ class BeatmapPlayer:
             status = self.get_status()
             for template in templates:
                 text = template.format(**status)
-                text_ran, _ = tui.textrange1(ran.start, text)
+                text_ran, _ = wcb.textrange1(ran.start, text)
                 if ran.start <= text_ran.start and text_ran.stop <= ran.stop:
                     break
             return text

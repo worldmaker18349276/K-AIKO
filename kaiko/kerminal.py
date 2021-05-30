@@ -11,7 +11,7 @@ import pyaudio
 import audioread
 from . import cfg
 from . import datanodes as dn
-from . import tui
+from . import wcbuffers as wcb
 
 
 @contextlib.contextmanager
@@ -341,7 +341,7 @@ class Renderer:
                     width = size.columns if columns == -1 else min(columns, size.columns)
 
                     time = index / framerate + display_delay - ref_time
-                    view = tui.newwin1(width)
+                    view = wcb.newwin1(width)
                     try:
                         view = scheduler.send((view, time, width))
                     except StopIteration:
@@ -393,7 +393,7 @@ class Renderer:
                     text = text_node.send((time, range(-x, width-x)[xmask]))
                 except StopIteration:
                     return
-                view, _ = tui.addtext1(view, width, x, text, xmask=xmask)
+                view, _ = wcb.addtext1(view, width, x, text, xmask=xmask)
 
                 view, time, width = yield view
 
@@ -404,12 +404,12 @@ class Renderer:
         with pad_node:
             view, time, width = yield
             while True:
-                subview, x, subwidth = tui.newpad1(view, width, xmask=xmask)
+                subview, x, subwidth = wcb.newpad1(view, width, xmask=xmask)
                 try:
                     subview = pad_node.send(((time, subwidth), subview))
                 except StopIteration:
                     return
-                view, xran = tui.addpad1(view, width, x, subview, subwidth)
+                view, xran = wcb.addpad1(view, width, x, subview, subwidth)
 
                 view, time, width = yield view
 

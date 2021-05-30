@@ -10,7 +10,7 @@ import appdirs
 import pyaudio
 from . import datanodes as dn
 from . import cfg
-from . import tui
+from . import wcbuffers as wcb
 from . import kerminal
 from . import beatshell
 from . import biparsers as bp
@@ -154,7 +154,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         emph_attr = self.settings.menu.emph_attr
         songs_dir = self._songs_dir
 
-        print(f"{info_icon} Loading songs from {tui.add_attr(songs_dir.as_uri(), emph_attr)}...")
+        print(f"{info_icon} Loading songs from {wcb.add_attr(songs_dir.as_uri(), emph_attr)}...")
 
         self._beatmaps = []
 
@@ -163,7 +163,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
                 distpath = file.parent / file.stem
                 if distpath.exists():
                     continue
-                print(f"{info_icon} Unzip file {tui.add_attr(file.as_uri(), emph_attr)}...")
+                print(f"{info_icon} Unzip file {wcb.add_attr(file.as_uri(), emph_attr)}...")
                 distpath.mkdir()
                 zf = zipfile.ZipFile(str(file), 'r')
                 zf.extractall(path=str(distpath))
@@ -199,10 +199,10 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         songs_dir = self._songs_dir
 
         if not beatmap.exists():
-            print(tui.add_attr(f"File not found: {str(beatmap)}", warn_attr))
+            print(wcb.add_attr(f"File not found: {str(beatmap)}", warn_attr))
             return
 
-        print(f"{info_icon} Adding new song from {tui.add_attr(beatmap.as_uri(), emph_attr)}...")
+        print(f"{info_icon} Adding new song from {wcb.add_attr(beatmap.as_uri(), emph_attr)}...")
 
         distpath = songs_dir / beatmap.name
         n = 1
@@ -210,14 +210,14 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             distpath = songs_dir / (beatmap.name + f" ({n})")
             n += 1
         if n != 1:
-            print(f"{info_icon} Name conflict! rename to {tui.add_attr(distpath.name, emph_attr)}")
+            print(f"{info_icon} Name conflict! rename to {wcb.add_attr(distpath.name, emph_attr)}")
 
         if beatmap.is_file():
             shutil.copy(str(beatmap), str(songs_dir))
         elif beatmap.is_dir():
             shutil.copytree(str(beatmap), str(distpath))
         else:
-            print(tui.add_attr(f"Not a file: {str(beatmap)}", warn_attr))
+            print(wcb.add_attr(f"Not a file: {str(beatmap)}", warn_attr))
             return
 
         self.reload()
@@ -243,17 +243,17 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
         beatmap_path = songs_dir / beatmap
         if beatmap_path.is_file():
-            print(f"{info_icon} Removing the beatmap at {tui.add_attr(beatmap_path.as_uri(), emph_attr)}...")
+            print(f"{info_icon} Removing the beatmap at {wcb.add_attr(beatmap_path.as_uri(), emph_attr)}...")
             beatmap_path.unlink()
             self.reload()
 
         elif beatmap_path.is_dir():
-            print(f"{info_icon} Removing the beatmapset at {tui.add_attr(beatmap_path.as_uri(), emph_attr)}...")
+            print(f"{info_icon} Removing the beatmapset at {wcb.add_attr(beatmap_path.as_uri(), emph_attr)}...")
             shutil.rmtree(str(beatmap_path))
             self.reload()
 
         else:
-            print(tui.add_attr(f"Not a file: {str(beatmap)}", warn_attr))
+            print(wcb.add_attr(f"Not a file: {str(beatmap)}", warn_attr))
 
     @remove.arg_parser("beatmap")
     def _remove_beatmap_parser(self):
@@ -316,7 +316,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
         except ValueError as e:
             info = e.args[0]
-            print(tui.add_attr(info, warn_attr))
+            print(wcb.add_attr(info, warn_attr))
 
         else:
             self.settings.gameplay.detector.input_device = device
@@ -356,7 +356,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
         except ValueError as e:
             info = e.args[0]
-            print(tui.add_attr(info, warn_attr))
+            print(wcb.add_attr(info, warn_attr))
 
         else:
             self.settings.gameplay.mixer.output_device = device
@@ -506,7 +506,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             if not config_path.exists():
                 config.write(config_path)
             print(f"{data_icon} your data will be stored in "
-                  f"{tui.add_attr(data_dir.as_uri(), emph_attr)}")
+                  f"{wcb.add_attr(data_dir.as_uri(), emph_attr)}")
             print(flush=True)
 
         # load PyAudio
@@ -543,8 +543,8 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
                     return
 
                 # tips
-                print(f"{info_icon} Use {tui.add_attr('Tab', emph_attr)} to autocomplete command.")
-                print(f"{info_icon} If you need help, press {tui.add_attr('Alt+Enter', emph_attr)}.")
+                print(f"{info_icon} Use {wcb.add_attr('Tab', emph_attr)} to autocomplete command.")
+                print(f"{info_icon} If you need help, press {wcb.add_attr('Alt+Enter', emph_attr)}.")
                 print()
 
                 # prompt
@@ -621,12 +621,12 @@ class ConfigCommand:
     def rename(self, profile):
         if "\n" in profile or "\r" in profile:
             warn_attr = self.config.current.menu.warn_attr
-            print(tui.add_attr("Invalid profile name.", warn_attr))
+            print(wcb.add_attr("Invalid profile name.", warn_attr))
             return
 
         if profile in self.config.profiles:
             warn_attr = self.config.current.menu.warn_attr
-            print(tui.add_attr("This profile name already exists.", warn_attr))
+            print(wcb.add_attr("This profile name already exists.", warn_attr))
             return
 
         self.config.name = profile
@@ -635,12 +635,12 @@ class ConfigCommand:
     def new(self, profile, clone=None):
         if "\n" in profile or "\r" in profile:
             warn_attr = self.config.current.menu.warn_attr
-            print(tui.add_attr("Invalid profile name.", warn_attr))
+            print(wcb.add_attr("Invalid profile name.", warn_attr))
             return
 
         if profile == self.config.name or profile in self.config.profiles:
             warn_attr = self.config.current.menu.warn_attr
-            print(tui.add_attr("This profile name already exists.", warn_attr))
+            print(wcb.add_attr("This profile name already exists.", warn_attr))
             return
 
         self.config.new(profile, clone)
