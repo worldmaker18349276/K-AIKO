@@ -13,7 +13,7 @@ from typing import List, Set, Tuple, Dict, Union
 from . import datanodes as dn
 from . import biparsers as bp
 from . import wcbuffers as wcb
-from . import cfg
+from . import config as cfg
 
 
 def outdent(doc):

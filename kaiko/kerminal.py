@@ -9,7 +9,7 @@ import signal
 import numpy
 import pyaudio
 import audioread
-from . import cfg
+from . import config as cfg
 from . import datanodes as dn
 from . import wcbuffers as wcb
 

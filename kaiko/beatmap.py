@@ -9,7 +9,7 @@ import numpy
 import audioread
 from .kerminal import Mixer, MixerSettings, Detector, DetectorSettings, Renderer, RendererSettings
 from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings
-from . import cfg
+from . import config as cfg
 from . import datanodes as dn
 from . import wcbuffers as wcb
 

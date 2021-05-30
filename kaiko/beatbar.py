@@ -4,7 +4,7 @@ from enum import Enum
 from typing import List, Tuple, Dict, Optional, Union
 import queue
 import threading
-from . import cfg
+from . import config as cfg
 from . import datanodes as dn
 from . import wcbuffers as wcb
 

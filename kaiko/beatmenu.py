@@ -9,7 +9,7 @@ from pathlib import Path
 import appdirs
 import pyaudio
 from . import datanodes as dn
-from . import cfg
+from . import config as cfg
 from . import wcbuffers as wcb
 from . import kerminal
 from . import beatshell
