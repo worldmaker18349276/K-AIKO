@@ -638,16 +638,18 @@ class GameplaySettings(cfg.Configurable):
         tickrate: float = 60.0
 
     class widgets(cfg.Configurable):
-        icon_template: str = "\x1b[95m{spectrum:^8s}\x1b[m"
-        header_template: str = "\x1b[38;5;93;1m[\x1b[22m{score:05d}\x1b[1m/\x1b[22m{full_score:05d}\x1b[1m]"
-        footer_template: str = "\x1b[38;5;93;1m[\x1b[22m{progress:>6.1%}\x1b[1m|\x1b[22m{time:%M:%S}\x1b[1m]"
-        use: List[str] = ["spectrum"]
-
         class spectrum(cfg.Configurable):
+            attr: str = "95"
             spec_width: int = 6
             spec_decay_time: float = 0.01
             spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
             spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
+
+        class score(cfg.Configurable):
+            attr: str = "38;5;93"
+
+        class progress(cfg.Configurable):
+            attr: str = "38;5;93"
 
 class BeatmapPlayer:
     def __init__(self, beatmap, settings=None):
@@ -672,18 +674,6 @@ class BeatmapPlayer:
 
         self.perfs = []
         self.time = datetime.time(0, 0, 0)
-
-        # icon/header/footer handlers
-        icon_template = self.settings.widgets.icon_template
-        header_template = self.settings.widgets.header_template
-        footer_template = self.settings.widgets.footer_template
-
-        self.icon_func = lambda time, ran: icon_template.format(
-            **{name: getattr(self, name) for name in self.widgets})
-        self.header_func = lambda time, ran: header_template.format(
-            **{name: getattr(self, name) for name in self.widgets})
-        self.footer_func = lambda time, ran: footer_template.format(
-            **{name: getattr(self, name) for name in self.widgets})
 
         return abs(self.start_time)
 
@@ -710,14 +700,10 @@ class BeatmapPlayer:
         if self.audionode is not None:
             self.beatbar.mixer.play(self.audionode, time=0.0, zindex=(-3,))
 
-        # register handlers
-        for widget in self.settings.widgets.use:
-            if widget == "spectrum":
-                self.add_spectrum()
-
-        self.beatbar.current_icon.set(self.icon_func)
-        self.beatbar.current_header.set(self.header_func)
-        self.beatbar.current_footer.set(self.footer_func)
+        # use widgets
+        self.beatbar.current_icon.set(self._spectrum_widget())
+        self.beatbar.current_header.set(self._score_widget())
+        self.beatbar.current_footer.set(self._progress_widget())
 
         # game loop
         event_knot = dn.interval(consumer=self.update_events(), dt=1/tickrate)
@@ -747,17 +733,13 @@ class BeatmapPlayer:
                 event.register(self)
                 event = next(events_iter, None)
 
-            time = int(max(0.0, time)) # datetime cannot be negative
-            self.time = datetime.time(time//3600, time%3600//60, time%60)
+            self.time = time
 
             yield
             index += 1
 
-    @property
-    def progress(self):
-        return self.finished_subjects/self.total_subjects if self.total_subjects>0 else 1.0
-
-    def add_spectrum(self):
+    def _spectrum_widget(self):
+        attr = self.settings.widgets.spectrum.attr
         spec_width = self.settings.widgets.spectrum.spec_width
         samplerate = self.settings.mixer.output_samplerate
         nchannels = self.settings.mixer.output_channels
@@ -801,6 +783,29 @@ class BeatmapPlayer:
         self.spectrum = "\u2800"*spec_width
         self.widgets.append("spectrum")
         self.beatbar.mixer.add_effect(handler, zindex=(-1,))
+
+        def widget_func(time, ran):
+            spectrum = self.spectrum
+            width = ran.stop - ran.start
+            return f"\x1b[{attr}m{spectrum:^{width}.{width}s}\x1b[m"
+        return widget_func
+
+    def _score_widget(self):
+        attr = self.settings.widgets.score.attr
+        def widget_func(time, ran):
+            score = self.score
+            full_score = self.full_score
+            return f"\x1b[{attr};1m[\x1b[22m{score:05d}\x1b[1m/\x1b[22m{full_score:05d}\x1b[1m]\x1b[m"
+        return widget_func
+
+    def _progress_widget(self):
+        attr = self.settings.widgets.progress.attr
+        def widget_func(time, ran):
+            progress = self.finished_subjects/self.total_subjects if self.total_subjects>0 else 1.0
+            time = int(max(0.0, self.time)) # datetime cannot be negative
+            time = datetime.time(time//3600, time%3600//60, time%60)
+            return f"\x1b[{attr};1m[\x1b[22m{progress:>6.1%}\x1b[1m|\x1b[22m{time:%M:%S}\x1b[1m]\x1b[m"
+        return widget_func
 
 
     def add_score(self, score):
