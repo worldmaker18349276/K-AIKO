@@ -638,6 +638,10 @@ class GameplaySettings(cfg.Configurable):
         tickrate: float = 60.0
 
     class widgets(cfg.Configurable):
+        icon: str = "spectrum"
+        header: str = "score"
+        footer: str = "progress"
+
         class spectrum(cfg.Configurable):
             attr: str = "95"
             spec_width: int = 6
@@ -655,7 +659,6 @@ class BeatmapPlayer:
     def __init__(self, beatmap, settings=None):
         self.beatmap = beatmap
         self.settings = settings or GameplaySettings()
-        self.widgets = ["full_score", "score", "total_subjects", "finished_subjects", "progress", "time"]
 
     def prepare(self, output_samplerate, output_nchannels):
         # prepare music
@@ -701,9 +704,12 @@ class BeatmapPlayer:
             self.beatbar.mixer.play(self.audionode, time=0.0, zindex=(-3,))
 
         # use widgets
-        self.beatbar.current_icon.set(self._spectrum_widget())
-        self.beatbar.current_header.set(self._score_widget())
-        self.beatbar.current_footer.set(self._progress_widget())
+        icon_widget = self.settings.widgets.icon
+        header_widget = self.settings.widgets.header
+        footer_widget = self.settings.widgets.footer
+        self.beatbar.current_icon.set(Widget.get_widget(icon_widget, self))
+        self.beatbar.current_header.set(Widget.get_widget(header_widget, self))
+        self.beatbar.current_footer.set(Widget.get_widget(footer_widget, self))
 
         # game loop
         event_knot = dn.interval(consumer=self.update_events(), dt=1/tickrate)
@@ -737,75 +743,6 @@ class BeatmapPlayer:
 
             yield
             index += 1
-
-    def _spectrum_widget(self):
-        attr = self.settings.widgets.spectrum.attr
-        spec_width = self.settings.widgets.spectrum.spec_width
-        samplerate = self.settings.mixer.output_samplerate
-        nchannels = self.settings.mixer.output_channels
-        hop_length = round(samplerate * self.settings.widgets.spectrum.spec_time_res)
-        win_length = round(samplerate / self.settings.widgets.spectrum.spec_freq_res)
-        spec_decay_time = self.settings.widgets.spectrum.spec_decay_time
-
-        df = samplerate/win_length
-        n_fft = win_length//2+1
-        n = numpy.linspace(1, 88, spec_width*2+1)
-        f = 440 * 2**((n-49)/12) # frequency of n-th piano key
-        sec = numpy.minimum(n_fft-1, (f/df).round().astype(int))
-        slices = [slice(start, stop) for start, stop in zip(sec[:-1], (sec+1)[1:])]
-
-        decay = hop_length / samplerate / spec_decay_time / 4
-        volume_of = lambda J: dn.power2db(J.mean() * samplerate / 2, scale=(1e-5, 1e6)) / 60.0
-
-        A = numpy.cumsum([0, 2**6, 2**2, 2**1, 2**0])
-        B = numpy.cumsum([0, 2**7, 2**5, 2**4, 2**3])
-        draw_bar = lambda a, b: chr(0x2800 + A[int(a*4)] + B[int(b*4)])
-
-        node = dn.pipe(dn.frame(win_length, hop_length), dn.power_spectrum(win_length, samplerate=samplerate))
-
-        @dn.datanode
-        def draw_spectrum():
-            with node:
-                vols = [0.0]*(spec_width*2)
-
-                while True:
-                    data = yield
-                    try:
-                        J = node.send(data)
-                    except StopIteration:
-                        return
-
-                    vols = [max(0.0, prev-decay, min(1.0, volume_of(J[slic])))
-                            for slic, prev in zip(slices, vols)]
-                    self.spectrum = "".join(map(draw_bar, vols[0::2], vols[1::2]))
-
-        handler = dn.pipe(lambda a:a[0], dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels))))
-        self.spectrum = "\u2800"*spec_width
-        self.widgets.append("spectrum")
-        self.beatbar.mixer.add_effect(handler, zindex=(-1,))
-
-        def widget_func(time, ran):
-            spectrum = self.spectrum
-            width = ran.stop - ran.start
-            return f"\x1b[{attr}m{spectrum:^{width}.{width}s}\x1b[m"
-        return widget_func
-
-    def _score_widget(self):
-        attr = self.settings.widgets.score.attr
-        def widget_func(time, ran):
-            score = self.score
-            full_score = self.full_score
-            return f"\x1b[{attr};1m[\x1b[22m{score:05d}\x1b[1m/\x1b[22m{full_score:05d}\x1b[1m]\x1b[m"
-        return widget_func
-
-    def _progress_widget(self):
-        attr = self.settings.widgets.progress.attr
-        def widget_func(time, ran):
-            progress = self.finished_subjects/self.total_subjects if self.total_subjects>0 else 1.0
-            time = int(max(0.0, self.time)) # datetime cannot be negative
-            time = datetime.time(time//3600, time%3600//60, time%60)
-            return f"\x1b[{attr};1m[\x1b[22m{progress:>6.1%}\x1b[1m|\x1b[22m{time:%M:%S}\x1b[1m]\x1b[m"
-        return widget_func
 
 
     def add_score(self, score):
@@ -843,4 +780,84 @@ class BeatmapPlayer:
     def on_before_render(self, node):
         node = dn.pipe(dn.branch(lambda a:a[1:], node), lambda a:a[0])
         return self.beatbar.renderer.add_drawer(node, zindex=())
+
+
+class Widget:
+    @staticmethod
+    def get_widget(name, field):
+        func = getattr(Widget, name, None)
+        if func is None:
+            raise ValueError("no such widget: " + name)
+        return func(field)
+
+    @staticmethod
+    def spectrum(field):
+        attr = field.settings.widgets.spectrum.attr
+        spec_width = field.settings.widgets.spectrum.spec_width
+        samplerate = field.settings.mixer.output_samplerate
+        nchannels = field.settings.mixer.output_channels
+        hop_length = round(samplerate * field.settings.widgets.spectrum.spec_time_res)
+        win_length = round(samplerate / field.settings.widgets.spectrum.spec_freq_res)
+        spec_decay_time = field.settings.widgets.spectrum.spec_decay_time
+
+        df = samplerate/win_length
+        n_fft = win_length//2+1
+        n = numpy.linspace(1, 88, spec_width*2+1)
+        f = 440 * 2**((n-49)/12) # frequency of n-th piano key
+        sec = numpy.minimum(n_fft-1, (f/df).round().astype(int))
+        slices = [slice(start, stop) for start, stop in zip(sec[:-1], (sec+1)[1:])]
+
+        decay = hop_length / samplerate / spec_decay_time / 4
+        volume_of = lambda J: dn.power2db(J.mean() * samplerate / 2, scale=(1e-5, 1e6)) / 60.0
+
+        A = numpy.cumsum([0, 2**6, 2**2, 2**1, 2**0])
+        B = numpy.cumsum([0, 2**7, 2**5, 2**4, 2**3])
+        draw_bar = lambda a, b: chr(0x2800 + A[int(a*4)] + B[int(b*4)])
+
+        node = dn.pipe(dn.frame(win_length, hop_length), dn.power_spectrum(win_length, samplerate=samplerate))
+
+        @dn.datanode
+        def draw_spectrum():
+            with node:
+                vols = [0.0]*(spec_width*2)
+
+                while True:
+                    data = yield
+                    try:
+                        J = node.send(data)
+                    except StopIteration:
+                        return
+
+                    vols = [max(0.0, prev-decay, min(1.0, volume_of(J[slic])))
+                            for slic, prev in zip(slices, vols)]
+                    field.spectrum = "".join(map(draw_bar, vols[0::2], vols[1::2]))
+
+        handler = dn.pipe(lambda a:a[0], dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels))))
+        field.spectrum = "\u2800"*spec_width
+        field.beatbar.mixer.add_effect(handler, zindex=(-1,))
+
+        def widget_func(time, ran):
+            spectrum = field.spectrum
+            width = ran.stop - ran.start
+            return f"\x1b[{attr}m{spectrum:^{width}.{width}s}\x1b[m"
+        return widget_func
+
+    @staticmethod
+    def score(field):
+        attr = field.settings.widgets.score.attr
+        def widget_func(time, ran):
+            score = field.score
+            full_score = field.full_score
+            return f"\x1b[{attr};1m[\x1b[22m{score:05d}\x1b[1m/\x1b[22m{full_score:05d}\x1b[1m]\x1b[m"
+        return widget_func
+
+    @staticmethod
+    def progress(field):
+        attr = field.settings.widgets.progress.attr
+        def widget_func(time, ran):
+            progress = field.finished_subjects/field.total_subjects if field.total_subjects>0 else 1.0
+            time = int(max(0.0, field.time)) # datetime cannot be negative
+            time = datetime.time(time//3600, time%3600//60, time%60)
+            return f"\x1b[{attr};1m[\x1b[22m{progress:>6.1%}\x1b[1m|\x1b[22m{time:%M:%S}\x1b[1m]\x1b[m"
+        return widget_func
 
