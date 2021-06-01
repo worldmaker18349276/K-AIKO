@@ -90,7 +90,7 @@ class BeatbarSettings(cfg.Configurable):
     class layout(cfg.Configurable):
         icon_width: int = 8
         header_width: int = 13
-        footer_width: int = 14
+        footer_width: int = 13
 
     class scrollingbar(cfg.Configurable):
         performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
@@ -159,8 +159,9 @@ class Beatbar:
 
         icon_mask = slice(None, icon_width)
         header_mask = slice(icon_width, icon_width+header_width)
-        content_mask = slice(icon_width+header_width, -footer_width)
-        footer_mask = slice(-footer_width, None)
+        content_mask = (slice(icon_width+header_width, -footer_width)
+                        if footer_width > 0 else slice(icon_width+header_width, None))
+        footer_mask = slice(-footer_width, None) if footer_width > 0 else slice(0, 0)
 
         content_scheduler = dn.Scheduler()
         current_icon = dn.TimedVariable(value=lambda time, ran: "")

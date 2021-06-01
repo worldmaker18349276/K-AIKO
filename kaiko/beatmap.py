@@ -782,6 +782,50 @@ class BeatmapPlayer:
         return self.beatbar.renderer.add_drawer(node, zindex=())
 
 
+def uint_format(value, width, zero_padded=False):
+    scales = "KMGTPEZY"
+    pad = "0" if zero_padded else " "
+
+    if width == 0:
+        return ""
+    if width == 1:
+        return str(value) if value < 10 else "+"
+
+    if width == 2 and value < 1000:
+        return f"{value:{pad}{width}d}" if value < 10 else "9+"
+    elif value < 10**width:
+        return f"{value:{pad}{width}d}"
+
+    for scale, symbol in enumerate(scales):
+        if value < 1000**(scale+2):
+            if width == 2:
+                return symbol + "+"
+
+            value_ = value // 1000**(scale+1)
+            eff = f"{value_:{pad}{width-2}d}" if value_ < 10**(width-2) else str(10**(width-2)-1)
+            return eff + symbol + "+"
+
+    else:
+        return str(10**(width-2)-1) + scales[-1] + "+"
+
+def time_format(value, width):
+    if width < 4:
+        return uint_format(value, width, True)
+    else:
+        return f"{uint_format(value//60, width-3, True)}:{value%60:02d}"
+
+def pc_format(value, width):
+    if width == 0:
+        return ""
+    if width == 1:
+        return "1" if value == 1 else "0"
+    if width == 2:
+        return f"1." if value == 1 else "." + str(int(value*10))
+    if width == 3:
+        return f"1.0" if value == 1 else f"{value:>{width}.0%}"
+    if width >= 4:
+        return f"{value:>{width}.0%}" if value == 1 else f"{value:>{width}.{width-4}%}"
+
 class Widget:
     @staticmethod
     def get_widget(name, field):
@@ -848,7 +892,23 @@ class Widget:
         def widget_func(time, ran):
             score = field.score
             full_score = field.full_score
-            return f"\x1b[{attr};1m[\x1b[22m{score:05d}\x1b[1m/\x1b[22m{full_score:05d}\x1b[1m]\x1b[m"
+            width = ran.stop - ran.start
+
+            if width == 0:
+                return ""
+            if width == 1:
+                return f"\x1b[{attr};1m|\x1b[m"
+            if width == 2:
+                return f"\x1b[{attr};1m[]\x1b[m"
+            if width <= 7:
+                score_str = uint_format(score, width-2, True)
+                return f"\x1b[{attr};1m[\x1b[22m{score_str}\x1b[1m]\x1b[m"
+
+            w1 = max((width-3)//2, 5)
+            w2 = (width-3) - w1
+            score_str = uint_format(score, w1, True)
+            full_score_str = uint_format(full_score, w2, True)
+            return f"\x1b[{attr};1m[\x1b[22m{score_str}\x1b[1m/\x1b[22m{full_score_str}\x1b[1m]\x1b[m"
         return widget_func
 
     @staticmethod
@@ -856,8 +916,23 @@ class Widget:
         attr = field.settings.widgets.progress.attr
         def widget_func(time, ran):
             progress = field.finished_subjects/field.total_subjects if field.total_subjects>0 else 1.0
-            time = int(max(0.0, field.time)) # datetime cannot be negative
-            time = datetime.time(time//3600, time%3600//60, time%60)
-            return f"\x1b[{attr};1m[\x1b[22m{progress:>6.1%}\x1b[1m|\x1b[22m{time:%M:%S}\x1b[1m]\x1b[m"
+            time = int(max(0.0, field.time))
+            width = ran.stop - ran.start
+
+            if width == 0:
+                return ""
+            if width == 1:
+                return f"\x1b[{attr};1m|\x1b[m"
+            if width == 2:
+                return f"\x1b[{attr};1m[]\x1b[m"
+            if width <= 7:
+                progress_str = pc_format(progress, width-2)
+                return f"\x1b[{attr};1m[\x1b[22m{progress_str}\x1b[1m]\x1b[m"
+
+            w1 = max((width-3)//2, 5)
+            w2 = (width-3) - w1
+            progress_str = pc_format(progress, w1)
+            time_str = time_format(time, w2)
+            return f"\x1b[{attr};1m[\x1b[22m{progress_str}\x1b[1m|\x1b[22m{time_str}\x1b[1m]\x1b[m"
         return widget_func
 
