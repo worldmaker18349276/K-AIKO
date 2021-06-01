@@ -655,6 +655,10 @@ class GameplaySettings(cfg.Configurable):
         class progress(cfg.Configurable):
             attr: str = "38;5;93"
 
+        class bounce(cfg.Configurable):
+            attr: str = "95"
+            division: int = 2
+
 class BeatmapPlayer:
     def __init__(self, beatmap, settings=None):
         self.beatmap = beatmap
@@ -934,5 +938,33 @@ class Widget:
             progress_str = pc_format(progress, w1)
             time_str = time_format(time, w2)
             return f"\x1b[{attr};1m[\x1b[22m{progress_str}\x1b[1m|\x1b[22m{time_str}\x1b[1m]\x1b[m"
+        return widget_func
+
+    @staticmethod
+    def bounce(field):
+        attr = field.settings.widgets.bounce.attr
+        division = field.settings.widgets.bounce.division
+
+        offset = field.beatmap.offset
+        period = 60.0 / field.beatmap.tempo / division
+        def widget_func(time, ran):
+            width = ran.stop - ran.start
+
+            if width == 0:
+                return ""
+            if width == 1:
+                return f"\x1b[{attr};1m|\x1b[m"
+            if width == 2:
+                return f"\x1b[{attr};1m[]\x1b[m"
+
+            turns = (time - offset) / period
+            index = int(turns % 1 * (width-3) // 1)
+            dir = int(turns % 2 // 1 * 2 - 1)
+            inner = [" "]*(width-2)
+            if dir > 0:
+                inner[index] = "="
+            else:
+                inner[-1-index] = "="
+            return f"\x1b[{attr};1m[\x1b[22m{''.join(inner)}\x1b[1m]\x1b[m"
         return widget_func
 
