@@ -649,6 +649,10 @@ class GameplaySettings(cfg.Configurable):
             spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
             spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
 
+        class volume_indicator(cfg.Configurable):
+            attr: str = "95"
+            vol_decay_time: float = 0.01
+
         class score(cfg.Configurable):
             attr: str = "38;5;93"
 
@@ -888,6 +892,36 @@ class Widget:
             spectrum = field.spectrum
             width = ran.stop - ran.start
             return f"\x1b[{attr}m{spectrum:^{width}.{width}s}\x1b[m"
+        return widget_func
+
+    @staticmethod
+    def volume_indicator(field):
+        attr = field.settings.widgets.volume_indicator.attr
+        vol_decay_time = field.settings.widgets.volume_indicator.vol_decay_time
+        buffer_length = field.settings.mixer.output_buffer_length
+        samplerate = field.settings.mixer.output_samplerate
+
+        decay = buffer_length / samplerate / vol_decay_time
+
+        volume_of = lambda x: dn.power2db((x**2).mean(), scale=(1e-5, 1e6)) / 60.0
+
+        @dn.datanode
+        def volume_indicator():
+            vol = 0.0
+
+            while True:
+                data = yield
+                vol = max(0.0, vol-decay, min(1.0, volume_of(data)))
+                field.volume_indicator = vol
+
+        handler = dn.pipe(lambda a:a[0], dn.branch(volume_indicator()))
+        field.volume_indicator = 0.0
+        field.beatbar.mixer.add_effect(handler, zindex=(-1,))
+
+        def widget_func(time, ran):
+            volume_indicator = field.volume_indicator
+            width = ran.stop - ran.start
+            return f"\x1b[{attr}m" + "▮" * int(volume_indicator * width) + "\x1b[m"
         return widget_func
 
     @staticmethod
