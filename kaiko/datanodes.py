@@ -66,8 +66,9 @@ class DataNode:
 
         except StopIteration:
             self.finalized = True
+            return self
 
-        finally:
+        else:
             return self
 
     def __exit__(self, type=None, value=None, traceback=None):
