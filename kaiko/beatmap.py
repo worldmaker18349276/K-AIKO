@@ -1,6 +1,7 @@
 import os
 import datetime
 import contextlib
+from enum import Enum
 from dataclasses import dataclass, replace
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
@@ -625,6 +626,268 @@ class Beatmap(Playable):
         return events
 
 
+def uint_format(value, width, zero_padded=False):
+    scales = "KMGTPEZY"
+    pad = "0" if zero_padded else " "
+
+    if width == 0:
+        return ""
+    if width == 1:
+        return str(value) if value < 10 else "+"
+
+    if width == 2 and value < 1000:
+        return f"{value:{pad}{width}d}" if value < 10 else "9+"
+    elif value < 10**width:
+        return f"{value:{pad}{width}d}"
+
+    for scale, symbol in enumerate(scales):
+        if value < 1000**(scale+2):
+            if width == 2:
+                return symbol + "+"
+
+            value_ = value // 1000**(scale+1)
+            eff = f"{value_:{pad}{width-2}d}" if value_ < 10**(width-2) else str(10**(width-2)-1)
+            return eff + symbol + "+"
+
+    else:
+        return str(10**(width-2)-1) + scales[-1] + "+"
+
+def time_format(value, width):
+    if width < 4:
+        return uint_format(value, width, True)
+    else:
+        return f"{uint_format(value//60, width-3, True)}:{value%60:02d}"
+
+def pc_format(value, width):
+    if width == 0:
+        return ""
+    if width == 1:
+        return "1" if value == 1 else "0"
+    if width == 2:
+        return f"1." if value == 1 else "." + str(int(value*10))
+    if width == 3:
+        return f"1.0" if value == 1 else f"{value:>{width}.0%}"
+    if width >= 4:
+        return f"{value:>{width}.0%}" if value == 1 else f"{value:>{width}.{width-4}%}"
+
+class Widget(Enum):
+    spectrum = "spectrum"
+    volume_indicator = "volume_indicator"
+    score = "score"
+    progress = "progress"
+    bounce = "bounce"
+    accuracy_meter = "accuracy_meter"
+
+class WidgetManager:
+    @staticmethod
+    def use_widget(name, field):
+        func = getattr(WidgetManager, name.value, None)
+        if func is None:
+            raise ValueError("no such widget: " + name)
+        func(field)
+
+    @staticmethod
+    def spectrum(field):
+        attr = field.settings.widgets.spectrum.attr
+        spec_width = field.settings.widgets.spectrum.spec_width
+        samplerate = field.settings.mixer.output_samplerate
+        nchannels = field.settings.mixer.output_channels
+        hop_length = round(samplerate * field.settings.widgets.spectrum.spec_time_res)
+        win_length = round(samplerate / field.settings.widgets.spectrum.spec_freq_res)
+        spec_decay_time = field.settings.widgets.spectrum.spec_decay_time
+
+        df = samplerate/win_length
+        n_fft = win_length//2+1
+        n = numpy.linspace(1, 88, spec_width*2+1)
+        f = 440 * 2**((n-49)/12) # frequency of n-th piano key
+        sec = numpy.minimum(n_fft-1, (f/df).round().astype(int))
+        slices = [slice(start, stop) for start, stop in zip(sec[:-1], (sec+1)[1:])]
+
+        decay = hop_length / samplerate / spec_decay_time / 4
+        volume_of = lambda J: dn.power2db(J.mean() * samplerate / 2, scale=(1e-5, 1e6)) / 60.0
+
+        A = numpy.cumsum([0, 2**6, 2**2, 2**1, 2**0])
+        B = numpy.cumsum([0, 2**7, 2**5, 2**4, 2**3])
+        draw_bar = lambda a, b: chr(0x2800 + A[int(a*4)] + B[int(b*4)])
+
+        node = dn.pipe(dn.frame(win_length, hop_length), dn.power_spectrum(win_length, samplerate=samplerate))
+
+        @dn.datanode
+        def draw_spectrum():
+            with node:
+                vols = [0.0]*(spec_width*2)
+
+                while True:
+                    data = yield
+                    try:
+                        J = node.send(data)
+                    except StopIteration:
+                        return
+
+                    vols = [max(0.0, prev-decay, min(1.0, volume_of(J[slic])))
+                            for slic, prev in zip(slices, vols)]
+                    field.spectrum = "".join(map(draw_bar, vols[0::2], vols[1::2]))
+
+        handler = dn.pipe(lambda a:a[0], dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels))))
+        field.spectrum = "\u2800"*spec_width
+        field.beatbar.mixer.add_effect(handler, zindex=(-1,))
+
+        def widget_func(time, ran):
+            spectrum = field.spectrum
+            width = ran.stop - ran.start
+            return f"\x1b[{attr}m{spectrum:^{width}.{width}s}\x1b[m"
+
+        field.beatbar.current_icon.set(widget_func)
+
+    @staticmethod
+    def volume_indicator(field):
+        attr = field.settings.widgets.volume_indicator.attr
+        vol_decay_time = field.settings.widgets.volume_indicator.vol_decay_time
+        buffer_length = field.settings.mixer.output_buffer_length
+        samplerate = field.settings.mixer.output_samplerate
+
+        decay = buffer_length / samplerate / vol_decay_time
+
+        volume_of = lambda x: dn.power2db((x**2).mean(), scale=(1e-5, 1e6)) / 60.0
+
+        @dn.datanode
+        def volume_indicator():
+            vol = 0.0
+
+            while True:
+                data = yield
+                vol = max(0.0, vol-decay, min(1.0, volume_of(data)))
+                field.volume_indicator = vol
+
+        handler = dn.pipe(lambda a:a[0], dn.branch(volume_indicator()))
+        field.volume_indicator = 0.0
+        field.beatbar.mixer.add_effect(handler, zindex=(-1,))
+
+        def widget_func(time, ran):
+            volume_indicator = field.volume_indicator
+            width = ran.stop - ran.start
+            return f"\x1b[{attr}m" + "▮" * int(volume_indicator * width) + "\x1b[m"
+
+        field.beatbar.current_icon.set(widget_func)
+
+    @staticmethod
+    def score(field):
+        attr = field.settings.widgets.score.attr
+        def widget_func(time, ran):
+            score = field.score
+            full_score = field.full_score
+            width = ran.stop - ran.start
+
+            if width == 0:
+                return ""
+            if width == 1:
+                return f"\x1b[{attr};1m|\x1b[m"
+            if width == 2:
+                return f"\x1b[{attr};1m[]\x1b[m"
+            if width <= 7:
+                score_str = uint_format(score, width-2, True)
+                return f"\x1b[{attr};1m[\x1b[22m{score_str}\x1b[1m]\x1b[m"
+
+            w1 = max((width-3)//2, 5)
+            w2 = (width-3) - w1
+            score_str = uint_format(score, w1, True)
+            full_score_str = uint_format(full_score, w2, True)
+            return f"\x1b[{attr};1m[\x1b[22m{score_str}\x1b[1m/\x1b[22m{full_score_str}\x1b[1m]\x1b[m"
+
+        field.beatbar.current_header.set(widget_func)
+
+    @staticmethod
+    def progress(field):
+        attr = field.settings.widgets.progress.attr
+        def widget_func(time, ran):
+            progress = field.finished_subjects/field.total_subjects if field.total_subjects>0 else 1.0
+            time = int(max(0.0, field.time))
+            width = ran.stop - ran.start
+
+            if width == 0:
+                return ""
+            if width == 1:
+                return f"\x1b[{attr};1m|\x1b[m"
+            if width == 2:
+                return f"\x1b[{attr};1m[]\x1b[m"
+            if width <= 7:
+                progress_str = pc_format(progress, width-2)
+                return f"\x1b[{attr};1m[\x1b[22m{progress_str}\x1b[1m]\x1b[m"
+
+            w1 = max((width-3)//2, 5)
+            w2 = (width-3) - w1
+            progress_str = pc_format(progress, w1)
+            time_str = time_format(time, w2)
+            return f"\x1b[{attr};1m[\x1b[22m{progress_str}\x1b[1m|\x1b[22m{time_str}\x1b[1m]\x1b[m"
+
+        field.beatbar.current_footer.set(widget_func)
+
+    @staticmethod
+    def bounce(field):
+        attr = field.settings.widgets.bounce.attr
+        division = field.settings.widgets.bounce.division
+
+        offset = field.beatmap.offset
+        period = 60.0 / field.beatmap.tempo / division
+        def widget_func(time, ran):
+            width = ran.stop - ran.start
+
+            if width == 0:
+                return ""
+            if width == 1:
+                return f"\x1b[{attr};1m|\x1b[m"
+            if width == 2:
+                return f"\x1b[{attr};1m[]\x1b[m"
+
+            turns = (time - offset) / period
+            index = int(turns % 1 * (width-3) // 1)
+            dir = int(turns % 2 // 1 * 2 - 1)
+            inner = [" "]*(width-2)
+            if dir > 0:
+                inner[index] = "="
+            else:
+                inner[-1-index] = "="
+            return f"\x1b[{attr};1m[\x1b[22m{''.join(inner)}\x1b[1m]\x1b[m"
+
+        field.beatbar.current_icon.set(widget_func)
+
+    @staticmethod
+    def accuracy_meter(field):
+        meter_width = field.settings.widgets.accuracy_meter.meter_width
+        meter_decay_time = field.settings.widgets.accuracy_meter.meter_decay_time
+        meter_tolerance = field.settings.widgets.accuracy_meter.meter_tolerance
+
+        length = meter_width*2
+        last_perf = 0
+        last_time = float("inf")
+        hit = [0.0]*length
+        nlevel = 24
+
+        def widget_func(time, ran):
+            nonlocal last_perf, last_time
+
+            new_err = []
+            while len(field.perfs) > last_perf:
+                err = field.perfs[last_perf].err
+                index = max(min(int((err-meter_tolerance)/-meter_tolerance/2 * length//1), length-1), 0)
+                new_err.append(index)
+                last_perf += 1
+
+            decay = max(0.0, time - last_time) / meter_decay_time
+            last_time = time
+
+            for i in range(meter_width*2):
+                if i in new_err:
+                    hit[i] = 1.0
+                else:
+                    hit[i] = max(0.0, hit[i] - decay)
+
+            return "".join(f"\x1b[48;5;{232+int(i*(nlevel-1))};38;5;{232+int(j*(nlevel-1))}m▐\x1b[m"
+                           for i, j in zip(hit[::2], hit[1::2]))
+
+        field.beatbar.current_icon.set(widget_func)
+
+
 class GameplaySettings(cfg.Configurable):
     mixer = MixerSettings
     detector = DetectorSettings
@@ -638,9 +901,7 @@ class GameplaySettings(cfg.Configurable):
         tickrate: float = 60.0
 
     class widgets(cfg.Configurable):
-        icon: str = "spectrum"
-        header: str = "score"
-        footer: str = "progress"
+        use: List[Widget] = [Widget.spectrum, Widget.score, Widget.progress]
 
         class spectrum(cfg.Configurable):
             attr: str = "95"
@@ -717,12 +978,8 @@ class BeatmapPlayer:
             self.beatbar.mixer.play(self.audionode, time=0.0, zindex=(-3,))
 
         # use widgets
-        icon_widget = self.settings.widgets.icon
-        header_widget = self.settings.widgets.header
-        footer_widget = self.settings.widgets.footer
-        self.beatbar.current_icon.set(Widget.get_widget(icon_widget, self))
-        self.beatbar.current_header.set(Widget.get_widget(header_widget, self))
-        self.beatbar.current_footer.set(Widget.get_widget(footer_widget, self))
+        for widget in self.settings.widgets.use:
+            WidgetManager.use_widget(widget, self)
 
         # game loop
         event_knot = dn.interval(consumer=self.update_events(), dt=1/tickrate)
@@ -793,252 +1050,4 @@ class BeatmapPlayer:
     def on_before_render(self, node):
         node = dn.pipe(dn.branch(lambda a:a[1:], node), lambda a:a[0])
         return self.beatbar.renderer.add_drawer(node, zindex=())
-
-
-def uint_format(value, width, zero_padded=False):
-    scales = "KMGTPEZY"
-    pad = "0" if zero_padded else " "
-
-    if width == 0:
-        return ""
-    if width == 1:
-        return str(value) if value < 10 else "+"
-
-    if width == 2 and value < 1000:
-        return f"{value:{pad}{width}d}" if value < 10 else "9+"
-    elif value < 10**width:
-        return f"{value:{pad}{width}d}"
-
-    for scale, symbol in enumerate(scales):
-        if value < 1000**(scale+2):
-            if width == 2:
-                return symbol + "+"
-
-            value_ = value // 1000**(scale+1)
-            eff = f"{value_:{pad}{width-2}d}" if value_ < 10**(width-2) else str(10**(width-2)-1)
-            return eff + symbol + "+"
-
-    else:
-        return str(10**(width-2)-1) + scales[-1] + "+"
-
-def time_format(value, width):
-    if width < 4:
-        return uint_format(value, width, True)
-    else:
-        return f"{uint_format(value//60, width-3, True)}:{value%60:02d}"
-
-def pc_format(value, width):
-    if width == 0:
-        return ""
-    if width == 1:
-        return "1" if value == 1 else "0"
-    if width == 2:
-        return f"1." if value == 1 else "." + str(int(value*10))
-    if width == 3:
-        return f"1.0" if value == 1 else f"{value:>{width}.0%}"
-    if width >= 4:
-        return f"{value:>{width}.0%}" if value == 1 else f"{value:>{width}.{width-4}%}"
-
-class Widget:
-    @staticmethod
-    def get_widget(name, field):
-        func = getattr(Widget, name, None)
-        if func is None:
-            raise ValueError("no such widget: " + name)
-        return func(field)
-
-    @staticmethod
-    def spectrum(field):
-        attr = field.settings.widgets.spectrum.attr
-        spec_width = field.settings.widgets.spectrum.spec_width
-        samplerate = field.settings.mixer.output_samplerate
-        nchannels = field.settings.mixer.output_channels
-        hop_length = round(samplerate * field.settings.widgets.spectrum.spec_time_res)
-        win_length = round(samplerate / field.settings.widgets.spectrum.spec_freq_res)
-        spec_decay_time = field.settings.widgets.spectrum.spec_decay_time
-
-        df = samplerate/win_length
-        n_fft = win_length//2+1
-        n = numpy.linspace(1, 88, spec_width*2+1)
-        f = 440 * 2**((n-49)/12) # frequency of n-th piano key
-        sec = numpy.minimum(n_fft-1, (f/df).round().astype(int))
-        slices = [slice(start, stop) for start, stop in zip(sec[:-1], (sec+1)[1:])]
-
-        decay = hop_length / samplerate / spec_decay_time / 4
-        volume_of = lambda J: dn.power2db(J.mean() * samplerate / 2, scale=(1e-5, 1e6)) / 60.0
-
-        A = numpy.cumsum([0, 2**6, 2**2, 2**1, 2**0])
-        B = numpy.cumsum([0, 2**7, 2**5, 2**4, 2**3])
-        draw_bar = lambda a, b: chr(0x2800 + A[int(a*4)] + B[int(b*4)])
-
-        node = dn.pipe(dn.frame(win_length, hop_length), dn.power_spectrum(win_length, samplerate=samplerate))
-
-        @dn.datanode
-        def draw_spectrum():
-            with node:
-                vols = [0.0]*(spec_width*2)
-
-                while True:
-                    data = yield
-                    try:
-                        J = node.send(data)
-                    except StopIteration:
-                        return
-
-                    vols = [max(0.0, prev-decay, min(1.0, volume_of(J[slic])))
-                            for slic, prev in zip(slices, vols)]
-                    field.spectrum = "".join(map(draw_bar, vols[0::2], vols[1::2]))
-
-        handler = dn.pipe(lambda a:a[0], dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels))))
-        field.spectrum = "\u2800"*spec_width
-        field.beatbar.mixer.add_effect(handler, zindex=(-1,))
-
-        def widget_func(time, ran):
-            spectrum = field.spectrum
-            width = ran.stop - ran.start
-            return f"\x1b[{attr}m{spectrum:^{width}.{width}s}\x1b[m"
-        return widget_func
-
-    @staticmethod
-    def volume_indicator(field):
-        attr = field.settings.widgets.volume_indicator.attr
-        vol_decay_time = field.settings.widgets.volume_indicator.vol_decay_time
-        buffer_length = field.settings.mixer.output_buffer_length
-        samplerate = field.settings.mixer.output_samplerate
-
-        decay = buffer_length / samplerate / vol_decay_time
-
-        volume_of = lambda x: dn.power2db((x**2).mean(), scale=(1e-5, 1e6)) / 60.0
-
-        @dn.datanode
-        def volume_indicator():
-            vol = 0.0
-
-            while True:
-                data = yield
-                vol = max(0.0, vol-decay, min(1.0, volume_of(data)))
-                field.volume_indicator = vol
-
-        handler = dn.pipe(lambda a:a[0], dn.branch(volume_indicator()))
-        field.volume_indicator = 0.0
-        field.beatbar.mixer.add_effect(handler, zindex=(-1,))
-
-        def widget_func(time, ran):
-            volume_indicator = field.volume_indicator
-            width = ran.stop - ran.start
-            return f"\x1b[{attr}m" + "▮" * int(volume_indicator * width) + "\x1b[m"
-        return widget_func
-
-    @staticmethod
-    def score(field):
-        attr = field.settings.widgets.score.attr
-        def widget_func(time, ran):
-            score = field.score
-            full_score = field.full_score
-            width = ran.stop - ran.start
-
-            if width == 0:
-                return ""
-            if width == 1:
-                return f"\x1b[{attr};1m|\x1b[m"
-            if width == 2:
-                return f"\x1b[{attr};1m[]\x1b[m"
-            if width <= 7:
-                score_str = uint_format(score, width-2, True)
-                return f"\x1b[{attr};1m[\x1b[22m{score_str}\x1b[1m]\x1b[m"
-
-            w1 = max((width-3)//2, 5)
-            w2 = (width-3) - w1
-            score_str = uint_format(score, w1, True)
-            full_score_str = uint_format(full_score, w2, True)
-            return f"\x1b[{attr};1m[\x1b[22m{score_str}\x1b[1m/\x1b[22m{full_score_str}\x1b[1m]\x1b[m"
-        return widget_func
-
-    @staticmethod
-    def progress(field):
-        attr = field.settings.widgets.progress.attr
-        def widget_func(time, ran):
-            progress = field.finished_subjects/field.total_subjects if field.total_subjects>0 else 1.0
-            time = int(max(0.0, field.time))
-            width = ran.stop - ran.start
-
-            if width == 0:
-                return ""
-            if width == 1:
-                return f"\x1b[{attr};1m|\x1b[m"
-            if width == 2:
-                return f"\x1b[{attr};1m[]\x1b[m"
-            if width <= 7:
-                progress_str = pc_format(progress, width-2)
-                return f"\x1b[{attr};1m[\x1b[22m{progress_str}\x1b[1m]\x1b[m"
-
-            w1 = max((width-3)//2, 5)
-            w2 = (width-3) - w1
-            progress_str = pc_format(progress, w1)
-            time_str = time_format(time, w2)
-            return f"\x1b[{attr};1m[\x1b[22m{progress_str}\x1b[1m|\x1b[22m{time_str}\x1b[1m]\x1b[m"
-        return widget_func
-
-    @staticmethod
-    def bounce(field):
-        attr = field.settings.widgets.bounce.attr
-        division = field.settings.widgets.bounce.division
-
-        offset = field.beatmap.offset
-        period = 60.0 / field.beatmap.tempo / division
-        def widget_func(time, ran):
-            width = ran.stop - ran.start
-
-            if width == 0:
-                return ""
-            if width == 1:
-                return f"\x1b[{attr};1m|\x1b[m"
-            if width == 2:
-                return f"\x1b[{attr};1m[]\x1b[m"
-
-            turns = (time - offset) / period
-            index = int(turns % 1 * (width-3) // 1)
-            dir = int(turns % 2 // 1 * 2 - 1)
-            inner = [" "]*(width-2)
-            if dir > 0:
-                inner[index] = "="
-            else:
-                inner[-1-index] = "="
-            return f"\x1b[{attr};1m[\x1b[22m{''.join(inner)}\x1b[1m]\x1b[m"
-        return widget_func
-
-    @staticmethod
-    def accuracy_meter(field):
-        meter_width = field.settings.widgets.accuracy_meter.meter_width
-        meter_decay_time = field.settings.widgets.accuracy_meter.meter_decay_time
-        meter_tolerance = field.settings.widgets.accuracy_meter.meter_tolerance
-
-        length = meter_width*2
-        last_perf = 0
-        last_time = float("inf")
-        hit = [0.0]*length
-        nlevel = 24
-
-        def widget_func(time, ran):
-            nonlocal last_perf, last_time
-
-            new_err = []
-            while len(field.perfs) > last_perf:
-                err = field.perfs[last_perf].err
-                index = max(min(int((err-meter_tolerance)/-meter_tolerance/2 * length//1), length-1), 0)
-                new_err.append(index)
-                last_perf += 1
-
-            decay = max(0.0, time - last_time) / meter_decay_time
-            last_time = time
-
-            for i in range(meter_width*2):
-                if i in new_err:
-                    hit[i] = 1.0
-                else:
-                    hit[i] = max(0.0, hit[i] - decay)
-
-            return "".join(f"\x1b[48;5;{232+int(i*(nlevel-1))};38;5;{232+int(j*(nlevel-1))}m▐\x1b[m"
-                           for i, j in zip(hit[::2], hit[1::2]))
-        return widget_func
 
