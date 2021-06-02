@@ -866,8 +866,8 @@ class WidgetManager:
             new_err = []
             while len(field.perfs) > last_perf:
                 err = field.perfs[last_perf].err
-                index = max(min(int((err-meter_tolerance)/-meter_tolerance/2 * length//1), length-1), 0)
-                new_err.append(index)
+                if err is not None:
+                    new_err.append(max(min(int((err-meter_tolerance)/-meter_tolerance/2 * length//1), length-1), 0))
                 last_perf += 1
 
             decay = max(0.0, time - last_time) / meter_decay_time
