@@ -663,6 +663,11 @@ class GameplaySettings(cfg.Configurable):
             attr: str = "95"
             division: int = 2
 
+        class accuracy_meter(cfg.Configurable):
+            meter_width: int = 8
+            meter_decay_time: float = 1.5
+            meter_tolerance: float = 0.10
+
 class BeatmapPlayer:
     def __init__(self, beatmap, settings=None):
         self.beatmap = beatmap
@@ -1000,5 +1005,40 @@ class Widget:
             else:
                 inner[-1-index] = "="
             return f"\x1b[{attr};1m[\x1b[22m{''.join(inner)}\x1b[1m]\x1b[m"
+        return widget_func
+
+    @staticmethod
+    def accuracy_meter(field):
+        meter_width = field.settings.widgets.accuracy_meter.meter_width
+        meter_decay_time = field.settings.widgets.accuracy_meter.meter_decay_time
+        meter_tolerance = field.settings.widgets.accuracy_meter.meter_tolerance
+
+        length = meter_width*2
+        last_perf = 0
+        last_time = float("inf")
+        hit = [0.0]*length
+        nlevel = 24
+
+        def widget_func(time, ran):
+            nonlocal last_perf, last_time
+
+            new_err = []
+            while len(field.perfs) > last_perf:
+                err = field.perfs[last_perf].err
+                index = max(min(int((err-meter_tolerance)/-meter_tolerance/2 * length//1), length-1), 0)
+                new_err.append(index)
+                last_perf += 1
+
+            decay = max(0.0, time - last_time) / meter_decay_time
+            last_time = time
+
+            for i in range(meter_width*2):
+                if i in new_err:
+                    hit[i] = 1.0
+                else:
+                    hit[i] = max(0.0, hit[i] - decay)
+
+            return "".join(f"\x1b[48;5;{232+int(i*(nlevel-1))};38;5;{232+int(j*(nlevel-1))}m▐\x1b[m"
+                           for i, j in zip(hit[::2], hit[1::2]))
         return widget_func
 
