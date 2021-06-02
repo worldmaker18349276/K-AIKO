@@ -576,14 +576,6 @@ class Beatmap(Playable):
         self.total_subjects = 0
         self.event_sequences = []
 
-    @property
-    def duration(self):
-        if self.audio is None:
-            return 0.0
-
-        with audioread.audio_open(os.path.join(self.root, self.audio)) as file:
-            return file.duration
-
     def time(self, beat):
         return self.offset + beat*60/self.tempo
 
@@ -618,10 +610,15 @@ class Beatmap(Playable):
 
         events = sorted(events, key=lambda e: e.lifespan[0])
 
+        duration = 0.0
+        if self.audio is not None:
+            with audioread.audio_open(os.path.join(self.root, self.audio)) as file:
+                duration = file.duration
+
         event_leadin_time = self.settings.notes.event_leadin_time
         self.total_subjects = sum([1 for event in events if event.is_subject], 0)
-        self.start_time = min([event.lifespan[0] - event_leadin_time for event in events], default=0.0)
-        self.end_time = max([event.lifespan[1] + event_leadin_time for event in events], default=self.duration)
+        self.start_time = min(0.0, *[event.lifespan[0] - event_leadin_time for event in events])
+        self.end_time = max(duration, *[event.lifespan[1] + event_leadin_time for event in events])
 
         return events
 
