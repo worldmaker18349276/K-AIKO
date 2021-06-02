@@ -419,9 +419,10 @@ class EnumBiparser(Biparser):
 
     def decode(self, text, index=0, partial=False):
         name = self.enum_class.__name__
-        _, index = match(nameperiod.format(re.escape(name)), [name + "."], text, index, partial=True)
+        _, index = match(self.nameperiod.format(re.escape(name)), [name + "."], text, index, partial=True)
 
-        option, index = startswith([option.name for option in self.options], text, index, partial=False)
+        option, index = startswith([option.name for option in self.options], text, index, partial=partial)
+        option = getattr(self.enum_class, option)
         return option, index
 
     def encode(self, value):
