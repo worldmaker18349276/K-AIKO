@@ -5,6 +5,7 @@ import traceback
 import zipfile
 import shutil
 import psutil
+import pkgutil
 from pathlib import Path
 import appdirs
 import pyaudio
@@ -280,7 +281,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
              songs folder can be accessed.
         """
 
-        return KAIKOPlay(self._songs_dir / beatmap, self.settings.gameplay)
+        return KAIKOPlay(self._data_dir, self._songs_dir / beatmap, self.settings.gameplay)
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
@@ -504,6 +505,17 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             songs_dir.mkdir(exist_ok=True)
             if not config_path.exists():
                 config.write(config_path)
+
+            (data_dir / "samples/").mkdir(exist_ok=True)
+            resources = ["samples/soft.wav",
+                         "samples/loud.wav",
+                         "samples/incr.wav",
+                         "samples/rock.wav",
+                         "samples/disk.wav"]
+            for rspath in resources:
+                data = pkgutil.get_data("kaiko", rspath)
+                open(data_dir / rspath, 'wb').write(data)
+
             print(f"{data_icon} your data will be stored in "
                   f"{wcb.add_attr(data_dir.as_uri(), emph_attr)}")
             print(flush=True)
@@ -725,7 +737,8 @@ class PyAudioDeviceParser(beatshell.ArgumentParser):
 
 
 class KAIKOPlay:
-    def __init__(self, filepath, settings):
+    def __init__(self, data_dir, filepath, settings):
+        self.data_dir = data_dir
         self.filepath = filepath
         self.settings = settings
 
@@ -741,7 +754,7 @@ class KAIKOPlay:
             print(f"\x1b[m", end="")
 
         else:
-            game = BeatmapPlayer(beatmap, self.settings)
+            game = BeatmapPlayer(self.data_dir, beatmap, self.settings)
             game.execute(manager)
 
             print()

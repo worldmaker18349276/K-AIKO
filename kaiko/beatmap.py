@@ -15,8 +15,6 @@ from . import datanodes as dn
 from . import wcbuffers as wcb
 
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
 @dataclass
 class UpdateContext:
     update: Dict[str, Union[None, bool, int, Fraction, float, str]]
@@ -232,7 +230,7 @@ class Soft(OneshotTarget):
         self.approach_appearance = beatmap.settings.notes.soft_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.soft_wrong_appearance
         self.sound = beatmap.settings.notes.soft_sound
-        self.sound_root = beatmap.root
+        self.sound_root = context.get('data_dir')
         self.threshold = beatmap.settings.difficulty.soft_threshold
 
         if self.speed is None:
@@ -254,7 +252,7 @@ class Loud(OneshotTarget):
         self.approach_appearance = beatmap.settings.notes.loud_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.loud_wrong_appearance
         self.sound = beatmap.settings.notes.loud_sound
-        self.sound_root = beatmap.root
+        self.sound_root = context.get('data_dir')
         self.threshold = beatmap.settings.difficulty.loud_threshold
 
         if self.speed is None:
@@ -287,7 +285,7 @@ class Incr(OneshotTarget):
         self.approach_appearance = beatmap.settings.notes.incr_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.incr_wrong_appearance
         self.sound = beatmap.settings.notes.incr_sound
-        self.sound_root = beatmap.root
+        self.sound_root = context.get('data_dir')
         self.incr_threshold = beatmap.settings.difficulty.incr_threshold
 
         if self.speed is None:
@@ -347,7 +345,7 @@ class Roll(Target):
         self.tolerance = beatmap.settings.difficulty.roll_tolerance
         self.rock_appearance = beatmap.settings.notes.roll_rock_appearance
         self.sound = beatmap.settings.notes.roll_rock_sound
-        self.sound_root = beatmap.root
+        self.sound_root = context.get('data_dir')
         self.rock_score = beatmap.settings.scores.roll_rock_score
 
         if self.speed is None:
@@ -417,7 +415,7 @@ class Spin(Target):
         self.finishing_appearance = beatmap.settings.notes.spin_finishing_appearance
         self.finish_sustain_time = beatmap.settings.notes.spin_finish_sustain_time
         self.sound = beatmap.settings.notes.spin_disk_sound
-        self.sound_root = beatmap.root
+        self.sound_root = context.get('data_dir')
         self.full_score = beatmap.settings.scores.spin_score
 
         if self.speed is None:
@@ -524,22 +522,22 @@ class BeatmapSettings(cfg.Configurable):
     class notes(cfg.Configurable):
         soft_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[96m□\x1b[m"
         soft_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[96m⬚\x1b[m"
-        soft_sound: str = f"{BASE_DIR}/samples/soft.wav" # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
+        soft_sound: str = f"samples/soft.wav" # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
         loud_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[94m■\x1b[m"
         loud_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[94m⬚\x1b[m"
-        loud_sound: str = f"{BASE_DIR}/samples/loud.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
+        loud_sound: str = f"samples/loud.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
         incr_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[94m⬒\x1b[m"
         incr_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[94m⬚\x1b[m"
-        incr_sound: str = f"{BASE_DIR}/samples/incr.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
+        incr_sound: str = f"samples/incr.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
         roll_rock_appearance:      Union[str, Tuple[str, str]] = "\x1b[96m◎\x1b[m"
-        roll_rock_sound: str = f"{BASE_DIR}/samples/rock.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
+        roll_rock_sound: str = f"samples/rock.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
         spin_disk_appearances:     Union[List[str], List[Tuple[str, str]]] = ["\x1b[94m◴\x1b[m",
                                                                               "\x1b[94m◵\x1b[m",
                                                                               "\x1b[94m◶\x1b[m",
                                                                               "\x1b[94m◷\x1b[m"]
         spin_finishing_appearance: Union[str, Tuple[str, str]] = "\x1b[94m☺\x1b[m"
         spin_finish_sustain_time: float = 0.1
-        spin_disk_sound: str = f"{BASE_DIR}/samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
+        spin_disk_sound: str = f"samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
         event_leadin_time: float = 1.0
 
 class Playable:
@@ -550,7 +548,7 @@ class Playable:
     def get_audionode(self, output_samplerate, output_nchannels):
         raise NotImplementedError
 
-    def prepare_events(self):
+    def prepare_events(self, data_dir):
         raise NotImplementedError
 
 class Beatmap(Playable):
@@ -597,10 +595,10 @@ class Beatmap(Playable):
                                                        volume=self.volume))
             return audionode
 
-    def prepare_events(self):
+    def prepare_events(self, data_dir):
         events = []
         for sequence in self.event_sequences:
-            context = {}
+            context = {'data_dir': data_dir}
             for event in sequence:
                 event = replace(event)
                 event.prepare(self, context)
@@ -927,7 +925,8 @@ class GameplaySettings(cfg.Configurable):
             meter_tolerance: float = 0.10
 
 class BeatmapPlayer:
-    def __init__(self, beatmap, settings=None):
+    def __init__(self, data_dir, beatmap, settings=None):
+        self.data_dir = data_dir
         self.beatmap = beatmap
         self.settings = settings or GameplaySettings()
 
@@ -936,7 +935,7 @@ class BeatmapPlayer:
         self.audionode = self.beatmap.get_audionode(output_samplerate, output_nchannels)
 
         # prepare events
-        self.events = self.beatmap.prepare_events()
+        self.events = self.beatmap.prepare_events(self.data_dir)
         self.start_time = self.beatmap.start_time
         self.end_time = self.beatmap.end_time
 
