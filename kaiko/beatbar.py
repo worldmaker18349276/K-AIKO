@@ -274,6 +274,35 @@ class Beatbar:
         node = _content_node(pos, text, start, duration)
         return self.add_content_drawer(node, zindex=zindex)
 
+    def _draw_title(self, view, width, pos, text):
+        mask = self.content_mask
+
+        content_start, content_end, _ = mask.indices(width)
+        index = round(content_start + pos * max(0, content_end - content_start - 1))
+
+        return wcb.addtext1(view, width, index, text, xmask=mask)
+
+    def draw_title(self, pos, text, start=None, duration=None, zindex=(10,)):
+        pos_func = pos if hasattr(pos, '__call__') else lambda time: pos
+        text_func = text if hasattr(text, '__call__') else lambda time: text
+
+        @dn.datanode
+        def _content_node(pos, text, start, duration):
+            view, time, width = yield
+
+            if start is None:
+                start = time
+
+            while time < start:
+                view, time, width = yield view
+
+            while duration is None or time < start + duration:
+                view, _ = self._draw_title(view, width, pos_func(time), text_func(time))
+                view, time, width = yield view
+
+        node = _content_node(pos, text, start, duration)
+        return self.add_content_drawer(node, zindex=zindex)
+
     def remove_content_drawer(self, key):
         self.content_scheduler.remove_node(key)
 

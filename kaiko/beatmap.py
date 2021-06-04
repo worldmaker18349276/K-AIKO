@@ -71,6 +71,25 @@ class Text(Event):
                                start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
 
 @dataclass
+class Title(Event):
+    has_length = True
+
+    text: Optional[str] = None
+    pos: float = 0.5
+
+    def prepare(self, beatmap, context):
+        self.time = beatmap.time(self.beat)
+        self.end = beatmap.time(self.beat + self.length)
+
+        self.lifespan = (self.time, self.end)
+        self.zindex = (10, -self.time)
+
+    def register(self, field):
+        if self.text is not None:
+            field.draw_title(self.pos, self.text, zindex=self.zindex,
+                             start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
+
+@dataclass
 class Flip(Event):
     has_length = False
 
@@ -1042,6 +1061,9 @@ class BeatmapPlayer:
 
     def draw_content(self, pos, text, start=None, duration=None, zindex=(0,)):
         return self.beatbar.draw_content(pos, text, start=start, duration=duration, zindex=zindex)
+
+    def draw_title(self, pos, text, start=None, duration=None, zindex=(0,)):
+        return self.beatbar.draw_title(pos, text, start=start, duration=duration, zindex=zindex)
 
     def on_before_render(self, node):
         node = dn.pipe(dn.branch(lambda a:a[1:], node), lambda a:a[0])
