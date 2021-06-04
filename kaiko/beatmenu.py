@@ -100,6 +100,210 @@ class KAIKOMenu:
         self._beatmaps = []
         self.songs_mtime = None
 
+    @staticmethod
+    def main():
+        try:
+            with KAIKOMenu.init() as game:
+                info_icon = game.settings.menu.info_icon
+                emph_attr = game.settings.menu.emph_attr
+
+                # load songs
+                game.reload()
+
+                # execute given command
+                if len(sys.argv) > 1:
+                    res = beatshell.RootCommand(game).build(sys.argv[1:])()
+                    if hasattr(res, 'execute'):
+                        res.execute(game.manager)
+                    return
+
+                # tips
+                print(f"{info_icon} Use {wcb.add_attr('Tab', emph_attr)} to autocomplete command.")
+                print(f"{info_icon} If you need help, press {wcb.add_attr('Alt+Enter', emph_attr)}.")
+                print()
+
+                # prompt
+                history = []
+                while True:
+                    result = beatshell.prompt(game, history)
+
+                    if hasattr(result, 'execute'):
+                        result.execute(game.manager)
+
+                    elif isinstance(result, list):
+                        for item in result:
+                            print(item)
+
+                    elif result is not None:
+                        print(result)
+
+        except KeyboardInterrupt:
+            pass
+
+        except:
+            # print error
+            print("\x1b[31m", end="")
+            traceback.print_exc(file=sys.stdout)
+            print(f"\x1b[m", end="")
+
+    @classmethod
+    @contextlib.contextmanager
+    def init(clz):
+        username = psutil.Process().username()
+        data_dir = Path(appdirs.user_data_dir("K-AIKO", username))
+
+        # load settings
+        config_path = data_dir / "config.py"
+        config = cfg.Configuration(KAIKOSettings)
+        if config_path.exists():
+            config.read(config_path)
+        settings = config.current
+
+        data_icon = settings.menu.data_icon
+        info_icon = settings.menu.info_icon
+        verb_attr = settings.menu.verb_attr
+        emph_attr = settings.menu.emph_attr
+
+        # print logo
+        print(settings.menu.logo, flush=True)
+
+        # fit screen size
+        clz.fit_screen(settings.menu.best_screen_size)
+
+        # load user data
+        songs_dir = data_dir / "songs"
+
+        if not data_dir.exists():
+            # start up
+            print(f"{data_icon} preparing your profile...")
+            data_dir.mkdir(exist_ok=True)
+            songs_dir.mkdir(exist_ok=True)
+            if not config_path.exists():
+                config.write(config_path)
+
+            (data_dir / "samples/").mkdir(exist_ok=True)
+            resources = ["samples/soft.wav",
+                         "samples/loud.wav",
+                         "samples/incr.wav",
+                         "samples/rock.wav",
+                         "samples/disk.wav"]
+            for rspath in resources:
+                data = pkgutil.get_data("kaiko", rspath)
+                open(data_dir / rspath, 'wb').write(data)
+
+            print(f"{data_icon} your data will be stored in "
+                  f"{wcb.add_attr(data_dir.as_uri(), emph_attr)}")
+            print(flush=True)
+
+        # load PyAudio
+        print(f"{info_icon} Loading PyAudio...")
+        print()
+
+        print(f"\x1b[{verb_attr}m", end="", flush=True)
+        try:
+            manager = pyaudio.PyAudio()
+            print_pyaudio_info(manager)
+        finally:
+            print("\x1b[m", flush=True)
+
+        try:
+            yield clz(config, username, data_dir, songs_dir, manager)
+        finally:
+            manager.terminate()
+
+    @beatshell.function_command
+    def exit(self):
+        print("bye~")
+        raise KeyboardInterrupt
+
+    @staticmethod
+    def fit_screen(width, delay=1.0):
+        import time
+
+        @dn.datanode
+        def fit():
+            size = yield
+            current_width = 0
+
+            if size.columns < width:
+                t = time.time()
+
+                print("The screen size seems too small.")
+                print(f"Can you adjust the screen size to (or bigger than) {width}?")
+                print("Or you can try to fit the line below.")
+                print("━"*width)
+
+                while current_width < width or time.time() < t+delay:
+                    if current_width != size.columns:
+                        current_width = size.columns
+                        t = time.time()
+                        if current_width < width - 5:
+                            hint = "(too small!)"
+                        elif current_width < width:
+                            hint = "(very close!)"
+                        elif current_width == width:
+                            hint = "(perfect!)"
+                        else:
+                            hint = "(great!)"
+                        print(f"\r\x1b[KCurrent width: {current_width} {hint}", end="", flush=True)
+
+                    size = yield
+
+                print("\nThanks!\n")
+
+                # sleep
+                t = time.time()
+                while time.time() < t+delay:
+                    yield
+
+        dn.exhaust(dn.pipe(dn.terminal_size(), fit()), dt=0.1)
+
+    @beatshell.function_command
+    def intro(self):
+        print(
+"""Beat shell is a user friendly commandline shell for playing K-AIKO.
+
+Just type a command followed by any arguments, and press \x1b[1mEnter\x1b[m to execute!
+
+ \x1b[2mbeating prompt\x1b[m
+   \x1b[2m│\x1b[m    \x1b[2mthe command you want to execute\x1b[m
+   \x1b[2m│\x1b[m     \x1b[2m╱\x1b[m     \x1b[2m╭──\x1b[m \x1b[2margument of command\x1b[m
+\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;252m❯ \x1b[m\x1b[94msay\x1b[m \x1b[92m'Welcome\x1b[2m⌴\x1b[m\x1b[92mto\x1b[2m⌴\x1b[m\x1b[92mK-AIKO!'\x1b[m \x1b[7;2m \x1b[m
+Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeating caret\x1b[m
+     \x1b[2m╲\x1b[m                \x1b[2m╰───\x1b[m \x1b[2mquoted whitespace look like this!\x1b[m
+   \x1b[2moutput of command\x1b[m
+""")
+
+    @beatshell.function_command
+    def say(self, message, escape=False):
+        """Say something and I will echo.
+
+        usage: \x1b[94msay\x1b[m \x1b[92m{message}\x1b[m [\x1b[95m--escape\x1b[m \x1b[92m{ESCAPE}\x1b[m]\x1b[m
+                      ╱                    ╲
+            text, the message               ╲
+             to be printed.          bool, use backslash escapes
+                                    or not; the default is False.
+        """
+
+        if escape:
+            print(beatshell.echo_str(message))
+        else:
+            print(message)
+
+    @say.arg_parser("message")
+    def _say_message_parser(self):
+        return beatshell.RawParser(expected="It should be some text,"
+                                            " indicating the message to be printed.")
+
+    @say.arg_parser("escape")
+    def _say_escape_parser(self, message):
+        return beatshell.LiteralParser(bool, default=False,
+                                       expected="It should be bool,"
+                                                " indicating whether to use backslash escapes;"
+                                                " the default is False.")
+
+    # properties
+
     @property
     def settings(self):
         return self._config.current
@@ -127,21 +331,7 @@ class KAIKOMenu:
 
         return self._beatmaps
 
-    @beatshell.function_command
-    def intro(self):
-        print(
-"""Beat shell is a user friendly commandline shell for playing K-AIKO.
-
-Just type a command followed by any arguments, and press \x1b[1mEnter\x1b[m to execute!
-
- \x1b[2mbeating prompt\x1b[m
-   \x1b[2m│\x1b[m    \x1b[2mthe command you want to execute\x1b[m
-   \x1b[2m│\x1b[m     \x1b[2m╱\x1b[m     \x1b[2m╭──\x1b[m \x1b[2margument of command\x1b[m
-\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;252m❯ \x1b[m\x1b[94msay\x1b[m \x1b[92m'Welcome\x1b[2m⌴\x1b[m\x1b[92mto\x1b[2m⌴\x1b[m\x1b[92mK-AIKO!'\x1b[m \x1b[7;2m \x1b[m
-Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeating caret\x1b[m
-     \x1b[2m╲\x1b[m                \x1b[2m╰───\x1b[m \x1b[2mquoted whitespace look like this!\x1b[m
-   \x1b[2moutput of command\x1b[m
-""")
+    # beatmaps
 
     @beatshell.function_command
     def reload(self):
@@ -287,6 +477,8 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
     def _play_beatmap_parser(self):
         return BeatmapParser(self._beatmaps, self._songs_dir)
 
+    # audio
+
     @beatshell.function_command
     def audio_input(self, device, samplerate=None, channels=None, format=None):
         warn_attr = self.settings.menu.warn_attr
@@ -391,196 +583,13 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
     def _audio_format_parser(self, device, **__):
         return beatshell.OptionParser(['f4', 'i4', 'i2', 'i1', 'u1'])
 
+    # config
+
     @beatshell.subcommand
     @property
     def config(self):
         return ConfigCommand(self._config, self.config_file())
 
-    @beatshell.function_command
-    def say(self, message, escape=False):
-        """Say something and I will echo.
-
-        usage: \x1b[94msay\x1b[m \x1b[92m{message}\x1b[m [\x1b[95m--escape\x1b[m \x1b[92m{ESCAPE}\x1b[m]\x1b[m
-                      ╱                    ╲
-            text, the message               ╲
-             to be printed.          bool, use backslash escapes
-                                    or not; the default is False.
-        """
-
-        if escape:
-            print(beatshell.echo_str(message))
-        else:
-            print(message)
-
-    @say.arg_parser("message")
-    def _say_message_parser(self):
-        return beatshell.RawParser(expected="It should be some text,"
-                                            " indicating the message to be printed.")
-
-    @say.arg_parser("escape")
-    def _say_escape_parser(self, message):
-        return beatshell.LiteralParser(bool, default=False,
-                                       expected="It should be bool,"
-                                                " indicating whether to use backslash escapes;"
-                                                " the default is False.")
-
-    @beatshell.function_command
-    def exit(self):
-        print("bye~")
-        raise KeyboardInterrupt
-
-    @staticmethod
-    def fit_screen(width, delay=1.0):
-        import time
-
-        @dn.datanode
-        def fit():
-            size = yield
-            current_width = 0
-
-            if size.columns < width:
-                t = time.time()
-
-                print("The screen size seems too small.")
-                print(f"Can you adjust the screen size to (or bigger than) {width}?")
-                print("Or you can try to fit the line below.")
-                print("━"*width)
-
-                while current_width < width or time.time() < t+delay:
-                    if current_width != size.columns:
-                        current_width = size.columns
-                        t = time.time()
-                        if current_width < width - 5:
-                            hint = "(too small!)"
-                        elif current_width < width:
-                            hint = "(very close!)"
-                        elif current_width == width:
-                            hint = "(perfect!)"
-                        else:
-                            hint = "(great!)"
-                        print(f"\r\x1b[KCurrent width: {current_width} {hint}", end="", flush=True)
-
-                    size = yield
-
-                print("\nThanks!\n")
-
-                # sleep
-                t = time.time()
-                while time.time() < t+delay:
-                    yield
-
-        dn.exhaust(dn.pipe(dn.terminal_size(), fit()), dt=0.1)
-
-    @classmethod
-    @contextlib.contextmanager
-    def init(clz):
-        username = psutil.Process().username()
-        data_dir = Path(appdirs.user_data_dir("K-AIKO", username))
-
-        # load settings
-        config_path = data_dir / "config.py"
-        config = cfg.Configuration(KAIKOSettings)
-        if config_path.exists():
-            config.read(config_path)
-        settings = config.current
-
-        data_icon = settings.menu.data_icon
-        info_icon = settings.menu.info_icon
-        verb_attr = settings.menu.verb_attr
-        emph_attr = settings.menu.emph_attr
-
-        # print logo
-        print(settings.menu.logo, flush=True)
-
-        # fit screen size
-        clz.fit_screen(settings.menu.best_screen_size)
-
-        # load user data
-        songs_dir = data_dir / "songs"
-
-        if not data_dir.exists():
-            # start up
-            print(f"{data_icon} preparing your profile...")
-            data_dir.mkdir(exist_ok=True)
-            songs_dir.mkdir(exist_ok=True)
-            if not config_path.exists():
-                config.write(config_path)
-
-            (data_dir / "samples/").mkdir(exist_ok=True)
-            resources = ["samples/soft.wav",
-                         "samples/loud.wav",
-                         "samples/incr.wav",
-                         "samples/rock.wav",
-                         "samples/disk.wav"]
-            for rspath in resources:
-                data = pkgutil.get_data("kaiko", rspath)
-                open(data_dir / rspath, 'wb').write(data)
-
-            print(f"{data_icon} your data will be stored in "
-                  f"{wcb.add_attr(data_dir.as_uri(), emph_attr)}")
-            print(flush=True)
-
-        # load PyAudio
-        print(f"{info_icon} Loading PyAudio...")
-        print()
-
-        print(f"\x1b[{verb_attr}m", end="", flush=True)
-        try:
-            manager = pyaudio.PyAudio()
-            print_pyaudio_info(manager)
-        finally:
-            print("\x1b[m", flush=True)
-
-        try:
-            yield clz(config, username, data_dir, songs_dir, manager)
-        finally:
-            manager.terminate()
-
-    @staticmethod
-    def main():
-        try:
-            with KAIKOMenu.init() as game:
-                info_icon = game.settings.menu.info_icon
-                emph_attr = game.settings.menu.emph_attr
-
-                # load songs
-                game.reload()
-
-                # execute given command
-                if len(sys.argv) > 1:
-                    res = beatshell.RootCommand(game).build(sys.argv[1:])()
-                    if hasattr(res, 'execute'):
-                        res.execute(game.manager)
-                    return
-
-                # tips
-                print(f"{info_icon} Use {wcb.add_attr('Tab', emph_attr)} to autocomplete command.")
-                print(f"{info_icon} If you need help, press {wcb.add_attr('Alt+Enter', emph_attr)}.")
-                print()
-
-                # prompt
-                history = []
-                while True:
-                    result = beatshell.prompt(game, history)
-
-                    if hasattr(result, 'execute'):
-                        result.execute(game.manager)
-
-                    elif isinstance(result, list):
-                        for item in result:
-                            print(item)
-
-                    elif result is not None:
-                        print(result)
-
-        except KeyboardInterrupt:
-            pass
-
-        except:
-            # print error
-            print("\x1b[31m", end="")
-            traceback.print_exc(file=sys.stdout)
-            print(f"\x1b[m", end="")
 
 class ConfigCommand:
     def __init__(self, config, path):
