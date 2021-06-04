@@ -308,7 +308,7 @@ class OptionParser(ArgumentParser):
 
         if expected is None:
             options = list(self.options.keys()) if isinstance(self.options, dict) else self.options
-            self.expected = expected_options(self.options)
+            self.expected = expected_options(options)
 
     def parse(self, token):
         if token not in self.options:

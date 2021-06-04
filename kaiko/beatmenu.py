@@ -285,7 +285,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        return beatshell.OptionParser([str(beatmap.relative_to(self._songs_dir)) for beatmap in self.beatmaps()])
+        return BeatmapParser(self._beatmaps, self._songs_dir)
 
     @beatshell.function_command
     def audio_input(self, device, samplerate=None, channels=None, format=None):
@@ -734,6 +734,33 @@ class PyAudioDeviceParser(beatshell.ArgumentParser):
         ch_out = device_info['maxOutputChannels']
 
         return f"{name} by {api} ({freq} kHz, in: {ch_in}, out: {ch_out})"
+
+
+class BeatmapParser(beatshell.ArgumentParser):
+    def __init__(self, beatmaps, songs_dir):
+        self.beatmaps = beatmaps
+        self.songs_dir = songs_dir
+
+        self.options = [str(beatmap.relative_to(self.songs_dir)) for beatmap in self.beatmaps]
+        self.expected = beatshell.expected_options(self.options)
+
+    def parse(self, token):
+        if token not in self.options:
+            expected = self.expected
+            raise TokenParseError("Invalid value" + "\n" + self.expected)
+
+        return token
+
+    def suggest(self, token):
+        return [val + "\000" for val in beatshell.fit(token, self.options)]
+
+    def info(self, token):
+        try:
+            beatmap = BeatSheet.read(str(self.songs_dir / token), metadata_only=True)
+        except BeatmapParseError:
+            return None
+        else:
+            return beatmap.info.strip()
 
 
 class KAIKOPlay:

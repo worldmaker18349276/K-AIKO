@@ -128,7 +128,7 @@ class BeatSheet(Beatmap):
         self.event_sequences = [self.to_events(track) for track in tracks]
 
     @staticmethod
-    def read(filename, hack=False):
+    def read(filename, hack=False, metadata_only=False):
         filename = os.path.abspath(filename)
         if filename.endswith((".kaiko", ".ka")):
             sheet = open(filename).read()
@@ -138,7 +138,7 @@ class BeatSheet(Beatmap):
                     beatmap = BeatSheet()
                     exec(sheet, dict(), dict(beatmap=beatmap))
                 else:
-                    beatmap, _ = beatsheet_biparser.decode(sheet)
+                    beatmap, _ = beatsheet_biparser.decode(sheet, metadata_only=metadata_only)
             except Exception as e:
                 raise BeatmapParseError(f"failed to read beatmap {filename}") from e
 
@@ -147,7 +147,7 @@ class BeatSheet(Beatmap):
 
         elif filename.endswith(".osu"):
             try:
-                return OSU_FORMAT.read(filename)
+                return OSU_FORMAT.read(filename, metadata_only=metadata_only)
             except Exception as e:
                 raise BeatmapParseError(f"failed to read beatmap {filename}") from e
 
@@ -505,7 +505,7 @@ class BeatSheetBiparser(Biparser):
         field_biparser = RMStrBiparser()
         sheet += "beatmap.chart = " + field_biparser.encode(getattr(value, 'chart')) + "\n"
 
-    def decode(self, text, index=0, partial=False):
+    def decode(self, text, index=0, partial=False, metadata_only=False):
         m, index = match(r"#K-AIKO-std-(\d+\.\d+\.\d+)(?=\n|$)",
                                   ["#K-AIKO-std-" + self.version],
                                   text, index, partial=True)
@@ -549,12 +549,13 @@ class BeatSheetBiparser(Biparser):
 
             value, index = field_biparser.decode(text, index, partial=True)
 
-            setattr(beatsheet, name, value)
+            if not metadata_only or name != "chart":
+                setattr(beatsheet, name, value)
 beatsheet_biparser = BeatSheetBiparser()
 
 
 class OSU:
-    def read(self, filename):
+    def read(self, filename, metadata_only=False):
         path = os.path.dirname(filename)
         index = 0
 
@@ -592,7 +593,8 @@ class OSU:
                     parse = self.parse_hitobjects
                 else:
                     try:
-                        parse(beatmap, context, line)
+                        if not metadata_only or parse != self.parse_timingpoints and parse != self.parse_hitobjects:
+                            parse(beatmap, context, line)
                     except Exception as e:
                         raise BeatmapParseError(f"parse error at line {index}") from e
 
