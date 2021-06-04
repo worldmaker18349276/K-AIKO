@@ -1,4 +1,5 @@
 import time
+import math
 import contextlib
 from enum import Enum
 from typing import List, Tuple, Dict, Optional, Union
@@ -246,7 +247,10 @@ class Beatbar:
             pos = 1 - pos
 
         content_start, content_end, _ = mask.indices(width)
-        index = round(content_start + pos * max(0, content_end - content_start - 1))
+        index = content_start + pos * max(0, content_end - content_start - 1)
+        if not math.isfinite(index):
+            return view
+        index = round(index)
 
         if isinstance(text, tuple):
             text = text[self.bar_flip]
@@ -278,7 +282,10 @@ class Beatbar:
         mask = self.content_mask
 
         content_start, content_end, _ = mask.indices(width)
-        index = round(content_start + pos * max(0, content_end - content_start - 1))
+        index = content_start + pos * max(0, content_end - content_start - 1)
+        if not math.isfinite(index):
+            return view
+        index = round(index)
 
         return wcb.addtext1(view, width, index, text, xmask=mask)
 
