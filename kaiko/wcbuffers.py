@@ -1,5 +1,10 @@
 import wcwidth
 
+# \t -> right
+# \b -> left
+# \v -> down
+# \f -> up
+# \r -> back to starting position
 
 def parse_attr(text):
     text = iter(text)

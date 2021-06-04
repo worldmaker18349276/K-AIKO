@@ -406,7 +406,7 @@ class LiteralParser(ArgumentParser):
             self.biparser.decode(token)
         except bp.DecodeError as e:
             sugg = [token[:e.index] + ex for ex in e.expected]
-            if self.default is not inspect.Parameter.empty:
+            if token == "" and self.default is not inspect.Parameter.empty:
                 default = self.biparser.encode(self.default) + "\000"
                 if default in sugg:
                     sugg.remove(default)

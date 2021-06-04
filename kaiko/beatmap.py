@@ -230,7 +230,7 @@ class Soft(OneshotTarget):
         self.approach_appearance = beatmap.settings.notes.soft_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.soft_wrong_appearance
         self.sound = beatmap.settings.notes.soft_sound
-        self.sound_root = context.get('data_dir')
+        self.sound_root = context['data_dir']
         self.threshold = beatmap.settings.difficulty.soft_threshold
 
         if self.speed is None:
@@ -252,7 +252,7 @@ class Loud(OneshotTarget):
         self.approach_appearance = beatmap.settings.notes.loud_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.loud_wrong_appearance
         self.sound = beatmap.settings.notes.loud_sound
-        self.sound_root = context.get('data_dir')
+        self.sound_root = context['data_dir']
         self.threshold = beatmap.settings.difficulty.loud_threshold
 
         if self.speed is None:
@@ -285,7 +285,7 @@ class Incr(OneshotTarget):
         self.approach_appearance = beatmap.settings.notes.incr_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.incr_wrong_appearance
         self.sound = beatmap.settings.notes.incr_sound
-        self.sound_root = context.get('data_dir')
+        self.sound_root = context['data_dir']
         self.incr_threshold = beatmap.settings.difficulty.incr_threshold
 
         if self.speed is None:
@@ -345,7 +345,7 @@ class Roll(Target):
         self.tolerance = beatmap.settings.difficulty.roll_tolerance
         self.rock_appearance = beatmap.settings.notes.roll_rock_appearance
         self.sound = beatmap.settings.notes.roll_rock_sound
-        self.sound_root = context.get('data_dir')
+        self.sound_root = context['data_dir']
         self.rock_score = beatmap.settings.scores.roll_rock_score
 
         if self.speed is None:
@@ -415,7 +415,7 @@ class Spin(Target):
         self.finishing_appearance = beatmap.settings.notes.spin_finishing_appearance
         self.finish_sustain_time = beatmap.settings.notes.spin_finish_sustain_time
         self.sound = beatmap.settings.notes.spin_disk_sound
-        self.sound_root = context.get('data_dir')
+        self.sound_root = context['data_dir']
         self.full_score = beatmap.settings.scores.spin_score
 
         if self.speed is None:
@@ -795,7 +795,7 @@ class WidgetManager:
     def progress(field):
         attr = field.settings.widgets.progress.attr
         def widget_func(time, ran):
-            progress = field.finished_subjects/field.total_subjects if field.total_subjects>0 else 1.0
+            progress = min(1.0, field.finished_subjects/field.total_subjects) if field.total_subjects>0 else 1.0
             time = int(max(0.0, field.time))
             width = ran.stop - ran.start
 
@@ -822,8 +822,8 @@ class WidgetManager:
         attr = field.settings.widgets.bounce.attr
         division = field.settings.widgets.bounce.division
 
-        offset = field.beatmap.offset
-        period = 60.0 / field.beatmap.tempo / division
+        offset = getattr(field.beatmap, 'offset', 0.0)
+        period = 60.0 / getattr(field.beatmap, 'tempo', 60.0) / division
         def widget_func(time, ran):
             width = ran.stop - ran.start
 

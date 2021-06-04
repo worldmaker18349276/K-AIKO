@@ -141,7 +141,6 @@ class Mixer:
                     return
 
     def resample(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None):
-
         if start is not None or end is not None:
             node = dn.tslice(node, samplerate, start, end)
         if channels is not None and channels != self.nchannels:
