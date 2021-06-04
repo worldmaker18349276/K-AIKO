@@ -179,7 +179,7 @@ class Target(Event):
 
 @dataclass
 class OneshotTarget(Target):
-    # time, speed, volume, perf, sound, sound_root
+    # time, speed, volume, nofeedback, perf, sound, sound_root
     # approach_appearance, wrong_appearance
     # hit(field, time, strength)
 
@@ -202,7 +202,7 @@ class OneshotTarget(Target):
         return (self.time-time) * 0.5 * self.speed
 
     def appearance(self, time):
-        if not self.is_finished:
+        if self.nofeedback or not self.is_finished:
             return self.approach_appearance
         elif self.perf.is_miss:
             return self.approach_appearance
@@ -230,7 +230,7 @@ class OneshotTarget(Target):
 
     def hit(self, field, time, strength, is_correct_key=True):
         perf = Performance.judge(self.performance_tolerance, self.time, time, is_correct_key)
-        field.add_perf(perf, True, self.speed < 0)
+        field.add_perf(perf, not self.nofeedback, self.speed < 0)
         self.finish(field, perf)
 
     def finish(self, field, perf=None):
@@ -244,6 +244,7 @@ class OneshotTarget(Target):
 class Soft(OneshotTarget):
     speed: Optional[float] = None
     volume: Optional[float] = None
+    nofeedback: Optional[bool] = None
 
     def prepare(self, beatmap, context):
         self.approach_appearance = beatmap.settings.notes.soft_approach_appearance
@@ -256,6 +257,8 @@ class Soft(OneshotTarget):
             self.speed = context.get('speed', 1.0)
         if self.volume is None:
             self.volume = context.get('volume', 0.0)
+        if self.nofeedback is None:
+            self.nofeedback = context.get('nofeedback', False)
 
         super().prepare(beatmap, context)
 
@@ -266,6 +269,7 @@ class Soft(OneshotTarget):
 class Loud(OneshotTarget):
     speed: Optional[float] = None
     volume: Optional[float] = None
+    nofeedback: Optional[bool] = None
 
     def prepare(self, beatmap, context):
         self.approach_appearance = beatmap.settings.notes.loud_approach_appearance
@@ -278,6 +282,8 @@ class Loud(OneshotTarget):
             self.speed = context.get('speed', 1.0)
         if self.volume is None:
             self.volume = context.get('volume', 0.0)
+        if self.nofeedback is None:
+            self.nofeedback = context.get('nofeedback', False)
 
         super().prepare(beatmap, context)
 
@@ -299,6 +305,7 @@ class Incr(OneshotTarget):
     group: Optional[str] = None
     speed: Optional[float] = None
     group_volume: Optional[float] = None
+    nofeedback: Optional[float] = None
 
     def prepare(self, beatmap, context):
         self.approach_appearance = beatmap.settings.notes.incr_approach_appearance
@@ -311,6 +318,8 @@ class Incr(OneshotTarget):
             self.speed = context.get('speed', 1.0)
         if self.group_volume is None:
             self.group_volume = context.get('volume', 0.0)
+        if self.nofeedback is None:
+            self.nofeedback = context.get('nofeedback', False)
 
         super().prepare(beatmap, context)
 
@@ -358,6 +367,7 @@ class Roll(Target):
     density: Union[int, Fraction, float] = 2
     speed: Optional[float] = None
     volume: Optional[float] = None
+    nofeedback: Optional[bool] = None
 
     def prepare(self, beatmap, context):
         self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
@@ -371,6 +381,8 @@ class Roll(Target):
             self.speed = context.get('speed', 1.0)
         if self.volume is None:
             self.volume = context.get('volume', 0.0)
+        if self.nofeedback is None:
+            self.nofeedback = context.get('nofeedback', False)
 
         self.time = beatmap.time(self.beat)
         self.end = beatmap.time(self.beat+self.length)
@@ -389,7 +401,7 @@ class Roll(Target):
         return lambda time: (self.times[index]-time) * 0.5 * self.speed
 
     def appearance_of(self, index):
-        return lambda time: self.rock_appearance if self.roll <= index else ""
+        return lambda time: self.rock_appearance if self.nofeedback or self.roll <= index else ""
 
     def approach(self, field):
         for i, time in enumerate(self.times):
@@ -427,6 +439,7 @@ class Spin(Target):
     density: Union[int, Fraction, float] = 2
     speed: Optional[float] = None
     volume: Optional[float] = None
+    nofeedback: Optional[bool] = None
 
     def prepare(self, beatmap, context):
         self.tolerance = beatmap.settings.difficulty.spin_tolerance
@@ -441,6 +454,8 @@ class Spin(Target):
             self.speed = context.get('speed', 1.0)
         if self.volume is None:
             self.volume = context.get('volume', 0.0)
+        if self.nofeedback is None:
+            self.nofeedback = context.get('nofeedback', False)
 
         self.time = beatmap.time(self.beat)
         self.end = beatmap.time(self.beat+self.length)
@@ -458,7 +473,10 @@ class Spin(Target):
         return (max(0.0, self.time-time) + min(0.0, self.end-time)) * 0.5 * self.speed
 
     def appearance(self, time):
-        return self.disk_appearances[int(self.charge) % len(self.disk_appearances)] if not self.is_finished else ""
+        if self.nofeedback or not self.is_finished:
+            return self.disk_appearances[int(self.charge) % len(self.disk_appearances)]
+        else:
+            return ""
 
     def approach(self, field):
         for time in self.times:
@@ -491,10 +509,11 @@ class Spin(Target):
         if self.charge != self.capacity:
             return
 
-        appearance = self.finishing_appearance
-        if isinstance(appearance, tuple) and self.speed < 0:
-            appearance = appearance[::-1]
-        field.draw_sight(appearance, duration=self.finish_sustain_time)
+        if not self.nofeedback:
+            appearance = self.finishing_appearance
+            if isinstance(appearance, tuple) and self.speed < 0:
+                appearance = appearance[::-1]
+            field.draw_sight(appearance, duration=self.finish_sustain_time)
 
 
 # Game
