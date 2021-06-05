@@ -107,6 +107,7 @@ class KAIKOMenu:
         try:
             with KAIKOMenu.init() as game:
                 info_icon = game.settings.menu.info_icon
+                hint_icon = game.settings.menu.hint_icon
                 emph_attr = game.settings.menu.emph_attr
                 dt = 0.01
 
@@ -125,8 +126,8 @@ class KAIKOMenu:
                 # load mixer
                 with game.load_bgm(game.manager) as bgm_knot:
                     # tips
-                    print(f"{info_icon} Use {wcb.add_attr('Tab', emph_attr)} to autocomplete command.")
-                    print(f"{info_icon} If you need help, press {wcb.add_attr('Alt+Enter', emph_attr)}.")
+                    print(f"{hint_icon} Use {wcb.add_attr('Tab', emph_attr)} to autocomplete command.")
+                    print(f"{hint_icon} If you need help, press {wcb.add_attr('Alt+Enter', emph_attr)}.")
                     print()
 
                     # prompt
@@ -175,7 +176,7 @@ class KAIKOMenu:
 
         if not data_dir.exists():
             # start up
-            print(f"{data_icon} preparing your profile...")
+            print(f"{data_icon} Prepare your profile...")
             data_dir.mkdir(exist_ok=True)
             songs_dir.mkdir(exist_ok=True)
             if not config_path.exists():
@@ -188,16 +189,16 @@ class KAIKOMenu:
                          "samples/rock.wav",
                          "samples/disk.wav"]
             for rspath in resources:
-                print(f"{data_icon} load resource {rspath}...")
+                print(f"{data_icon} Load resource {rspath}...")
                 data = pkgutil.get_data("kaiko", rspath)
                 open(data_dir / rspath, 'wb').write(data)
 
-            print(f"{data_icon} your data will be stored in "
+            print(f"{data_icon} Your data will be stored in "
                   f"{wcb.add_attr(data_dir.as_uri(), emph_attr)}")
             print(flush=True)
 
         # load PyAudio
-        print(f"{info_icon} Loading PyAudio...")
+        print(f"{info_icon} Load PyAudio...")
         print()
 
         print(f"\x1b[{verb_attr}m", end="", flush=True)
@@ -423,11 +424,11 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         usage: \x1b[94mreload\x1b[m
         """
 
-        info_icon = self.settings.menu.info_icon
+        data_icon = self.settings.menu.data_icon
         emph_attr = self.settings.menu.emph_attr
         songs_dir = self._songs_dir
 
-        print(f"{info_icon} Loading songs from {wcb.add_attr(songs_dir.as_uri(), emph_attr)}...")
+        print(f"{data_icon} Load songs from {wcb.add_attr(songs_dir.as_uri(), emph_attr)}...")
 
         self._beatmaps = []
 
@@ -436,7 +437,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
                 distpath = file.parent / file.stem
                 if distpath.exists():
                     continue
-                print(f"{info_icon} Unzip file {wcb.add_attr(file.as_uri(), emph_attr)}...")
+                print(f"{data_icon} Unzip file {wcb.add_attr(file.as_uri(), emph_attr)}...")
                 distpath.mkdir()
                 zf = zipfile.ZipFile(str(file), 'r')
                 zf.extractall(path=str(distpath))
@@ -449,7 +450,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
                         self._beatmaps.append(beatmap)
 
         if len(self._beatmaps) == 0:
-            print(f"{info_icon} There is no song in the folder yet!")
+            print(f"{data_icon} There is no song in the folder yet!")
         print(flush=True)
 
         self.songs_mtime = os.stat(str(songs_dir)).st_mtime
@@ -466,7 +467,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
            the terminal to paste its path.
         """
 
-        info_icon = self.settings.menu.info_icon
+        data_icon = self.settings.menu.data_icon
         emph_attr = self.settings.menu.emph_attr
         warn_attr = self.settings.menu.warn_attr
         songs_dir = self._songs_dir
@@ -475,7 +476,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             print(wcb.add_attr(f"File not found: {str(beatmap)}", warn_attr))
             return
 
-        print(f"{info_icon} Adding new song from {wcb.add_attr(beatmap.as_uri(), emph_attr)}...")
+        print(f"{data_icon} Add new song from {wcb.add_attr(beatmap.as_uri(), emph_attr)}...")
 
         distpath = songs_dir / beatmap.name
         n = 1
@@ -483,7 +484,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             distpath = songs_dir / (beatmap.name + f" ({n})")
             n += 1
         if n != 1:
-            print(f"{info_icon} Name conflict! rename to {wcb.add_attr(distpath.name, emph_attr)}")
+            print(f"{data_icon} Name conflict! rename to {wcb.add_attr(distpath.name, emph_attr)}")
 
         if beatmap.is_file():
             shutil.copy(str(beatmap), str(songs_dir))
@@ -509,19 +510,19 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
                beatmap you want to remove.
         """
 
-        info_icon = self.settings.menu.info_icon
+        data_icon = self.settings.menu.data_icon
         emph_attr = self.settings.menu.emph_attr
         warn_attr = self.settings.menu.warn_attr
         songs_dir = self._songs_dir
 
         beatmap_path = songs_dir / beatmap
         if beatmap_path.is_file():
-            print(f"{info_icon} Removing the beatmap at {wcb.add_attr(beatmap_path.as_uri(), emph_attr)}...")
+            print(f"{data_icon} Remove the beatmap at {wcb.add_attr(beatmap_path.as_uri(), emph_attr)}...")
             beatmap_path.unlink()
             self.reload()
 
         elif beatmap_path.is_dir():
-            print(f"{info_icon} Removing the beatmapset at {wcb.add_attr(beatmap_path.as_uri(), emph_attr)}...")
+            print(f"{data_icon} Remove the beatmapset at {wcb.add_attr(beatmap_path.as_uri(), emph_attr)}...")
             shutil.rmtree(str(beatmap_path))
             self.reload()
 
@@ -682,10 +683,22 @@ class ConfigCommand:
 
     @beatshell.function_command
     def reload(self):
+        data_icon = self.config.current.menu.data_icon
+        emph_attr = self.config.current.menu.emph_attr
+
+        print(f"{data_icon} Load configuration from {wcb.add_attr(self.path.as_uri(), emph_attr)}...")
+        print()
+
         self.config.read(self.path)
 
     @beatshell.function_command
     def save(self):
+        data_icon = self.config.current.menu.data_icon
+        emph_attr = self.config.current.menu.emph_attr
+
+        print(f"{data_icon} Save configuration to {wcb.add_attr(self.path.as_uri(), emph_attr)}...")
+        print()
+
         self.config.write(self.path)
 
     @beatshell.function_command
@@ -723,13 +736,13 @@ class ConfigCommand:
 
     @beatshell.function_command
     def rename(self, profile):
+        warn_attr = self.config.current.menu.warn_attr
+
         if "\n" in profile or "\r" in profile:
-            warn_attr = self.config.current.menu.warn_attr
             print(wcb.add_attr("Invalid profile name.", warn_attr))
             return
 
         if profile in self.config.profiles:
-            warn_attr = self.config.current.menu.warn_attr
             print(wcb.add_attr("This profile name already exists.", warn_attr))
             return
 
@@ -737,13 +750,13 @@ class ConfigCommand:
 
     @beatshell.function_command
     def new(self, profile, clone=None):
+        warn_attr = self.config.current.menu.warn_attr
+
         if "\n" in profile or "\r" in profile:
-            warn_attr = self.config.current.menu.warn_attr
             print(wcb.add_attr("Invalid profile name.", warn_attr))
             return
 
         if profile == self.config.name or profile in self.config.profiles:
-            warn_attr = self.config.current.menu.warn_attr
             print(wcb.add_attr("This profile name already exists.", warn_attr))
             return
 
