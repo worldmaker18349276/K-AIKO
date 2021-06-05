@@ -106,15 +106,18 @@ class KAIKOMenu:
             with KAIKOMenu.init() as game:
                 info_icon = game.settings.menu.info_icon
                 emph_attr = game.settings.menu.emph_attr
+                dt = 0.01
+
+                # fit screen size
+                game.fit_screen(game.settings.menu.best_screen_size)
 
                 # load songs
                 game.reload()
 
                 # execute given command
                 if len(sys.argv) > 1:
-                    res = beatshell.RootCommand(game).build(sys.argv[1:])()
-                    if hasattr(res, 'execute'):
-                        res.execute(game.manager)
+                    result = beatshell.RootCommand(game).build(sys.argv[1:])()
+                    game.run_result(result, dt)
                     return
 
                 # tips
@@ -125,17 +128,13 @@ class KAIKOMenu:
                 # prompt
                 history = []
                 while True:
-                    result = beatshell.prompt(game, history)
+                    # parse command
+                    prompt_knot, prompt = beatshell.prompt(game, history)
+                    dn.exhaust(prompt_knot, dt, interruptible=True)
+                    result = prompt.result()
 
-                    if hasattr(result, 'execute'):
-                        result.execute(game.manager)
-
-                    elif isinstance(result, list):
-                        for item in result:
-                            print(item)
-
-                    elif result is not None:
-                        print(result)
+                    # execute result
+                    game.run_result(result, dt)
 
         except KeyboardInterrupt:
             pass
@@ -167,9 +166,6 @@ class KAIKOMenu:
         # print logo
         print(settings.menu.logo, flush=True)
 
-        # fit screen size
-        clz.fit_screen(settings.menu.best_screen_size)
-
         # load user data
         songs_dir = data_dir / "songs"
 
@@ -188,6 +184,7 @@ class KAIKOMenu:
                          "samples/rock.wav",
                          "samples/disk.wav"]
             for rspath in resources:
+                print(f"{data_icon} load resource {rspath}...")
                 data = pkgutil.get_data("kaiko", rspath)
                 open(data_dir / rspath, 'wb').write(data)
 
@@ -215,6 +212,20 @@ class KAIKOMenu:
     def exit(self):
         print("bye~")
         raise KeyboardInterrupt
+
+    def run_result(self, result, dt):
+        if hasattr(result, 'execute'):
+            result.execute(self.manager)
+
+        elif isinstance(result, dn.DataNode):
+            dn.exhaust(result, dt, interruptible=True)
+
+        elif isinstance(result, list):
+            for item in result:
+                print(item)
+
+        elif result is not None:
+            print(result)
 
     @staticmethod
     def fit_screen(width, delay=1.0):
@@ -756,7 +767,7 @@ class BeatmapParser(beatshell.ArgumentParser):
     def parse(self, token):
         if token not in self.options:
             expected = self.expected
-            raise TokenParseError("Invalid value" + "\n" + self.expected)
+            raise beatshell.TokenParseError("Invalid value" + "\n" + self.expected)
 
         return token
 

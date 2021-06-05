@@ -1595,6 +1595,4 @@ def prompt(promptable, history=None, settings=None):
             time.sleep(dt)
 
     prompt_knot = dn.pipe(input_knot, slow(), display_knot)
-    dn.exhaust(prompt_knot, dt=0.01, interruptible=True)
-
-    return prompt.result()
+    return prompt_knot, prompt

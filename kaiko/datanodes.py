@@ -641,7 +641,7 @@ def timeit(node, log=print):
                     log(f"count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms"
                         f" ({best_time*1000:5.3f}ms ~ {worst_time*1000:5.3f}ms) ({eff: >6.1%})")
 
-def exhaust(node, dt=0.0, interruptible=False):
+def exhaust(node, dt=0.0, interruptible=False, sync_to=None):
     node = DataNode.wrap(node)
 
     stop_event = threading.Event()
@@ -660,6 +660,12 @@ def exhaust(node, dt=0.0, interruptible=False):
                 node.send(None)
             except StopIteration:
                 return
+
+            if sync_to is not None:
+                try:
+                    sync_to.send(None)
+                except StopIteration:
+                    sync_to = None
 
 
 # for fixed-width data
