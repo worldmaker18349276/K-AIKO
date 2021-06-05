@@ -503,8 +503,15 @@ class Scheduler(DataNode):
                 node.__exit__()
 
     class _NodeKey:
-        def __init__(self, parent):
+        def __init__(self, parent, node):
             self.parent = parent
+            self.node = node
+
+        def is_initialized(self):
+            return self.node.initialized
+
+        def is_finalized(self):
+            return self.node.finalized
 
         def remove(self):
             self.parent.remove_node(self)
@@ -516,7 +523,7 @@ class Scheduler(DataNode):
             self.remove()
 
     def add_node(self, node, zindex=(0,)):
-        key = self._NodeKey(self)
+        key = self._NodeKey(self, node)
         self.queue.put((key, node, zindex))
         return key
 

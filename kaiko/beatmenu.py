@@ -14,6 +14,7 @@ from . import config as cfg
 from . import wcbuffers as wcb
 from . import beatshell
 from . import biparsers as bp
+from .engines import Mixer, MixerSettings
 from .beatshell import BeatShellSettings
 from .beatmap import BeatmapPlayer, GameplaySettings
 from .beatsheet import BeatSheet, BeatmapParseError
@@ -99,6 +100,7 @@ class KAIKOMenu:
         self.manager = manager
         self._beatmaps = []
         self.songs_mtime = None
+        self._current_bgm = None
 
     @staticmethod
     def main():
@@ -120,21 +122,23 @@ class KAIKOMenu:
                     game.run_result(result, dt)
                     return
 
-                # tips
-                print(f"{info_icon} Use {wcb.add_attr('Tab', emph_attr)} to autocomplete command.")
-                print(f"{info_icon} If you need help, press {wcb.add_attr('Alt+Enter', emph_attr)}.")
-                print()
+                # load mixer
+                with game.load_bgm(game.manager) as bgm_knot:
+                    # tips
+                    print(f"{info_icon} Use {wcb.add_attr('Tab', emph_attr)} to autocomplete command.")
+                    print(f"{info_icon} If you need help, press {wcb.add_attr('Alt+Enter', emph_attr)}.")
+                    print()
 
-                # prompt
-                history = []
-                while True:
-                    # parse command
-                    prompt_knot, prompt = beatshell.prompt(game, history)
-                    dn.exhaust(prompt_knot, dt, interruptible=True)
-                    result = prompt.result()
+                    # prompt
+                    history = []
+                    while True:
+                        # parse command
+                        prompt_knot, prompt = beatshell.prompt(game, history)
+                        dn.exhaust(prompt_knot, dt, interruptible=True, sync_to=bgm_knot)
+                        result = prompt.result()
 
-                    # execute result
-                    game.run_result(result, dt)
+                        # execute result
+                        game.run_result(result, dt, bgm_knot)
 
         except KeyboardInterrupt:
             pass
@@ -213,12 +217,14 @@ class KAIKOMenu:
         print("bye~")
         raise KeyboardInterrupt
 
-    def run_result(self, result, dt):
+    def run_result(self, result, dt, bgm_knot=None):
         if hasattr(result, 'execute'):
+            self.bgm_stop()
             result.execute(self.manager)
+            self.bgm_start()
 
         elif isinstance(result, dn.DataNode):
-            dn.exhaust(result, dt, interruptible=True)
+            dn.exhaust(result, dt, interruptible=True, sync_to=bgm_knot)
 
         elif isinstance(result, list):
             for item in result:
@@ -226,6 +232,46 @@ class KAIKOMenu:
 
         elif result is not None:
             print(result)
+
+    def load_bgm(self, manager):
+        warn_attr = self.settings.menu.warn_attr
+        device = self.settings.gameplay.mixer.output_device
+
+        try:
+            settings = MixerSettings()
+            settings.output_device = device
+            if device == -1: device = manager.get_default_output_device_info()['index']
+            device_info = manager.get_device_info_by_index(device)
+            settings.output_samplerate = int(device_info['defaultSampleRate'])
+            settings.output_channels = min(2, device_info['maxOutputChannels'])
+
+            knot, mixer = Mixer.create(settings, manager)
+
+        except Exception:
+            print(f"\x1b[{warn_attr}m", end="")
+            print("Fail to load mixer")
+            traceback.print_exc(file=sys.stdout)
+            print(f"\x1b[m", end="")
+
+            return dn.DataNode.wrap(lambda _:None)
+
+        else:
+            return dn.pipe(knot, dn.interval(self._bgm_rountine(mixer), dt=0.1))
+
+    @dn.datanode
+    def _bgm_rountine(self, mixer):
+        yield
+        while True:
+            if self._current_bgm is None:
+                yield
+                continue
+
+            current_bgm = self._current_bgm
+            with mixer.play(current_bgm) as bgm_key:
+                if bgm_key.is_finalized():
+                    break
+                while current_bgm == self._current_bgm:
+                    yield
 
     @staticmethod
     def fit_screen(width, delay=1.0):
@@ -341,6 +387,32 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             self.reload()
 
         return self._beatmaps
+
+    @beatshell.function_command
+    def current_bgm(self):
+        return self._current_bgm
+
+    # bgm
+
+    @beatshell.function_command
+    def bgm_stop(self):
+        self._current_bgm = None
+
+    @beatshell.function_command
+    def bgm_start(self, beatmap):
+        warn_attr = self.settings.menu.warn_attr
+
+        try:
+            beatmap = BeatSheet.read(str(self._songs_dir / beatmap), metadata_only=True)
+
+        except BeatmapParseError:
+            print(wcb.add_attr(f"Fail to read beatmap", warn_attr))
+
+        else:
+            if beatmap.audio is None:
+                print(wcb.add_attr(f"This beatmap has no song", warn_attr))
+
+            self._current_bgm = os.path.join(beatmap.root, beatmap.audio)
 
     # beatmaps
 
@@ -484,6 +556,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
         return KAIKOPlay(self._data_dir, self._songs_dir / beatmap, self.settings.gameplay)
 
+    @bgm_start.arg_parser("beatmap")
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
         return BeatmapParser(self._beatmaps, self._songs_dir)
