@@ -225,9 +225,12 @@ class KAIKOMenu:
 
     def run_result(self, result, dt, bgm_knot=None):
         if hasattr(result, 'execute'):
-            self.bgm_stop()
+            has_bgm = bool(self._current_bgm)
+            if has_bgm:
+                self.bgm_off()
             result.execute(self.manager)
-            self.bgm_start()
+            if has_bgm:
+                self.bgm_on()
 
         elif isinstance(result, dn.DataNode):
             dn.exhaust(result, dt, interruptible=True, sync_to=bgm_knot)
@@ -278,18 +281,19 @@ class KAIKOMenu:
                 yield
                 continue
 
-            current_song, (start, end) = current_bgm
+            filepath, (start, end) = current_bgm
 
-            with mixer.play(current_song, start=start, end=end) as bgm_key:
+            with mixer.play(filepath, start=start, end=end) as bgm_key:
                 while self.bgm_queue.empty():
                     if bgm_key.is_finalized():
                         if self._bgm_repeat:
                             self.bgm_queue.put(current_bgm)
                         else:
                             songs = self.get_songs()
-                            songs.remove(current_song)
+                            if current_bgm in songs:
+                                songs.remove(current_bgm)
                             if songs:
-                                self.bgm_queue.put((random.choice(songs), (None, None)))
+                                self.bgm_queue.put(random.choice(songs))
 
                         break
 
@@ -299,7 +303,7 @@ class KAIKOMenu:
         beatmap = BeatSheet.read(str(self._songs_dir / beatmap), metadata_only=True)
         if beatmap.audio is None:
             return None
-        return os.path.join(beatmap.root, beatmap.audio)
+        return os.path.join(beatmap.root, beatmap.audio), (None, None)
 
     def get_songs(self):
         songs = set()
@@ -436,11 +440,12 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
     # bgm
 
     @beatshell.function_command
-    def bgm_stop(self):
+    def bgm_off(self):
         self.bgm_queue.put(None)
 
     @beatshell.function_command
-    def bgm_start(self, beatmap=None, clip:Tuple[Optional[float], Optional[float]]=(None, None)):
+    def bgm_on(self, beatmap=None, clip:Tuple[Optional[float], Optional[float]]=(None, None)):
+        data_icon = self.settings.menu.data_icon
         warn_attr = self.settings.menu.warn_attr
 
         if beatmap is None:
@@ -451,21 +456,24 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             if not songs:
                 print(f"{data_icon} There is no song in the folder yet!")
                 return
-
-            self.bgm_queue.put((random.choice(songs), clip))
-            return
-
-        try:
-            song = self.get_song(beatmap)
-
-        except BeatmapParseError:
-            print(wcb.add_attr(f"Fail to read beatmap", warn_attr))
+            song = random.choice(songs)
 
         else:
+            try:
+                song = self.get_song(beatmap)
+            except BeatmapParseError:
+                print(wcb.add_attr(f"Fail to read beatmap", warn_attr))
+                return
             if song is None:
                 print(wcb.add_attr(f"This beatmap has no song", warn_attr))
+                return
 
-            self.bgm_queue.put((song, clip))
+        song = (song[0], clip)
+        self.bgm_queue.put(song)
+
+    @bgm_on.arg_parser("beatmap")
+    def _bgm_beatmap_parser(self):
+        return BeatmapParser(self._beatmaps, self._songs_dir, self, False)
 
     @beatshell.function_command
     def bgm_repeat(self, repeat:bool):
@@ -613,10 +621,9 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
         return KAIKOPlay(self._data_dir, self._songs_dir / beatmap, self.settings.gameplay)
 
-    @bgm_start.arg_parser("beatmap")
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        return BeatmapParser(self._beatmaps, self._songs_dir, self)
+        return BeatmapParser(self._beatmaps, self._songs_dir, self, True)
 
     # audio
 
@@ -899,10 +906,11 @@ class PyAudioDeviceParser(beatshell.ArgumentParser):
 
 
 class BeatmapParser(beatshell.ArgumentParser):
-    def __init__(self, beatmaps, songs_dir, parent):
+    def __init__(self, beatmaps, songs_dir, parent, preview_song=False):
         self.beatmaps = beatmaps
         self.songs_dir = songs_dir
         self.parent = parent
+        self.preview_song = preview_song
 
         self.options = [str(beatmap.relative_to(self.songs_dir)) for beatmap in self.beatmaps]
         self.expected = beatshell.expected_options(self.options)
@@ -923,7 +931,7 @@ class BeatmapParser(beatshell.ArgumentParser):
         except BeatmapParseError:
             return None
         else:
-            if beatmap.audio is not None:
+            if self.preview_song and beatmap.audio is not None:
                 song = os.path.join(beatmap.root, beatmap.audio)
                 if self.parent._current_bgm is None or self.parent._current_bgm[0] != song:
                     clip = (None, None) if beatmap.preview is None else (beatmap.preview, beatmap.preview+30.0)
