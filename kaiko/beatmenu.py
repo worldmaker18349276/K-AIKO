@@ -1,5 +1,6 @@
 import sys
 import os
+import random
 import contextlib
 import traceback
 import zipfile
@@ -269,10 +270,31 @@ class KAIKOMenu:
 
             current_bgm = self._current_bgm
             with mixer.play(current_bgm) as bgm_key:
-                if bgm_key.is_finalized():
-                    break
                 while current_bgm == self._current_bgm:
+                    if bgm_key.is_finalized():
+                        songs = self._get_songs()
+                        songs.remove(self._current_bgm)
+                        if songs:
+                            self._current_bgm = random.choice(songs)
+                        break
+
                     yield
+
+    def _get_songs(self):
+        songs = set()
+        for song in self._songs_dir.iterdir():
+            if song.is_dir():
+                for beatmap in song.iterdir():
+                    if beatmap.suffix in (".kaiko", ".ka", ".osu"):
+                        try:
+                            beatmap = BeatSheet.read(str(beatmap), metadata_only=True)
+                        except BeatmapParseError:
+                            pass
+                        else:
+                            if beatmap.audio is not None:
+                                songs.add(os.path.join(beatmap.root, beatmap.audio))
+
+        return list(songs)
 
     @staticmethod
     def fit_screen(width, delay=1.0):
@@ -400,8 +422,20 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         self._current_bgm = None
 
     @beatshell.function_command
-    def bgm_start(self, beatmap):
+    def bgm_start(self, beatmap=None):
         warn_attr = self.settings.menu.warn_attr
+
+        if beatmap is None:
+            if self._current_bgm is not None:
+                return
+
+            songs = self._get_songs()
+            if not songs:
+                print(f"{data_icon} There is no song in the folder yet!")
+                return
+
+            self._current_bgm = random.choice(songs)
+            return
 
         try:
             beatmap = BeatSheet.read(str(self._songs_dir / beatmap), metadata_only=True)
@@ -475,6 +509,9 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         if not beatmap.exists():
             print(wcb.add_attr(f"File not found: {str(beatmap)}", warn_attr))
             return
+        if not beatmap.is_file() and not beatmap.is_dir():
+            print(wcb.add_attr(f"Not a file or directory: {str(beatmap)}", warn_attr))
+            return
 
         print(f"{data_icon} Add new song from {wcb.add_attr(beatmap.as_uri(), emph_attr)}...")
 
@@ -490,9 +527,6 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             shutil.copy(str(beatmap), str(songs_dir))
         elif beatmap.is_dir():
             shutil.copytree(str(beatmap), str(distpath))
-        else:
-            print(wcb.add_attr(f"Not a file: {str(beatmap)}", warn_attr))
-            return
 
         self.reload()
 
