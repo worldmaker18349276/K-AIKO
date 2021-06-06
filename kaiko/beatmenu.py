@@ -1,7 +1,9 @@
 import sys
 import os
 import random
+import queue
 import contextlib
+from typing import Tuple, Optional
 import traceback
 import zipfile
 import shutil
@@ -102,6 +104,8 @@ class KAIKOMenu:
         self._beatmaps = []
         self.songs_mtime = None
         self._current_bgm = None
+        self._bgm_repeat = False
+        self.bgm_queue = queue.Queue()
 
     @staticmethod
     def main():
@@ -262,37 +266,51 @@ class KAIKOMenu:
 
     @dn.datanode
     def _bgm_rountine(self, mixer):
+        current_bgm = None
+
         yield
         while True:
+            while not self.bgm_queue.empty():
+                current_bgm = self.bgm_queue.get()
+            self._current_bgm = current_bgm
+
             if self._current_bgm is None:
                 yield
                 continue
 
-            current_bgm = self._current_bgm
-            with mixer.play(current_bgm) as bgm_key:
-                while current_bgm == self._current_bgm:
+            current_song, (start, end) = current_bgm
+
+            with mixer.play(current_song, start=start, end=end) as bgm_key:
+                while self.bgm_queue.empty():
                     if bgm_key.is_finalized():
-                        songs = self._get_songs()
-                        songs.remove(self._current_bgm)
-                        if songs:
-                            self._current_bgm = random.choice(songs)
+                        if self._bgm_repeat:
+                            self.bgm_queue.put(current_bgm)
+                        else:
+                            songs = self.get_songs()
+                            songs.remove(current_song)
+                            if songs:
+                                self.bgm_queue.put((random.choice(songs), (None, None)))
+
                         break
 
                     yield
 
-    def _get_songs(self):
+    def get_song(self, beatmap):
+        beatmap = BeatSheet.read(str(self._songs_dir / beatmap), metadata_only=True)
+        if beatmap.audio is None:
+            return None
+        return os.path.join(beatmap.root, beatmap.audio)
+
+    def get_songs(self):
         songs = set()
-        for song in self._songs_dir.iterdir():
-            if song.is_dir():
-                for beatmap in song.iterdir():
-                    if beatmap.suffix in (".kaiko", ".ka", ".osu"):
-                        try:
-                            beatmap = BeatSheet.read(str(beatmap), metadata_only=True)
-                        except BeatmapParseError:
-                            pass
-                        else:
-                            if beatmap.audio is not None:
-                                songs.add(os.path.join(beatmap.root, beatmap.audio))
+        for beatmap in self._beatmaps:
+            try:
+                song = self.get_song(beatmap)
+            except BeatmapParseError:
+                pass
+            else:
+                if song is not None:
+                    songs.add(song)
 
         return list(songs)
 
@@ -413,41 +431,45 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @beatshell.function_command
     def current_bgm(self):
-        return self._current_bgm
+        return self._current_bgm and self._current_bgm[0]
 
     # bgm
 
     @beatshell.function_command
     def bgm_stop(self):
-        self._current_bgm = None
+        self.bgm_queue.put(None)
 
     @beatshell.function_command
-    def bgm_start(self, beatmap=None):
+    def bgm_start(self, beatmap=None, clip:Tuple[Optional[float], Optional[float]]=(None, None)):
         warn_attr = self.settings.menu.warn_attr
 
         if beatmap is None:
             if self._current_bgm is not None:
                 return
 
-            songs = self._get_songs()
+            songs = self.get_songs()
             if not songs:
                 print(f"{data_icon} There is no song in the folder yet!")
                 return
 
-            self._current_bgm = random.choice(songs)
+            self.bgm_queue.put((random.choice(songs), clip))
             return
 
         try:
-            beatmap = BeatSheet.read(str(self._songs_dir / beatmap), metadata_only=True)
+            song = self.get_song(beatmap)
 
         except BeatmapParseError:
             print(wcb.add_attr(f"Fail to read beatmap", warn_attr))
 
         else:
-            if beatmap.audio is None:
+            if song is None:
                 print(wcb.add_attr(f"This beatmap has no song", warn_attr))
 
-            self._current_bgm = os.path.join(beatmap.root, beatmap.audio)
+            self.bgm_queue.put((song, clip))
+
+    @beatshell.function_command
+    def bgm_repeat(self, repeat:bool):
+        self._bgm_repeat = repeat
 
     # beatmaps
 
