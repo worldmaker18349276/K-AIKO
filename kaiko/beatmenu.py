@@ -616,7 +616,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
     @bgm_start.arg_parser("beatmap")
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        return BeatmapParser(self._beatmaps, self._songs_dir)
+        return BeatmapParser(self._beatmaps, self._songs_dir, self)
 
     # audio
 
@@ -899,9 +899,10 @@ class PyAudioDeviceParser(beatshell.ArgumentParser):
 
 
 class BeatmapParser(beatshell.ArgumentParser):
-    def __init__(self, beatmaps, songs_dir):
+    def __init__(self, beatmaps, songs_dir, parent):
         self.beatmaps = beatmaps
         self.songs_dir = songs_dir
+        self.parent = parent
 
         self.options = [str(beatmap.relative_to(self.songs_dir)) for beatmap in self.beatmaps]
         self.expected = beatshell.expected_options(self.options)
@@ -922,6 +923,11 @@ class BeatmapParser(beatshell.ArgumentParser):
         except BeatmapParseError:
             return None
         else:
+            if beatmap.audio is not None:
+                song = os.path.join(beatmap.root, beatmap.audio)
+                if self.parent._current_bgm is None or self.parent._current_bgm[0] != song:
+                    clip = (None, None) if beatmap.preview is None else (beatmap.preview, beatmap.preview+30.0)
+                    self.parent.bgm_queue.put((song, clip))
             return beatmap.info.strip()
 
 

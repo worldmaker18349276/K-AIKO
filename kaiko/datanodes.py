@@ -965,15 +965,15 @@ def resample(ratio):
         data = yield data_
 
 @datanode
-def tslice(node, samplerate=44100, start=None, end=None):
+def tslice(node, samplerate, start=None, end=None):
     """A data node sliced by given timespan.
 
     Parameters
     ----------
     node : DataNode
         The data node to slice.
-    samplerate : int, optional
-        The sample rate of data, default is `44100`.
+    samplerate : int
+        The sample rate of data.
     start : float, optional
         The start time, default is no slicing.
     end : float, optional
