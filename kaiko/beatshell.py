@@ -1,5 +1,4 @@
 import os
-import time
 from enum import Enum
 import dataclasses
 from collections import OrderedDict
@@ -1278,6 +1277,8 @@ class BeatShellSettings(cfg.Configurable):
 
     class prompt(cfg.Configurable):
         framerate: float = 60.0
+        t0: float = 0.0
+        tempo: float = 130.0
 
         headers: List[str] = [
             "\x1b[96;1m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;255m❯ \x1b[m",
@@ -1384,6 +1385,8 @@ class BeatPrompt:
 
     @dn.datanode
     def header_node(self):
+        t0 = self.settings.prompt.t0
+        tempo = self.settings.prompt.tempo
         framerate = self.settings.prompt.framerate
 
         headers = self.settings.prompt.headers
@@ -1392,9 +1395,8 @@ class BeatPrompt:
         cursor_blink_ratio = self.settings.prompt.cursor_blink_ratio
 
         clean = yield
-        ref_time = time.time()
         n = 0
-        t = (ref_time - self.t0)/(60/self.tempo)
+        t = t0/(60/tempo)
         tr = t // 1
         while True:
             # don't blink while key pressing
@@ -1417,7 +1419,7 @@ class BeatPrompt:
 
             clean = yield header, cursor
             n += 1
-            t = (ref_time - self.t0 + n/framerate)/(60/self.tempo)
+            t = (t0 + n/framerate)/(60/tempo)
 
     @dn.datanode
     def message_node(self):
@@ -1588,6 +1590,7 @@ def prompt(promptable, history=None, settings=None):
     # `dn.show`, `dn.input` will fight each other...
     @dn.datanode
     def slow(dt=0.1):
+        import time
         try:
             yield
             while True:
