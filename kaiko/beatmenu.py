@@ -162,6 +162,10 @@ class KAIKOMenu:
             traceback.print_exc(file=sys.stdout)
             print(f"\x1b[m", end="")
 
+    @property
+    def settings(self):
+        return self._config.current
+
     @classmethod
     @contextlib.contextmanager
     def init(clz):
@@ -336,11 +340,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
                                                 " indicating whether to use backslash escapes;"
                                                 " the default is False.")
 
-    # properties
-
-    @property
-    def settings(self):
-        return self._config.current
+    # user
 
     @beatshell.function_command
     def username(self):
@@ -357,13 +357,6 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
     @beatshell.function_command
     def songs_dir(self):
         return self.user.songs_dir
-
-    @beatshell.function_command
-    def beatmaps(self):
-        if self._beatmaps_mtime != os.stat(str(self.user.songs_dir)).st_mtime:
-            self.reload()
-
-        return self._beatmaps
 
     # bgm
 
@@ -430,6 +423,13 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         self.bgm._bgm_repeat = repeat
 
     # beatmaps
+
+    @beatshell.function_command
+    def beatmaps(self):
+        if self._beatmaps_mtime != os.stat(str(self.user.songs_dir)).st_mtime:
+            self.reload()
+
+        return self._beatmaps
 
     @beatshell.function_command
     def reload(self):
