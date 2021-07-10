@@ -3,6 +3,7 @@ import os
 import random
 import queue
 import contextlib
+import dataclasses
 from typing import Tuple, Optional
 import traceback
 import zipfile
@@ -94,18 +95,22 @@ class KAIKOSettings(cfg.Configurable):
     gameplay = GameplaySettings
 
 
+@dataclasses.dataclass
+class KAIKOUser:
+    username: str
+    config_file: Path
+    data_dir: Path
+    songs_dir: Path
+
+
 class KAIKOMenu:
-    def __init__(self, config, username, data_dir, songs_dir, manager):
+    def __init__(self, config, user, manager):
         self._config = config
-        self._username = username
-        self._data_dir = data_dir
-        self._songs_dir = songs_dir
+        self.user = user
         self.manager = manager
         self._beatmaps = []
         self._beatmaps_mtime = None
-        self._current_bgm = None
-        self._bgm_repeat = False
-        self.bgm_queue = queue.Queue()
+        self.bgm = None
 
     @staticmethod
     def main():
@@ -114,6 +119,7 @@ class KAIKOMenu:
                 info_icon = game.settings.menu.info_icon
                 hint_icon = game.settings.menu.hint_icon
                 emph_attr = game.settings.menu.emph_attr
+                warn_attr = game.settings.menu.warn_attr
                 dt = 0.01
 
                 # fit screen size
@@ -129,7 +135,8 @@ class KAIKOMenu:
                     return
 
                 # load mixer
-                with game.load_bgm(game.manager) as bgm_knot:
+                game.bgm = KAIKOBGM(game.settings.gameplay.mixer, game.get_songs())
+                with game.bgm.load_bgm(game.manager, warn_attr) as bgm_knot:
                     # tips
                     print(f"{hint_icon} Use {wcb.add_attr('Tab', emph_attr)} to autocomplete command.")
                     print(f"{hint_icon} If you need help, press {wcb.add_attr('Alt+Enter', emph_attr)}.")
@@ -162,10 +169,10 @@ class KAIKOMenu:
         data_dir = Path(appdirs.user_data_dir("K-AIKO", username))
 
         # load settings
-        config_path = data_dir / "config.py"
+        config_file = data_dir / "config.py"
         config = cfg.Configuration(KAIKOSettings)
-        if config_path.exists():
-            config.read(config_path)
+        if config_file.exists():
+            config.read(config_file)
         settings = config.current
 
         data_icon = settings.menu.data_icon
@@ -184,8 +191,8 @@ class KAIKOMenu:
             print(f"{data_icon} Prepare your profile...")
             data_dir.mkdir(exist_ok=True)
             songs_dir.mkdir(exist_ok=True)
-            if not config_path.exists():
-                config.write(config_path)
+            if not config_file.exists():
+                config.write(config_file)
 
             (data_dir / "samples/").mkdir(exist_ok=True)
             resources = ["samples/soft.wav",
@@ -214,7 +221,8 @@ class KAIKOMenu:
             print("\x1b[m", flush=True)
 
         try:
-            yield clz(config, username, data_dir, songs_dir, manager)
+            user = KAIKOUser(username, config_file, data_dir, songs_dir)
+            yield clz(config, user, manager)
         finally:
             manager.terminate()
 
@@ -225,7 +233,7 @@ class KAIKOMenu:
 
     def run_result(self, result, dt, bgm_knot=None):
         if hasattr(result, 'execute'):
-            has_bgm = bool(self._current_bgm)
+            has_bgm = bool(self.bgm._current_bgm)
             if has_bgm:
                 self.bgm_off()
             result.execute(self.manager)
@@ -241,82 +249,6 @@ class KAIKOMenu:
 
         elif result is not None:
             print(result)
-
-    def load_bgm(self, manager):
-        warn_attr = self.settings.menu.warn_attr
-        device = self.settings.gameplay.mixer.output_device
-
-        try:
-            settings = MixerSettings()
-            settings.output_device = device
-            if device == -1: device = manager.get_default_output_device_info()['index']
-            device_info = manager.get_device_info_by_index(device)
-            settings.output_samplerate = int(device_info['defaultSampleRate'])
-            settings.output_channels = min(2, device_info['maxOutputChannels'])
-
-            knot, mixer = Mixer.create(settings, manager)
-
-        except Exception:
-            print(f"\x1b[{warn_attr}m", end="")
-            print("Fail to load mixer")
-            traceback.print_exc(file=sys.stdout)
-            print(f"\x1b[m", end="")
-
-            return dn.DataNode.wrap(lambda _:None)
-
-        else:
-            return dn.pipe(knot, dn.interval(self._bgm_rountine(mixer), dt=0.1))
-
-    @dn.datanode
-    def _bgm_rountine(self, mixer):
-        current_bgm = None
-
-        yield
-        while True:
-            while not self.bgm_queue.empty():
-                current_bgm = self.bgm_queue.get()
-            self._current_bgm = current_bgm
-
-            if self._current_bgm is None:
-                yield
-                continue
-
-            filepath, (start, end) = current_bgm
-
-            with mixer.play(filepath, start=start, end=end) as bgm_key:
-                while self.bgm_queue.empty():
-                    if bgm_key.is_finalized():
-                        if self._bgm_repeat:
-                            self.bgm_queue.put(current_bgm)
-                        else:
-                            songs = self.get_songs()
-                            if current_bgm in songs:
-                                songs.remove(current_bgm)
-                            if songs:
-                                self.bgm_queue.put(random.choice(songs))
-
-                        break
-
-                    yield
-
-    def get_song(self, beatmap):
-        beatmap = BeatSheet.read(str(self._songs_dir / beatmap), metadata_only=True)
-        if beatmap.audio is None:
-            return None
-        return os.path.join(beatmap.root, beatmap.audio), (None, None)
-
-    def get_songs(self):
-        songs = set()
-        for beatmap in self._beatmaps:
-            try:
-                song = self.get_song(beatmap)
-            except BeatmapParseError:
-                pass
-            else:
-                if song is not None:
-                    songs.add(song)
-
-        return list(songs)
 
     @staticmethod
     def fit_screen(width, delay=1.0):
@@ -412,36 +344,55 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @beatshell.function_command
     def username(self):
-        return self._username
-
-    @beatshell.function_command
-    def data_dir(self):
-        return self._data_dir
+        return self.user.username
 
     @beatshell.function_command
     def config_file(self):
-        return self._data_dir / "config.py"
+        return self.user.config_file
+
+    @beatshell.function_command
+    def data_dir(self):
+        return self.user.data_dir
 
     @beatshell.function_command
     def songs_dir(self):
-        return self._songs_dir
+        return self.user.songs_dir
 
     @beatshell.function_command
     def beatmaps(self):
-        if self._beatmaps_mtime != os.stat(str(self._songs_dir)).st_mtime:
+        if self._beatmaps_mtime != os.stat(str(self.user.songs_dir)).st_mtime:
             self.reload()
 
         return self._beatmaps
 
+    # bgm
+
+    def get_song(self, beatmap):
+        beatmap = BeatSheet.read(str(self.user.songs_dir / beatmap), metadata_only=True)
+        if beatmap.audio is None:
+            return None
+        return os.path.join(beatmap.root, beatmap.audio), (None, None)
+
+    def get_songs(self):
+        songs = set()
+        for beatmap in self._beatmaps:
+            try:
+                song = self.get_song(beatmap)
+            except BeatmapParseError:
+                pass
+            else:
+                if song is not None:
+                    songs.add(song)
+
+        return list(songs)
+
     @beatshell.function_command
     def current_bgm(self):
-        return self._current_bgm and self._current_bgm[0]
-
-    # bgm
+        return self.bgm._current_bgm and self.bgm._current_bgm[0]
 
     @beatshell.function_command
     def bgm_off(self):
-        self.bgm_queue.put(None)
+        self.bgm.stop()
 
     @beatshell.function_command
     def bgm_on(self, beatmap=None, clip:Tuple[Optional[float], Optional[float]]=(None, None)):
@@ -449,7 +400,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         warn_attr = self.settings.menu.warn_attr
 
         if beatmap is None:
-            if self._current_bgm is not None:
+            if self.bgm._current_bgm is not None:
                 return
 
             songs = self.get_songs()
@@ -468,16 +419,15 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
                 print(wcb.add_attr(f"This beatmap has no song", warn_attr))
                 return
 
-        song = (song[0], clip)
-        self.bgm_queue.put(song)
+        self.bgm.play(song[0], clip)
 
     @bgm_on.arg_parser("beatmap")
     def _bgm_beatmap_parser(self):
-        return BeatmapParser(self._beatmaps, self._songs_dir, self, False)
+        return BeatmapParser(self._beatmaps, self.user.songs_dir, self, False)
 
     @beatshell.function_command
     def bgm_repeat(self, repeat:bool):
-        self._bgm_repeat = repeat
+        self.bgm._bgm_repeat = repeat
 
     # beatmaps
 
@@ -490,7 +440,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
         data_icon = self.settings.menu.data_icon
         emph_attr = self.settings.menu.emph_attr
-        songs_dir = self._songs_dir
+        songs_dir = self.user.songs_dir
 
         print(f"{data_icon} Load songs from {wcb.add_attr(songs_dir.as_uri(), emph_attr)}...")
 
@@ -534,7 +484,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         data_icon = self.settings.menu.data_icon
         emph_attr = self.settings.menu.emph_attr
         warn_attr = self.settings.menu.warn_attr
-        songs_dir = self._songs_dir
+        songs_dir = self.user.songs_dir
 
         if not beatmap.exists():
             print(wcb.add_attr(f"File not found: {str(beatmap)}", warn_attr))
@@ -577,7 +527,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         data_icon = self.settings.menu.data_icon
         emph_attr = self.settings.menu.emph_attr
         warn_attr = self.settings.menu.warn_attr
-        songs_dir = self._songs_dir
+        songs_dir = self.user.songs_dir
 
         beatmap_path = songs_dir / beatmap
         if beatmap_path.is_file():
@@ -595,7 +545,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @remove.arg_parser("beatmap")
     def _remove_beatmap_parser(self):
-        songs_dir = self._songs_dir
+        songs_dir = self.user.songs_dir
 
         options = []
         for song in songs_dir.iterdir():
@@ -619,11 +569,11 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
              songs folder can be accessed.
         """
 
-        return KAIKOPlay(self._data_dir, self._songs_dir / beatmap, self.settings.gameplay)
+        return KAIKOPlay(self.data_dir, self.user.songs_dir / beatmap, self.settings.gameplay)
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        return BeatmapParser(self._beatmaps, self._songs_dir, self, True)
+        return BeatmapParser(self._beatmaps, self.user.songs_dir, self, True)
 
     # audio
 
@@ -737,6 +687,67 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
     @property
     def config(self):
         return ConfigCommand(self._config, self.config_file())
+
+
+class KAIKOBGM:
+    def __init__(self, settings, songs):
+        self.settings = settings
+        self._current_bgm = None
+        self._bgm_repeat = False
+        self._action_queue = queue.Queue()
+        self._songs = songs
+
+    def load_bgm(self, manager, warn_attr):
+        try:
+            knot, mixer = Mixer.create(self.settings, manager)
+
+        except Exception:
+            print(f"\x1b[{warn_attr}m", end="")
+            print("Fail to load mixer")
+            traceback.print_exc(file=sys.stdout)
+            print(f"\x1b[m", end="")
+
+            return dn.DataNode.wrap(lambda _:None)
+
+        else:
+            return dn.pipe(knot, dn.interval(self._bgm_rountine(mixer), dt=0.1))
+
+    @dn.datanode
+    def _bgm_rountine(self, mixer):
+        current_bgm = None
+
+        yield
+        while True:
+            while not self._action_queue.empty():
+                current_bgm = self._action_queue.get()
+            self._current_bgm = current_bgm
+
+            if self._current_bgm is None:
+                yield
+                continue
+
+            filepath, (start, end) = current_bgm
+
+            with mixer.play(filepath, start=start, end=end) as bgm_key:
+                while self._action_queue.empty():
+                    if bgm_key.is_finalized():
+                        if self._bgm_repeat:
+                            self._action_queue.put(current_bgm)
+                        else:
+                            if current_bgm in self._songs:
+                                songs.remove(current_bgm)
+                            if songs:
+                                self._action_queue.put(random.choice(songs))
+
+                        break
+
+                    yield
+
+    def stop(self):
+        self._action_queue.put(None)
+
+    def play(self, song, clip=(None,None)):
+        self._action_queue.put((song, clip))
 
 
 class ConfigCommand:
@@ -933,9 +944,9 @@ class BeatmapParser(beatshell.ArgumentParser):
         else:
             if self.preview_song and beatmap.audio is not None:
                 song = os.path.join(beatmap.root, beatmap.audio)
-                if self.parent._current_bgm is None or self.parent._current_bgm[0] != song:
+                if self.parent.bgm._current_bgm is None or self.parent.bgm._current_bgm[0] != song:
                     clip = (None, None) if beatmap.preview is None else (beatmap.preview, beatmap.preview+30.0)
-                    self.parent.bgm_queue.put((song, clip))
+                    self.parent.bgm.play(song, clip)
             return beatmap.info.strip()
 
 
