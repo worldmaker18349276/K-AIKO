@@ -135,7 +135,7 @@ class KAIKOMenu:
                     return
 
                 # load mixer
-                game.bgm = KAIKOBGM(game.settings.gameplay.mixer, game.get_songs())
+                game.bgm = KAIKOBGM(game._config, game.get_songs())
                 with game.bgm.load_bgm(game.manager, warn_attr) as bgm_knot:
                     # tips
                     print(f"{hint_icon} Use {wcb.add_attr('Tab', emph_attr)} to autocomplete command.")
@@ -690,8 +690,8 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
 
 class KAIKOBGM:
-    def __init__(self, settings, songs):
-        self.settings = settings
+    def __init__(self, config, songs):
+        self.config = config
         self._current_bgm = None
         self._bgm_repeat = False
         self._action_queue = queue.Queue()
@@ -699,7 +699,7 @@ class KAIKOBGM:
 
     def load_bgm(self, manager, warn_attr):
         try:
-            knot, mixer = Mixer.create(self.settings, manager)
+            knot, mixer = Mixer.create(self.config.current.gameplay.mixer, manager)
 
         except Exception:
             print(f"\x1b[{warn_attr}m", end="")
