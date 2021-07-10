@@ -1343,8 +1343,9 @@ class BeatPrompt:
         self.input = input
         self.settings = settings
         self.result = None
-        self.t0 = 0.0
-        self.tempo = 130.0
+        self.ref_time = None
+        self.t0 = None
+        self.tempo = None
 
     @dn.datanode
     def output_handler(self):
@@ -1385,8 +1386,6 @@ class BeatPrompt:
 
     @dn.datanode
     def header_node(self):
-        t0 = self.settings.prompt.t0
-        tempo = self.settings.prompt.tempo
         framerate = self.settings.prompt.framerate
 
         headers = self.settings.prompt.headers
@@ -1395,8 +1394,11 @@ class BeatPrompt:
         cursor_blink_ratio = self.settings.prompt.cursor_blink_ratio
 
         clean = yield
+        self.t0 = self.settings.prompt.t0
+        self.tempo = self.settings.prompt.tempo
+
         n = 0
-        t = t0/(60/tempo)
+        t = (self.ref_time - self.t0)/(60/self.tempo)
         tr = t // 1
         while True:
             # don't blink while key pressing
@@ -1419,7 +1421,7 @@ class BeatPrompt:
 
             clean = yield header, cursor
             n += 1
-            t = (t0 + n/framerate)/(60/tempo)
+            t = (self.ref_time - self.t0 + n/framerate)/(60/self.tempo)
 
     @dn.datanode
     def message_node(self):
@@ -1592,6 +1594,8 @@ def prompt(promptable, history=None, settings=None):
     def slow(dt=0.1):
         import time
         try:
+            yield
+            prompt.ref_time = time.time()
             yield
             while True:
                 yield
