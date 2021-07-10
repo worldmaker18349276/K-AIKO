@@ -25,14 +25,55 @@ from .beatsheet import BeatSheet, BeatmapParseError
 from . import beatanalyzer
 
 
-def print_pyaudio_info(manager):
-    print()
+def fit_screen(logger, width, delay=1.0):
+    import time
 
-    print("portaudio version:")
-    print("  " + pyaudio.get_portaudio_version_text())
-    print()
+    @dn.datanode
+    def fit():
+        size = yield
+        current_width = 0
 
-    print("available devices:")
+        if size.columns < width:
+            t = time.time()
+
+            logger.print("The screen size seems too small.")
+            logger.print(f"Can you adjust the screen size to (or bigger than) {width}?")
+            logger.print("Or you can try to fit the line below.")
+            logger.print("━"*width)
+
+            while current_width < width or time.time() < t+delay:
+                if current_width != size.columns:
+                    current_width = size.columns
+                    t = time.time()
+                    if current_width < width - 5:
+                        hint = "(too small!)"
+                    elif current_width < width:
+                        hint = "(very close!)"
+                    elif current_width == width:
+                        hint = "(perfect!)"
+                    else:
+                        hint = "(great!)"
+                    logger.print(f"\r\x1b[KCurrent width: {current_width} {hint}", end="", flush=True)
+
+                size = yield
+
+            logger.print("\nThanks!\n")
+
+            # sleep
+            t = time.time()
+            while time.time() < t+delay:
+                yield
+
+    dn.exhaust(dn.pipe(dn.terminal_size(), fit()), dt=0.1)
+
+def print_pyaudio_info(manager, logger):
+    logger.print()
+
+    logger.print("portaudio version:")
+    logger.print("  " + pyaudio.get_portaudio_version_text())
+    logger.print()
+
+    logger.print("available devices:")
     apis_list = [manager.get_host_api_info_by_index(i)['name'] for i in range(manager.get_host_api_count())]
 
     table = []
@@ -56,15 +97,15 @@ def print_pyaudio_info(manager):
     chout_len = max(len(entry[5]) for entry in table)
 
     for ind, name, api, freq, chin, chout in table:
-        print(f"  {ind:>{ind_len}}. {name:{name_len}}  by  {api:{api_len}}"
-              f"  ({freq:>{freq_len}} kHz, in: {chin:>{chin_len}}, out: {chout:>{chout_len}})")
+        logger.print(f"  {ind:>{ind_len}}. {name:{name_len}}  by  {api:{api_len}}"
+                     f"  ({freq:>{freq_len}} kHz, in: {chin:>{chin_len}}, out: {chout:>{chout_len}})")
 
-    print()
+    logger.print()
 
     default_input_device_index = manager.get_default_input_device_info()['index']
     default_output_device_index = manager.get_default_output_device_info()['index']
-    print(f"default input device: {default_input_device_index}")
-    print(f"default output device: {default_output_device_index}")
+    logger.print(f"default input device: {default_input_device_index}")
+    logger.print(f"default output device: {default_output_device_index}")
 
 class KAIKOMenuSettings(cfg.Configurable):
     logo: str = """
@@ -95,6 +136,49 @@ class KAIKOSettings(cfg.Configurable):
     gameplay = GameplaySettings
 
 
+class KAIKOLogger:
+    def __init__(self, config):
+        self.config = config
+        self.level = 1
+
+    @contextlib.contextmanager
+    def verb(self):
+        verb_attr = self.config.current.menu.verb_attr
+        level = self.level
+        self.level = 0
+        try:
+            print(f"\x1b[{verb_attr}m", end="", flush=True)
+            yield
+        finally:
+            self.level = level
+            print("\x1b[m", flush=True)
+
+    @contextlib.contextmanager
+    def warn(self):
+        warn_attr = self.config.current.menu.warn_attr
+        level = self.level
+        self.level = 2
+        try:
+            print(f"\x1b[{warn_attr}m", end="", flush=True)
+            yield
+        finally:
+            self.level = level
+            print("\x1b[m", flush=True)
+
+    def emph(self, msg):
+        return wcb.add_attr(msg, self.config.current.menu.emph_attr)
+
+    def print(self, msg="", prefix=None, end="\n", flush=False):
+        if prefix is None:
+            print(msg, end=end, flush=flush)
+        elif prefix == "data":
+            print(self.config.current.menu.data_icon + " " + msg, end=end, flush=flush)
+        elif prefix == "info":
+            print(self.config.current.menu.info_icon + " " + msg, end=end, flush=flush)
+        elif prefix == "hint":
+            print(self.config.current.menu.hint_icon + " " + msg, end=end, flush=flush)
+
+
 @dataclasses.dataclass
 class KAIKOUser:
     username: str
@@ -104,10 +188,11 @@ class KAIKOUser:
 
 
 class KAIKOMenu:
-    def __init__(self, config, user, manager):
+    def __init__(self, config, user, manager, logger):
         self._config = config
         self.user = user
         self.manager = manager
+        self.logger = logger
         self._beatmaps = []
         self._beatmaps_mtime = None
         self.bgm = None
@@ -116,14 +201,11 @@ class KAIKOMenu:
     def main():
         try:
             with KAIKOMenu.init() as game:
-                info_icon = game.settings.menu.info_icon
-                hint_icon = game.settings.menu.hint_icon
-                emph_attr = game.settings.menu.emph_attr
-                warn_attr = game.settings.menu.warn_attr
+                logger = game.logger
                 dt = 0.01
 
                 # fit screen size
-                game.fit_screen(game.settings.menu.best_screen_size)
+                fit_screen(logger, game.settings.menu.best_screen_size)
 
                 # load songs
                 game.reload()
@@ -135,12 +217,12 @@ class KAIKOMenu:
                     return
 
                 # load mixer
-                game.bgm = KAIKOBGM(game._config, game.get_songs())
-                with game.bgm.load_bgm(game.manager, warn_attr) as bgm_knot:
+                game.bgm = KAIKOBGM(game._config, logger, game.get_songs())
+                with game.bgm.load_bgm(game.manager) as bgm_knot:
                     # tips
-                    print(f"{hint_icon} Use {wcb.add_attr('Tab', emph_attr)} to autocomplete command.")
-                    print(f"{hint_icon} If you need help, press {wcb.add_attr('Alt+Enter', emph_attr)}.")
-                    print()
+                    logger.print(f"Use {logger.emph('Tab')} to autocomplete command.", prefix="hint")
+                    logger.print(f"If you need help, press {logger.emph('Alt+Enter')}.", prefix="hint")
+                    logger.print()
 
                     # prompt
                     history = []
@@ -159,7 +241,7 @@ class KAIKOMenu:
         except:
             # print error
             print("\x1b[31m", end="")
-            traceback.print_exc(file=sys.stdout)
+            print(traceback.format_exc(), end="")
             print(f"\x1b[m", end="")
 
     @property
@@ -179,20 +261,17 @@ class KAIKOMenu:
             config.read(config_file)
         settings = config.current
 
-        data_icon = settings.menu.data_icon
-        info_icon = settings.menu.info_icon
-        verb_attr = settings.menu.verb_attr
-        emph_attr = settings.menu.emph_attr
+        logger = KAIKOLogger(config)
 
         # print logo
-        print(settings.menu.logo, flush=True)
+        logger.print(settings.menu.logo, flush=True)
 
         # load user data
         songs_dir = data_dir / "songs"
 
         if not data_dir.exists():
             # start up
-            print(f"{data_icon} Prepare your profile...")
+            logger.print(f"Prepare your profile...", prefix="data")
             data_dir.mkdir(exist_ok=True)
             songs_dir.mkdir(exist_ok=True)
             if not config_file.exists():
@@ -205,34 +284,30 @@ class KAIKOMenu:
                          "samples/rock.wav",
                          "samples/disk.wav"]
             for rspath in resources:
-                print(f"{data_icon} Load resource {rspath}...")
+                logger.print(f"Load resource {rspath}...", prefix="data")
                 data = pkgutil.get_data("kaiko", rspath)
                 open(data_dir / rspath, 'wb').write(data)
 
-            print(f"{data_icon} Your data will be stored in "
-                  f"{wcb.add_attr(data_dir.as_uri(), emph_attr)}")
-            print(flush=True)
+            logger.print(f"Your data will be stored in {logger.emph(data_dir.as_uri())}", prefix="data")
+            logger.print(flush=True)
 
         # load PyAudio
-        print(f"{info_icon} Load PyAudio...")
-        print()
+        logger.print(f"Load PyAudio...", prefix="info")
+        logger.print()
 
-        print(f"\x1b[{verb_attr}m", end="", flush=True)
-        try:
+        with logger.verb():
             manager = pyaudio.PyAudio()
-            print_pyaudio_info(manager)
-        finally:
-            print("\x1b[m", flush=True)
+            print_pyaudio_info(manager, logger)
 
         try:
             user = KAIKOUser(username, config_file, data_dir, songs_dir)
-            yield clz(config, user, manager)
+            yield clz(config, user, manager, logger)
         finally:
             manager.terminate()
 
     @beatshell.function_command
     def exit(self):
-        print("bye~")
+        self.logger.print("bye~")
         raise KeyboardInterrupt
 
     def run_result(self, result, dt, bgm_knot=None):
@@ -249,56 +324,14 @@ class KAIKOMenu:
 
         elif isinstance(result, list):
             for item in result:
-                print(item)
+                self.logger.print(item)
 
         elif result is not None:
-            print(result)
-
-    @staticmethod
-    def fit_screen(width, delay=1.0):
-        import time
-
-        @dn.datanode
-        def fit():
-            size = yield
-            current_width = 0
-
-            if size.columns < width:
-                t = time.time()
-
-                print("The screen size seems too small.")
-                print(f"Can you adjust the screen size to (or bigger than) {width}?")
-                print("Or you can try to fit the line below.")
-                print("━"*width)
-
-                while current_width < width or time.time() < t+delay:
-                    if current_width != size.columns:
-                        current_width = size.columns
-                        t = time.time()
-                        if current_width < width - 5:
-                            hint = "(too small!)"
-                        elif current_width < width:
-                            hint = "(very close!)"
-                        elif current_width == width:
-                            hint = "(perfect!)"
-                        else:
-                            hint = "(great!)"
-                        print(f"\r\x1b[KCurrent width: {current_width} {hint}", end="", flush=True)
-
-                    size = yield
-
-                print("\nThanks!\n")
-
-                # sleep
-                t = time.time()
-                while time.time() < t+delay:
-                    yield
-
-        dn.exhaust(dn.pipe(dn.terminal_size(), fit()), dt=0.1)
+            self.logger.print(result)
 
     @beatshell.function_command
     def intro(self):
-        print(
+        self.logger.print(
 """Beat shell is a user friendly commandline shell for playing K-AIKO.
 
 Just type a command followed by any arguments, and press \x1b[1mEnter\x1b[m to execute!
@@ -324,9 +357,9 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         """
 
         if escape:
-            print(beatshell.echo_str(message))
+            self.logger.print(beatshell.echo_str(message))
         else:
-            print(message)
+            self.logger.print(message)
 
     @say.arg_parser("message")
     def _say_message_parser(self):
@@ -389,8 +422,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @beatshell.function_command
     def bgm_on(self, beatmap=None, clip:Tuple[Optional[float], Optional[float]]=(None, None)):
-        data_icon = self.settings.menu.data_icon
-        warn_attr = self.settings.menu.warn_attr
+        logger = self.logger
 
         if beatmap is None:
             if self.bgm._current_bgm is not None:
@@ -398,7 +430,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
             songs = self.get_songs()
             if not songs:
-                print(f"{data_icon} There is no song in the folder yet!")
+                logger.print("There is no song in the folder yet!", prefix="data")
                 return
             song = random.choice(songs)
 
@@ -406,10 +438,12 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             try:
                 song = self.get_song(beatmap)
             except BeatmapParseError:
-                print(wcb.add_attr(f"Fail to read beatmap", warn_attr))
+                with logger.warn():
+                    logger.print("Fail to read beatmap")
                 return
             if song is None:
-                print(wcb.add_attr(f"This beatmap has no song", warn_attr))
+                with logger.warn():
+                    logger.print("This beatmap has no song")
                 return
 
         self.bgm.play(song[0], clip)
@@ -438,11 +472,10 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         usage: \x1b[94mreload\x1b[m
         """
 
-        data_icon = self.settings.menu.data_icon
-        emph_attr = self.settings.menu.emph_attr
+        logger = self.logger
         songs_dir = self.user.songs_dir
 
-        print(f"{data_icon} Load songs from {wcb.add_attr(songs_dir.as_uri(), emph_attr)}...")
+        logger.print(f"Load songs from {logger.emph(songs_dir.as_uri())}...", prefix="data")
 
         self._beatmaps = []
 
@@ -451,7 +484,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
                 distpath = file.parent / file.stem
                 if distpath.exists():
                     continue
-                print(f"{data_icon} Unzip file {wcb.add_attr(file.as_uri(), emph_attr)}...")
+                logger.print(f"Unzip file {logger.emph(file.as_uri())}...", prefix="data")
                 distpath.mkdir()
                 zf = zipfile.ZipFile(str(file), 'r')
                 zf.extractall(path=str(distpath))
@@ -464,8 +497,8 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
                         self._beatmaps.append(beatmap)
 
         if len(self._beatmaps) == 0:
-            print(f"{data_icon} There is no song in the folder yet!")
-        print(flush=True)
+            logger.print("There is no song in the folder yet!", prefix="data")
+        logger.print(flush=True)
 
         self._beatmaps_mtime = os.stat(str(songs_dir)).st_mtime
 
@@ -481,19 +514,19 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
            the terminal to paste its path.
         """
 
-        data_icon = self.settings.menu.data_icon
-        emph_attr = self.settings.menu.emph_attr
-        warn_attr = self.settings.menu.warn_attr
+        logger = self.logger
         songs_dir = self.user.songs_dir
 
         if not beatmap.exists():
-            print(wcb.add_attr(f"File not found: {str(beatmap)}", warn_attr))
+            with logger.warn():
+                logger.print(f"File not found: {str(beatmap)}")
             return
         if not beatmap.is_file() and not beatmap.is_dir():
-            print(wcb.add_attr(f"Not a file or directory: {str(beatmap)}", warn_attr))
+            with logger.warn():
+                logger.print(f"Not a file or directory: {str(beatmap)}")
             return
 
-        print(f"{data_icon} Add new song from {wcb.add_attr(beatmap.as_uri(), emph_attr)}...")
+        logger.print(f"Add new song from {logger.emph(beatmap.as_uri())}...", prefix="data")
 
         distpath = songs_dir / beatmap.name
         n = 1
@@ -501,7 +534,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             distpath = songs_dir / (beatmap.name + f" ({n})")
             n += 1
         if n != 1:
-            print(f"{data_icon} Name conflict! rename to {wcb.add_attr(distpath.name, emph_attr)}")
+            logger.print(f"Name conflict! rename to {logger.emph(distpath.name)}", prefix="data")
 
         if beatmap.is_file():
             shutil.copy(str(beatmap), str(songs_dir))
@@ -524,24 +557,23 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
                beatmap you want to remove.
         """
 
-        data_icon = self.settings.menu.data_icon
-        emph_attr = self.settings.menu.emph_attr
-        warn_attr = self.settings.menu.warn_attr
+        logger = self.logger
         songs_dir = self.user.songs_dir
 
         beatmap_path = songs_dir / beatmap
         if beatmap_path.is_file():
-            print(f"{data_icon} Remove the beatmap at {wcb.add_attr(beatmap_path.as_uri(), emph_attr)}...")
+            logger.print(f"Remove the beatmap at {logger.emph(beatmap_path.as_uri())}...", prefix="data")
             beatmap_path.unlink()
             self.reload()
 
         elif beatmap_path.is_dir():
-            print(f"{data_icon} Remove the beatmapset at {wcb.add_attr(beatmap_path.as_uri(), emph_attr)}...")
+            logger.print(f"Remove the beatmapset at {logger.emph(beatmap_path.as_uri())}...", prefix="data")
             shutil.rmtree(str(beatmap_path))
             self.reload()
 
         else:
-            print(wcb.add_attr(f"Not a file: {str(beatmap)}", warn_attr))
+            with logger.warn():
+                logger.print(f"Not a file: {str(beatmap)}")
 
     @remove.arg_parser("beatmap")
     def _remove_beatmap_parser(self):
@@ -569,7 +601,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
              songs folder can be accessed.
         """
 
-        return KAIKOPlay(self.data_dir, self.user.songs_dir / beatmap, self.settings.gameplay)
+        return KAIKOPlay(self.user.data_dir, self.user.songs_dir / beatmap, self.settings.gameplay, self.logger)
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
@@ -579,7 +611,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @beatshell.function_command
     def audio_input(self, device, samplerate=None, channels=None, format=None):
-        warn_attr = self.settings.menu.warn_attr
+        logger = self.logger
 
         pa_device = device
         pa_samplerate = samplerate
@@ -606,7 +638,8 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
         except ValueError as e:
             info = e.args[0]
-            print(wcb.add_attr(info, warn_attr))
+            with logger.warn():
+                logger.print(info)
 
         else:
             self.settings.gameplay.detector.input_device = device
@@ -619,7 +652,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @beatshell.function_command
     def audio_output(self, device, samplerate=None, channels=None, format=None):
-        warn_attr = self.settings.menu.warn_attr
+        logger = self.logger
 
         pa_device = device
         pa_samplerate = samplerate
@@ -646,7 +679,8 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
         except ValueError as e:
             info = e.args[0]
-            print(wcb.add_attr(info, warn_attr))
+            with logger.warn():
+                logger.print(info)
 
         else:
             self.settings.gameplay.mixer.output_device = device
@@ -686,26 +720,26 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
     @beatshell.subcommand
     @property
     def config(self):
-        return ConfigCommand(self._config, self.config_file())
+        return ConfigCommand(self._config, self.logger, self.user.config_file)
 
 
 class KAIKOBGM:
-    def __init__(self, config, songs):
+    def __init__(self, config, logger, songs):
         self.config = config
+        self.logger = logger
         self._current_bgm = None
         self._bgm_repeat = False
         self._action_queue = queue.Queue()
         self._songs = songs
 
-    def load_bgm(self, manager, warn_attr):
+    def load_bgm(self, manager):
         try:
             knot, mixer = Mixer.create(self.config.current.gameplay.mixer, manager)
 
         except Exception:
-            print(f"\x1b[{warn_attr}m", end="")
-            print("Fail to load mixer")
-            traceback.print_exc(file=sys.stdout)
-            print(f"\x1b[m", end="")
+            with self.logger.warn():
+                self.logger.print("Failed to load mixer")
+                self.logger.print(traceback.format_exc(), end="")
 
             return dn.DataNode.wrap(lambda _:None)
 
@@ -751,33 +785,32 @@ class KAIKOBGM:
 
 
 class ConfigCommand:
-    def __init__(self, config, path):
+    def __init__(self, config, logger, path):
         self.config = config
+        self.logger = logger
         self.path = path
 
     @beatshell.function_command
     def reload(self):
-        data_icon = self.config.current.menu.data_icon
-        emph_attr = self.config.current.menu.emph_attr
+        logger = self.logger
 
-        print(f"{data_icon} Load configuration from {wcb.add_attr(self.path.as_uri(), emph_attr)}...")
-        print()
+        logger.print(f"Load configuration from {logger.emph(self.path.as_uri())}...", prefix="data")
+        logger.print()
 
         self.config.read(self.path)
 
     @beatshell.function_command
     def save(self):
-        data_icon = self.config.current.menu.data_icon
-        emph_attr = self.config.current.menu.emph_attr
+        logger = self.logger
 
-        print(f"{data_icon} Save configuration to {wcb.add_attr(self.path.as_uri(), emph_attr)}...")
-        print()
+        logger.print(f"Save configuration to {logger.emph(self.path.as_uri())}...", prefix="data")
+        logger.print()
 
         self.config.write(self.path)
 
     @beatshell.function_command
     def show(self):
-        print(str(self.config))
+        self.logger.print(str(self.config))
 
     @beatshell.function_command
     def get(self, field):
@@ -810,28 +843,32 @@ class ConfigCommand:
 
     @beatshell.function_command
     def rename(self, profile):
-        warn_attr = self.config.current.menu.warn_attr
+        logger = self.logger
 
         if "\n" in profile or "\r" in profile:
-            print(wcb.add_attr("Invalid profile name.", warn_attr))
+            with logger.warn():
+                logger.print("Invalid profile name.")
             return
 
         if profile in self.config.profiles:
-            print(wcb.add_attr("This profile name already exists.", warn_attr))
+            with logger.warn():
+                logger.print("This profile name already exists.")
             return
 
         self.config.name = profile
 
     @beatshell.function_command
     def new(self, profile, clone=None):
-        warn_attr = self.config.current.menu.warn_attr
+        logger = self.logger
 
         if "\n" in profile or "\r" in profile:
-            print(wcb.add_attr("Invalid profile name.", warn_attr))
+            with logger.warn():
+                logger.print("Invalid profile name.")
             return
 
         if profile == self.config.name or profile in self.config.profiles:
-            print(wcb.add_attr("This profile name already exists.", warn_attr))
+            with logger.warn():
+                logger.print("This profile name already exists.")
             return
 
         self.config.new(profile, clone)
@@ -951,21 +988,23 @@ class BeatmapParser(beatshell.ArgumentParser):
 
 
 class KAIKOPlay:
-    def __init__(self, data_dir, filepath, settings):
+    def __init__(self, data_dir, filepath, settings, logger):
         self.data_dir = data_dir
         self.filepath = filepath
         self.settings = settings
+        self.logger = logger
 
     @contextlib.contextmanager
     def execute(self, manager):
+        logger = self.logger
+
         try:
             beatmap = BeatSheet.read(str(self.filepath))
 
         except BeatmapParseError:
-            print(f"failed to read beatmap {str(self.filepath)}")
-            print("\x1b[31m", end="")
-            traceback.print_exc(file=sys.stdout)
-            print(f"\x1b[m", end="")
+            with logger.warn():
+                logger.print(f"Failed to read beatmap {str(self.filepath)}")
+                logger.print(traceback.format_exc(), end="")
 
         else:
             game = BeatmapPlayer(self.data_dir, beatmap, self.settings)
