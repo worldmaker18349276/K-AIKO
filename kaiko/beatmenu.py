@@ -102,7 +102,7 @@ class KAIKOMenu:
         self._songs_dir = songs_dir
         self.manager = manager
         self._beatmaps = []
-        self.songs_mtime = None
+        self._beatmaps_mtime = None
         self._current_bgm = None
         self._bgm_repeat = False
         self.bgm_queue = queue.Queue()
@@ -428,7 +428,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @beatshell.function_command
     def beatmaps(self):
-        if self.songs_mtime != os.stat(str(self._songs_dir)).st_mtime:
+        if self._beatmaps_mtime != os.stat(str(self._songs_dir)).st_mtime:
             self.reload()
 
         return self._beatmaps
@@ -517,7 +517,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             print(f"{data_icon} There is no song in the folder yet!")
         print(flush=True)
 
-        self.songs_mtime = os.stat(str(songs_dir)).st_mtime
+        self._beatmaps_mtime = os.stat(str(songs_dir)).st_mtime
 
     @beatshell.function_command
     def add(self, beatmap):
