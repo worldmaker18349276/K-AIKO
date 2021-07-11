@@ -193,8 +193,7 @@ class KAIKOMenu:
         self.user = user
         self.manager = manager
         self.logger = logger
-        self._beatmaps = []
-        self._beatmaps_mtime = None
+        self.beatmap_manager = BeatmapManager(user, logger)
         self.bgm = None
 
     @staticmethod
@@ -217,7 +216,7 @@ class KAIKOMenu:
                     return
 
                 # load mixer
-                game.bgm = KAIKOBGM(game._config, logger, game.get_songs())
+                game.bgm = KAIKOBGM(game._config, logger, game.beatmap_manager.get_songs())
                 with game.bgm.load_bgm(game.manager) as bgm_knot:
                     # tips
                     logger.print(f"Use {logger.emph('Tab')} to autocomplete command.", prefix="hint")
@@ -393,25 +392,6 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     # bgm
 
-    def get_song(self, beatmap):
-        beatmap = BeatSheet.read(str(self.user.songs_dir / beatmap), metadata_only=True)
-        if beatmap.audio is None:
-            return None
-        return os.path.join(beatmap.root, beatmap.audio), (None, None)
-
-    def get_songs(self):
-        songs = set()
-        for beatmap in self._beatmaps:
-            try:
-                song = self.get_song(beatmap)
-            except BeatmapParseError:
-                pass
-            else:
-                if song is not None:
-                    songs.add(song)
-
-        return list(songs)
-
     @beatshell.function_command
     def current_bgm(self):
         return self.bgm._current_bgm and self.bgm._current_bgm[0]
@@ -428,7 +408,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             if self.bgm._current_bgm is not None:
                 return
 
-            songs = self.get_songs()
+            songs = self.beatmap_manager.get_songs()
             if not songs:
                 logger.print("There is no song in the folder yet!", prefix="data")
                 return
@@ -436,7 +416,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
         else:
             try:
-                song = self.get_song(beatmap)
+                song = self.beatmap_manager.get_song(beatmap)
             except BeatmapParseError:
                 with logger.warn():
                     logger.print("Fail to read beatmap")
@@ -450,7 +430,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @bgm_on.arg_parser("beatmap")
     def _bgm_beatmap_parser(self):
-        return BeatmapParser(self._beatmaps, self.user.songs_dir, self, False)
+        return self.beatmap_manager.make_parser()
 
     @beatshell.function_command
     def bgm_repeat(self, repeat:bool):
@@ -460,10 +440,10 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @beatshell.function_command
     def beatmaps(self):
-        if self._beatmaps_mtime != os.stat(str(self.user.songs_dir)).st_mtime:
+        if not self.beatmap_manager.is_uptodate():
             self.reload()
 
-        return self._beatmaps
+        return [beatmap for beatmapset in self.beatmap_manager._beatmaps.values() for beatmap in beatmapset]
 
     @beatshell.function_command
     def reload(self):
@@ -472,35 +452,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         usage: \x1b[94mreload\x1b[m
         """
 
-        logger = self.logger
-        songs_dir = self.user.songs_dir
-
-        logger.print(f"Load songs from {logger.emph(songs_dir.as_uri())}...", prefix="data")
-
-        self._beatmaps = []
-
-        for file in songs_dir.iterdir():
-            if file.is_file() and file.suffix == ".osz":
-                distpath = file.parent / file.stem
-                if distpath.exists():
-                    continue
-                logger.print(f"Unzip file {logger.emph(file.as_uri())}...", prefix="data")
-                distpath.mkdir()
-                zf = zipfile.ZipFile(str(file), 'r')
-                zf.extractall(path=str(distpath))
-                file.unlink()
-
-        for song in songs_dir.iterdir():
-            if song.is_dir():
-                for beatmap in song.iterdir():
-                    if beatmap.suffix in (".kaiko", ".ka", ".osu"):
-                        self._beatmaps.append(beatmap)
-
-        if len(self._beatmaps) == 0:
-            logger.print("There is no song in the folder yet!", prefix="data")
-        logger.print(flush=True)
-
-        self._beatmaps_mtime = os.stat(str(songs_dir)).st_mtime
+        self.beatmap_manager.reload()
 
     @beatshell.function_command
     def add(self, beatmap):
@@ -514,34 +466,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
            the terminal to paste its path.
         """
 
-        logger = self.logger
-        songs_dir = self.user.songs_dir
-
-        if not beatmap.exists():
-            with logger.warn():
-                logger.print(f"File not found: {str(beatmap)}")
-            return
-        if not beatmap.is_file() and not beatmap.is_dir():
-            with logger.warn():
-                logger.print(f"Not a file or directory: {str(beatmap)}")
-            return
-
-        logger.print(f"Add new song from {logger.emph(beatmap.as_uri())}...", prefix="data")
-
-        distpath = songs_dir / beatmap.name
-        n = 1
-        while distpath.exists():
-            distpath = songs_dir / (beatmap.name + f" ({n})")
-            n += 1
-        if n != 1:
-            logger.print(f"Name conflict! rename to {logger.emph(distpath.name)}", prefix="data")
-
-        if beatmap.is_file():
-            shutil.copy(str(beatmap), str(songs_dir))
-        elif beatmap.is_dir():
-            shutil.copytree(str(beatmap), str(distpath))
-
-        self.reload()
+        self.beatmap_manager.add(beatmap)
 
     @add.arg_parser("beatmap")
     def _add_beatmap_parser(self):
@@ -557,35 +482,15 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
                beatmap you want to remove.
         """
 
-        logger = self.logger
-        songs_dir = self.user.songs_dir
-
-        beatmap_path = songs_dir / beatmap
-        if beatmap_path.is_file():
-            logger.print(f"Remove the beatmap at {logger.emph(beatmap_path.as_uri())}...", prefix="data")
-            beatmap_path.unlink()
-            self.reload()
-
-        elif beatmap_path.is_dir():
-            logger.print(f"Remove the beatmapset at {logger.emph(beatmap_path.as_uri())}...", prefix="data")
-            shutil.rmtree(str(beatmap_path))
-            self.reload()
-
-        else:
-            with logger.warn():
-                logger.print(f"Not a file: {str(beatmap)}")
+        self.beatmap_manager.remove(beatmap)
 
     @remove.arg_parser("beatmap")
     def _remove_beatmap_parser(self):
-        songs_dir = self.user.songs_dir
-
         options = []
-        for song in songs_dir.iterdir():
-            options.append(os.path.join(str(song.relative_to(songs_dir)), ""))
-            if song.is_dir():
-                for beatmap in song.iterdir():
-                    if beatmap.suffix in (".kaiko", ".ka", ".osu"):
-                        options.append(str(beatmap.relative_to(songs_dir)))
+        for song, beatmapset in self.beatmap_manager._beatmaps.items():
+            options.append(os.path.join(str(song), ""))
+            for beatmap in beatmapset:
+                options.append(str(beatmap))
 
         return beatshell.OptionParser(options)
 
@@ -605,7 +510,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        return BeatmapParser(self._beatmaps, self.user.songs_dir, self, True)
+        return self.beatmap_manager.make_parser(self.bgm)
 
     # audio
 
@@ -953,14 +858,129 @@ class PyAudioDeviceParser(beatshell.ArgumentParser):
         return f"{name} by {api} ({freq} kHz, in: {ch_in}, out: {ch_out})"
 
 
-class BeatmapParser(beatshell.ArgumentParser):
-    def __init__(self, beatmaps, songs_dir, parent, preview_song=False):
-        self.beatmaps = beatmaps
-        self.songs_dir = songs_dir
-        self.parent = parent
-        self.preview_song = preview_song
+class BeatmapManager:
+    def __init__(self, user, logger):
+        self.user = user
+        self.logger = logger
+        self._beatmaps = {}
+        self._beatmaps_mtime = None
 
-        self.options = [str(beatmap.relative_to(self.songs_dir)) for beatmap in self.beatmaps]
+    def is_uptodate(self):
+        return self._beatmaps_mtime == os.stat(str(self.user.songs_dir)).st_mtime
+
+    def reload(self):
+        logger = self.logger
+        songs_dir = self.user.songs_dir
+
+        logger.print(f"Load songs from {logger.emph(songs_dir.as_uri())}...", prefix="data")
+
+        for file in songs_dir.iterdir():
+            if file.is_file() and file.suffix == ".osz":
+                distpath = file.parent / file.stem
+                if distpath.exists():
+                    continue
+                logger.print(f"Unzip file {logger.emph(file.as_uri())}...", prefix="data")
+                distpath.mkdir()
+                zf = zipfile.ZipFile(str(file), 'r')
+                zf.extractall(path=str(distpath))
+                file.unlink()
+
+        logger.print("Load beatmaps...", prefix="data")
+
+        self._beatmaps_mtime = os.stat(str(songs_dir)).st_mtime
+        self._beatmaps = {}
+
+        for song in songs_dir.iterdir():
+            if song.is_dir():
+                beatmapset = []
+                for beatmap in song.iterdir():
+                    if beatmap.suffix in (".kaiko", ".ka", ".osu"):
+                        beatmapset.append(beatmap.relative_to(songs_dir))
+                if beatmapset:
+                    self._beatmaps[song.relative_to(songs_dir)] = beatmapset
+
+        if len(self._beatmaps) == 0:
+            logger.print("There is no song in the folder yet!", prefix="data")
+        logger.print(flush=True)
+
+    def add(self, beatmap):
+        logger = self.logger
+        songs_dir = self.user.songs_dir
+
+        if not beatmap.exists():
+            with logger.warn():
+                logger.print(f"File not found: {str(beatmap)}")
+            return
+        if not beatmap.is_file() and not beatmap.is_dir():
+            with logger.warn():
+                logger.print(f"Not a file or directory: {str(beatmap)}")
+            return
+
+        logger.print(f"Add a new song from {logger.emph(beatmap.as_uri())}...", prefix="data")
+
+        distpath = songs_dir / beatmap.name
+        n = 1
+        while distpath.exists():
+            n += 1
+            distpath = songs_dir / f"{beatmap.stem} ({n}){beatmap.suffix}"
+        if n != 1:
+            logger.print(f"Name conflict! Rename to {logger.emph(distpath.name)}", prefix="data")
+
+        if beatmap.is_file():
+            shutil.copy(str(beatmap), str(songs_dir))
+        elif beatmap.is_dir():
+            shutil.copytree(str(beatmap), str(distpath))
+
+        self.reload()
+
+    def remove(self, beatmap):
+        logger = self.logger
+        songs_dir = self.user.songs_dir
+
+        beatmap_path = songs_dir / beatmap
+        if beatmap_path.is_file():
+            logger.print(f"Remove the beatmap at {logger.emph(beatmap_path.as_uri())}...", prefix="data")
+            beatmap_path.unlink()
+            self.reload()
+
+        elif beatmap_path.is_dir():
+            logger.print(f"Remove the beatmapset at {logger.emph(beatmap_path.as_uri())}...", prefix="data")
+            shutil.rmtree(str(beatmap_path))
+            self.reload()
+
+        else:
+            with logger.warn():
+                logger.print(f"Not a file: {str(beatmap)}")
+
+    def get_song(self, beatmap):
+        beatmap = BeatSheet.read(str(self.user.songs_dir / beatmap), metadata_only=True)
+        if beatmap.audio is None:
+            return None
+        return os.path.join(beatmap.root, beatmap.audio), (None, None)
+
+    def get_songs(self):
+        songs = set()
+        for beatmapset in self._beatmaps.values():
+            beatmap = beatmapset[0]
+            try:
+                song = self.get_song(beatmap)
+            except BeatmapParseError:
+                pass
+            else:
+                if song is not None:
+                    songs.add(song)
+
+        return list(songs)
+
+    def make_parser(self, bgm=None):
+        return BeatmapParser(self._beatmaps, self.user.songs_dir, bgm)
+
+class BeatmapParser(beatshell.ArgumentParser):
+    def __init__(self, beatmaps, songs_dir, bgm):
+        self.songs_dir = songs_dir
+        self.bgm = bgm
+
+        self.options = [str(beatmap) for beatmapset in self.beatmaps.values() for beatmap in beatmapset]
         self.expected = beatshell.expected_options(self.options)
 
     def parse(self, token):
@@ -979,11 +999,11 @@ class BeatmapParser(beatshell.ArgumentParser):
         except BeatmapParseError:
             return None
         else:
-            if self.preview_song and beatmap.audio is not None:
+            if self.bgm is not None and beatmap.audio is not None:
                 song = os.path.join(beatmap.root, beatmap.audio)
-                if self.parent.bgm._current_bgm is None or self.parent.bgm._current_bgm[0] != song:
+                if self.bgm._current_bgm is None or self.bgm._current_bgm[0] != song:
                     clip = (None, None) if beatmap.preview is None else (beatmap.preview, beatmap.preview+30.0)
-                    self.parent.bgm.play(song, clip)
+                    self.bgm.play(song, clip)
             return beatmap.info.strip()
 
 
@@ -1010,6 +1030,6 @@ class KAIKOPlay:
             game = BeatmapPlayer(self.data_dir, beatmap, self.settings)
             game.execute(manager)
 
-            print()
+            logger.print()
             beatanalyzer.show_analyze(beatmap.settings.difficulty.performance_tolerance, game.perfs)
 
