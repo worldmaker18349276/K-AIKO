@@ -918,7 +918,7 @@ class BeatmapParser(beatshell.ArgumentParser):
         self.songs_dir = songs_dir
         self.bgm_controller = bgm_controller
 
-        self.options = [str(beatmap) for beatmapset in self.beatmaps.values() for beatmap in beatmapset]
+        self.options = [str(beatmap) for beatmapset in beatmaps.values() for beatmap in beatmapset]
         self.expected = beatshell.expected_options(self.options)
 
     def parse(self, token):

@@ -793,7 +793,6 @@ class BeatInput:
             self.buffer[selection] = suggestions[index]
             self.pos = selection.start + len(suggestions[index])
             self.parse_syntax()
-            self.help(selection_index)
 
             action = yield
             if action == +1:
@@ -890,11 +889,11 @@ class BeatInput:
         self.cancel_result()
 
         if index is None:
-            for index, (_, _, slic, _) in enumerate(self.tokens):
-                if slic.stop is None or self.pos <= slic.stop:
+            for index, (_, _, slic, _) in reversed(list(enumerate(self.tokens))):
+                if slic.start is None or self.pos >= slic.start:
                     break
             else:
-                index = len(self.tokens)
+                index = 0
 
         prefix = [token for token, _, _, _ in self.tokens[:index]]
         target, token_type = self.tokens[index][:2] if index < len(self.tokens) else (None, TOKEN_TYPE.UNKNOWN)
