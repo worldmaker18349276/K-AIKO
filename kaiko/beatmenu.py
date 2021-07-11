@@ -391,45 +391,10 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     # bgm
 
-    @beatshell.function_command
-    def current_bgm(self):
-        return self.bgm_controller._current_bgm and self.bgm_controller._current_bgm[0]
-
-    @beatshell.function_command
-    def bgm_off(self):
-        self.bgm_controller.stop()
-
-    @beatshell.function_command
-    def bgm_on(self, beatmap=None, start:Optional[float]=None):
-        logger = self.logger
-
-        if beatmap is None:
-            if self.bgm_controller._current_bgm is not None:
-                return
-
-            songs = self.beatmap_manager.get_songs()
-            if not songs:
-                logger.print("There is no song in the folder yet!", prefix="data")
-                return
-            song = random.choice(songs)
-
-        else:
-            try:
-                song = self.beatmap_manager.get_song(beatmap)
-            except BeatmapParseError:
-                with logger.warn():
-                    logger.print("Fail to read beatmap")
-                return
-            if song is None:
-                with logger.warn():
-                    logger.print("This beatmap has no song")
-                return
-
-        self.bgm_controller.play(song[0], start)
-
-    @bgm_on.arg_parser("beatmap")
-    def _bgm_beatmap_parser(self):
-        return self.beatmap_manager.make_parser()
+    @beatshell.subcommand
+    @property
+    def bgm(self):
+        return BGMCommand(self.bgm_controller, self.beatmap_manager, self.logger)
 
     # beatmaps
 
@@ -890,7 +855,7 @@ class BeatmapManager:
         beatmap = BeatSheet.read(str(self.user.songs_dir / beatmap), metadata_only=True)
         if beatmap.audio is None:
             return None
-        return os.path.join(beatmap.root, beatmap.audio), (None, None)
+        return os.path.join(beatmap.root, beatmap.audio), None
 
     def get_songs(self):
         songs = set()
@@ -994,6 +959,56 @@ class KAIKOBGMManager:
 
     def play(self, song, start=None):
         self._action_queue.put((song, start))
+
+class BGMCommand:
+    def __init__(self, bgm_controller, beatmap_manager, logger):
+        self.bgm_controller = bgm_controller
+        self.beatmap_manager = beatmap_manager
+        self.logger = logger
+
+    @beatshell.function_command
+    def on(self):
+        logger = self.logger
+
+        if self.bgm_controller._current_bgm is not None:
+            return
+
+        songs = self.beatmap_manager.get_songs()
+        if not songs:
+            logger.print("There is no song in the folder yet!", prefix="data")
+            return
+        song, start = random.choice(songs)
+
+        self.bgm_controller.play(song, start)
+
+    @beatshell.function_command
+    def off(self):
+        self.bgm_controller.stop()
+
+    @beatshell.function_command
+    def play(self, beatmap, start:Optional[float]=None):
+        logger = self.logger
+
+        try:
+            song, _ = self.beatmap_manager.get_song(beatmap) or (None, None)
+        except BeatmapParseError:
+            with logger.warn():
+                logger.print("Fail to read beatmap")
+            return
+        if song is None:
+            with logger.warn():
+                logger.print("This beatmap has no song")
+            return
+
+        self.bgm_controller.play(song, start)
+
+    @play.arg_parser("beatmap")
+    def _play_beatmap_parser(self):
+        return self.beatmap_manager.make_parser()
+
+    @beatshell.function_command
+    def now_playing(self):
+        return self.bgm_controller._current_bgm and self.bgm_controller._current_bgm[0]
 
 
 class KAIKOPlay:
