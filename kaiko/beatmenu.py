@@ -194,7 +194,7 @@ class KAIKOMenu:
         self.manager = manager
         self.logger = logger
         self.beatmap_manager = BeatmapManager(user, logger)
-        self.bgm_controller = KAIKOBGMManager(config, logger, self.beatmap_manager)
+        self.bgm_controller = KAIKOBGMController(config, logger, self.beatmap_manager)
 
     @staticmethod
     def main():
@@ -903,7 +903,7 @@ class BeatmapParser(beatshell.ArgumentParser):
                 self.bgm_controller.play(song, beatmap.preview)
             return beatmap.info.strip()
 
-class KAIKOBGMManager:
+class KAIKOBGMController:
     def __init__(self, config, logger, beatmap_manager):
         self.config = config
         self.logger = logger
@@ -927,32 +927,38 @@ class KAIKOBGMManager:
 
     @dn.datanode
     def _bgm_rountine(self, mixer):
-        current_bgm = None
+        self._current_bgm = None
 
         yield
         while True:
-            while not self._action_queue.empty():
-                current_bgm = self._action_queue.get()
-            self._current_bgm = current_bgm
-
-            if self._current_bgm is None:
+            if self._action_queue.empty():
                 yield
                 continue
 
-            filepath, start = current_bgm
+            next_song = self._action_queue.get()
+            while next_song:
+                filepath, start = next_song
+                self._current_bgm = filepath
 
-            with mixer.play(filepath, start=start) as bgm_key:
-                while self._action_queue.empty():
-                    if bgm_key.is_finalized():
-                        songs = self.beatmap_manager.get_songs()
-                        if current_bgm in songs:
-                            songs.remove(current_bgm)
-                        if songs:
-                            self._action_queue.put(random.choice(songs))
+                with mixer.play(filepath, start=start) as bgm_key:
+                    while not bgm_key.is_finalized():
+                        if self._action_queue.empty():
+                            yield
+                            continue
 
+                        next_song = self._action_queue.get()
                         break
 
-                    yield
+                    else:
+                        next_song = self.random_song()
+
+                self._current_bgm = None
+
+    def random_song(self):
+        songs = self.beatmap_manager.get_songs()
+        if self._current_bgm is not None:
+            songs.remove((self._current_bgm, None))
+        return random.choice(songs) if songs else None
 
     def stop(self):
         self._action_queue.put(None)
@@ -971,19 +977,28 @@ class BGMCommand:
         logger = self.logger
 
         if self.bgm_controller._current_bgm is not None:
+            logger.print("now playing: " + self.bgm_controller._current_bgm)
             return
 
         songs = self.beatmap_manager.get_songs()
         if not songs:
             logger.print("There is no song in the folder yet!", prefix="data")
             return
-        song, start = random.choice(songs)
 
+        song, start = self.bgm_controller.random_song()
+        logger.print("will play: " + song)
         self.bgm_controller.play(song, start)
 
     @beatshell.function_command
     def off(self):
         self.bgm_controller.stop()
+
+    @beatshell.function_command
+    def skip(self):
+        if self.bgm_controller._current_bgm is not None:
+            song, start = self.bgm_controller.random_song()
+            self.logger.print("will play: " + song)
+            self.bgm_controller.play(song, start)
 
     @beatshell.function_command
     def play(self, beatmap, start:Optional[float]=None):
@@ -1008,7 +1023,7 @@ class BGMCommand:
 
     @beatshell.function_command
     def now_playing(self):
-        return self.bgm_controller._current_bgm and self.bgm_controller._current_bgm[0]
+        return self.bgm_controller._current_bgm
 
 
 class KAIKOPlay:
