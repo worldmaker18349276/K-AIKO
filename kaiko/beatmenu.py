@@ -194,7 +194,7 @@ class KAIKOMenu:
         self.manager = manager
         self.logger = logger
         self.beatmap_manager = BeatmapManager(user, logger)
-        self.bgm = None
+        self.bgm_controller = KAIKOBGMManager(config, logger, self.beatmap_manager)
 
     @staticmethod
     def main():
@@ -216,8 +216,7 @@ class KAIKOMenu:
                     return
 
                 # load mixer
-                game.bgm = KAIKOBGM(game._config, logger, game.beatmap_manager.get_songs())
-                with game.bgm.load_bgm(game.manager) as bgm_knot:
+                with game.bgm_controller.load_bgm(game.manager) as bgm_knot:
                     # tips
                     logger.print(f"Use {logger.emph('Tab')} to autocomplete command.", prefix="hint")
                     logger.print(f"If you need help, press {logger.emph('Alt+Enter')}.", prefix="hint")
@@ -311,7 +310,7 @@ class KAIKOMenu:
 
     def run_result(self, result, dt, bgm_knot=None):
         if hasattr(result, 'execute'):
-            has_bgm = bool(self.bgm._current_bgm)
+            has_bgm = bool(self.bgm_controller._current_bgm)
             if has_bgm:
                 self.bgm_off()
             result.execute(self.manager)
@@ -394,18 +393,18 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @beatshell.function_command
     def current_bgm(self):
-        return self.bgm._current_bgm and self.bgm._current_bgm[0]
+        return self.bgm_controller._current_bgm and self.bgm_controller._current_bgm[0]
 
     @beatshell.function_command
     def bgm_off(self):
-        self.bgm.stop()
+        self.bgm_controller.stop()
 
     @beatshell.function_command
     def bgm_on(self, beatmap=None, clip:Tuple[Optional[float], Optional[float]]=(None, None)):
         logger = self.logger
 
         if beatmap is None:
-            if self.bgm._current_bgm is not None:
+            if self.bgm_controller._current_bgm is not None:
                 return
 
             songs = self.beatmap_manager.get_songs()
@@ -426,7 +425,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
                     logger.print("This beatmap has no song")
                 return
 
-        self.bgm.play(song[0], clip)
+        self.bgm_controller.play(song[0], clip)
 
     @bgm_on.arg_parser("beatmap")
     def _bgm_beatmap_parser(self):
@@ -434,7 +433,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @beatshell.function_command
     def bgm_repeat(self, repeat:bool):
-        self.bgm._bgm_repeat = repeat
+        self.bgm_controller._bgm_repeat = repeat
 
     # beatmaps
 
@@ -510,7 +509,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        return self.beatmap_manager.make_parser(self.bgm)
+        return self.beatmap_manager.make_parser(self.bgm_controller)
 
     # audio
 
@@ -626,67 +625,6 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
     @property
     def config(self):
         return ConfigCommand(self._config, self.logger, self.user.config_file)
-
-
-class KAIKOBGM:
-    def __init__(self, config, logger, songs):
-        self.config = config
-        self.logger = logger
-        self._current_bgm = None
-        self._bgm_repeat = False
-        self._action_queue = queue.Queue()
-        self._songs = songs
-
-    def load_bgm(self, manager):
-        try:
-            knot, mixer = Mixer.create(self.config.current.gameplay.mixer, manager)
-
-        except Exception:
-            with self.logger.warn():
-                self.logger.print("Failed to load mixer")
-                self.logger.print(traceback.format_exc(), end="")
-
-            return dn.DataNode.wrap(lambda _:None)
-
-        else:
-            return dn.pipe(knot, dn.interval(self._bgm_rountine(mixer), dt=0.1))
-
-    @dn.datanode
-    def _bgm_rountine(self, mixer):
-        current_bgm = None
-
-        yield
-        while True:
-            while not self._action_queue.empty():
-                current_bgm = self._action_queue.get()
-            self._current_bgm = current_bgm
-
-            if self._current_bgm is None:
-                yield
-                continue
-
-            filepath, (start, end) = current_bgm
-
-            with mixer.play(filepath, start=start, end=end) as bgm_key:
-                while self._action_queue.empty():
-                    if bgm_key.is_finalized():
-                        if self._bgm_repeat:
-                            self._action_queue.put(current_bgm)
-                        else:
-                            if current_bgm in self._songs:
-                                songs.remove(current_bgm)
-                            if songs:
-                                self._action_queue.put(random.choice(songs))
-
-                        break
-
-                    yield
-
-    def stop(self):
-        self._action_queue.put(None)
-
-    def play(self, song, clip=(None,None)):
-        self._action_queue.put((song, clip))
 
 
 class ConfigCommand:
@@ -972,13 +910,13 @@ class BeatmapManager:
 
         return list(songs)
 
-    def make_parser(self, bgm=None):
-        return BeatmapParser(self._beatmaps, self.user.songs_dir, bgm)
+    def make_parser(self, bgm_controller=None):
+        return BeatmapParser(self._beatmaps, self.user.songs_dir, bgm_controller)
 
 class BeatmapParser(beatshell.ArgumentParser):
-    def __init__(self, beatmaps, songs_dir, bgm):
+    def __init__(self, beatmaps, songs_dir, bgm_controller):
         self.songs_dir = songs_dir
-        self.bgm = bgm
+        self.bgm_controller = bgm_controller
 
         self.options = [str(beatmap) for beatmapset in self.beatmaps.values() for beatmap in beatmapset]
         self.expected = beatshell.expected_options(self.options)
@@ -999,12 +937,73 @@ class BeatmapParser(beatshell.ArgumentParser):
         except BeatmapParseError:
             return None
         else:
-            if self.bgm is not None and beatmap.audio is not None:
+            if self.bgm_controller is not None and beatmap.audio is not None:
                 song = os.path.join(beatmap.root, beatmap.audio)
-                if self.bgm._current_bgm is None or self.bgm._current_bgm[0] != song:
+                if self.bgm_controller._current_bgm is None or self.bgm_controller._current_bgm[0] != song:
                     clip = (None, None) if beatmap.preview is None else (beatmap.preview, beatmap.preview+30.0)
-                    self.bgm.play(song, clip)
+                    self.bgm_controller.play(song, clip)
             return beatmap.info.strip()
+
+class KAIKOBGMManager:
+    def __init__(self, config, logger, beatmap_manager):
+        self.config = config
+        self.logger = logger
+        self._current_bgm = None
+        self._bgm_repeat = False
+        self._action_queue = queue.Queue()
+        self.beatmap_manager = beatmap_manager
+
+    def load_bgm(self, manager):
+        try:
+            knot, mixer = Mixer.create(self.config.current.gameplay.mixer, manager)
+
+        except Exception:
+            with self.logger.warn():
+                self.logger.print("Failed to load mixer")
+                self.logger.print(traceback.format_exc(), end="")
+
+            return dn.DataNode.wrap(lambda _:None)
+
+        else:
+            return dn.pipe(knot, dn.interval(self._bgm_rountine(mixer), dt=0.1))
+
+    @dn.datanode
+    def _bgm_rountine(self, mixer):
+        current_bgm = None
+
+        yield
+        while True:
+            while not self._action_queue.empty():
+                current_bgm = self._action_queue.get()
+            self._current_bgm = current_bgm
+
+            if self._current_bgm is None:
+                yield
+                continue
+
+            filepath, (start, end) = current_bgm
+
+            with mixer.play(filepath, start=start, end=end) as bgm_key:
+                while self._action_queue.empty():
+                    if bgm_key.is_finalized():
+                        if self._bgm_repeat:
+                            self._action_queue.put(current_bgm)
+                        else:
+                            songs = self.beatmap_manager.get_songs()
+                            if current_bgm in songs:
+                                songs.remove(current_bgm)
+                            if songs:
+                                self._action_queue.put(random.choice(songs))
+
+                        break
+
+                    yield
+
+    def stop(self):
+        self._action_queue.put(None)
+
+    def play(self, song, clip=(None,None)):
+        self._action_queue.put((song, clip))
 
 
 class KAIKOPlay:
