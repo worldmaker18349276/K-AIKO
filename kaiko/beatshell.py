@@ -10,6 +10,7 @@ import threading
 import inspect
 from pathlib import Path
 from typing import List, Set, Tuple, Dict, Union
+import wcwidth
 from . import datanodes as dn
 from . import biparsers as bp
 from . import wcbuffers as wcb
@@ -785,39 +786,46 @@ class BeatInput:
         self.tokens = [(token, type, slic, ignored) for (token, slic, ignored), type in zip(tokens, types)]
 
     def autocomplete(self, action=+1):
+        """A generator to process autocompletion.
+        Complete the token on the caret, or fill in suggestions if caret is
+        located in between.
+
+        Parameters
+        ----------
+        action : +1 or -1
+            Indicating direction for exploration of suggestions.
+
+        Receives
+        --------
+        action : +1, -1 or 0
+            `+1` for next suggestion; `-1` for previous suggestion; `0` for cancel
+            autocomplete.
+        """
+        if action not in (+1, -1):
+            raise ValueError
+
         self.typeahead = ""
 
         # find the token to autocomplete
-        tokens = []
-        selection = slice(self.pos, self.pos)
-        selection_index = len(self.tokens)
+        parents = []
         target = ""
-        for i, (token, _, slic, _) in enumerate(self.tokens):
+        selection = slice(self.pos, self.pos)
+        for token, _, slic, _ in self.tokens:
             start, stop, _ = slic.indices(len(self.buffer))
             if stop < self.pos:
-                tokens.append(token)
-            elif self.pos < start:
-                break
-            else:
-                selection = slic
-                selection_index = i
+                parents.append(token)
+            if start <= self.pos <= stop:
                 target = token
+                selection = slic
 
         # generate suggestions
-        suggestions = [shlexer_quoting(sugg) for sugg in self.command.suggest_command(tokens, target)]
-        length = len(suggestions)
+        suggestions = [shlexer_quoting(sugg) for sugg in self.command.suggest_command(parents, target)]
+        index = 0 if action == +1 else len(suggestions)-1
 
         original_buffer = list(self.buffer)
         original_pos = self.pos
 
-        if action == +1:
-            index = 0
-        elif action == -1:
-            index = length-1
-        else:
-            raise ValueError
-
-        while index in range(length):
+        while index in range(len(suggestions)):
             self.buffer[selection] = suggestions[index]
             self.pos = selection.start + len(suggestions[index])
             self.parse_syntax()
@@ -837,20 +845,29 @@ class BeatInput:
             self.parse_syntax()
             self.cancel_hint()
 
-    def make_typeahead(self, suggest=True):
-        if not suggest or self.pos != len(self.buffer):
+    def make_typeahead(self):
+        """Make typeahead.
+        Show the possible command you want to type.  Only work if the caret is at
+        the end of buffer.
+
+        Returns
+        -------
+        succ : bool
+            `False` if unable to complete or the caret is not at the end of buffer.
+        """
+        if self.pos != len(self.buffer):
             self.typeahead = ""
             return False
 
         if self.state == SHLEXER_STATE.SPACED:
-            tokens = [token for token, _, _, _ in self.tokens]
+            parents = [token for token, _, _, _ in self.tokens]
             target = ""
         else:
-            tokens = [token for token, _, _, _ in self.tokens[:-1]]
+            parents = [token for token, _, _, _ in self.tokens[:-1]]
             target, _, _, _ = self.tokens[-1]
 
         compreply = None
-        for suggestion in self.command.suggest_command(tokens, target):
+        for suggestion in self.command.suggest_command(parents, target):
             if suggestion.startswith(target):
                 compreply = suggestion[len(target):]
                 break
@@ -862,7 +879,26 @@ class BeatInput:
             self.typeahead = shlexer_quoting(compreply, self.state)
             return True
 
+    def cancel_typeahead(self):
+        """Cancel typeahead.
+
+        Returns
+        -------
+        succ : bool
+        """
+        self.typeahead = ""
+        return True
+
     def insert_typeahead(self):
+        """Insert typeahead.
+        Insert the typeahead if the caret is at the end of buffer.
+
+        Returns
+        -------
+        succ : bool
+            `False` if there is no typeahead or the caret is not at the end of buffer.
+        """
+
         if self.typeahead == "" or self.pos != len(self.buffer):
             return False
 
@@ -873,27 +909,59 @@ class BeatInput:
 
         return True
 
-    def index(self):
-        for index, (_, _, slic, _) in reversed(list(enumerate(self.tokens))):
-            if slic.start <= self.pos:
-                return index
-        return None
-
     def set_result(self, res_type, value, index=None):
+        """Set result.
+        Set result of this session.
+
+        Parameters
+        ----------
+        res_type : InputError or InputComplete
+            The type of result.
+        value : any
+            The value of result.
+        index : int or None
+            The index of token to highlight.
+
+        Returns
+        -------
+        succ : bool
+        """
         self.highlighted = index
         self.result = res_type(value)
         self.hint = None
         return True
 
     def clear_result(self):
+        """Clear result.
+
+        Returns
+        -------
+        succ : bool
+        """
         self.highlighted = None
         self.result = None
         return True
 
     def set_hint(self, hint_type, message, index=None):
+        """Set hint.
+        Show hint below the prompt.
+
+        Parameters
+        ----------
+        hint_type : InputWarn or InputMessage
+            The type of hint.
+        message : str
+            The message to show.
+        index : int or None
+            Index of the token to which the hint is directed, or `None` for nothing.
+
+        Returns
+        -------
+        succ : bool
+        """
         self.highlighted = index
         if index is None:
-            msg_tokens = self.tokens[:]
+            msg_tokens = None
         elif hint_type == InputWarn:
             msg_tokens = self.tokens[:index]
         else:
@@ -902,42 +970,78 @@ class BeatInput:
         return True
 
     def cancel_hint(self):
+        """Cancel hint.
+        Remove the hint below the prompt.
+
+        Returns
+        -------
+        succ : bool
+        """
+        self.highlighted = None
         self.hint = None
         return True
 
     def update_hint(self):
+        """Update hint.
+        Remove hint if the target is updated.
+
+        Returns
+        -------
+        succ : bool
+            `False` if there is no hint or the hint isn't removed.
+        """
         if self.hint is None:
             return False
 
+        if self.hint.tokens is None:
+            return self.cancel_hint()
+
         if len(self.hint.tokens) > len(self.tokens):
-            self.hint = None
-            return True
+            return self.cancel_hint()
 
         for t1, t2 in zip(self.hint.tokens, self.tokens):
             if t1[0] != t2[0]:
-                self.hint = None
-                return True
+                return self.cancel_hint()
 
         return False
 
-    def help(self, index=None):
+    def cancel(self):
+        """Cancel.
+        Cancel typeahead and hint.
+
+        Returns
+        -------
+        succ : bool
+        """
+        self.typeahead = ""
+        self.cancel_hint()
+        return True
+
+    def help(self):
+        """Help for command.
+        Provide some hint for the command before the caret.
+
+        Returns
+        -------
+        succ : bool
+            `False` if there is no hint.
+        """
         self.cancel_hint()
 
-        if index is None:
-            for index, (_, _, slic, _) in reversed(list(enumerate(self.tokens))):
-                if slic.start is None or self.pos >= slic.start:
-                    break
-            else:
-                index = 0
+        # find the last token before the caret
+        for index, (target, token_type, slic, _) in reversed(list(enumerate(self.tokens))):
+            if slic.start is None or slic.start <= self.pos:
+                break
+        else:
+            return False
 
-        prefix = [token for token, _, _, _ in self.tokens[:index]]
-        target, token_type = self.tokens[index][:2] if index < len(self.tokens) else (None, TOKEN_TYPE.UNKNOWN)
+        parents = [token for token, _, _, _ in self.tokens[:index]]
 
         if token_type == TOKEN_TYPE.UNKNOWN:
-            msg = self.command.expected_command(prefix)
+            msg = self.command.expected_command(parents)
             hint_type = InputWarn
         else:
-            msg = self.command.info_command(prefix, target)
+            msg = self.command.info_command(parents, target)
             hint_type = InputMessage
 
         if msg is None:
@@ -947,6 +1051,14 @@ class BeatInput:
             return True
 
     def enter(self):
+        """Enter.
+        Finish the command.
+
+        Returns
+        -------
+        succ : bool
+            `False` if the command is wrong.
+        """
         if len(self.tokens) == 0:
             self.set_result(InputComplete, lambda:None)
             return True
@@ -968,12 +1080,21 @@ class BeatInput:
             self.set_result(InputComplete, res)
             return True
 
-    def cancel(self):
-        self.typeahead = ""
-        self.cancel_hint()
-        return False
-
     def input(self, text):
+        """Input.
+        Insert some text into the buffer.
+
+        Parameters
+        ----------
+        text : str
+            The text to insert.  It shouldn't contain any nongraphic character,
+            except for prefix `\\b` which indicate deleting.
+
+        Returns
+        -------
+        succ : bool
+            `False` if buffer isn't changed.
+        """
         text = list(text)
 
         if len(text) == 0:
@@ -984,39 +1105,67 @@ class BeatInput:
             del self.buffer[self.pos-1]
             self.pos = self.pos-1
 
+        if wcwidth.wcswidth("".join(self.buffer)) == -1:
+            raise ValueError("invalid text to insert: " + repr("".join(self.buffer)))
+
         self.buffer[self.pos:self.pos] = text
         self.pos += len(text)
         self.parse_syntax()
 
-        self.make_typeahead(True)
+        self.make_typeahead()
         self.update_hint()
 
         return True
 
     def backspace(self):
+        """Backspace.
+        Delete one character before the caret if exists.
+
+        Returns
+        -------
+        succ : bool
+        """
         if self.pos == 0:
             return False
 
         self.pos -= 1
         del self.buffer[self.pos]
         self.parse_syntax()
-        self.make_typeahead(False)
+        self.cancel_typeahead()
         self.update_hint()
 
         return True
 
     def delete(self):
+        """Delete.
+        Delete one character after the caret if exists.
+
+        Returns
+        -------
+        succ : bool
+        """
         if self.pos >= len(self.buffer):
             return False
 
         del self.buffer[self.pos]
         self.parse_syntax()
-        self.make_typeahead(False)
+        self.cancel_typeahead()
         self.update_hint()
 
         return True
 
     def delete_range(self, start, end):
+        """Delete range.
+
+        Parameters
+        ----------
+        start : int or None
+        end : int or None
+
+        Returns
+        -------
+        succ : bool
+        """
         start = min(max(0, start), len(self.buffer)) if start is not None else 0
         end = min(max(0, end), len(self.buffer)) if end is not None else len(self.buffer)
 
@@ -1026,12 +1175,19 @@ class BeatInput:
         del self.buffer[start:end]
         self.pos = start
         self.parse_syntax()
-        self.make_typeahead(False)
+        self.cancel_typeahead()
         self.update_hint()
 
         return True
 
     def delete_to_word_start(self):
+        """Delete to the word start.
+        The word is defined as `\\w+|\\W+`.
+
+        Returns
+        -------
+        succ : bool
+        """
         for match in re.finditer("\w+|\W+", "".join(self.buffer)):
             if match.end() >= self.pos:
                 return self.delete_range(match.start(), self.pos)
@@ -1039,24 +1195,35 @@ class BeatInput:
             return self.delete_range(None, self.pos)
 
     def delete_to_word_end(self):
+        """Delete to the word end.
+        The word is defined as `\\w+|\\W+`.
+
+        Returns
+        -------
+        succ : bool
+        """
         for match in re.finditer("\w+|\W+", "".join(self.buffer)):
             if match.end() > self.pos:
                 return self.delete_range(self.pos, match.end())
         else:
             return self.delete_range(self.pos, None)
 
-    def move(self, offset):
-        return self.move_to(self.pos+offset)
-
-    def move_left(self):
-        return self.move(-1)
-
-    def move_right(self):
-        return self.move(+1)
-
     def move_to(self, pos):
+        """Move caret to the specific position.
+        Regardless of success or failure, typeahead will be cancelled.
+
+        Parameters
+        ----------
+        pos : int or None
+            Index of buffer, which will be clamped to 0 and length of buffer, or
+            `None` for the end of buffer.
+
+        Returns
+        -------
+        succ : bool
+        """
         pos = min(max(0, pos), len(self.buffer)) if pos is not None else len(self.buffer)
-        self.make_typeahead(False)
+        self.cancel_typeahead()
 
         if self.pos == pos:
             return False
@@ -1064,13 +1231,62 @@ class BeatInput:
         self.pos = pos
         return True
 
+    def move(self, offset):
+        """Move caret.
+
+        Parameters
+        ----------
+        offset : int
+
+        Returns
+        -------
+        succ : bool
+        """
+        return self.move_to(self.pos+offset)
+
+    def move_left(self):
+        """Move caret one character to the left.
+
+        Returns
+        -------
+        succ : bool
+        """
+        return self.move(-1)
+
+    def move_right(self):
+        """Move caret one character to the right.
+
+        Returns
+        -------
+        succ : bool
+        """
+        return self.move(+1)
+
     def move_to_start(self):
+        """Move caret to the start of buffer.
+
+        Returns
+        -------
+        succ : bool
+        """
         return self.move_to(0)
 
     def move_to_end(self):
+        """Move caret to the end of buffer.
+
+        Returns
+        -------
+        succ : bool
+        """
         return self.move_to(None)
 
     def move_to_word_start(self):
+        """Move caret to the start of the word.
+
+        Returns
+        -------
+        succ : bool
+        """
         for match in re.finditer("\w+|\W+", "".join(self.buffer)):
             if match.end() >= self.pos:
                 return self.move_to(match.start())
@@ -1078,6 +1294,12 @@ class BeatInput:
             return self.move_to(0)
 
     def move_to_word_end(self):
+        """Move caret to the end of the word.
+
+        Returns
+        -------
+        succ : bool
+        """
         for match in re.finditer("\w+|\W+", "".join(self.buffer)):
             if match.end() > self.pos:
                 return self.move_to(match.end())
@@ -1085,6 +1307,12 @@ class BeatInput:
             return self.move_to(None)
 
     def prev(self):
+        """Previous buffer.
+
+        Returns
+        -------
+        succ : bool
+        """
         if self.buffers_index == -len(self.buffers):
             return False
         self.buffers_index -= 1
@@ -1092,12 +1320,18 @@ class BeatInput:
         self.buffer = self.buffers[self.buffers_index]
         self.pos = len(self.buffer)
         self.parse_syntax()
-        self.make_typeahead(False)
+        self.cancel_typeahead()
         self.cancel_hint()
 
         return True
 
     def next(self):
+        """Next buffer.
+
+        Returns
+        -------
+        succ : bool
+        """
         if self.buffers_index == -1:
             return False
         self.buffers_index += 1
@@ -1105,7 +1339,7 @@ class BeatInput:
         self.buffer = self.buffers[self.buffers_index]
         self.pos = len(self.buffer)
         self.parse_syntax()
-        self.make_typeahead(False)
+        self.cancel_typeahead()
         self.cancel_hint()
 
         return True
