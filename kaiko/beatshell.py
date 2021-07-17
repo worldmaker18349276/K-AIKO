@@ -224,12 +224,8 @@ def pmove(width, x, text, tabsize=8):
 
     for ch, w in wcb.parse_attr(text):
         if ch == "\t":
-            if tabsize > 0:
-                x += 1
-                if x > width:
-                    y += 1
-                    x = 0
-                x = min(x // -tabsize * -tabsize, width-1)
+            if tabsize > 0 and x < width:
+                x = min((x+1) // -tabsize * -tabsize, width-1)
 
         elif ch == "\b":
             x = max(min(x, width-1)-1, 0)
@@ -1445,9 +1441,9 @@ class BeatPrompt:
             if msg:
                 if isinstance(result, (InputError, InputWarn)):
                     msg = wcb.add_attr(msg, error_message_attr)
-                if isinstance(result, (InputMessage, InputWarn)):
+                if isinstance(result, (InputWarn, InputMessage)):
                     msg = wcb.add_attr(msg, info_message_attr)
-            msg = "\n" + msg + ("\n" if msg else "")
+            msg = "\n" + msg + "\n" if msg else "\n"
             moveback = isinstance(result, (InputWarn, InputMessage))
 
             # track changes of the result
