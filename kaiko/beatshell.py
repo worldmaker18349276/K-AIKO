@@ -699,21 +699,18 @@ class RootCommandParser(SubCommandParser):
 
 
 class InputWarn:
-    def __init__(self, index, message, tokens):
-        self.index = index
+    def __init__(self, message, tokens):
         self.message = message
         self.tokens = tokens
 
 class InputMessage:
-    def __init__(self, index, message, tokens):
-        self.index = index
+    def __init__(self, message, tokens):
         self.message = message
         self.tokens = tokens
 
 class InputError:
-    def __init__(self, value, index):
+    def __init__(self, value):
         self.value = value
-        self.index = index
 
 class InputComplete:
     def __init__(self, value):
@@ -740,6 +737,7 @@ class BeatInput:
 
         self.tokens = []
         self.state = SHLEXER_STATE.SPACED
+        self.highlighted = None
 
         self.message = None
         self.result = None
@@ -881,12 +879,26 @@ class BeatInput:
                 return index
         return None
 
+    def set_result(self, res_type, value, index=None):
+        self.highlighted = index
+        self.result = res_type(value)
+        self.message = None
+        return True
+
+    def clear_result(self):
+        self.highlighted = None
+        self.result = None
+        return True
+
     def set_message(self, msg_type, message, index=None):
-        if index is not None:
-            msg_tokens = self.tokens[:index] if msg_type == InputWarn else self.tokens[:index+1]
-            self.message = msg_type(index, message, msg_tokens)
+        self.highlighted = index
+        if index is None:
+            msg_tokens = self.tokens[:]
+        elif msg_type == InputWarn:
+            msg_tokens = self.tokens[:index]
         else:
-            self.message = msg_type(None, message, self.tokens[:])
+            msg_tokens = self.tokens[:index+1]
+        self.message = msg_type(message, msg_tokens)
         return True
 
     def cancel_message(self):
@@ -936,7 +948,7 @@ class BeatInput:
 
     def enter(self):
         if len(self.tokens) == 0:
-            self.result = InputComplete(lambda:None)
+            self.set_result(InputComplete, lambda:None)
             return True
 
         if self.state == SHLEXER_STATE.BACKSLASHED:
@@ -947,13 +959,13 @@ class BeatInput:
             _, res, index = self.command.parse_command(token for token, _, _, _ in self.tokens)
 
         if isinstance(res, TokenUnfinishError):
-            self.result = InputError(res, None)
+            self.set_result(InputError, res, None)
             return False
         elif isinstance(res, TokenParseError):
-            self.result = InputError(res, index)
+            self.set_result(InputError, res, index)
             return False
         else:
-            self.result = InputComplete(res)
+            self.set_result(InputComplete, res)
             return True
 
     def cancel(self):
@@ -1164,7 +1176,7 @@ class BeatStroke:
                 if key.isprintable():
                     self.input.input(key)
                 else:
-                    self.input.result = InputError(ValueError(f"Unknown key: {key!r}"), None)
+                    self.input.set_result(InputError, ValueError(f"Unknown key: {key!r}"), None)
 
 
 class BeatShellSettings(cfg.Configurable):
@@ -1387,12 +1399,14 @@ class BeatPrompt:
                 size = size_node.send()
 
                 # draw message
-                msg_data, clean, highlighted = message_node.send(result or message)
+                msg_data = message_node.send(message)
 
                 # draw header
+                clean = result is not None
                 header_data = header_node.send(clean)
 
                 # draw text
+                highlighted = self.input.highlighted
                 text_data = text_node.send((clean, highlighted))
 
                 # render
@@ -1403,7 +1417,7 @@ class BeatPrompt:
                 # end
                 if result is not None:
                     self.result = result.value
-                    self.input.result = None
+                    self.input.clear_result()
                     return
 
     @dn.datanode
@@ -1452,36 +1466,33 @@ class BeatPrompt:
         info_message_attr = self.settings.text.info_message_attr
         clear = False
 
-        result = yield
+        message = yield
         while True:
-            clean = isinstance(result, (InputError, InputComplete))
-
-            if not isinstance(result, (InputWarn, InputMessage)):
-                highlighted = result.index if isinstance(result, InputError) else None
-                result = yield ("", clear, False), clean, highlighted
+            if message is None:
+                message = yield "", clear, False
                 clear = False
                 continue
 
             # render message
-            msg = result.message or ""
+            msg = message.message or ""
             if msg.count("\n") >= message_max_lines:
                 msg = "\n".join(msg.split("\n")[:message_max_lines]) + "\x1b[m\n…"
             if msg:
-                if isinstance(result, InputWarn):
+                if isinstance(message, InputWarn):
                     msg = wcb.add_attr(msg, error_message_attr)
-                if isinstance(result, (InputWarn, InputMessage)):
+                if isinstance(message, (InputWarn, InputMessage)):
                     msg = wcb.add_attr(msg, info_message_attr)
             msg = "\n" + msg + "\n" if msg else "\n"
-            moveback = isinstance(result, (InputWarn, InputMessage))
+            moveback = isinstance(message, (InputWarn, InputMessage))
 
-            # track changes of the result
-            shown_result = result
-            result = yield (msg, clear, moveback), clean, shown_result.index
+            # track changes of the message
+            shown_message = message
+            message = yield msg, clear, moveback
             clear = False
-            while shown_result == result:
-                result = yield ("", False, False), False, shown_result.index
+            while shown_message == message:
+                message = yield "", False, False
 
-            if isinstance(shown_result, (InputWarn, InputMessage)):
+            if isinstance(shown_message, (InputWarn, InputMessage)):
                 clear = True
 
     @dn.datanode
