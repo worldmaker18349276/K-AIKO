@@ -228,6 +228,13 @@ class KAIKOMenu:
                         # parse command
                         prompt_knot, prompt = input.prompt()
                         dn.exhaust(prompt_knot, dt, interruptible=True, sync_to=bgm_knot)
+
+                        if isinstance(prompt.result, Exception):
+                            print()
+                            with logger.warn():
+                                logger.print(prompt.result)
+                            continue
+
                         result = prompt.result()
                         input.new_session()
 

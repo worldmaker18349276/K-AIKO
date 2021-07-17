@@ -698,11 +698,6 @@ class RootCommandParser(SubCommandParser):
         return cmd.info(target)
 
 
-class InputError:
-    def __init__(self, index, message):
-        self.index = index
-        self.message = message
-
 class InputWarn:
     def __init__(self, index, message):
         self.index = index
@@ -712,6 +707,11 @@ class InputMessage:
     def __init__(self, index, message):
         self.index = index
         self.message = message
+
+class InputError:
+    def __init__(self, value, index):
+        self.value = value
+        self.index = index
 
 class InputComplete:
     def __init__(self, value):
@@ -941,9 +941,8 @@ class BeatInput:
 
     def enter(self):
         if len(self.tokens) == 0:
-            self.delete_range(None, None)
-            self.set_result(InputError, None)
-            return False
+            self.result = InputComplete(lambda:None)
+            return True
 
         if self.state == SHLEXER_STATE.BACKSLASHED:
             res, index = TokenParseError("No escaped character"), len(self.tokens)-1
@@ -953,10 +952,10 @@ class BeatInput:
             _, res, index = self.command.parse_command(token for token, _, _, _ in self.tokens)
 
         if isinstance(res, TokenUnfinishError):
-            self.set_result(InputError, res.args[0])
+            self.result = InputError(res, None)
             return False
         elif isinstance(res, TokenParseError):
-            self.set_result(InputError, res.args[0], index)
+            self.result = InputError(res, index)
             return False
         else:
             self.result = InputComplete(res)
@@ -1170,7 +1169,7 @@ class BeatStroke:
                 if key.isprintable():
                     self.input.input(key)
                 else:
-                    self.input.set_result(InputError, f"Unknown key: {key!r}")
+                    self.input.result = InputError(ValueError(f"Unknown key: {key!r}"), None)
 
 
 class BeatShellSettings(cfg.Configurable):
@@ -1406,8 +1405,9 @@ class BeatPrompt:
                 yield output_text
 
                 # end
-                if isinstance(result, InputComplete):
+                if isinstance(result, (InputError, InputComplete)):
                     self.result = result.value
+                    self.input.result = None
                     return
 
     @dn.datanode
@@ -1460,8 +1460,9 @@ class BeatPrompt:
         while True:
             clean = isinstance(result, (InputError, InputComplete))
 
-            if not isinstance(result, (InputError, InputWarn, InputMessage)):
-                result = yield ("", clear, False), clean, None
+            if not isinstance(result, (InputWarn, InputMessage)):
+                highlighted = result.index if isinstance(result, InputError) else None
+                result = yield ("", clear, False), clean, highlighted
                 clear = False
                 continue
 
@@ -1470,7 +1471,7 @@ class BeatPrompt:
             if msg.count("\n") >= message_max_lines:
                 msg = "\n".join(msg.split("\n")[:message_max_lines]) + "\x1b[m\n…"
             if msg:
-                if isinstance(result, (InputError, InputWarn)):
+                if isinstance(result, InputWarn):
                     msg = wcb.add_attr(msg, error_message_attr)
                 if isinstance(result, (InputWarn, InputMessage)):
                     msg = wcb.add_attr(msg, info_message_attr)
