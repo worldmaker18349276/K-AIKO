@@ -304,6 +304,44 @@ class Detector:
             _, time, strength, detected = yield
 
 
+def pt_walk(text, width, x=0, tabsize=8):
+    y = 0
+
+    for ch, w in wcb.parse_attr(text):
+        if ch == "\t":
+            if tabsize > 0 and x < width:
+                x = min((x+1) // -tabsize * -tabsize, width-1)
+
+        elif ch == "\b":
+            x = max(min(x, width-1)-1, 0)
+
+        elif ch == "\r":
+            x = 0
+
+        elif ch == "\n":
+            y += 1
+            x = 0
+
+        elif ch == "\v":
+            y += 1
+
+        elif ch == "\f":
+            y += 1
+
+        elif ch == "\x00":
+            pass
+
+        elif ch[0] == "\x1b":
+            pass
+
+        else:
+            x += w
+            if x > width:
+                y += 1
+                x = w
+
+    return x, y
+
 class RendererSettings(cfg.Configurable):
     display_framerate: float = 160.0 # ~ 2 / detector_time_res
     display_delay: float = 0.0
@@ -346,12 +384,19 @@ class Renderer:
                     except StopIteration:
                         return
 
-                    msg = []
+                    msg = None
                     while not msg_queue.empty():
-                        msg.append(msg_queue.get())
+                        msg = msg_queue.get()
 
-                    msg = "\n" + "".join(msg) + "\n" if msg else ""
-                    yield msg + "\r" + "".join(view) + "\r"
+                    if msg is None:
+                        res_text = "\r" + "".join(view) + "\r"
+                    elif msg == "":
+                        res_text = "\r\x1b[J" + "".join(view) + "\r"
+                    else:
+                        _, y = pt_walk(msg, width, 0)
+                        res_text = "\r\x1b[J" + "".join(view) + f"\n{msg}\x1b[{y+1}A"
+
+                    yield res_text
                     index += 1
 
         display_node = _node()
