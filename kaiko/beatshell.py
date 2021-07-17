@@ -699,14 +699,16 @@ class RootCommandParser(SubCommandParser):
 
 
 class InputWarn:
-    def __init__(self, index, message):
+    def __init__(self, index, message, tokens):
         self.index = index
         self.message = message
+        self.tokens = tokens
 
 class InputMessage:
-    def __init__(self, index, message):
+    def __init__(self, index, message, tokens):
         self.index = index
         self.message = message
+        self.tokens = tokens
 
 class InputError:
     def __init__(self, value, index):
@@ -739,7 +741,7 @@ class BeatInput:
         self.tokens = []
         self.state = SHLEXER_STATE.SPACED
 
-        self.resulted_tokens = None
+        self.message = None
         self.result = None
 
     def prompt(self, settings=None):
@@ -835,7 +837,7 @@ class BeatInput:
 
         else:
             self.parse_syntax()
-            self.cancel_result()
+            self.cancel_message()
 
     def make_typeahead(self, suggest=True):
         if not suggest or self.pos != len(self.buffer):
@@ -879,42 +881,35 @@ class BeatInput:
                 return index
         return None
 
-    def set_result(self, result_type, message, index=None):
+    def set_message(self, msg_type, message, index=None):
         if index is not None:
-            if result_type == InputWarn:
-                self.resulted_tokens = self.tokens[:index]
-            else:
-                self.resulted_tokens = self.tokens[:index+1]
-            self.result = result_type(index, message)
+            msg_tokens = self.tokens[:index] if msg_type == InputWarn else self.tokens[:index+1]
+            self.message = msg_type(index, message, msg_tokens)
         else:
-            self.resulted_tokens = self.tokens[:]
-            self.result = result_type(None, message)
+            self.message = msg_type(None, message, self.tokens[:])
         return True
 
-    def cancel_result(self):
-        self.resulted_tokens = None
-        self.result = None
+    def cancel_message(self):
+        self.message = None
         return True
 
-    def update_result(self):
-        if self.resulted_tokens is None:
+    def update_message(self):
+        if self.message is None:
             return False
 
-        if len(self.resulted_tokens) > len(self.tokens):
-            self.resulted_tokens = None
-            self.result = None
+        if len(self.message.tokens) > len(self.tokens):
+            self.message = None
             return True
 
-        for t1, t2 in zip(self.resulted_tokens, self.tokens):
+        for t1, t2 in zip(self.message.tokens, self.tokens):
             if t1[0] != t2[0]:
-                self.resulted_tokens = None
-                self.result = None
+                self.message = None
                 return True
 
         return False
 
     def help(self, index=None):
-        self.cancel_result()
+        self.cancel_message()
 
         if index is None:
             for index, (_, _, slic, _) in reversed(list(enumerate(self.tokens))):
@@ -928,15 +923,15 @@ class BeatInput:
 
         if token_type == TOKEN_TYPE.UNKNOWN:
             msg = self.command.expected_command(prefix)
-            result_type = InputWarn
+            msg_type = InputWarn
         else:
             msg = self.command.info_command(prefix, target)
-            result_type = InputMessage
+            msg_type = InputMessage
 
         if msg is None:
             return False
         else:
-            self.set_result(result_type, msg, index)
+            self.set_message(msg_type, msg, index)
             return True
 
     def enter(self):
@@ -963,7 +958,7 @@ class BeatInput:
 
     def cancel(self):
         self.typeahead = ""
-        self.cancel_result()
+        self.cancel_message()
         return False
 
     def input(self, text):
@@ -982,7 +977,7 @@ class BeatInput:
         self.parse_syntax()
 
         self.make_typeahead(True)
-        self.update_result()
+        self.update_message()
 
         return True
 
@@ -994,7 +989,7 @@ class BeatInput:
         del self.buffer[self.pos]
         self.parse_syntax()
         self.make_typeahead(False)
-        self.update_result()
+        self.update_message()
 
         return True
 
@@ -1005,7 +1000,7 @@ class BeatInput:
         del self.buffer[self.pos]
         self.parse_syntax()
         self.make_typeahead(False)
-        self.update_result()
+        self.update_message()
 
         return True
 
@@ -1020,7 +1015,7 @@ class BeatInput:
         self.pos = start
         self.parse_syntax()
         self.make_typeahead(False)
-        self.update_result()
+        self.update_message()
 
         return True
 
@@ -1086,7 +1081,7 @@ class BeatInput:
         self.pos = len(self.buffer)
         self.parse_syntax()
         self.make_typeahead(False)
-        self.cancel_result()
+        self.cancel_message()
 
         return True
 
@@ -1099,7 +1094,7 @@ class BeatInput:
         self.pos = len(self.buffer)
         self.parse_syntax()
         self.make_typeahead(False)
-        self.cancel_result()
+        self.cancel_message()
 
         return True
 
@@ -1387,11 +1382,12 @@ class BeatPrompt:
                 while not self.stroke.queue.empty():
                     stroke_handler.send(self.stroke.queue.get())
                 result = self.input.result
+                message = self.input.message
 
                 size = size_node.send()
 
                 # draw message
-                msg_data, clean, highlighted = message_node.send(result)
+                msg_data, clean, highlighted = message_node.send(result or message)
 
                 # draw header
                 header_data = header_node.send(clean)
@@ -1400,12 +1396,12 @@ class BeatPrompt:
                 text_data = text_node.send((clean, highlighted))
 
                 # render
-                output_text = render_node.send((result, header_data, text_data, msg_data, size))
+                output_text = render_node.send((header_data, text_data, msg_data, size))
 
                 yield output_text
 
                 # end
-                if isinstance(result, (InputError, InputComplete)):
+                if result is not None:
                     self.result = result.value
                     self.input.result = None
                     return
@@ -1563,7 +1559,7 @@ class BeatPrompt:
         output_text = None
 
         while True:
-            result, (header, cursor), (text, cursor_pos), (msg, clear, moveback), size = yield output_text
+            (header, cursor), (text, cursor_pos), (msg, clear, moveback), size = yield output_text
             width = size.columns
             view = wcb.newwin1(width)
 
