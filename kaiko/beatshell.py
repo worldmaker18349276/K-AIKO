@@ -718,9 +718,15 @@ class InputComplete:
         self.value = value
 
 class BeatInput:
-    def __init__(self, command, history=None):
-        self.command = command
+    def __init__(self, promptable, history=None):
+        self.command = RootCommandParser(promptable)
         self.history = history if history is not None else []
+
+        self.new_session(False)
+
+    def new_session(self, record_current=True):
+        if record_current:
+            self.history.append("".join(self.buffer))
 
         self.buffers = [list(history_buffer) for history_buffer in self.history]
         self.buffers.append([])
@@ -735,6 +741,32 @@ class BeatInput:
 
         self.resulted_tokens = None
         self.result = None
+
+    def prompt(self, settings=None):
+        if settings is None:
+            settings = BeatShellSettings()
+
+        stroke = BeatStroke(self, settings.input.keymap, settings.input.keycodes)
+        prompt = BeatPrompt(stroke, self, settings)
+
+        input_knot = dn.input(stroke.input_handler())
+        display_knot = dn.show(prompt.output_handler(), 1/settings.prompt.framerate, hide_cursor=True)
+
+        # `dn.show`, `dn.input` will fight each other...
+        @dn.datanode
+        def slow(dt=0.1):
+            import time
+            try:
+                yield
+                prompt.ref_time = time.time()
+                yield
+                while True:
+                    yield
+            finally:
+                time.sleep(dt)
+
+        prompt_knot = dn.pipe(input_knot, slow(), display_knot)
+        return prompt_knot, prompt
 
     def parse_syntax(self):
         tokenizer = shlexer_tokenize(self.buffer, partial=True)
@@ -927,7 +959,6 @@ class BeatInput:
             self.set_result(InputError, res.args[0], index)
             return False
         else:
-            self.history.append("".join(self.buffer))
             self.result = InputComplete(res)
             return True
 
@@ -1571,31 +1602,3 @@ class BeatPrompt:
                 msg = "\n\x1b[J\x1b[A" + msg
 
             output_text = "\r\x1b[K" + "".join(view).rstrip() + "\r" + msg
-
-def prompt(promptable, history=None, settings=None):
-    if settings is None:
-        settings = BeatShellSettings()
-
-    command = RootCommandParser(promptable)
-    input = BeatInput(command, history)
-    stroke = BeatStroke(input, settings.input.keymap, settings.input.keycodes)
-    prompt = BeatPrompt(stroke, input, settings)
-
-    input_knot = dn.input(stroke.input_handler())
-    display_knot = dn.show(prompt.output_handler(), 1/settings.prompt.framerate, hide_cursor=True)
-
-    # `dn.show`, `dn.input` will fight each other...
-    @dn.datanode
-    def slow(dt=0.1):
-        import time
-        try:
-            yield
-            prompt.ref_time = time.time()
-            yield
-            while True:
-                yield
-        finally:
-            time.sleep(dt)
-
-    prompt_knot = dn.pipe(input_knot, slow(), display_knot)
-    return prompt_knot, prompt

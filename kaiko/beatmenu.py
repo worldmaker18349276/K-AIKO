@@ -223,12 +223,13 @@ class KAIKOMenu:
                     logger.print()
 
                     # prompt
-                    history = []
+                    input = beatshell.BeatInput(game)
                     while True:
                         # parse command
-                        prompt_knot, prompt = beatshell.prompt(game, history)
+                        prompt_knot, prompt = input.prompt()
                         dn.exhaust(prompt_knot, dt, interruptible=True, sync_to=bgm_knot)
                         result = prompt.result()
+                        input.new_session()
 
                         # execute result
                         game.run_result(result, dt, bgm_knot)
