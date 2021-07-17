@@ -739,7 +739,7 @@ class BeatInput:
         self.state = SHLEXER_STATE.SPACED
         self.highlighted = None
 
-        self.message = None
+        self.hint = None
         self.result = None
 
     def prompt(self, settings=None):
@@ -835,7 +835,7 @@ class BeatInput:
 
         else:
             self.parse_syntax()
-            self.cancel_message()
+            self.cancel_hint()
 
     def make_typeahead(self, suggest=True):
         if not suggest or self.pos != len(self.buffer):
@@ -882,7 +882,7 @@ class BeatInput:
     def set_result(self, res_type, value, index=None):
         self.highlighted = index
         self.result = res_type(value)
-        self.message = None
+        self.hint = None
         return True
 
     def clear_result(self):
@@ -890,38 +890,38 @@ class BeatInput:
         self.result = None
         return True
 
-    def set_message(self, msg_type, message, index=None):
+    def set_hint(self, hint_type, message, index=None):
         self.highlighted = index
         if index is None:
             msg_tokens = self.tokens[:]
-        elif msg_type == InputWarn:
+        elif hint_type == InputWarn:
             msg_tokens = self.tokens[:index]
         else:
             msg_tokens = self.tokens[:index+1]
-        self.message = msg_type(message, msg_tokens)
+        self.hint = hint_type(message, msg_tokens)
         return True
 
-    def cancel_message(self):
-        self.message = None
+    def cancel_hint(self):
+        self.hint = None
         return True
 
-    def update_message(self):
-        if self.message is None:
+    def update_hint(self):
+        if self.hint is None:
             return False
 
-        if len(self.message.tokens) > len(self.tokens):
-            self.message = None
+        if len(self.hint.tokens) > len(self.tokens):
+            self.hint = None
             return True
 
-        for t1, t2 in zip(self.message.tokens, self.tokens):
+        for t1, t2 in zip(self.hint.tokens, self.tokens):
             if t1[0] != t2[0]:
-                self.message = None
+                self.hint = None
                 return True
 
         return False
 
     def help(self, index=None):
-        self.cancel_message()
+        self.cancel_hint()
 
         if index is None:
             for index, (_, _, slic, _) in reversed(list(enumerate(self.tokens))):
@@ -935,15 +935,15 @@ class BeatInput:
 
         if token_type == TOKEN_TYPE.UNKNOWN:
             msg = self.command.expected_command(prefix)
-            msg_type = InputWarn
+            hint_type = InputWarn
         else:
             msg = self.command.info_command(prefix, target)
-            msg_type = InputMessage
+            hint_type = InputMessage
 
         if msg is None:
             return False
         else:
-            self.set_message(msg_type, msg, index)
+            self.set_hint(hint_type, msg, index)
             return True
 
     def enter(self):
@@ -970,7 +970,7 @@ class BeatInput:
 
     def cancel(self):
         self.typeahead = ""
-        self.cancel_message()
+        self.cancel_hint()
         return False
 
     def input(self, text):
@@ -989,7 +989,7 @@ class BeatInput:
         self.parse_syntax()
 
         self.make_typeahead(True)
-        self.update_message()
+        self.update_hint()
 
         return True
 
@@ -1001,7 +1001,7 @@ class BeatInput:
         del self.buffer[self.pos]
         self.parse_syntax()
         self.make_typeahead(False)
-        self.update_message()
+        self.update_hint()
 
         return True
 
@@ -1012,7 +1012,7 @@ class BeatInput:
         del self.buffer[self.pos]
         self.parse_syntax()
         self.make_typeahead(False)
-        self.update_message()
+        self.update_hint()
 
         return True
 
@@ -1027,7 +1027,7 @@ class BeatInput:
         self.pos = start
         self.parse_syntax()
         self.make_typeahead(False)
-        self.update_message()
+        self.update_hint()
 
         return True
 
@@ -1093,7 +1093,7 @@ class BeatInput:
         self.pos = len(self.buffer)
         self.parse_syntax()
         self.make_typeahead(False)
-        self.cancel_message()
+        self.cancel_hint()
 
         return True
 
@@ -1106,7 +1106,7 @@ class BeatInput:
         self.pos = len(self.buffer)
         self.parse_syntax()
         self.make_typeahead(False)
-        self.cancel_message()
+        self.cancel_hint()
 
         return True
 
@@ -1385,21 +1385,21 @@ class BeatPrompt:
         size_node = dn.terminal_size()
         header_node = self.header_node()
         text_node = self.text_node()
-        message_node = self.message_node()
+        hint_node = self.hint_node()
         render_node = self.render_node()
-        with stroke_handler, size_node, header_node, text_node, message_node, render_node:
+        with stroke_handler, size_node, header_node, text_node, hint_node, render_node:
             yield
             while True:
                 # deal with keystrokes
                 while not self.stroke.queue.empty():
                     stroke_handler.send(self.stroke.queue.get())
                 result = self.input.result
-                message = self.input.message
+                hint = self.input.hint
 
                 size = size_node.send()
 
-                # draw message
-                msg_data = message_node.send(message)
+                # draw hint
+                msg_data = hint_node.send(hint)
 
                 # draw header
                 clean = result is not None
@@ -1460,40 +1460,38 @@ class BeatPrompt:
             t = (self.ref_time - self.t0 + n/framerate)/(60/self.tempo)
 
     @dn.datanode
-    def message_node(self):
+    def hint_node(self):
         message_max_lines = self.settings.text.message_max_lines
         error_message_attr = self.settings.text.error_message_attr
         info_message_attr = self.settings.text.info_message_attr
-        clear = False
 
-        message = yield
+        current_hint = None
+        hint = yield
         while True:
-            if message is None:
-                message = yield "", clear, False
-                clear = False
+            # track changes of the hint
+            if hint == current_hint:
+                hint = yield None
                 continue
 
-            # render message
-            msg = message.message or ""
+            current_hint = hint
+
+            # clear hint
+            if hint is None:
+                hint = yield ""
+                continue
+
+            # show hint
+            msg = hint.message or ""
             if msg.count("\n") >= message_max_lines:
                 msg = "\n".join(msg.split("\n")[:message_max_lines]) + "\x1b[m\n…"
             if msg:
-                if isinstance(message, InputWarn):
+                if isinstance(hint, InputWarn):
                     msg = wcb.add_attr(msg, error_message_attr)
-                if isinstance(message, (InputWarn, InputMessage)):
+                if isinstance(hint, (InputWarn, InputMessage)):
                     msg = wcb.add_attr(msg, info_message_attr)
             msg = "\n" + msg + "\n" if msg else "\n"
-            moveback = isinstance(message, (InputWarn, InputMessage))
 
-            # track changes of the message
-            shown_message = message
-            message = yield msg, clear, moveback
-            clear = False
-            while shown_message == message:
-                message = yield "", False, False
-
-            if isinstance(shown_message, (InputWarn, InputMessage)):
-                clear = True
+            hint = yield msg
 
     @dn.datanode
     def text_node(self):
@@ -1570,7 +1568,7 @@ class BeatPrompt:
         output_text = None
 
         while True:
-            (header, cursor), (text, cursor_pos), (msg, clear, moveback), size = yield output_text
+            (header, cursor), (text, cursor_pos), msg, size = yield output_text
             width = size.columns
             view = wcb.newwin1(width)
 
@@ -1602,11 +1600,10 @@ class BeatPrompt:
                 view[cursor_ran.start] = cursor(view[cursor_ran.start])
 
             # print error
-            if moveback:
+            if msg is None:
+                output_text = "\r\x1b[K" + "".join(view).rstrip() + "\r"
+            elif msg == "":
+                output_text = "\r\x1b[J" + "".join(view).rstrip() + "\r"
+            else:
                 _, y = pmove(width, 0, msg)
-                if y != 0:
-                    msg = msg + f"\x1b[{y}A"
-            if clear:
-                msg = "\n\x1b[J\x1b[A" + msg
-
-            output_text = "\r\x1b[K" + "".join(view).rstrip() + "\r" + msg
+                output_text = "\r\x1b[J" + "".join(view).rstrip() + "\r" + msg + f"\x1b[{y}A"
