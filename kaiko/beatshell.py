@@ -1598,7 +1598,7 @@ class BeatPrompt:
     def __init__(self, stroke, input, settings):
         self.stroke = stroke
         self.key_event = threading.Event()
-        self.stroke_queue = queue.Queue()
+        self.input_lock = threading.Lock()
 
         self.input = input
         self.settings = settings
@@ -1609,37 +1609,47 @@ class BeatPrompt:
 
     @dn.datanode
     def input_handler(self):
-        while True:
-            time, key = yield
-            self.stroke_queue.put((time, key))
-            self.key_event.set()
+        stroke_handler = self.stroke.stroke_handler()
+        with stroke_handler:
+            while True:
+                time, key = yield
+                with self.input_lock:
+                    stroke_handler.send((time, key))
+                    self.key_event.set()
 
     @dn.datanode
     def output_handler(self):
-        stroke_handler = self.stroke.stroke_handler()
         size_node = dn.terminal_size()
         header_node = self.header_node()
         hint_node = self.hint_node()
         render_node = self.render_node()
-        with stroke_handler, size_node, header_node, hint_node, render_node:
+        with size_node, header_node, hint_node, render_node:
             yield
             while True:
-                # deal with keystrokes
-                while not self.stroke_queue.empty():
-                    stroke_handler.send(self.stroke_queue.get())
-                result = self.input.result
+                # obtain input state
+                with self.input_lock:
+                    buffer = list(self.input.buffer)
+                    tokens = list(self.input.tokens)
+                    pos = self.input.pos
+                    highlighted = self.input.highlighted
+
+                    typeahead = self.input.typeahead
+                    result = self.input.result
+                    hint = self.input.hint
+                    if result is not None:
+                        self.input.clear_result()
 
                 size = size_node.send()
 
                 # draw hint
-                msg_data = hint_node.send(self.input.hint)
+                msg_data = hint_node.send(hint)
 
                 # draw header
                 clean = result is not None
                 header_data = header_node.send(clean)
 
                 # draw text
-                text_data = self.render_text(clean, self.input.highlighted)
+                text_data = self.render_text(buffer, tokens, typeahead, pos, highlighted, clean)
 
                 # render
                 output_text = render_node.send((header_data, text_data, msg_data, size))
@@ -1649,7 +1659,6 @@ class BeatPrompt:
                 # end
                 if result is not None:
                     self.result = result.value
-                    self.input.clear_result()
                     return
 
     @dn.datanode
@@ -1729,7 +1738,7 @@ class BeatPrompt:
 
         return msg
 
-    def render_text(self, clean, highlighted):
+    def render_text(self, rendered_buffer, tokens, typeahead, pos, highlighted, clean):
         escape_attr     = self.settings.text.escape_attr
         typeahead_attr  = self.settings.text.typeahead_attr
         whitespace      = self.settings.text.whitespace
@@ -1741,10 +1750,9 @@ class BeatPrompt:
         token_highlight_attr = self.settings.text.token_highlight_attr
 
         # render buffer
-        rendered_buffer = list(self.input.buffer)
         indices = range(len(rendered_buffer))
 
-        for token, type, slic, ignored in self.input.tokens:
+        for token, type, slic, ignored in tokens:
             # render whitespace
             for index in indices[slic]:
                 if rendered_buffer[index] == " ":
@@ -1775,22 +1783,22 @@ class BeatPrompt:
                 for index in indices[slic]:
                     rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_argument_attr)
 
-        if highlighted in range(len(self.input.tokens)):
+        if highlighted in range(len(tokens)):
             # render highlighted token
-            _, _, slic, _ = self.input.tokens[highlighted]
+            _, _, slic, _ = tokens[highlighted]
             for index in indices[slic]:
                 rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_highlight_attr)
 
         rendered_text = "".join(rendered_buffer)
 
         # render typeahead
-        if self.input.typeahead and not clean:
-            rendered_typeahead = wcb.add_attr(self.input.typeahead, typeahead_attr)
+        if typeahead and not clean:
+            rendered_typeahead = wcb.add_attr(typeahead, typeahead_attr)
         else:
             rendered_typeahead = ""
 
         # compute caret position
-        _, caret_pos = wcb.textrange1(0, "".join(rendered_buffer[:self.input.pos]))
+        _, caret_pos = wcb.textrange1(0, "".join(rendered_buffer[:pos]))
 
         return rendered_text, rendered_typeahead, caret_pos
 
