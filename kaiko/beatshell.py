@@ -750,7 +750,7 @@ class BeatInput:
         stroke = BeatStroke(self, settings.input.keymap, settings.input.keycodes)
         prompt = BeatPrompt(stroke, self, settings)
 
-        input_knot = dn.input(stroke.input_handler())
+        input_knot = dn.input(prompt.input_handler())
         display_knot = dn.show(prompt.output_handler(), 1/settings.prompt.framerate, hide_cursor=True)
 
         # `dn.show`, `dn.input` will fight each other...
@@ -1352,18 +1352,9 @@ class INPUT_STATE(Enum):
 class BeatStroke:
     def __init__(self, input, keymap, keycodes):
         self.input = input
-        self.event = threading.Event()
-        self.queue = queue.Queue()
         self.keymap = keymap
         self.keycodes = keycodes
         self.state = INPUT_STATE.EDIT
-
-    @dn.datanode
-    def input_handler(self):
-        while True:
-            time, key = yield
-            self.queue.put((time, key))
-            self.event.set()
 
     @dn.datanode
     def stroke_handler(self):
@@ -1606,12 +1597,22 @@ class BeatShellSettings(cfg.Configurable):
 class BeatPrompt:
     def __init__(self, stroke, input, settings):
         self.stroke = stroke
+        self.key_event = threading.Event()
+        self.stroke_queue = queue.Queue()
+
         self.input = input
         self.settings = settings
         self.result = None
         self.ref_time = None
         self.t0 = None
         self.tempo = None
+
+    @dn.datanode
+    def input_handler(self):
+        while True:
+            time, key = yield
+            self.stroke_queue.put((time, key))
+            self.key_event.set()
 
     @dn.datanode
     def output_handler(self):
@@ -1625,8 +1626,8 @@ class BeatPrompt:
             yield
             while True:
                 # deal with keystrokes
-                while not self.stroke.queue.empty():
-                    stroke_handler.send(self.stroke.queue.get())
+                while not self.stroke_queue.empty():
+                    stroke_handler.send(self.stroke_queue.get())
                 result = self.input.result
                 hint = self.input.hint
 
@@ -1672,8 +1673,8 @@ class BeatPrompt:
         tr = t // 1
         while True:
             # don't blink while key pressing
-            if self.stroke.event.is_set():
-                self.stroke.event.clear()
+            if self.key_event.is_set():
+                self.key_event.clear()
                 tr = t // -1 * -1
 
             # render cursor
