@@ -1374,12 +1374,12 @@ class BeatStroke:
             _, key = yield
 
             # completions
-            while key == self.keycodes["Tab"] or key == self.keycodes["Shift+Tab"]:
+            while key == self.keycodes["Tab"] or key == self.keycodes["Shift_Tab"]:
                 self.state = INPUT_STATE.TAB
 
                 if key == self.keycodes["Tab"]:
                     selector = self.input.autocomplete(+1)
-                elif key == self.keycodes["Shift+Tab"]:
+                elif key == self.keycodes["Shift_Tab"]:
                     selector = self.input.autocomplete(-1)
 
                 try:
@@ -1389,7 +1389,7 @@ class BeatStroke:
                         _, key = yield
                         if key == self.keycodes["Tab"]:
                             selector.send(+1)
-                        elif key == self.keycodes["Shift+Tab"]:
+                        elif key == self.keycodes["Shift_Tab"]:
                             selector.send(-1)
                         elif key == self.keycodes["Esc"]:
                             selector.send(0)
@@ -1420,110 +1420,110 @@ class BeatShellSettings(cfg.Configurable):
     class input(cfg.Configurable):
         keycodes: Dict[str, str] = {
             "Esc"       : "\x1b",
-            "Alt+Esc"   : "\x1b\x1b",
+            "Alt_Esc"   : "\x1b\x1b",
 
             "Enter"     : "\n",
-            "Alt+Enter" : "\x1b\n",
+            "Alt_Enter" : "\x1b\n",
 
             "Backspace"            : "\x7f",
-            "Ctrl+Backspace"       : "\x08",
-            "Alt+Backspace"        : "\x1b\x7f",
-            "Ctrl+Alt+Backspace"   : "\x1b\x08",
+            "Ctrl_Backspace"       : "\x08",
+            "Alt_Backspace"        : "\x1b\x7f",
+            "Ctrl_Alt_Backspace"   : "\x1b\x08",
 
             "Tab"                  : "\t",
-            "Shift+Tab"            : "\x1b[Z",
-            "Alt+Tab"              : "\x1b\t",
-            "Alt+Shift+Tab"        : "\x1b\x1b[Z",
+            "Shift_Tab"            : "\x1b[Z",
+            "Alt_Tab"              : "\x1b\t",
+            "Alt_Shift_Tab"        : "\x1b\x1b[Z",
 
             "Up"                   : "\x1b[A",
-            "Shift+Up"             : "\x1b[1;2A",
-            "Alt+Up"               : "\x1b[1;3A",
-            "Alt+Shift+Up"         : "\x1b[1;4A",
-            "Ctrl+Up"              : "\x1b[1;5A",
-            "Ctrl+Shift+Up"        : "\x1b[1;6A",
-            "Ctrl+Alt+Up"          : "\x1b[1;7A",
-            "Ctrl+Alt+Shift+Up"    : "\x1b[1;8A",
+            "Shift_Up"             : "\x1b[1;2A",
+            "Alt_Up"               : "\x1b[1;3A",
+            "Alt_Shift_Up"         : "\x1b[1;4A",
+            "Ctrl_Up"              : "\x1b[1;5A",
+            "Ctrl_Shift_Up"        : "\x1b[1;6A",
+            "Ctrl_Alt_Up"          : "\x1b[1;7A",
+            "Ctrl_Alt_Shift_Up"    : "\x1b[1;8A",
 
             "Down"                 : "\x1b[B",
-            "Shift+Down"           : "\x1b[1;2B",
-            "Alt+Down"             : "\x1b[1;3B",
-            "Alt+Shift+Down"       : "\x1b[1;4B",
-            "Ctrl+Down"            : "\x1b[1;5B",
-            "Ctrl+Shift+Down"      : "\x1b[1;6B",
-            "Ctrl+Alt+Down"        : "\x1b[1;7B",
-            "Ctrl+Alt+Shift+Down"  : "\x1b[1;8B",
+            "Shift_Down"           : "\x1b[1;2B",
+            "Alt_Down"             : "\x1b[1;3B",
+            "Alt_Shift_Down"       : "\x1b[1;4B",
+            "Ctrl_Down"            : "\x1b[1;5B",
+            "Ctrl_Shift_Down"      : "\x1b[1;6B",
+            "Ctrl_Alt_Down"        : "\x1b[1;7B",
+            "Ctrl_Alt_Shift_Down"  : "\x1b[1;8B",
 
             "Right"                : "\x1b[C",
-            "Shift+Right"          : "\x1b[1;2C",
-            "Alt+Right"            : "\x1b[1;3C",
-            "Alt+Shift+Right"      : "\x1b[1;4C",
-            "Ctrl+Right"           : "\x1b[1;5C",
-            "Ctrl+Shift+Right"     : "\x1b[1;6C",
-            "Ctrl+Alt+Right"       : "\x1b[1;7C",
-            "Ctrl+Alt+Shift+Right" : "\x1b[1;8C",
+            "Shift_Right"          : "\x1b[1;2C",
+            "Alt_Right"            : "\x1b[1;3C",
+            "Alt_Shift_Right"      : "\x1b[1;4C",
+            "Ctrl_Right"           : "\x1b[1;5C",
+            "Ctrl_Shift_Right"     : "\x1b[1;6C",
+            "Ctrl_Alt_Right"       : "\x1b[1;7C",
+            "Ctrl_Alt_Shift_Right" : "\x1b[1;8C",
 
             "Left"                 : "\x1b[D",
-            "Shift+Left"           : "\x1b[1;2D",
-            "Alt+Left"             : "\x1b[1;3D",
-            "Alt+Shift+Left"       : "\x1b[1;4D",
-            "Ctrl+Left"            : "\x1b[1;5D",
-            "Ctrl+Shift+Left"      : "\x1b[1;6D",
-            "Ctrl+Alt+Left"        : "\x1b[1;7D",
-            "Ctrl+Alt+Shift+Left"  : "\x1b[1;8D",
+            "Shift_Left"           : "\x1b[1;2D",
+            "Alt_Left"             : "\x1b[1;3D",
+            "Alt_Shift_Left"       : "\x1b[1;4D",
+            "Ctrl_Left"            : "\x1b[1;5D",
+            "Ctrl_Shift_Left"      : "\x1b[1;6D",
+            "Ctrl_Alt_Left"        : "\x1b[1;7D",
+            "Ctrl_Alt_Shift_Left"  : "\x1b[1;8D",
 
             "End"                  : "\x1b[F",
-            "Shift+End"            : "\x1b[1;2F",
-            "Alt+End"              : "\x1b[1;3F",
-            "Alt+Shift+End"        : "\x1b[1;4F",
-            "Ctrl+End"             : "\x1b[1;5F",
-            "Ctrl+Shift+End"       : "\x1b[1;6F",
-            "Ctrl+Alt+End"         : "\x1b[1;7F",
-            "Ctrl+Alt+Shift+End"   : "\x1b[1;8F",
+            "Shift_End"            : "\x1b[1;2F",
+            "Alt_End"              : "\x1b[1;3F",
+            "Alt_Shift_End"        : "\x1b[1;4F",
+            "Ctrl_End"             : "\x1b[1;5F",
+            "Ctrl_Shift_End"       : "\x1b[1;6F",
+            "Ctrl_Alt_End"         : "\x1b[1;7F",
+            "Ctrl_Alt_Shift_End"   : "\x1b[1;8F",
 
             "Home"                 : "\x1b[H",
-            "Shift+Home"           : "\x1b[1;2H",
-            "Alt+Home"             : "\x1b[1;3H",
-            "Alt+Shift+Home"       : "\x1b[1;4H",
-            "Ctrl+Home"            : "\x1b[1;5H",
-            "Ctrl+Shift+Home"      : "\x1b[1;6H",
-            "Ctrl+Alt+Home"        : "\x1b[1;7H",
-            "Ctrl+Alt+Shift+Home"  : "\x1b[1;8H",
+            "Shift_Home"           : "\x1b[1;2H",
+            "Alt_Home"             : "\x1b[1;3H",
+            "Alt_Shift_Home"       : "\x1b[1;4H",
+            "Ctrl_Home"            : "\x1b[1;5H",
+            "Ctrl_Shift_Home"      : "\x1b[1;6H",
+            "Ctrl_Alt_Home"        : "\x1b[1;7H",
+            "Ctrl_Alt_Shift_Home"  : "\x1b[1;8H",
 
             "Insert"                 : "\x1b[2~",
-            "Shift+Insert"           : "\x1b[2;2~",
-            "Alt+Insert"             : "\x1b[2;3~",
-            "Alt+Shift+Insert"       : "\x1b[2;4~",
-            "Ctrl+Insert"            : "\x1b[2;5~",
-            "Ctrl+Shift+Insert"      : "\x1b[2;6~",
-            "Ctrl+Alt+Insert"        : "\x1b[2;7~",
-            "Ctrl+Alt+Shift+Insert"  : "\x1b[2;8~",
+            "Shift_Insert"           : "\x1b[2;2~",
+            "Alt_Insert"             : "\x1b[2;3~",
+            "Alt_Shift_Insert"       : "\x1b[2;4~",
+            "Ctrl_Insert"            : "\x1b[2;5~",
+            "Ctrl_Shift_Insert"      : "\x1b[2;6~",
+            "Ctrl_Alt_Insert"        : "\x1b[2;7~",
+            "Ctrl_Alt_Shift_Insert"  : "\x1b[2;8~",
 
             "Delete"                 : "\x1b[3~",
-            "Shift+Delete"           : "\x1b[3;2~",
-            "Alt+Delete"             : "\x1b[3;3~",
-            "Alt+Shift+Delete"       : "\x1b[3;4~",
-            "Ctrl+Delete"            : "\x1b[3;5~",
-            "Ctrl+Shift+Delete"      : "\x1b[3;6~",
-            "Ctrl+Alt+Delete"        : "\x1b[3;7~",
-            "Ctrl+Alt+Shift+Delete"  : "\x1b[3;8~",
+            "Shift_Delete"           : "\x1b[3;2~",
+            "Alt_Delete"             : "\x1b[3;3~",
+            "Alt_Shift_Delete"       : "\x1b[3;4~",
+            "Ctrl_Delete"            : "\x1b[3;5~",
+            "Ctrl_Shift_Delete"      : "\x1b[3;6~",
+            "Ctrl_Alt_Delete"        : "\x1b[3;7~",
+            "Ctrl_Alt_Shift_Delete"  : "\x1b[3;8~",
 
             "PageUp"                  : "\x1b[5~",
-            "Shift+PageUp"            : "\x1b[5;2~",
-            "Alt+PageUp"              : "\x1b[5;3~",
-            "Alt+Shift+PageUp"        : "\x1b[5;4~",
-            "Ctrl+PageUp"             : "\x1b[5;5~",
-            "Ctrl+Shift+PageUp"       : "\x1b[5;6~",
-            "Ctrl+Alt+PageUp"         : "\x1b[5;7~",
-            "Ctrl+Alt+Shift+PageUp"   : "\x1b[5;8~",
+            "Shift_PageUp"            : "\x1b[5;2~",
+            "Alt_PageUp"              : "\x1b[5;3~",
+            "Alt_Shift_PageUp"        : "\x1b[5;4~",
+            "Ctrl_PageUp"             : "\x1b[5;5~",
+            "Ctrl_Shift_PageUp"       : "\x1b[5;6~",
+            "Ctrl_Alt_PageUp"         : "\x1b[5;7~",
+            "Ctrl_Alt_Shift_PageUp"   : "\x1b[5;8~",
 
             "PageDown"                : "\x1b[6~",
-            "Shift+PageDown"          : "\x1b[6;2~",
-            "Alt+PageDown"            : "\x1b[6;3~",
-            "Alt+Shift+PageDown"      : "\x1b[6;4~",
-            "Ctrl+PageDown"           : "\x1b[6;5~",
-            "Ctrl+Shift+PageDown"     : "\x1b[6;6~",
-            "Ctrl+Alt+PageDown"       : "\x1b[6;7~",
-            "Ctrl+Alt+Shift+PageDown" : "\x1b[6;8~",
+            "Shift_PageDown"          : "\x1b[6;2~",
+            "Alt_PageDown"            : "\x1b[6;3~",
+            "Alt_Shift_PageDown"      : "\x1b[6;4~",
+            "Ctrl_PageDown"           : "\x1b[6;5~",
+            "Ctrl_Shift_PageDown"     : "\x1b[6;6~",
+            "Ctrl_Alt_PageDown"       : "\x1b[6;7~",
+            "Ctrl_Alt_Shift_PageDown" : "\x1b[6;8~",
         }
 
         keymap = {
@@ -1537,11 +1537,11 @@ class BeatShellSettings(cfg.Configurable):
             "End"           : lambda input: input.move_to_end(),
             "Enter"         : lambda input: input.enter(),
             "Esc"           : lambda input: input.cancel(),
-            "Alt+Enter"     : lambda input: input.help(),
-            "Ctrl+Left"     : lambda input: input.move_to_word_start(),
-            "Ctrl+Right"    : lambda input: input.move_to_word_end(),
-            "Ctrl+Backspace": lambda input: input.delete_to_word_start(),
-            "Ctrl+Delete"   : lambda input: input.delete_to_word_end(),
+            "Alt_Enter"     : lambda input: input.help(),
+            "Ctrl_Left"     : lambda input: input.move_to_word_start(),
+            "Ctrl_Right"    : lambda input: input.move_to_word_end(),
+            "Ctrl_Backspace": lambda input: input.delete_to_word_start(),
+            "Ctrl_Delete"   : lambda input: input.delete_to_word_end(),
         }
 
     class prompt(cfg.Configurable):
