@@ -212,7 +212,7 @@ class KAIKOMenu:
                 # execute given command
                 if len(sys.argv) > 1:
                     result = beatshell.RootCommand(game).build(sys.argv[1:])()
-                    game.run_result(result, dt)
+                    game.run_command(result, dt)
                     return
 
                 # load mixer
@@ -229,17 +229,15 @@ class KAIKOMenu:
                         prompt_knot, prompt = input.prompt()
                         dn.exhaust(prompt_knot, dt, interruptible=True, sync_to=bgm_knot)
 
+                        # execute result
                         if isinstance(prompt.result, Exception):
                             with logger.warn():
                                 logger.print(prompt.result)
                             input.prev_session()
-                            continue
                         else:
-                            result = prompt.result()
+                            game.run_command(prompt.result, dt, bgm_knot)
                             input.new_session()
 
-                        # execute result
-                        game.run_result(result, dt, bgm_knot)
 
         except KeyboardInterrupt:
             pass
@@ -316,14 +314,17 @@ class KAIKOMenu:
         self.logger.print("bye~")
         raise KeyboardInterrupt
 
-    def run_result(self, result, dt, bgm_knot=None):
+    def run_command(self, command, dt, bgm_knot=None):
+        result = command()
+
         if hasattr(result, 'execute'):
             has_bgm = bool(self.bgm_controller._current_bgm)
             if has_bgm:
-                self.bgm_off()
+                self.bgm_controller.stop()
+                self.bgm.off()
             result.execute(self.manager)
             if has_bgm:
-                self.bgm_on()
+                self.bgm.on()
 
         elif isinstance(result, dn.DataNode):
             dn.exhaust(result, dt, interruptible=True, sync_to=bgm_knot)
