@@ -721,6 +721,7 @@ class BeatInput:
     def __init__(self, promptable, history=None):
         self.command = RootCommandParser(promptable)
         self.history = history if history is not None else []
+        self.lock = threading.Lock()
 
         self.new_session(False)
 
@@ -750,7 +751,7 @@ class BeatInput:
         stroke = BeatStroke(self, settings.input.keymap, settings.input.keycodes)
         prompt = BeatPrompt(stroke, self, settings)
 
-        input_knot = dn.input(prompt.input_handler())
+        input_knot = dn.input(stroke.input_handler())
         display_knot = dn.show(prompt.output_handler(), 1/settings.prompt.framerate, hide_cursor=True)
 
         # `dn.show`, `dn.input` will fight each other...
@@ -1355,6 +1356,17 @@ class BeatStroke:
         self.keymap = keymap
         self.keycodes = keycodes
         self.state = INPUT_STATE.EDIT
+        self.key_event = threading.Event()
+
+    @dn.datanode
+    def input_handler(self):
+        stroke_handler = self.stroke_handler()
+        with stroke_handler:
+            while True:
+                time, key = yield
+                with self.input.lock:
+                    stroke_handler.send((time, key))
+                    self.key_event.set()
 
     @dn.datanode
     def stroke_handler(self):
@@ -1597,8 +1609,6 @@ class BeatShellSettings(cfg.Configurable):
 class BeatPrompt:
     def __init__(self, stroke, input, settings):
         self.stroke = stroke
-        self.key_event = threading.Event()
-        self.input_lock = threading.Lock()
 
         self.input = input
         self.settings = settings
@@ -1606,16 +1616,6 @@ class BeatPrompt:
         self.ref_time = None
         self.t0 = None
         self.tempo = None
-
-    @dn.datanode
-    def input_handler(self):
-        stroke_handler = self.stroke.stroke_handler()
-        with stroke_handler:
-            while True:
-                time, key = yield
-                with self.input_lock:
-                    stroke_handler.send((time, key))
-                    self.key_event.set()
 
     @dn.datanode
     def output_handler(self):
@@ -1627,7 +1627,7 @@ class BeatPrompt:
             yield
             while True:
                 # obtain input state
-                with self.input_lock:
+                with self.input.lock:
                     buffer = list(self.input.buffer)
                     tokens = list(self.input.tokens)
                     pos = self.input.pos
@@ -1679,8 +1679,8 @@ class BeatPrompt:
         tr = t // 1
         while True:
             # don't blink while key pressing
-            if self.key_event.is_set():
-                self.key_event.clear()
+            if self.stroke.key_event.is_set():
+                self.stroke.key_event.clear()
                 tr = t // -1 * -1
 
             # render caret
