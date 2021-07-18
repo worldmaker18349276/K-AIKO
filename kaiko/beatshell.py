@@ -737,7 +737,7 @@ class BeatInput:
         self.typeahead = ""
 
         self.tokens = []
-        self.state = SHLEXER_STATE.SPACED
+        self.lex_state = SHLEXER_STATE.SPACED
         self.highlighted = None
 
         self.hint = None
@@ -777,7 +777,7 @@ class BeatInput:
             try:
                 token, slic, ignored = next(tokenizer)
             except StopIteration as e:
-                self.state = e.value
+                self.lex_state = e.value
                 break
 
             tokens.append((token, slic, ignored))
@@ -859,7 +859,7 @@ class BeatInput:
             self.typeahead = ""
             return False
 
-        if self.state == SHLEXER_STATE.SPACED:
+        if self.lex_state == SHLEXER_STATE.SPACED:
             parents = [token for token, _, _, _ in self.tokens]
             target = ""
         else:
@@ -876,7 +876,7 @@ class BeatInput:
             self.typeahead = ""
             return False
         else:
-            self.typeahead = shlexer_quoting(compreply, self.state)
+            self.typeahead = shlexer_quoting(compreply, self.lex_state)
             return True
 
     def cancel_typeahead(self):
@@ -1063,9 +1063,9 @@ class BeatInput:
             self.set_result(InputComplete, lambda:None)
             return True
 
-        if self.state == SHLEXER_STATE.BACKSLASHED:
+        if self.lex_state == SHLEXER_STATE.BACKSLASHED:
             res, index = TokenParseError("No escaped character"), len(self.tokens)-1
-        elif self.state == SHLEXER_STATE.QUOTED:
+        elif self.lex_state == SHLEXER_STATE.QUOTED:
             res, index = TokenParseError("No closing quotation"), len(self.tokens)-1
         else:
             _, res, index = self.command.parse_command(token for token, _, _, _ in self.tokens)
@@ -1576,8 +1576,8 @@ class BeatShellSettings(cfg.Configurable):
         ]
         header_width: int = 7
 
-        cursor_attr: Tuple[str, str] = ("7;2", "7;1")
-        cursor_blink_ratio: float = 0.3
+        caret_attr: Tuple[str, str] = ("7;2", "7;1")
+        caret_blink_ratio: float = 0.3
 
     class text(cfg.Configurable):
         error_message_attr: str = "31"
@@ -1590,8 +1590,8 @@ class BeatShellSettings(cfg.Configurable):
 
         token_unknown_attr: str = "31"
         token_command_attr: str = "94"
-        token_argument_attr: str = "95"
-        token_literal_attr: str = "92"
+        token_keyword_attr: str = "95"
+        token_argument_attr: str = "92"
         token_highlight_attr: str = "4"
 
 class BeatPrompt:
@@ -1619,30 +1619,27 @@ class BeatPrompt:
         stroke_handler = self.stroke.stroke_handler()
         size_node = dn.terminal_size()
         header_node = self.header_node()
-        text_node = self.text_node()
         hint_node = self.hint_node()
         render_node = self.render_node()
-        with stroke_handler, size_node, header_node, text_node, hint_node, render_node:
+        with stroke_handler, size_node, header_node, hint_node, render_node:
             yield
             while True:
                 # deal with keystrokes
                 while not self.stroke_queue.empty():
                     stroke_handler.send(self.stroke_queue.get())
                 result = self.input.result
-                hint = self.input.hint
 
                 size = size_node.send()
 
                 # draw hint
-                msg_data = hint_node.send(hint)
+                msg_data = hint_node.send(self.input.hint)
 
                 # draw header
                 clean = result is not None
                 header_data = header_node.send(clean)
 
                 # draw text
-                highlighted = self.input.highlighted
-                text_data = text_node.send((clean, highlighted))
+                text_data = self.render_text(clean, self.input.highlighted)
 
                 # render
                 output_text = render_node.send((header_data, text_data, msg_data, size))
@@ -1661,8 +1658,8 @@ class BeatPrompt:
 
         headers = self.settings.prompt.headers
 
-        cursor_attr = self.settings.prompt.cursor_attr
-        cursor_blink_ratio = self.settings.prompt.cursor_blink_ratio
+        caret_attr = self.settings.prompt.caret_attr
+        caret_blink_ratio = self.settings.prompt.caret_blink_ratio
 
         clean = yield
         self.t0 = self.settings.prompt.t0
@@ -1677,29 +1674,27 @@ class BeatPrompt:
                 self.key_event.clear()
                 tr = t // -1 * -1
 
-            # render cursor
-            if not clean and (t-tr < 0 or (t-tr) % 1 < cursor_blink_ratio):
-                if t % 4 < cursor_blink_ratio:
-                    cursor = lambda s: wcb.add_attr(s, cursor_attr[1])
+            # render caret
+            if clean:
+                caret = None
+            elif t < tr or t % 1 < caret_blink_ratio:
+                if t % 4 < caret_blink_ratio:
+                    caret = lambda s: wcb.add_attr(s, caret_attr[1])
                 else:
-                    cursor = lambda s: wcb.add_attr(s, cursor_attr[0])
+                    caret = lambda s: wcb.add_attr(s, caret_attr[0])
             else:
-                cursor = None
+                caret = None
 
             # render header
-            ind = int(t / 4 * len(headers)) % len(headers)
+            ind = int(t / 4 * len(headers) // 1) % len(headers)
             header = headers[ind]
 
-            clean = yield header, cursor
+            clean = yield header, caret
             n += 1
             t = (self.ref_time - self.t0 + n/framerate)/(60/self.tempo)
 
     @dn.datanode
     def hint_node(self):
-        message_max_lines = self.settings.text.message_max_lines
-        error_message_attr = self.settings.text.error_message_attr
-        info_message_attr = self.settings.text.info_message_attr
-
         current_hint = None
         hint = yield
         while True:
@@ -1710,88 +1705,94 @@ class BeatPrompt:
 
             current_hint = hint
 
-            # clear hint
-            if hint is None:
-                hint = yield ""
-                continue
-
             # show hint
-            msg = hint.message or ""
-            if msg.count("\n") >= message_max_lines:
-                msg = "\n".join(msg.split("\n")[:message_max_lines]) + "\x1b[m\n…"
-            if msg:
-                if isinstance(hint, InputWarn):
-                    msg = wcb.add_attr(msg, error_message_attr)
-                if isinstance(hint, (InputWarn, InputMessage)):
-                    msg = wcb.add_attr(msg, info_message_attr)
-            msg = "\n" + msg + "\n" if msg else "\n"
+            hint = yield self.render_hint(hint)
 
-            hint = yield msg
+    def render_hint(self, hint):
+        if hint is None:
+            return ""
 
-    @dn.datanode
-    def text_node(self):
+        message_max_lines = self.settings.text.message_max_lines
+        error_message_attr = self.settings.text.error_message_attr
+        info_message_attr = self.settings.text.info_message_attr
+
+        # show hint
+        msg = hint.message or ""
+        if msg.count("\n") >= message_max_lines:
+            msg = "\n".join(msg.split("\n")[:message_max_lines]) + "\x1b[m\n…"
+        if msg:
+            if isinstance(hint, InputWarn):
+                msg = wcb.add_attr(msg, error_message_attr)
+            if isinstance(hint, (InputWarn, InputMessage)):
+                msg = wcb.add_attr(msg, info_message_attr)
+        msg = "\n" + msg + "\n" if msg else "\n"
+
+        return msg
+
+    def render_text(self, clean, highlighted):
         escape_attr     = self.settings.text.escape_attr
         typeahead_attr  = self.settings.text.typeahead_attr
         whitespace      = self.settings.text.whitespace
 
-        token_unknown_attr  = self.settings.text.token_unknown_attr
-        token_command_attr  = self.settings.text.token_command_attr
-        token_argument_attr = self.settings.text.token_argument_attr
-        token_literal_attr  = self.settings.text.token_literal_attr
+        token_unknown_attr   = self.settings.text.token_unknown_attr
+        token_command_attr   = self.settings.text.token_command_attr
+        token_keyword_attr   = self.settings.text.token_keyword_attr
+        token_argument_attr  = self.settings.text.token_argument_attr
         token_highlight_attr = self.settings.text.token_highlight_attr
 
-        clean, highlighted = yield
-        while True:
-            # render buffer
-            rendered_buffer = list(self.input.buffer)
+        # render buffer
+        rendered_buffer = list(self.input.buffer)
+        indices = range(len(rendered_buffer))
 
-            for token, type, slic, ignored in self.input.tokens:
-                # render escape
-                for index in ignored:
-                    rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], escape_attr)
+        for token, type, slic, ignored in self.input.tokens:
+            # render whitespace
+            for index in indices[slic]:
+                if rendered_buffer[index] == " ":
+                    rendered_buffer[index] = whitespace
 
-                # render whitespace
-                for index in range(len(rendered_buffer))[slic]:
-                    if rendered_buffer[index] == " ":
-                        rendered_buffer[index] = whitespace
+            # render escape
+            for index in ignored:
+                rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], escape_attr)
 
-                # render unknown token
-                if type is TOKEN_TYPE.UNKNOWN:
-                    if slic.stop is not None or clean:
-                        for index in range(len(rendered_buffer))[slic]:
-                            rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_unknown_attr)
+            # render unknown token
+            if type is TOKEN_TYPE.UNKNOWN:
+                if slic.stop is not None or clean:
+                    for index in indices[slic]:
+                        rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_unknown_attr)
 
-                # render command token
-                if type is TOKEN_TYPE.COMMAND:
-                    for index in range(len(rendered_buffer))[slic]:
-                        rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_command_attr)
+            # render command token
+            if type is TOKEN_TYPE.COMMAND:
+                for index in indices[slic]:
+                    rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_command_attr)
 
-                # render argument token
-                elif type is TOKEN_TYPE.KEYWORD:
-                    for index in range(len(rendered_buffer))[slic]:
-                        rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_argument_attr)
+            # render keyword token
+            elif type is TOKEN_TYPE.KEYWORD:
+                for index in indices[slic]:
+                    rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_keyword_attr)
 
-                # render literal token
-                elif type is TOKEN_TYPE.ARGUMENT:
-                    for index in range(len(rendered_buffer))[slic]:
-                        rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_literal_attr)
+            # render argument token
+            elif type is TOKEN_TYPE.ARGUMENT:
+                for index in indices[slic]:
+                    rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_argument_attr)
 
-            if highlighted in range(len(self.input.tokens)):
-                # render highlighted token
-                _, _, slic, _ = self.input.tokens[highlighted]
-                for index in range(len(rendered_buffer))[slic]:
-                    rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_highlight_attr)
+        if highlighted in range(len(self.input.tokens)):
+            # render highlighted token
+            _, _, slic, _ = self.input.tokens[highlighted]
+            for index in indices[slic]:
+                rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_highlight_attr)
 
-            rendered_text = "".join(rendered_buffer)
+        rendered_text = "".join(rendered_buffer)
 
-            # render typeahead
-            if self.input.typeahead and not clean:
-                rendered_text += wcb.add_attr(self.input.typeahead, typeahead_attr)
+        # render typeahead
+        if self.input.typeahead and not clean:
+            rendered_typeahead = wcb.add_attr(self.input.typeahead, typeahead_attr)
+        else:
+            rendered_typeahead = ""
 
-            # compute cursor position
-            _, cursor_pos = wcb.textrange1(0, "".join(rendered_buffer[:self.input.pos]))
+        # compute caret position
+        _, caret_pos = wcb.textrange1(0, "".join(rendered_buffer[:self.input.pos]))
 
-            clean, highlighted = yield rendered_text, cursor_pos
+        return rendered_text, rendered_typeahead, caret_pos
 
     @dn.datanode
     def render_node(self):
@@ -1803,38 +1804,39 @@ class BeatPrompt:
         output_text = None
 
         while True:
-            (header, cursor), (text, cursor_pos), msg, size = yield output_text
+            (header, caret), (text, typeahead, caret_pos), msg, size = yield output_text
             width = size.columns
             view = wcb.newwin1(width)
 
             # adjust input offset
             input_width = len(range(width)[input_ran])
-            _, text_length = wcb.textrange1(0, text)
+            _, solid_text_width = wcb.textrange1(0, text)
 
-            if cursor_pos - input_offset >= input_width:
-                input_offset = cursor_pos - input_width + 1
-            elif cursor_pos - input_offset < 0:
-                input_offset = cursor_pos
-            elif text_length - input_offset + 1 <= input_width:
-                input_offset = max(0, text_length-input_width+1)
+            if solid_text_width - input_offset + 1 <= input_width:
+                input_offset = max(0, solid_text_width-input_width+1)
+            if caret_pos - input_offset >= input_width:
+                input_offset = caret_pos - input_width + 1
+            elif caret_pos - input_offset < 0:
+                input_offset = caret_pos
 
             # draw input
-            wcb.addtext1(view, width, input_ran.start-input_offset, text, input_ran)
+            _, text_width = wcb.textrange1(0, text+typeahead)
+            wcb.addtext1(view, width, input_ran.start-input_offset, text+typeahead, input_ran)
             if input_offset > 0:
                 wcb.addtext1(view, width, input_ran.start, "…", input_ran)
-            if text_length-input_offset >= input_width:
+            if text_width-input_offset >= input_width:
                 wcb.addtext1(view, width, input_ran.start+input_width-1, "…", input_ran)
 
             # draw header
             wcb.addtext1(view, width, 0, header, header_ran)
 
-            # draw cursor
-            if cursor:
-                cursor_x = input_ran.start - input_offset + cursor_pos
-                cursor_ran = wcb.select1(view, width, slice(cursor_x, cursor_x+1))
-                view[cursor_ran.start] = cursor(view[cursor_ran.start])
+            # draw caret
+            if caret:
+                caret_x = input_ran.start - input_offset + caret_pos
+                caret_ran = wcb.select1(view, width, slice(caret_x, caret_x+1))
+                view[caret_ran.start] = caret(view[caret_ran.start])
 
-            # print error
+            # print message
             if msg is None:
                 output_text = "\r\x1b[K" + "".join(view).rstrip() + "\r"
             elif msg == "":
