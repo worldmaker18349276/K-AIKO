@@ -230,13 +230,13 @@ class KAIKOMenu:
                         dn.exhaust(prompt_knot, dt, interruptible=True, sync_to=bgm_knot)
 
                         if isinstance(prompt.result, Exception):
-                            print()
                             with logger.warn():
                                 logger.print(prompt.result)
+                            input.prev_session()
                             continue
-
-                        result = prompt.result()
-                        input.new_session()
+                        else:
+                            result = prompt.result()
+                            input.new_session()
 
                         # execute result
                         game.run_result(result, dt, bgm_knot)

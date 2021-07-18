@@ -718,32 +718,36 @@ class InputComplete:
     def __init__(self, value):
         self.value = value
 
+def onstate(*states):
+    def onstate_dec(func):
+        @functools.wraps(func)
+        def onstate_func(self, *args, **kwargs):
+            if self.state not in states:
+                return False
+            return func(self, *args, **kwargs)
+        return onstate_func
+    return onstate_dec
+
+def locked(func):
+    @functools.wraps(func)
+    def locked_func(self, *args, **kwargs):
+        with self.lock:
+            return func(self, *args, **kwargs)
+    return locked_func
+
+class INPUT_STATE(Enum):
+    EDIT = "edit"
+    TAB = "tab"
+    FIN = "fin"
+
 class BeatInput:
     def __init__(self, promptable, history=None):
         self.command = RootCommandParser(promptable)
         self.history = history if history is not None else []
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
+        self.state = INPUT_STATE.FIN
 
         self.new_session(False)
-
-    def new_session(self, record_current=True):
-        if record_current:
-            self.history.append("".join(self.buffer))
-
-        self.buffers = [list(history_buffer) for history_buffer in self.history]
-        self.buffers.append([])
-        self.buffers_index = -1
-
-        self.buffer = self.buffers[self.buffers_index]
-        self.pos = len(self.buffer)
-        self.typeahead = ""
-
-        self.tokens = []
-        self.lex_state = SHLEXER_STATE.SPACED
-        self.highlighted = None
-
-        self.hint = None
-        self.result = None
 
     def prompt(self, settings=None):
         if settings is None:
@@ -772,7 +776,48 @@ class BeatInput:
         prompt_knot = dn.pipe(input_knot, slow(), display_knot)
         return prompt_knot, prompt
 
+    @locked
+    @onstate(INPUT_STATE.FIN)
+    def new_session(self, record_current=True):
+        if record_current:
+            self.history.append("".join(self.buffer))
+
+        self.buffers = [list(history_buffer) for history_buffer in self.history]
+        self.buffers.append([])
+        self.buffers_index = -1
+
+        self.buffer = self.buffers[self.buffers_index]
+        self.pos = len(self.buffer)
+        self.typeahead = ""
+
+        self.tokens = []
+        self.lex_state = SHLEXER_STATE.SPACED
+        self.highlighted = None
+
+        self.hint = None
+        self.result = None
+        self.state = INPUT_STATE.EDIT
+
+    @locked
+    @onstate(INPUT_STATE.FIN)
+    def prev_session(self):
+        self.result = None
+        self.state = INPUT_STATE.EDIT
+
+    @locked
+    @onstate(INPUT_STATE.EDIT)
+    def finish(self):
+        self.state = INPUT_STATE.FIN
+        return True
+
+    @locked
     def parse_syntax(self):
+        """Parse syntax.
+
+        Returns
+        -------
+        succ : bool
+        """
         tokenizer = shlexer_tokenize(self.buffer, partial=True)
 
         tokens = []
@@ -787,67 +832,9 @@ class BeatInput:
 
         types, _, _ = self.command.parse_command(token for token, _, _ in tokens)
         self.tokens = [(token, type, slic, ignored) for (token, slic, ignored), type in zip(tokens, types)]
+        return True
 
-    def autocomplete(self, action=+1):
-        """A generator to process autocompletion.
-        Complete the token on the caret, or fill in suggestions if caret is
-        located in between.
-
-        Parameters
-        ----------
-        action : +1 or -1
-            Indicating direction for exploration of suggestions.
-
-        Receives
-        --------
-        action : +1, -1 or 0
-            `+1` for next suggestion; `-1` for previous suggestion; `0` for cancel
-            autocomplete.
-        """
-        if action not in (+1, -1):
-            raise ValueError
-
-        self.typeahead = ""
-
-        # find the token to autocomplete
-        parents = []
-        target = ""
-        selection = slice(self.pos, self.pos)
-        for token, _, slic, _ in self.tokens:
-            start, stop, _ = slic.indices(len(self.buffer))
-            if stop < self.pos:
-                parents.append(token)
-            if start <= self.pos <= stop:
-                target = token
-                selection = slic
-
-        # generate suggestions
-        suggestions = [shlexer_quoting(sugg) for sugg in self.command.suggest_command(parents, target)]
-        index = 0 if action == +1 else len(suggestions)-1
-
-        original_buffer = list(self.buffer)
-        original_pos = self.pos
-
-        while index in range(len(suggestions)):
-            self.buffer[selection] = suggestions[index]
-            self.pos = selection.start + len(suggestions[index])
-            self.parse_syntax()
-
-            action = yield
-            if action == +1:
-                index += 1
-            elif action == -1:
-                index -= 1
-            elif action == 0:
-                index = None
-
-            self.buffer = list(original_buffer)
-            self.pos = original_pos
-
-        else:
-            self.parse_syntax()
-            self.cancel_hint()
-
+    @locked
     def make_typeahead(self):
         """Make typeahead.
         Show the possible command you want to type.  Only work if the caret is at
@@ -882,6 +869,7 @@ class BeatInput:
             self.typeahead = shlexer_quoting(compreply, self.lex_state)
             return True
 
+    @locked
     def cancel_typeahead(self):
         """Cancel typeahead.
 
@@ -892,26 +880,7 @@ class BeatInput:
         self.typeahead = ""
         return True
 
-    def insert_typeahead(self):
-        """Insert typeahead.
-        Insert the typeahead if the caret is at the end of buffer.
-
-        Returns
-        -------
-        succ : bool
-            `False` if there is no typeahead or the caret is not at the end of buffer.
-        """
-
-        if self.typeahead == "" or self.pos != len(self.buffer):
-            return False
-
-        self.buffer[self.pos:self.pos] = self.typeahead
-        self.pos += len(self.typeahead)
-        self.typeahead = ""
-        self.parse_syntax()
-
-        return True
-
+    @locked
     def set_result(self, res_type, value, index=None):
         """Set result.
         Set result of this session.
@@ -934,6 +903,7 @@ class BeatInput:
         self.hint = None
         return True
 
+    @locked
     def clear_result(self):
         """Clear result.
 
@@ -945,6 +915,7 @@ class BeatInput:
         self.result = None
         return True
 
+    @locked
     def set_hint(self, hint_type, message, index=None):
         """Set hint.
         Show hint below the prompt.
@@ -972,6 +943,7 @@ class BeatInput:
         self.hint = hint_type(message, msg_tokens)
         return True
 
+    @locked
     def cancel_hint(self):
         """Cancel hint.
         Remove the hint below the prompt.
@@ -984,6 +956,7 @@ class BeatInput:
         self.hint = None
         return True
 
+    @locked
     def update_hint(self):
         """Update hint.
         Remove hint if the target is updated.
@@ -1008,18 +981,30 @@ class BeatInput:
 
         return False
 
-    def cancel(self):
-        """Cancel.
-        Cancel typeahead and hint.
+    @locked
+    @onstate(INPUT_STATE.EDIT)
+    def insert_typeahead(self):
+        """Insert typeahead.
+        Insert the typeahead if the caret is at the end of buffer.
 
         Returns
         -------
         succ : bool
+            `False` if there is no typeahead or the caret is not at the end of buffer.
         """
+
+        if self.typeahead == "" or self.pos != len(self.buffer):
+            return False
+
+        self.buffer[self.pos:self.pos] = self.typeahead
+        self.pos += len(self.typeahead)
         self.typeahead = ""
-        self.cancel_hint()
+        self.parse_syntax()
+
         return True
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def help(self):
         """Help for command.
         Provide some hint for the command before the caret.
@@ -1053,6 +1038,8 @@ class BeatInput:
             self.set_hint(hint_type, msg, index)
             return True
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def enter(self):
         """Enter.
         Finish the command.
@@ -1064,6 +1051,7 @@ class BeatInput:
         """
         if len(self.tokens) == 0:
             self.set_result(InputComplete, lambda:None)
+            self.finish()
             return True
 
         if self.lex_state == SHLEXER_STATE.BACKSLASHED:
@@ -1075,14 +1063,19 @@ class BeatInput:
 
         if isinstance(res, TokenUnfinishError):
             self.set_result(InputError, res, None)
+            self.finish()
             return False
         elif isinstance(res, TokenParseError):
             self.set_result(InputError, res, index)
+            self.finish()
             return False
         else:
             self.set_result(InputComplete, res)
+            self.finish()
             return True
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def input(self, text):
         """Input.
         Insert some text into the buffer.
@@ -1120,6 +1113,8 @@ class BeatInput:
 
         return True
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def backspace(self):
         """Backspace.
         Delete one character before the caret if exists.
@@ -1139,6 +1134,8 @@ class BeatInput:
 
         return True
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def delete(self):
         """Delete.
         Delete one character after the caret if exists.
@@ -1157,6 +1154,8 @@ class BeatInput:
 
         return True
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def delete_range(self, start, end):
         """Delete range.
 
@@ -1183,6 +1182,8 @@ class BeatInput:
 
         return True
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def delete_to_word_start(self):
         """Delete to the word start.
         The word is defined as `\\w+|\\W+`.
@@ -1197,6 +1198,8 @@ class BeatInput:
         else:
             return self.delete_range(None, self.pos)
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def delete_to_word_end(self):
         """Delete to the word end.
         The word is defined as `\\w+|\\W+`.
@@ -1211,6 +1214,8 @@ class BeatInput:
         else:
             return self.delete_range(self.pos, None)
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def move_to(self, pos):
         """Move caret to the specific position.
         Regardless of success or failure, typeahead will be cancelled.
@@ -1234,6 +1239,8 @@ class BeatInput:
         self.pos = pos
         return True
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def move(self, offset):
         """Move caret.
 
@@ -1247,6 +1254,8 @@ class BeatInput:
         """
         return self.move_to(self.pos+offset)
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def move_left(self):
         """Move caret one character to the left.
 
@@ -1256,6 +1265,8 @@ class BeatInput:
         """
         return self.move(-1)
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def move_right(self):
         """Move caret one character to the right.
 
@@ -1265,6 +1276,8 @@ class BeatInput:
         """
         return self.move(+1)
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def move_to_start(self):
         """Move caret to the start of buffer.
 
@@ -1274,6 +1287,8 @@ class BeatInput:
         """
         return self.move_to(0)
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def move_to_end(self):
         """Move caret to the end of buffer.
 
@@ -1283,6 +1298,8 @@ class BeatInput:
         """
         return self.move_to(None)
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def move_to_word_start(self):
         """Move caret to the start of the word.
 
@@ -1296,6 +1313,8 @@ class BeatInput:
         else:
             return self.move_to(0)
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def move_to_word_end(self):
         """Move caret to the end of the word.
 
@@ -1309,6 +1328,8 @@ class BeatInput:
         else:
             return self.move_to(None)
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def prev(self):
         """Previous buffer.
 
@@ -1328,6 +1349,8 @@ class BeatInput:
 
         return True
 
+    @locked
+    @onstate(INPUT_STATE.EDIT)
     def next(self):
         """Next buffer.
 
@@ -1347,91 +1370,123 @@ class BeatInput:
 
         return True
 
+    @locked
+    @onstate(INPUT_STATE.EDIT, INPUT_STATE.TAB)
+    def autocomplete(self, action=+1):
+        """Autocomplete.
+        Complete the token on the caret, or fill in suggestions if caret is
+        located in between.
 
-class INPUT_STATE(Enum):
-    EDIT = "edit"
-    TAB = "tab"
+        Parameters
+        ----------
+        action : +1 or -1 or 0
+            Indicating direction for exploration of suggestions.  `+1` for next
+            suggestion; `-1` for previous suggestion; `0` for canceling the process.
+
+        Returns
+        -------
+        succ : bool
+            `False` for canceling the process.
+        """
+
+        if self.state == INPUT_STATE.EDIT:
+            self.cancel_typeahead()
+
+            # find the token to autocomplete
+            parents = []
+            target = ""
+            selection = slice(self.pos, self.pos)
+            for token, _, slic, _ in self.tokens:
+                start, stop, _ = slic.indices(len(self.buffer))
+                if stop < self.pos:
+                    parents.append(token)
+                if start <= self.pos <= stop:
+                    target = token
+                    selection = slic
+
+            # generate suggestions
+            self._suggestions = [shlexer_quoting(sugg) for sugg in self.command.suggest_command(parents, target)]
+            self._sugg_index = len(self._suggestions) if action == -1 else -1
+
+            # tab state
+            self._original_buffer = list(self.buffer)
+            self._original_pos = self.pos
+            self._selection = selection
+            self.state = INPUT_STATE.TAB
+
+        if action == +1:
+            self._sugg_index += 1
+        elif action == -1:
+            self._sugg_index -= 1
+        elif action == 0:
+            self._sugg_index = None
+        else:
+            raise ValueError
+
+        self.buffer = list(self._original_buffer)
+        self.pos = self._original_pos
+
+        if self._sugg_index in range(len(self._suggestions)):
+            # autocomplete selected token
+            self.buffer[self._selection] = self._suggestions[self._sugg_index]
+            self.pos = self._selection.start + len(self._suggestions[self._sugg_index])
+            self.parse_syntax()
+            return True
+
+        else:
+            # restore state
+            del self._original_buffer
+            del self._original_pos
+            del self._selection
+            self.state = INPUT_STATE.EDIT
+            self.parse_syntax()
+            return False
+
+    @locked
+    @onstate(INPUT_STATE.TAB)
+    def finish_autocomplete(self):
+        del self._original_buffer
+        del self._original_pos
+        del self._selection
+        self.state = INPUT_STATE.EDIT
+        return True
 
 class BeatStroke:
     def __init__(self, input, keymap):
         self.input = input
         self.keymap = keymap
-        self.state = INPUT_STATE.EDIT
         self.key_event = threading.Event()
 
     def register(self, controller):
-        controller.add_handler(self.autocomplete_handler())
-
+        controller.add_handler(self.keypress_handler())
+        controller.add_handler(self.finish_autocomplete_handler())
         for key, func in self.keymap.items():
             controller.add_handler(self.action_handler(func), key)
         controller.add_handler(self.printable_handler(), "PRINTABLE")
         controller.add_handler(self.unknown_handler(self.keymap))
 
+    def keypress_handler(self):
+        return lambda args: self.key_event.set()
+
+    def finish_autocomplete_handler(self):
+        return lambda args: self.input.finish_autocomplete() if args[2] not in ("Tab", "Shift_Tab", "Esc") else False
+
     def action_handler(self, func):
-        def handler(args):
-            if  self.state != INPUT_STATE.EDIT:
-                return
-            with self.input.lock:
-                func(self.input)
-        return handler
+        return lambda args: func(self.input)
 
     def printable_handler(self):
-        def handler(args):
-            if  self.state != INPUT_STATE.EDIT:
-                return
-            _, _, _, text = args
-            with self.input.lock:
-                self.input.input(text)
-        return handler
+        return lambda args: self.input.input(args[3])
 
     def unknown_handler(self, keymap):
         keys = list(keymap.keys())
         keys.append("PRINTABLE")
-        keys.append("Tab")
-        keys.append("Shift_Tab")
         def handler(args):
             _, _, key, _ = args
             if key not in keys:
                 with self.input.lock:
                     self.input.set_result(InputError, ValueError(f"Unknown key: " + repr(key or code)), None)
+                    self.finish()
         return handler
-
-    @dn.datanode
-    def autocomplete_handler(self):
-        while True:
-            _, _, key, _ = yield
-
-            # completions
-            while key == "Tab" or key == "Shift_Tab":
-                self.state = INPUT_STATE.TAB
-
-                with self.input.lock:
-                    if key == "Tab":
-                        selector = self.input.autocomplete(+1)
-                    elif key == "Shift_Tab":
-                        selector = self.input.autocomplete(-1)
-
-                try:
-                    next(selector)
-
-                    while True:
-                        _, _, key, _ = yield
-
-                        with self.input.lock:
-                            if key == "Tab":
-                                selector.send(+1)
-                            elif key == "Shift_Tab":
-                                selector.send(-1)
-                            elif key == "Esc":
-                                selector.send(0)
-                            else:
-                                selector.close()
-                                self.state = INPUT_STATE.EDIT
-                                break
-
-                except StopIteration:
-                    self.state = INPUT_STATE.EDIT
-                    _, _, key, _ = yield
 
 
 class BeatShellSettings(cfg.Configurable):
@@ -1446,12 +1501,14 @@ class BeatShellSettings(cfg.Configurable):
             "Home"          : lambda input: input.move_to_start(),
             "End"           : lambda input: input.move_to_end(),
             "Enter"         : lambda input: input.enter(),
-            "Esc"           : lambda input: input.cancel(),
+            "Esc"           : lambda input: (input.cancel_typeahead(), input.cancel_hint(), input.autocomplete(0)),
             "Alt_Enter"     : lambda input: input.help(),
             "Ctrl_Left"     : lambda input: input.move_to_word_start(),
             "Ctrl_Right"    : lambda input: input.move_to_word_end(),
             "Ctrl_Backspace": lambda input: input.delete_to_word_start(),
             "Ctrl_Delete"   : lambda input: input.delete_to_word_end(),
+            "Tab"           : lambda input: input.autocomplete(+1),
+            "Shift_Tab"     : lambda input: input.autocomplete(-1),
         }
 
     class prompt(cfg.Configurable):
@@ -1546,8 +1603,7 @@ class BeatPrompt:
                     typeahead = self.input.typeahead
                     result = self.input.result
                     hint = self.input.hint
-                    if result is not None:
-                        self.input.clear_result()
+                    state = self.input.state
 
                 size = size_node.send()
 
@@ -1567,8 +1623,9 @@ class BeatPrompt:
                 yield output_text
 
                 # end
-                if result is not None:
+                if state == INPUT_STATE.FIN:
                     self.result = result.value
+                    self.input.clear_result()
                     return
 
     @dn.datanode
