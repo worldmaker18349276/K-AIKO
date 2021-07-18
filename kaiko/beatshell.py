@@ -11,6 +11,7 @@ import inspect
 from pathlib import Path
 from typing import List, Set, Tuple, Dict, Union
 import wcwidth
+from . import engines
 from . import datanodes as dn
 from . import biparsers as bp
 from . import wcbuffers as wcb
@@ -748,10 +749,11 @@ class BeatInput:
         if settings is None:
             settings = BeatShellSettings()
 
-        stroke = BeatStroke(self, settings.input.keymap, settings.input.keycodes)
+        input_knot, controller = engines.Controller.create(engines.ControllerSettings())
+        stroke = BeatStroke(self, settings.input.keymap)
         prompt = BeatPrompt(stroke, self, settings)
 
-        input_knot = dn.input(stroke.input_handler())
+        stroke.register(controller)
         display_knot = dn.show(prompt.output_handler(), 1/settings.prompt.framerate, hide_cursor=True)
 
         # `dn.show`, `dn.input` will fight each other...
@@ -1351,181 +1353,89 @@ class INPUT_STATE(Enum):
     TAB = "tab"
 
 class BeatStroke:
-    def __init__(self, input, keymap, keycodes):
+    def __init__(self, input, keymap):
         self.input = input
         self.keymap = keymap
-        self.keycodes = keycodes
         self.state = INPUT_STATE.EDIT
         self.key_event = threading.Event()
 
-    @dn.datanode
-    def input_handler(self):
-        stroke_handler = self.stroke_handler()
-        with stroke_handler:
-            while True:
-                time, key = yield
+    def register(self, controller):
+        controller.add_handler(self.autocomplete_handler())
+
+        for key, func in self.keymap.items():
+            controller.add_handler(self.action_handler(func), key)
+        controller.add_handler(self.printable_handler(), "PRINTABLE")
+        controller.add_handler(self.unknown_handler(self.keymap))
+
+    def action_handler(self, func):
+        def handler(args):
+            if  self.state != INPUT_STATE.EDIT:
+                return
+            with self.input.lock:
+                func(self.input)
+        return handler
+
+    def printable_handler(self):
+        def handler(args):
+            if  self.state != INPUT_STATE.EDIT:
+                return
+            _, _, _, text = args
+            with self.input.lock:
+                self.input.input(text)
+        return handler
+
+    def unknown_handler(self, keymap):
+        keys = list(keymap.keys())
+        keys.append("PRINTABLE")
+        keys.append("Tab")
+        keys.append("Shift_Tab")
+        def handler(args):
+            _, _, key, _ = args
+            if key not in keys:
                 with self.input.lock:
-                    stroke_handler.send((time, key))
-                    self.key_event.set()
+                    self.input.set_result(InputError, ValueError(f"Unknown key: " + repr(key or code)), None)
+        return handler
 
     @dn.datanode
-    def stroke_handler(self):
+    def autocomplete_handler(self):
         while True:
-            _, key = yield
+            _, _, key, _ = yield
 
             # completions
-            while key == self.keycodes["Tab"] or key == self.keycodes["Shift_Tab"]:
+            while key == "Tab" or key == "Shift_Tab":
                 self.state = INPUT_STATE.TAB
 
-                if key == self.keycodes["Tab"]:
-                    selector = self.input.autocomplete(+1)
-                elif key == self.keycodes["Shift_Tab"]:
-                    selector = self.input.autocomplete(-1)
+                with self.input.lock:
+                    if key == "Tab":
+                        selector = self.input.autocomplete(+1)
+                    elif key == "Shift_Tab":
+                        selector = self.input.autocomplete(-1)
 
                 try:
                     next(selector)
 
                     while True:
-                        _, key = yield
-                        if key == self.keycodes["Tab"]:
-                            selector.send(+1)
-                        elif key == self.keycodes["Shift_Tab"]:
-                            selector.send(-1)
-                        elif key == self.keycodes["Esc"]:
-                            selector.send(0)
-                        else:
-                            selector.close()
-                            self.state = INPUT_STATE.EDIT
-                            break
+                        _, _, key, _ = yield
+
+                        with self.input.lock:
+                            if key == "Tab":
+                                selector.send(+1)
+                            elif key == "Shift_Tab":
+                                selector.send(-1)
+                            elif key == "Esc":
+                                selector.send(0)
+                            else:
+                                selector.close()
+                                self.state = INPUT_STATE.EDIT
+                                break
 
                 except StopIteration:
                     self.state = INPUT_STATE.EDIT
-                    _, key = yield
-
-            # registered keystrokes
-            for keyname, func in self.keymap.items():
-                if key == self.keycodes[keyname]:
-                    func(self.input)
-                    break
-
-            else:
-                # edit
-                if key.isprintable():
-                    self.input.input(key)
-                else:
-                    self.input.set_result(InputError, ValueError(f"Unknown key: {key!r}"), None)
+                    _, _, key, _ = yield
 
 
 class BeatShellSettings(cfg.Configurable):
     class input(cfg.Configurable):
-        keycodes: Dict[str, str] = {
-            "Esc"       : "\x1b",
-            "Alt_Esc"   : "\x1b\x1b",
-
-            "Enter"     : "\n",
-            "Alt_Enter" : "\x1b\n",
-
-            "Backspace"            : "\x7f",
-            "Ctrl_Backspace"       : "\x08",
-            "Alt_Backspace"        : "\x1b\x7f",
-            "Ctrl_Alt_Backspace"   : "\x1b\x08",
-
-            "Tab"                  : "\t",
-            "Shift_Tab"            : "\x1b[Z",
-            "Alt_Tab"              : "\x1b\t",
-            "Alt_Shift_Tab"        : "\x1b\x1b[Z",
-
-            "Up"                   : "\x1b[A",
-            "Shift_Up"             : "\x1b[1;2A",
-            "Alt_Up"               : "\x1b[1;3A",
-            "Alt_Shift_Up"         : "\x1b[1;4A",
-            "Ctrl_Up"              : "\x1b[1;5A",
-            "Ctrl_Shift_Up"        : "\x1b[1;6A",
-            "Ctrl_Alt_Up"          : "\x1b[1;7A",
-            "Ctrl_Alt_Shift_Up"    : "\x1b[1;8A",
-
-            "Down"                 : "\x1b[B",
-            "Shift_Down"           : "\x1b[1;2B",
-            "Alt_Down"             : "\x1b[1;3B",
-            "Alt_Shift_Down"       : "\x1b[1;4B",
-            "Ctrl_Down"            : "\x1b[1;5B",
-            "Ctrl_Shift_Down"      : "\x1b[1;6B",
-            "Ctrl_Alt_Down"        : "\x1b[1;7B",
-            "Ctrl_Alt_Shift_Down"  : "\x1b[1;8B",
-
-            "Right"                : "\x1b[C",
-            "Shift_Right"          : "\x1b[1;2C",
-            "Alt_Right"            : "\x1b[1;3C",
-            "Alt_Shift_Right"      : "\x1b[1;4C",
-            "Ctrl_Right"           : "\x1b[1;5C",
-            "Ctrl_Shift_Right"     : "\x1b[1;6C",
-            "Ctrl_Alt_Right"       : "\x1b[1;7C",
-            "Ctrl_Alt_Shift_Right" : "\x1b[1;8C",
-
-            "Left"                 : "\x1b[D",
-            "Shift_Left"           : "\x1b[1;2D",
-            "Alt_Left"             : "\x1b[1;3D",
-            "Alt_Shift_Left"       : "\x1b[1;4D",
-            "Ctrl_Left"            : "\x1b[1;5D",
-            "Ctrl_Shift_Left"      : "\x1b[1;6D",
-            "Ctrl_Alt_Left"        : "\x1b[1;7D",
-            "Ctrl_Alt_Shift_Left"  : "\x1b[1;8D",
-
-            "End"                  : "\x1b[F",
-            "Shift_End"            : "\x1b[1;2F",
-            "Alt_End"              : "\x1b[1;3F",
-            "Alt_Shift_End"        : "\x1b[1;4F",
-            "Ctrl_End"             : "\x1b[1;5F",
-            "Ctrl_Shift_End"       : "\x1b[1;6F",
-            "Ctrl_Alt_End"         : "\x1b[1;7F",
-            "Ctrl_Alt_Shift_End"   : "\x1b[1;8F",
-
-            "Home"                 : "\x1b[H",
-            "Shift_Home"           : "\x1b[1;2H",
-            "Alt_Home"             : "\x1b[1;3H",
-            "Alt_Shift_Home"       : "\x1b[1;4H",
-            "Ctrl_Home"            : "\x1b[1;5H",
-            "Ctrl_Shift_Home"      : "\x1b[1;6H",
-            "Ctrl_Alt_Home"        : "\x1b[1;7H",
-            "Ctrl_Alt_Shift_Home"  : "\x1b[1;8H",
-
-            "Insert"                 : "\x1b[2~",
-            "Shift_Insert"           : "\x1b[2;2~",
-            "Alt_Insert"             : "\x1b[2;3~",
-            "Alt_Shift_Insert"       : "\x1b[2;4~",
-            "Ctrl_Insert"            : "\x1b[2;5~",
-            "Ctrl_Shift_Insert"      : "\x1b[2;6~",
-            "Ctrl_Alt_Insert"        : "\x1b[2;7~",
-            "Ctrl_Alt_Shift_Insert"  : "\x1b[2;8~",
-
-            "Delete"                 : "\x1b[3~",
-            "Shift_Delete"           : "\x1b[3;2~",
-            "Alt_Delete"             : "\x1b[3;3~",
-            "Alt_Shift_Delete"       : "\x1b[3;4~",
-            "Ctrl_Delete"            : "\x1b[3;5~",
-            "Ctrl_Shift_Delete"      : "\x1b[3;6~",
-            "Ctrl_Alt_Delete"        : "\x1b[3;7~",
-            "Ctrl_Alt_Shift_Delete"  : "\x1b[3;8~",
-
-            "PageUp"                  : "\x1b[5~",
-            "Shift_PageUp"            : "\x1b[5;2~",
-            "Alt_PageUp"              : "\x1b[5;3~",
-            "Alt_Shift_PageUp"        : "\x1b[5;4~",
-            "Ctrl_PageUp"             : "\x1b[5;5~",
-            "Ctrl_Shift_PageUp"       : "\x1b[5;6~",
-            "Ctrl_Alt_PageUp"         : "\x1b[5;7~",
-            "Ctrl_Alt_Shift_PageUp"   : "\x1b[5;8~",
-
-            "PageDown"                : "\x1b[6~",
-            "Shift_PageDown"          : "\x1b[6;2~",
-            "Alt_PageDown"            : "\x1b[6;3~",
-            "Alt_Shift_PageDown"      : "\x1b[6;4~",
-            "Ctrl_PageDown"           : "\x1b[6;5~",
-            "Ctrl_Shift_PageDown"     : "\x1b[6;6~",
-            "Ctrl_Alt_PageDown"       : "\x1b[6;7~",
-            "Ctrl_Alt_Shift_PageDown" : "\x1b[6;8~",
-        }
-
         keymap = {
             "Backspace"     : lambda input: input.backspace(),
             "Delete"        : lambda input: input.delete(),

@@ -3,6 +3,7 @@ import itertools
 import functools
 import re
 import contextlib
+from typing import Dict
 import queue
 import threading
 import signal
@@ -603,7 +604,7 @@ class Controller:
 
     def add_handler(self, node, key=None):
         if key is None:
-            return self.handlers_scheduler.add_node(node, (0,))
+            return self.handlers_scheduler.add_node(dn.DataNode.wrap(node), (0,))
         else:
             return self.handlers_scheduler.add_node(self._filter_node(node, key), (0,))
 
