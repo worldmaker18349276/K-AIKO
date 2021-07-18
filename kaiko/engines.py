@@ -459,7 +459,113 @@ class Renderer:
 
 
 class ControllerSettings(cfg.Configurable):
-    pass
+    keycodes: Dict[str, str] = {
+        "\x1b"       : "Esc",
+        "\x1b\x1b"   : "Alt_Esc",
+
+        "\n"         : "Enter",
+        "\x1b\n"     : "Alt_Enter",
+
+        "\x7f"       : "Backspace",
+        "\x08"       : "Ctrl_Backspace",
+        "\x1b\x7f"   : "Alt_Backspace",
+        "\x1b\x08"   : "Ctrl_Alt_Backspace",
+
+        "\t"         : "Tab",
+        "\x1b[Z"     : "Shift_Tab",
+        "\x1b\t"     : "Alt_Tab",
+        "\x1b\x1b[Z" : "Alt_Shift_Tab",
+
+        "\x1b[A"     : "Up",
+        "\x1b[1;2A"  : "Shift_Up",
+        "\x1b[1;3A"  : "Alt_Up",
+        "\x1b[1;4A"  : "Alt_Shift_Up",
+        "\x1b[1;5A"  : "Ctrl_Up",
+        "\x1b[1;6A"  : "Ctrl_Shift_Up",
+        "\x1b[1;7A"  : "Ctrl_Alt_Up",
+        "\x1b[1;8A"  : "Ctrl_Alt_Shift_Up",
+
+        "\x1b[B"     : "Down",
+        "\x1b[1;2B"  : "Shift_Down",
+        "\x1b[1;3B"  : "Alt_Down",
+        "\x1b[1;4B"  : "Alt_Shift_Down",
+        "\x1b[1;5B"  : "Ctrl_Down",
+        "\x1b[1;6B"  : "Ctrl_Shift_Down",
+        "\x1b[1;7B"  : "Ctrl_Alt_Down",
+        "\x1b[1;8B"  : "Ctrl_Alt_Shift_Down",
+
+        "\x1b[C"     : "Right",
+        "\x1b[1;2C"  : "Shift_Right",
+        "\x1b[1;3C"  : "Alt_Right",
+        "\x1b[1;4C"  : "Alt_Shift_Right",
+        "\x1b[1;5C"  : "Ctrl_Right",
+        "\x1b[1;6C"  : "Ctrl_Shift_Right",
+        "\x1b[1;7C"  : "Ctrl_Alt_Right",
+        "\x1b[1;8C"  : "Ctrl_Alt_Shift_Right",
+
+        "\x1b[D"     : "Left",
+        "\x1b[1;2D"  : "Shift_Left",
+        "\x1b[1;3D"  : "Alt_Left",
+        "\x1b[1;4D"  : "Alt_Shift_Left",
+        "\x1b[1;5D"  : "Ctrl_Left",
+        "\x1b[1;6D"  : "Ctrl_Shift_Left",
+        "\x1b[1;7D"  : "Ctrl_Alt_Left",
+        "\x1b[1;8D"  : "Ctrl_Alt_Shift_Left",
+
+        "\x1b[F"     : "End",
+        "\x1b[1;2F"  : "Shift_End",
+        "\x1b[1;3F"  : "Alt_End",
+        "\x1b[1;4F"  : "Alt_Shift_End",
+        "\x1b[1;5F"  : "Ctrl_End",
+        "\x1b[1;6F"  : "Ctrl_Shift_End",
+        "\x1b[1;7F"  : "Ctrl_Alt_End",
+        "\x1b[1;8F"  : "Ctrl_Alt_Shift_End",
+
+        "\x1b[H"     : "Home",
+        "\x1b[1;2H"  : "Shift_Home",
+        "\x1b[1;3H"  : "Alt_Home",
+        "\x1b[1;4H"  : "Alt_Shift_Home",
+        "\x1b[1;5H"  : "Ctrl_Home",
+        "\x1b[1;6H"  : "Ctrl_Shift_Home",
+        "\x1b[1;7H"  : "Ctrl_Alt_Home",
+        "\x1b[1;8H"  : "Ctrl_Alt_Shift_Home",
+
+        "\x1b[2~"    : "Insert",
+        "\x1b[2;2~"  : "Shift_Insert",
+        "\x1b[2;3~"  : "Alt_Insert",
+        "\x1b[2;4~"  : "Alt_Shift_Insert",
+        "\x1b[2;5~"  : "Ctrl_Insert",
+        "\x1b[2;6~"  : "Ctrl_Shift_Insert",
+        "\x1b[2;7~"  : "Ctrl_Alt_Insert",
+        "\x1b[2;8~"  : "Ctrl_Alt_Shift_Insert",
+
+        "\x1b[3~"    : "Delete",
+        "\x1b[3;2~"  : "Shift_Delete",
+        "\x1b[3;3~"  : "Alt_Delete",
+        "\x1b[3;4~"  : "Alt_Shift_Delete",
+        "\x1b[3;5~"  : "Ctrl_Delete",
+        "\x1b[3;6~"  : "Ctrl_Shift_Delete",
+        "\x1b[3;7~"  : "Ctrl_Alt_Delete",
+        "\x1b[3;8~"  : "Ctrl_Alt_Shift_Delete",
+
+        "\x1b[5~"    : "PageUp",
+        "\x1b[5;2~"  : "Shift_PageUp",
+        "\x1b[5;3~"  : "Alt_PageUp",
+        "\x1b[5;4~"  : "Alt_Shift_PageUp",
+        "\x1b[5;5~"  : "Ctrl_PageUp",
+        "\x1b[5;6~"  : "Ctrl_Shift_PageUp",
+        "\x1b[5;7~"  : "Ctrl_Alt_PageUp",
+        "\x1b[5;8~"  : "Ctrl_Alt_Shift_PageUp",
+
+        "\x1b[6~"    : "PageDown",
+        "\x1b[6;2~"  : "Shift_PageDown",
+        "\x1b[6;3~"  : "Alt_PageDown",
+        "\x1b[6;4~"  : "Alt_Shift_PageDown",
+        "\x1b[6;5~"  : "Ctrl_PageDown",
+        "\x1b[6;6~"  : "Ctrl_Shift_PageDown",
+        "\x1b[6;7~"  : "Ctrl_Alt_PageDown",
+        "\x1b[6;8~"  : "Ctrl_Alt_Shift_PageDown",
+    }
 
 class Controller:
     def __init__(self, handlers_scheduler):
@@ -467,14 +573,23 @@ class Controller:
 
     @staticmethod
     def get_node(scheduler, settings, ref_time):
+        keycodes = settings.keycodes
         @dn.datanode
         def _node():
             with scheduler:
                 while True:
-                    time, key = yield
+                    time, keycode = yield
+
+                    if keycode in keycodes:
+                        keyname = keycodes[keycode]
+                    elif keycode.isprintable():
+                        keyname = "PRINTABLE"
+                    else:
+                        keyname = None
+
                     time_ = time - ref_time
                     try:
-                        scheduler.send((None, time_, key))
+                        scheduler.send((None, time_, keyname, keycode))
                     except StopIteration:
                         return
 
@@ -490,22 +605,20 @@ class Controller:
         if key is None:
             return self.handlers_scheduler.add_node(node, (0,))
         else:
-            if isinstance(key, str):
-                key = re.compile(re.escape(key))
             return self.handlers_scheduler.add_node(self._filter_node(node, key), (0,))
 
     def remove_handler(self, key):
         self.handlers_scheduler.remove_node(key)
 
     @dn.datanode
-    def _filter_node(self, node, regex):
+    def _filter_node(self, node, key):
         node = dn.DataNode.wrap(node)
         with node:
             while True:
-                _, t, key = yield
-                if regex.fullmatch(key):
+                _, t, keyname, keycode = yield
+                if key == keyname:
                     try:
-                        node.send((None, t, key))
+                        node.send((None, t, keyname, keycode))
                     except StopIteration:
                         return
 
