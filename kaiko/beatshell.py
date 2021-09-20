@@ -21,47 +21,57 @@ from . import config as cfg
 def expected_options(options):
     return "It should be one of:\n" + "\n".join("• " + shlexer_quoting(s + "\000") for s in options)
 
-def masks_key(masks):
-    return tuple(slic.stop-slic.start for slic in masks), (-masks[-1].stop if masks else 0)
+def suitability(part, full):
+    """Compute suitability of a string `full` to the given substring `part`.
+    The substring mask of a string `full` is a list of non-empty slices `sections`
+    such that `''.join(full[sec] for sec in sections) == part`.  The suitability of
+    an option is the greatest tuple `(seclens, -last, -length)` in all possible substring
+    masks.  Where `seclens` is a list of section lengths.  `last` is the last index of
+    the substring mask.  `length` is the length of string `full`.
+    """
+    if part == "":
+        return ((), 0, -len(full))
 
-def fit_masks(part, full):
-    def substr_treeiter(part, full, start=0):
-        if part == "":
-            return
-        head = part[0]
-        tail = part[1:]
-        for i in range(start, len(full)):
-            if full[i] == head:
-                yield i, substr_treeiter(tail, full, i+1)
-
-    def subsec_treeiter(treeiter, index=0, sec=(slice(0,0),)):
-        for i, nextiter in treeiter:
-            if i == index:
-                sec_ = (*sec[:-1], slice(sec[-1].start, i+1))
-            else:
-                sec_ = (*sec, slice(i, i+1))
-            yield sec_, subsec_treeiter(nextiter, i+1, sec_)
-
-    def sorted_subsec_iter(treeiters, depth):
-        if depth == 0:
-            yield from sorted([sec for sec, _ in treeiters], key=masks_key)
-            return
-        treeiters_ = [item for _, nextiters in treeiters for item in nextiters]
-        treeiters_ = sorted(treeiters_, key=lambda e:masks_key(e[0]), reverse=True)
-        for _, nextiters in itertools.groupby(treeiters_, lambda e:masks_key(e[0])):
-            yield from sorted_subsec_iter(nextiters, depth-1)
-
-    return sorted_subsec_iter([((), subsec_treeiter(substr_treeiter(part, full)))], len(part))
-
+    plen = len(part)
+    flen = len(full)
+    suitabilities = []
+    
+    def loop(pstart=0, fstart=0, seclens=()):
+        for flast in range(fstart, flen-plen+pstart):
+            if full[flast] == part[pstart]:
+                for plast in range(pstart, plen):
+                    if full[flast+plast-pstart] != part[plast]:
+                        loop(plast, flast+plast-pstart, (*seclens, plast-pstart))
+                        break
+                else:
+                    suitabilities.append(((*seclens, plen-pstart), -(flast+plen-pstart), -flen))
+    
+    loop()
+    return max(suitabilities, default=())
+    
 def fit(part, options):
+    """Sort options by its suitability.
+    It will also filter out the option that has no such substring.
+    
+    Parameters
+    ----------
+    part : str
+        The substring to match.
+    options : list of str
+        The options to sort.
+    
+    Returns
+    -------
+    options : list of str
+        The sorted options.
+    """
     if part == "":
         return options
-
-    masked_options = [(next(fit_masks(part.lower(), opt.lower()), ()), opt) for opt in options]
-    masked_options = [(m, opt) for m, opt in masked_options if m != ()]
-
-    masked_options = sorted(masked_options, key=lambda e:(masks_key(e[0]), -len(e[1])), reverse=True)
-    return [opt for m, opt in masked_options]
+    options = [(suitability(part, opt), opt) for opt in options]
+    options = [(m, opt) for m, opt in options if m != ()]
+    options = sorted(options, reverse=True)
+    options = [opt for _, opt in options]
+    return options
 
 class SHLEXER_STATE(Enum):
     SPACED = " "
