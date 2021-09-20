@@ -51,6 +51,7 @@ class FieldBiparser(bp.Biparser):
         return ".".join(value)
 
 class ConfigurationBiparser(bp.Biparser):
+    """Biparser for Configuration."""
     vindent = r"(#[^\n]*|[ ]*)(\n|$)"
     name = r"#### ([^\n]*) ####(\n|$)"
     profile = r"# #### ([^\n]*) ####(\n#[^\n]*)*(\n|$)"
@@ -143,12 +144,12 @@ class ConfigurableMeta(type):
         return instance
 
     def get_configurable_fields(self):
-        """Get configurable fields of a configuration.
+        """Get configurable fields of this configuration.
         
         Returns
         -------
         field_hints : dict
-            A dictionary from a series of field names to field type.
+            A dictionary which maps a series of field names to its field type.
             If it has item `(('a', 'b', 'c'), float)`, then this configuration
             should have the field `config.a.b.c` with type `float`.
         """
@@ -165,7 +166,7 @@ class ConfigurableMeta(type):
 class Configurable(metaclass=ConfigurableMeta):
     """The super class for configuration.
 
-    In this type, the configuration can be easily defined::
+    With this type, the configuration can be easily defined::
     
         class SomeSettings(Configurable):
             field1: int = 123
@@ -186,19 +187,34 @@ class Configurable(metaclass=ConfigurableMeta):
         print(settings.field1)  # 456
         print(settings.subsettings.field3)  # False
 
-    The field that is annotated or is Configurable will be assigned as a
-    field of this configuration.  One can define an exclusion list
-    `__configurable_excludes__` to exclude them.  The field with type
-    Configurable will become sub-configuration, and will be created
-    before initializing object.  The others fields will become the field
-    of this configuration, which is initially absent.  So in the above
-    example, the field access at the beginning is the fallback value of
-    the static field in the class.
+    The field that is annotated or is Configurable type object will be
+    assigned as a field of this configuration.  One can define an
+    exclusion list `__configurable_excludes__` to exclude them.  The
+    Configurable type object in this class will become sub-configuration,
+    and will be created before initializing object.  The others fields
+    will become the field of this configuration, which is initially absent.
+    So in the above example, the field access at the beginning is the
+    fallback value of the static field in the class.
     """
     pass
 
 class Configuration:
+    """Configuration manager for Configurable type."""
     def __init__(self, config_type, name=None, current=None, profiles=None):
+        """The constructor of Configuration.
+        
+        Parameters
+        ----------
+        config_type : type
+            The Configurable type to manage.
+        name : str, optional
+            The name of current configuration.
+        current : Configurable, optional
+            The current configuration.
+        profiles : dict, optional
+            A dictionary that maps the name of profile to the string
+            representation of configurations.
+        """
         self.config_type = config_type
         self.name = name or "default"
         self.current = current or config_type()
@@ -206,6 +222,20 @@ class Configuration:
         self.biparser = ConfigurationBiparser(config_type)
 
     def set(self, fields, value):
+        """Set a field of current configuration to the given value.
+        
+        Parameters
+        ----------
+        fields : list of str
+            The series of field names.
+        value : any
+            The value to set.
+        
+        Raises
+        ------
+        ValueError
+            If there is no such field.
+        """
         if len(fields) == 0:
             raise ValueError("empty field")
 
@@ -225,6 +255,18 @@ class Configuration:
             parent.__dict__[field] = value
 
     def unset(self, fields):
+        """Unset a field of current configuration.
+        
+        Parameters
+        ----------
+        fields : list of str
+            The series of field names.
+        
+        Raises
+        ------
+        ValueError
+            If there is no such field.
+        """
         if len(fields) == 0:
             raise ValueError("empty field")
 
@@ -245,6 +287,23 @@ class Configuration:
                 del parent.__dict__[field]
 
     def get(self, fields):
+        """Get a field of current configuration.
+        
+        Parameters
+        ----------
+        fields : list of str
+            The series of field names.
+
+        Returns
+        -------
+        value : any
+            The value of the field.
+
+        Raises
+        ------
+        ValueError
+            If there is no such field.
+        """
         if len(fields) == 0:
             raise ValueError("empty field")
 
@@ -264,6 +323,23 @@ class Configuration:
             return getattr(parent, field)
 
     def has(self, fields):
+        """Check if a field of current configuration has a value.
+        
+        Parameters
+        ----------
+        fields : list of str
+            The series of field names.
+
+        Returns
+        -------
+        res : bool
+            True if this field has a value.
+
+        Raises
+        ------
+        ValueError
+            If there is no such field.
+        """
         if len(fields) == 0:
             raise ValueError("empty field")
 
@@ -283,6 +359,20 @@ class Configuration:
             return field in parent.__dict__
 
     def read(self, path):
+        """Read configuration from a file.
+        
+        Parameters
+        ----------
+        path : str or Path
+            The path of file.
+
+        Raises
+        ------
+        ValueError
+            If there is no such file.
+        DecodeError
+            If decoding fails.
+        """
         if isinstance(path, str):
             path = Path(path)
         if not path.exists():
@@ -296,11 +386,35 @@ class Configuration:
         return self.biparser.encode(self)
 
     def write(self, path):
+        """Write this configuration to a file.
+        
+        Parameters
+        ----------
+        path : str or Path
+            The path of file.
+
+        Raises
+        ------
+        EncodeError
+            If encoding fails.
+        """
         if isinstance(path, str):
             path = Path(path)
         open(path, 'w').write(self.biparser.encode(self))
 
     def use(self, name):
+        """change the profile of configuration.
+        
+        Parameters
+        ----------
+        name : str
+            The name of profile.
+
+        Raises
+        ------
+        ValueError
+            If there is no such profile.
+        """
         if name == self.name:
             return
         if name not in self.profiles:
@@ -316,6 +430,20 @@ class Configuration:
         self.current = res.current
 
     def new(self, name, clone=None):
+        """make a new profile of configuration.
+        
+        Parameters
+        ----------
+        name : str
+            The name of profile.
+        clone : str, optional
+            The name of profile to clone.
+
+        Raises
+        ------
+        ValueError
+            If there is no such profile.
+        """
         if clone is not None and clone != self.name and clone not in self.profiles:
             raise ValueError("no such profile: " + clone)
 
