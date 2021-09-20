@@ -1,3 +1,7 @@
+"""
+Bidirectional parsers for structured data type.
+"""
+
 import re
 import ast
 import enum
@@ -6,6 +10,19 @@ import typing
 
 
 class DecodeError(Exception):
+    """Decode error.
+    
+    Attributes
+    ----------
+    text : str
+        The text to decode.
+    index : int
+        The index of text where the decoding fails
+    expected : list of str
+        The expected texts to decode.  The suffix "\000" means eof.
+    info : str, optional
+        The description for this exception.
+    """
     def __init__(self, text, index, expected, info=None):
         self.text = text
         self.index = index
@@ -28,6 +45,19 @@ class DecodeError(Exception):
             return f"parse failed at {loc}, expect: {self.expected!r}"
 
 class EncodeError(Exception):
+    """Encode error.
+    
+    Attributes
+    ----------
+    value : any
+        The value to encode.
+    pos : any
+        The position of value where the encoding fails.
+    expected : list
+        The expected values to encode.
+    info : str, optional
+        The description for this exception.
+    """
     def __init__(self, value, pos, expected, info=None):
         self.value = value
         self.pos = pos
@@ -36,42 +66,172 @@ class EncodeError(Exception):
 
 class Biparser:
     def decode(self, text, index=0, partial=False):
+        """Decode a string into a value.
+        
+        Parameters
+        ----------
+        text : str
+            The text to decode.
+        index : int
+            The index of text where the decoding starts with.
+        partial : bool, optional
+            True for partially decoding.  It will parse the longest possible prefix of a given string.
+            
+        Returns
+        -------
+        value : any
+            The decoded value of the given text.
+        end : int
+            The index of the end of the matched substring, which is `len(text)` for non-partial decoding.
+        
+        Raises
+        ------
+        DecodeError
+            If the decoding fails.
+        """
         raise NotImplementedError
 
     def encode(self, value):
+        """Encode a value into a string.
+        
+        Parameters
+        ----------
+        value : any
+            The value to encode.
+            
+        Returns
+        --------
+        text : str
+            The encoded text of the given value.
+        
+        Raises
+        ------
+        EncodeError
+            If the encoding fails.
+        """
         raise NotImplementedError
 
-def eof(text, start, optional=False):
-    if start == len(text):
+def eof(text, index, optional=False):
+    """decode 'end of file'.
+
+    Parameters
+    ----------
+    text : str
+        The text to decode.
+    index : int
+        The index of text where the decoding starts with.
+    optional : bool, optional
+        True for optionally decoding.
+
+    Returns
+    -------
+    value : bool
+        True for eof.
+    end : int
+        The index of the end of the matched substring.
+
+    Raises
+    ------
+    DecodeError
+        If the decoding fails.
+    """
+    if index == len(text):
         return True, start
     else:
         if optional:
-            return False, start
-        raise DecodeError(text, start, ["\000"])
+            return False, index
+        raise DecodeError(text, index, ["\000"])
 
-def startswith(prefixes, text, start, optional=False, partial=True):
+def startswith(prefixes, text, index, optional=False, partial=True):
+    """match a list of strings.
+
+    Parameters
+    ----------
+    prefixes : list of str
+        The list of strings to match.
+    text : str
+        The text to decode.
+    index : int
+        The index of text where the decoding starts with.
+    optional : bool, optional
+        True for optionally decoding.
+    partial : bool, optional
+        True for partially decoding.
+
+    Returns
+    -------
+    value : str
+        The matched string.
+    end : int
+        The index of the end of the matched substring.
+
+    Raises
+    ------
+    DecodeError
+        If the decoding fails.
+    """
     regex = re.compile("|".join(re.escape(prefix) for prefix in sorted(prefixes, reverse=True)))
-    m = regex.match(text, start)
+    m = regex.match(text, index)
     if not m:
         if optional:
-            return "", start
-        raise DecodeError(text, start, [prefix + ("" if partial else "\000") for prefix in prefixes])
+            return "", index
+        raise DecodeError(text, index, [prefix + ("" if partial else "\000") for prefix in prefixes])
     if not partial and m.end() != len(text):
-        raise DecodeError(text, start, [prefix + ("" if partial else "\000") for prefix in prefixes])
+        raise DecodeError(text, index, [prefix + ("" if partial else "\000") for prefix in prefixes])
     return m.group(), m.end()
 
-def match(regex, expected, text, start, optional=False, partial=True):
-    m = re.compile(regex).match(text, start)
+def match(regex, expected, text, index, optional=False, partial=True):
+    """match a regular expression.
+
+    Parameters
+    ----------
+    regex : regular expression object
+        The regular expression to match.
+    expected : list of str
+        The expected strings to match.
+    text : str
+        The text to decode.
+    index : int
+        The index of text where the decoding starts with.
+    optional : bool, optional
+        True for optionally decoding.
+    partial : bool, optional
+        True for partially decoding.
+
+    Returns
+    -------
+    value : str
+        The match object.
+    end : int
+        The index of the end of the matched substring.
+
+    Raises
+    ------
+    DecodeError
+        If the decoding fails.
+    """
+    m = re.compile(regex).match(text, index)
     if not m:
         if optional:
-            return m, start
-        raise DecodeError(text, start, [ex + ("" if partial else "\000") for ex in expected])
+            return m, index
+        raise DecodeError(text, index, [ex + ("" if partial else "\000") for ex in expected])
     if not partial and m.end() != len(text):
-        raise DecodeError(text, start, [ex + ("" if partial else "\000") for ex in expected])
+        raise DecodeError(text, index, [ex + ("" if partial else "\000") for ex in expected])
     return m, m.end()
 
 
 class LiteralBiparser(Biparser):
+    """Biparser for Python literal.
+    
+    Attributes
+    ----------
+    regex : regular expression object
+        The regular expression to parse literal.
+    expected : list of str
+        The expected strings to match.
+    type : type
+        The type of literal.
+    """
     def encode(self, value):
         if not isinstance(value, self.type):
             raise EncodeError(value, "", self.type)
@@ -127,6 +287,7 @@ class StrBiparser(LiteralBiparser):
     type = str
 
     def encode(self, value):
+        # make sure it uses double quotation
         return '"' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
 
 class BytesBiparser(LiteralBiparser):
@@ -142,6 +303,7 @@ class BytesBiparser(LiteralBiparser):
     type = bytes
 
     def encode(self, value):
+        # make sure it uses double quotation
         return 'b"' + repr(value + b'"')[2:-2].replace(b'"', rb'\"').replace(rb"\'", b"'") + '"'
 
 class SStrBiparser(LiteralBiparser):
@@ -157,6 +319,7 @@ class SStrBiparser(LiteralBiparser):
     type = str
 
     def encode(self, value):
+        # make sure it uses single quotation
         return repr(value + '"')[:-2] + "'"
 
 
@@ -432,6 +595,18 @@ class EnumBiparser(Biparser):
 
 
 def from_type_hint(type_hint):
+    """Make Biparser from type hint.
+    
+    Parameters
+    ----------
+    type_hint : type or type hint
+        the type to parse.
+    
+    Returns
+    -------
+    biparser : Biparser
+        the biparser of the given type.
+    """
     if type_hint is None:
         type_hint = type(None)
 
