@@ -1,3 +1,8 @@
+"""
+A configuration system using biparser.
+The format of configuration file is a sub-language of python.
+"""
+
 import re
 import typing
 from collections import OrderedDict
@@ -6,6 +11,7 @@ from . import biparsers as bp
 
 
 class FieldBiparser(bp.Biparser):
+    """Biparser for fields of configuration."""
     def __init__(self, config_type):
         self.config_type = config_type
 
@@ -118,10 +124,11 @@ class ConfigurableMeta(type):
 
         fields = OrderedDict()
         for name in dir(self):
-            if name in annotations and name not in self.__configurable_excludes__:
-                fields[name] = annotations[name]
-            elif isinstance(getattr(self, name), ConfigurableMeta):
-                fields[name] = getattr(self, name)
+            if name not in self.__configurable_excludes__:
+                if name in annotations:
+                    fields[name] = annotations[name]
+                elif isinstance(getattr(self, name), ConfigurableMeta):
+                    fields[name] = getattr(self, name)
         self.__configurable_fields__ = fields
 
     def __configurable_init__(self, instance):
@@ -136,6 +143,15 @@ class ConfigurableMeta(type):
         return instance
 
     def get_configurable_fields(self):
+        """Get configurable fields of a configuration.
+        
+        Returns
+        -------
+        field_hints : dict
+            A dictionary from a series of field names to field type.
+            If it has item `(('a', 'b', 'c'), float)`, then this configuration
+            should have the field `config.a.b.c` with type `float`.
+        """
         field_hints = {}
         for field_name, field_type in self.__configurable_fields__.items():
             if not hasattr(field_type, '__configurable_fields__'):
@@ -147,6 +163,38 @@ class ConfigurableMeta(type):
         return field_hints
 
 class Configurable(metaclass=ConfigurableMeta):
+    """The super class for configuration.
+
+    In this type, the configuration can be easily defined::
+    
+        class SomeSettings(Configurable):
+            field1: int = 123
+            field2: str = 'abc'
+
+            class subsettings(Configurable):
+                field3: bool = True
+                field4: float = 3.14
+
+        settings = SomeSettings()
+        
+        print(settings.field1)  # 123
+        print(settings.subsettings.field3)  # True
+        
+        settings.field1 = 456
+        settings.subsettings.field3 = False
+        
+        print(settings.field1)  # 456
+        print(settings.subsettings.field3)  # False
+
+    The field that is annotated or is Configurable will be assigned as a
+    field of this configuration.  One can define an exclusion list
+    `__configurable_excludes__` to exclude them.  The field with type
+    Configurable will become sub-configuration, and will be created
+    before initializing object.  The others fields will become the field
+    of this configuration, which is initially absent.  So in the above
+    example, the field access at the beginning is the fallback value of
+    the static field in the class.
+    """
     pass
 
 class Configuration:
