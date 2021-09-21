@@ -614,7 +614,7 @@ class BeatInput:
         parents = [token for token, _, _, _ in self.tokens[:index]]
 
         if token_type == TOKEN_TYPE.UNKNOWN:
-            msg = self.command.expected_command(parents)
+            msg = self.command.desc_command(parents)
             hint_type = InputWarn
         else:
             msg = self.command.info_command(parents, target)

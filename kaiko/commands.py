@@ -9,9 +9,6 @@ from pathlib import Path
 from . import biparsers as bp
 
 
-def expected_options(options):
-    return "It should be one of:\n" + "\n".join("• " + s for s in options)
-
 def suitability(part, full):
     r"""Compute suitability of a string `full` to the given substring `part`.
     The suitability is defined by substring mask:
@@ -95,22 +92,29 @@ class TOKEN_TYPE(Enum):
     UNKNOWN = "unknown"
 
 
-class ArgumentParser:
-    expected = None
+def desc_options(options):
+    return "It should be one of:\n" + "\n".join("• " + s for s in options)
 
+class ArgumentParser:
     def parse(self, token):
         raise TokenParseError("Invalid value")
 
     def suggest(self, token):
         return []
 
+    def desc(self):
+        return None
+
     def info(self, token):
         return None
 
 class RawParser(ArgumentParser):
-    def __init__(self, default=inspect.Parameter.empty, expected=None):
+    def __init__(self, default=inspect.Parameter.empty, desc=None):
         self.default = default
-        self.expected = expected
+        self._desc = desc
+
+    def desc(self):
+        return self._desc
 
     def parse(self, token):
         return token
@@ -122,18 +126,21 @@ class RawParser(ArgumentParser):
             return [val + "\000" for val in fit(token, [self.default])]
 
 class OptionParser(ArgumentParser):
-    def __init__(self, options, default=inspect.Parameter.empty, expected=None):
+    def __init__(self, options, default=inspect.Parameter.empty, desc=None):
         self.options = options
         self.default = default
 
-        if expected is None:
+        if desc is None:
             options = list(self.options.keys()) if isinstance(self.options, dict) else self.options
-            self.expected = expected_options(options)
+            self._desc = desc_options(options)
+
+    def desc(self):
+        return self._desc
 
     def parse(self, token):
         if token not in self.options:
-            expected = self.expected
-            raise TokenParseError("Invalid value" + ("\n" + expected if expected is not None else ""))
+            desc = self._desc
+            raise TokenParseError("Invalid value" + ("\n" + desc if desc is not None else ""))
 
         if isinstance(self.options, dict):
             return self.options[token]
@@ -145,10 +152,13 @@ class OptionParser(ArgumentParser):
         return [val + "\000" for val in fit(token, options)]
 
 class PathParser(ArgumentParser):
-    def __init__(self, root=".", default=inspect.Parameter.empty, expected=None):
+    def __init__(self, root=".", default=inspect.Parameter.empty, desc=None):
         self.root = root
         self.default = default
-        self.expected = expected or "It should be a path"
+        self._desc = desc or "It should be a path"
+
+    def desc(self):
+        return self._desc
 
     def parse(self, token):
         try:
@@ -157,8 +167,8 @@ class PathParser(ArgumentParser):
             exists = False
 
         if not exists:
-            expected = self.expected
-            raise TokenParseError("Path does not exist" + ("\n" + expected if expected is not None else ""))
+            desc = self._desc
+            raise TokenParseError("Path does not exist" + ("\n" + desc if desc is not None else ""))
 
         return Path(token)
 
@@ -208,18 +218,21 @@ class PathParser(ArgumentParser):
         return suggestions
 
 class LiteralParser(ArgumentParser):
-    def __init__(self, type_hint, default=inspect.Parameter.empty, expected=None):
+    def __init__(self, type_hint, default=inspect.Parameter.empty, desc=None):
         self.type_hint = type_hint
         self.biparser = bp.from_type_hint(type_hint)
         self.default = default
-        self.expected = expected or f"It should be {type_hint}"
+        self._desc = desc or f"It should be {type_hint}"
+
+    def desc(self):
+        return self._desc
 
     def parse(self, token):
         try:
             return self.biparser.decode(token)[0]
         except bp.DecodeError:
-            expected = self.expected
-            raise TokenParseError("Invalid value" + ("\n" + expected if expected is not None else ""))
+            desc = self._desc
+            raise TokenParseError("Invalid value" + ("\n" + desc if desc is not None else ""))
 
     def suggest(self, token):
         try:
@@ -297,8 +310,7 @@ class CommandParser:
     def suggest(self, token):
         raise NotImplementedError
 
-    @property
-    def expected(self):
+    def desc(self):
         raise NotImplementedError
 
     def info(self, token):
@@ -314,8 +326,7 @@ class UnknownCommandParser(CommandParser):
     def suggest(self, token):
         return []
 
-    @property
-    def expected(self):
+    def desc(self):
         return None
 
     def info(self, token):
@@ -332,8 +343,8 @@ class FunctionCommandParser(CommandParser):
         if self.args:
             parser_func = next(iter(self.args.values()))
             parser = parser_func(**self.bound)
-            expected = parser.expected
-            msg = "Missing value" + ("\n" + expected if expected is not None else "")
+            desc = parser.desc()
+            msg = "Missing value" + ("\n" + desc if desc is not None else "")
             raise TokenUnfinishError(msg)
 
         return functools.partial(self.func, **self.bound)
@@ -357,8 +368,8 @@ class FunctionCommandParser(CommandParser):
             parser_func = kwargs.pop(name, None)
 
             if parser_func is None:
-                expected = expected_options(["--" + key for key in self.kwargs.keys()])
-                msg = f"Unknown argument {token!r}" + "\n" + expected
+                desc = desc_options(["--" + key for key in self.kwargs.keys()])
+                msg = f"Unknown argument {token!r}" + "\n" + desc
                 raise TokenParseError(msg)
 
             args = OrderedDict([(name, parser_func)])
@@ -382,18 +393,17 @@ class FunctionCommandParser(CommandParser):
         # rest
         return []
 
-    @property
-    def expected(self):
+    def desc(self):
         # parse positional arguments
         if self.args:
             parser_func = next(iter(self.args.values()))
             parser = parser_func(**self.bound)
-            return parser.expected
+            return parser.desc()
 
         # parse keyword arguments
         if self.kwargs:
             keys = ["--" + key for key in self.kwargs.keys()]
-            return expected_options(keys)
+            return desc_options(keys)
 
         # rest
         return None
@@ -422,13 +432,13 @@ class SubCommandParser(CommandParser):
         return desc.__get_command__(self.parent, type(self.parent))
 
     def finish(self):
-        expected = self.expected
-        raise TokenUnfinishError("Unfinished command" + ("\n" + expected if expected is not None else ""))
+        desc = self.desc()
+        raise TokenUnfinishError("Unfinished command" + ("\n" + desc if desc is not None else ""))
 
     def parse(self, token):
         if token not in self.fields:
-            expected = self.expected
-            msg = "Unknown command" + ("\n" + expected if expected is not None else "")
+            desc = self.desc()
+            msg = "Unknown command" + ("\n" + desc if desc is not None else "")
             raise TokenParseError(msg)
 
         field = self.get_promptable_field(token)
@@ -440,14 +450,13 @@ class SubCommandParser(CommandParser):
     def suggest(self, token):
         return [val + "\000" for val in fit(token, self.fields)]
 
-    @property
-    def expected(self):
-        return expected_options(self.fields)
+    def desc(self):
+        return desc_options(self.fields)
 
     def info(self, token):
         # assert token in self.fields
-        desc = type(self.parent).__dict__[token]
-        doc = desc.proxy.__doc__
+        descriptor = type(self.parent).__dict__[token]
+        doc = descriptor.proxy.__doc__
         if doc is None:
             return None
 
@@ -503,14 +512,14 @@ class RootCommandParser(SubCommandParser):
                 cmd = UnknownCommandParser()
         return cmd.suggest(target)
 
-    def expected_command(self, tokens):
+    def desc_command(self, tokens):
         cmd = self
         for token in tokens:
             try:
                 _, cmd = cmd.parse(token)
             except TokenParseError as err:
                 cmd = UnknownCommandParser()
-        return cmd.expected
+        return cmd.desc()
 
     def info_command(self, tokens, target):
         cmd = self

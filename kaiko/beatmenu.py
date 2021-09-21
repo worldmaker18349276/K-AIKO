@@ -370,15 +370,15 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @say.arg_parser("message")
     def _say_message_parser(self):
-        return cmd.RawParser(expected="It should be some text,"
-                                      " indicating the message to be printed.")
+        return cmd.RawParser(desc="It should be some text,"
+                                  " indicating the message to be printed.")
 
     @say.arg_parser("escape")
     def _say_escape_parser(self, message):
         return cmd.LiteralParser(bool, default=False,
-                                       expected="It should be bool,"
-                                                " indicating whether to use backslash escapes;"
-                                                " the default is False.")
+                                       desc="It should be bool,"
+                                            " indicating whether to use backslash escapes;"
+                                            " the default is False.")
 
     # user
 
@@ -889,12 +889,15 @@ class BeatmapParser(cmd.ArgumentParser):
         self.bgm_controller = bgm_controller
 
         self.options = [str(beatmap) for beatmapset in beatmaps.values() for beatmap in beatmapset]
-        self.expected = cmd.expected_options(self.options)
+        self._desc = cmd.desc_options(self.options)
+
+    def desc(self):
+        return self._desc
 
     def parse(self, token):
         if token not in self.options:
-            expected = self.expected
-            raise cmd.TokenParseError("Invalid value" + "\n" + self.expected)
+            desc = self._desc
+            raise cmd.TokenParseError("Invalid value" + "\n" + desc)
 
         return token
 
