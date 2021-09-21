@@ -110,6 +110,7 @@ def shlexer_tokenize(raw, partial=False):
     
     The backslashes and quotation marks used for escaping will be deleted after being interpreted as a string.
     The input string should be printable, so it doesn't contain tab, newline, backspace, etc.
+    In this grammar, the token of an empty string can be expressed as `''`.
     
     Parameters
     ----------
@@ -208,44 +209,58 @@ def shlexer_tokenize(raw, partial=False):
                 return SHLEXER_STATE.PLAIN
 
 def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
+    """Escape a given string so that it can be inserted into an untokenized string.
+    The strategy to escape insert string only depends on the state of insert position.
+
+    Parameters
+    ----------
+    compreply : str
+        The string to insert.  The suffix `'\000'` indicate closing the token.
+        But inserting `'\000'` after backslash results in `''`, since it is impossible to close it.
+    state : SHLEXER_STATE
+        The state of insert position.
+    
+    Returns
+    -------
+    raw : str
+        The escaped string which can be inserted into untokenized string directly.
+    """
     partial = not compreply.endswith("\000")
     if not partial:
         compreply = compreply[:-1]
 
     if state == SHLEXER_STATE.PLAIN:
-        compreply = re.sub(r"([ \\'])", r"\\\1", compreply)
-
-    elif state == SHLEXER_STATE.SPACED:
-        if compreply == "" and not partial:
-            # escape empty string
-            compreply = "''"
-        elif " " not in compreply:
-            compreply = re.sub(r"([ \\'])", r"\\\1", compreply)
-        else:
-            # use quotation
-            compreply = compreply.replace("'", r"'\''")
-            if not partial:
-                compreply = compreply[:-1] if compreply.endswith("'") else compreply + "'"
-            compreply = "'" + compreply
+        raw = re.sub(r"([ \\'])", r"\\\1", compreply)
 
     elif state == SHLEXER_STATE.BACKSLASHED:
         if compreply == "":
+            # cannot close backslash without deleting it
             return ""
-        compreply = re.sub(r"([ \\'])", r"\\\1", compreply)
-        # remove opening backslash
-        if compreply.startswith("\\"):
-            compreply = compreply[1:]
+        raw = compreply[0] + re.sub(r"([ \\'])", r"\\\1", compreply[1:])
 
     elif state == SHLEXER_STATE.QUOTED:
-        compreply = compreply.replace("'", r"'\''")
-        # add closing quotation
-        if not partial:
-            compreply = compreply[:-1] if compreply.endswith("'") else compreply + "'"
+        if partial:
+            raw = compreply.replace("'", r"'\''")
+        elif compreply == "":
+            raw = "'"
+        else:
+            raw = compreply[:-1].replace("'", r"'\''") + (r"'\'" if compreply[-1] == "'" else compreply[-1] + "'")
+
+    elif state == SHLEXER_STATE.SPACED:
+        if compreply != "" and " " not in compreply:
+            # use backslash if there is no whitespace
+            raw = re.sub(r"([ \\'])", r"\\\1", compreply)
+        elif partial:
+            raw = "'" + compreply.replace("'", r"'\''")
+        elif compreply == "":
+            raw = "''"
+        else:
+            raw = "'" + compreply[:-1].replace("'", r"'\''") + (r"'\'" if compreply[-1] == "'" else compreply[-1] + "'")
 
     else:
         raise ValueError
 
-    return compreply if partial else compreply + " "
+    return raw if partial else raw + " "
 
 def echo_str(escaped_str):
     r"""
