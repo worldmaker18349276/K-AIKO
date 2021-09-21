@@ -23,11 +23,25 @@ def expected_options(options):
 
 def suitability(part, full):
     """Compute suitability of a string `full` to the given substring `part`.
+    The suitability is defined by substring mask:
     The substring mask of a string `full` is a list of non-empty slices `sections`
     such that `''.join(full[sec] for sec in sections) == part`.  The suitability of
     an option is the greatest tuple `(seclens, -last, -length)` in all possible substring
     masks.  Where `seclens` is a list of section lengths.  `last` is the last index of
     the substring mask.  `length` is the length of string `full`.
+    
+    Parameters
+    ----------
+    part : str
+        The substring to find.
+    full : str
+        The string to match.
+    
+    Returns
+    -------
+    suitability : tuple
+        A value representing suitability of a string `full` to given substring `part`.
+        The larger value means more suitable.  The suitability of unmatched string is `()`.
     """
     if part == "":
         return ((), 0, -len(full))
@@ -36,17 +50,20 @@ def suitability(part, full):
     flen = len(full)
     suitabilities = []
     
-    def loop(pstart=0, fstart=0, seclens=()):
-        for flast in range(fstart, flen-plen+pstart):
-            if full[flast] == part[pstart]:
-                for plast in range(pstart, plen):
-                    if full[flast+plast-pstart] != part[plast]:
-                        loop(plast, flast+plast-pstart, (*seclens, plast-pstart))
-                        break
-                else:
-                    suitabilities.append(((*seclens, plen-pstart), -(flast+plen-pstart), -flen))
+    states = [(0, 0, ())]
+    while states:
+        new_states = []
+        for pstart, fstart, seclens in states:
+            for flast in range(fstart, flen-plen+pstart+1):
+                if full[flast] == part[pstart]:
+                    for plast in range(pstart, plen):
+                        if full[flast+plast-pstart] != part[plast]:
+                            new_states.append((plast, flast+plast-pstart, (*seclens, plast-pstart)))
+                            break
+                    else:
+                        suitabilities.append(((*seclens, plen-pstart), -(flast+plen-pstart), -flen))
+        states = new_states
     
-    loop()
     return max(suitabilities, default=())
     
 def fit(part, options):
