@@ -16,10 +16,10 @@ import pyaudio
 from . import datanodes as dn
 from . import config as cfg
 from . import wcbuffers as wcb
-from . import beatshell
 from . import biparsers as bp
+from . import commands as cmd
 from .engines import Mixer, MixerSettings
-from .beatshell import BeatShellSettings
+from .beatshell import BeatShellSettings, BeatInput, echo_str
 from .beatmap import BeatmapPlayer, GameplaySettings
 from .beatsheet import BeatSheet, BeatmapParseError
 from . import beatanalyzer
@@ -211,7 +211,7 @@ class KAIKOMenu:
 
                 # execute given command
                 if len(sys.argv) > 1:
-                    result = beatshell.RootCommand(game).build(sys.argv[1:])()
+                    result = cmd.RootCommand(game).build(sys.argv[1:])()
                     game.run_command(result, dt)
                     return
 
@@ -223,7 +223,7 @@ class KAIKOMenu:
                     logger.print()
 
                     # prompt
-                    input = beatshell.BeatInput(game)
+                    input = BeatInput(game)
                     while True:
                         # parse command
                         prompt_knot, prompt = input.prompt()
@@ -309,7 +309,7 @@ class KAIKOMenu:
         finally:
             manager.terminate()
 
-    @beatshell.function_command
+    @cmd.function_command
     def exit(self):
         self.logger.print("bye~")
         raise KeyboardInterrupt
@@ -336,7 +336,7 @@ class KAIKOMenu:
         elif result is not None:
             self.logger.print(result)
 
-    @beatshell.function_command
+    @cmd.function_command
     def intro(self):
         self.logger.print(
 """Beat shell is a user friendly commandline shell for playing K-AIKO.
@@ -352,7 +352,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
    \x1b[2moutput of command\x1b[m
 """)
 
-    @beatshell.function_command
+    @cmd.function_command
     def say(self, message, escape=False):
         """Say something and I will echo.
 
@@ -364,57 +364,57 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         """
 
         if escape:
-            self.logger.print(beatshell.echo_str(message))
+            self.logger.print(echo_str(message))
         else:
             self.logger.print(message)
 
     @say.arg_parser("message")
     def _say_message_parser(self):
-        return beatshell.RawParser(expected="It should be some text,"
-                                            " indicating the message to be printed.")
+        return cmd.RawParser(expected="It should be some text,"
+                                      " indicating the message to be printed.")
 
     @say.arg_parser("escape")
     def _say_escape_parser(self, message):
-        return beatshell.LiteralParser(bool, default=False,
+        return cmd.LiteralParser(bool, default=False,
                                        expected="It should be bool,"
                                                 " indicating whether to use backslash escapes;"
                                                 " the default is False.")
 
     # user
 
-    @beatshell.function_command
+    @cmd.function_command
     def username(self):
         return self.user.username
 
-    @beatshell.function_command
+    @cmd.function_command
     def config_file(self):
         return self.user.config_file
 
-    @beatshell.function_command
+    @cmd.function_command
     def data_dir(self):
         return self.user.data_dir
 
-    @beatshell.function_command
+    @cmd.function_command
     def songs_dir(self):
         return self.user.songs_dir
 
     # bgm
 
-    @beatshell.subcommand
+    @cmd.subcommand
     @property
     def bgm(self):
         return BGMCommand(self.bgm_controller, self.beatmap_manager, self.logger)
 
     # beatmaps
 
-    @beatshell.function_command
+    @cmd.function_command
     def beatmaps(self):
         if not self.beatmap_manager.is_uptodate():
             self.reload()
 
         return [beatmap for beatmapset in self.beatmap_manager._beatmaps.values() for beatmap in beatmapset]
 
-    @beatshell.function_command
+    @cmd.function_command
     def reload(self):
         """Reload your songs.
 
@@ -423,7 +423,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
         self.beatmap_manager.reload()
 
-    @beatshell.function_command
+    @cmd.function_command
     def add(self, beatmap):
         """Add beatmap/beatmapset to your songs folder.
 
@@ -439,9 +439,9 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @add.arg_parser("beatmap")
     def _add_beatmap_parser(self):
-        return beatshell.PathParser()
+        return cmd.PathParser()
 
-    @beatshell.function_command
+    @cmd.function_command
     def remove(self, beatmap):
         """Remove beatmap/beatmapset in your songs folder.
 
@@ -461,9 +461,9 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             for beatmap in beatmapset:
                 options.append(str(beatmap))
 
-        return beatshell.OptionParser(options)
+        return cmd.OptionParser(options)
 
-    @beatshell.function_command
+    @cmd.function_command
     def play(self, beatmap):
         """Let's beat with the song!
 
@@ -483,7 +483,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     # audio
 
-    @beatshell.function_command
+    @cmd.function_command
     def audio_input(self, device, samplerate=None, channels=None, format=None):
         logger = self.logger
 
@@ -524,7 +524,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             if format is not None:
                 self.settings.gameplay.detector.input_format = format
 
-    @beatshell.function_command
+    @cmd.function_command
     def audio_output(self, device, samplerate=None, channels=None, format=None):
         logger = self.logger
 
@@ -577,21 +577,21 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
     @audio_output.arg_parser("samplerate")
     def _audio_samplerate_parser(self, device, **__):
         options = [44100, 48000, 88200, 96000, 32000, 22050, 11025, 8000]
-        return beatshell.OptionParser({str(rate): rate for rate in options})
+        return cmd.OptionParser({str(rate): rate for rate in options})
 
     @audio_input.arg_parser("channels")
     @audio_output.arg_parser("channels")
     def _audio_channels_parser(self, device, **__):
-        return beatshell.OptionParser({'2': 2, '1': 1})
+        return cmd.OptionParser({'2': 2, '1': 1})
 
     @audio_input.arg_parser("format")
     @audio_output.arg_parser("format")
     def _audio_format_parser(self, device, **__):
-        return beatshell.OptionParser(['f4', 'i4', 'i2', 'i1', 'u1'])
+        return cmd.OptionParser(['f4', 'i4', 'i2', 'i1', 'u1'])
 
     # config
 
-    @beatshell.subcommand
+    @cmd.subcommand
     @property
     def config(self):
         return ConfigCommand(self._config, self.logger, self.user.config_file)
@@ -603,7 +603,7 @@ class ConfigCommand:
         self.logger = logger
         self.path = path
 
-    @beatshell.function_command
+    @cmd.function_command
     def reload(self):
         logger = self.logger
 
@@ -612,7 +612,7 @@ class ConfigCommand:
 
         self.config.read(self.path)
 
-    @beatshell.function_command
+    @cmd.function_command
     def save(self):
         logger = self.logger
 
@@ -621,23 +621,23 @@ class ConfigCommand:
 
         self.config.write(self.path)
 
-    @beatshell.function_command
+    @cmd.function_command
     def show(self):
         self.logger.print(str(self.config))
 
-    @beatshell.function_command
+    @cmd.function_command
     def get(self, field):
         return self.config.get(field)
 
-    @beatshell.function_command
+    @cmd.function_command
     def has(self, field):
         return self.config.has(field)
 
-    @beatshell.function_command
+    @cmd.function_command
     def unset(self, field):
         self.config.unset(field)
 
-    @beatshell.function_command
+    @cmd.function_command
     def set(self, field, value):
         self.config.set(field, value)
 
@@ -652,9 +652,9 @@ class ConfigCommand:
     def _set_value_parser(self, field):
         annotation = self.config.config_type.get_configurable_fields()[field]
         default = self.config.get(field)
-        return beatshell.LiteralParser(annotation, default)
+        return cmd.LiteralParser(annotation, default)
 
-    @beatshell.function_command
+    @cmd.function_command
     def rename(self, profile):
         logger = self.logger
 
@@ -670,7 +670,7 @@ class ConfigCommand:
 
         self.config.name = profile
 
-    @beatshell.function_command
+    @cmd.function_command
     def new(self, profile, clone=None):
         logger = self.logger
 
@@ -689,28 +689,28 @@ class ConfigCommand:
     @rename.arg_parser("profile")
     @new.arg_parser("profile")
     def _new_profile_parser(self):
-        return beatshell.RawParser()
+        return cmd.RawParser()
 
     @new.arg_parser("clone")
     def _new_clone_parser(self, profile):
         options = list(self.config.profiles.keys())
         options.insert(0, self.config.name)
-        return beatshell.OptionParser(options)
+        return cmd.OptionParser(options)
 
-    @beatshell.function_command
+    @cmd.function_command
     def use(self, profile):
         self.config.use(profile)
 
-    @beatshell.function_command
+    @cmd.function_command
     def delete(self, profile):
         del self.config.profiles[profile]
 
     @use.arg_parser("profile")
     @delete.arg_parser("profile")
     def _profile_parser(self):
-        return beatshell.OptionParser(list(self.config.profiles.keys()))
+        return cmd.OptionParser(list(self.config.profiles.keys()))
 
-class FieldParser(beatshell.ArgumentParser):
+class FieldParser(cmd.ArgumentParser):
     def __init__(self, config_type):
         self.config_type = config_type
         self.biparser = cfg.FieldBiparser(config_type)
@@ -719,19 +719,19 @@ class FieldParser(beatshell.ArgumentParser):
         try:
             return self.biparser.decode(token)[0]
         except bp.DecodeError:
-            raise beatshell.TokenParseError("No such field")
+            raise cmd.TokenParseError("No such field")
 
     def suggest(self, token):
         try:
             self.biparser.decode(token)
         except bp.DecodeError as e:
-            sugg = beatshell.fit(token, [token[:e.index] + ex for ex in e.expected])
+            sugg = cmd.fit(token, [token[:e.index] + ex for ex in e.expected])
         else:
             sugg = []
 
         return sugg
 
-class PyAudioDeviceParser(beatshell.ArgumentParser):
+class PyAudioDeviceParser(cmd.ArgumentParser):
     def __init__(self, manager, is_input):
         self.manager = manager
         self.is_input = is_input
@@ -741,11 +741,11 @@ class PyAudioDeviceParser(beatshell.ArgumentParser):
 
     def parse(self, token):
         if token not in self.options:
-            raise beatshell.TokenParseError("Invalid device index")
+            raise cmd.TokenParseError("Invalid device index")
         return int(token)
 
     def suggest(self, token):
-        return [val + "\000" for val in beatshell.fit(token, self.options)]
+        return [val + "\000" for val in cmd.fit(token, self.options)]
 
     def info(self, token):
         value = int(token)
@@ -883,23 +883,23 @@ class BeatmapManager:
     def make_parser(self, bgm_controller=None):
         return BeatmapParser(self._beatmaps, self.user.songs_dir, bgm_controller)
 
-class BeatmapParser(beatshell.ArgumentParser):
+class BeatmapParser(cmd.ArgumentParser):
     def __init__(self, beatmaps, songs_dir, bgm_controller):
         self.songs_dir = songs_dir
         self.bgm_controller = bgm_controller
 
         self.options = [str(beatmap) for beatmapset in beatmaps.values() for beatmap in beatmapset]
-        self.expected = beatshell.expected_options(self.options)
+        self.expected = cmd.expected_options(self.options)
 
     def parse(self, token):
         if token not in self.options:
             expected = self.expected
-            raise beatshell.TokenParseError("Invalid value" + "\n" + self.expected)
+            raise cmd.TokenParseError("Invalid value" + "\n" + self.expected)
 
         return token
 
     def suggest(self, token):
-        return [val + "\000" for val in beatshell.fit(token, self.options)]
+        return [val + "\000" for val in cmd.fit(token, self.options)]
 
     def info(self, token):
         try:
@@ -981,7 +981,7 @@ class BGMCommand:
         self.beatmap_manager = beatmap_manager
         self.logger = logger
 
-    @beatshell.function_command
+    @cmd.function_command
     def on(self):
         logger = self.logger
 
@@ -998,18 +998,18 @@ class BGMCommand:
         logger.print("will play: " + song)
         self.bgm_controller.play(song, start)
 
-    @beatshell.function_command
+    @cmd.function_command
     def off(self):
         self.bgm_controller.stop()
 
-    @beatshell.function_command
+    @cmd.function_command
     def skip(self):
         if self.bgm_controller._current_bgm is not None:
             song, start = self.bgm_controller.random_song()
             self.logger.print("will play: " + song)
             self.bgm_controller.play(song, start)
 
-    @beatshell.function_command
+    @cmd.function_command
     def play(self, beatmap, start:Optional[float]=None):
         logger = self.logger
 
@@ -1030,7 +1030,7 @@ class BGMCommand:
     def _play_beatmap_parser(self):
         return self.beatmap_manager.make_parser()
 
-    @beatshell.function_command
+    @cmd.function_command
     def now_playing(self):
         return self.bgm_controller._current_bgm
 
