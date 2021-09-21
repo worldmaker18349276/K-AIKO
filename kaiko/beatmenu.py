@@ -719,7 +719,7 @@ class FieldParser(cmd.ArgumentParser):
         try:
             return self.biparser.decode(token)[0]
         except bp.DecodeError:
-            raise cmd.TokenParseError("No such field")
+            raise cmd.CommandParseError("No such field")
 
     def suggest(self, token):
         try:
@@ -741,7 +741,7 @@ class PyAudioDeviceParser(cmd.ArgumentParser):
 
     def parse(self, token):
         if token not in self.options:
-            raise cmd.TokenParseError("Invalid device index")
+            raise cmd.CommandParseError("Invalid device index")
         return int(token)
 
     def suggest(self, token):
@@ -897,7 +897,7 @@ class BeatmapParser(cmd.ArgumentParser):
     def parse(self, token):
         if token not in self.options:
             desc = self._desc
-            raise cmd.TokenParseError("Invalid value" + "\n" + desc)
+            raise cmd.CommandParseError("Invalid value" + "\n" + desc)
 
         return token
 

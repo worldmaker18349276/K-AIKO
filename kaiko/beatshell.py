@@ -10,7 +10,7 @@ from . import datanodes as dn
 from . import biparsers as bp
 from . import wcbuffers as wcb
 from . import config as cfg
-from .commands import TokenUnfinishError, TokenParseError, TOKEN_TYPE, RootCommandParser
+from .commands import CommandUnfinishError, CommandParseError, TOKEN_TYPE, RootCommandParser
 
 
 class SHLEXER_STATE(Enum):
@@ -649,11 +649,11 @@ class BeatInput:
         else:
             _, res, index = self.command.parse_command(token for token, _, _, _ in self.tokens)
 
-        if isinstance(res, TokenUnfinishError):
+        if isinstance(res, CommandUnfinishError):
             self.set_result(InputError, res, None)
             self.finish()
             return False
-        elif isinstance(res, (TokenParseError, ShellSyntaxError)):
+        elif isinstance(res, (CommandParseError, ShellSyntaxError)):
             self.set_result(InputError, res, index)
             self.finish()
             return False

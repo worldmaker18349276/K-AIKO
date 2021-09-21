@@ -79,10 +79,10 @@ def fit(part, options):
     return options
 
 
-class TokenUnfinishError(Exception):
+class CommandUnfinishError(Exception):
     pass
 
-class TokenParseError(Exception):
+class CommandParseError(Exception):
     pass
 
 class TOKEN_TYPE(Enum):
@@ -96,20 +96,82 @@ def desc_options(options):
     return "It should be one of:\n" + "\n".join("• " + s for s in options)
 
 class ArgumentParser:
+    r"""Parser for argument of command."""
+
     def parse(self, token):
-        raise TokenParseError("Invalid value")
+        r"""Parse a token as an argument.
+
+        Parameters
+        ----------
+        token : str
+            The token.
+
+        Returns
+        -------
+        arg : any
+            The argument.
+
+        Raises
+        ------
+        CommandParseError
+            If parsing fails.
+        """
+        raise CommandParseError("Invalid value")
 
     def suggest(self, token):
+        r"""Suggest some possible tokens related to the given token.
+
+        Parameters
+        ----------
+        token : str
+            The token.
+
+        Returns
+        -------
+        suggestions : list of str
+            A list of possible tokens.  Use the suffix '\000' to mark token as
+            complete.
+        """
         return []
 
     def desc(self):
+        r"""Describe acceptable tokens.
+
+        Returns
+        -------
+        description : str or None
+            The description.
+        """
         return None
 
     def info(self, token):
+        r"""Describe the value of the given token.
+
+        Parameters
+        ----------
+        token : str
+            The token.
+
+        Returns
+        -------
+        description : str or None
+            The description.
+        """
         return None
 
 class RawParser(ArgumentParser):
+    r"""Parse a raw string."""
+
     def __init__(self, default=inspect.Parameter.empty, desc=None):
+        r"""Contructor.
+
+        Parameters
+        ----------
+        default : any, optional
+            The default value of this argument.
+        desc : str, optional
+            The description of this argument.
+        """
         self.default = default
         self._desc = desc
 
@@ -126,7 +188,21 @@ class RawParser(ArgumentParser):
             return [val + "\000" for val in fit(token, [self.default])]
 
 class OptionParser(ArgumentParser):
+    r"""Parse an option."""
+
     def __init__(self, options, default=inspect.Parameter.empty, desc=None):
+        r"""Contructor.
+
+        Parameters
+        ----------
+        options : list of str or dict
+            The list of options, or dictionary that maps option name to its
+            value.  If it is dictionary, the result of parsing will be its value.
+        default : any, optional
+            The default value of this argument.
+        desc : str, optional
+            The description of this argument.
+        """
         self.options = options
         self.default = default
 
@@ -140,7 +216,7 @@ class OptionParser(ArgumentParser):
     def parse(self, token):
         if token not in self.options:
             desc = self._desc
-            raise TokenParseError("Invalid value" + ("\n" + desc if desc is not None else ""))
+            raise CommandParseError("Invalid value" + ("\n" + desc if desc is not None else ""))
 
         if isinstance(self.options, dict):
             return self.options[token]
@@ -152,7 +228,20 @@ class OptionParser(ArgumentParser):
         return [val + "\000" for val in fit(token, options)]
 
 class PathParser(ArgumentParser):
+    r"""Parse a file path."""
+
     def __init__(self, root=".", default=inspect.Parameter.empty, desc=None):
+        r"""Contructor.
+
+        Parameters
+        ----------
+        root : str, optional
+            The root of path.
+        default : any, optional
+            The default value of this argument.
+        desc : str, optional
+            The description of this argument.
+        """
         self.root = root
         self.default = default
         self._desc = desc or "It should be a path"
@@ -168,7 +257,7 @@ class PathParser(ArgumentParser):
 
         if not exists:
             desc = self._desc
-            raise TokenParseError("Path does not exist" + ("\n" + desc if desc is not None else ""))
+            raise CommandParseError("Path does not exist" + ("\n" + desc if desc is not None else ""))
 
         return Path(token)
 
@@ -218,7 +307,20 @@ class PathParser(ArgumentParser):
         return suggestions
 
 class LiteralParser(ArgumentParser):
+    r"""Parse a Python literal."""
+
     def __init__(self, type_hint, default=inspect.Parameter.empty, desc=None):
+        r"""Contructor.
+
+        Parameters
+        ----------
+        type_hint : type
+            The type of literal to parse.
+        default : any, optional
+            The default value of this argument.
+        desc : str, optional
+            The description of this argument.
+        """
         self.type_hint = type_hint
         self.biparser = bp.from_type_hint(type_hint)
         self.default = default
@@ -232,7 +334,7 @@ class LiteralParser(ArgumentParser):
             return self.biparser.decode(token)[0]
         except bp.DecodeError:
             desc = self._desc
-            raise TokenParseError("Invalid value" + ("\n" + desc if desc is not None else ""))
+            raise CommandParseError("Invalid value" + ("\n" + desc if desc is not None else ""))
 
     def suggest(self, token):
         try:
@@ -250,75 +352,98 @@ class LiteralParser(ArgumentParser):
         return sugg
 
 
-class CommandDescriptor:
-    def __init__(self, proxy):
-        self.proxy = proxy
-
-    def __get__(self, instance, owner):
-        return self.proxy.__get__(instance, owner)
-
-    def __get_command__(self, instance, owner):
-        raise NotImplementedError
-
-class function_command(CommandDescriptor):
-    def __init__(self, proxy):
-        super(function_command, self).__init__(proxy)
-        self.parsers = {}
-
-    def __get_command__(self, instance, owner):
-        func = self.proxy.__get__(instance, owner)
-
-        def get_parser_func(param):
-            if param.name in self.parsers:
-                return self.parsers[param.name].__get__(instance, owner)
-            elif param.annotation is not inspect.Signature.empty:
-                return lambda *_, **__: LiteralParser(param.annotation, param.default)
-            else:
-                raise ValueError(f"No parser for argument {param.name} in {self.proxy.__name__}")
-
-        sig = inspect.signature(func)
-        args = OrderedDict()
-        kwargs = OrderedDict()
-        for param in sig.parameters.values():
-            if param.default is inspect.Parameter.empty:
-                args[param.name] = get_parser_func(param)
-            else:
-                kwargs[param.name] = get_parser_func(param)
-
-        return FunctionCommandParser(func, args, kwargs)
-
-    def arg_parser(self, name):
-        def arg_parser_dec(parser):
-            self.parsers[name] = parser
-            return parser
-        return arg_parser_dec
-
-class subcommand(CommandDescriptor):
-    def __get_command__(self, instance, owner):
-        parent = self.proxy.__get__(instance, owner)
-        fields = [k for k, v in type(parent).__dict__.items() if isinstance(v, CommandDescriptor)]
-        return SubCommandParser(parent, fields)
-
-
 class CommandParser:
+    r"""Monadic parser for a command.
+    To parse a command with tokens `abc efg 123`, use
+    `cmdparser.parse("abc").parse("efg").parse("123").finish()`.
+    """
+
     def finish(self):
+        r"""Finish parsing.
+
+        Returns
+        -------
+        res : any
+            The command object, usually is a function.
+
+        Raises
+        ------
+        CommandUnfinishError
+            If this command is unfinished.
+        """
         raise NotImplementedError
 
     def parse(self, token):
+        r"""Parse a token.
+
+        Parameters
+        ----------
+        token : str
+            The token to parse.
+
+        Returns
+        -------
+        toke_type : TOKEN_TYPE
+            The type of parsed token.
+        next_parser : CommandParser
+            The next step of parsing.
+
+        Raises
+        ------
+        CommandParseError
+            If parsing fails.
+        """
         raise NotImplementedError
 
     def suggest(self, token):
+        r"""Suggest some possible tokens related to the given token.
+
+        Parameters
+        ----------
+        token : str
+            The token.
+
+        Returns
+        -------
+        suggestions : list of str
+            A list of possible tokens.  Use the suffix '\000' to mark token as
+            complete.
+        """
         raise NotImplementedError
 
     def desc(self):
+        r"""Describe acceptable tokens.
+
+        Returns
+        -------
+        description : str or None
+            The description.
+        """
         raise NotImplementedError
 
     def info(self, token):
+        r"""Describe the value of the given token.
+
+        Parameters
+        ----------
+        token : str
+            The token.
+
+        Returns
+        -------
+        description : str or None
+            The description.
+        """
         raise NotImplementedError
 
+def fail():
+    raise ValueError("Unknown command")
+
 class UnknownCommandParser(CommandParser):
+    r"""Parse Unknown command, which is used when the parsing fails."""
+
     def finish(self):
-        raise TokenParseError("Unknown command")
+        return fail
 
     def parse(self, token):
         return TOKEN_TYPE.UNKNOWN, self
@@ -333,6 +458,8 @@ class UnknownCommandParser(CommandParser):
         return None
 
 class FunctionCommandParser(CommandParser):
+    r"""Parse a function, which will result in partially applied function."""
+
     def __init__(self, func, args, kwargs, bound=None):
         self.func = func
         self.args = args
@@ -345,7 +472,7 @@ class FunctionCommandParser(CommandParser):
             parser = parser_func(**self.bound)
             desc = parser.desc()
             msg = "Missing value" + ("\n" + desc if desc is not None else "")
-            raise TokenUnfinishError(msg)
+            raise CommandUnfinishError(msg)
 
         return functools.partial(self.func, **self.bound)
 
@@ -370,13 +497,13 @@ class FunctionCommandParser(CommandParser):
             if parser_func is None:
                 desc = desc_options(["--" + key for key in self.kwargs.keys()])
                 msg = f"Unknown argument {token!r}" + "\n" + desc
-                raise TokenParseError(msg)
+                raise CommandParseError(msg)
 
             args = OrderedDict([(name, parser_func)])
             return TOKEN_TYPE.KEYWORD, FunctionCommandParser(self.func, args, kwargs, self.bound)
 
         # rest
-        raise TokenParseError("Too many arguments")
+        raise CommandParseError("Too many arguments")
 
     def suggest(self, token):
         # parse positional arguments
@@ -433,17 +560,17 @@ class SubCommandParser(CommandParser):
 
     def finish(self):
         desc = self.desc()
-        raise TokenUnfinishError("Unfinished command" + ("\n" + desc if desc is not None else ""))
+        raise CommandUnfinishError("Unfinished command" + ("\n" + desc if desc is not None else ""))
 
     def parse(self, token):
         if token not in self.fields:
             desc = self.desc()
             msg = "Unknown command" + ("\n" + desc if desc is not None else "")
-            raise TokenParseError(msg)
+            raise CommandParseError(msg)
 
         field = self.get_promptable_field(token)
         if not isinstance(field, CommandParser):
-            raise TokenParseError("Not a command")
+            raise CommandParseError("Not a command")
 
         return TOKEN_TYPE.COMMAND, field
 
@@ -465,6 +592,56 @@ class SubCommandParser(CommandParser):
         level = len(m.group(0)[1:]) if m else 0
         return re.sub("\\n[ ]{,%d}"%level, "\\n", doc)
 
+
+class CommandDescriptor:
+    def __init__(self, proxy):
+        self.proxy = proxy
+
+    def __get__(self, instance, owner):
+        return self.proxy.__get__(instance, owner)
+
+    def __get_command__(self, instance, owner):
+        raise NotImplementedError
+
+class function_command(CommandDescriptor):
+    def __init__(self, proxy):
+        super(function_command, self).__init__(proxy)
+        self.parsers = {}
+
+    def __get_command__(self, instance, owner):
+        func = self.proxy.__get__(instance, owner)
+
+        def get_parser_func(param):
+            if param.name in self.parsers:
+                return self.parsers[param.name].__get__(instance, owner)
+            elif param.annotation is not inspect.Signature.empty:
+                return lambda *_, **__: LiteralParser(param.annotation, param.default)
+            else:
+                raise ValueError(f"No parser for argument {param.name} in {self.proxy.__name__}")
+
+        sig = inspect.signature(func)
+        args = OrderedDict()
+        kwargs = OrderedDict()
+        for param in sig.parameters.values():
+            if param.default is inspect.Parameter.empty:
+                args[param.name] = get_parser_func(param)
+            else:
+                kwargs[param.name] = get_parser_func(param)
+
+        return FunctionCommandParser(func, args, kwargs)
+
+    def arg_parser(self, name):
+        def arg_parser_dec(parser):
+            self.parsers[name] = parser
+            return parser
+        return arg_parser_dec
+
+class subcommand(CommandDescriptor):
+    def __get_command__(self, instance, owner):
+        parent = self.proxy.__get__(instance, owner)
+        fields = [k for k, v in type(parent).__dict__.items() if isinstance(v, CommandDescriptor)]
+        return SubCommandParser(parent, fields)
+
 class RootCommandParser(SubCommandParser):
     def __init__(self, root):
         fields = [k for k, v in type(root).__dict__.items() if isinstance(v, CommandDescriptor)]
@@ -473,7 +650,7 @@ class RootCommandParser(SubCommandParser):
     def build(self, tokens):
         _, res, _ = self.parse_command(tokens)
 
-        if isinstance(res, (TokenUnfinishError, TokenParseError)):
+        if isinstance(res, (CommandUnfinishError, CommandParseError)):
             raise res
         else:
             return res
@@ -487,7 +664,7 @@ class RootCommandParser(SubCommandParser):
         for i, token in enumerate(tokens):
             try:
                 type, cmd = cmd.parse(token)
-            except TokenParseError as err:
+            except CommandParseError as err:
                 res, index = err, i
                 type, cmd = TOKEN_TYPE.UNKNOWN, UnknownCommandParser()
             types.append(type)
@@ -498,7 +675,7 @@ class RootCommandParser(SubCommandParser):
         index = len(types)
         try:
             res = cmd.finish()
-        except TokenUnfinishError as err:
+        except CommandUnfinishError as err:
             res = err
 
         return (types, res, index)
@@ -508,7 +685,7 @@ class RootCommandParser(SubCommandParser):
         for token in tokens:
             try:
                 _, cmd = cmd.parse(token)
-            except TokenParseError as err:
+            except CommandParseError as err:
                 cmd = UnknownCommandParser()
         return cmd.suggest(target)
 
@@ -517,7 +694,7 @@ class RootCommandParser(SubCommandParser):
         for token in tokens:
             try:
                 _, cmd = cmd.parse(token)
-            except TokenParseError as err:
+            except CommandParseError as err:
                 cmd = UnknownCommandParser()
         return cmd.desc()
 
@@ -526,7 +703,7 @@ class RootCommandParser(SubCommandParser):
         for token in tokens:
             try:
                 _, cmd = cmd.parse(token)
-            except TokenParseError as err:
+            except CommandParseError as err:
                 cmd = UnknownCommandParser()
         return cmd.info(target)
 
