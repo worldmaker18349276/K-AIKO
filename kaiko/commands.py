@@ -96,10 +96,10 @@ def desc_options(options):
     return "It should be one of:\n" + "\n".join("• " + s for s in options)
 
 class ArgumentParser:
-    r"""Parser for argument of command."""
+    r"""Parser for the argument of command."""
 
     def parse(self, token):
-        r"""Parse a token as an argument.
+        r"""Parse the token as into an argument.
 
         Parameters
         ----------
@@ -129,8 +129,8 @@ class ArgumentParser:
         Returns
         -------
         suggestions : list of str
-            A list of possible tokens.  Use the suffix '\000' to mark token as
-            complete.
+            A list of possible tokens, where complete tokens have the suffix
+            '\000'.
         """
         return []
 
@@ -353,7 +353,7 @@ class LiteralParser(ArgumentParser):
 
 
 class CommandParser:
-    r"""Monadic parser for a command.
+    r"""Command parser.
     To parse a command with tokens `abc efg 123`, use
     `cmdparser.parse("abc").parse("efg").parse("123").finish()`.
     """
@@ -436,31 +436,28 @@ class CommandParser:
         """
         raise NotImplementedError
 
-def fail():
-    raise ValueError("Unknown command")
-
-class UnknownCommandParser(CommandParser):
-    r"""Parse Unknown command, which is used when the parsing fails."""
-
-    def finish(self):
-        return fail
-
-    def parse(self, token):
-        return TOKEN_TYPE.UNKNOWN, self
-
-    def suggest(self, token):
-        return []
-
-    def desc(self):
-        return None
-
-    def info(self, token):
-        return None
-
 class FunctionCommandParser(CommandParser):
-    r"""Parse a function, which will result in partially applied function."""
+    r"""Command parser for a function, which will result in partially applied function."""
 
     def __init__(self, func, args, kwargs, bound=None):
+        r"""Constructor.
+
+        Parameters
+        ----------
+        func : function
+            The function to parse.  Its signature should be in a simple form,
+            like `func(a, b, c, d=1, e=2, f=3)`.  The positional arguments are
+            required, and keyword arguments are optional and unordered.  This
+            function will be interpreted as a command
+            `func a_value b_value c_value --d d_value --e e_value --f f_value`.
+        args : dict of function
+        kwargs : dict of function
+            The parsers function for positional arguments and keyword arguments.
+            Parser function is a function of bound arguments that returning
+            ArgumentParser: `parser_func(**self.bound)` is argument parser.
+        bound : dict, optional
+            The bound arguments.
+        """
         self.func = func
         self.args = args
         self.kwargs = kwargs
@@ -481,11 +478,10 @@ class FunctionCommandParser(CommandParser):
         if self.args:
             args = OrderedDict(self.args)
             name, parser_func = args.popitem(False)
-
             parser = parser_func(**self.bound)
+
             value = parser.parse(token)
             bound = {**self.bound, name: value}
-
             return TOKEN_TYPE.ARGUMENT, FunctionCommandParser(self.func, args, self.kwargs, bound)
 
         # parse keyword arguments
@@ -550,17 +546,25 @@ class FunctionCommandParser(CommandParser):
         return None
 
 class SubCommandParser(CommandParser):
+    r"""Command parser for subcommands."""
+
     def __init__(self, parent, fields):
+        r"""Constructor.
+
+        Parameters
+        ----------
+        parent : object
+            The object with fields with command descriptors.
+        fields : list of str
+            The names of accessible subcommands.
+        """
         self.parent = parent
         self.fields = fields
 
-    def get_promptable_field(self, name):
-        desc = type(self.parent).__dict__[name]
-        return desc.__get_command__(self.parent, type(self.parent))
-
     def finish(self):
         desc = self.desc()
-        raise CommandUnfinishError("Unfinished command" + ("\n" + desc if desc is not None else ""))
+        msg = "Unfinished command" + ("\n" + desc if desc is not None else "")
+        raise CommandUnfinishError(msg)
 
     def parse(self, token):
         if token not in self.fields:
@@ -568,7 +572,7 @@ class SubCommandParser(CommandParser):
             msg = "Unknown command" + ("\n" + desc if desc is not None else "")
             raise CommandParseError(msg)
 
-        field = self.get_promptable_field(token)
+        field = getcmd(self.parent, token)
         if not isinstance(field, CommandParser):
             raise CommandParseError("Not a command")
 
@@ -581,21 +585,41 @@ class SubCommandParser(CommandParser):
         return desc_options(self.fields)
 
     def info(self, token):
-        # assert token in self.fields
-        descriptor = type(self.parent).__dict__[token]
-        doc = descriptor.proxy.__doc__
-        if doc is None:
-            return None
+        return self.getcmddesc(self.parent, token)
 
-        # outdent docstring
-        m = re.search("\\n[ ]*", doc)
-        level = len(m.group(0)[1:]) if m else 0
-        return re.sub("\\n[ ]{,%d}"%level, "\\n", doc)
 
+def getcmd(obj, name):
+    clz = type(obj)
+    if name not in clz.__dict__:
+        return None
+    descriptor = clz.__dict__[name]
+    if not isinstance(descriptor, CommandDescriptor):
+        return None
+
+    return descriptor.__get_command__(obj, clz)
+
+def getcmddesc(obj, name):
+    clz = type(obj)
+    if name not in clz.__dict__:
+        return None
+    descriptor = clz.__dict__[name]
+    if not isinstance(descriptor, CommandDescriptor):
+        return None
+
+    doc = descriptor.__doc__
+    if doc is None:
+        return None
+    # outdent docstring
+    m = re.search("\\n[ ]*", doc)
+    level = len(m.group(0)[1:]) if m else 0
+    return re.sub("\\n[ ]{,%d}"%level, "\\n", doc)
 
 class CommandDescriptor:
+    r"""Command descriptor."""
+
     def __init__(self, proxy):
         self.proxy = proxy
+        functools.update_wrapper(self, proxy)
 
     def __get__(self, instance, owner):
         return self.proxy.__get__(instance, owner)
@@ -603,7 +627,17 @@ class CommandDescriptor:
     def __get_command__(self, instance, owner):
         raise NotImplementedError
 
+class subcommand(CommandDescriptor):
+    r"""Command descriptor for subcommands."""
+
+    def __get_command__(self, instance, owner):
+        parent = self.proxy.__get__(instance, owner)
+        fields = [k for k, v in type(parent).__dict__.items() if isinstance(v, CommandDescriptor)]
+        return SubCommandParser(parent, fields)
+
 class function_command(CommandDescriptor):
+    r"""Command descriptor for function command."""
+
     def __init__(self, proxy):
         super(function_command, self).__init__(proxy)
         self.parsers = {}
@@ -631,80 +665,154 @@ class function_command(CommandDescriptor):
         return FunctionCommandParser(func, args, kwargs)
 
     def arg_parser(self, name):
+        r"""Assign a parser function to an argument of this command.
+
+        Parameters
+        ----------
+        name : str
+            The name of argument to bind.
+
+        Returns
+        -------
+        arg_parser_dec : function
+        """
         def arg_parser_dec(parser):
             self.parsers[name] = parser
             return parser
         return arg_parser_dec
 
-class subcommand(CommandDescriptor):
-    def __get_command__(self, instance, owner):
-        parent = self.proxy.__get__(instance, owner)
-        fields = [k for k, v in type(parent).__dict__.items() if isinstance(v, CommandDescriptor)]
-        return SubCommandParser(parent, fields)
-
 class RootCommandParser(SubCommandParser):
+    r"""Parser for root command."""
+
     def __init__(self, root):
+        r"""Constructor.
+
+        Parameters
+        ----------
+        root : object
+            The object of root command, where all fields with command descriptors
+            will become the valid subcommands.
+        """
         fields = [k for k, v in type(root).__dict__.items() if isinstance(v, CommandDescriptor)]
         super(RootCommandParser, self).__init__(root, fields)
 
     def build(self, tokens):
-        _, res, _ = self.parse_command(tokens)
+        r"""Directly build a command from the given tokens.
 
-        if isinstance(res, (CommandUnfinishError, CommandParseError)):
-            raise res
-        else:
-            return res
+        Parameters
+        ----------
+        tokens : list of str
+            The tokens to parse.
+
+        Returns
+        -------
+        cmd : object
+            The command object.
+
+        Raises
+        ------
+        CommandParseError
+        CommandUnfinishError
+        """
+        parser = self
+        for token in tokens:
+            _, parser = parser.parse(token)
+        res = parser.finish()
+        return res
 
     def parse_command(self, tokens):
-        cmd = self
-        types = []
-        res = None
-        index = 0
+        r"""Parse a command.
 
-        for i, token in enumerate(tokens):
+        Parameters
+        ----------
+        tokens : list of str
+            The tokens to parse.
+
+        Returns
+        -------
+        types : list of TOKEN_TYPE
+            The token types.
+        res : any or CommandParseError or CommandUnfinishError
+            The command object or the error.
+        """
+        parser = self
+        types = []
+
+        for token in tokens:
             try:
-                type, cmd = cmd.parse(token)
+                type, parser = parser.parse(token)
             except CommandParseError as err:
-                res, index = err, i
-                type, cmd = TOKEN_TYPE.UNKNOWN, UnknownCommandParser()
+                return types, err
             types.append(type)
 
-        if res is not None:
-            return (types, res, index)
-
-        index = len(types)
         try:
-            res = cmd.finish()
+            res = parser.finish()
         except CommandUnfinishError as err:
-            res = err
-
-        return (types, res, index)
+            return types, err
+        else:
+            return types, res
 
     def suggest_command(self, tokens, target):
-        cmd = self
+        r"""Find some suggestions for a command.
+
+        Parameters
+        ----------
+        tokens : list of str
+            The tokens of parent command.
+        target : str
+            The token to find suggestion.
+
+        Returns
+        -------
+        suggestion : list of str
+        """
+        parser = self
         for token in tokens:
             try:
-                _, cmd = cmd.parse(token)
-            except CommandParseError as err:
-                cmd = UnknownCommandParser()
-        return cmd.suggest(target)
+                _, parser = parser.parse(token)
+            except CommandParseError:
+                return []
+        return parser.suggest(target)
 
     def desc_command(self, tokens):
-        cmd = self
+        r"""Describe a command.
+
+        Parameters
+        ----------
+        tokens : list of str
+            The tokens of command.
+
+        Returns
+        -------
+        desc : str or None
+        """
+        parser = self
         for token in tokens:
             try:
-                _, cmd = cmd.parse(token)
-            except CommandParseError as err:
-                cmd = UnknownCommandParser()
-        return cmd.desc()
+                _, parser = parser.parse(token)
+            except CommandParseError:
+                return None
+        return parser.desc()
 
     def info_command(self, tokens, target):
-        cmd = self
+        r"""Describe a token of a command.
+
+        Parameters
+        ----------
+        tokens : list of str
+            The tokens of parent command.
+        target : str
+            The token to describe.
+
+        Returns
+        -------
+        info : str or None
+        """
+        parser = self
         for token in tokens:
             try:
-                _, cmd = cmd.parse(token)
-            except CommandParseError as err:
-                cmd = UnknownCommandParser()
-        return cmd.info(target)
-
+                _, parser = parser.parse(token)
+            except CommandParseError:
+                return None
+        return parser.info(target)
 

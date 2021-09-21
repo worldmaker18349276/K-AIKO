@@ -418,7 +418,8 @@ class BeatInput:
 
             tokens.append((token, slic, ignored))
 
-        types, _, _ = self.command.parse_command(token for token, _, _ in tokens)
+        types, _ = self.command.parse_command(token for token, _, _ in tokens)
+        types.extend([TOKEN_TYPE.UNKNOWN]*(len(tokens) - len(types)))
         self.tokens = [(token, type, slic, ignored) for (token, slic, ignored), type in zip(tokens, types)]
         return True
 
@@ -647,7 +648,8 @@ class BeatInput:
         elif self.lex_state == SHLEXER_STATE.QUOTED:
             res, index = ShellSyntaxError("No closing quotation"), len(self.tokens)-1
         else:
-            _, res, index = self.command.parse_command(token for token, _, _, _ in self.tokens)
+            types, res = self.command.parse_command(token for token, _, _, _ in self.tokens)
+            index = len(types)
 
         if isinstance(res, CommandUnfinishError):
             self.set_result(InputError, res, None)
