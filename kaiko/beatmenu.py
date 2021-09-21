@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 import random
 import queue
 import contextlib
@@ -19,11 +20,67 @@ from . import wcbuffers as wcb
 from . import biparsers as bp
 from . import commands as cmd
 from .engines import Mixer, MixerSettings
-from .beatshell import BeatShellSettings, BeatInput, echo_str
+from .beatshell import BeatShellSettings, BeatInput
 from .beatmap import BeatmapPlayer, GameplaySettings
 from .beatsheet import BeatSheet, BeatmapParseError
 from . import beatanalyzer
 
+
+def echo_str(escaped_str):
+    r"""Interpret a string like bash's echo.
+    It interprets the following backslash-escaped characters into:
+        \a     alert (bell)
+        \b     backspace
+        \c     suppress further output
+        \e     escape character
+        \f     form feed
+        \n     new line
+        \r     carriage return
+        \t     horizontal tab
+        \v     vertical tab
+        \\     backslash
+        \0NNN  the character whose ASCII code is NNN (octal).  NNN can be 0 to 3 octal digits
+        \xHH   the eight-bit character whose value is HH (hexadecimal).  HH can be one or two hex digits
+
+    Parameters
+    ----------
+    escaped_str : str
+        The string to be interpreted.
+
+    Returns
+    -------
+    interpreted_str : str
+        The interpreted string.
+    """
+    regex = r"\\c.*|\\[\\abefnrtv]|\\0[0-7]{0,3}|\\x[0-9a-fA-F]{1,2}|."
+
+    escaped = {
+        r"\\": "\\",
+        r"\a": "\a",
+        r"\b": "\b",
+        r"\e": "\x1b",
+        r"\f": "\f",
+        r"\n": "\n",
+        r"\r": "\r",
+        r"\t": "\t",
+        r"\v": "\v",
+        }
+
+    def repl(match):
+        matched = match.group(0)
+
+        if matched.startswith("\\c"):
+            return ""
+        elif matched in escaped:
+            return escaped[matched]
+        elif matched.startswith("\\0"):
+            return chr(int(matched[2:] or "0", 8))
+        elif matched.startswith("\\x"):
+            return chr(int(matched[2:], 16))
+        else:
+            return matched
+
+    return re.sub(regex, repl, escaped_str)
 
 def fit_screen(logger, width, delay=1.0):
     import time

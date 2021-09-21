@@ -171,62 +171,6 @@ def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
 
     return raw if partial else raw + " "
 
-def echo_str(escaped_str):
-    r"""Interpret a string like bash's echo.
-    It interprets the following backslash-escaped characters into:
-        \a     alert (bell)
-        \b     backspace
-        \c     suppress further output
-        \e     escape character
-        \f     form feed
-        \n     new line
-        \r     carriage return
-        \t     horizontal tab
-        \v     vertical tab
-        \\     backslash
-        \0NNN  the character whose ASCII code is NNN (octal).  NNN can be 0 to 3 octal digits
-        \xHH   the eight-bit character whose value is HH (hexadecimal).  HH can be one or two hex digits
-
-    Parameters
-    ----------
-    escaped_str : str
-        The string to be interpreted.
-
-    Returns
-    -------
-    interpreted_str : str
-        The interpreted string.
-    """
-    regex = r"\\c.*|\\[\\abefnrtv]|\\0[0-7]{0,3}|\\x[0-9a-fA-F]{1,2}|."
-
-    escaped = {
-        r"\\": "\\",
-        r"\a": "\a",
-        r"\b": "\b",
-        r"\e": "\x1b",
-        r"\f": "\f",
-        r"\n": "\n",
-        r"\r": "\r",
-        r"\t": "\t",
-        r"\v": "\v",
-        }
-
-    def repl(match):
-        matched = match.group(0)
-
-        if matched.startswith("\\c"):
-            return ""
-        elif matched in escaped:
-            return escaped[matched]
-        elif matched.startswith("\\0"):
-            return chr(int(matched[2:] or "0", 8))
-        elif matched.startswith("\\x"):
-            return chr(int(matched[2:], 16))
-        else:
-            return matched
-
-    return re.sub(regex, repl, escaped_str)
-
 def pmove(width, x, text, tabsize=8):
     r"""Predict the position after print the given text in the terminal (GNOME terminal).
 
@@ -303,6 +247,14 @@ class InputComplete:
     def __init__(self, value):
         self.value = value
 
+class INPUT_STATE(Enum):
+    EDIT = "edit"
+    TAB = "tab"
+    FIN = "fin"
+
+class ShellSyntaxError(Exception):
+    pass
+
 def onstate(*states):
     def onstate_dec(func):
         @functools.wraps(func)
@@ -320,15 +272,38 @@ def locked(func):
             return func(self, *args, **kwargs)
     return locked_func
 
-class INPUT_STATE(Enum):
-    EDIT = "edit"
-    TAB = "tab"
-    FIN = "fin"
-
-class ShellSyntaxError(Exception):
-    pass
-
 class BeatInput:
+    r"""Input editor for beatshell.
+
+    Attributes
+    ----------
+    command : RootCommandParser
+        The root command parser for beatshell.
+    history : list of str
+        The input history.
+    buffers : list of list of str
+        The editable buffers of input history.
+    buffers_index : int
+        The negative index of current input buffer.
+    buffer : list of str
+        The buffer of current input.
+    pos : int
+        The caret position of input.
+    typeahead : str
+        The type ahead of input.
+    tokens : list
+        The list of token info, which is yielded by `shlexer_tokenize`.
+    lex_state : SHLEXER_STATE
+        The shlexer state.
+    highlighted : int or None
+        The index of highlighted token.
+    hint : InputWarn or InputMessage or None
+        The hint of input.
+    result : InputError or InputComplete or None
+        The result of input.
+    state : INPUT_STATE
+        The input state.
+    """
     def __init__(self, promptable, history=None):
         self.command = RootCommandParser(promptable)
         self.history = history if history is not None else []
@@ -411,16 +386,16 @@ class BeatInput:
         tokens = []
         while True:
             try:
-                token, slic, ignored = next(tokenizer)
+                token, mask, ignored = next(tokenizer)
             except StopIteration as e:
                 self.lex_state = e.value
                 break
 
-            tokens.append((token, slic, ignored))
+            tokens.append((token, mask, ignored))
 
         types, _ = self.command.parse_command(token for token, _, _ in tokens)
         types.extend([TOKEN_TYPE.UNKNOWN]*(len(tokens) - len(types)))
-        self.tokens = [(token, type, slic, ignored) for (token, slic, ignored), type in zip(tokens, types)]
+        self.tokens = [(token, type, mask, ignored) for (token, mask, ignored), type in zip(tokens, types)]
         return True
 
     @locked
@@ -986,13 +961,13 @@ class BeatInput:
             parents = []
             target = ""
             selection = slice(self.pos, self.pos)
-            for token, _, slic, _ in self.tokens:
-                start, stop, _ = slic.indices(len(self.buffer))
+            for token, _, mask, _ in self.tokens:
+                start, stop, _ = mask.indices(len(self.buffer))
                 if stop < self.pos:
                     parents.append(token)
                 if start <= self.pos <= stop:
                     target = token
-                    selection = slic
+                    selection = mask
 
             # generate suggestions
             self._suggestions = [shlexer_quoting(sugg) for sugg in self.command.suggest_command(parents, target)]
@@ -1042,6 +1017,8 @@ class BeatInput:
         return True
 
 class BeatStroke:
+    r"""Keyboard controller for beatshell."""
+
     def __init__(self, input, keymap):
         self.input = input
         self.keymap = keymap
@@ -1164,6 +1141,8 @@ class BeatShellSettings(cfg.Configurable):
         token_highlight_attr: str = "4"
 
 class BeatPrompt:
+    r"""Prompt renderer for beatshell."""
+
     def __init__(self, stroke, input, settings):
         self.stroke = stroke
 
@@ -1309,9 +1288,9 @@ class BeatPrompt:
         # render buffer
         indices = range(len(rendered_buffer))
 
-        for token, type, slic, ignored in tokens:
+        for token, type, mask, ignored in tokens:
             # render whitespace
-            for index in indices[slic]:
+            for index in indices[mask]:
                 if rendered_buffer[index] == " ":
                     rendered_buffer[index] = whitespace
 
@@ -1321,29 +1300,29 @@ class BeatPrompt:
 
             # render unknown token
             if type is TOKEN_TYPE.UNKNOWN:
-                if slic.stop is not None or clean:
-                    for index in indices[slic]:
+                if mask.stop is not None or clean:
+                    for index in indices[mask]:
                         rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_unknown_attr)
 
             # render command token
             if type is TOKEN_TYPE.COMMAND:
-                for index in indices[slic]:
+                for index in indices[mask]:
                     rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_command_attr)
 
             # render keyword token
             elif type is TOKEN_TYPE.KEYWORD:
-                for index in indices[slic]:
+                for index in indices[mask]:
                     rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_keyword_attr)
 
             # render argument token
             elif type is TOKEN_TYPE.ARGUMENT:
-                for index in indices[slic]:
+                for index in indices[mask]:
                     rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_argument_attr)
 
         if highlighted in range(len(tokens)):
             # render highlighted token
-            _, _, slic, _ = tokens[highlighted]
-            for index in indices[slic]:
+            _, _, mask, _ = tokens[highlighted]
+            for index in indices[mask]:
                 rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_highlight_attr)
 
         rendered_text = "".join(rendered_buffer)
