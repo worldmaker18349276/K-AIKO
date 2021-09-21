@@ -22,7 +22,7 @@ def expected_options(options):
     return "It should be one of:\n" + "\n".join("• " + shlexer_quoting(s + "\000") for s in options)
 
 def suitability(part, full):
-    """Compute suitability of a string `full` to the given substring `part`.
+    r"""Compute suitability of a string `full` to the given substring `part`.
     The suitability is defined by substring mask:
     The substring mask of a string `full` is a list of non-empty slices `sections`
     such that `''.join(full[sec] for sec in sections) == part`.  The suitability of
@@ -67,7 +67,7 @@ def suitability(part, full):
     return max(suitabilities, default=())
     
 def fit(part, options):
-    """Sort options by its suitability.
+    r"""Sort options by its suitability.
     It will also filter out the option that has no such substring.
     
     Parameters
@@ -96,14 +96,11 @@ class SHLEXER_STATE(Enum):
     BACKSLASHED = "\\"
     QUOTED = "'"
 
-class TokenError(Exception):
-    pass
-
-def shlexer_tokenize(raw, partial=False):
-    """Tokenizer for shell-like grammar.
+def shlexer_tokenize(raw):
+    r"""Tokenizer for shell-like grammar.
     The delimiter is just whitespace, and the token is defined as::
 
-        <nonspace-character> ::= /[^ ]/
+        <nonspace-character> ::= /[^ \\\']/
         <backslashed-character> ::= "\" /./
         <quoted-string> ::= "'" /[^']*/ "'"
         <token> ::= ( <nonspace-character> | <backslashed-character> | <quoted-string> )*
@@ -116,8 +113,6 @@ def shlexer_tokenize(raw, partial=False):
     ----------
     raw : str or list of str
         The string to tokenize, which should be printable.
-    partial : bool, optional
-        True for partially parsing the input string.
     
     Yields
     ------
@@ -133,11 +128,6 @@ def shlexer_tokenize(raw, partial=False):
     -------
     state : SHLEXER_STATE
         The final state of parsing.
-    
-    Raises
-    ------
-    TokenError
-        If the input string has non-closed escape character.
     """
     SPACE = " "
     BACKSLASH = "\\"
@@ -172,8 +162,6 @@ def shlexer_tokenize(raw, partial=False):
                 try:
                     index, char = next(raw)
                 except StopIteration:
-                    if not partial:
-                        raise TokenError("No escaped character")
                     yield "".join(token), slice(start, None), ignored
                     return SHLEXER_STATE.BACKSLASHED
 
@@ -187,8 +175,6 @@ def shlexer_tokenize(raw, partial=False):
                     try:
                         index, char = next(raw)
                     except StopIteration:
-                        if not partial:
-                            raise TokenError("No closing quotation")
                         yield "".join(token), slice(start, None), ignored
                         return SHLEXER_STATE.QUOTED
 
@@ -209,7 +195,7 @@ def shlexer_tokenize(raw, partial=False):
                 return SHLEXER_STATE.PLAIN
 
 def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
-    """Escape a given string so that it can be inserted into an untokenized string.
+    r"""Escape a given string so that it can be inserted into an untokenized string.
     The strategy to escape insert string only depends on the state of insert position.
 
     Parameters
@@ -263,8 +249,8 @@ def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
     return raw if partial else raw + " "
 
 def echo_str(escaped_str):
-    r"""
-    It interprets the following backslash-escaped characters like bash's echo:
+    r"""Interpret a string like bash's echo.
+    It interprets the following backslash-escaped characters into:
         \a     alert (bell)
         \b     backspace
         \c     suppress further output
@@ -275,8 +261,18 @@ def echo_str(escaped_str):
         \t     horizontal tab
         \v     vertical tab
         \\     backslash
-        \0nnn  the character whose ASCII code is NNN (octal).  NNN can be 0 to 3 octal digits
+        \0NNN  the character whose ASCII code is NNN (octal).  NNN can be 0 to 3 octal digits
         \xHH   the eight-bit character whose value is HH (hexadecimal).  HH can be one or two hex digits
+    
+    Parameters
+    ----------
+    escaped_str : str
+        The string to be interpreted.
+    
+    Returns
+    -------
+    interpreted_str : str
+        The interpreted string.
     """
     regex = r"\\c.*|\\[\\abefnrtv]|\\0[0-7]{0,3}|\\x[0-9a-fA-F]{1,2}|."
 
@@ -309,6 +305,25 @@ def echo_str(escaped_str):
     return re.sub(regex, repl, escaped_str)
 
 def pmove(width, x, text, tabsize=8):
+    r"""Predict the position after print the given text in the terminal (GNOME terminal).
+    
+    Parameters
+    ----------
+    with : int
+        The with of terminal.
+    x : int
+        The initial position before printing.
+    text : str
+        The string to print.
+    tabsize : int, optional
+        The tab size of terminal.
+    
+    Returns
+    -------
+    x : int
+    y : int
+        The final position after printing.
+    """
     y = 0
 
     for ch, w in wcb.parse_attr(text):
@@ -905,7 +920,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        tokenizer = shlexer_tokenize(self.buffer, partial=True)
+        tokenizer = shlexer_tokenize(self.buffer)
 
         tokens = []
         while True:
