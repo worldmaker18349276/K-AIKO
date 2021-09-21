@@ -79,7 +79,48 @@ class SHLEXER_STATE(Enum):
     BACKSLASHED = "\\"
     QUOTED = "'"
 
+class TokenError(Exception):
+    pass
+
 def shlexer_tokenize(raw, partial=False):
+    """Tokenizer for shell-like grammar.
+    The delimiter is just whitespace, and the token is defined as::
+
+        <nonspace-character> ::= /[^ ]/
+        <backslashed-character> ::= "\" /./
+        <quoted-string> ::= "'" /[^']*/ "'"
+        <token> ::= ( <nonspace-character> | <backslashed-character> | <quoted-string> )*
+    
+    The backslashes and quotation marks used for escaping will be deleted after being interpreted as a string.
+    The input string should be printable, so it doesn't contain tab, newline, backspace, etc.
+    
+    Parameters
+    ----------
+    raw : str or list of str
+        The string to tokenize, which should be printable.
+    partial : bool, optional
+        True for partially parsing the input string.
+    
+    Yields
+    ------
+    token : str
+        The tokenized string.
+    mask : slice
+        The position of this token.
+    ignored : list of int
+        The indices of all backslashes and quotation marks used for escaping.
+        The token is equal to `''.join(raw[i] for i in range(*slice.indices(len(raw))) if i not in ignored)`.
+    
+    Returns
+    -------
+    state : SHLEXER_STATE
+        The final state of parsing.
+    
+    Raises
+    ------
+    TokenError
+        If the input string has non-closed escape character.
+    """
     SPACE = " "
     BACKSLASH = "\\"
     QUOTE = "'"
@@ -108,32 +149,36 @@ def shlexer_tokenize(raw, partial=False):
 
             elif char == BACKSLASH:
                 # escape the next character
-                try:
-                    ignored.append(index)
-                    index, char = next(raw)
-                    token.append(char)
+                ignored.append(index)
 
+                try:
+                    index, char = next(raw)
                 except StopIteration:
                     if not partial:
-                        raise ValueError("No escaped character")
+                        raise TokenError("No escaped character")
                     yield "".join(token), slice(start, None), ignored
                     return SHLEXER_STATE.BACKSLASHED
 
+                token.append(char)
+                
             elif char == QUOTE:
                 # escape the following characters until the next quotation mark
-                try:
-                    ignored.append(index)
-                    index, char = next(raw)
-                    while char != QUOTE:
-                        token.append(char)
+                ignored.append(index)
+                
+                while True:
+                    try:
                         index, char = next(raw)
-                    ignored.append(index)
+                    except StopIteration:
+                        if not partial:
+                            raise TokenError("No closing quotation")
+                        yield "".join(token), slice(start, None), ignored
+                        return SHLEXER_STATE.QUOTED
 
-                except StopIteration:
-                    if not partial:
-                        raise ValueError("No closing quotation")
-                    yield "".join(token), slice(start, None), ignored
-                    return SHLEXER_STATE.QUOTED
+                    if char == QUOTE:
+                        ignored.append(index)
+                        break
+                    else:
+                        token.append(char)
 
             else:
                 # otherwise, as it is
