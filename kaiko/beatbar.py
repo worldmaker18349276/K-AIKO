@@ -211,7 +211,7 @@ class Beatbar:
     @staticmethod
     @dn.datanode
     def _masked_node(variable, mask):
-        view, time, width = yield
+        (view, msg), time, width = yield
 
         while True:
             mask_ran = range(width)[mask]
@@ -222,7 +222,7 @@ class Beatbar:
             view = wcb.clear1(view, width, xmask=mask)
             view, _ = wcb.addtext1(view, width, start, text, xmask=mask)
 
-            view, time, width = yield view
+            (view, msg), time, width = yield (view, msg)
 
     def set_icon(self, icon, start=None, duration=None):
         icon_func = icon if hasattr(icon, '__call__') else lambda time, ran: icon
@@ -263,17 +263,17 @@ class Beatbar:
 
         @dn.datanode
         def _content_node(pos, text, start, duration):
-            view, time, width = yield
+            (view, msg), time, width = yield
 
             if start is None:
                 start = time
 
             while time < start:
-                view, time, width = yield view
+                (view, msg), time, width = yield (view, msg)
 
             while duration is None or time < start + duration:
                 view, _ = self._draw_content(view, width, pos_func(time), text_func(time))
-                view, time, width = yield view
+                (view, msg), time, width = yield (view, msg)
 
         node = _content_node(pos, text, start, duration)
         return self.add_content_drawer(node, zindex=zindex)
@@ -295,17 +295,17 @@ class Beatbar:
 
         @dn.datanode
         def _content_node(pos, text, start, duration):
-            view, time, width = yield
+            (view, msg), time, width = yield
 
             if start is None:
                 start = time
 
             while time < start:
-                view, time, width = yield view
+                (view, msg), time, width = yield (view, msg)
 
             while duration is None or time < start + duration:
                 view, _ = self._draw_title(view, width, pos_func(time), text_func(time))
-                view, time, width = yield view
+                (view, msg), time, width = yield (view, msg)
 
         node = _content_node(pos, text, start, duration)
         return self.add_content_drawer(node, zindex=zindex)

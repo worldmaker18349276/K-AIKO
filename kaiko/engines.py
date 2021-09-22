@@ -351,12 +351,11 @@ class RendererSettings(cfg.Configurable):
     debug_timeit: bool = False
 
 class Renderer:
-    def __init__(self, drawers_scheduler, msg_queue):
+    def __init__(self, drawers_scheduler):
         self.drawers_scheduler = drawers_scheduler
-        self.msg_queue = msg_queue
 
     @staticmethod
-    def get_node(scheduler, msg_queue, settings, ref_time):
+    def get_node(scheduler, settings, ref_time):
         framerate = settings.display_framerate
         display_delay = settings.display_delay
         columns = settings.display_columns
@@ -380,14 +379,11 @@ class Renderer:
 
                     time = index / framerate + display_delay - ref_time
                     view = wcb.newwin1(width)
+                    msg = None
                     try:
-                        view = scheduler.send((view, time, width))
+                        view, msg = scheduler.send(((view, msg), time, width))
                     except StopIteration:
                         return
-
-                    msg = None
-                    while not msg_queue.empty():
-                        msg = msg_queue.get()
 
                     if msg is None:
                         res_text = "\r" + "".join(view) + "\r"
@@ -408,18 +404,17 @@ class Renderer:
     @classmethod
     def create(clz, settings, ref_time=0.0):
         scheduler = dn.Scheduler()
-        msg_queue = queue.Queue()
-        display_node = clz.get_node(scheduler, msg_queue, settings, ref_time)
-        return display_node, clz(scheduler, msg_queue)
-
-    def message(self, msg):
-        self.msg_queue.put(msg)
+        display_node = clz.get_node(scheduler, settings, ref_time)
+        return display_node, clz(scheduler)
 
     def add_drawer(self, node, zindex=(0,)):
         return self.drawers_scheduler.add_node(node, zindex=zindex)
 
     def remove_drawer(self, key):
         self.drawers_scheduler.remove_node(key)
+
+    def add_message(self, msg, zindex=(0,)):
+        return self.add_drawer(self._msg_drawer(msg), zindex)
 
     def add_text(self, text_node, x=0, xmask=slice(None,None), zindex=(0,)):
         return self.add_drawer(self._text_drawer(text_node, x, xmask), zindex)
@@ -429,10 +424,17 @@ class Renderer:
 
     @staticmethod
     @dn.datanode
+    def _msg_drawer(msg):
+        (view, premsg), _, _ = yield
+        msg = msg if premsg is None else premsg + msg
+        yield (view, msg)
+
+    @staticmethod
+    @dn.datanode
     def _text_drawer(text_node, x=0, xmask=slice(None,None)):
         text_node = dn.DataNode.wrap(text_node)
         with text_node:
-            view, time, width = yield
+            (view, msg), time, width = yield
             while True:
                 try:
                     text = text_node.send((time, range(-x, width-x)[xmask]))
@@ -440,14 +442,14 @@ class Renderer:
                     return
                 view, _ = wcb.addtext1(view, width, x, text, xmask=xmask)
 
-                view, time, width = yield view
+                (view, msg), time, width = yield (view, msg)
 
     @staticmethod
     @dn.datanode
     def _pad_drawer(pad_node, xmask=slice(None,None)):
         pad_node = dn.DataNode.wrap(pad_node)
         with pad_node:
-            view, time, width = yield
+            (view, msg), time, width = yield
             while True:
                 subview, x, subwidth = wcb.newpad1(view, width, xmask=xmask)
                 try:
@@ -456,7 +458,7 @@ class Renderer:
                     return
                 view, xran = wcb.addpad1(view, width, x, subview, subwidth)
 
-                view, time, width = yield view
+                (view, msg), time, width = yield (view, msg)
 
 
 class ControllerSettings(cfg.Configurable):
