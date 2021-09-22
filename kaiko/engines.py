@@ -306,6 +306,25 @@ class Detector:
 
 
 def pt_walk(text, width, x=0, tabsize=8):
+    r"""Predict the position after print the given text in the terminal (GNOME terminal).
+
+    Parameters
+    ----------
+    text : str
+        The string to print.
+    width : int
+        The width of terminal.
+    x : int, optional
+        The initial position before printing.
+    tabsize : int, optional
+        The tab size of terminal.
+
+    Returns
+    -------
+    x : int
+    y : int
+        The final position after printing.
+    """
     y = 0
 
     for ch, w in wcb.parse_attr(text):

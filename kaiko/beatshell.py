@@ -171,63 +171,6 @@ def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
 
     return raw if partial else raw + " "
 
-def pmove(width, x, text, tabsize=8):
-    r"""Predict the position after print the given text in the terminal (GNOME terminal).
-
-    Parameters
-    ----------
-    with : int
-        The with of terminal.
-    x : int
-        The initial position before printing.
-    text : str
-        The string to print.
-    tabsize : int, optional
-        The tab size of terminal.
-
-    Returns
-    -------
-    x : int
-    y : int
-        The final position after printing.
-    """
-    y = 0
-
-    for ch, w in wcb.parse_attr(text):
-        if ch == "\t":
-            if tabsize > 0 and x < width:
-                x = min((x+1) // -tabsize * -tabsize, width-1)
-
-        elif ch == "\b":
-            x = max(min(x, width-1)-1, 0)
-
-        elif ch == "\r":
-            x = 0
-
-        elif ch == "\n":
-            y += 1
-            x = 0
-
-        elif ch == "\v":
-            y += 1
-
-        elif ch == "\f":
-            y += 1
-
-        elif ch == "\x00":
-            pass
-
-        elif ch[0] == "\x1b":
-            pass
-
-        else:
-            x += w
-            if x > width:
-                y += 1
-                x = w
-
-    return x, y
-
 
 class BeatShellSettings(cfg.Configurable):
     class input(cfg.Configurable):
@@ -252,7 +195,6 @@ class BeatShellSettings(cfg.Configurable):
         }
 
     class prompt(cfg.Configurable):
-        framerate: float = 60.0
         t0: float = 0.0
         tempo: float = 130.0
 
@@ -423,26 +365,21 @@ class BeatInput:
             settings = BeatShellSettings()
 
         input_knot, controller = engines.Controller.create(engines.ControllerSettings())
+        display_knot, renderer = engines.Renderer.create(engines.RendererSettings())
         stroke = BeatStroke(self, settings.input.keymap)
         prompt = BeatPrompt(stroke, self, settings)
 
         stroke.register(controller)
-        display_knot = dn.show(prompt.output_handler(), 1/settings.prompt.framerate, hide_cursor=True)
+        prompt.register(renderer)
 
-        # `dn.show`, `dn.input` will fight each other...
         @dn.datanode
-        def slow(dt=0.1):
-            import time
-            try:
+        def stop_when(event):
+            yield
+            yield
+            while not event.is_set():
                 yield
-                prompt.ref_time = time.time()
-                yield
-                while True:
-                    yield
-            finally:
-                time.sleep(dt)
 
-        return dn.pipe(input_knot, slow(), display_knot)
+        return dn.pipe(stop_when(prompt.stop_event), display_knot, input_knot)
 
     @locked
     @onstate(INPUT_STATE.FIN)
@@ -1203,18 +1140,20 @@ class BeatPrompt:
 
         self.input = input
         self.settings = settings
-        self.ref_time = None
+        self.stop_event = threading.Event()
         self.t0 = None
         self.tempo = None
 
+    def register(self, renderer):
+        renderer.add_drawer(self.output_handler())
+
     @dn.datanode
     def output_handler(self):
-        size_node = dn.terminal_size()
         header_node = self.header_node()
         hint_node = self.hint_node()
         render_node = self.render_node()
-        with size_node, header_node, hint_node, render_node:
-            yield
+        with header_node, hint_node, render_node:
+            (view, msg), time, width = yield
             while True:
                 # obtain input state
                 with self.input.lock:
@@ -1228,41 +1167,36 @@ class BeatPrompt:
                     hint = self.input.hint
                     state = self.input.state
 
-                size = size_node.send()
-
                 # draw hint
-                msg_data = hint_node.send(hint)
+                msg = hint_node.send(hint)
 
                 # draw header
-                header_data = header_node.send(clean)
+                header_data = header_node.send((clean, time))
 
                 # draw text
                 text_data = self.render_text(buffer, tokens, typeahead, pos, highlighted, clean)
 
                 # render
-                output_text = render_node.send((header_data, text_data, msg_data, size))
+                view = render_node.send((view, width, header_data, text_data))
 
-                yield output_text
+                (view, msg), time, width = yield (view, msg)
 
                 # end
-                if state == INPUT_STATE.FIN:
-                    return
+                if state == INPUT_STATE.FIN and not self.stop_event.is_set():
+                    self.stop_event.set()
 
     @dn.datanode
     def header_node(self):
-        framerate = self.settings.prompt.framerate
-
         headers = self.settings.prompt.headers
 
         caret_attr = self.settings.prompt.caret_attr
         caret_blink_ratio = self.settings.prompt.caret_blink_ratio
 
-        clean = yield
+        clean, time = yield
         self.t0 = self.settings.prompt.t0
         self.tempo = self.settings.prompt.tempo
 
-        n = 0
-        t = (self.ref_time - self.t0)/(60/self.tempo)
+        t = (0 - self.t0)/(60/self.tempo)
         tr = t // 1
         while True:
             # don't blink while key pressing
@@ -1285,9 +1219,8 @@ class BeatPrompt:
             ind = int(t / 4 * len(headers) // 1) % len(headers)
             header = headers[ind]
 
-            clean = yield header, caret
-            n += 1
-            t = (self.ref_time - self.t0 + n/framerate)/(60/self.tempo)
+            clean, time = yield header, caret
+            t = (time - self.t0)/(60/self.tempo)
 
     @dn.datanode
     def hint_node(self):
@@ -1396,13 +1329,10 @@ class BeatPrompt:
         input_ran = slice(header_width, None)
 
         input_offset = 0
-        output_text = None
+
+        view, width, (header, caret), (text, typeahead, caret_pos) = yield
 
         while True:
-            (header, caret), (text, typeahead, caret_pos), msg, size = yield output_text
-            width = size.columns
-            view = wcb.newwin1(width)
-
             # adjust input offset
             input_width = len(range(width)[input_ran])
             _, solid_text_width = wcb.textrange1(0, text)
@@ -1431,11 +1361,4 @@ class BeatPrompt:
                 caret_ran = wcb.select1(view, width, slice(caret_x, caret_x+1))
                 view[caret_ran.start] = caret(view[caret_ran.start])
 
-            # print message
-            if msg is None:
-                output_text = "\r\x1b[K" + "".join(view).rstrip() + "\r"
-            elif msg == "":
-                output_text = "\r\x1b[J" + "".join(view).rstrip() + "\r"
-            else:
-                _, y = pmove(width, 0, msg)
-                output_text = "\r\x1b[J" + "".join(view).rstrip() + "\r" + msg + f"\x1b[{y}A"
+            view, width, (header, caret), (text, typeahead, caret_pos) = yield view

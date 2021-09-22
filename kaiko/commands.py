@@ -585,7 +585,7 @@ class SubCommandParser(CommandParser):
         return desc_options(self.fields)
 
     def info(self, token):
-        return self.getcmddesc(self.parent, token)
+        return getcmddesc(self.parent, token)
 
 
 def getcmd(obj, name):
