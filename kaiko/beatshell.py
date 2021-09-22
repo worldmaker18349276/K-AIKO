@@ -319,7 +319,9 @@ class BeatInput:
     typeahead : str
         The type ahead of input.
     tokens : list
-        The list of token info, which is yielded by `shlexer_tokenize`.
+        The tokens info, which is a list of tuple `(token, type, mask, ignored)`,
+        where `type` is TOKEN_TYPE or None, and the rest are the same as the
+        values yielded by `shlexer_tokenize`.
     lex_state : SHLEXER_STATE
         The shlexer state.
     highlighted : int or None
@@ -451,7 +453,7 @@ class BeatInput:
             tokens.append((token, mask, ignored))
 
         types, _ = self.command.parse_command(token for token, _, _ in tokens)
-        types.extend([TOKEN_TYPE.UNKNOWN]*(len(tokens) - len(types)))
+        types.extend([None]*(len(tokens) - len(types)))
         self.tokens = [(token, type, mask, ignored) for (token, mask, ignored), type in zip(tokens, types)]
         return True
 
@@ -646,7 +648,7 @@ class BeatInput:
 
         parents = [token for token, _, _, _ in self.tokens[:index]]
 
-        if token_type == TOKEN_TYPE.UNKNOWN:
+        if token_type is None:
             msg = self.command.desc_command(parents)
             hint_type = InputWarn
         else:
@@ -1286,7 +1288,7 @@ class BeatPrompt:
                 rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], escape_attr)
 
             # render unknown token
-            if type is TOKEN_TYPE.UNKNOWN:
+            if type is None:
                 if mask.stop is not None or clean:
                     for index in indices[mask]:
                         rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_unknown_attr)

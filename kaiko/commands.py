@@ -89,7 +89,6 @@ class TOKEN_TYPE(Enum):
     COMMAND = "command"
     ARGUMENT = "argument"
     KEYWORD = "keyword"
-    UNKNOWN = "unknown"
 
 
 def desc_options(options):
