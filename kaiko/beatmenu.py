@@ -20,7 +20,7 @@ from . import wcbuffers as wcb
 from . import biparsers as bp
 from . import commands as cmd
 from .engines import Mixer, MixerSettings
-from .beatshell import BeatShellSettings, BeatInput
+from .beatshell import BeatShellSettings, BeatInput, InputError
 from .beatmap import BeatmapPlayer, GameplaySettings
 from .beatsheet import BeatSheet, BeatmapParseError
 from . import beatanalyzer
@@ -283,16 +283,16 @@ class KAIKOMenu:
                     input = BeatInput(game)
                     while True:
                         # parse command
-                        prompt_knot, prompt = input.prompt()
+                        prompt_knot = input.prompt()
                         dn.exhaust(prompt_knot, dt, interruptible=True, sync_to=bgm_knot)
 
                         # execute result
-                        if isinstance(prompt.result, Exception):
+                        if isinstance(input.result, InputError):
                             with logger.warn():
-                                logger.print(prompt.result)
+                                logger.print(input.result.value)
                             input.prev_session()
                         else:
-                            game.run_command(prompt.result, dt, bgm_knot)
+                            game.run_command(input.result.value, dt, bgm_knot)
                             input.new_session()
 
 

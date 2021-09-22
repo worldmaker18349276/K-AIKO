@@ -229,6 +229,91 @@ def pmove(width, x, text, tabsize=8):
     return x, y
 
 
+class BeatShellSettings(cfg.Configurable):
+    class input(cfg.Configurable):
+        keymap = {
+            "Backspace"     : lambda input: input.backspace(),
+            "Delete"        : lambda input: input.delete(),
+            "Left"          : lambda input: input.move_left(),
+            "Right"         : lambda input: input.insert_typeahead() or input.move_right(),
+            "Up"            : lambda input: input.prev(),
+            "Down"          : lambda input: input.next(),
+            "Home"          : lambda input: input.move_to_start(),
+            "End"           : lambda input: input.move_to_end(),
+            "Enter"         : lambda input: input.enter(),
+            "Esc"           : lambda input: (input.cancel_typeahead(), input.cancel_hint(), input.autocomplete(0)),
+            "Alt_Enter"     : lambda input: input.help(),
+            "Ctrl_Left"     : lambda input: input.move_to_word_start(),
+            "Ctrl_Right"    : lambda input: input.move_to_word_end(),
+            "Ctrl_Backspace": lambda input: input.delete_to_word_start(),
+            "Ctrl_Delete"   : lambda input: input.delete_to_word_end(),
+            "Tab"           : lambda input: input.autocomplete(+1),
+            "Shift_Tab"     : lambda input: input.autocomplete(-1),
+        }
+
+    class prompt(cfg.Configurable):
+        framerate: float = 60.0
+        t0: float = 0.0
+        tempo: float = 130.0
+
+        headers: List[str] = [
+            "\x1b[96;1m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;255m❯ \x1b[m",
+            "\x1b[96;1m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;255m❯ \x1b[m",
+            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;254m❯ \x1b[m",
+            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;254m❯ \x1b[m",
+            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;253m❯ \x1b[m",
+            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;253m❯ \x1b[m",
+            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;252m❯ \x1b[m",
+            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;252m❯ \x1b[m",
+
+            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;251m❯ \x1b[m",
+            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;251m❯ \x1b[m",
+            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;250m❯ \x1b[m",
+            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;250m❯ \x1b[m",
+            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;249m❯ \x1b[m",
+            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;249m❯ \x1b[m",
+            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;248m❯ \x1b[m",
+            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;248m❯ \x1b[m",
+
+            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;247m❯ \x1b[m",
+            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;247m❯ \x1b[m",
+            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;246m❯ \x1b[m",
+            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;246m❯ \x1b[m",
+            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;245m❯ \x1b[m",
+            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;245m❯ \x1b[m",
+            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;244m❯ \x1b[m",
+            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;244m❯ \x1b[m",
+
+            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;243m❯ \x1b[m",
+            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;243m❯ \x1b[m",
+            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;242m❯ \x1b[m",
+            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;242m❯ \x1b[m",
+            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;241m❯ \x1b[m",
+            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;241m❯ \x1b[m",
+            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;240m❯ \x1b[m",
+            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;240m❯ \x1b[m",
+        ]
+        header_width: int = 7
+
+        caret_attr: Tuple[str, str] = ("7;2", "7;1")
+        caret_blink_ratio: float = 0.3
+
+    class text(cfg.Configurable):
+        error_message_attr: str = "31"
+        info_message_attr: str = "2"
+        message_max_lines: int = 16
+
+        escape_attr: str = "2"
+        typeahead_attr: str = "2"
+        whitespace: str = "\x1b[2m⌴\x1b[m"
+
+        token_unknown_attr: str = "31"
+        token_command_attr: str = "94"
+        token_keyword_attr: str = "95"
+        token_argument_attr: str = "92"
+        token_highlight_attr: str = "4"
+
+
 class InputWarn:
     def __init__(self, message, tokens):
         self.message = message
@@ -305,6 +390,15 @@ class BeatInput:
         The input state.
     """
     def __init__(self, promptable, history=None):
+        r"""Constructor.
+
+        Parameters
+        ----------
+        promptable : object
+            The root command.
+        history : list of str
+            The input history.
+        """
         self.command = RootCommandParser(promptable)
         self.history = history if history is not None else []
         self.lock = threading.RLock()
@@ -313,6 +407,18 @@ class BeatInput:
         self.new_session(False)
 
     def prompt(self, settings=None):
+        r"""Start prompt.
+
+        Parameters
+        ----------
+        settings : BeatShellSettings, optional
+            The settings of beatshell.
+
+        Returns
+        -------
+        prompt_knot : dn.DataNode
+            The datanode to execute the prompt.
+        """
         if settings is None:
             settings = BeatShellSettings()
 
@@ -336,12 +442,18 @@ class BeatInput:
             finally:
                 time.sleep(dt)
 
-        prompt_knot = dn.pipe(input_knot, slow(), display_knot)
-        return prompt_knot, prompt
+        return dn.pipe(input_knot, slow(), display_knot)
 
     @locked
     @onstate(INPUT_STATE.FIN)
     def new_session(self, record_current=True):
+        r"""Start a new session of input.
+
+        Parameters
+        ----------
+        record_current : bool, optional
+            Recording current input state.
+        """
         if record_current:
             self.history.append("".join(self.buffer))
 
@@ -364,12 +476,20 @@ class BeatInput:
     @locked
     @onstate(INPUT_STATE.FIN)
     def prev_session(self):
+        r"""Back to previous session of input."""
+        self.highlighted = None
         self.result = None
         self.state = INPUT_STATE.EDIT
 
     @locked
     @onstate(INPUT_STATE.EDIT)
     def finish(self):
+        r"""Finish this session of input.
+
+        Returns
+        -------
+        succ : bool
+        """
         self.state = INPUT_STATE.FIN
         return True
 
@@ -1010,6 +1130,12 @@ class BeatInput:
     @locked
     @onstate(INPUT_STATE.TAB)
     def finish_autocomplete(self):
+        r"""Finish autocompletion.
+
+        Returns
+        -------
+        succ : bool
+        """
         del self._original_buffer
         del self._original_pos
         del self._selection
@@ -1025,6 +1151,12 @@ class BeatStroke:
         self.key_event = threading.Event()
 
     def register(self, controller):
+        r"""Register handler to the given controller.
+
+        Parameters
+        ----------
+        controller : engines.Controller
+        """
         controller.add_handler(self.keypress_handler())
         controller.add_handler(self.finish_autocomplete_handler())
         for key, func in self.keymap.items():
@@ -1055,100 +1187,22 @@ class BeatStroke:
                     self.finish()
         return handler
 
-
-class BeatShellSettings(cfg.Configurable):
-    class input(cfg.Configurable):
-        keymap = {
-            "Backspace"     : lambda input: input.backspace(),
-            "Delete"        : lambda input: input.delete(),
-            "Left"          : lambda input: input.move_left(),
-            "Right"         : lambda input: input.insert_typeahead() or input.move_right(),
-            "Up"            : lambda input: input.prev(),
-            "Down"          : lambda input: input.next(),
-            "Home"          : lambda input: input.move_to_start(),
-            "End"           : lambda input: input.move_to_end(),
-            "Enter"         : lambda input: input.enter(),
-            "Esc"           : lambda input: (input.cancel_typeahead(), input.cancel_hint(), input.autocomplete(0)),
-            "Alt_Enter"     : lambda input: input.help(),
-            "Ctrl_Left"     : lambda input: input.move_to_word_start(),
-            "Ctrl_Right"    : lambda input: input.move_to_word_end(),
-            "Ctrl_Backspace": lambda input: input.delete_to_word_start(),
-            "Ctrl_Delete"   : lambda input: input.delete_to_word_end(),
-            "Tab"           : lambda input: input.autocomplete(+1),
-            "Shift_Tab"     : lambda input: input.autocomplete(-1),
-        }
-
-    class prompt(cfg.Configurable):
-        framerate: float = 60.0
-        t0: float = 0.0
-        tempo: float = 130.0
-
-        headers: List[str] = [
-            "\x1b[96;1m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;255m❯ \x1b[m",
-            "\x1b[96;1m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;255m❯ \x1b[m",
-            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;254m❯ \x1b[m",
-            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;254m❯ \x1b[m",
-            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;253m❯ \x1b[m",
-            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;253m❯ \x1b[m",
-            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;252m❯ \x1b[m",
-            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;252m❯ \x1b[m",
-
-            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;251m❯ \x1b[m",
-            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;251m❯ \x1b[m",
-            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;250m❯ \x1b[m",
-            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;250m❯ \x1b[m",
-            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;249m❯ \x1b[m",
-            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;249m❯ \x1b[m",
-            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;248m❯ \x1b[m",
-            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;248m❯ \x1b[m",
-
-            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;247m❯ \x1b[m",
-            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;247m❯ \x1b[m",
-            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;246m❯ \x1b[m",
-            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;246m❯ \x1b[m",
-            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;245m❯ \x1b[m",
-            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;245m❯ \x1b[m",
-            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;244m❯ \x1b[m",
-            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;244m❯ \x1b[m",
-
-            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;243m❯ \x1b[m",
-            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;243m❯ \x1b[m",
-            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;242m❯ \x1b[m",
-            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;242m❯ \x1b[m",
-            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;241m❯ \x1b[m",
-            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;241m❯ \x1b[m",
-            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;240m❯ \x1b[m",
-            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;240m❯ \x1b[m",
-        ]
-        header_width: int = 7
-
-        caret_attr: Tuple[str, str] = ("7;2", "7;1")
-        caret_blink_ratio: float = 0.3
-
-    class text(cfg.Configurable):
-        error_message_attr: str = "31"
-        info_message_attr: str = "2"
-        message_max_lines: int = 16
-
-        escape_attr: str = "2"
-        typeahead_attr: str = "2"
-        whitespace: str = "\x1b[2m⌴\x1b[m"
-
-        token_unknown_attr: str = "31"
-        token_command_attr: str = "94"
-        token_keyword_attr: str = "95"
-        token_argument_attr: str = "92"
-        token_highlight_attr: str = "4"
-
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
     def __init__(self, stroke, input, settings):
+        r"""Constructor.
+
+        Parameters
+        ----------
+        stroke : BeatStroke
+        input : BeatInput
+        settings : BeatShellSettings
+        """
         self.stroke = stroke
 
         self.input = input
         self.settings = settings
-        self.result = None
         self.ref_time = None
         self.t0 = None
         self.tempo = None
@@ -1170,7 +1224,7 @@ class BeatPrompt:
                     highlighted = self.input.highlighted
 
                     typeahead = self.input.typeahead
-                    result = self.input.result
+                    clean = self.input.result is not None
                     hint = self.input.hint
                     state = self.input.state
 
@@ -1180,7 +1234,6 @@ class BeatPrompt:
                 msg_data = hint_node.send(hint)
 
                 # draw header
-                clean = result is not None
                 header_data = header_node.send(clean)
 
                 # draw text
@@ -1193,8 +1246,6 @@ class BeatPrompt:
 
                 # end
                 if state == INPUT_STATE.FIN:
-                    self.result = result.value
-                    self.input.clear_result()
                     return
 
     @dn.datanode
