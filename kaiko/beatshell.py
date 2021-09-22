@@ -697,6 +697,11 @@ class BeatInput:
             return True
 
     @locked
+    def unknown_key(self, key):
+        self.set_result(InputError, ValueError(f"Unknown key: " + key), None)
+        self.finish()
+
+    @locked
     @onstate(INPUT_STATE.EDIT)
     def input(self, text):
         """Input.
@@ -1117,11 +1122,9 @@ class BeatStroke:
         keys = list(keymap.keys())
         keys.append("PRINTABLE")
         def handler(args):
-            _, _, key, _ = args
+            _, _, key, code = args
             if key not in keys:
-                with self.input.lock:
-                    self.input.set_result(InputError, ValueError(f"Unknown key: " + repr(key or code)), None)
-                    self.finish()
+                self.input.unknown_key(key or repr(code))
         return handler
 
 class BeatPrompt:
