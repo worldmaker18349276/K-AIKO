@@ -1259,7 +1259,6 @@ class BeatPrompt:
                 msg = wcb.add_attr(msg, error_message_attr)
             if isinstance(hint, (InputWarn, InputMessage)):
                 msg = wcb.add_attr(msg, info_message_attr)
-        msg = "\n" + msg + "\n" if msg else "\n"
 
         return msg
 

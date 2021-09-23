@@ -136,7 +136,7 @@ def eof(text, index, optional=False):
         If the decoding fails.
     """
     if index == len(text):
-        return True, start
+        return True, index
     else:
         if optional:
             return False, index
@@ -170,6 +170,10 @@ def startswith(prefixes, text, index, optional=False, partial=True):
     DecodeError
         If the decoding fails.
     """
+    if not prefixes:
+        if optional:
+            return "", index
+        raise DecodeError(text, index, [])
     regex = re.compile("|".join(re.escape(prefix) for prefix in sorted(prefixes, reverse=True)))
     m = regex.match(text, index)
     if not m:
