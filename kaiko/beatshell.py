@@ -350,12 +350,14 @@ class BeatInput:
 
         self.new_session(False)
 
-    def prompt(self, settings=None):
+    def prompt(self, devices_settings, settings):
         r"""Start prompt.
 
         Parameters
         ----------
-        settings : BeatShellSettings, optional
+        devices_settings : DevicesSettings
+            The settings of devices.
+        settings : BeatShellSettings
             The settings of beatshell.
 
         Returns
@@ -366,8 +368,8 @@ class BeatInput:
         if settings is None:
             settings = BeatShellSettings()
 
-        input_knot, controller = engines.Controller.create(engines.ControllerSettings())
-        display_knot, renderer = engines.Renderer.create(engines.RendererSettings())
+        input_knot, controller = engines.Controller.create(devices_settings.controller)
+        display_knot, renderer = engines.Renderer.create(devices_settings.renderer)
         stroke = BeatStroke(self, settings.input.keymap)
         prompt = BeatPrompt(stroke, self, settings)
 

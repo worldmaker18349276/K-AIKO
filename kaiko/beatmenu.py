@@ -19,7 +19,7 @@ from . import config as cfg
 from . import wcbuffers as wcb
 from . import biparsers as bp
 from . import commands as cmd
-from .engines import Mixer, MixerSettings
+from .engines import Mixer, MixerSettings, DetectorSettings, RendererSettings, ControllerSettings
 from .beatshell import BeatShellSettings, BeatInput, InputError
 from .beatmap import BeatmapPlayer, GameplaySettings
 from .beatsheet import BeatSheet, BeatmapParseError
@@ -187,8 +187,15 @@ class KAIKOMenuSettings(cfg.Configurable):
 
     best_screen_size: int = 80
 
+class DevicesSettings(cfg.Configurable):
+    mixer = MixerSettings
+    detector = DetectorSettings
+    renderer = RendererSettings
+    controller = ControllerSettings
+
 class KAIKOSettings(cfg.Configurable):
     menu = KAIKOMenuSettings
+    devices = DevicesSettings
     shell = BeatShellSettings
     gameplay = GameplaySettings
 
@@ -256,34 +263,34 @@ class KAIKOMenu:
     @staticmethod
     def main():
         try:
-            with KAIKOMenu.init() as game:
-                logger = game.logger
+            with KAIKOMenu.init() as menu:
+                logger = menu.logger
                 dt = 0.01
 
                 # fit screen size
-                fit_screen(logger, game.settings.menu.best_screen_size)
+                fit_screen(logger, menu.settings.menu.best_screen_size)
 
                 # load songs
-                game.reload()
+                menu.reload()
 
                 # execute given command
                 if len(sys.argv) > 1:
-                    result = cmd.RootCommand(game).build(sys.argv[1:])()
-                    game.run_command(result, dt)
+                    result = cmd.RootCommand(menu).build(sys.argv[1:])()
+                    menu.run_command(result, dt)
                     return
 
                 # load mixer
-                with game.bgm_controller.load_bgm(game.manager) as bgm_knot:
+                with menu.bgm_controller.load_bgm(menu.manager) as bgm_knot:
                     # tips
                     logger.print(f"Use {logger.emph('Tab')} to autocomplete command.", prefix="hint")
                     logger.print(f"If you need help, press {logger.emph('Alt+Enter')}.", prefix="hint")
                     logger.print()
 
                     # prompt
-                    input = BeatInput(game)
+                    input = BeatInput(menu)
                     while True:
                         # parse command
-                        prompt_knot = input.prompt()
+                        prompt_knot = input.prompt(menu.settings.devices, menu.settings.shell)
                         dn.exhaust(prompt_knot, dt, interruptible=True, sync_to=bgm_knot)
 
                         # execute result
@@ -292,7 +299,7 @@ class KAIKOMenu:
                                 logger.print(input.result.value)
                             input.prev_session()
                         else:
-                            game.run_command(input.result.value, dt, bgm_knot)
+                            menu.run_command(input.result.value, dt, bgm_knot)
                             input.new_session()
 
 
@@ -532,7 +539,8 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
              songs folder can be accessed.
         """
 
-        return KAIKOPlay(self.user.data_dir, self.user.songs_dir / beatmap, self.settings.gameplay, self.logger)
+        return KAIKOPlay(self.user.data_dir, self.user.songs_dir / beatmap,
+                         self.settings.devices, self.settings.gameplay, self.logger)
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
@@ -551,9 +559,9 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         if pa_device == -1:
             pa_device = self.manager.get_default_input_device_info()['index']
         if pa_samplerate is None:
-            pa_samplerate = self.settings.gameplay.detector.input_samplerate
+            pa_samplerate = self.settings.devices.detector.input_samplerate
         if pa_channels is None:
-            pa_channels = self.settings.gameplay.detector.input_channels
+            pa_channels = self.settings.devices.detector.input_channels
 
         pa_format = {
             'f4': pyaudio.paFloat32,
@@ -561,7 +569,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             'i2': pyaudio.paInt16,
             'i1': pyaudio.paInt8,
             'u1': pyaudio.paUInt8,
-        }[format or self.settings.gameplay.detector.input_format]
+        }[format or self.settings.devices.detector.input_format]
 
         try:
             self.manager.is_format_supported(pa_samplerate,
@@ -573,13 +581,13 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
                 logger.print(info)
 
         else:
-            self.settings.gameplay.detector.input_device = device
+            self.settings.devices.detector.input_device = device
             if samplerate is not None:
-                self.settings.gameplay.detector.input_samplerate = samplerate
+                self.settings.devices.detector.input_samplerate = samplerate
             if channels is not None:
-                self.settings.gameplay.detector.input_channels = channels
+                self.settings.devices.detector.input_channels = channels
             if format is not None:
-                self.settings.gameplay.detector.input_format = format
+                self.settings.devices.detector.input_format = format
 
     @cmd.function_command
     def audio_output(self, device, samplerate=None, channels=None, format=None):
@@ -592,9 +600,9 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         if pa_device == -1:
             pa_device = self.manager.get_default_output_device_info()['index']
         if pa_samplerate is None:
-            pa_samplerate = self.settings.gameplay.mixer.output_samplerate
+            pa_samplerate = self.settings.devices.mixer.output_samplerate
         if pa_channels is None:
-            pa_channels = self.settings.gameplay.mixer.output_channels
+            pa_channels = self.settings.devices.mixer.output_channels
 
         pa_format = {
             'f4': pyaudio.paFloat32,
@@ -602,7 +610,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
             'i2': pyaudio.paInt16,
             'i1': pyaudio.paInt8,
             'u1': pyaudio.paUInt8,
-        }[format or self.settings.gameplay.mixer.output_format]
+        }[format or self.settings.devices.mixer.output_format]
 
         try:
             self.manager.is_format_supported(pa_samplerate,
@@ -614,13 +622,13 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
                 logger.print(info)
 
         else:
-            self.settings.gameplay.mixer.output_device = device
+            self.settings.devices.mixer.output_device = device
             if samplerate is not None:
-                self.settings.gameplay.mixer.output_samplerate = samplerate
+                self.settings.devices.mixer.output_samplerate = samplerate
             if channels is not None:
-                self.settings.gameplay.mixer.output_channels = channels
+                self.settings.devices.mixer.output_channels = channels
             if format is not None:
-                self.settings.gameplay.mixer.output_format = format
+                self.settings.devices.mixer.output_format = format
 
     @audio_input.arg_parser("device")
     def _audio_input_device_parser(self):
@@ -982,7 +990,7 @@ class KAIKOBGMController:
 
     def load_bgm(self, manager):
         try:
-            knot, mixer = Mixer.create(self.config.current.gameplay.mixer, manager)
+            knot, mixer = Mixer.create(self.config.current.devices.mixer, manager)
 
         except Exception:
             with self.logger.warn():
@@ -1096,9 +1104,10 @@ class BGMCommand:
 
 
 class KAIKOPlay:
-    def __init__(self, data_dir, filepath, settings, logger):
+    def __init__(self, data_dir, filepath, devices_settings, settings, logger):
         self.data_dir = data_dir
         self.filepath = filepath
+        self.devices_settings = devices_settings
         self.settings = settings
         self.logger = logger
 
@@ -1115,7 +1124,7 @@ class KAIKOPlay:
                 logger.print(traceback.format_exc(), end="")
 
         else:
-            game = BeatmapPlayer(self.data_dir, beatmap, self.settings)
+            game = BeatmapPlayer(self.data_dir, beatmap, self.devices_settings, self.settings)
             game.execute(manager)
 
             logger.print()

@@ -8,7 +8,7 @@ from collections import OrderedDict
 from fractions import Fraction
 import numpy
 import audioread
-from .engines import Mixer, MixerSettings, Detector, DetectorSettings, Renderer, RendererSettings
+from .engines import Mixer, Detector, Renderer
 from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings
 from . import config as cfg
 from . import datanodes as dn
@@ -723,8 +723,8 @@ class WidgetManager:
     def spectrum(field):
         attr = field.settings.widgets.spectrum.attr
         spec_width = field.settings.widgets.spectrum.spec_width
-        samplerate = field.settings.mixer.output_samplerate
-        nchannels = field.settings.mixer.output_channels
+        samplerate = field.devices_settings.mixer.output_samplerate
+        nchannels = field.devices_settings.mixer.output_channels
         hop_length = round(samplerate * field.settings.widgets.spectrum.spec_time_res)
         win_length = round(samplerate / field.settings.widgets.spectrum.spec_freq_res)
         spec_decay_time = field.settings.widgets.spectrum.spec_decay_time
@@ -776,8 +776,8 @@ class WidgetManager:
     def volume_indicator(field):
         attr = field.settings.widgets.volume_indicator.attr
         vol_decay_time = field.settings.widgets.volume_indicator.vol_decay_time
-        buffer_length = field.settings.mixer.output_buffer_length
-        samplerate = field.settings.mixer.output_samplerate
+        buffer_length = field.devices_settings.mixer.output_buffer_length
+        samplerate = field.devices_settings.mixer.output_samplerate
 
         decay = buffer_length / samplerate / vol_decay_time
 
@@ -922,9 +922,6 @@ class WidgetManager:
 
 
 class GameplaySettings(cfg.Configurable):
-    mixer = MixerSettings
-    detector = DetectorSettings
-    renderer = RendererSettings
     beatbar = BeatbarSettings
 
     class controls(cfg.Configurable):
@@ -963,9 +960,10 @@ class GameplaySettings(cfg.Configurable):
             meter_tolerance: float = 0.10
 
 class BeatmapPlayer:
-    def __init__(self, data_dir, beatmap, settings=None):
+    def __init__(self, data_dir, beatmap, devices_settings, settings=None):
         self.data_dir = data_dir
         self.beatmap = beatmap
+        self.devices_settings = devices_settings
         self.settings = settings or GameplaySettings()
 
     def prepare(self, output_samplerate, output_nchannels):
@@ -991,8 +989,8 @@ class BeatmapPlayer:
     @contextlib.contextmanager
     def execute(self, manager):
         tickrate = self.settings.controls.tickrate
-        samplerate = self.settings.mixer.output_samplerate
-        nchannels = self.settings.mixer.output_channels
+        samplerate = self.devices_settings.mixer.output_samplerate
+        nchannels = self.devices_settings.mixer.output_channels
         time_shift = self.prepare(samplerate, nchannels)
         load_time = self.settings.controls.load_time
         ref_time = load_time + time_shift
@@ -1000,9 +998,9 @@ class BeatmapPlayer:
         bar_shift = self.beatmap.bar_shift
         bar_flip = self.beatmap.bar_flip
 
-        mixer_knot, mixer = Mixer.create(self.settings.mixer, manager, ref_time)
-        detector_knot, detector = Detector.create(self.settings.detector, manager, ref_time)
-        renderer_knot, renderer = Renderer.create(self.settings.renderer, ref_time)
+        mixer_knot, mixer = Mixer.create(self.devices_settings.mixer, manager, ref_time)
+        detector_knot, detector = Detector.create(self.devices_settings.detector, manager, ref_time)
+        renderer_knot, renderer = Renderer.create(self.devices_settings.renderer, ref_time)
         beatbar_knot = dn.pipe(mixer_knot, detector_knot, renderer_knot)
 
         self.beatbar = Beatbar.create(self.settings.beatbar, mixer, detector, renderer, bar_shift, bar_flip)
