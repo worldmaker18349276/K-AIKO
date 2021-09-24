@@ -1126,14 +1126,14 @@ class BeatStroke:
         """
         controller.add_handler(self.keypress_handler())
 
-        controller.add_handler(self.confirm_handler(), self.settings.confirm_key)
-        controller.add_handler(self.help_handler(), self.settings.help_key)
-        controller.add_handler(self.autocomplete_handler(self.settings.autocomplete_keys))
+        controller.add_handler(self.autocomplete_handler(self.settings.autocomplete_keys, self.settings.help_key))
+        controller.add_handler(self.printable_handler(), "PRINTABLE")
 
         for key, func in self.settings.keymap.items():
             controller.add_handler(self.action_handler(func), key)
 
-        controller.add_handler(self.printable_handler(), "PRINTABLE")
+        controller.add_handler(self.help_handler(), self.settings.help_key)
+        controller.add_handler(self.confirm_handler(), self.settings.confirm_key)
         controller.add_handler(self.unknown_handler(self.settings))
 
     def keypress_handler(self):
@@ -1145,7 +1145,7 @@ class BeatStroke:
     def help_handler(self):
         return lambda args: self.input.help()
 
-    def autocomplete_handler(self, keys):
+    def autocomplete_handler(self, keys, help_key):
         def handler(args):
             key = args[2]
             if key == keys[0]:
@@ -1154,7 +1154,7 @@ class BeatStroke:
                 self.input.autocomplete(-1)
             elif key == keys[2]:
                 self.input.autocomplete(0)
-            else:
+            elif key != help_key:
                 self.input.finish_autocomplete()
         return handler
 
