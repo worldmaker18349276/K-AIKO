@@ -383,7 +383,7 @@ class BeatInput:
             while not event.is_set():
                 yield
 
-        return dn.pipe(stop_when(prompt.stop_event), display_knot, input_knot)
+        return dn.pipe(stop_when(prompt.fin_event), display_knot, input_knot)
 
     @locked
     @onstate(INPUT_STATE.FIN)
@@ -1147,7 +1147,7 @@ class BeatPrompt:
 
         self.input = input
         self.settings = settings
-        self.stop_event = threading.Event()
+        self.fin_event = threading.Event()
         self.t0 = None
         self.tempo = None
 
@@ -1157,12 +1157,13 @@ class BeatPrompt:
     @dn.datanode
     def output_handler(self):
         header_node = self.header_node()
+        text_node = self.text_node()
         hint_node = self.hint_node()
         render_node = self.render_node()
-        with header_node, hint_node, render_node:
+        with header_node, text_node, hint_node, render_node:
             (view, msg), time, width = yield
             while True:
-                # obtain input state
+                # extract input state
                 with self.input.lock:
                     buffer = list(self.input.buffer)
                     tokens = list(self.input.tokens)
@@ -1174,34 +1175,51 @@ class BeatPrompt:
                     hint = self.input.hint
                     state = self.input.state
 
-                # draw hint
-                msg = hint_node.send(hint)
-
                 # draw header
                 header_data = header_node.send((clean, time))
 
                 # draw text
-                text_data = self.render_text(buffer, tokens, typeahead, pos, highlighted, clean)
+                text_data = text_node.send((buffer, tokens, typeahead, pos, highlighted, clean))
 
-                # render
+                # draw hint
+                msg = hint_node.send(hint)
+
+                # render view
                 view = render_node.send((view, width, header_data, text_data))
 
                 (view, msg), time, width = yield (view, msg)
 
-                # end
-                if state == INPUT_STATE.FIN and not self.stop_event.is_set():
-                    self.stop_event.set()
+                # fin
+                if state == INPUT_STATE.FIN and not self.fin_event.is_set():
+                    self.fin_event.set()
 
     @dn.datanode
     def header_node(self):
+        r"""The datanode to render header and caret.
+
+        Receives
+        --------
+        clean : bool
+            Render header and caret in the clean style: hide caret.
+        time : float
+            The current time.
+
+        Yields
+        ------
+        header : str
+            The rendered header.
+        caret : function or None
+            The function that add a caret to the text, or None for no caret.
+        """
         headers = self.settings.prompt.headers
 
         caret_attr = self.settings.prompt.caret_attr
         caret_blink_ratio = self.settings.prompt.caret_blink_ratio
 
-        clean, time = yield
         self.t0 = self.settings.prompt.t0
         self.tempo = self.settings.prompt.tempo
+
+        clean, time = yield
 
         t = (0 - self.t0)/(60/self.tempo)
         tr = t // 1
@@ -1230,41 +1248,29 @@ class BeatPrompt:
             t = (time - self.t0)/(60/self.tempo)
 
     @dn.datanode
-    def hint_node(self):
-        current_hint = None
-        hint = yield
-        while True:
-            # track changes of the hint
-            if hint == current_hint:
-                hint = yield None
-                continue
+    def text_node(self):
+        r"""The datanode to render input text.
 
-            current_hint = hint
+        Receives
+        --------
+        buffer : list of str
+        tokens : list
+        typeahead : str
+        pos : int
+        highlighted : int or None
+            See `BeatInput`'s attributes.
+        clean : bool
+            Render text in the clean style: hide type ahead.
 
-            # show hint
-            hint = yield self.render_hint(hint)
-
-    def render_hint(self, hint):
-        if hint is None:
-            return ""
-
-        message_max_lines = self.settings.text.message_max_lines
-        error_message_attr = self.settings.text.error_message_attr
-        info_message_attr = self.settings.text.info_message_attr
-
-        # show hint
-        msg = hint.message or ""
-        if msg.count("\n") >= message_max_lines:
-            msg = "\n".join(msg.split("\n")[:message_max_lines]) + "\x1b[m\n…"
-        if msg:
-            if isinstance(hint, InputWarn):
-                msg = wcb.add_attr(msg, error_message_attr)
-            if isinstance(hint, (InputWarn, InputMessage)):
-                msg = wcb.add_attr(msg, info_message_attr)
-
-        return msg
-
-    def render_text(self, rendered_buffer, tokens, typeahead, pos, highlighted, clean):
+        Yields
+        ------
+        rendered_text : str
+            The rendered input text.
+        rendered_typeahead : str
+            The rendered type ahead.
+        caret_pos : int
+            The position of caret.
+        """
         escape_attr     = self.settings.text.escape_attr
         typeahead_attr  = self.settings.text.typeahead_attr
         whitespace      = self.settings.text.whitespace
@@ -1276,60 +1282,123 @@ class BeatPrompt:
         token_highlight_attr = self.settings.text.token_highlight_attr
 
         # render buffer
-        indices = range(len(rendered_buffer))
+        buffer, tokens, typeahead, pos, highlighted, clean = yield None
+        while True:
+            indices = range(len(buffer))
 
-        for token, type, mask, ignored in tokens:
-            # render whitespace
-            for index in indices[mask]:
-                if rendered_buffer[index] == " ":
-                    rendered_buffer[index] = whitespace
+            for _, type, mask, ignored in tokens:
+                # render whitespace
+                for index in indices[mask]:
+                    if buffer[index] == " ":
+                        buffer[index] = whitespace
 
-            # render escape
-            for index in ignored:
-                rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], escape_attr)
+                # render escape
+                for index in ignored:
+                    buffer[index] = wcb.add_attr(buffer[index], escape_attr)
 
-            # render unknown token
-            if type is None:
-                if mask.stop is not None or clean:
+                # render unknown token
+                if type is None:
+                    if mask.stop is not None or clean:
+                        for index in indices[mask]:
+                            buffer[index] = wcb.add_attr(buffer[index], token_unknown_attr)
+
+                # render command token
+                if type is TOKEN_TYPE.COMMAND:
                     for index in indices[mask]:
-                        rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_unknown_attr)
+                        buffer[index] = wcb.add_attr(buffer[index], token_command_attr)
 
-            # render command token
-            if type is TOKEN_TYPE.COMMAND:
+                # render keyword token
+                elif type is TOKEN_TYPE.KEYWORD:
+                    for index in indices[mask]:
+                        buffer[index] = wcb.add_attr(buffer[index], token_keyword_attr)
+
+                # render argument token
+                elif type is TOKEN_TYPE.ARGUMENT:
+                    for index in indices[mask]:
+                        buffer[index] = wcb.add_attr(buffer[index], token_argument_attr)
+
+            if highlighted in range(len(tokens)):
+                # render highlighted token
+                _, _, mask, _ = tokens[highlighted]
                 for index in indices[mask]:
-                    rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_command_attr)
+                    buffer[index] = wcb.add_attr(buffer[index], token_highlight_attr)
 
-            # render keyword token
-            elif type is TOKEN_TYPE.KEYWORD:
-                for index in indices[mask]:
-                    rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_keyword_attr)
+            rendered_text = "".join(buffer)
 
-            # render argument token
-            elif type is TOKEN_TYPE.ARGUMENT:
-                for index in indices[mask]:
-                    rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_argument_attr)
+            # render typeahead
+            if typeahead and not clean:
+                rendered_typeahead = wcb.add_attr(typeahead, typeahead_attr)
+            else:
+                rendered_typeahead = ""
 
-        if highlighted in range(len(tokens)):
-            # render highlighted token
-            _, _, mask, _ = tokens[highlighted]
-            for index in indices[mask]:
-                rendered_buffer[index] = wcb.add_attr(rendered_buffer[index], token_highlight_attr)
+            # compute caret position
+            _, caret_pos = wcb.textrange1(0, "".join(buffer[:pos]))
 
-        rendered_text = "".join(rendered_buffer)
+            buffer, tokens, typeahead, pos, highlighted, clean = yield rendered_text, rendered_typeahead, caret_pos
 
-        # render typeahead
-        if typeahead and not clean:
-            rendered_typeahead = wcb.add_attr(typeahead, typeahead_attr)
-        else:
-            rendered_typeahead = ""
+    @dn.datanode
+    def hint_node(self):
+        r"""The datanode to render hint.
 
-        # compute caret position
-        _, caret_pos = wcb.textrange1(0, "".join(rendered_buffer[:pos]))
+        Receives
+        --------
+        hint : InputWarn or InputMessage
 
-        return rendered_text, rendered_typeahead, caret_pos
+        Yields
+        ------
+        msg : str
+            The rendered hint.
+        """
+        message_max_lines = self.settings.text.message_max_lines
+        error_message_attr = self.settings.text.error_message_attr
+        info_message_attr = self.settings.text.info_message_attr
+
+        current_hint = None
+        hint = yield
+        while True:
+            # track changes of the hint
+            if hint == current_hint:
+                hint = yield None
+                continue
+
+            current_hint = hint
+
+            if hint is None:
+                hint = yield ""
+                continue
+
+            # show hint
+            msg = hint.message or ""
+            if msg.count("\n") >= message_max_lines:
+                msg = "\n".join(msg.split("\n")[:message_max_lines]) + "\x1b[m\n…"
+            if msg:
+                if isinstance(hint, InputWarn):
+                    msg = wcb.add_attr(msg, error_message_attr)
+                if isinstance(hint, (InputWarn, InputMessage)):
+                    msg = wcb.add_attr(msg, info_message_attr)
+
+            hint = yield msg
 
     @dn.datanode
     def render_node(self):
+        r"""The datanode to render whole view.
+
+        Receives
+        --------
+        view : list of str
+            The buffer of the view.
+        width : int
+            The width of the view.
+        header_data : tuple
+            The values yielded by `header_node`.
+        text_data : tuple
+            The values yielded by `text_node`.
+
+        Yields
+        ------
+        view : list of str
+            The buffer of the rendered view.
+        """
         header_width = self.settings.prompt.header_width
         header_ran = slice(None, header_width)
         input_ran = slice(header_width, None)
