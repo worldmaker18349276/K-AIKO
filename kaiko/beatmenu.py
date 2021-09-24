@@ -282,8 +282,12 @@ class KAIKOMenu:
                 # load mixer
                 with menu.bgm_controller.load_bgm(menu.manager) as bgm_knot:
                     # tips
-                    logger.print(f"Use {logger.emph('Tab')} to autocomplete command.", prefix="hint")
-                    logger.print(f"If you need help, press {logger.emph('Alt+Enter')}.", prefix="hint")
+                    confirm_key = menu.settings.shell.input.confirm_key
+                    help_key = menu.settings.shell.input.help_key
+                    tab_key, _, _ = menu.settings.shell.input.autocomplete_keys
+                    logger.print(f"Type command and press {logger.emph(confirm_key)} to execute.", prefix="hint")
+                    logger.print(f"Use {logger.emph(tab_key)} to autocomplete command.", prefix="hint")
+                    logger.print(f"If you need help, press {logger.emph(help_key)}.", prefix="hint")
                     logger.print()
 
                     # prompt

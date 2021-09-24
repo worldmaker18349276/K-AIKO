@@ -174,6 +174,10 @@ def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
 
 class BeatShellSettings(cfg.Configurable):
     class input(cfg.Configurable):
+        confirm_key: str = "Enter"
+        help_key: str = "Alt_Enter"
+        autocomplete_keys: Tuple[str, str, str] = ("Tab", "Shift_Tab", "Esc")
+
         keymap = {
             "Backspace"     : lambda input: input.backspace(),
             "Delete"        : lambda input: input.delete(),
@@ -183,15 +187,11 @@ class BeatShellSettings(cfg.Configurable):
             "Down"          : lambda input: input.next(),
             "Home"          : lambda input: input.move_to_start(),
             "End"           : lambda input: input.move_to_end(),
-            "Enter"         : lambda input: input.enter(),
-            "Esc"           : lambda input: (input.cancel_typeahead(), input.cancel_hint(), input.autocomplete(0)),
-            "Alt_Enter"     : lambda input: input.help(),
             "Ctrl_Left"     : lambda input: input.move_to_word_start(),
             "Ctrl_Right"    : lambda input: input.move_to_word_end(),
             "Ctrl_Backspace": lambda input: input.delete_to_word_start(),
             "Ctrl_Delete"   : lambda input: input.delete_to_word_end(),
-            "Tab"           : lambda input: input.autocomplete(+1),
-            "Shift_Tab"     : lambda input: input.autocomplete(-1),
+            "Esc"           : lambda input: (input.cancel_typeahead(), input.cancel_hint()),
         }
 
     class prompt(cfg.Configurable):
@@ -365,7 +365,7 @@ class BeatInput:
 
         input_knot, controller = engines.Controller.create(devices_settings.controller)
         display_knot, renderer = engines.Renderer.create(devices_settings.renderer)
-        stroke = BeatStroke(self, settings.input.keymap)
+        stroke = BeatStroke(self, settings.input)
         prompt = BeatPrompt(stroke, self, settings)
 
         stroke.register(controller)
@@ -622,78 +622,6 @@ class BeatInput:
         self.parse_syntax()
 
         return True
-
-    @locked
-    @onstate("EDIT")
-    def help(self):
-        """Help for command.
-        Provide some hint for the command before the caret.
-
-        Returns
-        -------
-        succ : bool
-            `False` if there is no hint.
-        """
-        self.cancel_hint()
-
-        # find the last token before the caret
-        for index, (target, token_type, slic, _) in reversed(list(enumerate(self.tokens))):
-            if slic.start is None or slic.start <= self.pos:
-                break
-        else:
-            return False
-
-        parents = [token for token, _, _, _ in self.tokens[:index]]
-
-        if token_type is None:
-            msg = self.command.desc_command(parents)
-            hint_type = InputWarn
-        else:
-            msg = self.command.info_command(parents, target)
-            hint_type = InputMessage
-
-        if msg is None:
-            return False
-        else:
-            self.set_hint(hint_type, msg, index)
-            return True
-
-    @locked
-    @onstate("EDIT")
-    def enter(self):
-        """Enter.
-        Finish the command.
-
-        Returns
-        -------
-        succ : bool
-            `False` if the command is wrong.
-        """
-        if len(self.tokens) == 0:
-            self.set_result(InputComplete, lambda:None)
-            self.finish()
-            return True
-
-        if self.lex_state == SHLEXER_STATE.BACKSLASHED:
-            res, index = ShellSyntaxError("No escaped character"), len(self.tokens)-1
-        elif self.lex_state == SHLEXER_STATE.QUOTED:
-            res, index = ShellSyntaxError("No closing quotation"), len(self.tokens)-1
-        else:
-            types, res = self.command.parse_command(token for token, _, _, _ in self.tokens)
-            index = len(types)
-
-        if isinstance(res, CommandUnfinishError):
-            self.set_result(InputError, res, None)
-            self.finish()
-            return False
-        elif isinstance(res, (CommandParseError, ShellSyntaxError)):
-            self.set_result(InputError, res, index)
-            self.finish()
-            return False
-        else:
-            self.set_result(InputComplete, res)
-            self.finish()
-            return True
 
     @locked
     def unknown_key(self, key):
@@ -998,6 +926,77 @@ class BeatInput:
 
     @locked
     @onstate("EDIT")
+    def help(self):
+        """Help for command.
+        Provide some hint for the command before the caret.
+
+        Returns
+        -------
+        succ : bool
+            `False` if there is no hint.
+        """
+        self.cancel_hint()
+
+        # find the last token before the caret
+        for index, (target, token_type, slic, _) in reversed(list(enumerate(self.tokens))):
+            if slic.start is None or slic.start <= self.pos:
+                break
+        else:
+            return False
+
+        parents = [token for token, _, _, _ in self.tokens[:index]]
+
+        if token_type is None:
+            msg = self.command.desc_command(parents)
+            hint_type = InputWarn
+        else:
+            msg = self.command.info_command(parents, target)
+            hint_type = InputMessage
+
+        if msg is None:
+            return False
+        else:
+            self.set_hint(hint_type, msg, index)
+            return True
+
+    @locked
+    @onstate("EDIT")
+    def confirm(self):
+        """Finish the command.
+
+        Returns
+        -------
+        succ : bool
+            `False` if the command is wrong.
+        """
+        if len(self.tokens) == 0:
+            self.set_result(InputComplete, lambda:None)
+            self.finish()
+            return True
+
+        if self.lex_state == SHLEXER_STATE.BACKSLASHED:
+            res, index = ShellSyntaxError("No escaped character"), len(self.tokens)-1
+        elif self.lex_state == SHLEXER_STATE.QUOTED:
+            res, index = ShellSyntaxError("No closing quotation"), len(self.tokens)-1
+        else:
+            types, res = self.command.parse_command(token for token, _, _, _ in self.tokens)
+            index = len(types)
+
+        if isinstance(res, CommandUnfinishError):
+            self.set_result(InputError, res, None)
+            self.finish()
+            return False
+        elif isinstance(res, (CommandParseError, ShellSyntaxError)):
+            self.set_result(InputError, res, index)
+            self.finish()
+            return False
+        else:
+            self.set_result(InputComplete, res)
+            self.finish()
+            return True
+
+    @locked
+    @onstate("EDIT")
     def autocomplete(self, action=+1):
         """Autocomplete.
         Complete the token on the caret, or fill in suggestions if caret is
@@ -1092,9 +1091,9 @@ class BeatInput:
 class BeatStroke:
     r"""Keyboard controller for beatshell."""
 
-    def __init__(self, input, keymap):
+    def __init__(self, input, settings):
         self.input = input
-        self.keymap = keymap
+        self.settings = settings
         self.key_event = threading.Event()
 
     def register(self, controller):
@@ -1105,17 +1104,38 @@ class BeatStroke:
         controller : engines.Controller
         """
         controller.add_handler(self.keypress_handler())
-        controller.add_handler(self.finish_autocomplete_handler())
-        for key, func in self.keymap.items():
+
+        controller.add_handler(self.confirm_handler(), self.settings.confirm_key)
+        controller.add_handler(self.help_handler(), self.settings.help_key)
+        controller.add_handler(self.autocomplete_handler(self.settings.autocomplete_keys))
+
+        for key, func in self.settings.keymap.items():
             controller.add_handler(self.action_handler(func), key)
+
         controller.add_handler(self.printable_handler(), "PRINTABLE")
-        controller.add_handler(self.unknown_handler(self.keymap))
+        controller.add_handler(self.unknown_handler(self.settings))
 
     def keypress_handler(self):
         return lambda args: self.key_event.set()
 
-    def finish_autocomplete_handler(self):
-        return lambda args: self.input.finish_autocomplete() if args[2] not in ("Tab", "Shift_Tab", "Esc") else False
+    def confirm_handler(self):
+        return lambda args: self.input.confirm()
+
+    def help_handler(self):
+        return lambda args: self.input.help()
+
+    def autocomplete_handler(self, keys):
+        def handler(args):
+            key = args[2]
+            if key == keys[0]:
+                self.input.autocomplete(+1)
+            elif key == keys[1]:
+                self.input.autocomplete(-1)
+            elif key == keys[2]:
+                self.input.autocomplete(0)
+            else:
+                self.input.finish_autocomplete()
+        return handler
 
     def action_handler(self, func):
         return lambda args: func(self.input)
@@ -1123,8 +1143,11 @@ class BeatStroke:
     def printable_handler(self):
         return lambda args: self.input.input(args[3])
 
-    def unknown_handler(self, keymap):
-        keys = list(keymap.keys())
+    def unknown_handler(self, settings):
+        keys = list(settings.keymap.keys())
+        keys.append(settings.confirm_key)
+        keys.append(settings.help_key)
+        keys.extend(settings.autocomplete_keys)
         keys.append("PRINTABLE")
         def handler(args):
             _, _, key, code = args
