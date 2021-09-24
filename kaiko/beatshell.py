@@ -250,6 +250,10 @@ class BeatShellSettings(cfg.Configurable):
         typeahead_attr: str = "2"
         whitespace: str = "\x1b[2m⌴\x1b[m"
 
+        suggestions_lines: int = 8
+        suggestions_selected_attr: str = "7"
+        suggestions_bullet: str = "• "
+
         token_unknown_attr: str = "31"
         token_command_attr: str = "94"
         token_keyword_attr: str = "95"
@@ -258,13 +262,19 @@ class BeatShellSettings(cfg.Configurable):
 
 
 class InputWarn:
-    def __init__(self, message, tokens):
+    def __init__(self, tokens, message):
         self.message = message
         self.tokens = tokens
 
 class InputMessage:
-    def __init__(self, message, tokens):
+    def __init__(self, tokens, message):
         self.message = message
+        self.tokens = tokens
+
+class InputSuggestions:
+    def __init__(self, tokens, suggestions, selected):
+        self.suggestions = suggestions
+        self.selected = selected
         self.tokens = tokens
 
 class InputError:
@@ -322,7 +332,7 @@ class BeatInput:
         The shlexer state.
     highlighted : int or None
         The index of highlighted token.
-    hint : InputWarn or InputMessage or None
+    hint : InputWarn or InputMessage or InputSuggestions or None
         The hint of input.
     result : InputError or InputComplete or None
         The result of input.
@@ -537,18 +547,18 @@ class BeatInput:
         return True
 
     @locked
-    def set_hint(self, hint_type, message, index=None):
+    def set_hint(self, hint_type, index=None, *params):
         """Set hint.
         Show hint below the prompt.
 
         Parameters
         ----------
-        hint_type : InputWarn or InputMessage
+        hint_type : InputWarn or InputMessage or InputSuggestions
             The type of hint.
-        message : str
-            The message to show.
         index : int or None
             Index of the token to which the hint is directed, or `None` for nothing.
+        params : list
+            Parameters of hint.
 
         Returns
         -------
@@ -559,9 +569,13 @@ class BeatInput:
             msg_tokens = None
         elif hint_type == InputWarn:
             msg_tokens = self.tokens[:index]
-        else:
+        elif hint_type == InputMessage:
             msg_tokens = self.tokens[:index+1]
-        self.hint = hint_type(message, msg_tokens)
+        elif hint_type == InputSuggestions:
+            msg_tokens = None
+        else:
+            raise ValueError
+        self.hint = hint_type(msg_tokens, *params)
         return True
 
     @locked
@@ -972,7 +986,7 @@ class BeatInput:
         if msg is None:
             return False
         else:
-            self.set_hint(hint_type, msg, index)
+            self.set_hint(hint_type, index, msg)
             return True
 
     @locked
@@ -1029,6 +1043,7 @@ class BeatInput:
         succ : bool
             `False` for canceling the process.
         """
+
         if not hasattr(self, "_autocomplete") and action == 0:
             return False
 
@@ -1039,6 +1054,7 @@ class BeatInput:
             parents = []
             target = ""
             selection = slice(self.pos, self.pos)
+            token_index = None
             for token, _, mask, _ in self.tokens:
                 start, stop, _ = mask.indices(len(self.buffer))
                 if stop < self.pos:
@@ -1058,6 +1074,7 @@ class BeatInput:
             self._autocomplete = dict(
                 suggestions=suggestions,
                 sugg_index=sugg_index,
+                token_index=len(parents),
                 original_buffer=original_buffer,
                 original_pos=original_pos,
                 selection=selection)
@@ -1080,8 +1097,9 @@ class BeatInput:
             # autocomplete selected token
             self.buffer[selection] = self._autocomplete["suggestions"][sugg_index]
             self.pos = selection.start + len(self._autocomplete["suggestions"][sugg_index])
+
             self.parse_syntax()
-            self.update_hint()
+            self.set_hint(InputSuggestions, self._autocomplete["token_index"], self._autocomplete["suggestions"], sugg_index)
             return True
 
         else:
@@ -1102,6 +1120,7 @@ class BeatInput:
         """
         if hasattr(self, "_autocomplete"):
             del self._autocomplete
+            self.update_hint()
         return True
 
     @locked
@@ -1387,7 +1406,7 @@ class BeatPrompt:
 
         Receives
         --------
-        hint : InputWarn or InputMessage
+        hint : InputWarn or InputMessage or InputSuggestions
 
         Yields
         ------
@@ -1397,6 +1416,11 @@ class BeatPrompt:
         message_max_lines = self.settings.text.message_max_lines
         error_message_attr = self.settings.text.error_message_attr
         info_message_attr = self.settings.text.info_message_attr
+
+        suggestions_lines = self.settings.text.suggestions_lines
+        suggestions_lines = max(min(suggestions_lines, message_max_lines-2), 0)
+        suggestions_selected_attr = self.settings.text.suggestions_selected_attr
+        suggestions_bullet = self.settings.text.suggestions_bullet
 
         current_hint = None
         hint = yield
@@ -1412,15 +1436,29 @@ class BeatPrompt:
                 hint = yield ""
                 continue
 
-            # show hint
-            msg = hint.message or ""
-            if msg.count("\n") >= message_max_lines:
-                msg = "\n".join(msg.split("\n")[:message_max_lines]) + "\x1b[m\n…"
-            if msg:
-                if isinstance(hint, InputWarn):
-                    msg = wcb.add_attr(msg, error_message_attr)
-                if isinstance(hint, (InputWarn, InputMessage)):
-                    msg = wcb.add_attr(msg, info_message_attr)
+            # draw hint
+            if isinstance(hint, InputSuggestions):
+                sugg_start = hint.selected // suggestions_lines * suggestions_lines
+                sugg_end = sugg_start + suggestions_lines
+                sugg_mask = slice(sugg_start, sugg_end)
+                sugg = hint.suggestions[sugg_mask]
+                sugg[hint.selected-sugg_start] = wcb.add_attr(sugg[hint.selected-sugg_start], suggestions_selected_attr)
+                msg = "\n".join(suggestions_bullet + s for s in sugg)
+                if sugg_start > 0:
+                    msg = "…\n" + msg
+                if sugg_end < len(hint.suggestions):
+                    msg = msg + "\n…"
+
+            else:
+                msg = hint.message or ""
+                if msg.count("\n") >= message_max_lines:
+                    msg = "\n".join(msg.split("\n")[:message_max_lines]) + "\x1b[m\n…"
+
+                if msg:
+                    if isinstance(hint, InputWarn):
+                        msg = wcb.add_attr(msg, error_message_attr)
+
+                msg = wcb.add_attr(msg, info_message_attr)
 
             hint = yield msg
 
