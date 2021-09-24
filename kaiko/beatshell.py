@@ -274,11 +274,6 @@ class InputComplete:
     def __init__(self, value):
         self.value = value
 
-class INPUT_STATE(Enum):
-    EDIT = "edit"
-    TAB = "tab"
-    FIN = "fin"
-
 class ShellSyntaxError(Exception):
     pass
 
@@ -330,7 +325,7 @@ class BeatInput:
         The hint of input.
     result : InputError or InputComplete or None
         The result of input.
-    state : INPUT_STATE
+    state : str
         The input state.
     """
     def __init__(self, promptable, history=None):
@@ -346,7 +341,7 @@ class BeatInput:
         self.command = RootCommandParser(promptable)
         self.history = history if history is not None else []
         self.lock = threading.RLock()
-        self.state = INPUT_STATE.FIN
+        self.state = "FIN"
 
         self.new_session(False)
 
@@ -386,7 +381,7 @@ class BeatInput:
         return dn.pipe(stop_when(prompt.fin_event), display_knot, input_knot)
 
     @locked
-    @onstate(INPUT_STATE.FIN)
+    @onstate("FIN")
     def new_session(self, record_current=True):
         r"""Start a new session of input.
 
@@ -412,18 +407,18 @@ class BeatInput:
 
         self.hint = None
         self.result = None
-        self.state = INPUT_STATE.EDIT
+        self.state = "EDIT"
 
     @locked
-    @onstate(INPUT_STATE.FIN)
+    @onstate("FIN")
     def prev_session(self):
         r"""Back to previous session of input."""
         self.highlighted = None
         self.result = None
-        self.state = INPUT_STATE.EDIT
+        self.state = "EDIT"
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def finish(self):
         r"""Finish this session of input.
 
@@ -431,7 +426,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        self.state = INPUT_STATE.FIN
+        self.state = "FIN"
         return True
 
     @locked
@@ -607,7 +602,7 @@ class BeatInput:
         return False
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def insert_typeahead(self):
         """Insert typeahead.
         Insert the typeahead if the caret is at the end of buffer.
@@ -629,7 +624,7 @@ class BeatInput:
         return True
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def help(self):
         """Help for command.
         Provide some hint for the command before the caret.
@@ -664,7 +659,7 @@ class BeatInput:
             return True
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def enter(self):
         """Enter.
         Finish the command.
@@ -706,7 +701,7 @@ class BeatInput:
         self.finish()
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def input(self, text):
         """Input.
         Insert some text into the buffer.
@@ -745,7 +740,7 @@ class BeatInput:
         return True
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def backspace(self):
         """Backspace.
         Delete one character before the caret if exists.
@@ -766,7 +761,7 @@ class BeatInput:
         return True
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def delete(self):
         """Delete.
         Delete one character after the caret if exists.
@@ -786,7 +781,7 @@ class BeatInput:
         return True
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def delete_range(self, start, end):
         """Delete range.
 
@@ -814,7 +809,7 @@ class BeatInput:
         return True
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def delete_to_word_start(self):
         """Delete to the word start.
         The word is defined as `\\w+|\\W+`.
@@ -830,7 +825,7 @@ class BeatInput:
             return self.delete_range(None, self.pos)
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def delete_to_word_end(self):
         """Delete to the word end.
         The word is defined as `\\w+|\\W+`.
@@ -846,7 +841,7 @@ class BeatInput:
             return self.delete_range(self.pos, None)
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def move_to(self, pos):
         """Move caret to the specific position.
         Regardless of success or failure, typeahead will be cancelled.
@@ -871,7 +866,7 @@ class BeatInput:
         return True
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def move(self, offset):
         """Move caret.
 
@@ -886,7 +881,7 @@ class BeatInput:
         return self.move_to(self.pos+offset)
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def move_left(self):
         """Move caret one character to the left.
 
@@ -897,7 +892,7 @@ class BeatInput:
         return self.move(-1)
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def move_right(self):
         """Move caret one character to the right.
 
@@ -908,7 +903,7 @@ class BeatInput:
         return self.move(+1)
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def move_to_start(self):
         """Move caret to the start of buffer.
 
@@ -919,7 +914,7 @@ class BeatInput:
         return self.move_to(0)
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def move_to_end(self):
         """Move caret to the end of buffer.
 
@@ -930,7 +925,7 @@ class BeatInput:
         return self.move_to(None)
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def move_to_word_start(self):
         """Move caret to the start of the word.
 
@@ -945,7 +940,7 @@ class BeatInput:
             return self.move_to(0)
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def move_to_word_end(self):
         """Move caret to the end of the word.
 
@@ -960,7 +955,7 @@ class BeatInput:
             return self.move_to(None)
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def prev(self):
         """Previous buffer.
 
@@ -981,7 +976,7 @@ class BeatInput:
         return True
 
     @locked
-    @onstate(INPUT_STATE.EDIT)
+    @onstate("EDIT")
     def next(self):
         """Next buffer.
 
@@ -1002,7 +997,7 @@ class BeatInput:
         return True
 
     @locked
-    @onstate(INPUT_STATE.EDIT, INPUT_STATE.TAB)
+    @onstate("EDIT")
     def autocomplete(self, action=+1):
         """Autocomplete.
         Complete the token on the caret, or fill in suggestions if caret is
@@ -1019,8 +1014,10 @@ class BeatInput:
         succ : bool
             `False` for canceling the process.
         """
+        if not hasattr(self, "_autocomplete") and action == 0:
+            return False
 
-        if self.state == INPUT_STATE.EDIT:
+        if not hasattr(self, "_autocomplete"):
             self.cancel_typeahead()
 
             # find the token to autocomplete
@@ -1036,45 +1033,51 @@ class BeatInput:
                     selection = mask
 
             # generate suggestions
-            self._suggestions = [shlexer_quoting(sugg) for sugg in self.command.suggest_command(parents, target)]
-            self._sugg_index = len(self._suggestions) if action == -1 else -1
+            suggestions = [shlexer_quoting(sugg) for sugg in self.command.suggest_command(parents, target)]
+            sugg_index = len(suggestions) if action == -1 else -1
 
             # tab state
-            self._original_buffer = list(self.buffer)
-            self._original_pos = self.pos
-            self._selection = selection
-            self.state = INPUT_STATE.TAB
+            original_buffer = list(self.buffer)
+            original_pos = self.pos
+
+            self._autocomplete = dict(
+                suggestions=suggestions,
+                sugg_index=sugg_index,
+                original_buffer=original_buffer,
+                original_pos=original_pos,
+                selection=selection)
 
         if action == +1:
-            self._sugg_index += 1
+            self._autocomplete["sugg_index"] += 1
         elif action == -1:
-            self._sugg_index -= 1
+            self._autocomplete["sugg_index"] -= 1
         elif action == 0:
-            self._sugg_index = None
+            self._autocomplete["sugg_index"] = None
         else:
             raise ValueError
 
-        self.buffer = list(self._original_buffer)
-        self.pos = self._original_pos
+        self.buffer = list(self._autocomplete["original_buffer"])
+        self.pos = self._autocomplete["original_pos"]
 
-        if self._sugg_index in range(len(self._suggestions)):
+        sugg_index = self._autocomplete["sugg_index"]
+        selection = self._autocomplete["selection"]
+        if sugg_index in range(len(self._autocomplete["suggestions"])):
             # autocomplete selected token
-            self.buffer[self._selection] = self._suggestions[self._sugg_index]
-            self.pos = self._selection.start + len(self._suggestions[self._sugg_index])
+            self.buffer[selection] = self._autocomplete["suggestions"][sugg_index]
+            self.pos = selection.start + len(self._autocomplete["suggestions"][sugg_index])
             self.parse_syntax()
+            self.update_hint()
             return True
 
         else:
             # restore state
-            del self._original_buffer
-            del self._original_pos
-            del self._selection
-            self.state = INPUT_STATE.EDIT
+            del self._autocomplete
             self.parse_syntax()
+            self.update_hint()
             return False
 
     @locked
-    @onstate(INPUT_STATE.TAB)
+    @onstate("EDIT")
     def finish_autocomplete(self):
         r"""Finish autocompletion.
 
@@ -1082,10 +1085,8 @@ class BeatInput:
         -------
         succ : bool
         """
-        del self._original_buffer
-        del self._original_pos
-        del self._selection
-        self.state = INPUT_STATE.EDIT
+        if hasattr(self, "_autocomplete"):
+            del self._autocomplete
         return True
 
 class BeatStroke:
@@ -1190,7 +1191,7 @@ class BeatPrompt:
                 (view, msg), time, width = yield (view, msg)
 
                 # fin
-                if state == INPUT_STATE.FIN and not self.fin_event.is_set():
+                if state == "FIN" and not self.fin_event.is_set():
                     self.fin_event.set()
 
     @dn.datanode
