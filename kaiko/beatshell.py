@@ -180,6 +180,7 @@ class BeatShellSettings(cfg.Configurable):
 
         keymap = {
             "Backspace"     : lambda input: input.backspace(),
+            "Alt_Backspace" : lambda input: input.delete_all(),
             "Delete"        : lambda input: input.delete(),
             "Left"          : lambda input: input.move_left(),
             "Right"         : lambda input: input.insert_typeahead() or input.move_right(),
@@ -624,11 +625,6 @@ class BeatInput:
         return True
 
     @locked
-    def unknown_key(self, key):
-        self.set_result(InputError, ValueError(f"Unknown key: " + key), None)
-        self.finish()
-
-    @locked
     @onstate("EDIT")
     def input(self, text):
         """Input.
@@ -702,6 +698,26 @@ class BeatInput:
             return False
 
         del self.buffer[self.pos]
+        self.parse_syntax()
+        self.cancel_typeahead()
+        self.update_hint()
+
+        return True
+
+    @locked
+    @onstate("EDIT")
+    def delete_all(self):
+        """Delete All.
+
+        Returns
+        -------
+        succ : bool
+        """
+        if not self.buffer:
+            return False
+
+        del self.buffer[:]
+        self.pos = 0
         self.parse_syntax()
         self.cancel_typeahead()
         self.update_hint()
@@ -1087,6 +1103,11 @@ class BeatInput:
         if hasattr(self, "_autocomplete"):
             del self._autocomplete
         return True
+
+    @locked
+    def unknown_key(self, key):
+        self.set_result(InputError, ValueError(f"Unknown key: " + key), None)
+        self.finish()
 
 class BeatStroke:
     r"""Keyboard controller for beatshell."""
