@@ -565,12 +565,10 @@ class BeatInput:
         succ : bool
         """
         self.highlighted = index
-        if index is None:
-            msg_tokens = None
-        elif hint_type == InputWarn:
-            msg_tokens = self.tokens[:index]
+        if hint_type == InputWarn:
+            msg_tokens = self.tokens[:index] if index is not None else None
         elif hint_type == InputMessage:
-            msg_tokens = self.tokens[:index+1]
+            msg_tokens = self.tokens[:index+1] if index is not None else None
         elif hint_type == InputSuggestions:
             msg_tokens = None
         else:
@@ -963,7 +961,6 @@ class BeatInput:
         Returns
         -------
         succ : bool
-            `False` if there is no hint.
         """
         self.cancel_hint()
 
@@ -972,7 +969,8 @@ class BeatInput:
             if slic.start is None or slic.start <= self.pos:
                 break
         else:
-            return False
+            self.set_hint(InputMessage, None, None)
+            return True
 
         parents = [token for token, _, _, _ in self.tokens[:index]]
 
@@ -983,11 +981,8 @@ class BeatInput:
             msg = self.command.info_command(parents, target)
             hint_type = InputMessage
 
-        if msg is None:
-            return False
-        else:
-            self.set_hint(hint_type, index, msg)
-            return True
+        self.set_hint(hint_type, index, msg)
+        return True
 
     @locked
     @onstate("EDIT")
