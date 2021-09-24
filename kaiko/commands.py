@@ -83,7 +83,17 @@ class CommandUnfinishError(Exception):
     pass
 
 class CommandParseError(Exception):
-    pass
+    def __init__(self, msg, token=None, expected=None):
+        self.msg = msg
+        self.token = token
+        self.expected = expected
+
+    def __str__(self):
+        if self.token is not None and self.expected is not None:
+            desc = do_you_mean(fit(self.token, self.expected))
+            if desc:
+                return self.msg + "\n" + desc
+        return self.msg
 
 class TOKEN_TYPE(Enum):
     COMMAND = "command"
@@ -91,8 +101,15 @@ class TOKEN_TYPE(Enum):
     KEYWORD = "keyword"
 
 
-def desc_options(options):
+def it_should_be_one_of(options):
+    if not options:
+        return None
     return "It should be one of:\n" + "\n".join("• " + s for s in options)
+
+def do_you_mean(options):
+    if not options:
+        return None
+    return "Do you mean:\n" + "\n".join("• " + s for s in options)
 
 class ArgumentParser:
     r"""Parser for the argument of command."""
@@ -207,7 +224,7 @@ class OptionParser(ArgumentParser):
 
         if desc is None:
             options = list(self.options.keys()) if isinstance(self.options, dict) else self.options
-            self._desc = desc_options(options)
+            self._desc = it_should_be_one_of(options)
 
     def desc(self):
         return self._desc
@@ -490,9 +507,8 @@ class FunctionCommandParser(CommandParser):
             parser_func = kwargs.pop(name, None)
 
             if parser_func is None:
-                desc = desc_options(["--" + key for key in self.kwargs.keys()])
-                msg = f"Unknown argument {token!r}" + "\n" + desc
-                raise CommandParseError(msg)
+                msg = f"Unknown argument {token!r}"
+                raise CommandParseError(msg, token, ["--" + key for key in self.kwargs.keys()])
 
             args = OrderedDict([(name, parser_func)])
             return TOKEN_TYPE.KEYWORD, FunctionCommandParser(self.func, args, kwargs, self.bound)
@@ -525,7 +541,7 @@ class FunctionCommandParser(CommandParser):
         # parse keyword arguments
         if self.kwargs:
             keys = ["--" + key for key in self.kwargs.keys()]
-            return desc_options(keys)
+            return it_should_be_one_of(keys)
 
         # rest
         return None
@@ -567,9 +583,8 @@ class SubCommandParser(CommandParser):
 
     def parse(self, token):
         if token not in self.fields:
-            desc = self.desc()
-            msg = "Unknown command" + ("\n" + desc if desc is not None else "")
-            raise CommandParseError(msg)
+            msg = "Unknown command"
+            raise CommandParseError(msg, token, self.fields)
 
         field = getcmd(self.parent, token)
         if not isinstance(field, CommandParser):
@@ -581,7 +596,7 @@ class SubCommandParser(CommandParser):
         return [val + "\000" for val in fit(token, self.fields)]
 
     def desc(self):
-        return desc_options(self.fields)
+        return it_should_be_one_of(self.fields)
 
     def info(self, token):
         return getcmddesc(self.parent, token)

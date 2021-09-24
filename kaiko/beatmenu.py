@@ -958,7 +958,7 @@ class BeatmapParser(cmd.ArgumentParser):
         self.bgm_controller = bgm_controller
 
         self.options = [str(beatmap) for beatmapset in beatmaps.values() for beatmap in beatmapset]
-        self._desc = cmd.desc_options(self.options)
+        self._desc = cmd.it_should_be_one_of(self.options)
 
     def desc(self):
         return self._desc
