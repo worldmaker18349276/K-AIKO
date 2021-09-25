@@ -4,6 +4,7 @@ import functools
 import re
 import threading
 from typing import List, Set, Tuple
+from dataclasses import dataclass
 import wcwidth
 from . import engines
 from . import datanodes as dn
@@ -316,7 +317,7 @@ class BeatInput:
         The input history.
     buffers : list of list of str
         The editable buffers of input history.
-    buffers_index : int
+    buffer_index : int
         The negative index of current input buffer.
     buffer : list of str
         The buffer of current input.
@@ -332,6 +333,8 @@ class BeatInput:
         The shlexer state.
     highlighted : int or None
         The index of highlighted token.
+    tab_state : TabState or None
+        The state of autocomplete.
     hint : InputWarn or InputMessage or InputSuggestions or None
         The hint of input.
     result : InputError or InputComplete or None
@@ -351,8 +354,9 @@ class BeatInput:
         """
         self.command = RootCommandParser(promptable)
         self.history = history if history is not None else []
-        self.lock = threading.RLock()
+        self.tab_state = None
         self.state = "FIN"
+        self.lock = threading.RLock()
 
         self.new_session(False)
 
@@ -406,9 +410,9 @@ class BeatInput:
 
         self.buffers = [list(history_buffer) for history_buffer in self.history]
         self.buffers.append([])
-        self.buffers_index = -1
+        self.buffer_index = -1
 
-        self.buffer = self.buffers[self.buffers_index]
+        self.buffer = self.buffers[self.buffer_index]
         self.pos = len(self.buffer)
         self.typeahead = ""
 
@@ -919,11 +923,11 @@ class BeatInput:
         -------
         succ : bool
         """
-        if self.buffers_index == -len(self.buffers):
+        if self.buffer_index == -len(self.buffers):
             return False
-        self.buffers_index -= 1
+        self.buffer_index -= 1
 
-        self.buffer = self.buffers[self.buffers_index]
+        self.buffer = self.buffers[self.buffer_index]
         self.pos = len(self.buffer)
         self.parse_syntax()
         self.cancel_typeahead()
@@ -940,11 +944,11 @@ class BeatInput:
         -------
         succ : bool
         """
-        if self.buffers_index == -1:
+        if self.buffer_index == -1:
             return False
-        self.buffers_index += 1
+        self.buffer_index += 1
 
-        self.buffer = self.buffers[self.buffers_index]
+        self.buffer = self.buffers[self.buffer_index]
         self.pos = len(self.buffer)
         self.parse_syntax()
         self.cancel_typeahead()
@@ -1039,17 +1043,16 @@ class BeatInput:
             `False` for canceling the process.
         """
 
-        if not hasattr(self, "_autocomplete") and action == 0:
+        if self.tab_state is None and action == 0:
             return False
 
-        if not hasattr(self, "_autocomplete"):
+        if self.tab_state is None:
             self.cancel_typeahead()
 
             # find the token to autocomplete
             parents = []
             target = ""
             selection = slice(self.pos, self.pos)
-            token_index = None
             for token, _, mask, _ in self.tokens:
                 start, stop, _ = mask.indices(len(self.buffer))
                 if stop < self.pos:
@@ -1063,43 +1066,44 @@ class BeatInput:
             sugg_index = len(suggestions) if action == -1 else -1
 
             # tab state
-            original_buffer = list(self.buffer)
             original_pos = self.pos
 
-            self._autocomplete = dict(
+            self.tab_state = TabState(
                 suggestions=suggestions,
                 sugg_index=sugg_index,
                 token_index=len(parents),
-                original_buffer=original_buffer,
+                original_token=self.buffer[selection],
                 original_pos=original_pos,
                 selection=selection)
 
         if action == +1:
-            self._autocomplete["sugg_index"] += 1
+            self.tab_state.sugg_index += 1
         elif action == -1:
-            self._autocomplete["sugg_index"] -= 1
+            self.tab_state.sugg_index -= 1
         elif action == 0:
-            self._autocomplete["sugg_index"] = None
+            self.tab_state.sugg_index = None
         else:
             raise ValueError
 
-        self.buffer = list(self._autocomplete["original_buffer"])
-        self.pos = self._autocomplete["original_pos"]
-
-        sugg_index = self._autocomplete["sugg_index"]
-        selection = self._autocomplete["selection"]
-        if sugg_index in range(len(self._autocomplete["suggestions"])):
+        sugg_index = self.tab_state.sugg_index
+        selection = self.tab_state.selection
+        suggestions = self.tab_state.suggestions
+        if sugg_index in range(len(suggestions)):
             # autocomplete selected token
-            self.buffer[selection] = self._autocomplete["suggestions"][sugg_index]
-            self.pos = selection.start + len(self._autocomplete["suggestions"][sugg_index])
+            self.buffer[selection] = suggestions[sugg_index]
+            self.pos = selection.start + len(suggestions[sugg_index])
+            self.tab_state.selection = slice(selection.start, self.pos)
 
             self.parse_syntax()
-            self.set_hint(InputSuggestions, self._autocomplete["token_index"], self._autocomplete["suggestions"], sugg_index)
+            self.set_hint(InputSuggestions, self.tab_state.token_index, suggestions, sugg_index)
             return True
 
         else:
             # restore state
-            del self._autocomplete
+            self.buffer[selection] = self.tab_state.original_token
+            self.pos = self.tab_state.original_pos
+
+            self.tab_state = None
             self.parse_syntax()
             self.update_hint()
             return False
@@ -1113,8 +1117,8 @@ class BeatInput:
         -------
         succ : bool
         """
-        if hasattr(self, "_autocomplete"):
-            del self._autocomplete
+        if self.tab_state is not None:
+            self.tab_state = None
             self.update_hint()
         return True
 
@@ -1122,6 +1126,15 @@ class BeatInput:
     def unknown_key(self, key):
         self.set_result(InputError, ValueError(f"Unknown key: " + key), None)
         self.finish()
+
+@dataclass
+class TabState:
+    suggestions: List[str]
+    sugg_index: int
+    token_index: int
+    original_token: List[str]
+    original_pos: int
+    selection: slice
 
 class BeatStroke:
     r"""Keyboard controller for beatshell."""
@@ -1413,7 +1426,6 @@ class BeatPrompt:
         info_message_attr = self.settings.text.info_message_attr
 
         suggestions_lines = self.settings.text.suggestions_lines
-        suggestions_lines = max(min(suggestions_lines, message_max_lines-2), 0)
         suggestions_selected_attr = self.settings.text.suggestions_selected_attr
         suggestions_bullet = self.settings.text.suggestions_bullet
 
@@ -1421,7 +1433,7 @@ class BeatPrompt:
         hint = yield
         while True:
             # track changes of the hint
-            if hint == current_hint:
+            if hint is current_hint:
                 hint = yield None
                 continue
 
@@ -1435,8 +1447,7 @@ class BeatPrompt:
             if isinstance(hint, InputSuggestions):
                 sugg_start = hint.selected // suggestions_lines * suggestions_lines
                 sugg_end = sugg_start + suggestions_lines
-                sugg_mask = slice(sugg_start, sugg_end)
-                sugg = hint.suggestions[sugg_mask]
+                sugg = hint.suggestions[sugg_start:sugg_end]
                 sugg[hint.selected-sugg_start] = wcb.add_attr(sugg[hint.selected-sugg_start], suggestions_selected_attr)
                 msg = "\n".join(suggestions_bullet + s for s in sugg)
                 if sugg_start > 0:
