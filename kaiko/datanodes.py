@@ -1369,13 +1369,17 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
         try:
             ref_time = time.time()
 
+            # stream.write("\n")
+            # dropped = 0
             for i, view in enumerate(node):
                 delta = ref_time+t0+i*dt - time.time()
                 if delta < 0:
+                    # dropped += 1
                     continue
                 if stop_event.wait(delta):
                     break
 
+                # stream.write(f"\x1b[A spend:[{(dt-delta)/dt:.3f}], drop:[{dropped}] \n")
                 stream.write(view)
                 stream.flush()
 

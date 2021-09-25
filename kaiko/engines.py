@@ -410,7 +410,7 @@ class Renderer:
                         res_text = "\r\x1b[J" + "".join(view) + "\r"
                     else:
                         _, y = pt_walk(msg, width, 0)
-                        res_text = "\r\x1b[J" + "".join(view) + f"\n{msg}\x1b[{y+1}A"
+                        res_text = "\r\x1b[J" + "".join(view) + f"\n{msg}\x1b[{y+1}A\r"
 
                     yield res_text
                     index += 1

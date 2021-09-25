@@ -476,7 +476,9 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
         if not self.beatmap_manager.is_uptodate():
             self.reload()
 
-        return [beatmap for beatmapset in self.beatmap_manager._beatmaps.values() for beatmap in beatmapset]
+        for beatmapset in self.beatmap_manager._beatmaps.values():
+            for beatmap in beatmapset:
+                self.logger.print(str(beatmap))
 
     @cmd.function_command
     def reload(self):
