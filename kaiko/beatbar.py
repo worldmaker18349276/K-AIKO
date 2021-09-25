@@ -126,52 +126,31 @@ class BeatbarSettings(cfg.Configurable):
         hit_sustain_time: float = 0.1
 
 class Beatbar:
-    def __init__(self, mixer, detector, renderer,
-                       icon_mask, header_mask, content_mask, footer_mask, bar_shift, bar_flip,
-                       content_scheduler, current_icon, current_header, current_footer,
-                       current_hit_hint, current_perf_hint, current_sight, target_queue):
+    def __init__(self, settings, mixer, detector, renderer, bar_shift, bar_flip):
         self.mixer = mixer
         self.detector = detector
         self.renderer = renderer
-
-        self.icon_mask = icon_mask
-        self.header_mask = header_mask
-        self.content_mask = content_mask
-        self.footer_mask = footer_mask
-
         self.bar_shift = bar_shift
         self.bar_flip = bar_flip
 
-        self.content_scheduler = content_scheduler
-        self.current_icon = current_icon
-        self.current_header = current_header
-        self.current_footer = current_footer
-
-        self.current_hit_hint = current_hit_hint
-        self.current_perf_hint = current_perf_hint
-        self.current_sight = current_sight
-        self.target_queue = target_queue
-
-    @classmethod
-    def create(clz, settings, mixer, detector, renderer, bar_shift, bar_flip):
         icon_width = settings.layout.icon_width
         header_width = settings.layout.header_width
         footer_width = settings.layout.footer_width
 
-        icon_mask = slice(None, icon_width)
-        header_mask = slice(icon_width, icon_width+header_width)
-        content_mask = (slice(icon_width+header_width, -footer_width)
-                        if footer_width > 0 else slice(icon_width+header_width, None))
-        footer_mask = slice(-footer_width, None) if footer_width > 0 else slice(0, 0)
+        self.icon_mask = slice(None, icon_width)
+        self.header_mask = slice(icon_width, icon_width+header_width)
+        self.content_mask = (slice(icon_width+header_width, -footer_width)
+                             if footer_width > 0 else slice(icon_width+header_width, None))
+        self.footer_mask = slice(-footer_width, None) if footer_width > 0 else slice(0, 0)
 
-        content_scheduler = dn.Scheduler()
-        current_icon = dn.TimedVariable(value=lambda time, ran: "")
-        current_header = dn.TimedVariable(value=lambda time, ran: "")
-        current_footer = dn.TimedVariable(value=lambda time, ran: "")
+        self.content_scheduler = dn.Scheduler()
+        self.current_icon = dn.TimedVariable(value=lambda time, ran: "")
+        self.current_header = dn.TimedVariable(value=lambda time, ran: "")
+        self.current_footer = dn.TimedVariable(value=lambda time, ran: "")
 
-        icon_drawer = clz._masked_node(current_icon, icon_mask)
-        header_drawer = clz._masked_node(current_header, header_mask)
-        footer_drawer = clz._masked_node(current_footer, footer_mask)
+        icon_drawer = Beatbar._masked_node(self.current_icon, self.icon_mask)
+        header_drawer = Beatbar._masked_node(self.current_header, self.header_mask)
+        footer_drawer = Beatbar._masked_node(self.current_footer, self.footer_mask)
 
         # sight
         hit_decay_time = settings.scrollingbar.hit_decay_time
@@ -181,32 +160,25 @@ class Beatbar:
         perf_sustain_time = settings.scrollingbar.performance_sustain_time
         hit_hint_duration = max(hit_decay_time, hit_sustain_time)
 
-        default_sight = clz._get_default_sight(hit_decay_time, hit_sustain_time,
-                                               perf_appearances, sight_appearances)
+        default_sight = Beatbar._get_default_sight(hit_decay_time, hit_sustain_time,
+                                                   perf_appearances, sight_appearances)
 
-        current_hit_hint = dn.TimedVariable(value=None, duration=hit_hint_duration)
-        current_perf_hint = dn.TimedVariable(value=(None, None), duration=perf_sustain_time)
-        current_sight = dn.TimedVariable(value=default_sight)
+        self.current_hit_hint = dn.TimedVariable(value=None, duration=hit_hint_duration)
+        self.current_perf_hint = dn.TimedVariable(value=(None, None), duration=perf_sustain_time)
+        self.current_sight = dn.TimedVariable(value=default_sight)
 
         # hit handler
-        target_queue = queue.Queue()
-        hit_handler = clz._hit_handler(current_hit_hint, target_queue)
+        self.target_queue = queue.Queue()
+        hit_handler = Beatbar._hit_handler(self.current_hit_hint, self.target_queue)
 
         # register handlers
-        renderer.add_drawer(content_scheduler, zindex=(0,))
+        renderer.add_drawer(self.content_scheduler, zindex=(0,))
         renderer.add_drawer(icon_drawer, zindex=(1,))
         renderer.add_drawer(header_drawer, zindex=(2,))
         renderer.add_drawer(footer_drawer, zindex=(3,))
         detector.add_listener(hit_handler)
 
-        self = clz(mixer, detector, renderer,
-                   icon_mask, header_mask, content_mask, footer_mask, bar_shift, bar_flip,
-                   content_scheduler, current_icon, current_header, current_footer,
-                   current_hit_hint, current_perf_hint, current_sight, target_queue)
-
         self.draw_content(0.0, self._sight_drawer, zindex=(2,))
-
-        return self
 
     @staticmethod
     @dn.datanode

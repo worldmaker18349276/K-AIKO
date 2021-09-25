@@ -1006,7 +1006,7 @@ class BeatmapPlayer:
         renderer_knot, renderer = Renderer.create(self.devices_settings.renderer, ref_time)
         beatbar_knot = dn.pipe(mixer_knot, detector_knot, renderer_knot)
 
-        self.beatbar = Beatbar.create(self.settings.beatbar, mixer, detector, renderer, bar_shift, bar_flip)
+        self.beatbar = Beatbar(self.settings.beatbar, mixer, detector, renderer, bar_shift, bar_flip)
 
         # play music
         if self.audionode is not None:
