@@ -386,9 +386,10 @@ class Renderer:
 
             size_node = dn.terminal_size()
 
+            curr_msg = ""
             index = 0
             with scheduler, size_node:
-                yield
+                shown = yield
                 while True:
                     try:
                         size = size_node.send(None)
@@ -398,13 +399,14 @@ class Renderer:
 
                     time = index / framerate + display_delay - ref_time
                     view = wcb.newwin1(width)
-                    msg = None
+                    msg = ""
                     try:
                         view, msg = scheduler.send(((view, msg), time, width))
                     except StopIteration:
                         return
 
-                    if msg is None:
+                    # track changes of the message
+                    if curr_msg == msg:
                         res_text = "\r" + "".join(view) + "\r"
                     elif msg == "":
                         res_text = "\r\x1b[J" + "".join(view) + "\r"
@@ -412,7 +414,8 @@ class Renderer:
                         _, y = pt_walk(msg, width, 0)
                         res_text = "\r\x1b[J" + "".join(view) + f"\n{msg}\x1b[{y+1}A\r"
 
-                    yield res_text
+                    shown = yield res_text
+                    if shown: curr_msg = msg
                     index += 1
 
         display_node = _node()
@@ -445,8 +448,8 @@ class Renderer:
     @dn.datanode
     def _msg_drawer(msg):
         (view, premsg), _, _ = yield
-        msg = msg if premsg is None else premsg + msg
-        yield (view, msg)
+        while True:
+            (view, premsg), _, _ = yield (view, premsg+msg)
 
     @staticmethod
     @dn.datanode

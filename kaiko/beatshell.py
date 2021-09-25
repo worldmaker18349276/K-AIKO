@@ -1430,21 +1430,21 @@ class BeatPrompt:
         suggestions_bullet = self.settings.text.suggestions_bullet
 
         current_hint = None
+        msg = ""
         hint = yield
         while True:
             # track changes of the hint
             if hint is current_hint:
-                hint = yield None
+                hint = yield msg
                 continue
 
             current_hint = hint
 
-            if hint is None:
-                hint = yield ""
-                continue
-
             # draw hint
-            if isinstance(hint, InputSuggestions):
+            if hint is None:
+                msg = ""
+
+            elif isinstance(hint, InputSuggestions):
                 sugg_start = hint.selected // suggestions_lines * suggestions_lines
                 sugg_end = sugg_start + suggestions_lines
                 sugg = hint.suggestions[sugg_start:sugg_end]
@@ -1463,8 +1463,7 @@ class BeatPrompt:
                 if msg:
                     if isinstance(hint, InputWarn):
                         msg = wcb.add_attr(msg, error_message_attr)
-
-                msg = wcb.add_attr(msg, info_message_attr)
+                    msg = wcb.add_attr(msg, info_message_attr)
 
             hint = yield msg
 
