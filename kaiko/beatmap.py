@@ -711,6 +711,9 @@ class Widget(Enum):
     bounce = "bounce"
     accuracy_meter = "accuracy_meter"
 
+    def __repr__(self):
+        return f"Widget.{self.name}"
+
 class WidgetManager:
     @staticmethod
     def use_widget(name, field):

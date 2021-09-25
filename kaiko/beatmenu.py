@@ -397,12 +397,8 @@ class KAIKOMenu:
         elif isinstance(result, dn.DataNode):
             dn.exhaust(result, dt, interruptible=True, sync_to=bgm_knot)
 
-        elif isinstance(result, list):
-            for item in result:
-                self.logger.print(item)
-
         elif result is not None:
-            self.logger.print(result)
+            self.logger.print(repr(result))
 
     @cmd.function_command
     def intro(self):
