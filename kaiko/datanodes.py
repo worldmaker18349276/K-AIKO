@@ -1300,12 +1300,17 @@ def input_ctxt(stream):
     old_owner = fcntl.fcntl(fd, fcntl.F_GETOWN)
     new_owner = os.getpid()
 
+    io_event = threading.Event()
+    def SIGIO_handler(signal, frame):
+        io_event.set()
+    signal.signal(signal.SIGIO, SIGIO_handler)
+
     try:
         fcntl.fcntl(fd, fcntl.F_SETFL, new_flags)
         fcntl.fcntl(fd, fcntl.F_SETOWN, new_owner)
         termios.tcsetattr(fd, termios.TCSANOW, new_attrs)
 
-        yield
+        yield io_event
 
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
@@ -1323,42 +1328,37 @@ def input(node, stream=None):
     if stream is None:
         stream = sys.stdin
 
-    io_event = threading.Event()
-    def SIGIO_handler(signal, frame):
-        io_event.set()
-    signal.signal(signal.SIGIO, SIGIO_handler)
-
     stop_event = threading.Event()
     error = None
 
-    def run():
-        nonlocal error
-        try:
-            ref_time = time.time()
+    with input_ctxt(stream) as io_event:
+        def run():
+            nonlocal error
+            try:
+                ref_time = time.time()
 
-            while True:
-                occured = io_event.wait(dt)
-                if stop_event.is_set():
-                    break
-                if not occured:
-                    continue
+                while True:
+                    occured = io_event.wait(dt)
+                    if stop_event.is_set():
+                        break
+                    if not occured:
+                        continue
 
-                io_event.clear()
+                    io_event.clear()
 
-                key = stream.read(MAX_KEY_LEN)
+                    key = stream.read(MAX_KEY_LEN)
 
-                if key:
-                    try:
-                        node.send((time.time()-ref_time, key))
-                    except StopIteration:
-                        return
-                    if len(key) == MAX_KEY_LEN:
-                        io_event.set()
+                    if key:
+                        try:
+                            node.send((time.time()-ref_time, key))
+                        except StopIteration:
+                            return
+                        if len(key) == MAX_KEY_LEN:
+                            io_event.set()
 
-        except Exception as e:
-            error = e
+            except Exception as e:
+                error = e
 
-    with input_ctxt(stream):
         with node:
             thread = threading.Thread(target=run)
             try:
@@ -1369,7 +1369,6 @@ def input(node, stream=None):
                     yield
             finally:
                 stop_event.set()
-                io_event.set()
                 if thread.is_alive():
                     thread.join()
                 if error is not None:
