@@ -82,7 +82,18 @@ def echo_str(escaped_str):
 
     return re.sub(regex, repl, escaped_str)
 
-def fit_screen(logger, width, delay=1.0):
+def fit_screen(print, width, delay=1.0):
+    r"""Guide user to adjust screen size.
+
+    Parameters
+    ----------
+    print : function
+        The print function.
+    width : int
+        The required width of screen.
+    delay : float
+        The delay time before and after completion.
+    """
     import time
 
     @dn.datanode
@@ -93,10 +104,10 @@ def fit_screen(logger, width, delay=1.0):
         if size.columns < width:
             t = time.time()
 
-            logger.print("The screen size seems too small.")
-            logger.print(f"Can you adjust the screen size to (or bigger than) {width}?")
-            logger.print("Or you can try to fit the line below.")
-            logger.print("━"*width)
+            print("The screen size seems too small.")
+            print(f"Can you adjust the screen size to (or bigger than) {width}?")
+            print("Or you can try to fit the line below.")
+            print("━"*width)
 
             while current_width < width or time.time() < t+delay:
                 if current_width != size.columns:
@@ -110,27 +121,40 @@ def fit_screen(logger, width, delay=1.0):
                         hint = "(perfect!)"
                     else:
                         hint = "(great!)"
-                    logger.print(f"\r\x1b[KCurrent width: {current_width} {hint}", end="", flush=True)
+                    print(f"\r\x1b[KCurrent width: {current_width} {hint}", end="", flush=True)
 
                 size = yield
 
-            logger.print("\nThanks!\n")
+            print("\nThanks!\n")
 
             # sleep
             t = time.time()
             while time.time() < t+delay:
                 yield
 
-    dn.exhaust(dn.pipe(dn.terminal_size(), fit()), dt=0.1)
+    dn.exhaust(dn.pipe(dn.terminal_size(), fit()), dt=delay/10)
 
-def print_pyaudio_info(manager, logger):
-    logger.print()
+def print_pyaudio_info(manager, print):
+    r"""Print out some information of PyAudio.
 
-    logger.print("portaudio version:")
-    logger.print("  " + pyaudio.get_portaudio_version_text())
-    logger.print()
+    Loading PyAudio will cause PortAudio to print something to the terminal, which
+    cannot be turned off by PyAudio, so why not print more information to make it
+    more hacky.
 
-    logger.print("available devices:")
+    Parameters
+    ----------
+    manager : PyAudio
+        The manager of PyAudio.
+    print : function
+        The print function.
+    """
+    print()
+
+    print("portaudio version:")
+    print("  " + pyaudio.get_portaudio_version_text())
+    print()
+
+    print("available devices:")
     apis_list = [manager.get_host_api_info_by_index(i)['name'] for i in range(manager.get_host_api_count())]
 
     table = []
@@ -154,15 +178,15 @@ def print_pyaudio_info(manager, logger):
     chout_len = max(len(entry[5]) for entry in table)
 
     for ind, name, api, freq, chin, chout in table:
-        logger.print(f"  {ind:>{ind_len}}. {name:{name_len}}  by  {api:{api_len}}"
-                     f"  ({freq:>{freq_len}} kHz, in: {chin:>{chin_len}}, out: {chout:>{chout_len}})")
+        print(f"  {ind:>{ind_len}}. {name:{name_len}}  by  {api:{api_len}}"
+              f"  ({freq:>{freq_len}} kHz, in: {chin:>{chin_len}}, out: {chout:>{chout_len}})")
 
-    logger.print()
+    print()
 
     default_input_device_index = manager.get_default_input_device_info()['index']
     default_output_device_index = manager.get_default_output_device_info()['index']
-    logger.print(f"default input device: {default_input_device_index}")
-    logger.print(f"default output device: {default_output_device_index}")
+    print(f"default input device: {default_input_device_index}")
+    print(f"default output device: {default_output_device_index}")
 
 class KAIKOMenuSettings(cfg.Configurable):
     logo: str = """
@@ -253,6 +277,15 @@ class KAIKOUser:
 
 class KAIKOMenu:
     def __init__(self, config, user, manager, logger):
+        r"""Constructor.
+
+        Parameters
+        ----------
+        config : KAIKOSettings
+        user : KAIKOUser
+        manager : PyAudio
+        logger : KAIKOLogger
+        """
         self._config = config
         self.user = user
         self.manager = manager
@@ -260,23 +293,83 @@ class KAIKOMenu:
         self.beatmap_manager = BeatmapManager(user, logger)
         self.bgm_controller = KAIKOBGMController(config, logger, self.beatmap_manager)
 
+    @classmethod
+    @contextlib.contextmanager
+    def init(clz):
+        r"""Initialize KAIKOMenu within a context manager."""
+        username = psutil.Process().username()
+        data_dir = Path(appdirs.user_data_dir("K-AIKO", username))
+
+        # load settings
+        config_file = data_dir / "config.py"
+        config = cfg.Configuration(KAIKOSettings)
+        if config_file.exists():
+            config.read(config_file)
+        settings = config.current
+
+        logger = KAIKOLogger(config)
+
+        # print logo
+        logger.print(settings.menu.logo, flush=True)
+
+        # load user data
+        songs_dir = data_dir / "songs"
+
+        if not data_dir.exists():
+            # start up
+            logger.print(f"Prepare your profile...", prefix="data")
+            data_dir.mkdir(exist_ok=True)
+            songs_dir.mkdir(exist_ok=True)
+            if not config_file.exists():
+                config.write(config_file)
+
+            (data_dir / "samples/").mkdir(exist_ok=True)
+            resources = ["samples/soft.wav",
+                         "samples/loud.wav",
+                         "samples/incr.wav",
+                         "samples/rock.wav",
+                         "samples/disk.wav"]
+            for rspath in resources:
+                logger.print(f"Load resource {rspath}...", prefix="data")
+                data = pkgutil.get_data("kaiko", rspath)
+                open(data_dir / rspath, 'wb').write(data)
+
+            logger.print(f"Your data will be stored in {logger.emph(data_dir.as_uri())}", prefix="data")
+            logger.print(flush=True)
+
+        user = KAIKOUser(username, config_file, data_dir, songs_dir)
+
+        # load PyAudio
+        logger.print(f"Load PyAudio...", prefix="info")
+        logger.print()
+
+        with logger.verb():
+            manager = pyaudio.PyAudio()
+            print_pyaudio_info(manager, logger.print)
+
+        try:
+            yield clz(config, user, manager, logger)
+        finally:
+            manager.terminate()
+
     @staticmethod
     def main():
+        r"""Run K-AIKO."""
         try:
             with KAIKOMenu.init() as menu:
                 logger = menu.logger
                 dt = 0.01
 
                 # fit screen size
-                fit_screen(logger, menu.settings.menu.best_screen_size)
+                fit_screen(logger.print, menu.settings.menu.best_screen_size)
 
                 # load songs
                 menu.reload()
 
                 # execute given command
                 if len(sys.argv) > 1:
-                    result = cmd.RootCommand(menu).build(sys.argv[1:])()
-                    menu.run_command(result, dt)
+                    command = cmd.RootCommandParser(menu).build(sys.argv[1:])
+                    menu.run_command(command, dt)
                     return
 
                 # load mixer
@@ -318,71 +411,24 @@ class KAIKOMenu:
 
     @property
     def settings(self):
+        r"""Current settings."""
         return self._config.current
 
-    @classmethod
-    @contextlib.contextmanager
-    def init(clz):
-        username = psutil.Process().username()
-        data_dir = Path(appdirs.user_data_dir("K-AIKO", username))
-
-        # load settings
-        config_file = data_dir / "config.py"
-        config = cfg.Configuration(KAIKOSettings)
-        if config_file.exists():
-            config.read(config_file)
-        settings = config.current
-
-        logger = KAIKOLogger(config)
-
-        # print logo
-        logger.print(settings.menu.logo, flush=True)
-
-        # load user data
-        songs_dir = data_dir / "songs"
-
-        if not data_dir.exists():
-            # start up
-            logger.print(f"Prepare your profile...", prefix="data")
-            data_dir.mkdir(exist_ok=True)
-            songs_dir.mkdir(exist_ok=True)
-            if not config_file.exists():
-                config.write(config_file)
-
-            (data_dir / "samples/").mkdir(exist_ok=True)
-            resources = ["samples/soft.wav",
-                         "samples/loud.wav",
-                         "samples/incr.wav",
-                         "samples/rock.wav",
-                         "samples/disk.wav"]
-            for rspath in resources:
-                logger.print(f"Load resource {rspath}...", prefix="data")
-                data = pkgutil.get_data("kaiko", rspath)
-                open(data_dir / rspath, 'wb').write(data)
-
-            logger.print(f"Your data will be stored in {logger.emph(data_dir.as_uri())}", prefix="data")
-            logger.print(flush=True)
-
-        # load PyAudio
-        logger.print(f"Load PyAudio...", prefix="info")
-        logger.print()
-
-        with logger.verb():
-            manager = pyaudio.PyAudio()
-            print_pyaudio_info(manager, logger)
-
-        try:
-            user = KAIKOUser(username, config_file, data_dir, songs_dir)
-            yield clz(config, user, manager, logger)
-        finally:
-            manager.terminate()
-
-    @cmd.function_command
-    def exit(self):
-        self.logger.print("bye~")
-        raise KeyboardInterrupt
-
     def run_command(self, command, dt, bgm_knot=None):
+        r"""Run a command.
+        If it returns executable object (an object has method `execute`), call
+        `result.execute(manager)`; if it returns a DataNode, exhaust it; otherwise,
+        print repr of result.
+
+        Parameters
+        ----------
+        command : function
+            The command.
+        dt : float
+            The update interval.
+        bgm_knot : dn.DataNode
+            The bgm DataNode.
+        """
         result = command()
 
         if hasattr(result, 'execute'):
@@ -401,26 +447,16 @@ class KAIKOMenu:
             self.logger.print(repr(result))
 
     @cmd.function_command
-    def intro(self):
-        self.logger.print(
-"""Beat shell is a user friendly commandline shell for playing K-AIKO.
-
-Just type a command followed by any arguments, and press \x1b[1mEnter\x1b[m to execute!
-
- \x1b[2mbeating prompt\x1b[m
-   \x1b[2m│\x1b[m    \x1b[2mthe command you want to execute\x1b[m
-   \x1b[2m│\x1b[m     \x1b[2m╱\x1b[m     \x1b[2m╭──\x1b[m \x1b[2margument of command\x1b[m
-\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;252m❯ \x1b[m\x1b[94msay\x1b[m \x1b[92m'Welcome\x1b[2m⌴\x1b[m\x1b[92mto\x1b[2m⌴\x1b[m\x1b[92mK-AIKO!'\x1b[m \x1b[7;2m \x1b[m
-Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeating caret\x1b[m
-     \x1b[2m╲\x1b[m                \x1b[2m╰───\x1b[m \x1b[2mquoted whitespace look like this!\x1b[m
-   \x1b[2moutput of command\x1b[m
-""")
+    def exit(self):
+        """Close K-AIKO."""
+        self.logger.print("bye~")
+        raise KeyboardInterrupt
 
     @cmd.function_command
     def say(self, message, escape=False):
-        """Say something and I will echo.
-
-        usage: \x1b[94msay\x1b[m \x1b[92m{message}\x1b[m [\x1b[95m--escape\x1b[m \x1b[92m{ESCAPE}\x1b[m]\x1b[m
+        """Say something to... yourself.
+        
+        usage: \x1b[94msay\x1b[m \x1b[92m{message}\x1b[m [\x1b[95m--escape\x1b[m \x1b[92m{ESCAPE}\x1b[m]
                       ╱                    ╲
             text, the message               ╲
              to be printed.          bool, use backslash escapes
@@ -448,51 +484,53 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @cmd.function_command
     def username(self):
-        return self.user.username
+        """Your user name."""
+        self.logger.print(self.user.username)
 
     @cmd.function_command
     def config_file(self):
-        return self.user.config_file
+        """Your configuration file."""
+        self.logger.print(self.user.config_file.as_uri())
 
     @cmd.function_command
     def data_dir(self):
-        return self.user.data_dir
+        """Your data directory."""
+        self.logger.print(self.user.data_dir.as_uri())
 
     @cmd.function_command
     def songs_dir(self):
-        return self.user.songs_dir
+        """Your songs directory."""
+        self.logger.print(self.user.songs_dir.as_uri())
 
     # bgm
 
     @cmd.subcommand
     @property
     def bgm(self):
+        """Background music."""
         return BGMCommand(self.bgm_controller, self.beatmap_manager, self.logger)
 
     # beatmaps
 
     @cmd.function_command
     def beatmaps(self):
+        """Your beatmaps."""
         if not self.beatmap_manager.is_uptodate():
             self.reload()
 
         for beatmapset in self.beatmap_manager._beatmaps.values():
             for beatmap in beatmapset:
-                self.logger.print(str(beatmap))
+                self.logger.print("• " + str(beatmap))
 
     @cmd.function_command
     def reload(self):
-        """Reload your songs.
-
-        usage: \x1b[94mreload\x1b[m
-        """
-
+        """Reload your songs."""
         self.beatmap_manager.reload()
 
     @cmd.function_command
     def add(self, beatmap):
         """Add beatmap/beatmapset to your songs folder.
-
+        
         usage: \x1b[94madd\x1b[m \x1b[92m{beatmap}\x1b[m
                         ╲
               Path, the path to the
@@ -510,7 +548,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
     @cmd.function_command
     def remove(self, beatmap):
         """Remove beatmap/beatmapset in your songs folder.
-
+        
         usage: \x1b[94mremove\x1b[m \x1b[92m{beatmap}\x1b[m
                            ╲
                  Path, the path to the
@@ -532,7 +570,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
     @cmd.function_command
     def play(self, beatmap):
         """Let's beat with the song!
-
+        
         usage: \x1b[94mplay\x1b[m \x1b[92m{beatmap}\x1b[m
                          ╲
                Path, the path to the
@@ -552,6 +590,17 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @cmd.function_command
     def audio_input(self, device, samplerate=None, channels=None, format=None):
+        """Configure audio input.
+        
+        usage: \x1b[94maudio_input\x1b[m \x1b[92m{device}\x1b[m \
+[\x1b[95m--samplerate\x1b[m \x1b[92m{RATE}\x1b[m] \
+[\x1b[95m--channel\x1b[m \x1b[92m{CHANNEL}\x1b[m] \
+[\x1b[95m--format\x1b[m \x1b[92m{FORMAT}\x1b[m]
+                             ╱                     ╱                      ╲                    ╲
+                   the index of input        the sample rate       the channel of audio    the data format
+                    device, -1 is the       of recorded sound.      input: 1 for mono,    of recorded sound.
+                     default device.                                 2 for stereo.
+        """
         logger = self.logger
 
         pa_device = device
@@ -593,6 +642,17 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
 
     @cmd.function_command
     def audio_output(self, device, samplerate=None, channels=None, format=None):
+        """Configure audio output.
+        
+        usage: \x1b[94maudio_output\x1b[m \x1b[92m{device}\x1b[m \
+[\x1b[95m--samplerate\x1b[m \x1b[92m{RATE}\x1b[m] \
+[\x1b[95m--channel\x1b[m \x1b[92m{CHANNEL}\x1b[m] \
+[\x1b[95m--format\x1b[m \x1b[92m{FORMAT}\x1b[m]
+                              ╱                     ╱                      ╲                    ╲
+                    the index of output       the sample rate       the channel of audio    the data format
+                     device, -1 is the        of played sound.       output: 1 for mono,    of played sound.
+                      default device.                                 2 for stereo.
+        """
         logger = self.logger
 
         pa_device = device
@@ -661,6 +721,7 @@ Welcome to K-AIKO!    \x1b[2m│\x1b[m         \x1b[2m╰─\x1b[m \x1b[2mbeatin
     @cmd.subcommand
     @property
     def config(self):
+        """Configuration."""
         return ConfigCommand(self._config, self.logger, self.user.config_file)
 
 

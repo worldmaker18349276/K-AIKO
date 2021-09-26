@@ -1305,7 +1305,7 @@ class BeatPrompt:
             if clean:
                 caret = None
             elif t < tr or t % 1 < caret_blink_ratio:
-                if t % 4 < caret_blink_ratio:
+                if t % 4 < 1:
                     caret = lambda s: wcb.add_attr(s, caret_attr[1])
                 else:
                     caret = lambda s: wcb.add_attr(s, caret_attr[0])
