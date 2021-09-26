@@ -99,6 +99,19 @@ class DataNode:
             data = yield function(data)
 
     @staticmethod
+    @datanode
+    def from_thread(thread):
+        try:
+            yield
+            thread.start()
+            yield
+            while thread.is_alive():
+                yield
+        finally:
+            if thread.is_alive():
+                thread.join()
+
+    @staticmethod
     def wrap(node_like):
         if isinstance(node_like, DataNode):
             return node_like
@@ -108,6 +121,9 @@ class DataNode:
 
         elif hasattr(node_like, '__call__'):
             return DataNode.from_func(node_like)
+
+        elif isinstance(node_like, Thread):
+            return DataNode.from_thread(node_like)
 
         else:
             raise ValueError
@@ -673,6 +689,30 @@ def exhaust(node, dt=0.0, interruptible=False, sync_to=None):
                     sync_to.send(None)
                 except StopIteration:
                     sync_to = None
+
+def async(func):
+    # usage: res = yield from async(slow_func)
+    res = None
+    error = None
+
+    def run():
+        nonlocal res, error
+        try:
+            res = func()
+        except e:
+            error = e
+
+    thread = threading.Thread(target=run)
+    try:
+        thread.start()
+        while thread.is_alive():
+            yield
+    finally:
+        if thread.is_alive():
+            thread.join()
+        if error is not None:
+            raise error
+        return res
 
 
 # for fixed-width data
