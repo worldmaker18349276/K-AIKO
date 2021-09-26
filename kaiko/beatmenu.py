@@ -82,7 +82,7 @@ def echo_str(escaped_str):
 
     return re.sub(regex, repl, escaped_str)
 
-def fit_screen(print, width, delay=1.0):
+def fit_screen(print, width, delay):
     r"""Guide user to adjust screen size.
 
     Parameters
@@ -93,6 +93,11 @@ def fit_screen(print, width, delay=1.0):
         The required width of screen.
     delay : float
         The delay time before and after completion.
+
+    Returns
+    -------
+    knot : dn.DataNode
+        The datanode to manage this process.
     """
     import time
 
@@ -132,7 +137,7 @@ def fit_screen(print, width, delay=1.0):
             while time.time() < t+delay:
                 yield
 
-    dn.exhaust(dn.pipe(dn.terminal_size(), fit()), dt=delay/10)
+    return dn.pipe(dn.terminal_size(), fit())
 
 def print_pyaudio_info(manager, print):
     r"""Print out some information of PyAudio.
@@ -361,7 +366,9 @@ class KAIKOMenu:
                 dt = 0.01
 
                 # fit screen size
-                fit_screen(logger.print, menu.settings.menu.best_screen_size)
+                screen_size = menu.settings.menu.best_screen_size
+                fit_delay = 1.0
+                dn.exhaust(fit_screen(logger.print, screen_size, fit_delay), dt=dt)
 
                 # load songs
                 menu.reload()
@@ -1115,7 +1122,7 @@ class KAIKOBGMController:
             return dn.DataNode.wrap(lambda _:None)
 
         else:
-            return dn.pipe(knot, dn.interval(self._bgm_rountine(mixer), dt=0.1))
+            return dn.pipe(knot, self._bgm_rountine(mixer))
 
     @dn.datanode
     def _bgm_rountine(self, mixer):
