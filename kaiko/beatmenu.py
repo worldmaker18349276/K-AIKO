@@ -733,6 +733,7 @@ class ConfigCommand:
 
     @cmd.function_command
     def reload(self):
+        """Reload configuration."""
         logger = self.logger
 
         logger.print(f"Load configuration from {logger.emph(self.path.as_uri())}...", prefix="data")
@@ -742,6 +743,7 @@ class ConfigCommand:
 
     @cmd.function_command
     def save(self):
+        """Save configuration."""
         logger = self.logger
 
         logger.print(f"Save configuration to {logger.emph(self.path.as_uri())}...", prefix="data")
@@ -751,22 +753,47 @@ class ConfigCommand:
 
     @cmd.function_command
     def show(self):
+        """Show configuration."""
         self.logger.print(str(self.config))
 
     @cmd.function_command
     def get(self, field):
+        """Get the value of this field in the configuration.
+        
+        usage: \x1b[94mconfig\x1b[m \x1b[94mget\x1b[m \x1b[92m{field}\x1b[m
+                            ╱
+                     The field name.
+        """
         return self.config.get(field)
 
     @cmd.function_command
     def has(self, field):
+        """Check whether this field is set in the configuration.
+        
+        usage: \x1b[94mconfig\x1b[m \x1b[94mhas\x1b[m \x1b[92m{field}\x1b[m
+                            ╱
+                     The field name.
+        """
         return self.config.has(field)
 
     @cmd.function_command
     def unset(self, field):
+        """Unset this field in the configuration.
+        
+        usage: \x1b[94mconfig\x1b[m \x1b[94munset\x1b[m \x1b[92m{field}\x1b[m
+                              ╱
+                       The field name.
+        """
         self.config.unset(field)
 
     @cmd.function_command
     def set(self, field, value):
+        """Set this field in the configuration.
+        
+        usage: \x1b[94mconfig\x1b[m \x1b[94mset\x1b[m \x1b[92m{field}\x1b[m \x1b[92m{value}\x1b[m
+                            ╱         ╲
+                   The field name.   The value.
+        """
         self.config.set(field, value)
 
     @get.arg_parser("field")
@@ -784,32 +811,40 @@ class ConfigCommand:
 
     @cmd.function_command
     def rename(self, profile):
-        logger = self.logger
-
-        if "\n" in profile or "\r" in profile:
-            with logger.warn():
-                logger.print("Invalid profile name.")
+        """Rename current configuration profile.
+        
+        usage: \x1b[94mconfig\x1b[m \x1b[94mrename\x1b[m \x1b[92m{profile}\x1b[m
+                                ╱
+                      The profile name.
+        """
+        if not profile.isprintable():
+            with self.logger.warn():
+                self.logger.print("Invalid profile name.")
             return
 
         if profile in self.config.profiles:
-            with logger.warn():
-                logger.print("This profile name already exists.")
+            with self.logger.warn():
+                self.logger.print("This profile name already exists.")
             return
 
         self.config.name = profile
 
     @cmd.function_command
     def new(self, profile, clone=None):
-        logger = self.logger
-
-        if "\n" in profile or "\r" in profile:
-            with logger.warn():
-                logger.print("Invalid profile name.")
+        """Make new configuration profile.
+        
+        usage: \x1b[94mconfig\x1b[m \x1b[94mnew\x1b[m \x1b[92m{profile}\x1b[m [\x1b[95m--clone\x1b[m \x1b[92m{PROFILE}\x1b[m]
+                              ╱                    ╲
+                     The profile name.      The profile to be cloned.
+        """
+        if not profile.isprintable():
+            with self.logger.warn():
+                self.logger.print("Invalid profile name.")
             return
 
         if profile == self.config.name or profile in self.config.profiles:
-            with logger.warn():
-                logger.print("This profile name already exists.")
+            with self.logger.warn():
+                self.logger.print("This profile name already exists.")
             return
 
         self.config.new(profile, clone)
@@ -819,24 +854,41 @@ class ConfigCommand:
     def _new_profile_parser(self):
         return cmd.RawParser()
 
-    @new.arg_parser("clone")
-    def _new_clone_parser(self, profile):
-        options = list(self.config.profiles.keys())
-        options.insert(0, self.config.name)
-        return cmd.OptionParser(options)
-
     @cmd.function_command
     def use(self, profile):
+        """Change the current configuration profile.
+        
+        usage: \x1b[94mconfig\x1b[m \x1b[94muse\x1b[m \x1b[92m{profile}\x1b[m
+                              ╱
+                     The profile name.
+        """
+        if profile == self.config.name:
+            return
         self.config.use(profile)
 
     @cmd.function_command
     def delete(self, profile):
+        """Delete a configuration profile.
+        
+        usage: \x1b[94mconfig\x1b[m \x1b[94mdelete\x1b[m \x1b[92m{profile}\x1b[m
+                                ╱
+                       he profile name.
+        """
+        if profile == self.config.name:
+            with self.logger.warn():
+                self.logger.print("Cannot delete current profile.")
+            return
         del self.config.profiles[profile]
 
+    @new.arg_parser("clone")
     @use.arg_parser("profile")
     @delete.arg_parser("profile")
-    def _profile_parser(self):
-        return cmd.OptionParser(list(self.config.profiles.keys()))
+    def _old_profile_parser(self, *_, **__):
+        options = list(self.config.profiles.keys())
+        options.insert(0, self.config.name)
+        return cmd.OptionParser(options,
+                                desc="It should be the name of the profile that exists in the configuration.")
+
 
 class FieldParser(cmd.ArgumentParser):
     def __init__(self, config_type):

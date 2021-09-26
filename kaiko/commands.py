@@ -221,6 +221,7 @@ class OptionParser(ArgumentParser):
         """
         self.options = options
         self.default = default
+        self._desc = desc
 
         if desc is None:
             options = list(self.options.keys()) if isinstance(self.options, dict) else self.options
