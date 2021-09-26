@@ -1496,23 +1496,23 @@ class BeatPrompt:
         view, width, (header, caret), (text, typeahead, caret_pos) = yield
 
         while True:
-            # adjust input offset
             input_width = len(range(width)[input_ran])
-            _, solid_text_width = wcb.textrange1(0, text)
+            _, text_width = wcb.textrange1(0, text)
+            _, typeahead_width = wcb.textrange1(0, typeahead)
 
-            if solid_text_width - input_offset + 1 <= input_width:
-                input_offset = max(0, solid_text_width-input_width+1)
+            # adjust input offset
+            if text_width - input_offset < input_width - 1:
+                input_offset = max(0, text_width-input_width+1)
             if caret_pos - input_offset >= input_width:
                 input_offset = caret_pos - input_width + 1
             elif caret_pos - input_offset < 0:
                 input_offset = caret_pos
 
             # draw input
-            _, text_width = wcb.textrange1(0, text+typeahead)
             wcb.addtext1(view, width, input_ran.start-input_offset, text+typeahead, input_ran)
             if input_offset > 0:
                 wcb.addtext1(view, width, input_ran.start, "…", input_ran)
-            if text_width-input_offset >= input_width:
+            if text_width + typeahead_width - input_offset > input_width - 1:
                 wcb.addtext1(view, width, input_ran.start+input_width-1, "…", input_ran)
 
             # draw header
