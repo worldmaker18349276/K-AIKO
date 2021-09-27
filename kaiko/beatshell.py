@@ -406,7 +406,9 @@ class BeatInput:
             Recording current input state.
         """
         if record_current:
-            self.history.append("".join(self.buffer))
+            command = "".join(self.buffer)
+            if command and (not self.history or self.history[-1] != command):
+                self.history.append(command)
 
         self.buffers = [list(history_buffer) for history_buffer in self.history]
         self.buffers.append([])
