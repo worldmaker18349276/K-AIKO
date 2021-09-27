@@ -475,6 +475,11 @@ class KAIKOMenu:
         else:
             self.logger.print(message)
 
+    @cmd.function_command
+    def clean(self):
+        """Clean screen."""
+        self.logger.print("\x1b[2J\x1b[H")
+
     @say.arg_parser("message")
     def _say_message_parser(self):
         return cmd.RawParser(desc="It should be some text,"
