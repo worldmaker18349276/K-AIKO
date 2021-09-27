@@ -10,6 +10,5 @@ dependencies:
   - nwani::portaudio
   - nwani::pyaudio
   - wcwidth
-  - psutil
   - appdirs
   - twine

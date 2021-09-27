@@ -8,8 +8,8 @@ import dataclasses
 from typing import Tuple, Optional
 import traceback
 import zipfile
+import getpass
 import shutil
-import psutil
 import pkgutil
 from pathlib import Path
 import appdirs
@@ -302,7 +302,7 @@ class KAIKOMenu:
     @contextlib.contextmanager
     def init(clz):
         r"""Initialize KAIKOMenu within a context manager."""
-        username = psutil.Process().username()
+        username = getpass.getuser()
         data_dir = Path(appdirs.user_data_dir("K-AIKO", username))
 
         # load settings
