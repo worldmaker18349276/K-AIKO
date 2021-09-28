@@ -365,9 +365,9 @@ def pt_walk(text, width, x=0, tabsize=8):
 class RendererSettings(cfg.Configurable):
     display_framerate: float = 160.0 # ~ 2 / detector_time_res
     display_delay: float = 0.0
-    display_columns: int = -1
 
     debug_timeit: bool = False
+    resize_delay: float = 0.5
 
 class Renderer:
     def __init__(self, drawers_scheduler):
@@ -377,27 +377,44 @@ class Renderer:
     def get_node(scheduler, settings, ref_time):
         framerate = settings.display_framerate
         display_delay = settings.display_delay
-        columns = settings.display_columns
         debug_timeit = settings.debug_timeit
+        resize_delay = settings.resize_delay
 
         @dn.datanode
         def _node():
-            width = 0
-
             size_node = dn.terminal_size()
 
             curr_msg = ""
             index = 0
+            width = 0
+            resize_time = None
             with scheduler, size_node:
                 shown = yield
                 while True:
+                    time = index / framerate + display_delay - ref_time
+
                     try:
                         size = size_node.send(None)
                     except StopIteration:
                         return
-                    width = size.columns if columns == -1 else min(columns, size.columns)
 
-                    time = index / framerate + display_delay - ref_time
+                    if resize_time is not None:
+                        if size.columns < width:
+                            resize_time = time
+                        if time < resize_time + resize_delay:
+                            yield "\r\x1b[Kresizing...\r"
+                            index += 1
+                            width = size.columns
+                            continue
+
+                    elif size.columns < width:
+                        resize_time = time
+                        yield "\n\x1b[Jresizing...\r"
+                        index += 1
+                        width = size.columns
+                        continue
+
+                    width = size.columns
                     view = wcb.newwin1(width)
                     msg = ""
                     try:
@@ -406,16 +423,21 @@ class Renderer:
                         return
 
                     # track changes of the message
-                    if curr_msg == msg:
-                        res_text = "\r" + "".join(view) + "\r"
+                    if resize_time is None and curr_msg == msg:
+                        res_text = "\r\x1b[K" + "".join(view).rstrip() + "\r"
                     elif msg == "":
-                        res_text = "\r\x1b[J" + "".join(view) + "\r"
+                        res_text = "\r\x1b[J" + "".join(view).rstrip() + "\r"
                     else:
                         _, y = pt_walk(msg, width, 0)
-                        res_text = "\r\x1b[J" + "".join(view) + f"\n{msg}\x1b[{y+1}A\r"
+                        res_text = "\r\x1b[J" + "".join(view).rstrip() + f"\n{msg}\x1b[{y+1}A\r"
+
+                    if resize_time is not None:
+                        res_text = "\x1b[2J\x1b[H" + res_text
 
                     shown = yield res_text
-                    if shown: curr_msg = msg
+                    if shown:
+                        curr_msg = msg
+                        resize_time = None
                     index += 1
 
         display_node = _node()
