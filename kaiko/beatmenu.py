@@ -22,8 +22,8 @@ from . import biparsers as bp
 from . import commands as cmd
 from . import engines
 from . import beatshell
-from .beatmap import BeatmapPlayer, GameplaySettings
-from . import beatsheet
+from . import beatmaps
+from . import beatsheets
 from . import beatanalyzer
 
 
@@ -225,7 +225,7 @@ class KAIKOSettings(cfg.Configurable):
     menu = KAIKOMenuSettings
     devices = DevicesSettings
     shell = beatshell.BeatShellSettings
-    gameplay = GameplaySettings
+    gameplay = beatmaps.GameplaySettings
 
 
 class KAIKOLogger:
@@ -1052,7 +1052,7 @@ class BeatmapManager:
                 logger.print(f"Not a file: {str(beatmap)}")
 
     def get_song(self, beatmap):
-        beatmap = beatsheet.BeatSheet.read(str(self.user.songs_dir / beatmap), metadata_only=True)
+        beatmap = beatsheets.BeatSheet.read(str(self.user.songs_dir / beatmap), metadata_only=True)
         if beatmap.audio is None:
             return None
         return os.path.join(beatmap.root, beatmap.audio), None
@@ -1063,7 +1063,7 @@ class BeatmapManager:
             beatmap = beatmapset[0]
             try:
                 song = self.get_song(beatmap)
-            except beatsheet.BeatmapParseError:
+            except beatsheets.BeatmapParseError:
                 pass
             else:
                 if song is not None:
@@ -1075,11 +1075,11 @@ class BeatmapManager:
         return BeatmapParser(self._beatmaps, self.user.songs_dir, bgm_controller)
 
 class BeatmapParser(cmd.ArgumentParser):
-    def __init__(self, beatmaps, songs_dir, bgm_controller):
+    def __init__(self, beatmapsets, songs_dir, bgm_controller):
         self.songs_dir = songs_dir
         self.bgm_controller = bgm_controller
 
-        self.options = [str(beatmap) for beatmapset in beatmaps.values() for beatmap in beatmapset]
+        self.options = [str(beatmap) for beatmapset in beatmapsets.values() for beatmap in beatmapset]
         self._desc = cmd.it_should_be_one_of(self.options)
 
     def desc(self):
@@ -1097,8 +1097,8 @@ class BeatmapParser(cmd.ArgumentParser):
 
     def info(self, token):
         try:
-            beatmap = beatsheet.BeatSheet.read(str(self.songs_dir / token), metadata_only=True)
-        except beatsheet.BeatmapParseError:
+            beatmap = beatsheets.BeatSheet.read(str(self.songs_dir / token), metadata_only=True)
+        except beatsheets.BeatmapParseError:
             return None
         else:
             if self.bgm_controller is not None and beatmap.audio is not None:
@@ -1211,7 +1211,7 @@ class BGMCommand:
 
         try:
             song, _ = self.beatmap_manager.get_song(beatmap) or (None, None)
-        except beatsheet.BeatmapParseError:
+        except beatsheets.BeatmapParseError:
             with logger.warn():
                 logger.print("Fail to read beatmap")
             return
@@ -1244,15 +1244,15 @@ class KAIKOPlay:
         logger = self.logger
 
         try:
-            beatmap = beatsheet.BeatSheet.read(str(self.filepath))
+            beatmap = beatsheets.BeatSheet.read(str(self.filepath))
 
-        except beatsheet.BeatmapParseError:
+        except beatsheets.BeatmapParseError:
             with logger.warn():
                 logger.print(f"Failed to read beatmap {str(self.filepath)}")
                 logger.print(traceback.format_exc(), end="")
 
         else:
-            game = BeatmapPlayer(self.data_dir, beatmap, self.devices_settings, self.settings)
+            game = beatmaps.BeatmapPlayer(self.data_dir, beatmap, self.devices_settings, self.settings)
             game.execute(manager)
 
             logger.print()

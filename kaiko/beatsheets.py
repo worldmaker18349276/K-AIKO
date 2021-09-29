@@ -6,29 +6,25 @@ from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Union
 from ast import literal_eval
 from . import biparsers as bp
-from .beatmap import (
-    Beatmap,
-    UpdateContext, Text, Flip, Shift,
-    Soft, Loud, Incr, Roll, Spin,
-)
+from . import beatmaps
 
 def Context(beat, length, **update):
-    return UpdateContext(update)
+    return beatmaps.UpdateContext(update)
 
 class BeatmapParseError(Exception):
     pass
 
-class BeatSheet(Beatmap):
+class BeatSheet(beatmaps.Beatmap):
     _notations = {
-        'x': Soft,
-        'o': Loud,
-        '<': Incr,
-        '%': Roll,
-        '@': Spin,
+        'x': beatmaps.Soft,
+        'o': beatmaps.Loud,
+        '<': beatmaps.Incr,
+        '%': beatmaps.Roll,
+        '@': beatmaps.Spin,
         'Context': Context,
-        'Text': Text,
-        'Flip': Flip,
-        'Shift': Shift,
+        'Text': beatmaps.Text,
+        'Flip': beatmaps.Flip,
+        'Shift': beatmaps.Shift,
     }
 
     # audio
@@ -560,7 +556,7 @@ class OSU:
             # if format != "osu file format v14\n":
             #     raise BeatmapParseError(f"invalid file format: {repr(format)}")
 
-            beatmap = Beatmap()
+            beatmap = beatmaps.Beatmap()
             beatmap.event_sequences = [[]]
             context = {}
 
@@ -661,11 +657,11 @@ class OSU:
 
         if type & 1: # circle
             if hitSound == 0 or hitSound & 1: # don
-                event = Soft(beat=beat, length=0, speed=speed, volume=volume)
+                event = beatmaps.Soft(beat=beat, length=0, speed=speed, volume=volume)
                 beatmap.event_sequences[0].append(event)
 
             elif hitSound & 10: # kat
-                event = Loud(beat=beat, length=0, speed=speed, volume=volume)
+                event = beatmaps.Loud(beat=beat, length=0, speed=speed, volume=volume)
                 beatmap.event_sequences[0].append(event)
 
         elif type & 2: # slider
@@ -674,7 +670,7 @@ class OSU:
             sliderLength = float(sliderLength)
             length = sliderLength / sliderVelocity
 
-            event = Roll(beat=beat, length=length, density=density, speed=speed, volume=volume)
+            event = beatmaps.Roll(beat=beat, length=length, density=density, speed=speed, volume=volume)
             beatmap.event_sequences[0].append(event)
 
         elif type & 8: # spinner
@@ -682,7 +678,7 @@ class OSU:
             end_time = float(end_time)
             length = (end_time - time)/context['beatLength0']
 
-            event = Spin(beat=beat, length=length, density=density, speed=speed, volume=volume)
+            event = beatmaps.Spin(beat=beat, length=length, density=density, speed=speed, volume=volume)
             beatmap.event_sequences[0].append(event)
 
 OSU_FORMAT = OSU()
