@@ -362,6 +362,72 @@ def pt_walk(text, width, x=0, tabsize=8):
 
     return x, y
 
+def print_below(text, width, height, tabsize=8):
+    r"""Print the given text below the current position (GNOME terminal).
+
+    Parameters
+    ----------
+    text : str
+        The string to print.
+    width : int
+        The width of terminal.
+    height : int
+        The height of terminal.
+    tabsize : int, optional
+        The tab size of terminal.
+
+    Returns
+    -------
+    res : str
+    """
+    if height == 1:
+        return ""
+
+    x = 0
+    y = 0
+
+    res = []
+    for ch, w in wcb.parse_attr(text):
+        if ch == "\t":
+            if tabsize > 0 and x < width:
+                x = min((x+1) // -tabsize * -tabsize, width-1)
+
+        elif ch == "\b":
+            x = max(min(x, width-1)-1, 0)
+
+        elif ch == "\r":
+            x = 0
+
+        elif ch == "\n":
+            y += 1
+            x = 0
+
+        elif ch == "\v":
+            y += 1
+
+        elif ch == "\f":
+            y += 1
+
+        elif ch == "\x00":
+            pass
+
+        elif ch[0] == "\x1b":
+            pass
+
+        else:
+            x += w
+            if x > width:
+                y += 1
+                x = w
+
+        if y < height-1:
+            res.append(ch)
+        else:
+            y = height-2
+            break
+
+    return "\n" + "".join(res) + f"\x1b[m\x1b[{y+1}A"
+
 class RendererSettings(cfg.Configurable):
     display_framerate: float = 160.0 # ~ 2 / detector_time_res
     display_delay: float = 0.0
@@ -428,8 +494,7 @@ class Renderer:
                     elif msg == "":
                         res_text = "\r\x1b[J" + "".join(view).rstrip() + "\r"
                     else:
-                        _, y = pt_walk(msg, width, 0)
-                        res_text = "\r\x1b[J" + "".join(view).rstrip() + f"\n{msg}\x1b[{y+1}A\r"
+                        res_text = "\r\x1b[J" + "".join(view).rstrip() + print_below(msg, width, size.lines) + "\r"
 
                     if resize_time is not None:
                         res_text = "\x1b[2J\x1b[H" + res_text
