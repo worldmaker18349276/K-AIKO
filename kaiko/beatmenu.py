@@ -20,10 +20,10 @@ from . import config as cfg
 from . import wcbuffers as wcb
 from . import biparsers as bp
 from . import commands as cmd
-from .engines import Mixer, MixerSettings, DetectorSettings, RendererSettings, ControllerSettings
-from .beatshell import BeatShellSettings, BeatInput, InputError
+from . import engines
+from . import beatshell
 from .beatmap import BeatmapPlayer, GameplaySettings
-from .beatsheet import BeatSheet, BeatmapParseError
+from . import beatsheet
 from . import beatanalyzer
 
 
@@ -216,15 +216,15 @@ class KAIKOMenuSettings(cfg.Configurable):
     best_screen_size: int = 80
 
 class DevicesSettings(cfg.Configurable):
-    mixer = MixerSettings
-    detector = DetectorSettings
-    renderer = RendererSettings
-    controller = ControllerSettings
+    mixer = engines.MixerSettings
+    detector = engines.DetectorSettings
+    renderer = engines.RendererSettings
+    controller = engines.ControllerSettings
 
 class KAIKOSettings(cfg.Configurable):
     menu = KAIKOMenuSettings
     devices = DevicesSettings
-    shell = BeatShellSettings
+    shell = beatshell.BeatShellSettings
     gameplay = GameplaySettings
 
 
@@ -390,14 +390,14 @@ class KAIKOMenu:
                     logger.print()
 
                     # prompt
-                    input = BeatInput(menu)
+                    input = beatshell.BeatInput(menu)
                     while True:
                         # parse command
                         prompt_knot = input.prompt(menu.settings.devices, menu.settings.shell)
                         dn.exhaust(prompt_knot, dt, interruptible=True, sync_to=bgm_knot)
 
                         # execute result
-                        if isinstance(input.result, InputError):
+                        if isinstance(input.result, beatshell.InputError):
                             with logger.warn():
                                 logger.print(input.result.value)
                             input.prev_session()
@@ -1052,7 +1052,7 @@ class BeatmapManager:
                 logger.print(f"Not a file: {str(beatmap)}")
 
     def get_song(self, beatmap):
-        beatmap = BeatSheet.read(str(self.user.songs_dir / beatmap), metadata_only=True)
+        beatmap = beatsheet.BeatSheet.read(str(self.user.songs_dir / beatmap), metadata_only=True)
         if beatmap.audio is None:
             return None
         return os.path.join(beatmap.root, beatmap.audio), None
@@ -1063,7 +1063,7 @@ class BeatmapManager:
             beatmap = beatmapset[0]
             try:
                 song = self.get_song(beatmap)
-            except BeatmapParseError:
+            except beatsheet.BeatmapParseError:
                 pass
             else:
                 if song is not None:
@@ -1097,8 +1097,8 @@ class BeatmapParser(cmd.ArgumentParser):
 
     def info(self, token):
         try:
-            beatmap = BeatSheet.read(str(self.songs_dir / token), metadata_only=True)
-        except BeatmapParseError:
+            beatmap = beatsheet.BeatSheet.read(str(self.songs_dir / token), metadata_only=True)
+        except beatsheet.BeatmapParseError:
             return None
         else:
             if self.bgm_controller is not None and beatmap.audio is not None:
@@ -1116,7 +1116,7 @@ class KAIKOBGMController:
 
     def load_bgm(self, manager):
         try:
-            knot, mixer = Mixer.create(self.config.current.devices.mixer, manager)
+            knot, mixer = engines.Mixer.create(self.config.current.devices.mixer, manager)
 
         except Exception:
             with self.logger.warn():
@@ -1211,7 +1211,7 @@ class BGMCommand:
 
         try:
             song, _ = self.beatmap_manager.get_song(beatmap) or (None, None)
-        except BeatmapParseError:
+        except beatsheet.BeatmapParseError:
             with logger.warn():
                 logger.print("Fail to read beatmap")
             return
@@ -1244,9 +1244,9 @@ class KAIKOPlay:
         logger = self.logger
 
         try:
-            beatmap = BeatSheet.read(str(self.filepath))
+            beatmap = beatsheet.BeatSheet.read(str(self.filepath))
 
-        except BeatmapParseError:
+        except beatsheet.BeatmapParseError:
             with logger.warn():
                 logger.print(f"Failed to read beatmap {str(self.filepath)}")
                 logger.print(traceback.format_exc(), end="")

@@ -11,7 +11,7 @@ from . import datanodes as dn
 from . import biparsers as bp
 from . import wcbuffers as wcb
 from . import config as cfg
-from .commands import CommandUnfinishError, CommandParseError, TOKEN_TYPE, RootCommandParser
+from . import commands as cmd
 
 
 class SHLEXER_STATE(Enum):
@@ -311,7 +311,7 @@ class BeatInput:
 
     Attributes
     ----------
-    command : RootCommandParser
+    command : cmd.RootCommandParser
         The root command parser for beatshell.
     history : list of str
         The input history.
@@ -327,7 +327,7 @@ class BeatInput:
         The type ahead of input.
     tokens : list
         The tokens info, which is a list of tuple `(token, type, mask, ignored)`,
-        where `type` is TOKEN_TYPE or None, and the rest are the same as the
+        where `type` is cmd.TOKEN_TYPE or None, and the rest are the same as the
         values yielded by `shlexer_tokenize`.
     lex_state : SHLEXER_STATE
         The shlexer state.
@@ -352,7 +352,7 @@ class BeatInput:
         history : list of str
             The input history.
         """
-        self.command = RootCommandParser(promptable)
+        self.command = cmd.RootCommandParser(promptable)
         self.history = history if history is not None else []
         self.tab_state = None
         self.state = "FIN"
@@ -1013,11 +1013,11 @@ class BeatInput:
             types, res = self.command.parse_command(token for token, _, _, _ in self.tokens)
             index = len(types)
 
-        if isinstance(res, CommandUnfinishError):
+        if isinstance(res, cmd.CommandUnfinishError):
             self.set_result(InputError, res, None)
             self.finish()
             return False
-        elif isinstance(res, (CommandParseError, ShellSyntaxError)):
+        elif isinstance(res, (cmd.CommandParseError, ShellSyntaxError)):
             self.set_result(InputError, res, index)
             self.finish()
             return False
@@ -1377,17 +1377,17 @@ class BeatPrompt:
                             buffer[index] = wcb.add_attr(buffer[index], token_unknown_attr)
 
                 # render command token
-                if type is TOKEN_TYPE.COMMAND:
+                if type is cmd.TOKEN_TYPE.COMMAND:
                     for index in indices[mask]:
                         buffer[index] = wcb.add_attr(buffer[index], token_command_attr)
 
                 # render keyword token
-                elif type is TOKEN_TYPE.KEYWORD:
+                elif type is cmd.TOKEN_TYPE.KEYWORD:
                     for index in indices[mask]:
                         buffer[index] = wcb.add_attr(buffer[index], token_keyword_attr)
 
                 # render argument token
-                elif type is TOKEN_TYPE.ARGUMENT:
+                elif type is cmd.TOKEN_TYPE.ARGUMENT:
                     for index in indices[mask]:
                         buffer[index] = wcb.add_attr(buffer[index], token_argument_attr)
 

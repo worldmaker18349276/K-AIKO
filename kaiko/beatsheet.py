@@ -5,12 +5,7 @@ from fractions import Fraction
 from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Union
 from ast import literal_eval
-from .biparsers import (
-    startswith, match,
-    EncodeError, DecodeError,
-    Biparser, LiteralBiparser,
-    from_type_hint,
-)
+from . import biparsers as bp
 from .beatmap import (
     Beatmap,
     UpdateContext, Text, Flip, Shift,
@@ -206,7 +201,7 @@ class Instant(Pattern):
     patterns: List[Pattern] = field(default_factory=list)
 
 
-class MStrBiparser(LiteralBiparser):
+class MStrBiparser(bp.LiteralBiparser):
     # always start/end with newline => easy to parse
     # no named escape sequence '\N{...}'
 
@@ -223,10 +218,10 @@ class MStrBiparser(LiteralBiparser):
 
     def encode(self, value):
         if not value.startswith("\n") or not value.endswith("\n"):
-            raise EncodeError(value, "", [], info="it should start and end with newline")
+            raise bp.EncodeError(value, "", [], info="it should start and end with newline")
         return '"""' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'").replace(r"\n", "\n") + '"""'
 
-class RMStrBiparser(LiteralBiparser):
+class RMStrBiparser(bp.LiteralBiparser):
     regex = (r'r"""(?=\n)('
              r'(?!""")[^\\\x00]'
              r'|\\[^\x00]'
@@ -236,17 +231,17 @@ class RMStrBiparser(LiteralBiparser):
 
     def encode(self, value):
         if not value.startswith("\n") or not value.endswith("\n"):
-            raise EncodeError(value, "", [], info="it should start and end with newline")
+            raise bp.EncodeError(value, "", [], info="it should start and end with newline")
 
         m = re.search(r'\x00|\r|"""|\\$', value)
         if m:
-            raise EncodeError(value, f"[{m.start()}]", [],
+            raise bp.EncodeError(value, f"[{m.start()}]", [],
                 info="unable to repr '\\x00', '\\r', '\"\"\"' and single '\\' as raw string")
 
         return 'r"""' + value + '"""'
 
 
-class ValueBiparser(Biparser):
+class ValueBiparser(bp.Biparser):
     none  = r"None"
     bool  = r"True|False"
     int   = r"[-+]?(0|[1-9][0-9]*)"
@@ -264,21 +259,21 @@ class ValueBiparser(Biparser):
         elif isinstance(value, str):
             return '"' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
         else:
-            raise EncodeError(value, "", (None, bool, int, float, Fraction, str))
+            raise bp.EncodeError(value, "", (None, bool, int, float, Fraction, str))
 
     def decode(self, text, index=0, partial=False):
         for regex in [self.none, self.bool, self.str, self.float, self.frac, self.int]:
-            res, index = match(regex, ["None"], text, index, optional=True, partial=partial)
+            res, index = bp.match(regex, ["None"], text, index, optional=True, partial=partial)
             if res:
                 if regex == self.frac:
                     return Fraction(res.group()), index
                 else:
                     return literal_eval(res.group()), index
 
-        raise DecodeError(text, index, ["None"])
+        raise bp.DecodeError(text, index, ["None"])
 value_biparser = ValueBiparser()
 
-class ArgumentsBiparser(Biparser):
+class ArgumentsBiparser(bp.Biparser):
     key = r"([a-zA-Z_][a-zA-Z0-9_]*)="
 
     def encode(self, value):
@@ -297,13 +292,13 @@ class ArgumentsBiparser(Biparser):
         kwargs = {}
         keyworded = False
 
-        m, index = startswith(["("], text, index, optional=True, partial=True)
+        m, index = bp.startswith(["("], text, index, optional=True, partial=True)
         if not m: return (psargs, kwargs), index
-        m, index = startswith([")"], text, index, optional=True, partial=partial)
+        m, index = bp.startswith([")"], text, index, optional=True, partial=partial)
         if m: return (psargs, kwargs), index
 
         while True:
-            key, index = match(self.key, ["k="], text, index, optional=not keyworded, partial=True)
+            key, index = bp.match(self.key, ["k="], text, index, optional=not keyworded, partial=True)
             value, index = value_biparser.decode(text, index, partial=True)
             if key:
                 keyworded = True
@@ -311,13 +306,13 @@ class ArgumentsBiparser(Biparser):
             else:
                 psargs.append(value)
 
-            m, index = startswith([")"], text, index, optional=True, partial=partial)
+            m, index = bp.startswith([")"], text, index, optional=True, partial=partial)
             if m: return (psargs, kwargs), index
 
-            _, index = startswith([", "], text, index, partial=True)
+            _, index = bp.startswith([", "], text, index, partial=True)
 arguments_biparser = ArgumentsBiparser()
 
-class NoteBiparser(Biparser):
+class NoteBiparser(bp.Biparser):
     symbol = (r"[^ \b\t\n\r\f\v()[\]{}\'\"\\#]+"
               r'|"([^\r\n\\"\x00]|\\[\\"btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*"')
 
@@ -325,7 +320,7 @@ class NoteBiparser(Biparser):
         return value.symbol + arguments_biparser.encode(value.arguments)
 
     def decode(self, text, index=0, partial=False):
-        m, index = match(self.symbol, [], text, index, partial=True)
+        m, index = bp.match(self.symbol, [], text, index, partial=True)
         symbol = m.group(0)
         arguments, index = arguments_biparser.decode(text, index, partial=partial)
 
@@ -348,40 +343,40 @@ def parse_msp(text, index, indent=0, optional=False):
     cmt = r"#[^\n]*"
 
     # whitespace
-    m_sp, index = match(sp, [], text, index, optional=True, partial=True)
+    m_sp, index = bp.match(sp, [], text, index, optional=True, partial=True)
     if m_sp:
-        m_cmt, _ = match(cmt, [], text, index, optional=True, partial=True)
+        m_cmt, _ = bp.match(cmt, [], text, index, optional=True, partial=True)
         if m_cmt:
-            raise DecodeError(text, index, [], info="comment should occupy a whole line")
+            raise bp.DecodeError(text, index, [], info="comment should occupy a whole line")
 
     # end of line
-    m_eol, index = match(eol, [], text, index, optional=True, partial=True)
+    m_eol, index = bp.match(eol, [], text, index, optional=True, partial=True)
     if not m_eol:
         if m_sp:
             return " ", index
         elif optional:
             return None, index
         else:
-            raise DecodeError(text, index, [])
+            raise bp.DecodeError(text, index, [])
 
     # newline
     m_cmt = None
-    m_nl, index = match(nl, [], text, index, optional=True, partial=True)
+    m_nl, index = bp.match(nl, [], text, index, optional=True, partial=True)
     while m_nl:
         if m_nl.group(1) != " "*indent:
-            raise DecodeError(text, index, [], info="wrong indentation level")
+            raise bp.DecodeError(text, index, [], info="wrong indentation level")
 
-        m_eol, index = match(eol, [], text, index, optional=True, partial=True)
-        m_cmt, index = match(cmt, [], text, index, optional=True, partial=True)
+        m_eol, index = bp.match(eol, [], text, index, optional=True, partial=True)
+        m_cmt, index = bp.match(cmt, [], text, index, optional=True, partial=True)
         if not m_eol and not m_cmt:
             return "\n", index
 
-        m_nl, index = match(nl, [], text, index, optional=True, partial=True)
+        m_nl, index = bp.match(nl, [], text, index, optional=True, partial=True)
 
     else:
         return "", index
 
-class PatternsBiparser(Biparser):
+class PatternsBiparser(bp.Biparser):
     def encode(self, value):
         patterns_str = []
         for pattern in value:
@@ -407,22 +402,22 @@ class PatternsBiparser(Biparser):
             # end of block
             if sp == "":
                 if closed_by:
-                    raise DecodeError(text, index, [])
+                    raise bp.DecodeError(text, index, [])
                 else:
                     return patterns, index
 
             # closing bracket
             if closed_by:
-                closed, index = match(closed_by, [], text, index, optional=True, partial=partial)
+                closed, index = bp.match(closed_by, [], text, index, optional=True, partial=partial)
                 if closed:
                     return patterns, index
 
             # no space
             if sp is None:
-                raise DecodeError(text, index, [])
+                raise bp.DecodeError(text, index, [])
 
             # pattern
-            opened, index = startswith(["{", "["], text, index, optional=True, partial=True)
+            opened, index = bp.startswith(["{", "["], text, index, optional=True, partial=True)
             if opened == "{":
                 _, index = parse_msp(text, index, indent=indent, optional=True)
                 subpatterns, index = self.decode(text, index, partial=True, closed_by=r"\}", indent=indent)
@@ -431,7 +426,7 @@ class PatternsBiparser(Biparser):
             elif opened == "[":
                 _, index = parse_msp(text, index, indent=indent, optional=True)
                 subpatterns, index = self.decode(text, index, partial=True, closed_by=r"\]", indent=indent)
-                m, index = match(r"/(\d+)", [""], text, index, optional=True, partial=True)
+                m, index = bp.match(r"/(\d+)", [""], text, index, optional=True, partial=True)
                 divisor = int(m.group(1)) if m else 2
                 pattern = Division(divisor, subpatterns)
 
@@ -444,7 +439,7 @@ class PatternsBiparser(Biparser):
             sp, index = parse_msp(text, index, indent=indent, optional=True)
 patterns_biparser = PatternsBiparser()
 
-class ChartBiparser(Biparser):
+class ChartBiparser(bp.Biparser):
     def encode(self, value):
         res = ""
         for track in value:
@@ -462,19 +457,19 @@ class ChartBiparser(Biparser):
                 return tracks, index
 
             elif sp == "\n":
-                _, index = startswith(["TRACK"], text, index, partial=True)
+                _, index = bp.startswith(["TRACK"], text, index, partial=True)
                 arguments, index = arguments_biparser.decode(text, index, partial=True)
-                _, index = match(r":(?=\n)", [":"], text, index, partial=True)
+                _, index = bp.match(r":(?=\n)", [":"], text, index, partial=True)
 
                 track = Track()
                 try:
                     track.set_arguments(*arguments[0], **arguments[1])
                 except Exception:
-                    raise DecodeError(text, index, [])
+                    raise bp.DecodeError(text, index, [])
 
                 sp, index = parse_msp(text, index, indent=4, optional=True)
                 if sp != "\n":
-                    raise DecodeError(text, index, ["\n    "])
+                    raise bp.DecodeError(text, index, ["\n    "])
 
                 patterns, index = patterns_biparser.decode(text, index, partial=True, indent=4)
                 track.patterns = patterns
@@ -485,7 +480,7 @@ class ChartBiparser(Biparser):
                 raise ValueError("impossible condition")
 chart_biparser = ChartBiparser()
 
-class BeatSheetBiparser(Biparser):
+class BeatSheetBiparser(bp.Biparser):
     version = "0.2.0"
 
     def encode(self, value):
@@ -498,7 +493,7 @@ class BeatSheetBiparser(Biparser):
             if name == "info":
                 field_biparser = MStrBiparser()
             else:
-                field_biparser = from_type_hint(fields[name])
+                field_biparser = bp.from_type_hint(fields[name])
 
             sheet += "beatmap." + name + " = " + field_biparser.encode(getattr(value, name)) + "\n"
 
@@ -506,9 +501,9 @@ class BeatSheetBiparser(Biparser):
         sheet += "beatmap.chart = " + field_biparser.encode(getattr(value, 'chart')) + "\n"
 
     def decode(self, text, index=0, partial=False, metadata_only=False):
-        m, index = match(r"#K-AIKO-std-(\d+\.\d+\.\d+)(?=\n|$)",
-                                  ["#K-AIKO-std-" + self.version],
-                                  text, index, partial=True)
+        m, index = bp.match(r"#K-AIKO-std-(\d+\.\d+\.\d+)(?=\n|$)",
+                            ["#K-AIKO-std-" + self.version],
+                            text, index, partial=True)
         version = m.group(1)
 
         vernum = version.split(".")
@@ -527,16 +522,16 @@ class BeatSheetBiparser(Biparser):
             if sp == "":
                 return beatsheet, index
             if sp == " ":
-                raise DecodeError(text, prev_index, ["\n"])
+                raise bp.DecodeError(text, prev_index, ["\n"])
 
-            m, index = match(r"beatmap\.([_a-zA-Z][_a-zA-Z0-9]*) = ", [], text, index, partial=True)
+            m, index = bp.match(r"beatmap\.([_a-zA-Z][_a-zA-Z0-9]*) = ", [], text, index, partial=True)
             name = m.group(1)
             if name not in fields and name != "chart":
-                raise DecodeError(text, index, [], info=f"unknown field {name}")
+                raise bp.DecodeError(text, index, [], info=f"unknown field {name}")
             if name in is_set:
-                raise DecodeError(text, index, [], info=f"field {name} has been set")
+                raise bp.DecodeError(text, index, [], info=f"field {name} has been set")
             if name != "chart" and after_chart:
-                raise DecodeError(text, index, [], info=f"field {name} should be set before chart")
+                raise bp.DecodeError(text, index, [], info=f"field {name} should be set before chart")
             is_set.append(name)
 
             if name == "info":
@@ -545,7 +540,7 @@ class BeatSheetBiparser(Biparser):
                 field_biparser = RMStrBiparser()
                 after_chart = True
             else:
-                field_biparser = from_type_hint(fields[name])
+                field_biparser = bp.from_type_hint(fields[name])
 
             value, index = field_biparser.decode(text, index, partial=True)
 
