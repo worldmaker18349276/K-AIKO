@@ -1,3 +1,5 @@
+import sys
+import os
 import time
 import functools
 import itertools
@@ -6,6 +8,9 @@ import contextlib
 import queue
 import threading
 import signal
+import shutil
+import termios
+import fcntl
 import bisect
 import numpy
 import scipy
@@ -432,6 +437,19 @@ def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
 
 
 # for async processes
+def knot_template():
+    try:
+        # initialization
+        yield
+        # start
+        yield
+        # loop
+        while True:
+            yield
+    finally:
+        # finalization
+        pass
+
 class TimedVariable:
     def __init__(self, value=None, duration=numpy.inf):
         self._queue = queue.Queue()
@@ -1289,8 +1307,6 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
 
 @contextlib.contextmanager
 def input_ctxt(stream):
-    import os, termios, fcntl
-
     fd = stream.fileno()
     old_attrs = termios.tcgetattr(fd)
     new_attrs = list(old_attrs)
@@ -1319,8 +1335,6 @@ def input_ctxt(stream):
 
 @datanode
 def input(node, stream=None):
-    import sys, signal
-
     node = DataNode.wrap(node)
     MAX_KEY_LEN = 16
     dt = 0.01
@@ -1376,8 +1390,6 @@ def input(node, stream=None):
 
 @contextlib.contextmanager
 def show_ctxt(stream, hide_cursor=False, end="\n"):
-    import sys
-
     hide_cursor = hide_cursor and stream == sys.stdout
 
     try:
@@ -1394,8 +1406,6 @@ def show_ctxt(stream, hide_cursor=False, end="\n"):
 
 @datanode
 def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
-    import sys
-
     node = DataNode.wrap(node)
     if stream is None:
         stream = sys.stdout
@@ -1454,8 +1464,6 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
 
 @datanode
 def terminal_size():
-    import signal, shutil
-
     resize_event = threading.Event()
     def SIGWINCH_handler(sig, frame):
         resize_event.set()

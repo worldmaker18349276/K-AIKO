@@ -1,6 +1,7 @@
 import sys
 import os
 import re
+import time
 import random
 import queue
 import contextlib
@@ -99,8 +100,6 @@ def fit_screen(print, width, delay):
     knot : dn.DataNode
         The datanode to manage this process.
     """
-    import time
-
     @dn.datanode
     def fit():
         size = yield
@@ -1229,7 +1228,7 @@ class BGMCommand:
 
     @cmd.function_command
     def now_playing(self):
-        return self.bgm_controller._current_bgm
+        self.logger.print(self.bgm_controller._current_bgm)
 
 
 class KAIKOPlay:
