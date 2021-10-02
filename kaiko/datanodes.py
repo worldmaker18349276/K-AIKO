@@ -104,19 +104,6 @@ class DataNode:
             data = yield function(data)
 
     @staticmethod
-    @datanode
-    def from_thread(thread):
-        try:
-            yield
-            thread.start()
-            yield
-            while thread.is_alive():
-                yield
-        finally:
-            if thread.is_alive():
-                thread.join()
-
-    @staticmethod
     def wrap(node_like):
         if isinstance(node_like, DataNode):
             return node_like
@@ -127,11 +114,9 @@ class DataNode:
         elif hasattr(node_like, '__call__'):
             return DataNode.from_func(node_like)
 
-        elif isinstance(node_like, Thread):
-            return DataNode.from_thread(node_like)
-
         else:
             raise ValueError
+
 
 # basic data nodes
 @datanode
@@ -390,337 +375,8 @@ def merge(*nodes):
             except StopIteration:
                 return
 
-@datanode
-def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
-    """A data node of peak detaction.
 
-    Parameters
-    ----------
-    pre_max : int
-    post_max : int
-    pre_avg : int
-    post_avg : int
-    wait : int
-    delta : float
-
-    Receives
-    --------
-    y : float
-        The input signal.
-
-    Yields
-    ------
-    detected : bool
-        Whether the signal reaches its peak.
-    """
-    center = max(pre_max, pre_avg)
-    delay = max(post_max, post_avg)
-    buffer = numpy.zeros(center+delay+1, dtype=numpy.float32)
-    max_buffer = buffer[center-pre_max:center+post_max+1]
-    avg_buffer = buffer[center-pre_avg:center+post_avg+1]
-    index = -delay
-    prev_index = -wait
-
-    buffer[-1] = yield
-    while True:
-        index += 1
-        strength = buffer[center]
-        detected = True
-        detected = detected and index > prev_index + wait
-        detected = detected and strength == max_buffer.max()
-        detected = detected and strength >= avg_buffer.mean() + delta
-
-        if detected:
-            prev_index = index
-        buffer[:-1] = buffer[1:]
-        buffer[-1] = yield detected
-
-
-# for async processes
-class TimedVariable:
-    def __init__(self, value=None, duration=numpy.inf):
-        self._queue = queue.Queue()
-        self._lock = threading.Lock()
-        self._scheduled = []
-        self._default_value = value
-        self._default_duration = duration
-        self._item = (value, None, numpy.inf)
-
-    def get(self, time, ret_sched=False):
-        with self._lock:
-            value, start, duration = self._item
-            if start is None:
-                start = time
-
-            while not self._queue.empty():
-                item = self._queue.get()
-                if item[1] is None:
-                    item = (item[0], time, item[2])
-                self._scheduled.append(item)
-            self._scheduled.sort(key=lambda item: item[1])
-
-            while self._scheduled and self._scheduled[0][1] <= time:
-                value, start, duration = self._scheduled.pop(0)
-
-            if start + duration <= time:
-                value, start, duration = self._default_value, None, numpy.inf
-
-            self._item = (value, start, duration)
-            return value if not ret_sched else self._item
-
-    def set(self, value, start=None, duration=None):
-        if duration is None:
-            duration = self._default_duration
-        self._queue.put((value, start, duration))
-
-    def reset(self, start=None):
-        self._queue.put((self._default_value, start, numpy.inf))
-
-class Scheduler(DataNode):
-    """A data node schedule given data nodes dynamically.
-
-    Receives
-    --------
-    data : tuple
-        The input signal and the meta signal.
-
-    Yields
-    ------
-    data : any
-        The output signal.
-    """
-
-    def __init__(self):
-        self.queue = queue.Queue()
-        super().__init__(self.proxy())
-
-    def proxy(self):
-        nodes = OrderedDict()
-
-        try:
-            data, *meta = yield
-
-            while True:
-                while not self.queue.empty():
-                    key, node, zindex = self.queue.get()
-                    if key in nodes:
-                        nodes[key][0].__exit__()
-                        del nodes[key]
-                    if node is not None:
-                        node.__enter__()
-                        zindex_func = zindex if hasattr(zindex, '__call__') else lambda z=zindex: z
-                        nodes[key] = (node, zindex_func)
-
-                for key, (node, _) in sorted(nodes.items(), key=lambda item: item[1][1]()):
-                    try:
-                        data = node.send((data, *meta))
-                    except StopIteration:
-                        del nodes[key]
-
-                data, *meta = yield data
-
-        finally:
-            for node, _ in nodes.values():
-                node.__exit__()
-
-    class _NodeKey:
-        def __init__(self, parent, node):
-            self.parent = parent
-            self.node = node
-
-        def is_initialized(self):
-            return self.node.initialized
-
-        def is_finalized(self):
-            return self.node.finalized
-
-        def remove(self):
-            self.parent.remove_node(self)
-
-        def __enter__(self):
-            return self
-
-        def __exit__(self, type, value, traceback):
-            self.remove()
-
-    def add_node(self, node, zindex=(0,)):
-        key = self._NodeKey(self, node)
-        self.queue.put((key, node, zindex))
-        return key
-
-    def remove_node(self, key):
-        self.queue.put((key, None, (0,)))
-
-@datanode
-def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
-    producer = DataNode.wrap(producer)
-    consumer = DataNode.wrap(consumer)
-    stop_event = threading.Event()
-    error = queue.Queue()
-
-    def run():
-        try:
-            ref_time = time.time()
-
-            for i, data in enumerate(producer):
-                delta = ref_time+t0+i*dt - time.time()
-                if stop_event.wait(delta) if delta > 0 else stop_event.is_set():
-                    break
-
-                try:
-                    consumer.send(data)
-                except StopIteration:
-                    return
-
-        except Exception as e:
-            error.put(e)
-
-    with producer, consumer:
-        thread = threading.Thread(target=run)
-        try:
-            yield
-            thread.start()
-            yield
-            while thread.is_alive():
-                yield
-        finally:
-            stop_event.set()
-            if thread.is_alive():
-                thread.join()
-            if not error.empty():
-                raise error.get()
-
-@datanode
-def tick(dt, t0=0.0, shift=0.0, stop_event=None):
-    if stop_event is None:
-        stop_event = threading.Event()
-    ref_time = time.time()
-
-    yield
-    for i in itertools.count():
-        if stop_event.wait(max(0.0, ref_time+t0+i*dt - time.time())):
-            break
-
-        yield time.time()-ref_time+shift
-
-@datanode
-def timeit(node, log=print):
-    if hasattr(time, 'thread_time'):
-        get_time = time.thread_time
-    elif hasattr(time, 'clock_gettime'):
-        get_time = lambda: time.clock_gettime(time.CLOCK_THREAD_CPUTIME_ID)
-    else:
-        get_time = time.perf_counter
-
-    N = 10
-    start = 0.0
-    stop = numpy.inf
-    count = 0
-    total = 0.0
-    total2 = 0.0
-    worst = [0.0]*N
-    best = [numpy.inf]*N
-
-    with node:
-        try:
-            data = yield
-
-            start = stop = time.time()
-
-            while True:
-
-                t0 = get_time()
-                data = node.send(data)
-                t = get_time() - t0
-                stop = time.time()
-
-                count += 1
-                total += t
-                total2 += t**2
-                bisect.insort(worst, t)
-                worst.pop(0)
-                bisect.insort_left(best, t)
-                best.pop()
-
-                data = yield data
-
-        except StopIteration:
-            return
-
-        finally:
-            stop = time.time()
-
-            if count == 0:
-                log(f"count=0")
-
-            else:
-                avg = total/count
-                dev = (total2/count - avg**2)**0.5
-                eff = total/(stop - start)
-
-                if count < N:
-                    log(f"count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms ({eff: >6.1%})")
-
-                else:
-                    best_time = sum(best)/N
-                    worst_time = sum(worst)/N
-
-                    log(f"count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms"
-                        f" ({best_time*1000:5.3f}ms ~ {worst_time*1000:5.3f}ms) ({eff: >6.1%})")
-
-def exhaust(node, dt=0.0, interruptible=False, sync_to=None):
-    node = DataNode.wrap(node)
-
-    stop_event = threading.Event()
-    def SIGINT_handler(sig, frame):
-        stop_event.set()
-
-    with node:
-        if interruptible:
-            signal.signal(signal.SIGINT, SIGINT_handler)
-
-        while True:
-            if stop_event.wait(dt):
-                raise KeyboardInterrupt
-
-            try:
-                node.send(None)
-            except StopIteration:
-                return
-
-            if sync_to is not None:
-                try:
-                    sync_to.send(None)
-                except StopIteration:
-                    sync_to = None
-
-def async(func):
-    # usage: res = yield from async(slow_func)
-    res = queue.Queue()
-    error = queue.Queue()
-
-    def run():
-        try:
-            res.put(func())
-        except e:
-            error.put(e)
-
-    thread = threading.Thread(target=run)
-    try:
-        thread.start()
-        while thread.is_alive():
-            yield
-    finally:
-        if thread.is_alive():
-            thread.join()
-        if not error.empty():
-            raise error.get()
-        if res.empty():
-            raise ValueError("empty result")
-        return res.get()
-
-
-# for fixed-width data
+# signal analysis
 @datanode
 def frame(win_length, hop_length):
     """A data node to frame signal, prepend by zero.
@@ -826,8 +482,52 @@ def onset_strength(df):
     while True:
         prev, curr = curr, (yield numpy.mean(numpy.maximum(0.0, curr - prev).sum(axis=0)) * df)
 
+@datanode
+def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
+    """A data node of peak detaction.
 
-# for variable-width data
+    Parameters
+    ----------
+    pre_max : int
+    post_max : int
+    pre_avg : int
+    post_avg : int
+    wait : int
+    delta : float
+
+    Receives
+    --------
+    y : float
+        The input signal.
+
+    Yields
+    ------
+    detected : bool
+        Whether the signal reaches its peak.
+    """
+    center = max(pre_max, pre_avg)
+    delay = max(post_max, post_avg)
+    buffer = numpy.zeros(center+delay+1, dtype=numpy.float32)
+    max_buffer = buffer[center-pre_max:center+post_max+1]
+    avg_buffer = buffer[center-pre_avg:center+post_avg+1]
+    index = -delay
+    prev_index = -wait
+
+    buffer[-1] = yield
+    while True:
+        index += 1
+        strength = buffer[center]
+        detected = True
+        detected = detected and index > prev_index + wait
+        detected = detected and strength == max_buffer.max()
+        detected = detected and strength >= avg_buffer.mean() + delta
+
+        if detected:
+            prev_index = index
+        buffer[:-1] = buffer[1:]
+        buffer[-1] = yield detected
+
+
 @datanode
 def chunk(node, chunk_shape=1024):
     """Make a data node be able to produce fixed width data.
@@ -1053,8 +753,6 @@ def tslice(node, samplerate, start=None, end=None):
             if end is not None and index > end:
                 break
 
-
-# IO data nodes
 @datanode
 def load(filename):
     """A data node to load sound file.
@@ -1129,6 +827,306 @@ def save(filename, samplerate=44100, channels=1, width=2):
 
         while True:
             file.writeframes(tobuffer((yield)))
+
+
+# others
+class TimedVariable:
+    def __init__(self, value=None, duration=numpy.inf):
+        self._queue = queue.Queue()
+        self._lock = threading.Lock()
+        self._scheduled = []
+        self._default_value = value
+        self._default_duration = duration
+        self._item = (value, None, numpy.inf)
+
+    def get(self, time, ret_sched=False):
+        with self._lock:
+            value, start, duration = self._item
+            if start is None:
+                start = time
+
+            while not self._queue.empty():
+                item = self._queue.get()
+                if item[1] is None:
+                    item = (item[0], time, item[2])
+                self._scheduled.append(item)
+            self._scheduled.sort(key=lambda item: item[1])
+
+            while self._scheduled and self._scheduled[0][1] <= time:
+                value, start, duration = self._scheduled.pop(0)
+
+            if start + duration <= time:
+                value, start, duration = self._default_value, None, numpy.inf
+
+            self._item = (value, start, duration)
+            return value if not ret_sched else self._item
+
+    def set(self, value, start=None, duration=None):
+        if duration is None:
+            duration = self._default_duration
+        self._queue.put((value, start, duration))
+
+    def reset(self, start=None):
+        self._queue.put((self._default_value, start, numpy.inf))
+
+class Scheduler(DataNode):
+    """A data node schedule given data nodes dynamically.
+
+    Receives
+    --------
+    data : tuple
+        The input signal and the meta signal.
+
+    Yields
+    ------
+    data : any
+        The output signal.
+    """
+
+    def __init__(self):
+        self.queue = queue.Queue()
+        super().__init__(self.proxy())
+
+    def proxy(self):
+        nodes = OrderedDict()
+
+        try:
+            data, *meta = yield
+
+            while True:
+                while not self.queue.empty():
+                    key, node, zindex = self.queue.get()
+                    if key in nodes:
+                        nodes[key][0].__exit__()
+                        del nodes[key]
+                    if node is not None:
+                        node.__enter__()
+                        zindex_func = zindex if hasattr(zindex, '__call__') else lambda z=zindex: z
+                        nodes[key] = (node, zindex_func)
+
+                for key, (node, _) in sorted(nodes.items(), key=lambda item: item[1][1]()):
+                    try:
+                        data = node.send((data, *meta))
+                    except StopIteration:
+                        del nodes[key]
+
+                data, *meta = yield data
+
+        finally:
+            for node, _ in nodes.values():
+                node.__exit__()
+
+    class _NodeKey:
+        def __init__(self, parent, node):
+            self.parent = parent
+            self.node = node
+
+        def is_initialized(self):
+            return self.node.initialized
+
+        def is_finalized(self):
+            return self.node.finalized
+
+        def remove(self):
+            self.parent.remove_node(self)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, type, value, traceback):
+            self.remove()
+
+    def add_node(self, node, zindex=(0,)):
+        key = self._NodeKey(self, node)
+        self.queue.put((key, node, zindex))
+        return key
+
+    def remove_node(self, key):
+        self.queue.put((key, None, (0,)))
+
+@datanode
+def tick(dt, t0=0.0, shift=0.0, stop_event=None):
+    if stop_event is None:
+        stop_event = threading.Event()
+    ref_time = time.time()
+
+    yield
+    for i in itertools.count():
+        if stop_event.wait(max(0.0, ref_time+t0+i*dt - time.time())):
+            break
+
+        yield time.time()-ref_time+shift
+
+@datanode
+def timeit(node, log=print):
+    if hasattr(time, 'thread_time'):
+        get_time = time.thread_time
+    elif hasattr(time, 'clock_gettime'):
+        get_time = lambda: time.clock_gettime(time.CLOCK_THREAD_CPUTIME_ID)
+    else:
+        get_time = time.perf_counter
+
+    N = 10
+    start = 0.0
+    stop = numpy.inf
+    count = 0
+    total = 0.0
+    total2 = 0.0
+    worst = [0.0]*N
+    best = [numpy.inf]*N
+
+    with node:
+        try:
+            data = yield
+
+            start = stop = time.time()
+
+            while True:
+
+                t0 = get_time()
+                data = node.send(data)
+                t = get_time() - t0
+                stop = time.time()
+
+                count += 1
+                total += t
+                total2 += t**2
+                bisect.insort(worst, t)
+                worst.pop(0)
+                bisect.insort_left(best, t)
+                best.pop()
+
+                data = yield data
+
+        except StopIteration:
+            return
+
+        finally:
+            stop = time.time()
+
+            if count == 0:
+                log(f"count=0")
+
+            else:
+                avg = total/count
+                dev = (total2/count - avg**2)**0.5
+                eff = total/(stop - start)
+
+                if count < N:
+                    log(f"count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms ({eff: >6.1%})")
+
+                else:
+                    best_time = sum(best)/N
+                    worst_time = sum(worst)/N
+
+                    log(f"count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms"
+                        f" ({best_time*1000:5.3f}ms ~ {worst_time*1000:5.3f}ms) ({eff: >6.1%})")
+
+@datanode
+def terminal_size():
+    resize_event = threading.Event()
+    def SIGWINCH_handler(sig, frame):
+        resize_event.set()
+    resize_event.set()
+    signal.signal(signal.SIGWINCH, SIGWINCH_handler)
+
+    yield
+    while True:
+        if resize_event.is_set():
+            resize_event.clear()
+            size = shutil.get_terminal_size()
+        yield size
+
+
+# async processes
+def exhaust(node, dt=0.0, interruptible=False, sync_to=None):
+    node = DataNode.wrap(node)
+
+    stop_event = threading.Event()
+    def SIGINT_handler(sig, frame):
+        stop_event.set()
+
+    with node:
+        if interruptible:
+            signal.signal(signal.SIGINT, SIGINT_handler)
+
+        while True:
+            if stop_event.wait(dt):
+                raise KeyboardInterrupt
+
+            try:
+                node.send(None)
+            except StopIteration:
+                return
+
+            if sync_to is not None:
+                try:
+                    sync_to.send(None)
+                except StopIteration:
+                    sync_to = None
+
+@datanode
+def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
+    producer = DataNode.wrap(producer)
+    consumer = DataNode.wrap(consumer)
+    stop_event = threading.Event()
+    error = queue.Queue()
+
+    def run():
+        try:
+            ref_time = time.time()
+
+            for i, data in enumerate(producer):
+                delta = ref_time+t0+i*dt - time.time()
+                if stop_event.wait(delta) if delta > 0 else stop_event.is_set():
+                    break
+
+                try:
+                    consumer.send(data)
+                except StopIteration:
+                    return
+
+        except Exception as e:
+            error.put(e)
+
+    with producer, consumer:
+        thread = threading.Thread(target=run)
+        try:
+            yield
+            thread.start()
+            yield
+            while thread.is_alive():
+                yield
+        finally:
+            stop_event.set()
+            if thread.is_alive():
+                thread.join()
+            if not error.empty():
+                raise error.get()
+
+def async(func):
+    res = queue.Queue()
+    error = queue.Queue()
+
+    def run():
+        try:
+            res.put(func())
+        except e:
+            error.put(e)
+
+    thread = threading.Thread(target=run)
+    try:
+        thread.start()
+        while thread.is_alive():
+            yield
+    finally:
+        if thread.is_alive():
+            thread.join()
+        if not error.empty():
+            raise error.get()
+        if res.empty():
+            raise ValueError("empty result")
+        return res.get()
 
 @datanode
 def record(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device=-1):
@@ -1446,21 +1444,6 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
                     thread.join()
                 if not error.empty():
                     raise error.get()
-
-@datanode
-def terminal_size():
-    resize_event = threading.Event()
-    def SIGWINCH_handler(sig, frame):
-        resize_event.set()
-    resize_event.set()
-    signal.signal(signal.SIGWINCH, SIGWINCH_handler)
-
-    yield
-    while True:
-        if resize_event.is_set():
-            resize_event.clear()
-            size = shutil.get_terminal_size()
-        yield size
 
 
 # not data nodes
