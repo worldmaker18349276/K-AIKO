@@ -1000,10 +1000,9 @@ class BeatmapPlayer:
         bar_shift = self.beatmap.bar_shift
         bar_flip = self.beatmap.bar_flip
 
-        mixer_knot, mixer = Mixer.create(self.devices_settings.mixer, manager, ref_time)
-        detector_knot, detector = Detector.create(self.devices_settings.detector, manager, ref_time)
-        renderer_knot, renderer = Renderer.create(self.devices_settings.renderer, ref_time)
-        beatbar_knot = dn.pipe(mixer_knot, detector_knot, renderer_knot)
+        mixer_task, mixer = Mixer.create(self.devices_settings.mixer, manager, ref_time)
+        detector_task, detector = Detector.create(self.devices_settings.detector, manager, ref_time)
+        renderer_task, renderer = Renderer.create(self.devices_settings.renderer, ref_time)
 
         self.beatbar = Beatbar(self.settings.beatbar, mixer, detector, renderer, bar_shift, bar_flip)
 
@@ -1016,9 +1015,8 @@ class BeatmapPlayer:
             WidgetManager.use_widget(widget, self)
 
         # game loop
-        event_knot = dn.interval(consumer=self.update_events(), dt=1/tickrate)
-        game_knot = dn.pipe(event_knot, beatbar_knot)
-        return game_knot
+        event_task = dn.interval(consumer=self.update_events(), dt=1/tickrate)
+        return dn.pipe(event_task, mixer_task, detector_task, renderer_task)
 
     @dn.datanode
     def update_events(self):

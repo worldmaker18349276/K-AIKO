@@ -47,7 +47,7 @@ class Mixer:
         self.nchannels = nchannels
 
     @staticmethod
-    def get_node(scheduler, settings, manager, ref_time):
+    def get_task(scheduler, settings, manager, ref_time):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
@@ -76,11 +76,11 @@ class Mixer:
             output_node = dn.timeit(output_node, lambda msg: print(" output: " + msg))
 
         return dn.play(manager, output_node,
-                      samplerate=samplerate,
-                      buffer_shape=(buffer_length, nchannels),
-                      format=format,
-                      device=device,
-                      )
+                       samplerate=samplerate,
+                       buffer_shape=(buffer_length, nchannels),
+                       format=format,
+                       device=device,
+                       )
 
     @classmethod
     def create(clz, settings, manager, ref_time=0.0):
@@ -89,8 +89,8 @@ class Mixer:
         nchannels = settings.output_channels
 
         scheduler = dn.Scheduler()
-        output_node = clz.get_node(scheduler, settings, manager, ref_time)
-        return output_node, clz(scheduler, samplerate, buffer_length, nchannels)
+        task = clz.get_task(scheduler, settings, manager, ref_time)
+        return task, clz(scheduler, samplerate, buffer_length, nchannels)
 
     def add_effect(self, node, time=None, zindex=(0,)):
         if time is not None:
@@ -196,7 +196,7 @@ class Detector:
         self.listeners_scheduler = listeners_scheduler
 
     @staticmethod
-    def get_node(scheduler, settings, manager, ref_time):
+    def get_task(scheduler, settings, manager, ref_time):
         samplerate = settings.input_samplerate
         buffer_length = settings.input_buffer_length
         nchannels = settings.input_channels
@@ -265,17 +265,17 @@ class Detector:
             input_node = dn.timeit(input_node, lambda msg: print("  input: " + msg))
 
         return dn.record(manager, input_node,
-                        samplerate=samplerate,
-                        buffer_shape=(buffer_length, nchannels),
-                        format=format,
-                        device=device,
-                        )
+                         samplerate=samplerate,
+                         buffer_shape=(buffer_length, nchannels),
+                         format=format,
+                         device=device,
+                         )
 
     @classmethod
     def create(clz, settings, manager, ref_time=0.0):
         scheduler = dn.Scheduler()
-        input_node = clz.get_node(scheduler, settings, manager, ref_time)
-        return input_node, clz(scheduler)
+        task = clz.get_task(scheduler, settings, manager, ref_time)
+        return task, clz(scheduler)
 
     def add_listener(self, node):
         return self.listeners_scheduler.add_node(node, (0,))
@@ -440,7 +440,7 @@ class Renderer:
         self.drawers_scheduler = drawers_scheduler
 
     @staticmethod
-    def get_node(scheduler, settings, ref_time):
+    def get_task(scheduler, settings, ref_time):
         framerate = settings.display_framerate
         display_delay = settings.display_delay
         debug_timeit = settings.debug_timeit
@@ -513,8 +513,8 @@ class Renderer:
     @classmethod
     def create(clz, settings, ref_time=0.0):
         scheduler = dn.Scheduler()
-        display_node = clz.get_node(scheduler, settings, ref_time)
-        return display_node, clz(scheduler)
+        task = clz.get_task(scheduler, settings, ref_time)
+        return task, clz(scheduler)
 
     def add_drawer(self, node, zindex=(0,)):
         return self.drawers_scheduler.add_node(node, zindex=zindex)
@@ -684,7 +684,7 @@ class Controller:
         self.handlers_scheduler = handlers_scheduler
 
     @staticmethod
-    def get_node(scheduler, settings, ref_time):
+    def get_task(scheduler, settings, ref_time):
         keycodes = settings.keycodes
         @dn.datanode
         def _node():
@@ -710,8 +710,8 @@ class Controller:
     @classmethod
     def create(clz, settings, ref_time=0.0):
         scheduler = dn.Scheduler()
-        node = clz.get_node(scheduler, settings, ref_time)
-        return node, clz(scheduler)
+        task = clz.get_task(scheduler, settings, ref_time)
+        return task, clz(scheduler)
 
     def add_handler(self, node, key=None):
         if key is None:
@@ -733,65 +733,4 @@ class Controller:
                         node.send((None, t, keyname, keycode))
                     except StopIteration:
                         return
-
-
-class ClockSettings(cfg.Configurable):
-    tickrate: float = 60.0
-    clock_delay: float = 0.0
-
-class Clock:
-    def __init__(self, coroutines_scheduler):
-        self.coroutines_scheduler = coroutines_scheduler
-
-    @staticmethod
-    def get_node(scheduler, settings, ref_time):
-        tickrate = settings.tickrate
-        clock_delay = settings.clock_delay
-
-        @dn.datanode
-        def _node():
-            index = 0
-            with scheduler:
-                yield
-                while True:
-                    time = index / tickrate + clock_delay - ref_time
-                    try:
-                        scheduler.send((None, time))
-                    except StopIteration:
-                        return
-                    yield
-                    index += 1
-
-        return dn.interval(consumer=_node(), dt=1/tickrate)
-
-    @classmethod
-    def create(clz, settings, ref_time=0.0):
-        scheduler = dn.Scheduler()
-        node = clz.get_node(scheduler, settings, ref_time)
-        return node, clz(scheduler)
-
-    def add_coroutine(self, node, time=None):
-        if time is not None:
-            node = self.schedule(node, time)
-        return self.coroutines_scheduler.add_node(node, (0,))
-
-    @dn.datanode
-    def schedule(self, node, start_time):
-        node = dn.DataNode.wrap(node)
-
-        with node:
-            _, time = yield
-
-            while time < start_time:
-                _, time = yield
-
-            while True:
-                try:
-                    node.send((None, time))
-                except StopIteration:
-                    return
-                _, time = yield
-
-    def remove_coroutine(self, key):
-        self.coroutines_scheduler.remove_node(key)
 

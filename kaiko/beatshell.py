@@ -372,14 +372,14 @@ class BeatInput:
 
         Returns
         -------
-        prompt_knot : dn.DataNode
+        prompt_task : dn.DataNode
             The datanode to execute the prompt.
         """
         if settings is None:
             settings = BeatShellSettings()
 
-        input_knot, controller = engines.Controller.create(devices_settings.controller)
-        display_knot, renderer = engines.Renderer.create(devices_settings.renderer)
+        input_task, controller = engines.Controller.create(devices_settings.controller)
+        display_task, renderer = engines.Renderer.create(devices_settings.renderer)
         stroke = BeatStroke(self, settings.input)
         prompt = BeatPrompt(stroke, self, settings)
 
@@ -393,7 +393,7 @@ class BeatInput:
             while not event.is_set():
                 yield
 
-        return dn.pipe(stop_when(prompt.fin_event), display_knot, input_knot)
+        return dn.pipe(stop_when(prompt.fin_event), display_task, input_task)
 
     @locked
     @onstate("FIN")

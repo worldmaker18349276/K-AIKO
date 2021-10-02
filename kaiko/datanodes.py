@@ -1039,7 +1039,34 @@ def terminal_size():
 
 
 # async processes
-def exhaust(node, dt=0.0, interruptible=False, sync_to=None):
+def _thread_task(thread, stop_event, error):
+    yield
+    thread.start()
+    try:
+        yield
+        while thread.is_alive():
+            yield
+    finally:
+        stop_event.set()
+        if thread.is_alive():
+            thread.join()
+        if not error.empty():
+            raise error.get()
+
+def _stream_task(stream, error):
+    yield
+    stream.start_stream()
+    try:
+        yield
+        while stream.is_active():
+            yield
+    finally:
+        stream.stop_stream()
+        stream.close()
+        if not error.empty():
+            raise error.get()
+
+def exhaust(node, dt=0.0, interruptible=False):
     node = DataNode.wrap(node)
 
     stop_event = threading.Event()
@@ -1058,12 +1085,6 @@ def exhaust(node, dt=0.0, interruptible=False, sync_to=None):
                 node.send(None)
             except StopIteration:
                 return
-
-            if sync_to is not None:
-                try:
-                    sync_to.send(None)
-                except StopIteration:
-                    sync_to = None
 
 @datanode
 def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
@@ -1091,18 +1112,7 @@ def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
 
     with producer, consumer:
         thread = threading.Thread(target=run)
-        try:
-            yield
-            thread.start()
-            yield
-            while thread.is_alive():
-                yield
-        finally:
-            stop_event.set()
-            if thread.is_alive():
-                thread.join()
-            if not error.empty():
-                raise error.get()
+        yield from _thread_task(thread, stop_event, error)
 
 def async(func):
     res = queue.Queue()
@@ -1197,17 +1207,7 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format='f4', devi
                                 start=False)
 
     with node:
-        try:
-            yield
-            input_stream.start_stream()
-            yield
-            while input_stream.is_active():
-                yield
-        finally:
-            input_stream.stop_stream()
-            input_stream.close()
-            if not error.empty():
-                raise error.get()
+        yield from _stream_task(input_stream, error)
 
 @datanode
 def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device=-1):
@@ -1278,17 +1278,7 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
                                  start=False)
 
     with node:
-        try:
-            yield
-            output_stream.start_stream()
-            yield
-            while output_stream.is_active():
-                yield
-        finally:
-            output_stream.stop_stream()
-            output_stream.close()
-            if not error.empty():
-                raise error.get()
+        yield from _stream_task(output_stream, error)
 
 @contextlib.contextmanager
 def input_ctxt(stream):
@@ -1359,18 +1349,7 @@ def input(node, stream=None):
 
         with node:
             thread = threading.Thread(target=run)
-            try:
-                yield
-                thread.start()
-                yield
-                while thread.is_alive():
-                    yield
-            finally:
-                stop_event.set()
-                if thread.is_alive():
-                    thread.join()
-                if not error.empty():
-                    raise error.get()
+            yield from _thread_task(thread, stop_event, error)
 
 @contextlib.contextmanager
 def show_ctxt(stream, hide_cursor=False, end="\n"):
@@ -1431,19 +1410,7 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
     with show_ctxt(stream, hide_cursor, end):
         with node:
             thread = threading.Thread(target=run)
-
-            try:
-                yield
-                thread.start()
-                yield
-                while thread.is_alive():
-                    yield
-            finally:
-                stop_event.set()
-                if thread.is_alive():
-                    thread.join()
-                if not error.empty():
-                    raise error.get()
+            yield from _thread_task(thread, stop_event, error)
 
 
 # not data nodes

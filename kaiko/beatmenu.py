@@ -97,7 +97,7 @@ def fit_screen(print, width, delay):
 
     Returns
     -------
-    knot : dn.DataNode
+    fit_task : dn.DataNode
         The datanode to manage this process.
     """
     @dn.datanode
@@ -297,6 +297,12 @@ class KAIKOMenu:
         self.beatmap_manager = BeatmapManager(user, logger)
         self.bgm_controller = KAIKOBGMController(config, logger, self.beatmap_manager)
 
+    @staticmethod
+    def main():
+        dt = 0.01
+        with KAIKOMenu.init() as menu:
+            dn.exhaust(menu.run(), dt=dt, interruptible=True)
+
     @classmethod
     @contextlib.contextmanager
     def init(clz):
@@ -353,58 +359,6 @@ class KAIKOMenu:
 
         try:
             yield clz(config, user, manager, logger)
-        finally:
-            manager.terminate()
-
-    @staticmethod
-    def main():
-        r"""Run K-AIKO."""
-        try:
-            with KAIKOMenu.init() as menu:
-                logger = menu.logger
-                dt = 0.01
-
-                # fit screen size
-                screen_size = menu.settings.menu.best_screen_size
-                fit_delay = 1.0
-                dn.exhaust(fit_screen(logger.print, screen_size, fit_delay), dt=dt)
-
-                # load songs
-                menu.reload()
-
-                # execute given command
-                if len(sys.argv) > 1:
-                    command = cmd.RootCommandParser(menu).build(sys.argv[1:])
-                    menu.run_command(command, dt)
-                    return
-
-                # load mixer
-                with menu.bgm_controller.load_bgm(menu.manager) as bgm_knot:
-                    # tips
-                    confirm_key = menu.settings.shell.input.confirm_key
-                    help_key = menu.settings.shell.input.help_key
-                    tab_key, _, _ = menu.settings.shell.input.autocomplete_keys
-                    logger.print(f"Type command and press {logger.emph(confirm_key)} to execute.", prefix="hint")
-                    logger.print(f"Use {logger.emph(tab_key)} to autocomplete command.", prefix="hint")
-                    logger.print(f"If you need help, press {logger.emph(help_key)}.", prefix="hint")
-                    logger.print()
-
-                    # prompt
-                    input = beatshell.BeatInput(menu)
-                    while True:
-                        # parse command
-                        prompt_knot = input.prompt(menu.settings.devices, menu.settings.shell)
-                        dn.exhaust(prompt_knot, dt, interruptible=True, sync_to=bgm_knot)
-
-                        # execute result
-                        if isinstance(input.result, beatshell.InputError):
-                            with logger.warn():
-                                logger.print(input.result.value)
-                            input.prev_session()
-                        else:
-                            menu.run_command(input.result.value, dt, bgm_knot)
-                            input.new_session()
-
 
         except KeyboardInterrupt:
             pass
@@ -415,13 +369,71 @@ class KAIKOMenu:
             print(traceback.format_exc(), end="")
             print(f"\x1b[m", end="")
 
-    @property
-    def settings(self):
-        r"""Current settings."""
-        return self._config.current
+        finally:
+            manager.terminate()
 
-    def run_command(self, command, dt, bgm_knot=None):
-        r"""Run a command.
+    @dn.datanode
+    def run(self):
+        r"""Run KAIKOMenu."""
+        logger = self.logger
+
+        yield
+
+        # fit screen size
+        screen_size = self.settings.menu.best_screen_size
+        fit_delay = 1.0
+        with fit_screen(logger.print, screen_size, fit_delay) as fit_task:
+            yield from fit_task.join((yield))
+
+        # load songs
+        self.reload()
+
+        # execute given command
+        if len(sys.argv) > 1:
+            command = cmd.RootCommandParser(self).build(sys.argv[1:])
+            with self.execute(command) as command_task:
+                yield from command_task.join((yield))
+            return
+
+        # load bgm
+        bgm_task = self.bgm_controller.load_bgm(self.manager)
+
+        # tips
+        confirm_key = self.settings.shell.input.confirm_key
+        help_key = self.settings.shell.input.help_key
+        tab_key, _, _ = self.settings.shell.input.autocomplete_keys
+        logger.print(f"Type command and press {logger.emph(confirm_key)} to execute.", prefix="hint")
+        logger.print(f"Use {logger.emph(tab_key)} to autocomplete command.", prefix="hint")
+        logger.print(f"If you need help, press {logger.emph(help_key)}.", prefix="hint")
+        logger.print()
+
+        # prompt
+        repl_task = self.repl()
+        with dn.pipe(repl_task, bgm_task) as task:
+            yield from task.join((yield))
+
+    @dn.datanode
+    def repl(self):
+        r"""Start REPL."""
+        input = beatshell.BeatInput(self)
+        while True:
+            # parse command
+            with input.prompt(self.settings.devices, self.settings.shell) as prompt_task:
+                yield from prompt_task.join((yield))
+
+            # execute result
+            if isinstance(input.result, beatshell.InputError):
+                with self.logger.warn():
+                    self.logger.print(input.result.value)
+                input.prev_session()
+            else:
+                with self.execute(input.result.value) as command_task:
+                    yield from command_task.join((yield))
+                input.new_session()
+
+    @dn.datanode
+    def execute(self, command):
+        r"""Execute a command.
         If it returns executable object (an object has method `execute`), call
         `result.execute(manager)`; if it returns a DataNode, exhaust it; otherwise,
         print repr of result.
@@ -430,10 +442,6 @@ class KAIKOMenu:
         ----------
         command : function
             The command.
-        dt : float
-            The update interval.
-        bgm_knot : dn.DataNode
-            The bgm DataNode.
         """
         result = command()
 
@@ -441,15 +449,23 @@ class KAIKOMenu:
             has_bgm = bool(self.bgm_controller._current_bgm)
             if has_bgm:
                 self.bgm.off()
-            dn.exhaust(result.execute(self.manager), dt, interruptible=True, sync_to=bgm_knot)
+            with result.execute(self.manager) as command_task:
+                yield from command_task.join((yield))
             if has_bgm:
                 self.bgm.on()
 
         elif isinstance(result, dn.DataNode):
-            dn.exhaust(result, dt, interruptible=True, sync_to=bgm_knot)
+            with result:
+                yield from result.join((yield))
 
         elif result is not None:
+            yield
             self.logger.print(repr(result))
+
+    @property
+    def settings(self):
+        r"""Current settings."""
+        return self._config.current
 
     @cmd.function_command
     def exit(self):
@@ -1115,7 +1131,7 @@ class KAIKOBGMController:
 
     def load_bgm(self, manager):
         try:
-            knot, mixer = engines.Mixer.create(self.config.current.devices.mixer, manager)
+            mixer_task, mixer = engines.Mixer.create(self.config.current.devices.mixer, manager)
 
         except Exception:
             with self.logger.warn():
@@ -1125,7 +1141,7 @@ class KAIKOBGMController:
             return dn.DataNode.wrap(lambda _:None)
 
         else:
-            return dn.pipe(knot, self._bgm_rountine(mixer))
+            return dn.pipe(mixer_task, self._bgm_rountine(mixer))
 
     @dn.datanode
     def _bgm_rountine(self, mixer):
@@ -1253,8 +1269,8 @@ class KAIKOPlay:
         else:
             game = beatmaps.BeatmapPlayer(self.data_dir, beatmap, self.devices_settings, self.settings)
 
-            with game.execute(manager) as knot:
-                yield from knot
+            with game.execute(manager) as task:
+                yield from task.join((yield))
 
             logger.print()
             beatanalyzer.show_analyze(beatmap.settings.difficulty.performance_tolerance, game.perfs)
