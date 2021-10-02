@@ -26,6 +26,9 @@ def datanode(gen_func):
         return DataNode(gen_func(*args, **kwargs))
     return node_func
 
+class DataNodeStateError(Exception):
+    pass
+
 class DataNode:
     def __init__(self, generator):
         self.generator = generator
@@ -34,7 +37,7 @@ class DataNode:
 
     def send(self, value=None):
         if not self.initialized:
-            raise RuntimeError("try to access un-initialized data node")
+            raise DataNodeStateError("try to access un-initialized data node")
         if self.finalized:
             raise StopIteration
 
@@ -61,7 +64,7 @@ class DataNode:
 
     def __enter__(self):
         if self.finalized:
-            raise RuntimeError("try to initialize finalized data node")
+            raise DataNodeStateError("try to initialize finalized data node")
         if self.initialized:
             return self
         self.initialized = True
@@ -78,7 +81,7 @@ class DataNode:
 
     def __exit__(self, type=None, value=None, traceback=None):
         if not self.initialized:
-            raise RuntimeError("try to finalize un-initialized data node")
+            raise DataNodeStateError("try to finalize un-initialized data node")
         if self.finalized:
             return False
 
