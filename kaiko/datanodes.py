@@ -756,20 +756,27 @@ def tslice(node, samplerate, start=None, end=None):
             if end is not None and index > end:
                 break
 
+class IOCancelledError(Exception):
+    pass
+
 @datanode
-def load(filename):
+def load(filename, stop_event=None):
     """A data node to load sound file.
 
     Parameters
     ----------
     filename : str
         The sound file to load.
+    stop_event : threading.Event
+        The event to cancel loading file.
 
     Yields
     ------
     data : ndarray
         The loaded signal.
     """
+    if stop_event is None:
+        stop_event = threading.Event()
 
     if filename.endswith(".wav"):
         with wave.open(filename, 'rb') as file:
@@ -785,6 +792,8 @@ def load(filename):
                 data = file.readframes(256)
                 remaining -= len(data)//width
                 yield frombuffer(data)
+                if stop_event.is_set():
+                    raise IOCancelledError(f"The operation of loading file {filename} has been cancelled.")
 
     else:
         with audioread.audio_open(filename) as file:
@@ -796,9 +805,11 @@ def load(filename):
 
             for data in file:
                 yield frombuffer(data)
+                if stop_event.is_set():
+                    raise IOCancelledError(f"The operation of loading file {filename} has been cancelled.")
 
 @datanode
-def save(filename, samplerate=44100, channels=1, width=2):
+def save(filename, samplerate=44100, channels=1, width=2, stop_event=None):
     """A data node to save as .wav file.
 
     Parameters
@@ -811,12 +822,17 @@ def save(filename, samplerate=44100, channels=1, width=2):
         The number of channels, default is `1`.
     width : int, optional
         The sample width in bytes.
+    stop_event : threading.Event
+        The event to cancel saving file.
 
     Receives
     ------
     data : ndarray
         The signal to save.
     """
+    if stop_event is None:
+        stop_event = threading.Event()
+
     with wave.open(filename, 'wb') as file:
         scale = 2.0 ** (8*width - 1)
         fmt = f'<i{width}'
@@ -830,6 +846,8 @@ def save(filename, samplerate=44100, channels=1, width=2):
 
         while True:
             file.writeframes(tobuffer((yield)))
+            if stop_event.is_set():
+                raise IOCancelledError(f"The operation of saving file {filename} has been cancelled.")
 
 
 # others
@@ -1468,11 +1486,11 @@ def get_A_weight(samplerate, win_length):
 
     return weight
 
-def load_sound(filepath, samplerate=None, channels=None, volume=0.0, start=None, end=None, chunk_length=1024):
+def load_sound(filepath, samplerate=None, channels=None, volume=0.0, start=None, end=None, chunk_length=1024, stop_event=None):
     with audioread.audio_open(filepath) as file:
         file_samplerate = file.samplerate
 
-    filenode = load(filepath)
+    filenode = load(filepath, stop_event)
 
     if start is not None or end is not None:
         filenode = tslice(filenode, file_samplerate, start, end)
