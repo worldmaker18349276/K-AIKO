@@ -437,19 +437,6 @@ def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
 
 
 # for async processes
-def knot_template():
-    try:
-        # initialization
-        yield
-        # start
-        yield
-        # loop
-        while True:
-            yield
-    finally:
-        # finalization
-        pass
-
 class TimedVariable:
     def __init__(self, value=None, duration=numpy.inf):
         self._queue = queue.Queue()
@@ -569,10 +556,9 @@ def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
     producer = DataNode.wrap(producer)
     consumer = DataNode.wrap(consumer)
     stop_event = threading.Event()
-    error = None
+    error = queue.Queue()
 
     def run():
-        nonlocal error
         try:
             ref_time = time.time()
 
@@ -587,7 +573,7 @@ def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
                     return
 
         except Exception as e:
-            error = e
+            error.put(e)
 
     with producer, consumer:
         thread = threading.Thread(target=run)
@@ -601,8 +587,8 @@ def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
             stop_event.set()
             if thread.is_alive():
                 thread.join()
-            if error is not None:
-                raise error
+            if not error.empty():
+                raise error.get()
 
 @datanode
 def tick(dt, t0=0.0, shift=0.0, stop_event=None):
@@ -710,15 +696,14 @@ def exhaust(node, dt=0.0, interruptible=False, sync_to=None):
 
 def async(func):
     # usage: res = yield from async(slow_func)
-    res = None
-    error = None
+    res = queue.Queue()
+    error = queue.Queue()
 
     def run():
-        nonlocal res, error
         try:
-            res = func()
+            res.put(func())
         except e:
-            error = e
+            error.put(e)
 
     thread = threading.Thread(target=run)
     try:
@@ -728,9 +713,11 @@ def async(func):
     finally:
         if thread.is_alive():
             thread.join()
-        if error is not None:
-            raise error
-        return res
+        if not error.empty():
+            raise error.get()
+        if res.empty():
+            raise ValueError("empty result")
+        return res.get()
 
 
 # for fixed-width data
@@ -1343,11 +1330,10 @@ def input(node, stream=None):
         stream = sys.stdin
 
     stop_event = threading.Event()
-    error = None
+    error = queue.Queue()
 
     with input_ctxt(stream) as io_event:
         def run():
-            nonlocal error
             try:
                 ref_time = time.time()
 
@@ -1371,7 +1357,7 @@ def input(node, stream=None):
                             io_event.set()
 
             except Exception as e:
-                error = e
+                error.put(e)
 
         with node:
             thread = threading.Thread(target=run)
@@ -1385,8 +1371,8 @@ def input(node, stream=None):
                 stop_event.set()
                 if thread.is_alive():
                     thread.join()
-                if error is not None:
-                    raise error
+                if not error.empty():
+                    raise error.get()
 
 @contextlib.contextmanager
 def show_ctxt(stream, hide_cursor=False, end="\n"):
@@ -1411,10 +1397,9 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
         stream = sys.stdout
 
     stop_event = threading.Event()
-    error = None
+    error = queue.Queue()
 
     def run():
-        nonlocal error
         try:
             ref_time = time.time()
 
@@ -1443,7 +1428,7 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
                 shown = True
 
         except Exception as e:
-            error = e
+            error.put(e)
 
     with show_ctxt(stream, hide_cursor, end):
         with node:
@@ -1459,8 +1444,8 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
                 stop_event.set()
                 if thread.is_alive():
                     thread.join()
-                if error is not None:
-                    raise error
+                if not error.empty():
+                    raise error.get()
 
 @datanode
 def terminal_size():

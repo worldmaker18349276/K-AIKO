@@ -989,7 +989,6 @@ class BeatmapPlayer:
 
         return abs(self.start_time)
 
-    @contextlib.contextmanager
     def execute(self, manager):
         tickrate = self.settings.controls.tickrate
         samplerate = self.devices_settings.mixer.output_samplerate

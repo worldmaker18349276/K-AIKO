@@ -440,7 +440,6 @@ class KAIKOMenu:
         if hasattr(result, 'execute'):
             has_bgm = bool(self.bgm_controller._current_bgm)
             if has_bgm:
-                self.bgm_controller.stop()
                 self.bgm.off()
             result.execute(self.manager)
             if has_bgm:
