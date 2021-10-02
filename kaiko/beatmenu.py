@@ -441,7 +441,7 @@ class KAIKOMenu:
             has_bgm = bool(self.bgm_controller._current_bgm)
             if has_bgm:
                 self.bgm.off()
-            result.execute(self.manager)
+            dn.exhaust(result.execute(self.manager), dt, interruptible=True, sync_to=bgm_knot)
             if has_bgm:
                 self.bgm.on()
 
@@ -1238,7 +1238,7 @@ class KAIKOPlay:
         self.settings = settings
         self.logger = logger
 
-    @contextlib.contextmanager
+    @dn.datanode
     def execute(self, manager):
         logger = self.logger
 
@@ -1252,7 +1252,9 @@ class KAIKOPlay:
 
         else:
             game = beatmaps.BeatmapPlayer(self.data_dir, beatmap, self.devices_settings, self.settings)
-            game.execute(manager)
+
+            with game.execute(manager) as knot:
+                yield from knot
 
             logger.print()
             beatanalyzer.show_analyze(beatmap.settings.difficulty.performance_tolerance, game.perfs)

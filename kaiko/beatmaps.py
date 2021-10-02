@@ -1018,7 +1018,7 @@ class BeatmapPlayer:
         # game loop
         event_knot = dn.interval(consumer=self.update_events(), dt=1/tickrate)
         game_knot = dn.pipe(event_knot, beatbar_knot)
-        dn.exhaust(game_knot, dt=0.1, interruptible=True)
+        return game_knot
 
     @dn.datanode
     def update_events(self):
