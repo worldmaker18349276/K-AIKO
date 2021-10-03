@@ -1107,6 +1107,23 @@ def exhaust(node, dt=0.0, interruptible=False):
             except StopIteration:
                 return
 
+def create_task(func):
+    res = queue.Queue()
+    error = queue.Queue()
+    stop_event = threading.Event()
+
+    def run():
+        try:
+            res.put(func(stop_event))
+        except e:
+            error.put(e)
+
+    thread = threading.Thread(target=run)
+    yield from _thread_task(thread, stop_event, error)
+    if res.empty():
+        raise ValueError("empty result")
+    return res.get()
+
 @datanode
 def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
     producer = DataNode.wrap(producer)
@@ -1134,30 +1151,6 @@ def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
     with producer, consumer:
         thread = threading.Thread(target=run)
         yield from _thread_task(thread, stop_event, error)
-
-def async(func):
-    res = queue.Queue()
-    error = queue.Queue()
-
-    def run():
-        try:
-            res.put(func())
-        except e:
-            error.put(e)
-
-    thread = threading.Thread(target=run)
-    try:
-        thread.start()
-        while thread.is_alive():
-            yield
-    finally:
-        if thread.is_alive():
-            thread.join()
-        if not error.empty():
-            raise error.get()
-        if res.empty():
-            raise ValueError("empty result")
-        return res.get()
 
 @datanode
 def record(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device=-1):

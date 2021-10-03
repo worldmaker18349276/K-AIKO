@@ -1158,7 +1158,8 @@ class KAIKOBGMController:
                 filepath, start = next_song
                 self._current_bgm = filepath
 
-                song = yield from dn.async(lambda: dn.DataNode.wrap(mixer.load_sound(filepath)))
+                song = yield from dn.create_task(lambda event: mixer.load_sound(filepath, event))
+                song = dn.DataNode.wrap(song)
 
                 with mixer.play(song, start=start) as bgm_key:
                     while not bgm_key.is_finalized():
