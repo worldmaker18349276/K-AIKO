@@ -1,6 +1,6 @@
 .. image:: https://github.com/worldmaker18349276/K-AIKO/raw/master/logo.png
 
-K-AIK▣ is a voice-controlled terminal-based rhythm game.
+K-AIK▣ is a sound-controlled terminal-based rhythm game.
 
 ::
 
