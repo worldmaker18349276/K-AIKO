@@ -985,6 +985,25 @@ class PyAudioDeviceParser(cmd.ArgumentParser):
         return f"{name} by {api} ({freq} kHz, in: {ch_in}, out: {ch_out})"
 
 
+@dataclasses.dataclass
+class SongMetadata:
+    root: str
+    audio: str
+    volume: float
+    info: str
+    preview: float
+
+    @classmethod
+    def from_beatmap(clz, beatmap):
+        if beatmap.audio is None:
+            return None
+        return clz(root=beatmap.root, audio=beatmap.audio,
+                   volume=beatmap.volume, info=beatmap.info, preview=beatmap.preview)
+
+    @property
+    def path(self):
+        return os.path.join(self.root, self.audio)
+
 class BeatmapManager:
     def __init__(self, user, logger):
         self.user = user
@@ -1079,34 +1098,41 @@ class BeatmapManager:
             with logger.warn():
                 logger.print(f"Not a file: {str(beatmap)}")
 
-    def get_song(self, beatmap):
-        beatmap = beatsheets.BeatSheet.read(str(self.user.songs_dir / beatmap), metadata_only=True)
-        if beatmap.audio is None:
-            return None
-        return os.path.join(beatmap.root, beatmap.audio), None
+    def get_beatmap(self, path):
+        filepath = self.user.songs_dir / path
+
+        beatmap = beatsheets.BeatSheet.read(str(filepath), metadata_only=True)
+        return beatmap
+
+    def get_song(self, path):
+        filepath = self.user.songs_dir / path
+        if filepath.is_dir():
+            filepath = self.user.songs_dir / self._beatmaps[path][0]
+
+        beatmap = beatsheets.BeatSheet.read(str(filepath), metadata_only=True)
+        return SongMetadata.from_beatmap(beatmap)
 
     def get_songs(self):
-        songs = set()
-        for beatmapset in self._beatmaps.values():
-            beatmap = beatmapset[0]
+        songs = []
+        for path in self._beatmaps.keys():
             try:
-                song = self.get_song(beatmap)
+                song = self.get_song(path)
             except beatsheets.BeatmapParseError:
                 pass
             else:
                 if song is not None:
-                    songs.add(song)
+                    songs.append(song)
 
-        return list(songs)
+        return songs
 
     def make_parser(self, bgm_controller=None):
-        return BeatmapParser(self._beatmaps, self.user.songs_dir, bgm_controller)
+        return BeatmapParser(self, bgm_controller)
 
 class BeatmapParser(cmd.ArgumentParser):
-    def __init__(self, beatmapsets, songs_dir, bgm_controller):
-        self.songs_dir = songs_dir
+    def __init__(self, beatmap_manager, bgm_controller):
+        self.beatmap_manager = beatmap_manager
         self.bgm_controller = bgm_controller
-
+        beatmapsets = self.beatmap_manager._beatmaps
         self.options = [str(beatmap) for beatmapset in beatmapsets.values() for beatmap in beatmapset]
         self._desc = cmd.it_should_be_one_of(self.options)
 
@@ -1125,13 +1151,13 @@ class BeatmapParser(cmd.ArgumentParser):
 
     def info(self, token):
         try:
-            beatmap = beatsheets.BeatSheet.read(str(self.songs_dir / token), metadata_only=True)
+            beatmap = self.beatmap_manager.get_beatmap(token)
         except beatsheets.BeatmapParseError:
             return None
         else:
-            if self.bgm_controller is not None and beatmap.audio is not None:
-                song = os.path.join(beatmap.root, beatmap.audio)
-                self.bgm_controller.play(song, beatmap.preview)
+            song = SongMetadata.from_beatmap(beatmap)
+            if self.bgm_controller is not None and song is not None:
+                self.bgm_controller.play(song, song.preview)
             return beatmap.info.strip()
 
 class KAIKOBGMController:
@@ -1166,32 +1192,33 @@ class KAIKOBGMController:
                 yield
                 continue
 
-            next_song = self._action_queue.get()
-            while next_song:
-                filepath, start = next_song
-                self._current_bgm = filepath
+            action = self._action_queue.get()
+            while action:
+                song, start = action
+                self._current_bgm = song
 
-                song = yield from dn.create_task(lambda event: mixer.load_sound(filepath, event))
-                song = dn.DataNode.wrap(song)
+                node = yield from dn.create_task(lambda event: mixer.load_sound(self._current_bgm.path, event))
+                node = dn.DataNode.wrap(node)
 
-                with mixer.play(song, start=start) as bgm_key:
+                with mixer.play(node, start=start, volume=song.volume) as bgm_key:
                     while not bgm_key.is_finalized():
                         if self._action_queue.empty():
                             yield
                             continue
 
-                        next_song = self._action_queue.get()
+                        action = self._action_queue.get()
                         break
 
                     else:
                         next_song = self.random_song()
+                        action = next_song, None
 
                 self._current_bgm = None
 
     def random_song(self):
         songs = self.beatmap_manager.get_songs()
         if self._current_bgm is not None:
-            songs.remove((self._current_bgm, None))
+            songs.remove(self._current_bgm)
         return random.choice(songs) if songs else None
 
     def stop(self):
@@ -1211,17 +1238,16 @@ class BGMCommand:
         logger = self.logger
 
         if self.bgm_controller._current_bgm is not None:
-            logger.print("now playing: " + self.bgm_controller._current_bgm)
+            logger.print("now playing: " + self.bgm_controller._current_bgm.path)
             return
 
-        songs = self.beatmap_manager.get_songs()
-        if not songs:
+        song = self.bgm_controller.random_song()
+        if song is None:
             logger.print("There is no song in the folder yet!", prefix="data")
             return
 
-        song, start = self.bgm_controller.random_song()
-        logger.print("will play: " + song)
-        self.bgm_controller.play(song, start)
+        logger.print("will play: " + song.path)
+        self.bgm_controller.play(song)
 
     @cmd.function_command
     def off(self):
@@ -1230,16 +1256,16 @@ class BGMCommand:
     @cmd.function_command
     def skip(self):
         if self.bgm_controller._current_bgm is not None:
-            song, start = self.bgm_controller.random_song()
-            self.logger.print("will play: " + song)
-            self.bgm_controller.play(song, start)
+            song = self.bgm_controller.random_song()
+            self.logger.print("will play: " + song.path)
+            self.bgm_controller.play(song)
 
     @cmd.function_command
     def play(self, beatmap, start:Optional[float]=None):
         logger = self.logger
 
         try:
-            song, _ = self.beatmap_manager.get_song(beatmap) or (None, None)
+            song = self.beatmap_manager.get_song(beatmap)
         except beatsheets.BeatmapParseError:
             with logger.warn():
                 logger.print("Fail to read beatmap")
@@ -1257,7 +1283,7 @@ class BGMCommand:
 
     @cmd.function_command
     def now_playing(self):
-        self.logger.print(self.bgm_controller._current_bgm)
+        self.logger.print(self.bgm_controller._current_bgm.path)
 
 
 class KAIKOPlay:
