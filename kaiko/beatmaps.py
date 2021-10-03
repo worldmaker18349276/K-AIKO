@@ -583,7 +583,7 @@ class Playable:
     # start_time: float
     # end_time: float
 
-    def get_audionode(self, output_samplerate, output_nchannels):
+    def load_audionode(self, output_samplerate, output_nchannels):
         raise NotImplementedError
 
     def prepare_events(self, data_dir):
@@ -621,17 +621,18 @@ class Beatmap(Playable):
     def dtime(self, beat, length):
         return self.time(beat+length) - self.time(beat)
 
-    def get_audionode(self, output_samplerate, output_nchannels):
+    def load_audionode(self, output_samplerate, output_nchannels):
         if self.audio is None:
-            return None
+            return dn.create_task(lambda event: None)
 
         else:
             audio_path = os.path.join(self.root, self.audio)
-            audionode = dn.DataNode.wrap(dn.load_sound(audio_path,
-                                                       samplerate=output_samplerate,
-                                                       channels=output_nchannels,
-                                                       volume=self.volume))
-            return audionode
+
+            return dn.create_task(lambda event: dn.DataNode.wrap(dn.load_sound(audio_path,
+                                                samplerate=output_samplerate,
+                                                channels=output_nchannels,
+                                                volume=self.volume,
+                                                stop_event=event)))
 
     def prepare_events(self, data_dir):
         events = []
@@ -971,7 +972,7 @@ class BeatmapPlayer:
 
     def prepare(self, output_samplerate, output_nchannels):
         # prepare music
-        self.audionode = self.beatmap.get_audionode(output_samplerate, output_nchannels)
+        self.audionode = yield from self.beatmap.load_audionode(output_samplerate, output_nchannels)
 
         # prepare events
         self.events = self.beatmap.prepare_events(self.data_dir)
@@ -989,11 +990,12 @@ class BeatmapPlayer:
 
         return abs(self.start_time)
 
+    @dn.datanode
     def execute(self, manager):
         tickrate = self.settings.controls.tickrate
         samplerate = self.devices_settings.mixer.output_samplerate
         nchannels = self.devices_settings.mixer.output_channels
-        time_shift = self.prepare(samplerate, nchannels)
+        time_shift = yield from self.prepare(samplerate, nchannels)
         load_time = self.settings.controls.load_time
         ref_time = load_time + time_shift
 
@@ -1016,7 +1018,8 @@ class BeatmapPlayer:
 
         # game loop
         event_task = dn.interval(consumer=self.update_events(), dt=1/tickrate)
-        return dn.pipe(event_task, mixer_task, detector_task, renderer_task)
+        with dn.pipe(event_task, mixer_task, detector_task, renderer_task) as task:
+            yield from task.join((yield))
 
     @dn.datanode
     def update_events(self):
