@@ -3,6 +3,7 @@ import os
 import re
 import time
 import random
+import threading
 import queue
 import contextlib
 import dataclasses
@@ -83,13 +84,12 @@ def echo_str(escaped_str):
 
     return re.sub(regex, repl, escaped_str)
 
-def fit_screen(print, width, delay):
+def fit_screen(logger, width, delay):
     r"""Guide user to adjust screen size.
 
     Parameters
     ----------
-    print : function
-        The print function.
+    logger : KAIKOLogger
     width : int
         The required width of screen.
     delay : float
@@ -100,6 +100,10 @@ def fit_screen(print, width, delay):
     fit_task : dn.DataNode
         The datanode to manage this process.
     """
+    skip_event = threading.Event()
+
+    skip = dn.input(lambda a: skip_event.set() if a[1] == '\x1b' else None)
+
     @dn.datanode
     def fit():
         size = yield
@@ -108,12 +112,17 @@ def fit_screen(print, width, delay):
         if size.columns < width:
             t = time.time()
 
-            print("The screen size seems too small.")
-            print(f"Can you adjust the screen size to (or bigger than) {width}?")
-            print("Or you can try to fit the line below.")
-            print("━"*width)
+            logger.print("Your screen size seems too small.")
+            logger.print(f"Can you adjust the width to (or bigger than) {width}?")
+            logger.print(f"Or {logger.emph('Esc')} to skip this process.")
+            logger.print("You can try to fit the line below.")
+            logger.print("━"*width, flush=True)
 
             while current_width < width or time.time() < t+delay:
+                if skip_event.is_set():
+                    logger.print()
+                    break
+
                 if current_width != size.columns:
                     current_width = size.columns
                     t = time.time()
@@ -125,18 +134,22 @@ def fit_screen(print, width, delay):
                         hint = "(perfect!)"
                     else:
                         hint = "(great!)"
-                    print(f"\r\x1b[KCurrent width: {current_width} {hint}", end="", flush=True)
+                    logger.print(f"\r\x1b[KCurrent width: {current_width} {hint}", end="", flush=True)
 
                 size = yield
 
-            print("\nThanks!\n")
+            else:
+                logger.print()
+                logger.print("Thanks!")
+
+            logger.print("You can adjust the screen size at any time.\n", flush=True)
 
             # sleep
             t = time.time()
             while time.time() < t+delay:
                 yield
 
-    return dn.pipe(dn.terminal_size(), fit())
+    return dn.pipe(skip, dn.terminal_size(), fit())
 
 def print_pyaudio_info(manager, print):
     r"""Print out some information of PyAudio.
@@ -382,7 +395,7 @@ class KAIKOMenu:
         # fit screen size
         screen_size = self.settings.menu.best_screen_size
         fit_delay = 1.0
-        with fit_screen(logger.print, screen_size, fit_delay) as fit_task:
+        with fit_screen(logger, screen_size, fit_delay) as fit_task:
             yield from fit_task.join((yield))
 
         # load songs
