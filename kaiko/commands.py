@@ -279,16 +279,13 @@ class PathParser(ArgumentParser):
         return Path(token)
 
     def suggest(self, token):
-        if not token:
-            token = "."
-
         suggestions = []
 
         if self.default is not inspect.Parameter.empty:
             suggestions.append(str(self.default) + "\000")
 
         # check path
-        currpath = os.path.join(self.root, token)
+        currpath = os.path.join(self.root, token or ".")
         try:
             is_dir = os.path.isdir(currpath)
             is_file = os.path.isfile(currpath)
@@ -296,30 +293,33 @@ class PathParser(ArgumentParser):
             return suggestions
 
         if is_file:
-            suggestions.append(token + "\000")
+            suggestions.append((token or ".") + "\000")
             return suggestions
 
         # separate parent and partial name
         if is_dir:
-            suggestions.append(os.path.join(token, ""))
-            target = ""
+            suggestions.append(os.path.join(token or ".", "") + "\000")
+            prefix, suffix = token, ""
         else:
-            token, target = os.path.split(token)
+            prefix, suffix = os.path.split(token)
 
         # explore directory
-        currdir = os.path.join(self.root, token)
-        if os.path.isdir(currdir):
-            names = fit(target, [name for name in os.listdir(currdir) if not name.startswith(".")])
-            for name in names:
-                subpath = os.path.join(currdir, name)
-                sugg = os.path.join(token, name)
+        parentpath = os.path.join(self.root, prefix or ".")
 
-                if os.path.isdir(subpath):
-                    sugg = os.path.join(sugg, "")
-                    suggestions.append(sugg)
+        if not os.path.isdir(parentpath):
+            return suggestions
 
-                elif os.path.isfile(subpath):
-                    suggestions.append(sugg + "\000")
+        names = fit(suffix, [name for name in os.listdir(parentpath) if not name.startswith(".")])
+        for name in names:
+            subpath = os.path.join(parentpath, name)
+            sugg = os.path.join(prefix, name)
+
+            if os.path.isdir(subpath):
+                sugg = os.path.join(sugg, "")
+                suggestions.append(sugg)
+
+            elif os.path.isfile(subpath):
+                suggestions.append(sugg + "\000")
 
         return suggestions
 

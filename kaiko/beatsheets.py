@@ -143,7 +143,7 @@ class BeatSheet(beatmaps.Beatmap):
                 raise BeatmapParseError(f"failed to read beatmap {filename}") from e
 
         else:
-            raise ValueError(f"unknown file extension: {filename}")
+            raise BeatmapParseError(f"unknown file extension: {filename}")
 
 
 Value = Union[None, bool, int, Fraction, float, str]
