@@ -1128,26 +1128,22 @@ class BeatmapManager:
     def make_parser(self, bgm_controller=None):
         return BeatmapParser(self, bgm_controller)
 
-class BeatmapParser(cmd.ArgumentParser):
+class BeatmapParser(cmd.TreeParser):
     def __init__(self, beatmap_manager, bgm_controller):
+        super().__init__(BeatmapParser.make_tree(beatmap_manager._beatmaps))
         self.beatmap_manager = beatmap_manager
         self.bgm_controller = bgm_controller
-        beatmapsets = self.beatmap_manager._beatmaps
-        self.options = [str(beatmap) for beatmapset in beatmapsets.values() for beatmap in beatmapset]
-        self._desc = cmd.it_should_be_one_of(self.options)
 
-    def desc(self):
-        return self._desc
-
-    def parse(self, token):
-        if token not in self.options:
-            desc = self._desc
-            raise cmd.CommandParseError("Invalid value" + "\n" + desc)
-
-        return token
-
-    def suggest(self, token):
-        return [val + "\000" for val in cmd.fit(token, self.options)]
+    @staticmethod
+    def make_tree(beatmapsets):
+        tree = {}
+        for beatmapset_path, beatmapset in beatmapsets.items():
+            subtree = {}
+            subtree[""] = Path
+            for beatmap_path in beatmapset:
+                subtree[str(beatmap_path.relative_to(beatmapset_path))] = Path
+            tree[os.path.join(str(beatmapset_path), "")] = subtree
+        return tree
 
     def info(self, token):
         try:

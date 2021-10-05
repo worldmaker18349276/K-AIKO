@@ -232,7 +232,7 @@ class OptionParser(ArgumentParser):
 
     def parse(self, token):
         if token not in self.options:
-            desc = self._desc
+            desc = self.desc()
             raise CommandParseError("Invalid value" + ("\n" + desc if desc is not None else ""))
 
         if isinstance(self.options, dict):
@@ -273,7 +273,7 @@ class PathParser(ArgumentParser):
             exists = False
 
         if not exists:
-            desc = self._desc
+            desc = self.desc()
             raise CommandParseError("Path does not exist" + ("\n" + desc if desc is not None else ""))
 
         return Path(token)
@@ -323,6 +323,75 @@ class PathParser(ArgumentParser):
 
         return suggestions
 
+class TreeParser(ArgumentParser):
+    r"""Parse something following a tree."""
+
+    def __init__(self, tree, default=inspect.Parameter.empty, desc=None):
+        r"""Contructor.
+
+        Parameters
+        ----------
+        tree : dict, Dict[str, Union[tree, Callable[[str], Any]]]
+            The parser tree, the leaf should be a function producing parsed result.
+        default : any, optional
+            The default value of this argument.
+        desc : str, optional
+            The description of this argument.
+        """
+        self.tree = tree
+        self.default = default
+        self._desc = desc
+
+    def desc(self):
+        return self._desc
+
+    def parse(self, token):
+        target = token
+        tree = self.tree
+
+        while isinstance(tree, dict):
+            for key, subtree in sorted(tree.items(), key=lambda a: a[0], reverse=True):
+                if target.startswith(key):
+                    target = target[len(key):]
+                    tree = subtree
+                    break
+
+            else:
+                desc = self.desc()
+                raise CommandParseError("Invalid value" + ("\n" + desc if desc is not None else ""))
+
+        if target:
+            desc = self.desc()
+            raise CommandParseError("Invalid value" + ("\n" + desc if desc is not None else ""))
+
+        if not hasattr(tree, '__call__'):
+            raise ValueError("Not a function.")
+
+        return tree(token)
+
+    def suggest(self, token):
+        prefix = ""
+        target = token
+        tree = self.tree
+
+        while isinstance(tree, dict):
+            for key, subtree in sorted(tree.items(), key=lambda a: a[0], reverse=True):
+                if target and target.startswith(key):
+                    prefix = prefix + target[:len(key)]
+                    target = target[len(key):]
+                    tree = subtree
+                    break
+
+            else:
+                comp = [key + ("\000" if hasattr(subtree, '__call__') else "") for key, subtree in tree.items()]
+                comp = fit(target, comp)
+                return [prefix + c for c in comp]
+
+        if not hasattr(tree, '__call__'):
+            raise ValueError("Not a function.")
+
+        return [token + "\000"]
+
 class LiteralParser(ArgumentParser):
     r"""Parse a Python literal."""
 
@@ -350,7 +419,7 @@ class LiteralParser(ArgumentParser):
         try:
             return self.biparser.decode(token)[0]
         except bp.DecodeError:
-            desc = self._desc
+            desc = self.desc()
             raise CommandParseError("Invalid value" + ("\n" + desc if desc is not None else ""))
 
     def suggest(self, token):
