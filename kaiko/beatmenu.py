@@ -618,6 +618,11 @@ class KAIKOMenu:
              songs folder can be accessed.
         """
 
+        if not self.beatmap_manager.is_beatmap(beatmap):
+            with self.logger.warn():
+                self.logger.print("Not a beatmap.")
+                return
+
         return KAIKOPlay(self.user.data_dir, self.user.songs_dir / beatmap,
                          self.settings.devices, self.settings.gameplay, self.logger)
 
@@ -1098,32 +1103,33 @@ class BeatmapManager:
             with logger.warn():
                 logger.print(f"Not a file: {str(beatmap)}")
 
-    def get_beatmap(self, path):
-        filepath = self.user.songs_dir / path
+    def is_beatmapset(self, path):
+        return path in self._beatmaps
 
-        beatmap = beatsheets.BeatSheet.read(str(filepath), metadata_only=True)
-        return beatmap
+    def is_beatmap(self, path):
+        return path.parent in self._beatmaps and path in self._beatmaps[path.parent]
+
+    def get_beatmap_metadata(self, path):
+        if not self.is_beatmap(path):
+            raise ValueError(f"Not a beatmap: {str(path)}")
+
+        filepath = self.user.songs_dir / path
+        try:
+            beatmap = beatsheets.BeatSheet.read(str(filepath), metadata_only=True)
+        except beatsheets.BeatmapParseError:
+            return None
+        else:
+            return beatmap
 
     def get_song(self, path):
-        filepath = self.user.songs_dir / path
-        if filepath.is_dir():
-            filepath = self.user.songs_dir / self._beatmaps[path][0]
-
-        beatmap = beatsheets.BeatSheet.read(str(filepath), metadata_only=True)
+        if self.is_beatmapset(path):
+            path = self._beatmaps[path][0]
+        beatmap = self.get_beatmap_metadata(path)
         return SongMetadata.from_beatmap(beatmap)
 
     def get_songs(self):
-        songs = []
-        for path in self._beatmaps.keys():
-            try:
-                song = self.get_song(path)
-            except beatsheets.BeatmapParseError:
-                pass
-            else:
-                if song is not None:
-                    songs.append(song)
-
-        return songs
+        songs = [self.get_song(path) for path in self._beatmaps.keys()]
+        return [song for song in songs if song is not None]
 
     def make_parser(self, bgm_controller=None):
         return BeatmapParser(self, bgm_controller)
@@ -1146,15 +1152,15 @@ class BeatmapParser(cmd.TreeParser):
         return tree
 
     def info(self, token):
-        try:
-            beatmap = self.beatmap_manager.get_beatmap(token)
-        except beatsheets.BeatmapParseError:
-            return None
-        else:
-            song = SongMetadata.from_beatmap(beatmap)
-            if self.bgm_controller is not None and song is not None:
-                self.bgm_controller.play(song, song.preview)
-            return beatmap.info.strip()
+        path = Path(token)
+
+        song = self.beatmap_manager.get_song(path)
+        if self.bgm_controller is not None and song is not None:
+            self.bgm_controller.play(song, song.preview)
+
+        if self.beatmap_manager.is_beatmap(path):
+            beatmap = self.beatmap_manager.get_beatmap_metadata(path)
+            return beatmap.info.strip() if beatmap is not None else None
 
 class KAIKOBGMController:
     def __init__(self, config, logger, beatmap_manager):
