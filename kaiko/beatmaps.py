@@ -578,7 +578,32 @@ class BeatmapSettings(cfg.Configurable):
         spin_disk_sound: str = f"samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
         event_leadin_time: float = 1.0
 
-class Playable:
+class Beatmap:
+    def __init__(self, root=".", audio=None, volume=0.0,
+                 offset=0.0, tempo=120.0,
+                 bar_shift=0.1, bar_flip=False,
+                 event_sequences=None,
+                 settings=None):
+        self.root = root
+        self.audio = audio
+        self.volume = volume
+        self.offset = offset
+        self.tempo = tempo
+        self.bar_shift = bar_shift
+        self.bar_flip = bar_flip
+        self.event_sequences = event_sequences or []
+
+        self.settings = settings or BeatmapSettings()
+
+    def time(self, beat):
+        return self.offset + beat*60/self.tempo
+
+    def beat(self, time):
+        return (time - self.offset)*self.tempo/60
+
+    def dtime(self, beat, length):
+        return self.time(beat+length) - self.time(beat)
+
     def load_audionode(self, output_samplerate, output_nchannels):
         r"""Load audionode asynchronously.
 
@@ -591,7 +616,17 @@ class Playable:
         -------
         audionode : dn.DataNode
         """
-        raise NotImplementedError
+        if self.audio is None:
+            return dn.create_task(lambda event: None)
+
+        else:
+            audio_path = os.path.join(self.root, self.audio)
+
+            return dn.create_task(lambda stop_event: dn.DataNode.wrap(dn.load_sound(audio_path,
+                                                     samplerate=output_samplerate,
+                                                     channels=output_nchannels,
+                                                     volume=self.volume,
+                                                     stop_event=stop_event)))
 
     def prepare_events(self, data_dir):
         r"""Prepare events asynchronously.
@@ -607,51 +642,6 @@ class Playable:
         end_time: float
         events: list of Event
         """
-        raise NotImplementedError
-
-class Beatmap(Playable):
-    def __init__(self, root=".", audio=None, volume=0.0,
-                 info="", preview=None,
-                 offset=0.0, tempo=60.0,
-                 bar_shift=0.1, bar_flip=False,
-                 settings=None):
-        self.root = root
-        self.audio = audio
-        self.volume = volume
-        self.info = info
-        self.preview = preview
-        self.offset = offset
-        self.tempo = tempo
-        self.bar_shift = bar_shift
-        self.bar_flip = bar_flip
-
-        self.settings = settings or BeatmapSettings()
-
-        self.event_sequences = []
-
-    def time(self, beat):
-        return self.offset + beat*60/self.tempo
-
-    def beat(self, time):
-        return (time - self.offset)*self.tempo/60
-
-    def dtime(self, beat, length):
-        return self.time(beat+length) - self.time(beat)
-
-    def load_audionode(self, output_samplerate, output_nchannels):
-        if self.audio is None:
-            return dn.create_task(lambda event: None)
-
-        else:
-            audio_path = os.path.join(self.root, self.audio)
-
-            return dn.create_task(lambda stop_event: dn.DataNode.wrap(dn.load_sound(audio_path,
-                                                     samplerate=output_samplerate,
-                                                     channels=output_nchannels,
-                                                     volume=self.volume,
-                                                     stop_event=stop_event)))
-
-    def prepare_events(self, data_dir):
         return dn.create_task(lambda stop_event: self._prepare_events(data_dir))
 
     def _prepare_events(self, data_dir):
@@ -661,9 +651,8 @@ class Beatmap(Playable):
             for event in sequence:
                 event = replace(event)
                 event.prepare(self, context)
-                if not isinstance(event, Event):
-                    continue
-                events.append(event)
+                if isinstance(event, Event):
+                    events.append(event)
 
         events = sorted(events, key=lambda e: e.lifespan[0])
 
@@ -674,8 +663,10 @@ class Beatmap(Playable):
 
         event_leadin_time = self.settings.notes.event_leadin_time
         total_subjects = sum([1 for event in events if event.is_subject], 0)
-        start_time = min(0.0, *[event.lifespan[0] - event_leadin_time for event in events])
-        end_time = max(duration, *[event.lifespan[1] + event_leadin_time for event in events])
+        start_time = min(event.lifespan[0] - event_leadin_time for event in events)
+        start_time = min(start_time, 0.0)
+        end_time = max(event.lifespan[1] + event_leadin_time for event in events)
+        end_time = max(end_time, duration)
 
         return total_subjects, start_time, end_time, events
 

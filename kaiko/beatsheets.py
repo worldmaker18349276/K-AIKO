@@ -175,7 +175,7 @@ class Track:
 @dataclass
 class Note(Pattern):
     #    event note: XXX(arg=...)
-    #     text note: 'ABC'(arg=...)
+    #     text note: "ABC"(arg=...)
     # lengthen note: ~
     #  measure note: |
     #     rest note: _
