@@ -392,6 +392,9 @@ class KAIKOMenu:
 
         yield
 
+        if not sys.stdout.isatty():
+            raise ValueError("please connect to interactive terminal device.")
+
         # fit screen size
         screen_size = self.settings.menu.best_screen_size
         fit_delay = 1.0
@@ -782,6 +785,22 @@ class DevicesCommand:
     @audio_output.arg_parser("format")
     def _audio_format_parser(self, device, **__):
         return cmd.OptionParser(['f4', 'i4', 'i2', 'i1', 'u1'])
+
+    # terminal
+
+    @cmd.function_command
+    def terminal(self):
+        """Show your terminal configuration."""
+
+        term = os.environ.get('TERM', None)
+        vte = os.environ.get('VTE_VERSION', None)
+        uni = os.environ.get('UNICODE_VERSION', None)
+        size = shutil.get_terminal_size()
+
+        self.logger.print(f"terminal type: {term}")
+        self.logger.print(f"VTE version: {vte}")
+        self.logger.print(f"unicode version: {uni}")
+        self.logger.print(f"terminal size: {size.columns}×{size.lines}")
 
 
 class ConfigCommand:
