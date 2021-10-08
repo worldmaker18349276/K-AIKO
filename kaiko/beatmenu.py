@@ -483,76 +483,31 @@ class KAIKOMenu:
         r"""Current settings."""
         return self._config.current
 
-    @cmd.function_command
-    def exit(self):
-        """Close K-AIKO."""
-        self.logger.print("bye~")
-        raise KeyboardInterrupt
-
-    @cmd.function_command
-    def say(self, message, escape=False):
-        """Say something to... yourself.
-        
-        usage: \x1b[94msay\x1b[m \x1b[92m{message}\x1b[m [\x1b[95m--escape\x1b[m \x1b[92m{ESCAPE}\x1b[m]
-                      ╱                    ╲
-            text, the message               ╲
-             to be printed.          bool, use backslash escapes
-                                    or not; the default is False.
-        """
-
-        if escape:
-            self.logger.print(echo_str(message))
-        else:
-            self.logger.print(message)
-
-    @cmd.function_command
-    def clean(self):
-        """Clean screen."""
-        self.logger.print("\x1b[2J\x1b[H")
-
-    @say.arg_parser("message")
-    def _say_message_parser(self):
-        return cmd.RawParser(desc="It should be some text,"
-                                  " indicating the message to be printed.")
-
-    @say.arg_parser("escape")
-    def _say_escape_parser(self, message):
-        return cmd.LiteralParser(bool, default=False,
-                                       desc="It should be bool,"
-                                            " indicating whether to use backslash escapes;"
-                                            " the default is False.")
-
-    # user
-
-    @cmd.function_command
-    def me(self):
-        """About user."""
-        logger = self.logger
-
-        logger.print(f"username: {logger.emph(self.user.username)}")
-        logger.print(f"config file: {logger.emph(self.user.config_file.as_uri())}")
-        logger.print(f"data directory: {logger.emph(self.user.data_dir.as_uri())}")
-        logger.print(f"songs directory: {logger.emph(self.user.songs_dir.as_uri())}")
-
-    # bgm
-
-    @cmd.subcommand
-    @property
-    def bgm(self):
-        """Background music."""
-        return BGMCommand(self.bgm_controller, self.beatmap_manager, self.logger)
-
     # beatmaps
 
     @cmd.function_command
-    def beatmaps(self):
-        """Your beatmaps."""
-        if not self.beatmap_manager.is_uptodate():
-            self.reload()
+    def play(self, beatmap):
+        """Let's beat with the song!
+        
+        usage: \x1b[94mplay\x1b[m \x1b[92m{beatmap}\x1b[m
+                         ╲
+               Path, the path to the
+              beatmap you want to play.
+              Only the beatmaps in your
+             songs folder can be accessed.
+        """
 
-        for beatmapset in self.beatmap_manager._beatmaps.values():
-            for beatmap in beatmapset:
-                self.logger.print("• " + str(beatmap))
+        if not self.beatmap_manager.is_beatmap(beatmap):
+            with self.logger.warn():
+                self.logger.print("Not a beatmap.")
+                return
+
+        return KAIKOPlay(self.user.data_dir, self.user.songs_dir / beatmap,
+                         self.settings.devices, self.settings.gameplay, self.logger)
+
+    @play.arg_parser("beatmap")
+    def _play_beatmap_parser(self):
+        return self.beatmap_manager.make_parser(self.bgm_controller)
 
     @cmd.function_command
     def reload(self):
@@ -600,28 +555,20 @@ class KAIKOMenu:
         return cmd.OptionParser(options)
 
     @cmd.function_command
-    def play(self, beatmap):
-        """Let's beat with the song!
-        
-        usage: \x1b[94mplay\x1b[m \x1b[92m{beatmap}\x1b[m
-                         ╲
-               Path, the path to the
-              beatmap you want to play.
-              Only the beatmaps in your
-             songs folder can be accessed.
-        """
+    def beatmaps(self):
+        """Your beatmaps."""
+        if not self.beatmap_manager.is_uptodate():
+            self.reload()
 
-        if not self.beatmap_manager.is_beatmap(beatmap):
-            with self.logger.warn():
-                self.logger.print("Not a beatmap.")
-                return
+        for beatmapset in self.beatmap_manager._beatmaps.values():
+            for beatmap in beatmapset:
+                self.logger.print("• " + str(beatmap))
 
-        return KAIKOPlay(self.user.data_dir, self.user.songs_dir / beatmap,
-                         self.settings.devices, self.settings.gameplay, self.logger)
-
-    @play.arg_parser("beatmap")
-    def _play_beatmap_parser(self):
-        return self.beatmap_manager.make_parser(self.bgm_controller)
+    @cmd.subcommand
+    @property
+    def bgm(self):
+        """Background music."""
+        return BGMCommand(self.bgm_controller, self.beatmap_manager, self.logger)
 
     # devices
 
@@ -638,6 +585,57 @@ class KAIKOMenu:
     def config(self):
         """Configuration."""
         return ConfigCommand(self._config, self.logger, self.user.config_file)
+
+    # system
+
+    @cmd.function_command
+    def me(self):
+        """About user."""
+        logger = self.logger
+
+        logger.print(f"username: {logger.emph(self.user.username)}")
+        logger.print(f"config file: {logger.emph(self.user.config_file.as_uri())}")
+        logger.print(f"data directory: {logger.emph(self.user.data_dir.as_uri())}")
+        logger.print(f"songs directory: {logger.emph(self.user.songs_dir.as_uri())}")
+
+    @cmd.function_command
+    def say(self, message, escape=False):
+        """Say something to... yourself.
+        
+        usage: \x1b[94msay\x1b[m \x1b[92m{message}\x1b[m [\x1b[95m--escape\x1b[m \x1b[92m{ESCAPE}\x1b[m]
+                      ╱                    ╲
+            text, the message               ╲
+             to be printed.          bool, use backslash escapes
+                                    or not; the default is False.
+        """
+
+        if escape:
+            self.logger.print(echo_str(message))
+        else:
+            self.logger.print(message)
+
+    @cmd.function_command
+    def clean(self):
+        """Clean screen."""
+        self.logger.print("\x1b[2J\x1b[H")
+
+    @say.arg_parser("message")
+    def _say_message_parser(self):
+        return cmd.RawParser(desc="It should be some text,"
+                                  " indicating the message to be printed.")
+
+    @say.arg_parser("escape")
+    def _say_escape_parser(self, message):
+        return cmd.LiteralParser(bool, default=False,
+                                       desc="It should be bool,"
+                                            " indicating whether to use backslash escapes;"
+                                            " the default is False.")
+
+    @cmd.function_command
+    def exit(self):
+        """Close K-AIKO."""
+        self.logger.print("bye~")
+        raise KeyboardInterrupt
 
 
 class DevicesCommand:
@@ -799,6 +797,8 @@ class ConfigCommand:
         self.logger = logger
         self.path = path
 
+    # configuration
+
     @cmd.function_command
     def reload(self):
         """Reload configuration."""
@@ -808,6 +808,11 @@ class ConfigCommand:
         logger.print()
 
         self.config.read(self.path)
+
+    @cmd.function_command
+    def show(self):
+        """Show configuration."""
+        self.logger.print(str(self.config))
 
     @cmd.function_command
     def save(self):
@@ -820,9 +825,14 @@ class ConfigCommand:
         self.config.write(self.path)
 
     @cmd.function_command
-    def show(self):
-        """Show configuration."""
-        self.logger.print(str(self.config))
+    def has(self, field):
+        """Check whether this field is set in the configuration.
+        
+        usage: \x1b[94mconfig\x1b[m \x1b[94mhas\x1b[m \x1b[92m{field}\x1b[m
+                            ╱
+                     The field name.
+        """
+        return self.config.has(field)
 
     @cmd.function_command
     def get(self, field):
@@ -835,14 +845,14 @@ class ConfigCommand:
         return self.config.get(field)
 
     @cmd.function_command
-    def has(self, field):
-        """Check whether this field is set in the configuration.
+    def set(self, field, value):
+        """Set this field in the configuration.
         
-        usage: \x1b[94mconfig\x1b[m \x1b[94mhas\x1b[m \x1b[92m{field}\x1b[m
-                            ╱
-                     The field name.
+        usage: \x1b[94mconfig\x1b[m \x1b[94mset\x1b[m \x1b[92m{field}\x1b[m \x1b[92m{value}\x1b[m
+                            ╱         ╲
+                   The field name.   The value.
         """
-        return self.config.has(field)
+        self.config.set(field, value)
 
     @cmd.function_command
     def unset(self, field):
@@ -853,16 +863,6 @@ class ConfigCommand:
                        The field name.
         """
         self.config.unset(field)
-
-    @cmd.function_command
-    def set(self, field, value):
-        """Set this field in the configuration.
-        
-        usage: \x1b[94mconfig\x1b[m \x1b[94mset\x1b[m \x1b[92m{field}\x1b[m \x1b[92m{value}\x1b[m
-                            ╱         ╲
-                   The field name.   The value.
-        """
-        self.config.set(field, value)
 
     @get.arg_parser("field")
     @has.arg_parser("field")
@@ -876,6 +876,20 @@ class ConfigCommand:
         annotation = self.config.config_type.get_configurable_fields()[field]
         default = self.config.get(field)
         return cmd.LiteralParser(annotation, default)
+
+    # profiles
+
+    @cmd.function_command
+    def use(self, profile):
+        """Change the current configuration profile.
+        
+        usage: \x1b[94mconfig\x1b[m \x1b[94muse\x1b[m \x1b[92m{profile}\x1b[m
+                              ╱
+                     The profile name.
+        """
+        if profile == self.config.name:
+            return
+        self.config.use(profile)
 
     @cmd.function_command
     def rename(self, profile):
@@ -917,23 +931,6 @@ class ConfigCommand:
 
         self.config.new(profile, clone)
 
-    @rename.arg_parser("profile")
-    @new.arg_parser("profile")
-    def _new_profile_parser(self):
-        return cmd.RawParser()
-
-    @cmd.function_command
-    def use(self, profile):
-        """Change the current configuration profile.
-        
-        usage: \x1b[94mconfig\x1b[m \x1b[94muse\x1b[m \x1b[92m{profile}\x1b[m
-                              ╱
-                     The profile name.
-        """
-        if profile == self.config.name:
-            return
-        self.config.use(profile)
-
     @cmd.function_command
     def delete(self, profile):
         """Delete a configuration profile.
@@ -947,6 +944,11 @@ class ConfigCommand:
                 self.logger.print("Cannot delete current profile.")
             return
         del self.config.profiles[profile]
+
+    @rename.arg_parser("profile")
+    @new.arg_parser("profile")
+    def _new_profile_parser(self):
+        return cmd.RawParser()
 
     @new.arg_parser("clone")
     @use.arg_parser("profile")
