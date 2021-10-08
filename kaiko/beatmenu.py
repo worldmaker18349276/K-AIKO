@@ -630,20 +630,43 @@ class KAIKOMenu:
     def _play_beatmap_parser(self):
         return self.beatmap_manager.make_parser(self.bgm_controller)
 
+    # devices
+
+    @cmd.subcommand
+    @property
+    def devices(self):
+        """Devices."""
+        return DevicesCommand(self._config, self.logger, self.manager)
+
+    # config
+
+    @cmd.subcommand
+    @property
+    def config(self):
+        """Configuration."""
+        return ConfigCommand(self._config, self.logger, self.user.config_file)
+
+
+class DevicesCommand:
+    def __init__(self, config, logger, manager):
+        self.config = config
+        self.logger = logger
+        self.manager = manager
+
     # audio
 
     @cmd.function_command
     def audio_input(self, device, samplerate=None, channels=None, format=None):
         """Configure audio input.
         
-        usage: \x1b[94maudio_input\x1b[m \x1b[92m{device}\x1b[m \
+        usage: devices \x1b[94maudio_input\x1b[m \x1b[92m{device}\x1b[m \
 [\x1b[95m--samplerate\x1b[m \x1b[92m{RATE}\x1b[m] \
 [\x1b[95m--channel\x1b[m \x1b[92m{CHANNEL}\x1b[m] \
 [\x1b[95m--format\x1b[m \x1b[92m{FORMAT}\x1b[m]
-                             ╱                     ╱                      ╲                    ╲
-                   the index of input        the sample rate       the channel of audio    the data format
-                    device, -1 is the       of recorded sound.      input: 1 for mono,    of recorded sound.
-                     default device.                                 2 for stereo.
+                                     ╱                     ╱                      ╲                    ╲
+                           the index of input        the sample rate       the channel of audio    the data format
+                            device, -1 is the       of recorded sound.      input: 1 for mono,    of recorded sound.
+                             default device.                                 2 for stereo.
         """
         logger = self.logger
 
@@ -654,9 +677,9 @@ class KAIKOMenu:
         if pa_device == -1:
             pa_device = self.manager.get_default_input_device_info()['index']
         if pa_samplerate is None:
-            pa_samplerate = self.settings.devices.detector.input_samplerate
+            pa_samplerate = self.config.get('devices.detector.input_samplerate')
         if pa_channels is None:
-            pa_channels = self.settings.devices.detector.input_channels
+            pa_channels = self.config.get('devices.detector.input_channels')
 
         pa_format = {
             'f4': pyaudio.paFloat32,
@@ -664,7 +687,7 @@ class KAIKOMenu:
             'i2': pyaudio.paInt16,
             'i1': pyaudio.paInt8,
             'u1': pyaudio.paUInt8,
-        }[format or self.settings.devices.detector.input_format]
+        }[format or self.config.get('devices.detector.input_format')]
 
         try:
             self.manager.is_format_supported(pa_samplerate,
@@ -676,26 +699,26 @@ class KAIKOMenu:
                 logger.print(info)
 
         else:
-            self.settings.devices.detector.input_device = device
+            self.config.set('devices.detector.input_device', device)
             if samplerate is not None:
-                self.settings.devices.detector.input_samplerate = samplerate
+                self.config.set('devices.detector.input_samplerate', samplerate)
             if channels is not None:
-                self.settings.devices.detector.input_channels = channels
+                self.config.set('devices.detector.input_channels', channels)
             if format is not None:
-                self.settings.devices.detector.input_format = format
+                self.config.set('devices.detector.input_format', format)
 
     @cmd.function_command
     def audio_output(self, device, samplerate=None, channels=None, format=None):
         """Configure audio output.
         
-        usage: \x1b[94maudio_output\x1b[m \x1b[92m{device}\x1b[m \
+        usage: devices \x1b[94maudio_output\x1b[m \x1b[92m{device}\x1b[m \
 [\x1b[95m--samplerate\x1b[m \x1b[92m{RATE}\x1b[m] \
 [\x1b[95m--channel\x1b[m \x1b[92m{CHANNEL}\x1b[m] \
 [\x1b[95m--format\x1b[m \x1b[92m{FORMAT}\x1b[m]
-                              ╱                     ╱                      ╲                    ╲
-                    the index of output       the sample rate       the channel of audio    the data format
-                     device, -1 is the        of played sound.       output: 1 for mono,    of played sound.
-                      default device.                                 2 for stereo.
+                                      ╱                     ╱                      ╲                    ╲
+                            the index of output       the sample rate       the channel of audio    the data format
+                             device, -1 is the        of played sound.       output: 1 for mono,    of played sound.
+                              default device.                                 2 for stereo.
         """
         logger = self.logger
 
@@ -706,9 +729,9 @@ class KAIKOMenu:
         if pa_device == -1:
             pa_device = self.manager.get_default_output_device_info()['index']
         if pa_samplerate is None:
-            pa_samplerate = self.settings.devices.mixer.output_samplerate
+            pa_samplerate = self.config.get('devices.mixer.output_samplerate')
         if pa_channels is None:
-            pa_channels = self.settings.devices.mixer.output_channels
+            pa_channels = self.config.get('devices.mixer.output_channels')
 
         pa_format = {
             'f4': pyaudio.paFloat32,
@@ -716,7 +739,7 @@ class KAIKOMenu:
             'i2': pyaudio.paInt16,
             'i1': pyaudio.paInt8,
             'u1': pyaudio.paUInt8,
-        }[format or self.settings.devices.mixer.output_format]
+        }[format or self.config.get('devices.mixer.output_format')]
 
         try:
             self.manager.is_format_supported(pa_samplerate,
@@ -728,13 +751,13 @@ class KAIKOMenu:
                 logger.print(info)
 
         else:
-            self.settings.devices.mixer.output_device = device
+            self.config.set('devices.mixer.output_device', device)
             if samplerate is not None:
-                self.settings.devices.mixer.output_samplerate = samplerate
+                self.config.set('devices.mixer.output_samplerate', samplerate)
             if channels is not None:
-                self.settings.devices.mixer.output_channels = channels
+                self.config.set('devices.mixer.output_channels', channels)
             if format is not None:
-                self.settings.devices.mixer.output_format = format
+                self.config.set('devices.mixer.output_format', format)
 
     @audio_input.arg_parser("device")
     def _audio_input_device_parser(self):
@@ -759,14 +782,6 @@ class KAIKOMenu:
     @audio_output.arg_parser("format")
     def _audio_format_parser(self, device, **__):
         return cmd.OptionParser(['f4', 'i4', 'i2', 'i1', 'u1'])
-
-    # config
-
-    @cmd.subcommand
-    @property
-    def config(self):
-        """Configuration."""
-        return ConfigCommand(self._config, self.logger, self.user.config_file)
 
 
 class ConfigCommand:
@@ -1125,7 +1140,7 @@ class BeatmapManager:
         if self.is_beatmapset(path):
             path = self._beatmaps[path][0]
         beatmap = self.get_beatmap_metadata(path)
-        return SongMetadata.from_beatmap(beatmap)
+        return beatmap and SongMetadata.from_beatmap(beatmap)
 
     def get_songs(self):
         songs = [self.get_song(path) for path in self._beatmaps.keys()]
