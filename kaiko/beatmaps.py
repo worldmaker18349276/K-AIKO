@@ -579,14 +579,34 @@ class BeatmapSettings(cfg.Configurable):
         event_leadin_time: float = 1.0
 
 class Playable:
-    # total_subjects: int
-    # start_time: float
-    # end_time: float
-
     def load_audionode(self, output_samplerate, output_nchannels):
+        r"""Load audionode asynchronously.
+
+        Parameters
+        ----------
+        output_samplerate : int
+        output_channels : int
+
+        Returns
+        -------
+        audionode : dn.DataNode
+        """
         raise NotImplementedError
 
     def prepare_events(self, data_dir):
+        r"""Prepare events asynchronously.
+
+        Parameters
+        ----------
+        data_dir : Path
+
+        Returns
+        -------
+        total_subjects: int
+        start_time: float
+        end_time: float
+        events: list of Event
+        """
         raise NotImplementedError
 
 class Beatmap(Playable):
@@ -607,9 +627,6 @@ class Beatmap(Playable):
 
         self.settings = settings or BeatmapSettings()
 
-        self.events_start_time = None
-        self.events_end_time = None
-        self.total_subjects = 0
         self.event_sequences = []
 
     def time(self, beat):
@@ -628,13 +645,16 @@ class Beatmap(Playable):
         else:
             audio_path = os.path.join(self.root, self.audio)
 
-            return dn.create_task(lambda event: dn.DataNode.wrap(dn.load_sound(audio_path,
-                                                samplerate=output_samplerate,
-                                                channels=output_nchannels,
-                                                volume=self.volume,
-                                                stop_event=event)))
+            return dn.create_task(lambda stop_event: dn.DataNode.wrap(dn.load_sound(audio_path,
+                                                     samplerate=output_samplerate,
+                                                     channels=output_nchannels,
+                                                     volume=self.volume,
+                                                     stop_event=stop_event)))
 
     def prepare_events(self, data_dir):
+        return dn.create_task(lambda stop_event: self._prepare_events(data_dir))
+
+    def _prepare_events(self, data_dir):
         events = []
         for sequence in self.event_sequences:
             context = {'data_dir': data_dir}
@@ -653,11 +673,11 @@ class Beatmap(Playable):
                 duration = file.duration
 
         event_leadin_time = self.settings.notes.event_leadin_time
-        self.total_subjects = sum([1 for event in events if event.is_subject], 0)
-        self.start_time = min(0.0, *[event.lifespan[0] - event_leadin_time for event in events])
-        self.end_time = max(duration, *[event.lifespan[1] + event_leadin_time for event in events])
+        total_subjects = sum([1 for event in events if event.is_subject], 0)
+        start_time = min(0.0, *[event.lifespan[0] - event_leadin_time for event in events])
+        end_time = max(duration, *[event.lifespan[1] + event_leadin_time for event in events])
 
-        return events
+        return total_subjects, start_time, end_time, events
 
 
 def uint_format(value, width, zero_padded=False):
@@ -975,12 +995,10 @@ class BeatmapPlayer:
         self.audionode = yield from self.beatmap.load_audionode(output_samplerate, output_nchannels)
 
         # prepare events
-        self.events = self.beatmap.prepare_events(self.data_dir)
-        self.start_time = self.beatmap.start_time
-        self.end_time = self.beatmap.end_time
+        events_data = yield from self.beatmap.prepare_events(self.data_dir)
+        self.total_subjects, self.start_time, self.end_time, self.events = events_data
 
         # initialize game state
-        self.total_subjects = self.beatmap.total_subjects
         self.finished_subjects = 0
         self.full_score = 0
         self.score = 0
