@@ -525,24 +525,14 @@ class KAIKOMenu:
     # user
 
     @cmd.function_command
-    def username(self):
-        """Your user name."""
-        self.logger.print(self.user.username)
+    def me(self):
+        """About user."""
+        logger = self.logger
 
-    @cmd.function_command
-    def config_file(self):
-        """Your configuration file."""
-        self.logger.print(self.user.config_file.as_uri())
-
-    @cmd.function_command
-    def data_dir(self):
-        """Your data directory."""
-        self.logger.print(self.user.data_dir.as_uri())
-
-    @cmd.function_command
-    def songs_dir(self):
-        """Your songs directory."""
-        self.logger.print(self.user.songs_dir.as_uri())
+        logger.print(f"username: {logger.emph(self.user.username)}")
+        logger.print(f"config file: {logger.emph(self.user.config_file.as_uri())}")
+        logger.print(f"data directory: {logger.emph(self.user.data_dir.as_uri())}")
+        logger.print(f"songs directory: {logger.emph(self.user.songs_dir.as_uri())}")
 
     # bgm
 
