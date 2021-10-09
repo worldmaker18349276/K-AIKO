@@ -515,8 +515,7 @@ class Spin(Target):
                 appearance = appearance[::-1]
             field.draw_sight(appearance, duration=self.finish_sustain_time)
 
-
-# Game
+# beatmap
 class BeatmapSettings(cfg.Configurable):
     class difficulty(cfg.Configurable):
         performance_tolerance: float = 0.02
@@ -604,6 +603,8 @@ class Beatmap:
     def dtime(self, beat, length):
         return self.time(beat+length) - self.time(beat)
 
+
+# widgets
 
 def uint_format(value, width, zero_padded=False):
     scales = "KMGTPEZY"
@@ -869,6 +870,7 @@ class WidgetManager:
 
         field.beatbar.current_icon.set(widget_func)
 
+# Game
 
 class GameplaySettings(cfg.Configurable):
     beatbar = BeatbarSettings
@@ -929,7 +931,7 @@ class BeatmapPlayer:
         audionode : dn.DataNode
         """
         if beatmap.audio is None:
-            return dn.create_task(lambda event: None)
+            return dn.create_task(lambda stop_event: None)
 
         else:
             audio_path = os.path.join(beatmap.root, beatmap.audio)
@@ -955,13 +957,15 @@ class BeatmapPlayer:
         end_time: float
         events: list of Event
         """
-        return dn.create_task(lambda stop_event: self._prepare_events(beatmap, data_dir))
+        return dn.create_task(lambda stop_event: self._prepare_events(beatmap, data_dir, stop_event))
 
-    def _prepare_events(self, beatmap, data_dir):
+    def _prepare_events(self, beatmap, data_dir, stop_event):
         events = []
         for sequence in beatmap.event_sequences:
             context = {'data_dir': data_dir}
             for event in sequence:
+                if stop_event.is_set():
+                    raise RuntimeError("The operation has been cancelled.")
                 event = replace(event)
                 event.prepare(beatmap, context)
                 if isinstance(event, Event):
