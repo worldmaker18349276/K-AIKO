@@ -604,72 +604,6 @@ class Beatmap:
     def dtime(self, beat, length):
         return self.time(beat+length) - self.time(beat)
 
-    def load_audionode(self, output_samplerate, output_nchannels):
-        r"""Load audionode asynchronously.
-
-        Parameters
-        ----------
-        output_samplerate : int
-        output_channels : int
-
-        Returns
-        -------
-        audionode : dn.DataNode
-        """
-        if self.audio is None:
-            return dn.create_task(lambda event: None)
-
-        else:
-            audio_path = os.path.join(self.root, self.audio)
-
-            return dn.create_task(lambda stop_event: dn.DataNode.wrap(dn.load_sound(audio_path,
-                                                     samplerate=output_samplerate,
-                                                     channels=output_nchannels,
-                                                     volume=self.volume,
-                                                     stop_event=stop_event)))
-
-    def prepare_events(self, data_dir):
-        r"""Prepare events asynchronously.
-
-        Parameters
-        ----------
-        data_dir : Path
-
-        Returns
-        -------
-        total_subjects: int
-        start_time: float
-        end_time: float
-        events: list of Event
-        """
-        return dn.create_task(lambda stop_event: self._prepare_events(data_dir))
-
-    def _prepare_events(self, data_dir):
-        events = []
-        for sequence in self.event_sequences:
-            context = {'data_dir': data_dir}
-            for event in sequence:
-                event = replace(event)
-                event.prepare(self, context)
-                if isinstance(event, Event):
-                    events.append(event)
-
-        events = sorted(events, key=lambda e: e.lifespan[0])
-
-        duration = 0.0
-        if self.audio is not None:
-            with audioread.audio_open(os.path.join(self.root, self.audio)) as file:
-                duration = file.duration
-
-        event_leadin_time = self.settings.notes.event_leadin_time
-        total_subjects = sum([1 for event in events if event.is_subject], 0)
-        start_time = min(event.lifespan[0] - event_leadin_time for event in events)
-        start_time = min(start_time, 0.0)
-        end_time = max(event.lifespan[1] + event_leadin_time for event in events)
-        end_time = max(end_time, duration)
-
-        return total_subjects, start_time, end_time, events
-
 
 def uint_format(value, width, zero_padded=False):
     scales = "KMGTPEZY"
@@ -981,12 +915,80 @@ class BeatmapPlayer:
         self.devices_settings = devices_settings
         self.settings = settings or GameplaySettings()
 
+    def load_audionode(self, beatmap, output_samplerate, output_nchannels):
+        r"""Load audionode asynchronously.
+
+        Parameters
+        ----------
+        beatmap : Beatmap
+        output_samplerate : int
+        output_channels : int
+
+        Returns
+        -------
+        audionode : dn.DataNode
+        """
+        if beatmap.audio is None:
+            return dn.create_task(lambda event: None)
+
+        else:
+            audio_path = os.path.join(beatmap.root, beatmap.audio)
+
+            return dn.create_task(lambda stop_event: dn.DataNode.wrap(dn.load_sound(audio_path,
+                                                     samplerate=output_samplerate,
+                                                     channels=output_nchannels,
+                                                     volume=beatmap.volume,
+                                                     stop_event=stop_event)))
+
+    def prepare_events(self, beatmap, data_dir):
+        r"""Prepare events asynchronously.
+
+        Parameters
+        ----------
+        beatmap : Beatmap
+        data_dir : Path
+
+        Returns
+        -------
+        total_subjects: int
+        start_time: float
+        end_time: float
+        events: list of Event
+        """
+        return dn.create_task(lambda stop_event: self._prepare_events(beatmap, data_dir))
+
+    def _prepare_events(self, beatmap, data_dir):
+        events = []
+        for sequence in beatmap.event_sequences:
+            context = {'data_dir': data_dir}
+            for event in sequence:
+                event = replace(event)
+                event.prepare(beatmap, context)
+                if isinstance(event, Event):
+                    events.append(event)
+
+        events = sorted(events, key=lambda e: e.lifespan[0])
+
+        duration = 0.0
+        if beatmap.audio is not None:
+            with audioread.audio_open(os.path.join(beatmap.root, beatmap.audio)) as file:
+                duration = file.duration
+
+        event_leadin_time = beatmap.settings.notes.event_leadin_time
+        total_subjects = sum([1 for event in events if event.is_subject], 0)
+        start_time = min(event.lifespan[0] - event_leadin_time for event in events)
+        start_time = min(start_time, 0.0)
+        end_time = max(event.lifespan[1] + event_leadin_time for event in events)
+        end_time = max(end_time, duration)
+
+        return total_subjects, start_time, end_time, events
+
     def prepare(self, output_samplerate, output_nchannels):
         # prepare music
-        self.audionode = yield from self.beatmap.load_audionode(output_samplerate, output_nchannels)
+        self.audionode = yield from self.load_audionode(self.beatmap, output_samplerate, output_nchannels)
 
         # prepare events
-        events_data = yield from self.beatmap.prepare_events(self.data_dir)
+        events_data = yield from self.prepare_events(self.beatmap, self.data_dir)
         self.total_subjects, self.start_time, self.end_time, self.events = events_data
 
         # initialize game state
