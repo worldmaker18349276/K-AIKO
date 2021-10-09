@@ -980,10 +980,8 @@ class BeatmapPlayer:
 
         event_leadin_time = beatmap.settings.notes.event_leadin_time
         total_subjects = sum([1 for event in events if event.is_subject], 0)
-        start_time = min(event.lifespan[0] - event_leadin_time for event in events)
-        start_time = min(start_time, 0.0)
-        end_time = max(event.lifespan[1] + event_leadin_time for event in events)
-        end_time = max(end_time, duration)
+        start_time = min([0.0, *[event.lifespan[0] - event_leadin_time for event in events]])
+        end_time = max([duration, *[event.lifespan[1] + event_leadin_time for event in events]])
 
         return total_subjects, start_time, end_time, events
 
