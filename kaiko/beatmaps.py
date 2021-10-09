@@ -873,6 +873,7 @@ class BeatmapSettings(cfg.Configurable):
 class Beatmap:
     def __init__(self, root=".", audio=None, volume=0.0,
                  offset=0.0, tempo=120.0,
+                 info="", preview=0.0,
                  bar_shift=0.1, bar_flip=False,
                  event_sequences=None,
                  settings=None):
@@ -880,6 +881,8 @@ class Beatmap:
         self.audio = audio
         self.volume = volume
         self.offset = offset
+        self.info = info
+        self.preview = preview
         self.tempo = tempo
         self.bar_shift = bar_shift
         self.bar_flip = bar_flip
