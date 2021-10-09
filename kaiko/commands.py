@@ -324,7 +324,33 @@ class PathParser(ArgumentParser):
         return suggestions
 
 class TreeParser(ArgumentParser):
-    r"""Parse something following a tree."""
+    r"""Parse something following a tree.
+
+    For example, a tree::
+
+        {
+        'abc': {
+            'x': lambda _: 'abcx',
+            'y': {
+                'z': lambda _: 'abcyz',
+                'w': lambda _: 'abcyw',
+                },
+            },
+        'def': {
+            '': lambda _: 'def',
+            'g': lambda _: 'defg',
+            },
+        'ab': {
+            'c': lambda _: '<never match>',
+            'cx': lambda _: '<never match>',
+            'd': lambda _: 'abd',
+            },
+        }
+
+    will match strings 'abcx', 'abcyz', 'abcyw', 'def', 'defg', 'abd'.  In each
+    layer, It parsed longer string first, so one should prevent from putting
+    ambiguious case.
+    """
 
     def __init__(self, tree, default=inspect.Parameter.empty, desc=None):
         r"""Contructor.
@@ -332,7 +358,8 @@ class TreeParser(ArgumentParser):
         Parameters
         ----------
         tree : dict, Dict[str, Union[tree, Callable[[str], Any]]]
-            The parser tree, the leaf should be a function producing parsed result.
+            The parser tree, the leaf should be a function producing parsed result,
+            and the key of node should be a non-empty string.
         default : any, optional
             The default value of this argument.
         desc : str, optional
@@ -350,8 +377,12 @@ class TreeParser(ArgumentParser):
         tree = self.tree
 
         while isinstance(tree, dict):
+            if target == "" in tree:
+                tree = tree[""]
+                break
+
             for key, subtree in sorted(tree.items(), key=lambda a: a[0], reverse=True):
-                if target.startswith(key):
+                if key and target.startswith(key):
                     target = target[len(key):]
                     tree = subtree
                     break
@@ -376,8 +407,8 @@ class TreeParser(ArgumentParser):
 
         while isinstance(tree, dict):
             for key, subtree in sorted(tree.items(), key=lambda a: a[0], reverse=True):
-                if target and target.startswith(key):
-                    prefix = prefix + target[:len(key)]
+                if target and key and target.startswith(key):
+                    prefix = prefix + key
                     target = target[len(key):]
                     tree = subtree
                     break
@@ -390,7 +421,7 @@ class TreeParser(ArgumentParser):
         if not hasattr(tree, '__call__'):
             raise ValueError("Not a function.")
 
-        return [token + "\000"]
+        return [token + "\000"] if not target else []
 
 class LiteralParser(ArgumentParser):
     r"""Parse a Python literal."""
