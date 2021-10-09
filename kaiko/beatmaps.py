@@ -17,6 +17,14 @@ from . import wcbuffers as wcb
 
 @dataclass
 class UpdateContext:
+    r"""An pseudo-event to update context in preparation phase.
+
+    Attributes
+    ----------
+    update : dict
+        The updated fields in the context.
+    """
+
     update: Dict[str, Union[None, bool, int, Fraction, float, str]]
 
     def prepare(self, beatmap, context):
@@ -24,16 +32,89 @@ class UpdateContext:
 
 @dataclass
 class Event:
+    r"""An event of beatmap.  Event represents an effect and action that occur
+    within a specific time span.
+
+    The tracks, which are sequences of events, can be drawn as a timeline diagram
+
+    ..code::
+
+        time    ____00_____________________01_____________________02_____________________03_____
+               |                                                                                |
+        track1 |                     [event1]    [===event2====]         []                     |
+        track2 |                              [========event4========]    [event5]              |
+               |________________________________________________________________________________|
+
+    Where `track1` contains three events, and `track2` contains two events.  Like
+    `event3`, some events have no length (determined by attribute `has_length`).
+    The square bracket is an interval `(beat, beat+length)`, which define the
+    timespan of action of this event, just like hit object and hold object in
+    others rhythm game.  The interval should be ordered and exclusive in each
+    track, but there is no limit to events between tracks.
+    The attribute `lifespan` of events can be drawn as a timeline diagram
+
+    ..code::
+
+        time    ____00_____________________01_____________________02_____________________03_____
+               |                                                                                |
+        event1 |                |<---[======]--->|                                              |
+        event2 |          |<---------------------[=============]->|                             |
+        event3 |                                            |<-----------[]----------->|        |
+        event4 |                         |<---[======================]--->|                     |
+        event5 |                                                |<--------[======]-------->|    |
+               |________________________________________________________________________________|
+
+    Where the region in the bar lines is an interval `lifespan`, which define
+    when this event occurred; it also includes the process that hit object runs
+    in and out of the view.  Just like `event1` and `event2`, the lifespan of
+    events can be unordered and overlapping.
+
+    Event is a dataclass described by some (immutable) fields, which is
+    documented in the section `Fields`.  These fields determine how this event
+    occurred.  Event also contains some attributes related to runtime conditions,
+    which is documented in the section `Attributes`.  These attributes are
+    determined by method `Event.prepare` and may change during execution.
+    One can use `dataclasses.replace` to copy the event, which will not copy
+    runtime attributes.
+
+    Fields
+    ------
+    beat, length : Fraction
+        The start time and sustain time of action of this event.  The actual
+        meaning in each event is different. `beat` is the time in the unit
+        defined by beatmap.  `length` is the time difference started from `beat`
+        in the unit defined by beatmap.  If `has_length` is False, the attribute
+        `length` can be dropped.
+
+    Attributes
+    ----------
+    lifespan : tuple of float and float
+        The start time and end time (in seconds) of this event.  In general, the
+        lifespan is determined by attributes `beat` and `length`.
+    is_subject : bool, optional
+        True if this event is an action.  To increase the value of progress bar,
+        use `playfield.add_finished`.
+    full_score : int, optional
+        The full score of this event.  To increase score counter and full score
+        counter, use `playfield.add_score` and `playfield.add_full_score`.
+    has_length : bool, optional
+        True if the attribute `length` is meaningful.
+
+    Methods
+    -------
+    prepare(beatmap, context)
+        Prepare resources for this event in the given context.  The context is a
+        mutable dictionary, which can be used to transfer parameters between events.
+        The context of each track is different, so event cannot affect each others
+        between tracks.
+    register(playfield)
+        Schedule handlers for this event.  `playfield` is an instance of
+        `BeatmapPlayer`, which controls the whole gameplay.
+    """
+
     beat: Fraction = Fraction(0, 1)
     length: Fraction = Fraction(1, 1)
 
-    def prepare(self, beatmap, context):
-        raise NotImplementedError
-
-    def register(self, field):
-        raise NotImplementedError
-
-    lifespan = (float('-inf'), float('-inf'))
     is_subject = False
     full_score = 0
     has_length = True
@@ -42,6 +123,23 @@ class Event:
 # scripts
 @dataclass
 class Text(Event):
+    r"""An event that displays text on the playfield.  The text will move to the
+    left at a constant speed.
+
+    Fields
+    ------
+    beat, length : Fraction
+        `beat` is the time the text pass through the position 0.0, `length` is
+        meaningless.
+    text : str, optional
+        The text to show, or None for no text.
+    sound : str, optional
+        The sound to play, or None for no sound.
+    speed : float, optional
+        The speed of the text (unit: half bar per second).  Default speed will be
+        determined by context value `speed`, or 1.0 if absence.
+    """
+
     has_length = False
 
     text: Optional[str] = None
@@ -72,6 +170,19 @@ class Text(Event):
 
 @dataclass
 class Title(Event):
+    r"""An event that displays title on the playfield.  The text will be placed
+    at the specific position.
+
+    Fields
+    ------
+    beat, length : Fraction
+        `beat` is the display time of the text, `length` is the display duration.
+    text : str, optional
+        The text to show, or None for no text.
+    pos : float, optional
+        The position to show, default is 0.5.
+    """
+
     has_length = True
 
     text: Optional[str] = None
@@ -91,6 +202,17 @@ class Title(Event):
 
 @dataclass
 class Flip(Event):
+    r"""An event that flips the scrolling bar of the playfield.
+
+    Fields
+    ------
+    beat, length : Fraction
+        `beat` is the time to flip, `length` is meaningless.
+    flip : bool, optional
+        The value of `bar_flip` of the scrolling bar after flipping, or None for
+        changing the direction of the scrolling bar.
+    """
+
     has_length = False
 
     flip: Optional[bool] = None
@@ -118,6 +240,20 @@ class Flip(Event):
 
 @dataclass
 class Shift(Event):
+    r"""An event that shifts the scrolling bar of the playfield.
+
+    Fields
+    ------
+    beat, length : Fraction
+        `beat` is the time to start shifting, `length` is meaningless.
+    shift : float, optional
+        The value of `bar_shift` of the scrolling bar after shifting, default is 0.0.
+    span : int or float or Fraction, optional
+        the duration of shifting, default is 0.
+    """
+
+    has_length = False
+
     shift: float = 0.0
     span: Union[int, Fraction, float] = 0
 
@@ -149,11 +285,37 @@ class Shift(Event):
 
 # targets
 class Target(Event):
-    # lifespan, range, is_finished
-    # __init__(*args, **kwargs)
-    # approach(field)
-    # hit(field, time, strength)
-    # finish(field)
+    r"""A target to hit.  Target will be counted as an action, and recorded by
+    the progress bar during the gameplay.  Players will be asked to do some
+    actions to accomplish this target, such as hitting a note or keeping hitting
+    within a timespan.
+
+    Fields
+    ------
+    beat, length : Fraction
+        `beat` is the time this target should be hit, `length` is the duration of
+        this target.
+
+    Attributes
+    ----------
+    range : tuple of float and float
+        The range of time this target listen to.  It is often slightly larger than
+        the interval `(beat, beat+length)` to includes the hit tolerance.
+    is_finished : bool
+        Whether this target is finished.  The progress bar will increase by 1
+        after completion.
+
+    Methods
+    -------
+    approach(playfield)
+        Register handlers for approaching effect of this target.  The hit handler
+        and increasing progress bar will be managed automatically.
+    hit(playfield, time, strength)
+        Deal with the hit event on this target.
+    finish(playfield)
+        Finish this target.
+    """
+
     is_subject = True
 
     @dn.datanode
@@ -179,9 +341,40 @@ class Target(Event):
 
 @dataclass
 class OneshotTarget(Target):
-    # time, speed, volume, nofeedback, perf, sound, sound_root
-    # approach_appearance, wrong_appearance
-    # hit(field, time, strength)
+    r"""A target to hit with one shot.  The target will move in a constant speed.
+    The score, range and hit tolerance are determined by settings. Only appearances
+    of targets, sound of target and rule of hitting target are different.
+
+    Fields
+    ------
+    beat, length : Fraction
+        `beat` is the time this target should be hit, `length` is meaningless.
+    speed : float, optional
+        The speed of this target (unit: half bar per second).  Default speed will
+        be determined by context value `speed`, or 1.0 if absence.
+    volume : float, optional
+        The relative volume of sound of this target (unit: dB).  Default volume
+        will be determined by context value `volume`, or 0.0 if absence.
+    nofeedback : bool, optional
+        Whether to make a visual cue for the action of hitting the target.
+        Default value will be determined by context value `nofeedback`, or False
+        if absence.
+
+    Attributes
+    ----------
+    sound : str or None
+        The relative path of sound file of the auditory cue of this target.
+    sound_root : str
+        The root of sound file path.
+    approach_appearance : str
+        The appearance of approaching target.
+    wrong_appearance : str
+        The appearance of wrong-shot target.
+
+    Methods
+    -------
+    hit(playfield, time, strength)
+    """
 
     has_length = False
 
@@ -242,6 +435,25 @@ class OneshotTarget(Target):
 
 @dataclass
 class Soft(OneshotTarget):
+    r"""A target to hit softly.  Player should hit this target with a volume
+    below a certain threshold, otherwise it will be counted as a wrong-shot target.
+
+    Fields
+    ------
+    beat, length : Fraction
+        `beat` is the time this target should be hit, `length` is meaningless.
+    speed : float, optional
+        The speed of this target (unit: half bar per second).  Default speed will
+        be determined by context value `speed`, or 1.0 if absence.
+    volume : float, optional
+        The relative volume of sound of this target (unit: dB).  Default volume
+        will be determined by context value `volume`, or 0.0 if absence.
+    nofeedback : bool, optional
+        Whether to make a visual cue for the action of hitting the target.
+        Default value will be determined by context value `nofeedback`, or False
+        if absence.
+    """
+
     speed: Optional[float] = None
     volume: Optional[float] = None
     nofeedback: Optional[bool] = None
@@ -267,6 +479,25 @@ class Soft(OneshotTarget):
 
 @dataclass
 class Loud(OneshotTarget):
+    r"""A target to hit loudly.  Player should hit this target with a volume
+    above a certain threshold, otherwise it will be counted as a wrong-shot target.
+
+    Fields
+    ------
+    beat, length : Fraction
+        `beat` is the time this target should be hit, `length` is meaningless.
+    speed : float, optional
+        The speed of this target (unit: half bar per second).  Default speed will
+        be determined by context value `speed`, or 1.0 if absence.
+    volume : float, optional
+        The relative volume of sound of this target (unit: dB).  Default volume
+        will be determined by context value `volume`, or 0.0 if absence.
+    nofeedback : bool, optional
+        Whether to make a visual cue for the action of hitting the target.
+        Default value will be determined by context value `nofeedback`, or False
+        if absence.
+    """
+
     speed: Optional[float] = None
     volume: Optional[float] = None
     nofeedback: Optional[bool] = None
@@ -302,6 +533,32 @@ class IncrGroup:
 
 @dataclass
 class Incr(OneshotTarget):
+    r"""A target to hit louder and louder.  Player should hit the target with a
+    volume louder than the previous target, otherwise it will be counted as a
+    wrong-shot target.
+
+    Fields
+    ------
+    beat, length : Fraction
+        `beat` is the time this target should be hit, `length` is meaningless.
+    group : str, optional
+        The group name this target belongs to, or None for automatically determine
+        The group by context.  The threshold will be dynamically changed by
+        hitting the target under the same group.
+    speed : float, optional
+        The speed of this target (unit: half bar per second).  Default speed will
+        be determined by context value `speed`, or 1.0 if absence.
+    group_volume : float, optional
+        The relative group volume of sound of this target (unit: dB).  Default
+        volume will be determined by context value `volume`, or 0.0 if absence.
+        The volume of targets will be louder and louder, which is determined by
+        the group volume of the first target in the same group.
+    nofeedback : bool, optional
+        Whether to make a visual cue for the action of hitting the target.
+        Default value will be determined by context value `nofeedback`, or False
+        if absence.
+    """
+
     group: Optional[str] = None
     speed: Optional[float] = None
     group_volume: Optional[float] = None
@@ -364,7 +621,28 @@ class Incr(OneshotTarget):
 
 @dataclass
 class Roll(Target):
-    density: Union[int, Fraction, float] = 2
+    r"""A target to hit multiple times within a certain timespan.
+
+    Fields
+    ------
+    beat, length : Fraction
+        `beat` is the time this target start rolling, `length` is the duration
+        of rolling.
+    density : int or float or Fraction, optional
+        The density of rolling (unit: hit per beat).  Default value is Fraction(2).
+    speed : float, optional
+        The speed of this target (unit: half bar per second).  Default speed will
+        be determined by context value `speed`, or 1.0 if absence.
+    volume : float, optional
+        The relative volume of sound of this target (unit: dB).  Default volume
+        will be determined by context value `volume`, or 0.0 if absence.
+    nofeedback : bool, optional
+        Whether to make a visual cue for the action of hitting the target.
+        Default value will be determined by context value `nofeedback`, or False
+        if absence.
+    """
+
+    density: Union[int, Fraction, float] = Fraction(2)
     speed: Optional[float] = None
     volume: Optional[float] = None
     nofeedback: Optional[bool] = None
@@ -387,14 +665,14 @@ class Roll(Target):
         self.time = beatmap.time(self.beat)
         self.end = beatmap.time(self.beat+self.length)
         self.roll = 0
-        self.number = max(int(self.length * self.density), 1)
+        self.number = max(int(self.length * self.density // -1 * -1), 1)
         self.is_finished = False
         self.score = 0
 
         self.times = [beatmap.time(self.beat+i/self.density) for i in range(self.number)]
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.end + travel_time)
-        self.range = (self.time - self.tolerance, self.end - self.tolerance)
+        self.range = (self.time - self.tolerance, self.end + self.tolerance)
         self.full_score = self.number * self.rock_score
 
     def pos_of(self, index):
@@ -422,9 +700,8 @@ class Roll(Target):
             field.add_score(self.rock_score)
             self.score += self.rock_score
 
-        elif self.roll <= 2*self.number:
-            field.add_score(-self.rock_score)
-            self.score -= self.rock_score
+        if self.roll == self.number:
+            self.finish(field)
 
     def finish(self, field):
         self.is_finished = True
@@ -436,7 +713,28 @@ class Roll(Target):
 
 @dataclass
 class Spin(Target):
-    density: Union[int, Fraction, float] = 2
+    r"""A target to accumulate hitting volume within a certain timespan.
+
+    Fields
+    ------
+    beat, length : Fraction
+        `beat` is the time this target start spinning, `length` is the duration
+        of spinning.
+    density : int or float or Fraction, optional
+        The density of spinning (unit: hit per beat).  Default value is 2.0.
+    speed : float, optional
+        The speed of this target (unit: half bar per second).  Default speed will
+        be determined by context value `speed`, or 1.0 if absence.
+    volume : float, optional
+        The relative volume of sound of this target (unit: dB).  Default volume
+        will be determined by context value `volume`, or 0.0 if absence.
+    nofeedback : bool, optional
+        Whether to make a visual cue for the action of hitting the target.
+        Default value will be determined by context value `nofeedback`, or False
+        if absence.
+    """
+
+    density: Union[int, Fraction, float] = 2.0
     speed: Optional[float] = None
     volume: Optional[float] = None
     nofeedback: Optional[bool] = None
@@ -460,7 +758,7 @@ class Spin(Target):
         self.time = beatmap.time(self.beat)
         self.end = beatmap.time(self.beat+self.length)
         self.charge = 0.0
-        self.capacity = self.length * self.density
+        self.capacity = float(self.length * self.density)
         self.is_finished = False
         self.score = 0
 
