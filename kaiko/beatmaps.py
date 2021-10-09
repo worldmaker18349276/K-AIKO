@@ -603,6 +603,30 @@ class Beatmap:
     def dtime(self, beat, length):
         return self.time(beat+length) - self.time(beat)
 
+    def load_audionode(self, output_samplerate, output_nchannels):
+        r"""Load audionode asynchronously.
+
+        Parameters
+        ----------
+        output_samplerate : int
+        output_channels : int
+
+        Returns
+        -------
+        audionode : dn.DataNode
+        """
+        if self.audio is None:
+            return dn.create_task(lambda stop_event: None)
+
+        else:
+            audio_path = os.path.join(self.root, self.audio)
+
+            return dn.create_task(lambda stop_event: dn.DataNode.wrap(dn.load_sound(audio_path,
+                                                     samplerate=output_samplerate,
+                                                     channels=output_nchannels,
+                                                     volume=self.volume,
+                                                     stop_event=stop_event)))
+
 
 # widgets
 
@@ -917,31 +941,6 @@ class BeatmapPlayer:
         self.devices_settings = devices_settings
         self.settings = settings or GameplaySettings()
 
-    def load_audionode(self, beatmap, output_samplerate, output_nchannels):
-        r"""Load audionode asynchronously.
-
-        Parameters
-        ----------
-        beatmap : Beatmap
-        output_samplerate : int
-        output_channels : int
-
-        Returns
-        -------
-        audionode : dn.DataNode
-        """
-        if beatmap.audio is None:
-            return dn.create_task(lambda stop_event: None)
-
-        else:
-            audio_path = os.path.join(beatmap.root, beatmap.audio)
-
-            return dn.create_task(lambda stop_event: dn.DataNode.wrap(dn.load_sound(audio_path,
-                                                     samplerate=output_samplerate,
-                                                     channels=output_nchannels,
-                                                     volume=beatmap.volume,
-                                                     stop_event=stop_event)))
-
     def prepare_events(self, beatmap, data_dir):
         r"""Prepare events asynchronously.
 
@@ -987,7 +986,7 @@ class BeatmapPlayer:
 
     def prepare(self, output_samplerate, output_nchannels):
         # prepare music
-        self.audionode = yield from self.load_audionode(self.beatmap, output_samplerate, output_nchannels)
+        self.audionode = yield from self.beatmap.load_audionode(output_samplerate, output_nchannels)
 
         # prepare events
         events_data = yield from self.prepare_events(self.beatmap, self.data_dir)
