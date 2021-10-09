@@ -133,8 +133,6 @@ class Text(Event):
         meaningless.
     text : str, optional
         The text to show, or None for no text.
-    sound : str, optional
-        The sound to play, or None for no sound.
     speed : float, optional
         The speed of the text (unit: half bar per second).  Default speed will be
         determined by context value `speed`, or 1.0 if absence.
@@ -143,11 +141,9 @@ class Text(Event):
     has_length = False
 
     text: Optional[str] = None
-    sound: Optional[str] = None
     speed: Optional[float] = None
 
     def prepare(self, beatmap, context):
-        self.sound_root = beatmap.root
         self.time = beatmap.time(self.beat)
         if self.speed is None:
             self.speed = context.get('speed', 1.0)
@@ -160,10 +156,6 @@ class Text(Event):
         return (self.time-time) * 0.5 * self.speed
 
     def register(self, field):
-        if self.sound is not None:
-            sound_path = os.path.join(self.sound_root, self.sound)
-            field.play(sound_path, time=self.time)
-
         if self.text is not None:
             field.draw_content(self.pos, self.text, zindex=self.zindex,
                                start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
@@ -362,10 +354,8 @@ class OneshotTarget(Target):
 
     Attributes
     ----------
-    sound : str or None
-        The relative path of sound file of the auditory cue of this target.
-    sound_root : str
-        The root of sound file path.
+    sound : DataNode or None
+        The sound of the auditory cue of this target.
     approach_appearance : str
         The appearance of approaching target.
     wrong_appearance : str
@@ -414,8 +404,7 @@ class OneshotTarget(Target):
 
     def approach(self, field):
         if self.sound is not None:
-            sound_path = os.path.join(self.sound_root, self.sound)
-            field.play(sound_path, time=self.time, volume=self.volume)
+            field.play(self.sound, time=self.time, volume=self.volume)
 
         field.draw_content(self.pos, self.appearance, zindex=self.zindex,
                            start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
@@ -461,8 +450,8 @@ class Soft(OneshotTarget):
     def prepare(self, beatmap, context):
         self.approach_appearance = beatmap.settings.notes.soft_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.soft_wrong_appearance
-        self.sound = beatmap.settings.notes.soft_sound
-        self.sound_root = context['data_dir']
+        sound = beatmap.resources.get(beatmap.settings.notes.soft_sound, None)
+        self.sound = dn.DataNode.wrap(sound) if sound is not None else None
         self.threshold = beatmap.settings.difficulty.soft_threshold
 
         if self.speed is None:
@@ -505,8 +494,8 @@ class Loud(OneshotTarget):
     def prepare(self, beatmap, context):
         self.approach_appearance = beatmap.settings.notes.loud_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.loud_wrong_appearance
-        self.sound = beatmap.settings.notes.loud_sound
-        self.sound_root = context['data_dir']
+        sound = beatmap.resources.get(beatmap.settings.notes.loud_sound, None)
+        self.sound = dn.DataNode.wrap(sound) if sound is not None else None
         self.threshold = beatmap.settings.difficulty.loud_threshold
 
         if self.speed is None:
@@ -567,8 +556,8 @@ class Incr(OneshotTarget):
     def prepare(self, beatmap, context):
         self.approach_appearance = beatmap.settings.notes.incr_approach_appearance
         self.wrong_appearance = beatmap.settings.notes.incr_wrong_appearance
-        self.sound = beatmap.settings.notes.incr_sound
-        self.sound_root = context['data_dir']
+        sound = beatmap.resources.get(beatmap.settings.notes.incr_sound, None)
+        self.sound = dn.DataNode.wrap(sound) if sound is not None else None
         self.incr_threshold = beatmap.settings.difficulty.incr_threshold
 
         if self.speed is None:
@@ -651,8 +640,8 @@ class Roll(Target):
         self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
         self.tolerance = beatmap.settings.difficulty.roll_tolerance
         self.rock_appearance = beatmap.settings.notes.roll_rock_appearance
-        self.sound = beatmap.settings.notes.roll_rock_sound
-        self.sound_root = context['data_dir']
+        sound = beatmap.resources.get(beatmap.settings.notes.roll_rock_sound, None)
+        self.sound = dn.DataNode.wrap(sound) if sound is not None else None
         self.rock_score = beatmap.settings.scores.roll_rock_score
 
         if self.speed is None:
@@ -684,8 +673,7 @@ class Roll(Target):
     def approach(self, field):
         for i, time in enumerate(self.times):
             if self.sound is not None:
-                sound_path = os.path.join(self.sound_root, self.sound)
-                field.play(sound_path, time=time, volume=self.volume)
+                field.play(self.sound, time=time, volume=self.volume)
             field.draw_content(self.pos_of(i), self.appearance_of(i), zindex=self.zindex,
                                start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
         field.reset_sight(start=self.range[0])
@@ -744,8 +732,8 @@ class Spin(Target):
         self.disk_appearances = beatmap.settings.notes.spin_disk_appearances
         self.finishing_appearance = beatmap.settings.notes.spin_finishing_appearance
         self.finish_sustain_time = beatmap.settings.notes.spin_finish_sustain_time
-        self.sound = beatmap.settings.notes.spin_disk_sound
-        self.sound_root = context['data_dir']
+        sound = beatmap.resources.get(beatmap.settings.notes.spin_disk_sound, None)
+        self.sound = dn.DataNode.wrap(sound) if sound is not None else None
         self.full_score = beatmap.settings.scores.spin_score
 
         if self.speed is None:
@@ -779,8 +767,7 @@ class Spin(Target):
     def approach(self, field):
         for time in self.times:
             if self.sound is not None:
-                sound_path = os.path.join(self.sound_root, self.sound)
-                field.play(sound_path, time=time, volume=self.volume)
+                field.play(self.sound, time=time, volume=self.volume)
 
         field.draw_content(self.pos, self.appearance, zindex=self.zindex,
                            start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
@@ -857,23 +844,31 @@ class BeatmapSettings(cfg.Configurable):
     class notes(cfg.Configurable):
         soft_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[96m□\x1b[m"
         soft_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[96m⬚\x1b[m"
-        soft_sound: str = f"samples/soft.wav" # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
+        soft_sound: str = 'soft'
         loud_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[94m■\x1b[m"
         loud_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[94m⬚\x1b[m"
-        loud_sound: str = f"samples/loud.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
+        loud_sound: str = 'loud'
         incr_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[94m⬒\x1b[m"
         incr_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[94m⬚\x1b[m"
-        incr_sound: str = f"samples/incr.wav" # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
+        incr_sound: str = 'incr'
         roll_rock_appearance:      Union[str, Tuple[str, str]] = "\x1b[96m◎\x1b[m"
-        roll_rock_sound: str = f"samples/rock.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
+        roll_rock_sound: str = 'rock'
         spin_disk_appearances:     Union[List[str], List[Tuple[str, str]]] = ["\x1b[94m◴\x1b[m",
                                                                               "\x1b[94m◵\x1b[m",
                                                                               "\x1b[94m◶\x1b[m",
                                                                               "\x1b[94m◷\x1b[m"]
         spin_finishing_appearance: Union[str, Tuple[str, str]] = "\x1b[94m☺\x1b[m"
         spin_finish_sustain_time: float = 0.1
-        spin_disk_sound: str = f"samples/disk.wav" # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
+        spin_disk_sound: str = 'disk'
         event_leadin_time: float = 1.0
+
+    resources: Dict[str, str] = {
+        'soft': "samples/soft.wav", # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
+        'loud': "samples/loud.wav", # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
+        'incr': "samples/incr.wav", # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
+        'rock': "samples/rock.wav", # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
+        'disk': "samples/disk.wav", # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
+    }
 
 class Beatmap:
     def __init__(self, root=".", audio=None, volume=0.0,
@@ -892,6 +887,8 @@ class Beatmap:
 
         self.settings = settings or BeatmapSettings()
 
+        self.resources = {}
+
     def time(self, beat):
         return self.offset + beat*60/self.tempo
 
@@ -901,29 +898,36 @@ class Beatmap:
     def dtime(self, beat, length):
         return self.time(beat+length) - self.time(beat)
 
-    def load_audionode(self, output_samplerate, output_nchannels):
-        r"""Load audionode asynchronously.
+    def load_resources(self, output_samplerate, output_nchannels, data_dir):
+        r"""Load resources asynchronously.
 
         Parameters
         ----------
         output_samplerate : int
         output_channels : int
-
-        Returns
-        -------
-        audionode : dn.DataNode
+        data_dir : Path
         """
-        if self.audio is None:
-            return dn.create_task(lambda stop_event: None)
-
-        else:
+        return dn.create_task(lambda stop_event: self._load_resources(output_samplerate,
+                                                                      output_nchannels,
+                                                                      data_dir,
+                                                                      stop_event))
+    def _load_resources(self, output_samplerate, output_nchannels, data_dir, stop_event):
+        if self.audio is not None:
             audio_path = os.path.join(self.root, self.audio)
 
-            return dn.create_task(lambda stop_event: dn.DataNode.wrap(dn.load_sound(audio_path,
-                                                     samplerate=output_samplerate,
-                                                     channels=output_nchannels,
-                                                     volume=self.volume,
-                                                     stop_event=stop_event)))
+            self.audionode = dn.DataNode.wrap(dn.load_sound(audio_path,
+                                              samplerate=output_samplerate,
+                                              channels=output_nchannels,
+                                              volume=self.volume,
+                                              stop_event=stop_event))
+
+        for name, path in self.settings.resources.items():
+            sound_path = os.path.join(data_dir, path)
+            self.resources[name] = dn.load_sound(sound_path,
+                                                 samplerate=output_samplerate,
+                                                 channels=output_nchannels,
+                                                 volume=self.volume,
+                                                 stop_event=stop_event)
 
 
 # widgets
@@ -1239,13 +1243,12 @@ class BeatmapPlayer:
         self.devices_settings = devices_settings
         self.settings = settings or GameplaySettings()
 
-    def prepare_events(self, beatmap, data_dir):
+    def prepare_events(self, beatmap):
         r"""Prepare events asynchronously.
 
         Parameters
         ----------
         beatmap : Beatmap
-        data_dir : Path
 
         Returns
         -------
@@ -1254,12 +1257,12 @@ class BeatmapPlayer:
         end_time: float
         events: list of Event
         """
-        return dn.create_task(lambda stop_event: self._prepare_events(beatmap, data_dir, stop_event))
+        return dn.create_task(lambda stop_event: self._prepare_events(beatmap, stop_event))
 
-    def _prepare_events(self, beatmap, data_dir, stop_event):
+    def _prepare_events(self, beatmap, stop_event):
         events = []
         for sequence in beatmap.event_sequences:
-            context = {'data_dir': data_dir}
+            context = {}
             for event in sequence:
                 if stop_event.is_set():
                     raise RuntimeError("The operation has been cancelled.")
@@ -1284,10 +1287,11 @@ class BeatmapPlayer:
 
     def prepare(self, output_samplerate, output_nchannels):
         # prepare music
-        self.audionode = yield from self.beatmap.load_audionode(output_samplerate, output_nchannels)
+        yield from self.beatmap.load_resources(output_samplerate, output_nchannels, self.data_dir)
+        self.audionode = self.beatmap.audionode
 
         # prepare events
-        events_data = yield from self.prepare_events(self.beatmap, self.data_dir)
+        events_data = yield from self.prepare_events(self.beatmap)
         self.total_subjects, self.start_time, self.end_time, self.events = events_data
 
         # initialize game state
