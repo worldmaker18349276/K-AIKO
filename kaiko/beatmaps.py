@@ -890,15 +890,47 @@ class Beatmap:
 
         self.settings = settings or BeatmapSettings()
 
+        self.audionode = None
         self.resources = {}
 
     def time(self, beat):
+        r"""Convert beat to time (in seconds).
+
+        Parameters
+        ----------
+        beat : int or Fraction or float
+
+        Returns
+        -------
+        time : float
+        """
         return self.offset + beat*60/self.tempo
 
     def beat(self, time):
+        r"""Convert time (in seconds) to beat.
+
+        Parameters
+        ----------
+        time : float
+
+        Returns
+        -------
+        beat : float
+        """
         return (time - self.offset)*self.tempo/60
 
     def dtime(self, beat, length):
+        r"""Convert length to time difference (in seconds).
+
+        Parameters
+        ----------
+        beat : int or Fraction or float
+        length : int or Fraction or float
+
+        Returns
+        -------
+        dtime : float
+        """
         return self.time(beat+length) - self.time(beat)
 
     def load_resources(self, output_samplerate, output_nchannels, data_dir):
@@ -914,10 +946,10 @@ class Beatmap:
                                                                       output_nchannels,
                                                                       data_dir,
                                                                       stop_event))
+
     def _load_resources(self, output_samplerate, output_nchannels, data_dir, stop_event):
         if self.audio is not None:
             audio_path = os.path.join(self.root, self.audio)
-
             self.audionode = dn.DataNode.wrap(dn.load_sound(audio_path,
                                               samplerate=output_samplerate,
                                               channels=output_nchannels,
@@ -929,7 +961,6 @@ class Beatmap:
             self.resources[name] = dn.load_sound(sound_path,
                                                  samplerate=output_samplerate,
                                                  channels=output_nchannels,
-                                                 volume=self.volume,
                                                  stop_event=stop_event)
 
 
@@ -989,6 +1020,35 @@ class Widget(Enum):
 
     def __repr__(self):
         return f"Widget.{self.name}"
+
+class WidgetSettings(cfg.Configurable):
+    use: List[Widget] = [Widget.spectrum, Widget.score, Widget.progress]
+
+    class spectrum(cfg.Configurable):
+        attr: str = "95"
+        spec_width: int = 6
+        spec_decay_time: float = 0.01
+        spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
+        spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
+
+    class volume_indicator(cfg.Configurable):
+        attr: str = "95"
+        vol_decay_time: float = 0.01
+
+    class score(cfg.Configurable):
+        attr: str = "38;5;93"
+
+    class progress(cfg.Configurable):
+        attr: str = "38;5;93"
+
+    class bounce(cfg.Configurable):
+        attr: str = "95"
+        division: int = 2
+
+    class accuracy_meter(cfg.Configurable):
+        meter_width: int = 8
+        meter_decay_time: float = 1.5
+        meter_tolerance: float = 0.10
 
 class WidgetManager:
     @staticmethod
@@ -1210,34 +1270,7 @@ class GameplaySettings(cfg.Configurable):
         prepare_time: float = 0.1
         tickrate: float = 60.0
 
-    class widgets(cfg.Configurable):
-        use: List[Widget] = [Widget.spectrum, Widget.score, Widget.progress]
-
-        class spectrum(cfg.Configurable):
-            attr: str = "95"
-            spec_width: int = 6
-            spec_decay_time: float = 0.01
-            spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
-            spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
-
-        class volume_indicator(cfg.Configurable):
-            attr: str = "95"
-            vol_decay_time: float = 0.01
-
-        class score(cfg.Configurable):
-            attr: str = "38;5;93"
-
-        class progress(cfg.Configurable):
-            attr: str = "38;5;93"
-
-        class bounce(cfg.Configurable):
-            attr: str = "95"
-            division: int = 2
-
-        class accuracy_meter(cfg.Configurable):
-            meter_width: int = 8
-            meter_decay_time: float = 1.5
-            meter_tolerance: float = 0.10
+    widgets = WidgetSettings
 
 class BeatmapPlayer:
     def __init__(self, data_dir, beatmap, devices_settings, settings=None):
