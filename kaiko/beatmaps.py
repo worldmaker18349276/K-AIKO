@@ -643,7 +643,7 @@ class Roll(Target):
         self.tolerance = beatmap.settings.difficulty.roll_tolerance
         self.rock_appearance = beatmap.settings.notes.roll_rock_appearance
         sound = beatmap.resources.get(beatmap.settings.notes.roll_rock_sound, None)
-        self.sound = dn.DataNode.wrap(sound) if sound is not None else None
+        self.sound = sound
         self.rock_score = beatmap.settings.scores.roll_rock_score
 
         if self.speed is None:
@@ -675,7 +675,7 @@ class Roll(Target):
     def approach(self, state, field):
         for i, time in enumerate(self.times):
             if self.sound is not None:
-                field.play(self.sound, time=time, volume=self.volume)
+                field.play(dn.DataNode.wrap(self.sound), time=time, volume=self.volume)
             field.draw_content(self.pos_of(i), self.appearance_of(i), zindex=self.zindex,
                                start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
         field.reset_sight(start=self.range[0])
@@ -986,7 +986,6 @@ class Beatmap:
         with self.prepare_events() as task:
             yield from task.join((yield))
             total_subjects, start_time, end_time, events = task.result
-        self.total_subjects = total_subjects
 
         ref_time = load_time + abs(start_time)
         mixer_task, mixer = Mixer.create(devices_settings.mixer, manager, ref_time)
