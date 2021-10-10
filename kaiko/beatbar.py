@@ -1,5 +1,4 @@
 import time
-import datetime
 import math
 import contextlib
 from enum import Enum
@@ -130,9 +129,7 @@ class BeatbarSettings(cfg.Configurable):
         hit_sustain_time: float = 0.1
 
 class Beatbar:
-    def __init__(self, mixer, detector, renderer,
-                 bar_shift, bar_flip, total_subjects,
-                 settings=None):
+    def __init__(self, mixer, detector, renderer, bar_shift, bar_flip, settings=None):
         settings = settings or BeatbarSettings()
 
         self.mixer = mixer
@@ -142,13 +139,6 @@ class Beatbar:
         # initialize game state
         self.bar_shift = bar_shift
         self.bar_flip = bar_flip
-        self.total_subjects = total_subjects
-
-        self.finished_subjects = 0
-        self.full_score = 0
-        self.score = 0
-        self.perfs = []
-        self.time = datetime.time(0, 0, 0)
 
         # layout
         icon_width = settings.layout.icon_width
@@ -415,21 +405,6 @@ class Beatbar:
         return self.renderer.add_drawer(node, zindex=())
 
 
-    def add_score(self, score):
-        self.score += score
-
-    def add_full_score(self, full_score):
-        self.full_score += full_score
-
-    def add_finished(self, finished=1):
-        self.finished_subjects += finished
-
-    def add_perf(self, perf, show=True, is_reversed=False):
-        self.perfs.append(perf)
-        if show:
-            self.set_perf(perf, is_reversed)
-
-
 # widgets
 def uint_format(value, width, zero_padded=False):
     scales = "KMGTPEZY"
@@ -517,14 +492,14 @@ class WidgetSettings(cfg.Configurable):
 
 class WidgetManager:
     @staticmethod
-    def use_widget(name, beatbar, devices_settings, settings):
+    def use_widget(name, state, beatbar, devices_settings, settings):
         func = getattr(WidgetManager, name.value, None)
         if func is None:
             raise ValueError("no such widget: " + name)
-        func(beatbar, settings, devices_settings)
+        func(state, beatbar, settings, devices_settings)
 
     @staticmethod
-    def spectrum(beatbar, settings, devices_settings):
+    def spectrum(state, beatbar, settings, devices_settings):
         attr = settings.spectrum.attr
         spec_width = settings.spectrum.spec_width
         samplerate = devices_settings.mixer.output_samplerate
@@ -577,7 +552,7 @@ class WidgetManager:
         beatbar.current_icon.set(widget_func)
 
     @staticmethod
-    def volume_indicator(beatbar, settings, devices_settings):
+    def volume_indicator(state, beatbar, settings, devices_settings):
         attr = settings.volume_indicator.attr
         vol_decay_time = settings.volume_indicator.vol_decay_time
         buffer_length = devices_settings.mixer.output_buffer_length
@@ -608,11 +583,11 @@ class WidgetManager:
         beatbar.current_icon.set(widget_func)
 
     @staticmethod
-    def score(beatbar, settings, devices_settings):
+    def score(state, beatbar, settings, devices_settings):
         attr = settings.score.attr
         def widget_func(time, ran):
-            score = beatbar.score
-            full_score = beatbar.full_score
+            score = state.score
+            full_score = state.full_score
             width = ran.stop - ran.start
 
             if width == 0:
@@ -634,11 +609,15 @@ class WidgetManager:
         beatbar.current_header.set(widget_func)
 
     @staticmethod
-    def progress(beatbar, settings, devices_settings):
+    def progress(state, beatbar, settings, devices_settings):
         attr = settings.progress.attr
         def widget_func(time, ran):
-            progress = min(1.0, beatbar.finished_subjects/beatbar.total_subjects) if beatbar.total_subjects>0 else 1.0
-            time = int(max(0.0, beatbar.time))
+            finished_subjects = state.finished_subjects
+            total_subjects = state.total_subjects
+            time = state.time
+
+            progress = min(1.0, finished_subjects/total_subjects) if total_subjects>0 else 1.0
+            time = int(max(0.0, time))
             width = ran.stop - ran.start
 
             if width == 0:
@@ -660,7 +639,7 @@ class WidgetManager:
         beatbar.current_footer.set(widget_func)
 
     @staticmethod
-    def bounce(beatbar, settings, devices_settings):
+    def bounce(state, beatbar, settings, devices_settings):
         attr = settings.bounce.attr
         division = settings.bounce.division
 
@@ -689,7 +668,7 @@ class WidgetManager:
         beatbar.current_icon.set(widget_func)
 
     @staticmethod
-    def accuracy_meter(beatbar, settings, devices_settings):
+    def accuracy_meter(state, beatbar, settings, devices_settings):
         meter_width = settings.accuracy_meter.meter_width
         meter_decay_time = settings.accuracy_meter.meter_decay_time
         meter_tolerance = settings.accuracy_meter.meter_tolerance
@@ -702,10 +681,11 @@ class WidgetManager:
 
         def widget_func(time, ran):
             nonlocal last_perf, last_time
+            perfs = state.perfs
 
             new_err = []
-            while len(beatbar.perfs) > last_perf:
-                err = beatbar.perfs[last_perf].err
+            while len(perfs) > last_perf:
+                err = perfs[last_perf].err
                 if err is not None:
                     new_err.append(max(min(int((err-meter_tolerance)/-meter_tolerance/2 * length//1), length-1), 0))
                 last_perf += 1

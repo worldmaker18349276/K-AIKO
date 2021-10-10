@@ -92,10 +92,10 @@ class Event:
         lifespan is determined by attributes `beat` and `length`.
     is_subject : bool, optional
         True if this event is an action.  To increase the value of progress bar,
-        use `playfield.add_finished`.
+        use `state.add_finished`.
     full_score : int, optional
         The full score of this event.  To increase score counter and full score
-        counter, use `playfield.add_score` and `playfield.add_full_score`.
+        counter, use `state.add_score` and `state.add_full_score`.
     has_length : bool, optional
         True if the attribute `length` is meaningful.
 
@@ -106,9 +106,10 @@ class Event:
         mutable dictionary, which can be used to transfer parameters between events.
         The context of each track is different, so event cannot affect each others
         between tracks.
-    register(playfield)
-        Schedule handlers for this event.  `playfield` is an instance of
-        `BeatmapPlayer`, which controls the whole gameplay.
+    register(state, playfield)
+        Schedule handlers for this event.  `state` is the game state of beatmap,
+        `playfield` is an instance of `BeatmapPlayer`, which controls the whole
+        gameplay.
     """
 
     beat: Fraction = Fraction(0, 1)
@@ -154,7 +155,7 @@ class Text(Event):
     def pos(self, time):
         return (self.time-time) * 0.5 * self.speed
 
-    def register(self, field):
+    def register(self, state, field):
         if self.text is not None:
             field.draw_content(self.pos, self.text, zindex=self.zindex,
                                start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
@@ -186,7 +187,7 @@ class Title(Event):
         self.lifespan = (self.time, self.end)
         self.zindex = (10, -self.time)
 
-    def register(self, field):
+    def register(self, state, field):
         if self.text is not None:
             field.draw_title(self.pos, self.text, zindex=self.zindex,
                              start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
@@ -212,7 +213,7 @@ class Flip(Event):
         self.time = beatmap.time(self.beat)
         self.lifespan = (self.time, self.time)
 
-    def register(self, field):
+    def register(self, state, field):
         field.on_before_render(self._node(field))
 
     @dn.datanode
@@ -253,7 +254,7 @@ class Shift(Event):
         self.end = beatmap.time(self.beat+self.span)
         self.lifespan = (self.time, self.end)
 
-    def register(self, field):
+    def register(self, state, field):
         field.on_before_render(self._node(field))
 
     @dn.datanode
@@ -298,37 +299,37 @@ class Target(Event):
 
     Methods
     -------
-    approach(playfield)
+    approach(state, playfield)
         Register handlers for approaching effect of this target.  The hit handler
         and increasing progress bar will be managed automatically.
-    hit(playfield, time, strength)
+    hit(state, playfield, time, strength)
         Deal with the hit event on this target.
-    finish(playfield)
+    finish(state, playfield)
         Finish this target.
     """
 
     is_subject = True
 
     @dn.datanode
-    def listen(self, field):
+    def listen(self, state, field):
         try:
             while True:
                 time, strength = yield
-                self.hit(field, time, strength)
+                self.hit(state, field, time, strength)
                 if self.is_finished:
                     break
         except GeneratorExit:
             if not self.is_finished:
-                self.finish(field)
+                self.finish(state, field)
         finally:
-            field.add_finished()
+            state.add_finished()
 
     def zindex(self):
         return (0, not self.is_finished, -self.range[0])
 
-    def register(self, field):
-        self.approach(field)
-        field.listen(self.listen(field), start=self.range[0], duration=self.range[1]-self.range[0])
+    def register(self, state, field):
+        self.approach(state, field)
+        field.listen(self.listen(state, field), start=self.range[0], duration=self.range[1]-self.range[0])
 
 @dataclass
 class OneshotTarget(Target):
@@ -362,7 +363,7 @@ class OneshotTarget(Target):
 
     Methods
     -------
-    hit(playfield, time, strength)
+    hit(state, playfield, time, strength)
     """
 
     has_length = False
@@ -401,7 +402,7 @@ class OneshotTarget(Target):
     def is_finished(self):
         return self.perf is not None
 
-    def approach(self, field):
+    def approach(self, state, field):
         if self.sound is not None:
             field.play(self.sound, time=self.time, volume=self.volume)
 
@@ -409,17 +410,19 @@ class OneshotTarget(Target):
                            start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
         field.reset_sight(start=self.range[0])
 
-    def hit(self, field, time, strength, is_correct_key=True):
+    def hit(self, state, field, time, strength, is_correct_key=True):
         perf = Performance.judge(self.performance_tolerance, self.time, time, is_correct_key)
-        field.add_perf(perf, not self.nofeedback, self.speed < 0)
-        self.finish(field, perf)
+        state.add_perf(perf, self.speed < 0)
+        if not self.nofeedback:
+            field.set_perf(perf, self.speed < 0)
+        self.finish(state, field, perf)
 
-    def finish(self, field, perf=None):
+    def finish(self, state, field, perf=None):
         if perf is None:
             perf = Performance.judge(self.performance_tolerance, self.time)
         self.perf = perf
-        field.add_full_score(self.full_score)
-        field.add_score(self.score)
+        state.add_full_score(self.full_score)
+        state.add_score(self.score)
 
 @dataclass
 class Soft(OneshotTarget):
@@ -462,8 +465,8 @@ class Soft(OneshotTarget):
 
         super().prepare(beatmap, context)
 
-    def hit(self, field, time, strength):
-        super().hit(field, time, strength, strength < self.threshold)
+    def hit(self, state, field, time, strength):
+        super().hit(state, field, time, strength, strength < self.threshold)
 
 @dataclass
 class Loud(OneshotTarget):
@@ -506,8 +509,8 @@ class Loud(OneshotTarget):
 
         super().prepare(beatmap, context)
 
-    def hit(self, field, time, strength):
-        super().hit(field, time, strength, strength >= self.threshold)
+    def hit(self, state, field, time, strength):
+        super().hit(state, field, time, strength, strength >= self.threshold)
 
 class IncrGroup:
     def __init__(self, threshold=0.0, total=0):
@@ -601,10 +604,10 @@ class Incr(OneshotTarget):
         group_obj = self.groups[self.group]
         return group_obj.volume + numpy.log10(0.2 + 0.8 * (self.count-1)/group_obj.total) * 20
 
-    def hit(self, field, time, strength):
+    def hit(self, state, field, time, strength):
         group_obj = self.groups[self.group]
         threshold = max(0.0, min(1.0, group_obj.threshold + self.incr_threshold))
-        super().hit(field, time, strength, strength >= threshold)
+        super().hit(state, field, time, strength, strength >= threshold)
         group_obj.hit(strength)
 
 @dataclass
@@ -669,7 +672,7 @@ class Roll(Target):
     def appearance_of(self, index):
         return lambda time: self.rock_appearance if self.nofeedback or self.roll <= index else ""
 
-    def approach(self, field):
+    def approach(self, state, field):
         for i, time in enumerate(self.times):
             if self.sound is not None:
                 field.play(self.sound, time=time, volume=self.volume)
@@ -677,26 +680,26 @@ class Roll(Target):
                                start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
         field.reset_sight(start=self.range[0])
 
-    def hit(self, field, time, strength):
+    def hit(self, state, field, time, strength):
         self.roll += 1
 
         if self.roll <= self.number:
             perf = Performance.judge(self.performance_tolerance, self.times[self.roll-1], time, True)
-            field.add_perf(perf, False)
+            state.add_perf(perf)
 
-            field.add_score(self.rock_score)
+            state.add_score(self.rock_score)
             self.score += self.rock_score
 
         if self.roll == self.number:
-            self.finish(field)
+            self.finish(state, field)
 
-    def finish(self, field):
+    def finish(self, state, field):
         self.is_finished = True
-        field.add_full_score(self.full_score)
+        state.add_full_score(self.full_score)
 
         for time in self.times[self.roll:]:
             perf = Performance.judge(self.performance_tolerance, time)
-            field.add_perf(perf, False)
+            state.add_perf(perf)
 
 @dataclass
 class Spin(Target):
@@ -763,7 +766,7 @@ class Spin(Target):
         else:
             return ""
 
-    def approach(self, field):
+    def approach(self, state, field):
         for time in self.times:
             if self.sound is not None:
                 field.play(self.sound, time=time, volume=self.volume)
@@ -772,22 +775,22 @@ class Spin(Target):
                            start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
         field.draw_sight("", start=self.range[0], duration=self.range[1]-self.range[0])
 
-    def hit(self, field, time, strength):
+    def hit(self, state, field, time, strength):
         self.charge = min(self.charge + min(1.0, strength), self.capacity)
 
         current_score = int(self.full_score * self.charge / self.capacity)
-        field.add_score(current_score - self.score)
+        state.add_score(current_score - self.score)
         self.score = current_score
 
         if self.charge == self.capacity:
-            self.finish(field)
+            self.finish(state, field)
 
-    def finish(self, field):
+    def finish(self, state, field):
         self.is_finished = True
-        field.add_full_score(self.full_score)
+        state.add_full_score(self.full_score)
 
         if self.charge != self.capacity:
-            field.add_score(-self.score)
+            state.add_score(-self.score)
             self.score = 0
 
         if self.charge != self.capacity:
@@ -880,6 +883,30 @@ class GameplaySettings(cfg.Configurable):
 
     widgets = WidgetSettings
 
+class BeatmapScore:
+    def __init__(self):
+        self.total_subjects = 0
+        self.finished_subjects = 0
+        self.full_score = 0
+        self.score = 0
+        self.perfs = []
+        self.time = 0.0
+
+    def set_total_subjects(self, total_subjects):
+        self.total_subjects = total_subjects
+
+    def add_score(self, score):
+        self.score += score
+
+    def add_full_score(self, full_score):
+        self.full_score += full_score
+
+    def add_finished(self, finished=1):
+        self.finished_subjects += finished
+
+    def add_perf(self, perf, is_reversed=False):
+        self.perfs.append(perf)
+
 class Beatmap:
     def __init__(self, root=".", audio=None, volume=0.0,
                  offset=0.0, tempo=120.0,
@@ -963,9 +990,10 @@ class Beatmap:
         detector_task, detector = Detector.create(devices_settings.detector, manager, ref_time)
         renderer_task, renderer = Renderer.create(devices_settings.renderer, ref_time)
 
-        beatbar = Beatbar(mixer, detector, renderer,
-                          self.bar_shift, self.bar_flip, self.total_subjects,
-                          gameplay_settings.beatbar)
+        beatbar = Beatbar(mixer, detector, renderer, self.bar_shift, self.bar_flip, gameplay_settings.beatbar)
+
+        state = BeatmapScore()
+        state.set_total_subjects(self.total_subjects)
 
         # play music
         if self.audionode is not None:
@@ -973,10 +1001,10 @@ class Beatmap:
 
         # install widgets
         for widget in gameplay_settings.widgets.use:
-            WidgetManager.use_widget(widget, beatbar, devices_settings, gameplay_settings.widgets)
+            WidgetManager.use_widget(widget, state, beatbar, devices_settings, gameplay_settings.widgets)
 
         # game loop
-        updater = self.update_events(events, beatbar, start_time, end_time, tickrate, prepare_time)
+        updater = self.update_events(events, state, beatbar, start_time, end_time, tickrate, prepare_time)
         event_task = dn.interval(consumer=updater, dt=1/tickrate)
 
         with dn.pipe(event_task, mixer_task, detector_task, renderer_task) as task:
@@ -1051,7 +1079,7 @@ class Beatmap:
         return total_subjects, start_time, end_time, events
 
     @dn.datanode
-    def update_events(self, events, beatbar, start_time, end_time, tickrate, prepare_time):
+    def update_events(self, events, state, beatbar, start_time, end_time, tickrate, prepare_time):
         # register events
         events_iter = iter(events)
         event = next(events_iter, None)
@@ -1066,10 +1094,10 @@ class Beatmap:
                 return
 
             while event is not None and event.lifespan[0] - prepare_time <= time:
-                event.register(beatbar)
+                event.register(state, beatbar)
                 event = next(events_iter, None)
 
-            beatbar.time = time
+            state.time = time
 
             yield
             index += 1
