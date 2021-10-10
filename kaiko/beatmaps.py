@@ -995,7 +995,7 @@ class Beatmap:
         beatbar = Beatbar(mixer, detector, renderer, self.bar_shift, self.bar_flip, gameplay_settings.beatbar)
 
         score = BeatmapScore()
-        score.set_total_subjects(self.total_subjects)
+        score.set_total_subjects(total_subjects)
 
         # play music
         if self.audionode is not None:
