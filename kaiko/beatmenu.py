@@ -1315,11 +1315,11 @@ class BGMCommand:
 
 
 class KAIKOPlay:
-    def __init__(self, data_dir, filepath, devices_settings, settings, logger):
+    def __init__(self, data_dir, filepath, devices_settings, gameplay_settings, logger):
         self.data_dir = data_dir
         self.filepath = filepath
         self.devices_settings = devices_settings
-        self.settings = settings
+        self.gameplay_settings = gameplay_settings
         self.logger = logger
 
     @dn.datanode
@@ -1335,11 +1335,9 @@ class KAIKOPlay:
                 logger.print(traceback.format_exc(), end="")
 
         else:
-            game = beatmaps.BeatmapPlayer(self.data_dir, beatmap, self.devices_settings, self.settings)
-
-            with game.execute(manager) as task:
+            with beatmap.play(manager, self.data_dir, self.devices_settings, self.gameplay_settings) as task:
                 yield from task.join((yield))
 
-            logger.print()
-            beatanalyzer.show_analyze(beatmap.settings.difficulty.performance_tolerance, game.perfs)
+            # logger.print()
+            # beatanalyzer.show_analyze(beatmap.settings.difficulty.performance_tolerance, game.perfs)
 

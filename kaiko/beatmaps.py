@@ -1,5 +1,4 @@
 import os
-import datetime
 import contextlib
 from enum import Enum
 from dataclasses import dataclass, replace
@@ -9,7 +8,7 @@ from fractions import Fraction
 import numpy
 import audioread
 from .engines import Mixer, Detector, Renderer
-from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings
+from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings, WidgetManager, WidgetSettings
 from . import config as cfg
 from . import datanodes as dn
 from . import wcbuffers as wcb
@@ -224,9 +223,9 @@ class Flip(Event):
             time, width = yield
 
         if self.flip is None:
-            field.beatbar.bar_flip = not field.beatbar.bar_flip
+            field.bar_flip = not field.bar_flip
         else:
-            field.beatbar.bar_flip = self.flip
+            field.bar_flip = self.flip
 
         time, width = yield
 
@@ -264,14 +263,14 @@ class Shift(Event):
         while time < self.time:
             time, width = yield
 
-        shift0 = field.beatbar.bar_shift
+        shift0 = field.bar_shift
         speed = (self.shift - shift0) / (self.end - self.time) if self.end != self.time else 0
 
         while time < self.end:
-            field.beatbar.bar_shift = shift0 + speed * (time - self.time)
+            field.bar_shift = shift0 + speed * (time - self.time)
             time, width = yield
 
-        field.beatbar.bar_shift = self.shift
+        field.bar_shift = self.shift
 
         time, width = yield
 
@@ -870,6 +869,17 @@ class BeatmapSettings(cfg.Configurable):
         'disk': "samples/disk.wav", # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
     }
 
+class GameplaySettings(cfg.Configurable):
+    beatbar = BeatbarSettings
+
+    class controls(cfg.Configurable):
+        skip_time: float = 8.0
+        load_time: float = 0.5
+        prepare_time: float = 0.1
+        tickrate: float = 60.0
+
+    widgets = WidgetSettings
+
 class Beatmap:
     def __init__(self, root=".", audio=None, volume=0.0,
                  offset=0.0, tempo=120.0,
@@ -933,6 +943,45 @@ class Beatmap:
         """
         return self.time(beat+length) - self.time(beat)
 
+    @dn.datanode
+    def play(self, manager, data_dir, devices_settings, gameplay_settings=None):
+        gameplay_settings = gameplay_settings or GameplaySettings()
+
+        samplerate = devices_settings.mixer.output_samplerate
+        nchannels = devices_settings.mixer.output_channels
+        load_time = gameplay_settings.controls.load_time
+        tickrate = gameplay_settings.controls.tickrate
+        prepare_time = gameplay_settings.controls.prepare_time
+
+        # prepare
+        yield from self.load_resources(samplerate, nchannels, data_dir)
+        total_subjects, start_time, end_time, events = yield from self.prepare_events()
+        self.total_subjects = total_subjects
+
+        ref_time = load_time + abs(start_time)
+        mixer_task, mixer = Mixer.create(devices_settings.mixer, manager, ref_time)
+        detector_task, detector = Detector.create(devices_settings.detector, manager, ref_time)
+        renderer_task, renderer = Renderer.create(devices_settings.renderer, ref_time)
+
+        beatbar = Beatbar(mixer, detector, renderer,
+                          self.bar_shift, self.bar_flip, self.total_subjects,
+                          gameplay_settings.beatbar)
+
+        # play music
+        if self.audionode is not None:
+            beatbar.mixer.play(self.audionode, time=0.0, zindex=(-3,))
+
+        # install widgets
+        for widget in gameplay_settings.widgets.use:
+            WidgetManager.use_widget(widget, beatbar, devices_settings, gameplay_settings.widgets)
+
+        # game loop
+        updater = self.update_events(events, beatbar, start_time, end_time, tickrate, prepare_time)
+        event_task = dn.interval(consumer=updater, dt=1/tickrate)
+
+        with dn.pipe(event_task, mixer_task, detector_task, renderer_task) as task:
+            yield from task.join((yield))
+
     def load_resources(self, output_samplerate, output_nchannels, data_dir):
         r"""Load resources asynchronously.
 
@@ -963,328 +1012,8 @@ class Beatmap:
                                                  channels=output_nchannels,
                                                  stop_event=stop_event)
 
-
-# widgets
-
-def uint_format(value, width, zero_padded=False):
-    scales = "KMGTPEZY"
-    pad = "0" if zero_padded else " "
-
-    if width == 0:
-        return ""
-    if width == 1:
-        return str(value) if value < 10 else "+"
-
-    if width == 2 and value < 1000:
-        return f"{value:{pad}{width}d}" if value < 10 else "9+"
-    elif value < 10**width:
-        return f"{value:{pad}{width}d}"
-
-    for scale, symbol in enumerate(scales):
-        if value < 1000**(scale+2):
-            if width == 2:
-                return symbol + "+"
-
-            value_ = value // 1000**(scale+1)
-            eff = f"{value_:{pad}{width-2}d}" if value_ < 10**(width-2) else str(10**(width-2)-1)
-            return eff + symbol + "+"
-
-    else:
-        return str(10**(width-2)-1) + scales[-1] + "+"
-
-def time_format(value, width):
-    if width < 4:
-        return uint_format(value, width, True)
-    else:
-        return f"{uint_format(value//60, width-3, True)}:{value%60:02d}"
-
-def pc_format(value, width):
-    if width == 0:
-        return ""
-    if width == 1:
-        return "1" if value == 1 else "0"
-    if width == 2:
-        return f"1." if value == 1 else "." + str(int(value*10))
-    if width == 3:
-        return f"1.0" if value == 1 else f"{value:>{width}.0%}"
-    if width >= 4:
-        return f"{value:>{width}.0%}" if value == 1 else f"{value:>{width}.{width-4}%}"
-
-class Widget(Enum):
-    spectrum = "spectrum"
-    volume_indicator = "volume_indicator"
-    score = "score"
-    progress = "progress"
-    bounce = "bounce"
-    accuracy_meter = "accuracy_meter"
-
-    def __repr__(self):
-        return f"Widget.{self.name}"
-
-class WidgetSettings(cfg.Configurable):
-    use: List[Widget] = [Widget.spectrum, Widget.score, Widget.progress]
-
-    class spectrum(cfg.Configurable):
-        attr: str = "95"
-        spec_width: int = 6
-        spec_decay_time: float = 0.01
-        spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
-        spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
-
-    class volume_indicator(cfg.Configurable):
-        attr: str = "95"
-        vol_decay_time: float = 0.01
-
-    class score(cfg.Configurable):
-        attr: str = "38;5;93"
-
-    class progress(cfg.Configurable):
-        attr: str = "38;5;93"
-
-    class bounce(cfg.Configurable):
-        attr: str = "95"
-        division: int = 2
-
-    class accuracy_meter(cfg.Configurable):
-        meter_width: int = 8
-        meter_decay_time: float = 1.5
-        meter_tolerance: float = 0.10
-
-class WidgetManager:
-    @staticmethod
-    def use_widget(name, field):
-        func = getattr(WidgetManager, name.value, None)
-        if func is None:
-            raise ValueError("no such widget: " + name)
-        func(field)
-
-    @staticmethod
-    def spectrum(field):
-        attr = field.settings.widgets.spectrum.attr
-        spec_width = field.settings.widgets.spectrum.spec_width
-        samplerate = field.devices_settings.mixer.output_samplerate
-        nchannels = field.devices_settings.mixer.output_channels
-        hop_length = round(samplerate * field.settings.widgets.spectrum.spec_time_res)
-        win_length = round(samplerate / field.settings.widgets.spectrum.spec_freq_res)
-        spec_decay_time = field.settings.widgets.spectrum.spec_decay_time
-
-        df = samplerate/win_length
-        n_fft = win_length//2+1
-        n = numpy.linspace(1, 88, spec_width*2+1)
-        f = 440 * 2**((n-49)/12) # frequency of n-th piano key
-        sec = numpy.minimum(n_fft-1, (f/df).round().astype(int))
-        slices = [slice(start, stop) for start, stop in zip(sec[:-1], (sec+1)[1:])]
-
-        decay = hop_length / samplerate / spec_decay_time / 4
-        volume_of = lambda J: dn.power2db(J.mean() * samplerate / 2, scale=(1e-5, 1e6)) / 60.0
-
-        A = numpy.cumsum([0, 2**6, 2**2, 2**1, 2**0])
-        B = numpy.cumsum([0, 2**7, 2**5, 2**4, 2**3])
-        draw_bar = lambda a, b: chr(0x2800 + A[int(a*4)] + B[int(b*4)])
-
-        node = dn.pipe(dn.frame(win_length, hop_length), dn.power_spectrum(win_length, samplerate=samplerate))
-
-        @dn.datanode
-        def draw_spectrum():
-            with node:
-                vols = [0.0]*(spec_width*2)
-
-                while True:
-                    data = yield
-                    try:
-                        J = node.send(data)
-                    except StopIteration:
-                        return
-
-                    vols = [max(0.0, prev-decay, min(1.0, volume_of(J[slic])))
-                            for slic, prev in zip(slices, vols)]
-                    field.spectrum = "".join(map(draw_bar, vols[0::2], vols[1::2]))
-
-        handler = dn.pipe(lambda a:a[0], dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels))))
-        field.spectrum = "\u2800"*spec_width
-        field.beatbar.mixer.add_effect(handler, zindex=(-1,))
-
-        def widget_func(time, ran):
-            spectrum = field.spectrum
-            width = ran.stop - ran.start
-            return f"\x1b[{attr}m{spectrum:^{width}.{width}s}\x1b[m"
-
-        field.beatbar.current_icon.set(widget_func)
-
-    @staticmethod
-    def volume_indicator(field):
-        attr = field.settings.widgets.volume_indicator.attr
-        vol_decay_time = field.settings.widgets.volume_indicator.vol_decay_time
-        buffer_length = field.devices_settings.mixer.output_buffer_length
-        samplerate = field.devices_settings.mixer.output_samplerate
-
-        decay = buffer_length / samplerate / vol_decay_time
-
-        volume_of = lambda x: dn.power2db((x**2).mean(), scale=(1e-5, 1e6)) / 60.0
-
-        @dn.datanode
-        def volume_indicator():
-            vol = 0.0
-
-            while True:
-                data = yield
-                vol = max(0.0, vol-decay, min(1.0, volume_of(data)))
-                field.volume_indicator = vol
-
-        handler = dn.pipe(lambda a:a[0], dn.branch(volume_indicator()))
-        field.volume_indicator = 0.0
-        field.beatbar.mixer.add_effect(handler, zindex=(-1,))
-
-        def widget_func(time, ran):
-            volume_indicator = field.volume_indicator
-            width = ran.stop - ran.start
-            return f"\x1b[{attr}m" + "▮" * int(volume_indicator * width) + "\x1b[m"
-
-        field.beatbar.current_icon.set(widget_func)
-
-    @staticmethod
-    def score(field):
-        attr = field.settings.widgets.score.attr
-        def widget_func(time, ran):
-            score = field.score
-            full_score = field.full_score
-            width = ran.stop - ran.start
-
-            if width == 0:
-                return ""
-            if width == 1:
-                return f"\x1b[{attr};1m|\x1b[m"
-            if width == 2:
-                return f"\x1b[{attr};1m[]\x1b[m"
-            if width <= 7:
-                score_str = uint_format(score, width-2, True)
-                return f"\x1b[{attr};1m[\x1b[22m{score_str}\x1b[1m]\x1b[m"
-
-            w1 = max((width-3)//2, 5)
-            w2 = (width-3) - w1
-            score_str = uint_format(score, w1, True)
-            full_score_str = uint_format(full_score, w2, True)
-            return f"\x1b[{attr};1m[\x1b[22m{score_str}\x1b[1m/\x1b[22m{full_score_str}\x1b[1m]\x1b[m"
-
-        field.beatbar.current_header.set(widget_func)
-
-    @staticmethod
-    def progress(field):
-        attr = field.settings.widgets.progress.attr
-        def widget_func(time, ran):
-            progress = min(1.0, field.finished_subjects/field.total_subjects) if field.total_subjects>0 else 1.0
-            time = int(max(0.0, field.time))
-            width = ran.stop - ran.start
-
-            if width == 0:
-                return ""
-            if width == 1:
-                return f"\x1b[{attr};1m|\x1b[m"
-            if width == 2:
-                return f"\x1b[{attr};1m[]\x1b[m"
-            if width <= 7:
-                progress_str = pc_format(progress, width-2)
-                return f"\x1b[{attr};1m[\x1b[22m{progress_str}\x1b[1m]\x1b[m"
-
-            w1 = max((width-3)//2, 5)
-            w2 = (width-3) - w1
-            progress_str = pc_format(progress, w1)
-            time_str = time_format(time, w2)
-            return f"\x1b[{attr};1m[\x1b[22m{progress_str}\x1b[1m|\x1b[22m{time_str}\x1b[1m]\x1b[m"
-
-        field.beatbar.current_footer.set(widget_func)
-
-    @staticmethod
-    def bounce(field):
-        attr = field.settings.widgets.bounce.attr
-        division = field.settings.widgets.bounce.division
-
-        offset = getattr(field.beatmap, 'offset', 0.0)
-        period = 60.0 / getattr(field.beatmap, 'tempo', 60.0) / division
-        def widget_func(time, ran):
-            width = ran.stop - ran.start
-
-            if width == 0:
-                return ""
-            if width == 1:
-                return f"\x1b[{attr};1m|\x1b[m"
-            if width == 2:
-                return f"\x1b[{attr};1m[]\x1b[m"
-
-            turns = (time - offset) / period
-            index = int(turns % 1 * (width-3) // 1)
-            dir = int(turns % 2 // 1 * 2 - 1)
-            inner = [" "]*(width-2)
-            if dir > 0:
-                inner[index] = "="
-            else:
-                inner[-1-index] = "="
-            return f"\x1b[{attr};1m[\x1b[22m{''.join(inner)}\x1b[1m]\x1b[m"
-
-        field.beatbar.current_icon.set(widget_func)
-
-    @staticmethod
-    def accuracy_meter(field):
-        meter_width = field.settings.widgets.accuracy_meter.meter_width
-        meter_decay_time = field.settings.widgets.accuracy_meter.meter_decay_time
-        meter_tolerance = field.settings.widgets.accuracy_meter.meter_tolerance
-
-        length = meter_width*2
-        last_perf = 0
-        last_time = float("inf")
-        hit = [0.0]*length
-        nlevel = 24
-
-        def widget_func(time, ran):
-            nonlocal last_perf, last_time
-
-            new_err = []
-            while len(field.perfs) > last_perf:
-                err = field.perfs[last_perf].err
-                if err is not None:
-                    new_err.append(max(min(int((err-meter_tolerance)/-meter_tolerance/2 * length//1), length-1), 0))
-                last_perf += 1
-
-            decay = max(0.0, time - last_time) / meter_decay_time
-            last_time = time
-
-            for i in range(meter_width*2):
-                if i in new_err:
-                    hit[i] = 1.0
-                else:
-                    hit[i] = max(0.0, hit[i] - decay)
-
-            return "".join(f"\x1b[48;5;{232+int(i*(nlevel-1))};38;5;{232+int(j*(nlevel-1))}m▐\x1b[m"
-                           for i, j in zip(hit[::2], hit[1::2]))
-
-        field.beatbar.current_icon.set(widget_func)
-
-# Game
-
-class GameplaySettings(cfg.Configurable):
-    beatbar = BeatbarSettings
-
-    class controls(cfg.Configurable):
-        skip_time: float = 8.0
-        load_time: float = 0.5
-        prepare_time: float = 0.1
-        tickrate: float = 60.0
-
-    widgets = WidgetSettings
-
-class BeatmapPlayer:
-    def __init__(self, data_dir, beatmap, devices_settings, settings=None):
-        self.data_dir = data_dir
-        self.beatmap = beatmap
-        self.devices_settings = devices_settings
-        self.settings = settings or GameplaySettings()
-
-    def prepare_events(self, beatmap):
+    def prepare_events(self):
         r"""Prepare events asynchronously.
-
-        Parameters
-        ----------
-        beatmap : Beatmap
 
         Returns
         -------
@@ -1293,93 +1022,39 @@ class BeatmapPlayer:
         end_time: float
         events: list of Event
         """
-        return dn.create_task(lambda stop_event: self._prepare_events(beatmap, stop_event))
+        return dn.create_task(lambda stop_event: self._prepare_events(stop_event))
 
-    def _prepare_events(self, beatmap, stop_event):
+    def _prepare_events(self, stop_event):
         events = []
-        for sequence in beatmap.event_sequences:
+        for sequence in self.event_sequences:
             context = {}
             for event in sequence:
                 if stop_event.is_set():
                     raise RuntimeError("The operation has been cancelled.")
                 event = replace(event)
-                event.prepare(beatmap, context)
+                event.prepare(self, context)
                 if isinstance(event, Event):
                     events.append(event)
 
         events = sorted(events, key=lambda e: e.lifespan[0])
 
         duration = 0.0
-        if beatmap.audio is not None:
-            with audioread.audio_open(os.path.join(beatmap.root, beatmap.audio)) as file:
+        if self.audio is not None:
+            with audioread.audio_open(os.path.join(self.root, self.audio)) as file:
                 duration = file.duration
 
-        event_leadin_time = beatmap.settings.notes.event_leadin_time
+        event_leadin_time = self.settings.notes.event_leadin_time
         total_subjects = sum([1 for event in events if event.is_subject], 0)
         start_time = min([0.0, *[event.lifespan[0] - event_leadin_time for event in events]])
         end_time = max([duration, *[event.lifespan[1] + event_leadin_time for event in events]])
 
         return total_subjects, start_time, end_time, events
 
-    def prepare(self, output_samplerate, output_nchannels):
-        # prepare music
-        yield from self.beatmap.load_resources(output_samplerate, output_nchannels, self.data_dir)
-        self.audionode = self.beatmap.audionode
-
-        # prepare events
-        events_data = yield from self.prepare_events(self.beatmap)
-        self.total_subjects, self.start_time, self.end_time, self.events = events_data
-
-        # initialize game state
-        self.finished_subjects = 0
-        self.full_score = 0
-        self.score = 0
-
-        self.perfs = []
-        self.time = datetime.time(0, 0, 0)
-
-        return abs(self.start_time)
-
     @dn.datanode
-    def execute(self, manager):
-        tickrate = self.settings.controls.tickrate
-        samplerate = self.devices_settings.mixer.output_samplerate
-        nchannels = self.devices_settings.mixer.output_channels
-        time_shift = yield from self.prepare(samplerate, nchannels)
-        load_time = self.settings.controls.load_time
-        ref_time = load_time + time_shift
-
-        bar_shift = self.beatmap.bar_shift
-        bar_flip = self.beatmap.bar_flip
-
-        mixer_task, mixer = Mixer.create(self.devices_settings.mixer, manager, ref_time)
-        detector_task, detector = Detector.create(self.devices_settings.detector, manager, ref_time)
-        renderer_task, renderer = Renderer.create(self.devices_settings.renderer, ref_time)
-
-        self.beatbar = Beatbar(self.settings.beatbar, mixer, detector, renderer, bar_shift, bar_flip)
-
-        # play music
-        if self.audionode is not None:
-            self.beatbar.mixer.play(self.audionode, time=0.0, zindex=(-3,))
-
-        # use widgets
-        for widget in self.settings.widgets.use:
-            WidgetManager.use_widget(widget, self)
-
-        # game loop
-        event_task = dn.interval(consumer=self.update_events(), dt=1/tickrate)
-        with dn.pipe(event_task, mixer_task, detector_task, renderer_task) as task:
-            yield from task.join((yield))
-
-    @dn.datanode
-    def update_events(self):
+    def update_events(self, events, beatbar, start_time, end_time, tickrate, prepare_time):
         # register events
-        events_iter = iter(self.events)
+        events_iter = iter(events)
         event = next(events_iter, None)
-
-        start_time = self.start_time
-        tickrate = self.settings.controls.tickrate
-        prepare_time = self.settings.controls.prepare_time
 
         yield
         index = 0
@@ -1387,55 +1062,14 @@ class BeatmapPlayer:
         while True:
             time = index / tickrate + start_time
 
-            if self.end_time <= time:
+            if end_time <= time:
                 return
 
             while event is not None and event.lifespan[0] - prepare_time <= time:
-                event.register(self)
+                event.register(beatbar)
                 event = next(events_iter, None)
 
-            self.time = time
+            beatbar.time = time
 
             yield
             index += 1
-
-
-    def add_score(self, score):
-        self.score += score
-
-    def add_full_score(self, full_score):
-        self.full_score += full_score
-
-    def add_finished(self, finished=1):
-        self.finished_subjects += finished
-
-    def add_perf(self, perf, show=True, is_reversed=False):
-        self.perfs.append(perf)
-        if show:
-            self.beatbar.set_perf(perf, is_reversed)
-
-
-    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
-        return self.beatbar.mixer.play(node, samplerate=samplerate, channels=channels,
-                                              volume=volume, start=start, end=end,
-                                              time=time, zindex=zindex)
-
-    def listen(self, node, start=None, duration=None):
-        self.beatbar.listen(node, start=start, duration=duration)
-
-    def draw_sight(self, text, start=None, duration=None):
-        self.beatbar.draw_sight(text, start=start, duration=duration)
-
-    def reset_sight(self, start=None):
-        self.beatbar.reset_sight(start=start)
-
-    def draw_content(self, pos, text, start=None, duration=None, zindex=(0,)):
-        return self.beatbar.draw_content(pos, text, start=start, duration=duration, zindex=zindex)
-
-    def draw_title(self, pos, text, start=None, duration=None, zindex=(0,)):
-        return self.beatbar.draw_title(pos, text, start=start, duration=duration, zindex=zindex)
-
-    def on_before_render(self, node):
-        node = dn.pipe(dn.branch(lambda a:a[1:], node), lambda a:a[0])
-        return self.beatbar.renderer.add_drawer(node, zindex=())
-
