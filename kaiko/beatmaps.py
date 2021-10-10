@@ -981,8 +981,11 @@ class Beatmap:
         prepare_time = gameplay_settings.controls.prepare_time
 
         # prepare
-        yield from self.load_resources(samplerate, nchannels, data_dir)
-        total_subjects, start_time, end_time, events = yield from self.prepare_events()
+        with self.load_resources(samplerate, nchannels, data_dir) as task:
+            yield from task.join((yield))
+        with self.prepare_events() as task:
+            yield from task.join((yield))
+            total_subjects, start_time, end_time, events = task.result
         self.total_subjects = total_subjects
 
         ref_time = load_time + abs(start_time)
@@ -992,8 +995,8 @@ class Beatmap:
 
         beatbar = Beatbar(mixer, detector, renderer, self.bar_shift, self.bar_flip, gameplay_settings.beatbar)
 
-        state = BeatmapScore()
-        state.set_total_subjects(self.total_subjects)
+        score = BeatmapScore()
+        score.set_total_subjects(self.total_subjects)
 
         # play music
         if self.audionode is not None:
@@ -1001,14 +1004,16 @@ class Beatmap:
 
         # install widgets
         for widget in gameplay_settings.widgets.use:
-            WidgetManager.use_widget(widget, state, beatbar, devices_settings, gameplay_settings.widgets)
+            WidgetManager.use_widget(widget, score, beatbar, devices_settings, gameplay_settings.widgets)
 
         # game loop
-        updater = self.update_events(events, state, beatbar, start_time, end_time, tickrate, prepare_time)
+        updater = self.update_events(events, score, beatbar, start_time, end_time, tickrate, prepare_time)
         event_task = dn.interval(consumer=updater, dt=1/tickrate)
 
         with dn.pipe(event_task, mixer_task, detector_task, renderer_task) as task:
             yield from task.join((yield))
+
+        return score
 
     def load_resources(self, output_samplerate, output_nchannels, data_dir):
         r"""Load resources asynchronously.

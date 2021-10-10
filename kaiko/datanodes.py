@@ -34,15 +34,20 @@ class DataNode:
         self.generator = generator
         self.initialized = False
         self.finalized = False
+        self.result = None
 
     def send(self, value=None):
         if not self.initialized:
             raise DataNodeStateError("try to access un-initialized data node")
         if self.finalized:
-            raise StopIteration
+            raise StopIteration(self.result)
 
         try:
             res = self.generator.send(value)
+        except StopIteration as e:
+            self.finalized = True
+            self.result = e.value
+            raise e
         except:
             self.finalized = True
             raise
@@ -72,8 +77,9 @@ class DataNode:
         try:
             next(self.generator)
 
-        except StopIteration:
+        except StopIteration as e:
             self.finalized = True
+            self.result = e.value
             return self
 
         else:
@@ -85,12 +91,12 @@ class DataNode:
         if self.finalized:
             return False
 
-        self.generator.close()
-        self.finalized = True
+        self.close()
         return False
 
     def close(self):
         self.generator.close()
+        self.finalized = True
 
     @staticmethod
     @datanode
@@ -1060,6 +1066,26 @@ def terminal_size():
 
 
 # async processes
+def exhaust(node, dt=0.0, interruptible=False):
+    node = DataNode.wrap(node)
+
+    stop_event = threading.Event()
+    def SIGINT_handler(sig, frame):
+        stop_event.set()
+
+    with node:
+        if interruptible:
+            signal.signal(signal.SIGINT, SIGINT_handler)
+
+        while True:
+            if stop_event.wait(dt):
+                raise KeyboardInterrupt
+
+            try:
+                node.send(None)
+            except StopIteration as e:
+                return e.value
+
 def _thread_task(thread, stop_event, error):
     yield
     thread.start()
@@ -1087,26 +1113,7 @@ def _stream_task(stream, error):
         if not error.empty():
             raise error.get()
 
-def exhaust(node, dt=0.0, interruptible=False):
-    node = DataNode.wrap(node)
-
-    stop_event = threading.Event()
-    def SIGINT_handler(sig, frame):
-        stop_event.set()
-
-    with node:
-        if interruptible:
-            signal.signal(signal.SIGINT, SIGINT_handler)
-
-        while True:
-            if stop_event.wait(dt):
-                raise KeyboardInterrupt
-
-            try:
-                node.send(None)
-            except StopIteration:
-                return
-
+@datanode
 def create_task(func):
     res = queue.Queue()
     error = queue.Queue()

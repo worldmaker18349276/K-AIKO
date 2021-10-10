@@ -1225,8 +1225,9 @@ class KAIKOBGMController:
                 song, start = action
                 self._current_bgm = song
 
-                node = yield from dn.create_task(lambda event: mixer.load_sound(self._current_bgm.path, event))
-                node = dn.DataNode.wrap(node)
+                with dn.create_task(lambda event: mixer.load_sound(self._current_bgm.path, event)) as task:
+                    yield from task.join((yield))
+                    node = dn.DataNode.wrap(task.result)
 
                 with mixer.play(node, start=start, volume=song.volume) as bgm_key:
                     while not bgm_key.is_finalized():
@@ -1337,7 +1338,8 @@ class KAIKOPlay:
         else:
             with beatmap.play(manager, self.data_dir, self.devices_settings, self.gameplay_settings) as task:
                 yield from task.join((yield))
+                score = task.result
 
-            # logger.print()
-            # beatanalyzer.show_analyze(beatmap.settings.difficulty.performance_tolerance, game.perfs)
+            logger.print()
+            beatanalyzer.show_analyze(beatmap.settings.difficulty.performance_tolerance, score.perfs)
 
