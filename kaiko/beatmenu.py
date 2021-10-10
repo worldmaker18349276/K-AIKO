@@ -523,6 +523,16 @@ class KAIKOMenu:
         return KAIKOPlay(self.user.data_dir, self.user.songs_dir / beatmap,
                          self.settings.devices, self.settings.gameplay, self.logger)
 
+    @cmd.function_command
+    def loop(self, pattern, tempo:float=120.0, offset:float=1.0):
+        # | x [_ x] o x | x [x x] o _ |
+        return KAIKOLoop(pattern, tempo, offset,
+                         self.user.data_dir, self.settings.devices, self.settings.gameplay, self.logger)
+
+    @loop.arg_parser("pattern")
+    def _loop_pattern_parser(self):
+        return cmd.RawParser(desc="It should be a pattern.")
+
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
         return self.beatmap_manager.make_parser(self.bgm_controller)
@@ -1354,6 +1364,38 @@ class KAIKOPlay:
                 logger.print(traceback.format_exc(), end="")
 
         else:
+            with beatmap.play(manager, self.data_dir, self.devices_settings, self.gameplay_settings) as task:
+                yield from task.join((yield))
+                score = task.result
+
+            logger.print()
+            beatanalyzer.show_analyze(beatmap.settings.difficulty.performance_tolerance, score.perfs)
+
+class KAIKOLoop:
+    def __init__(self, pattern, tempo, offset, data_dir, devices_settings, gameplay_settings, logger):
+        self.pattern = pattern
+        self.tempo = tempo
+        self.offset = offset
+        self.data_dir = data_dir
+        self.devices_settings = devices_settings
+        self.gameplay_settings = gameplay_settings
+        self.logger = logger
+
+    @dn.datanode
+    def execute(self, manager):
+        logger = self.logger
+
+        try:
+            events, width = beatsheets.BeatSheet.parse_patterns(self.pattern)
+
+        except beatsheets.BeatmapParseError:
+            with logger.warn():
+                logger.print(f"Failed to parse pattern.")
+                logger.print(traceback.format_exc(), end="")
+
+        else:
+            beatmap = beatmaps.Loop(tempo=self.tempo, offset=self.offset, width=width, events=events)
+
             with beatmap.play(manager, self.data_dir, self.devices_settings, self.gameplay_settings) as task:
                 yield from task.join((yield))
                 score = task.result

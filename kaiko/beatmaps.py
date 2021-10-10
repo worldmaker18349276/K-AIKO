@@ -1105,3 +1105,36 @@ class Beatmap:
 
             yield
             index += 1
+
+class Loop(Beatmap):
+    def __init__(self, tempo=120.0, offset=1.0, width=Fraction(0), events=None, settings=None):
+        super().__init__(tempo=tempo, offset=offset, event_sequences=[events], settings=settings)
+        self.width = width
+
+    def repeat_events(self):
+        sequence = self.event_sequences[0]
+        width = self.width
+        context = {}
+
+        n = 0
+        while True:
+            events = []
+
+            for event in sequence:
+                event = replace(event, beat=event.beat+n*width)
+                event.prepare(self, context)
+                if isinstance(event, Event):
+                    events.append(event)
+
+            events = sorted(events, key=lambda e: e.lifespan[0])
+            yield from events
+            n += 1
+
+    def _prepare_events(self, stop_event):
+        total_subjects = 0
+        start_time = 0.0
+        end_time = float('inf')
+        events = self.repeat_events()
+
+        return total_subjects, start_time, end_time, events
+

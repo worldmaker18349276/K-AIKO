@@ -40,11 +40,12 @@ class BeatSheet(beatmaps.Beatmap):
     bar_shift: float
     bar_flip: bool
 
-    def _to_events(self, track):
+    @staticmethod
+    def to_events(track):
         if track.hide:
             return
 
-        notations = self._notations
+        notations = BeatSheet._notations
 
         def build(beat, length, last_event, patterns):
             for pattern in patterns:
@@ -102,10 +103,10 @@ class BeatSheet(beatmaps.Beatmap):
         if last_event is not None:
             yield last_event
 
-    def to_events(self, track):
-        return list(self._to_events(track))
+        return beat
 
-    def to_track(self, sequence):
+    @staticmethod
+    def to_track(sequence):
         raise NotImplementedError
 
     @property
@@ -116,7 +117,29 @@ class BeatSheet(beatmaps.Beatmap):
     @chart.setter
     def chart(self, value):
         tracks, _ = chart_biparser.decode(value)
-        self.event_sequences = [self.to_events(track) for track in tracks]
+        self.event_sequences = [list(self.to_events(track)) for track in tracks]
+
+    @staticmethod
+    def parse_patterns(patterns_str):
+        try:
+            patterns, _ = patterns_biparser.decode(patterns_str)
+            track = Track(beat=0, length=1, meter=4, patterns=patterns)
+
+            events = []
+            it = BeatSheet.to_events(track)
+            while True:
+                try:
+                    event = next(it)
+                except StopIteration as e:
+                    width = e.value
+                    break
+                else:
+                    events.append(event)
+
+            return events, width
+
+        except Exception as e:
+            raise BeatmapParseError(f"failed to parse patterns") from e
 
     @staticmethod
     def read(filename, hack=False, metadata_only=False):
