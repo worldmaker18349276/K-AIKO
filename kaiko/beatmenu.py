@@ -28,6 +28,18 @@ from . import beatsheets
 from . import beatanalyzer
 
 
+logo = """
+
+  ██▀ ▄██▀   ▄██████▄ ▀██████▄ ██  ▄██▀ █▀▀▀▀▀▀█
+  ▀ ▄██▀  ▄▄▄▀█    ██    ██    ██▄██▀   █ ▓▓▓▓ █
+  ▄██▀██▄ ▀▀▀▄███████    ██    ███▀██▄  █ ▓▓▓▓ █
+  █▀   ▀██▄  ██    ██ ▀██████▄ ██   ▀██▄█▄▄▄▄▄▄█
+
+
+  🎧  Use headphones for the best experience 🎝 
+
+"""
+
 def echo_str(escaped_str):
     r"""Interpret a string like bash's echo.
     It interprets the following backslash-escaped characters into:
@@ -206,18 +218,6 @@ def print_pyaudio_info(manager, print):
     print(f"default output device: {default_output_device_index}")
 
 class KAIKOMenuSettings(cfg.Configurable):
-    logo: str = """
-
-  ██▀ ▄██▀   ▄██████▄ ▀██████▄ ██  ▄██▀ █▀▀▀▀▀▀█
-  ▀ ▄██▀  ▄▄▄▀█    ██    ██    ██▄██▀   █ ▓▓▓▓ █
-  ▄██▀██▄ ▀▀▀▄███████    ██    ███▀██▄  █ ▓▓▓▓ █
-  █▀   ▀██▄  ██    ██ ▀██████▄ ██   ▀██▄█▄▄▄▄▄▄█
-
-
-  🎧  Use headphones for the best experience 🎝 
-
-"""
-
     data_icon: str = "\x1b[92m🗀 \x1b[m"
     info_icon: str = "\x1b[94m🛠 \x1b[m"
     hint_icon: str = "\x1b[93m💡 \x1b[m"
@@ -291,6 +291,56 @@ class KAIKOUser:
     data_dir: Path
     songs_dir: Path
 
+    @classmethod
+    def create(clz):
+        username = getpass.getuser()
+        data_dir = Path(appdirs.user_data_dir("K-AIKO", username))
+        config_file = data_dir / "config.py"
+        songs_dir = data_dir / "songs"
+        return clz(username, config_file, data_dir, songs_dir)
+
+    def is_prepared(self):
+        if not self.config_file.exists():
+            return False
+
+        if not self.data_dir.exists():
+            return False
+
+        if not self.songs_dir.exists():
+            return False
+
+        return True
+
+    def prepare(self):
+        if self.is_prepared():
+            return
+
+        config = cfg.Configuration(KAIKOSettings)
+        if self.config_file.exists():
+            config.read(self.config_file)
+        logger = KAIKOLogger(config)
+
+        # start up
+        logger.print(f"Prepare your profile...", prefix="data")
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.songs_dir.mkdir(parents=True, exist_ok=True)
+        if not self.config_file.exists():
+            config.write(self.config_file)
+
+        (self.data_dir / "samples/").mkdir(exist_ok=True)
+        resources = ["samples/soft.wav",
+                     "samples/loud.wav",
+                     "samples/incr.wav",
+                     "samples/rock.wav",
+                     "samples/disk.wav"]
+        for rspath in resources:
+            logger.print(f"Load resource {rspath}...", prefix="data")
+            data = pkgutil.get_data("kaiko", rspath)
+            open(self.data_dir / rspath, 'wb').write(data)
+
+        logger.print(f"Your data will be stored in {logger.emph(self.data_dir.as_uri())}", prefix="data")
+        logger.print(flush=True)
+
 
 class KAIKOMenu:
     def __init__(self, config, user, manager, logger):
@@ -320,47 +370,15 @@ class KAIKOMenu:
     @contextlib.contextmanager
     def init(clz):
         r"""Initialize KAIKOMenu within a context manager."""
-        username = getpass.getuser()
-        data_dir = Path(appdirs.user_data_dir("K-AIKO", username))
-
-        # load settings
-        config_file = data_dir / "config.py"
-        config = cfg.Configuration(KAIKOSettings)
-        if config_file.exists():
-            config.read(config_file)
-        settings = config.current
-
-        logger = KAIKOLogger(config)
-
         # print logo
-        logger.print(settings.menu.logo, flush=True)
+        print(logo, flush=True)
 
         # load user data
-        songs_dir = data_dir / "songs"
-
-        if not data_dir.exists():
-            # start up
-            logger.print(f"Prepare your profile...", prefix="data")
-            data_dir.mkdir(exist_ok=True)
-            songs_dir.mkdir(exist_ok=True)
-            if not config_file.exists():
-                config.write(config_file)
-
-            (data_dir / "samples/").mkdir(exist_ok=True)
-            resources = ["samples/soft.wav",
-                         "samples/loud.wav",
-                         "samples/incr.wav",
-                         "samples/rock.wav",
-                         "samples/disk.wav"]
-            for rspath in resources:
-                logger.print(f"Load resource {rspath}...", prefix="data")
-                data = pkgutil.get_data("kaiko", rspath)
-                open(data_dir / rspath, 'wb').write(data)
-
-            logger.print(f"Your data will be stored in {logger.emph(data_dir.as_uri())}", prefix="data")
-            logger.print(flush=True)
-
-        user = KAIKOUser(username, config_file, data_dir, songs_dir)
+        user = KAIKOUser.create()
+        user.prepare()
+        config = cfg.Configuration(KAIKOSettings)
+        config.read(user.config_file)
+        logger = KAIKOLogger(config)
 
         # load PyAudio
         logger.print(f"Load PyAudio...", prefix="info")
