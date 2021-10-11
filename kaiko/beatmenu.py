@@ -228,15 +228,9 @@ class KAIKOMenuSettings(cfg.Configurable):
 
     best_screen_size: int = 80
 
-class DevicesSettings(cfg.Configurable):
-    mixer = engines.MixerSettings
-    detector = engines.DetectorSettings
-    renderer = engines.RendererSettings
-    controller = engines.ControllerSettings
-
 class KAIKOSettings(cfg.Configurable):
     menu = KAIKOMenuSettings
-    devices = DevicesSettings
+    devices = engines.DevicesSettings
     shell = beatshell.BeatShellSettings
     gameplay = beatmaps.GameplaySettings
 

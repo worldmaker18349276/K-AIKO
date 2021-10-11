@@ -734,3 +734,9 @@ class Controller:
                     except StopIteration:
                         return
 
+
+class DevicesSettings(cfg.Configurable):
+    mixer = MixerSettings
+    detector = DetectorSettings
+    renderer = RendererSettings
+    controller = ControllerSettings
