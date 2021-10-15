@@ -36,7 +36,7 @@ logo = """
   █▀   ▀██▄  ██    ██ ▀██████▄ ██   ▀██▄█▄▄▄▄▄▄█
 
 
-  🎧  Use headphones for the best experience 🎝 
+  🎧  Use headphones for the best experience 🎤 
 
 """
 
@@ -358,7 +358,7 @@ class KAIKOMenu:
     def main():
         dt = 0.01
         with KAIKOMenu.init() as menu:
-            dn.exhaust(menu.run(), dt=dt, interruptible=True)
+            menu.run().exhaust(dt=dt, interruptible=True)
 
     @classmethod
     @contextlib.contextmanager

@@ -126,6 +126,24 @@ class DataNode:
         else:
             raise ValueError
 
+    def exhaust(self, dt=0.0, interruptible=False):
+        stop_event = threading.Event()
+        def SIGINT_handler(sig, frame):
+            stop_event.set()
+
+        with self:
+            if interruptible:
+                signal.signal(signal.SIGINT, SIGINT_handler)
+
+            while True:
+                if stop_event.wait(dt):
+                    raise KeyboardInterrupt
+
+                try:
+                    self.send(None)
+                except StopIteration as e:
+                    return e.value
+
 
 # basic data nodes
 @datanode
@@ -1066,26 +1084,6 @@ def terminal_size():
 
 
 # async processes
-def exhaust(node, dt=0.0, interruptible=False):
-    node = DataNode.wrap(node)
-
-    stop_event = threading.Event()
-    def SIGINT_handler(sig, frame):
-        stop_event.set()
-
-    with node:
-        if interruptible:
-            signal.signal(signal.SIGINT, SIGINT_handler)
-
-        while True:
-            if stop_event.wait(dt):
-                raise KeyboardInterrupt
-
-            try:
-                node.send(None)
-            except StopIteration as e:
-                return e.value
-
 def _thread_task(thread, stop_event, error):
     yield
     thread.start()
