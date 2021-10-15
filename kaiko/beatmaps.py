@@ -5,6 +5,7 @@ from dataclasses import dataclass, replace
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
 from fractions import Fraction
+import threading
 import numpy
 import audioread
 from .engines import Mixer, Detector, Renderer, Controller
@@ -880,6 +881,7 @@ class GameplaySettings(cfg.Configurable):
         load_time: float = 0.5
         prepare_time: float = 0.1
         tickrate: float = 60.0
+        stop_key: str = 'Esc'
 
     widgets = WidgetSettings
 
@@ -999,6 +1001,10 @@ class Beatmap:
         score = BeatmapScore()
         score.set_total_subjects(total_subjects)
 
+        # handler
+        stop_event = threading.Event()
+        beatbar.add_handler(lambda _: stop_event.set(), gameplay_settings.controls.stop_key)
+
         # play music
         if self.audionode is not None:
             beatbar.mixer.play(self.audionode, time=0.0, zindex=(-3,))
@@ -1008,7 +1014,7 @@ class Beatmap:
             WidgetManager.use_widget(widget, score, beatbar, devices_settings, gameplay_settings.widgets)
 
         # game loop
-        updater = self.update_events(events, score, beatbar, start_time, end_time, tickrate, prepare_time)
+        updater = self.update_events(events, score, beatbar, start_time, end_time, tickrate, prepare_time, stop_event)
         event_task = dn.interval(consumer=updater, dt=1/tickrate)
 
         with dn.pipe(event_task, mixer_task, detector_task, renderer_task, controller_task) as task:
@@ -1085,7 +1091,7 @@ class Beatmap:
         return total_subjects, start_time, end_time, events
 
     @dn.datanode
-    def update_events(self, events, state, beatbar, start_time, end_time, tickrate, prepare_time):
+    def update_events(self, events, state, beatbar, start_time, end_time, tickrate, prepare_time, stop_event):
         # register events
         events_iter = iter(events)
         event = next(events_iter, None)
@@ -1094,6 +1100,9 @@ class Beatmap:
         index = 0
 
         while True:
+            if stop_event.is_set():
+                break
+
             time = index / tickrate + start_time
 
             if end_time <= time:
