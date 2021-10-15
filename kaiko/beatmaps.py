@@ -7,7 +7,7 @@ from collections import OrderedDict
 from fractions import Fraction
 import numpy
 import audioread
-from .engines import Mixer, Detector, Renderer
+from .engines import Mixer, Detector, Renderer, Controller
 from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings, WidgetManager, WidgetSettings
 from . import config as cfg
 from . import datanodes as dn
@@ -991,8 +991,10 @@ class Beatmap:
         mixer_task, mixer = Mixer.create(devices_settings.mixer, manager, ref_time)
         detector_task, detector = Detector.create(devices_settings.detector, manager, ref_time)
         renderer_task, renderer = Renderer.create(devices_settings.renderer, ref_time)
+        controller_task, controller = Controller.create(devices_settings.controller, ref_time)
 
-        beatbar = Beatbar(mixer, detector, renderer, self.bar_shift, self.bar_flip, gameplay_settings.beatbar)
+        beatbar = Beatbar(mixer, detector, renderer, controller,
+                          self.bar_shift, self.bar_flip, gameplay_settings.beatbar)
 
         score = BeatmapScore()
         score.set_total_subjects(total_subjects)
@@ -1009,7 +1011,7 @@ class Beatmap:
         updater = self.update_events(events, score, beatbar, start_time, end_time, tickrate, prepare_time)
         event_task = dn.interval(consumer=updater, dt=1/tickrate)
 
-        with dn.pipe(event_task, mixer_task, detector_task, renderer_task) as task:
+        with dn.pipe(event_task, mixer_task, detector_task, renderer_task, controller_task) as task:
             yield from task.join((yield))
 
         return score

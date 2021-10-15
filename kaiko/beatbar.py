@@ -129,12 +129,13 @@ class BeatbarSettings(cfg.Configurable):
         hit_sustain_time: float = 0.1
 
 class Beatbar:
-    def __init__(self, mixer, detector, renderer, bar_shift, bar_flip, settings=None):
+    def __init__(self, mixer, detector, renderer, controller, bar_shift, bar_flip, settings=None):
         settings = settings or BeatbarSettings()
 
         self.mixer = mixer
         self.detector = detector
         self.renderer = renderer
+        self.controller = controller
 
         # initialize game state
         self.bar_shift = bar_shift
@@ -399,6 +400,12 @@ class Beatbar:
         return self.mixer.play(node, samplerate=samplerate, channels=channels,
                                      volume=volume, start=start, end=end,
                                      time=time, zindex=zindex)
+
+    def add_handler(self, node, keyname=None):
+        return self.controller.add_handler(node, keyname)
+
+    def remove_handler(self, key):
+        self.controller.remove_handler(key)
 
     def on_before_render(self, node):
         node = dn.pipe(dn.branch(lambda a:a[1:], node), lambda a:a[0])

@@ -713,22 +713,22 @@ class Controller:
         task = clz.get_task(scheduler, settings, ref_time)
         return task, clz(scheduler)
 
-    def add_handler(self, node, key=None):
-        if key is None:
+    def add_handler(self, node, keyname=None):
+        if keyname is None:
             return self.handlers_scheduler.add_node(dn.DataNode.wrap(node), (0,))
         else:
-            return self.handlers_scheduler.add_node(self._filter_node(node, key), (0,))
+            return self.handlers_scheduler.add_node(self._filter_node(node, keyname), (0,))
 
     def remove_handler(self, key):
         self.handlers_scheduler.remove_node(key)
 
     @dn.datanode
-    def _filter_node(self, node, key):
+    def _filter_node(self, node, name):
         node = dn.DataNode.wrap(node)
         with node:
             while True:
                 _, t, keyname, keycode = yield
-                if key == keyname:
+                if name == keyname:
                     try:
                         node.send((None, t, keyname, keycode))
                     except StopIteration:
