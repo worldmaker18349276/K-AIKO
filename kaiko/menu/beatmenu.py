@@ -16,16 +16,16 @@ import pkgutil
 from pathlib import Path
 import appdirs
 import pyaudio
-from . import datanodes as dn
-from . import config as cfg
-from . import wcbuffers as wcb
-from . import biparsers as bp
-from . import commands as cmd
-from . import engines
-from . import beatshell
-from . import beatmaps
-from . import beatsheets
-from . import beatanalyzer
+from kaiko.utils import datanodes as dn
+from kaiko.utils import config as cfg
+from kaiko.utils import wcbuffers as wcb
+from kaiko.utils import biparsers as bp
+from kaiko.utils import commands as cmd
+from kaiko.utils import engines
+from kaiko.beats import beatshell
+from kaiko.beats import beatmaps
+from kaiko.beats import beatsheets
+from kaiko.beats import beatanalyzer
 
 
 logo = """

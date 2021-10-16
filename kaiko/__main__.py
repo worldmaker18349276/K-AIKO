@@ -1,7 +1,7 @@
-from . import beatmenu
+from .menu.beatmenu import KAIKOMenu
 
 def main():
-    beatmenu.KAIKOMenu.main()
+    KAIKOMenu.main()
 
 if __name__ == '__main__':
     main()

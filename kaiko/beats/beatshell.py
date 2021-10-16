@@ -6,12 +6,12 @@ import threading
 from typing import List, Set, Tuple
 from dataclasses import dataclass
 import wcwidth
-from . import engines
-from . import datanodes as dn
-from . import biparsers as bp
-from . import wcbuffers as wcb
-from . import config as cfg
-from . import commands as cmd
+from kaiko.utils import datanodes as dn
+from kaiko.utils import biparsers as bp
+from kaiko.utils import wcbuffers as wcb
+from kaiko.utils import config as cfg
+from kaiko.utils import commands as cmd
+from kaiko.utils import engines
 
 
 class SHLEXER_STATE(Enum):

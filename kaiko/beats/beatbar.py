@@ -6,9 +6,9 @@ from typing import List, Tuple, Dict, Optional, Union
 import queue
 import threading
 import numpy
-from . import config as cfg
-from . import datanodes as dn
-from . import wcbuffers as wcb
+from kaiko.utils import config as cfg
+from kaiko.utils import datanodes as dn
+from kaiko.utils import wcbuffers as wcb
 
 
 # performance

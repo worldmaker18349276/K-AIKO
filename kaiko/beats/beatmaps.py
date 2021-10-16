@@ -8,11 +8,11 @@ from fractions import Fraction
 import threading
 import numpy
 import audioread
-from .engines import Mixer, Detector, Renderer, Controller
+from kaiko.utils import config as cfg
+from kaiko.utils import datanodes as dn
+from kaiko.utils import wcbuffers as wcb
+from kaiko.utils import engines
 from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings, WidgetManager, WidgetSettings
-from . import config as cfg
-from . import datanodes as dn
-from . import wcbuffers as wcb
 
 
 @dataclass
@@ -990,10 +990,10 @@ class Beatmap:
             total_subjects, start_time, end_time, events = task.result
 
         ref_time = load_time + abs(start_time)
-        mixer_task, mixer = Mixer.create(devices_settings.mixer, manager, ref_time)
-        detector_task, detector = Detector.create(devices_settings.detector, manager, ref_time)
-        renderer_task, renderer = Renderer.create(devices_settings.renderer, ref_time)
-        controller_task, controller = Controller.create(devices_settings.controller, ref_time)
+        mixer_task, mixer = engines.Mixer.create(devices_settings.mixer, manager, ref_time)
+        detector_task, detector = engines.Detector.create(devices_settings.detector, manager, ref_time)
+        renderer_task, renderer = engines.Renderer.create(devices_settings.renderer, ref_time)
+        controller_task, controller = engines.Controller.create(devices_settings.controller, ref_time)
 
         beatbar = Beatbar(mixer, detector, renderer, controller,
                           self.bar_shift, self.bar_flip, gameplay_settings.beatbar)
