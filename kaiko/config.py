@@ -11,7 +11,13 @@ from . import biparsers as bp
 
 
 class FieldBiparser(bp.Biparser):
-    """Biparser for fields of configuration."""
+    """Biparser for fields of configuration.
+
+    It parse a series of field names of the configuration::
+
+        subfieldname1.subfieldname2.fieldname3
+
+    """
     def __init__(self, config_type):
         self.config_type = config_type
 
@@ -51,40 +57,44 @@ class FieldBiparser(bp.Biparser):
         return ".".join(value)
 
 class ConfigurationBiparser(bp.Biparser):
-    """Biparser for Configuration."""
+    """Biparser for Configurable.
+
+    It parses a configuration like a python script::
+
+        settings = SomeSettings()
+        settings.fieldname1 = 1
+        settings.fieldname2 = 'asd'
+        settings.subfieldname.fieldname3 = 3.14
+
+    """
     vindent = r"(#[^\n]*|[ ]*)(\n|$)"
-    name = r"#### ([^\n]*) ####(\n|$)"
-    profile = r"# #### ([^\n]*) ####(\n#[^\n]*)*(\n|$)"
     equal = r"[ ]*=[ ]*"
     nl = r"[ ]*(\n|$)"
 
-    def __init__(self, config_type):
+    def __init__(self, config_type, name):
         self.config_type = config_type
+        self.name = name
         self.field_biparser = FieldBiparser(config_type)
 
     def decode(self, text, index=0, partial=False):
-        # exec(text, globals(), config.current.__dict__)
-
-        config = Configuration(self.config_type)
         field_hints = self.config_type.get_configurable_fields()
-        is_named = False
 
         while index < len(text):
-            if not is_named:
-                m, index = bp.match(self.name, [], text, index, optional=True, partial=True)
-                if m:
-                    config.name = m.group(1)
-                    is_named = True
-                    continue
+            m, index = bp.match(self.vindent, ["\n"], text, index, optional=True, partial=True)
+            if not m: break
 
-            m, index = bp.match(self.profile, [], text, index, optional=True, partial=True)
-            if m and m.group(1) not in config.profiles:
-                config.profiles[m.group(1)] = m.group(0)
-                continue
+        _, index = bp.startswith([self.name], text, index, partial=True)
+        _, index = bp.match(self.equal, [" = "], text, index, partial=True)
+        _, index = bp.startswith([self.config_type.__name__ + "()"], text, index, partial=True)
+        _, index = bp.match(self.nl, ["\n"], text, index, partial=True)
 
+        config = self.config_type()
+
+        while index < len(text):
             m, index = bp.match(self.vindent, ["\n"], text, index, optional=True, partial=True)
             if m: continue
 
+            _, index = bp.startswith([self.name + "."], text, index, partial=True)
             field, index = self.field_biparser.decode(text, index, partial=True)
 
             _, index = bp.match(self.equal, [" = "], text, index, partial=True)
@@ -100,20 +110,16 @@ class ConfigurationBiparser(bp.Biparser):
     def encode(self, value):
         res = ""
 
-        if value.name is not None:
-            res += f"#### {value.name} ####\n"
+        res += f"{self.name} = {self.config_type.__name__}()\n"
 
         for field_key, field_type in self.config_type.get_configurable_fields().items():
-            field_name = self.field_biparser.encode(field_key)
-            value_biparser = bp.from_type_hint(field_type)
             if not value.has(field_key):
                 continue
             field_value = value.get(field_key)
+            field_name = self.field_biparser.encode(field_key)
+            value_biparser = bp.from_type_hint(field_type)
             field_value_str = value_biparser.encode(field_value)
-            res += field_name + " = " + field_value_str + "\n"
-
-        if value.profiles:
-            res += "\n" + "\n".join(value.profiles.values())
+            res += f"{self.name}.{field_name} = {field_value_str}\n"
 
         return res
 
@@ -145,7 +151,7 @@ class ConfigurableMeta(type):
 
     def get_configurable_fields(self):
         """Get configurable fields of this configuration.
-        
+
         Returns
         -------
         field_hints : dict
@@ -167,7 +173,7 @@ class Configurable(metaclass=ConfigurableMeta):
     """The super class for configuration.
 
     With this type, the configuration can be easily defined::
-    
+
         class SomeSettings(Configurable):
             field1: int = 123
             field2: str = 'abc'
@@ -177,13 +183,13 @@ class Configurable(metaclass=ConfigurableMeta):
                 field4: float = 3.14
 
         settings = SomeSettings()
-        
+
         print(settings.field1)  # 123
         print(settings.subsettings.field3)  # True
-        
+
         settings.field1 = 456
         settings.subsettings.field3 = False
-        
+
         print(settings.field1)  # 456
         print(settings.subsettings.field3)  # False
 
@@ -196,41 +202,16 @@ class Configurable(metaclass=ConfigurableMeta):
     So in the above example, the field access at the beginning is the
     fallback value of the static field in the class.
     """
-    pass
-
-class Configuration:
-    """Configuration manager for Configurable type."""
-    def __init__(self, config_type, name=None, current=None, profiles=None):
-        """The constructor of Configuration.
-        
-        Parameters
-        ----------
-        config_type : type
-            The Configurable type to manage.
-        name : str, optional
-            The name of current configuration.
-        current : Configurable, optional
-            The current configuration.
-        profiles : dict, optional
-            A dictionary that maps the name of profile to the string
-            representation of configurations.
-        """
-        self.config_type = config_type
-        self.name = name or "default"
-        self.current = current or config_type()
-        self.profiles = profiles or {}
-        self.biparser = ConfigurationBiparser(config_type)
-
     def set(self, fields, value):
-        """Set a field of current configuration to the given value.
-        
+        """Set a field of the configuration to the given value.
+
         Parameters
         ----------
         fields : list of str
             The series of field names.
         value : any
             The value to set.
-        
+
         Raises
         ------
         ValueError
@@ -239,8 +220,7 @@ class Configuration:
         if len(fields) == 0:
             raise ValueError("empty field")
 
-        parent = None
-        curr = self.current
+        parent, curr = None, self
 
         for i, field in enumerate(fields):
             if not isinstance(curr, Configurable):
@@ -252,16 +232,16 @@ class Configuration:
             parent, curr = curr, curr.__dict__.get(field, None)
 
         else:
-            parent.__dict__[field] = value
+            setattr(parent, field, value)
 
     def unset(self, fields):
-        """Unset a field of current configuration.
-        
+        """Unset a field of the configuration.
+
         Parameters
         ----------
         fields : list of str
             The series of field names.
-        
+
         Raises
         ------
         ValueError
@@ -270,8 +250,7 @@ class Configuration:
         if len(fields) == 0:
             raise ValueError("empty field")
 
-        parent = None
-        curr = self.current
+        parent, curr = None, self
 
         for i, field in enumerate(fields):
             if not isinstance(curr, Configurable):
@@ -284,11 +263,11 @@ class Configuration:
 
         else:
             if field in parent.__dict__:
-                del parent.__dict__[field]
+                delattr(parent, field)
 
     def get(self, fields):
-        """Get a field of current configuration.
-        
+        """Get a field of the configuration.
+
         Parameters
         ----------
         fields : list of str
@@ -307,8 +286,7 @@ class Configuration:
         if len(fields) == 0:
             raise ValueError("empty field")
 
-        parent = None
-        curr = self.current
+        parent, curr = None, self
 
         for i, field in enumerate(fields):
             if not isinstance(curr, Configurable):
@@ -323,8 +301,8 @@ class Configuration:
             return getattr(parent, field)
 
     def has(self, fields):
-        """Check if a field of current configuration has a value.
-        
+        """Check if a field of the configuration has a value.
+
         Parameters
         ----------
         fields : list of str
@@ -343,8 +321,7 @@ class Configuration:
         if len(fields) == 0:
             raise ValueError("empty field")
 
-        parent = None
-        curr = self.current
+        parent, curr = None, self
 
         for i, field in enumerate(fields):
             if not isinstance(curr, Configurable):
@@ -358,13 +335,20 @@ class Configuration:
         else:
             return field in parent.__dict__
 
-    def read(self, path):
+    @classmethod
+    def read(clz, path, name="settings"):
         """Read configuration from a file.
-        
+
         Parameters
         ----------
         path : str or Path
             The path of file.
+        name : str, optional
+            The name of the resulting configuration.
+
+        Returns
+        -------
+        config
 
         Raises
         ------
@@ -378,20 +362,25 @@ class Configuration:
         if not path.exists():
             raise ValueError("No such file: " + str(path))
 
-        res, _ = self.biparser.decode(open(path, 'r').read())
-        self.current = res.current
-        self.profiles = res.profiles
+        # text = open(path, 'r').read()
+        # locals = {}
+        # exec(text, globals(), locals)
+        # return locals[self.name]
 
-    def __str__(self):
-        return self.biparser.encode(self)
+        biparser = ConfigurationBiparser(clz, name)
+        text = open(path, 'r').read()
+        res = biparser.decode(text)[0]
+        return res
 
-    def write(self, path):
+    def write(self, path, name="settings"):
         """Write this configuration to a file.
-        
+
         Parameters
         ----------
         path : str or Path
             The path of file.
+        name : str, optional
+            The name of the resulting configuration.
 
         Raises
         ------
@@ -400,62 +389,13 @@ class Configuration:
         """
         if isinstance(path, str):
             path = Path(path)
-        open(path, 'w').write(self.biparser.encode(self))
 
-    def use(self, name):
-        """change the profile of configuration.
-        
-        Parameters
-        ----------
-        name : str
-            The name of profile.
+        biparser = ConfigurationBiparser(type(self), name)
+        text = biparser.encode(self)
+        open(path, 'w').write(text)
 
-        Raises
-        ------
-        ValueError
-            If there is no such profile.
-        """
-        if name == self.name:
-            return
-        if name not in self.profiles:
-            raise ValueError("no such profile: " + name)
+    def as_string(self, name="settings"):
+        biparser = ConfigurationBiparser(type(self), name)
+        text = biparser.encode(self)
+        return text
 
-        curr = Configuration(self.config_type, self.name, self.current, {})
-        res = re.sub(r"((?<=\n)|^)(?!$)", "# ", self.biparser.encode(curr))
-        self.profiles[self.name] = res
-
-        profile = self.profiles.pop(name)
-        res, _ = self.biparser.decode(re.sub(r"((?<=\n)|^)#[ ]?", "", profile))
-        self.name = name
-        self.current = res.current
-
-    def new(self, name, clone=None):
-        """make a new profile of configuration.
-        
-        Parameters
-        ----------
-        name : str
-            The name of profile.
-        clone : str, optional
-            The name of profile to clone.
-
-        Raises
-        ------
-        ValueError
-            If there is no such profile.
-        """
-        if clone is not None and clone != self.name and clone not in self.profiles:
-            raise ValueError("no such profile: " + clone)
-
-        curr = Configuration(self.config_type, self.name, self.current, {})
-        res = re.sub(r"((?<=\n)|^)(?!$)", "# ", self.biparser.encode(curr))
-        self.profiles[self.name] = res
-
-        if clone is None:
-            self.name = name
-            self.current = self.config_type()
-        else:
-            profile = self.profiles[clone]
-            res, _ = self.biparser.decode(re.sub(r"((?<=\n)|^)#[ ]?", "", profile))
-            self.name = name
-            self.current = res.current

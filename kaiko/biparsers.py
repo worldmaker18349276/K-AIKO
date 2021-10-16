@@ -11,7 +11,7 @@ import typing
 
 class DecodeError(Exception):
     """Decode error.
-    
+
     Attributes
     ----------
     text : str
@@ -46,7 +46,7 @@ class DecodeError(Exception):
 
 class EncodeError(Exception):
     """Encode error.
-    
+
     Attributes
     ----------
     value : any
@@ -67,7 +67,7 @@ class EncodeError(Exception):
 class Biparser:
     def decode(self, text, index=0, partial=False):
         """Decode a string into a value.
-        
+
         Parameters
         ----------
         text : str
@@ -76,14 +76,14 @@ class Biparser:
             The index of text where the decoding starts with.
         partial : bool, optional
             True for partially decoding.  It will parse the longest possible prefix of a given string.
-            
+
         Returns
         -------
         value : any
             The decoded value of the given text.
         end : int
             The index of the end of the matched substring, which is `len(text)` for non-partial decoding.
-        
+
         Raises
         ------
         DecodeError
@@ -93,17 +93,17 @@ class Biparser:
 
     def encode(self, value):
         """Encode a value into a string.
-        
+
         Parameters
         ----------
         value : any
             The value to encode.
-            
+
         Returns
         --------
         text : str
             The encoded text of the given value.
-        
+
         Raises
         ------
         EncodeError
@@ -226,7 +226,7 @@ def match(regex, expected, text, index, optional=False, partial=True):
 
 class LiteralBiparser(Biparser):
     """Biparser for Python literal.
-    
+
     Attributes
     ----------
     regex : regular expression object
@@ -600,12 +600,12 @@ class EnumBiparser(Biparser):
 
 def from_type_hint(type_hint):
     """Make Biparser from type hint.
-    
+
     Parameters
     ----------
     type_hint : type or type hint
         the type to parse.
-    
+
     Returns
     -------
     biparser : Biparser

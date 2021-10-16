@@ -163,8 +163,9 @@ def fit_screen(logger, width, delay):
 
     return dn.pipe(skip, dn.terminal_size(), fit())
 
-def print_pyaudio_info(manager, print):
-    r"""Print out some information of PyAudio.
+@contextlib.contextmanager
+def prepare_pyaudio(logger):
+    r"""Prepare PyAudio and print out some information.
 
     Loading PyAudio will cause PortAudio to print something to the terminal, which
     cannot be turned off by PyAudio, so why not print more information to make it
@@ -172,50 +173,60 @@ def print_pyaudio_info(manager, print):
 
     Parameters
     ----------
+    logger : KAIKOLogger
+
+    Yields
+    ------
     manager : PyAudio
-        The manager of PyAudio.
-    print : function
-        The print function.
     """
-    print()
+    with logger.verb():
+        manager = pyaudio.PyAudio()
 
-    print("portaudio version:")
-    print("  " + pyaudio.get_portaudio_version_text())
-    print()
+        logger.print()
 
-    print("available devices:")
-    apis_list = [manager.get_host_api_info_by_index(i)['name'] for i in range(manager.get_host_api_count())]
+        logger.print("portaudio version:")
+        logger.print("  " + pyaudio.get_portaudio_version_text())
+        logger.print()
 
-    table = []
-    for index in range(manager.get_device_count()):
-        info = manager.get_device_info_by_index(index)
+        logger.print("available devices:")
+        apis_list = [manager.get_host_api_info_by_index(i)['name'] for i in range(manager.get_host_api_count())]
 
-        ind = str(index)
-        name = info['name']
-        api = apis_list[info['hostApi']]
-        freq = str(info['defaultSampleRate']/1000)
-        chin = str(info['maxInputChannels'])
-        chout = str(info['maxOutputChannels'])
+        table = []
+        for index in range(manager.get_device_count()):
+            info = manager.get_device_info_by_index(index)
 
-        table.append((ind, name, api, freq, chin, chout))
+            ind = str(index)
+            name = info['name']
+            api = apis_list[info['hostApi']]
+            freq = str(info['defaultSampleRate']/1000)
+            chin = str(info['maxInputChannels'])
+            chout = str(info['maxOutputChannels'])
 
-    ind_len   = max(len(entry[0]) for entry in table)
-    name_len  = max(len(entry[1]) for entry in table)
-    api_len   = max(len(entry[2]) for entry in table)
-    freq_len  = max(len(entry[3]) for entry in table)
-    chin_len  = max(len(entry[4]) for entry in table)
-    chout_len = max(len(entry[5]) for entry in table)
+            table.append((ind, name, api, freq, chin, chout))
 
-    for ind, name, api, freq, chin, chout in table:
-        print(f"  {ind:>{ind_len}}. {name:{name_len}}  by  {api:{api_len}}"
-              f"  ({freq:>{freq_len}} kHz, in: {chin:>{chin_len}}, out: {chout:>{chout_len}})")
+        ind_len   = max(len(entry[0]) for entry in table)
+        name_len  = max(len(entry[1]) for entry in table)
+        api_len   = max(len(entry[2]) for entry in table)
+        freq_len  = max(len(entry[3]) for entry in table)
+        chin_len  = max(len(entry[4]) for entry in table)
+        chout_len = max(len(entry[5]) for entry in table)
 
-    print()
+        for ind, name, api, freq, chin, chout in table:
+            logger.print(f"  {ind:>{ind_len}}. {name:{name_len}}  by  {api:{api_len}}"
+                  f"  ({freq:>{freq_len}} kHz, in: {chin:>{chin_len}}, out: {chout:>{chout_len}})")
 
-    default_input_device_index = manager.get_default_input_device_info()['index']
-    default_output_device_index = manager.get_default_output_device_info()['index']
-    print(f"default input device: {default_input_device_index}")
-    print(f"default output device: {default_output_device_index}")
+        logger.print()
+
+        default_input_device_index = manager.get_default_input_device_info()['index']
+        default_output_device_index = manager.get_default_output_device_info()['index']
+        logger.print(f"default input device: {default_input_device_index}")
+        logger.print(f"default output device: {default_output_device_index}")
+
+    try:
+        yield manager
+    finally:
+        manager.terminate()
+
 
 class KAIKOMenuSettings(cfg.Configurable):
     data_icon: str = "\x1b[92m🗀 \x1b[m"
@@ -281,7 +292,7 @@ class KAIKOLogger:
 @dataclasses.dataclass
 class KAIKOUser:
     username: str
-    config_file: Path
+    config_dir: Path
     data_dir: Path
     songs_dir: Path
 
@@ -289,12 +300,12 @@ class KAIKOUser:
     def create(clz):
         username = getpass.getuser()
         data_dir = Path(appdirs.user_data_dir("K-AIKO", username))
-        config_file = data_dir / "config.py"
+        config_dir = data_dir / "config"
         songs_dir = data_dir / "songs"
-        return clz(username, config_file, data_dir, songs_dir)
+        return clz(username, config_dir, data_dir, songs_dir)
 
     def is_prepared(self):
-        if not self.config_file.exists():
+        if not self.config_dir.exists():
             return False
 
         if not self.data_dir.exists():
@@ -309,17 +320,14 @@ class KAIKOUser:
         if self.is_prepared():
             return
 
-        config = cfg.Configuration(KAIKOSettings)
-        if self.config_file.exists():
-            config.read(self.config_file)
+        config = ProfileManager(KAIKOSettings, self.config_dir)
         logger = KAIKOLogger(config)
 
         # start up
         logger.print(f"Prepare your profile...", prefix="data")
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.config_dir.mkdir(parents=True, exist_ok=True)
         self.songs_dir.mkdir(parents=True, exist_ok=True)
-        if not self.config_file.exists():
-            config.write(self.config_file)
 
         (self.data_dir / "samples/").mkdir(exist_ok=True)
         resources = ["samples/soft.wav",
@@ -342,7 +350,7 @@ class KAIKOMenu:
 
         Parameters
         ----------
-        config : KAIKOSettings
+        config : ProfileManager
         user : KAIKOUser
         manager : PyAudio
         logger : KAIKOLogger
@@ -367,23 +375,19 @@ class KAIKOMenu:
         # print logo
         print(logo, flush=True)
 
-        # load user data
-        user = KAIKOUser.create()
-        user.prepare()
-        config = cfg.Configuration(KAIKOSettings)
-        config.read(user.config_file)
-        logger = KAIKOLogger(config)
-
-        # load PyAudio
-        logger.print(f"Load PyAudio...", prefix="info")
-        logger.print()
-
-        with logger.verb():
-            manager = pyaudio.PyAudio()
-            print_pyaudio_info(manager, logger.print)
-
         try:
-            yield clz(config, user, manager, logger)
+            # load user data
+            user = KAIKOUser.create()
+            user.prepare()
+            config = ProfileManager(KAIKOSettings, user.config_dir)
+            logger = KAIKOLogger(config)
+
+            # load PyAudio
+            logger.print(f"Load PyAudio...", prefix="info")
+            logger.print()
+
+            with prepare_pyaudio(logger) as manager:
+                yield clz(config, user, manager, logger)
 
         except KeyboardInterrupt:
             pass
@@ -393,9 +397,6 @@ class KAIKOMenu:
             print("\x1b[31m", end="")
             print(traceback.format_exc(), end="")
             print(f"\x1b[m", end="")
-
-        finally:
-            manager.terminate()
 
     @dn.datanode
     def run(self):
@@ -519,13 +520,12 @@ class KAIKOMenu:
 
     @cmd.function_command
     def loop(self, pattern, tempo:float=120.0, offset:float=1.0):
-        # | x [_ x] o x | x [x x] o _ |
         return KAIKOLoop(pattern, tempo, offset,
                          self.user.data_dir, self.settings.devices, self.settings.gameplay, self.logger)
 
     @loop.arg_parser("pattern")
     def _loop_pattern_parser(self):
-        return cmd.RawParser(desc="It should be a pattern.")
+        return cmd.RawParser(desc="It should be a pattern.", default="x [_ x] o x | x [x x] o _")
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
@@ -606,7 +606,7 @@ class KAIKOMenu:
     @property
     def config(self):
         """Configuration."""
-        return ConfigCommand(self._config, self.logger, self.user.config_file)
+        return ConfigCommand(self._config, self.logger)
 
     # system
 
@@ -616,8 +616,8 @@ class KAIKOMenu:
         logger = self.logger
 
         logger.print(f"username: {logger.emph(self.user.username)}")
-        logger.print(f"config file: {logger.emph(self.user.config_file.as_uri())}")
         logger.print(f"data directory: {logger.emph(self.user.data_dir.as_uri())}")
+        logger.print(f"config directory: {logger.emph(self.user.config_dir.as_uri())}")
         logger.print(f"songs directory: {logger.emph(self.user.songs_dir.as_uri())}")
 
     @cmd.function_command
@@ -813,38 +813,290 @@ class DevicesCommand:
         self.logger.print(f"terminal size: {size.columns}×{size.lines}")
 
 
+class ProfileFormatError(Exception):
+    pass
+
+class ProfileNameError(Exception):
+    pass
+
+class ProfileManager:
+    """Profile manager for Configurable type.
+
+    Attributes
+    ----------
+    config_type : type
+        The Configurable type to manage.
+    path : Path
+        The path of profiles directory.
+    profiles : list of str
+        A list of names of profiles.
+    default_name : str or None
+        The name of default configuration.
+    current_name : str
+        The name of current configuration.
+    current : Configurable
+        The current configuration.
+    """
+
+    default_meta = ".default-config"
+    extension = ".config"
+    settings_name = "settings"
+
+    def __init__(self, config_type, path):
+        """Constructor.
+
+        Parameters
+        ----------
+        config_type : type
+            The Configurable type to manage.
+        path : str or Path
+            The path of profiles directory.
+
+        Raises
+        ------
+        ProfileFormatError
+            If file format is wrong.
+        DecodeError
+            If decoding fails.
+        """
+        if isinstance(path, str):
+            path = Path(path)
+
+        self.config_type = config_type
+        self.path = path
+
+        self.update()
+
+        if self.default_name in self.profiles:
+            self.use(self.default_name)
+        else:
+            self.new()
+
+    def update(self):
+        """Update the list of profiles.
+
+        Raises
+        ------
+        ProfileFormatError
+            If file format is wrong.
+        """
+        self.profiles = []
+        self.default_name = None
+
+        if not self.path.exists():
+            return
+
+        if not self.path.is_dir():
+            raise ProfileFormatError("Wrong format for profile directory: " + str(self.path))
+
+        for subpath in self.path.iterdir():
+            if subpath.suffix == self.extension:
+                self.profiles.append(subpath.stem)
+
+        default_meta_path = self.path / self.default_meta
+        if default_meta_path.exists():
+            if not default_meta_path.is_file():
+                raise ProfileFormatError("Wrong format for default profile: " + str(default_meta_path))
+            self.default_name = default_meta_path.read_text()
+
+    def set_default(self):
+        """Set the current configuration as default configuration.
+
+        Raises
+        ------
+        ProfileFormatError
+            If file format is wrong.
+        """
+        if not self.path.exists():
+            raise ProfileFormatError("No such profile directory: " + str(self.path))
+        self.default_name = self.current_name
+        default_meta_path = self.path / self.default_meta
+        if default_meta_path.exists() and not default_meta_path.is_file():
+            raise ProfileFormatError("Wrong format for default profile: " + str(default_meta_path))
+        default_meta_path.write_text(self.default_name)
+
+    def save(self):
+        """Save the current configuration.
+
+        Raises
+        ------
+        ProfileFormatError
+            If file format is wrong.
+        EncodeError
+            If encoding fails.
+        """
+        if not self.path.exists():
+            raise ProfileFormatError("No such profile directory: " + str(self.path))
+
+        current_path = self.path / (self.current_name + self.extension)
+        if current_path.exists() and not current_path.is_file():
+            raise ProfileFormatError("Wrong format for profile: " + str(current_path))
+
+        self.current.write(current_path, self.settings_name)
+
+        self.update()
+
+    def load(self):
+        """Load the current configuration.
+
+        Raises
+        ------
+        ProfileFormatError
+            If file format is wrong.
+        DecodeError
+            If decoding fails.
+        """
+        self.current = self.config_type()
+
+        current_path = self.path / (self.current_name + self.extension)
+        if current_path.exists():
+            if not current_path.is_file():
+                raise ProfileFormatError("Wrong format for profile: " + str(current_path))
+            self.current = self.config_type.read(current_path, name=self.settings_name)
+
+    def use(self, name=None):
+        """change the current profile of configuration.
+
+        Parameters
+        ----------
+        name : str, optional
+            The name of profile, or None for default.
+
+        Raises
+        ------
+        ProfileNameError
+            If there is no such profile.
+        ProfileFormatError
+            If file format is wrong.
+        DecodeError
+            If decoding fails.
+        """
+        if name is None:
+            if self.default_name is None:
+                raise ProfileNameError("No default profile")
+            name = self.default_name
+
+        if name not in self.profiles:
+            raise ProfileNameError("No such profile: " + name)
+        self.current_name = name
+        self.load()
+
+    def new(self, name=None, clone=None):
+        """make a new profile of configuration.
+
+        Parameters
+        ----------
+        name : str, optional
+            The name of profile.
+        clone : str, optional
+            The name of profile to clone.
+
+        Raises
+        ------
+        ProfileNameError
+            If there is no such profile or profile name is duplicated.
+        ProfileFormatError
+            If file format is wrong.
+        DecodeError
+            If decoding fails.
+        """
+        if clone is not None and clone not in self.profiles:
+            raise ProfileNameError("No such profile: " + clone)
+
+        if name in self.profiles:
+            raise ProfileNameError("Duplicated profile name: " + name)
+
+        if name is None:
+            name = "new profile"
+            n = 1
+            while name in self.profiles:
+                n += 1
+                name = f"new profile ({str(n)})"
+
+        if clone is None:
+            self.current_name = name
+            self.current = self.config_type()
+        else:
+            self.current_name = clone
+            self.load()
+            self.current_name = name
+
+    def delete(self, name):
+        """Delete a profile.
+
+        Parameters
+        ----------
+        name : str
+            The name of profile to delete.
+
+        Raises
+        ------
+        ProfileNameError
+            If there is a no such profile.
+        ProfileFormatError
+            If file format is wrong.
+        """
+        if name not in self.profiles:
+            raise ProfileNameError("No such profile: " + name)
+
+        self.profiles.remove(name)
+
+        target_path = self.path / (name + self.extension)
+        if target_path.exists():
+            if not target_path.is_file():
+                raise ProfileFormatError("Wrong format for profile: " + str(target_path))
+            target_path.unlink()
+
+    def rename(self, name):
+        """Rename the current profile.
+
+        Parameters
+        ----------
+        name : str
+            The new name of profile.
+
+        Raises
+        ------
+        ProfileFormatError
+            If file format is wrong.
+        ProfileNameError
+            If there is a duplicated profile name.
+        """
+        if self.current_name == name:
+            return
+
+        if name in self.profiles:
+            raise ProfileNameError("Duplicated profile name: " + name)
+
+        if self.current_name in self.profiles:
+            self.profiles.remove(self.current_name)
+            self.profiles.append(name)
+
+            current_path = self.path / (self.current_name + self.extension)
+            target_path = self.path / (name + self.extension)
+            if current_path.exists():
+                if not target_path.is_file():
+                    raise ProfileFormatError("Wrong format for profile: " + str(target_path))
+                current_path.rename(target_path)
+
+        if self.current_name == self.default_name:
+            self.current_name = name
+            self.set_default()
+        else:
+            self.current_name = name
+
 class ConfigCommand:
-    def __init__(self, config, logger, path):
+    def __init__(self, config, logger):
         self.config = config
         self.logger = logger
-        self.path = path
 
     # configuration
 
     @cmd.function_command
-    def reload(self):
-        """Reload configuration."""
-        logger = self.logger
-
-        logger.print(f"Load configuration from {logger.emph(self.path.as_uri())}...", prefix="data")
-        logger.print()
-
-        self.config.read(self.path)
-
-    @cmd.function_command
     def show(self):
         """Show configuration."""
-        self.logger.print(str(self.config))
-
-    @cmd.function_command
-    def save(self):
-        """Save configuration."""
-        logger = self.logger
-
-        logger.print(f"Save configuration to {logger.emph(self.path.as_uri())}...", prefix="data")
-        logger.print()
-
-        self.config.write(self.path)
+        self.logger.print("profile: " + self.config.current_name)
+        self.logger.print(self.config.current.as_string(name=self.config.settings_name))
 
     @cmd.function_command
     def has(self, field):
@@ -854,7 +1106,7 @@ class ConfigCommand:
                             ╱
                      The field name.
         """
-        return self.config.has(field)
+        return self.config.current.has(field)
 
     @cmd.function_command
     def get(self, field):
@@ -864,7 +1116,7 @@ class ConfigCommand:
                             ╱
                      The field name.
         """
-        return self.config.get(field)
+        return self.config.current.get(field)
 
     @cmd.function_command
     def set(self, field, value):
@@ -874,7 +1126,7 @@ class ConfigCommand:
                             ╱         ╲
                    The field name.   The value.
         """
-        self.config.set(field, value)
+        self.config.current.set(field, value)
 
     @cmd.function_command
     def unset(self, field):
@@ -884,7 +1136,7 @@ class ConfigCommand:
                               ╱
                        The field name.
         """
-        self.config.unset(field)
+        self.config.current.unset(field)
 
     @get.arg_parser("field")
     @has.arg_parser("field")
@@ -896,10 +1148,55 @@ class ConfigCommand:
     @set.arg_parser("value")
     def _set_value_parser(self, field):
         annotation = self.config.config_type.get_configurable_fields()[field]
-        default = self.config.get(field)
+        default = self.config.current.get(field)
         return cmd.LiteralParser(annotation, default)
 
     # profiles
+
+    @cmd.function_command
+    def reload(self):
+        """Reload configuration."""
+        logger = self.logger
+
+        logger.print(f"Load configuration from {logger.emph(self.config.path.as_uri())}...", prefix="data")
+        logger.print()
+
+        self.config.update()
+
+        try:
+            self.config.load()
+        except (ProfileNameError, ProfileFormatError, bp.DecodeError):
+            with self.logger.warn():
+                self.logger.print("Failed to load configuration")
+                self.logger.print(traceback.format_exc(), end="")
+
+    @cmd.function_command
+    def save(self):
+        """Save configuration."""
+        logger = self.logger
+
+        logger.print(f"Save configuration to {logger.emph(self.config.path.as_uri())}...", prefix="data")
+        logger.print()
+
+        try:
+            self.config.save()
+        except (ProfileNameError, ProfileFormatError, bp.EncodeError):
+            with self.logger.warn():
+                self.logger.print("Failed to save configuration")
+                self.logger.print(traceback.format_exc(), end="")
+
+    @cmd.function_command
+    def set_default(self):
+        """Set the current configuration profile as default.
+        
+        usage: \x1b[94mconfig\x1b[m \x1b[94mset_default\x1b[m
+        """
+        try:
+            self.config.set_default()
+        except (ProfileNameError, ProfileFormatError):
+            with self.logger.warn():
+                self.logger.print("Failed to save configuration")
+                self.logger.print(traceback.format_exc(), end="")
 
     @cmd.function_command
     def use(self, profile):
@@ -909,9 +1206,12 @@ class ConfigCommand:
                               ╱
                      The profile name.
         """
-        if profile == self.config.name:
-            return
-        self.config.use(profile)
+        try:
+            self.config.use(profile)
+        except (ProfileNameError, ProfileFormatError, bp.DecodeError):
+            with self.logger.warn():
+                self.logger.print("Failed to load configuration")
+                self.logger.print(traceback.format_exc(), end="")
 
     @cmd.function_command
     def rename(self, profile):
@@ -921,7 +1221,7 @@ class ConfigCommand:
                                 ╱
                       The profile name.
         """
-        if not profile.isprintable():
+        if not profile.isprintable() or "/" in profile:
             with self.logger.warn():
                 self.logger.print("Invalid profile name.")
             return
@@ -931,7 +1231,12 @@ class ConfigCommand:
                 self.logger.print("This profile name already exists.")
             return
 
-        self.config.name = profile
+        try:
+            self.config.rename(profile)
+        except (ProfileNameError, ProfileFormatError):
+            with self.logger.warn():
+                self.logger.print("Failed to save configuration")
+                self.logger.print(traceback.format_exc(), end="")
 
     @cmd.function_command
     def new(self, profile, clone=None):
@@ -941,17 +1246,22 @@ class ConfigCommand:
                               ╱                    ╲
                      The profile name.      The profile to be cloned.
         """
-        if not profile.isprintable():
+        if not profile.isprintable() or "/" in profile:
             with self.logger.warn():
                 self.logger.print("Invalid profile name.")
             return
 
-        if profile == self.config.name or profile in self.config.profiles:
+        if profile in self.config.profiles:
             with self.logger.warn():
                 self.logger.print("This profile name already exists.")
             return
 
-        self.config.new(profile, clone)
+        try:
+            self.config.new(profile, clone)
+        except (ProfileNameError, ProfileFormatError, bp.DecodeError):
+            with self.logger.warn():
+                self.logger.print("Failed to load configuration")
+                self.logger.print(traceback.format_exc(), end="")
 
     @cmd.function_command
     def delete(self, profile):
@@ -961,11 +1271,12 @@ class ConfigCommand:
                                 ╱
                        he profile name.
         """
-        if profile == self.config.name:
+        try:
+            self.config.delete(profile)
+        except (ProfileNameError, ProfileFormatError):
             with self.logger.warn():
-                self.logger.print("Cannot delete current profile.")
-            return
-        del self.config.profiles[profile]
+                self.logger.print("Failed to save configuration")
+                self.logger.print(traceback.format_exc(), end="")
 
     @rename.arg_parser("profile")
     @new.arg_parser("profile")
@@ -976,9 +1287,7 @@ class ConfigCommand:
     @use.arg_parser("profile")
     @delete.arg_parser("profile")
     def _old_profile_parser(self, *_, **__):
-        options = list(self.config.profiles.keys())
-        options.insert(0, self.config.name)
-        return cmd.OptionParser(options,
+        return cmd.OptionParser(self.config.profiles,
                                 desc="It should be the name of the profile that exists in the configuration.")
 
 
