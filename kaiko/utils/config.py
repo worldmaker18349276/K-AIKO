@@ -220,6 +220,18 @@ class ConfigurableMeta(type):
                     field_hints[(field_name, *subfield_names)] = subfield_hint
         return field_hints
 
+    def get_field_type(self, field):
+        if field not in self.__field_hints__:
+            raise ValueError("No such field: " + ".".join(field))
+        annotation, _ = self.__field_hints__[field]
+        return annotation
+
+    def get_field_doc(self, field):
+        if field not in self.__field_hints__:
+            raise ValueError("No such field: " + ".".join(field))
+        _, doc = self.__field_hints__[field]
+        return doc
+
 class Configurable(metaclass=ConfigurableMeta):
     """The super class for configuration.
 
@@ -444,9 +456,4 @@ class Configurable(metaclass=ConfigurableMeta):
         biparser = ConfigurationBiparser(type(self), name)
         text = biparser.encode(self)
         open(path, 'w').write(text)
-
-    def as_string(self, name="settings"):
-        biparser = ConfigurationBiparser(type(self), name)
-        text = biparser.encode(self)
-        return text
 

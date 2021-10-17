@@ -323,8 +323,7 @@ class FieldParser(cmd.ArgumentParser):
 
     def info(self, token):
         fields = self.parse(token)
-        field_hints = self.config_type.__field_hints__
-        return field_hints.get(fields, (None, None))[1]
+        return self.config_type.get_field_doc(fields)
 
 class ConfigCommand:
     def __init__(self, config, logger):
@@ -336,8 +335,11 @@ class ConfigCommand:
     @cmd.function_command
     def show(self):
         """Show configuration."""
+        biparser = cfg.ConfigurationBiparser(self.config.config_type, name=self.config.settings_name)
+        text = biparser.encode(self.config.current)
+
         self.logger.print(self.logger.emph(self.config.current_name+self.config.extension))
-        self.logger.print(self.config.current.as_string(name=self.config.settings_name))
+        self.logger.print(text)
 
     @cmd.function_command
     def has(self, field):
@@ -389,8 +391,8 @@ class ConfigCommand:
         """
         editor = self.config.current.menu.editor
 
-        annotation, _ = self.config.config_type.__field_hints__[field]
-        biparser = bp.from_type_hint(annotation, multiline=True)
+        field_type = self.config.config_type.get_field_type(field)
+        biparser = bp.from_type_hint(field_type, multiline=True)
 
         if self.config.current.has(field):
             value = self.config.current.get(field)
@@ -418,7 +420,7 @@ class ConfigCommand:
 
         except bp.DecodeError as e:
             with self.logger.warn():
-                self.logger.print("Failed to parse value:")
+                self.logger.print("Invalid syntax:")
                 self.logger.print(e)
 
         else:
@@ -434,7 +436,7 @@ class ConfigCommand:
 
     @set.arg_parser("value")
     def _set_value_parser(self, field):
-        annotation, _ = self.config.config_type.__field_hints__[field]
+        annotation = self.config.config_type.get_field_type(field)
         default = self.config.current.get(field)
         return cmd.LiteralParser(annotation, default)
 
