@@ -187,7 +187,7 @@ class DevicesCommand:
     @cmd.function_command
     def audio_input(self, device, samplerate=None, channels=None, format=None):
         """Configure audio input.
-        
+
         usage: devices \x1b[94maudio_input\x1b[m \x1b[92m{device}\x1b[m \
 [\x1b[95m--samplerate\x1b[m \x1b[92m{RATE}\x1b[m] \
 [\x1b[95m--channel\x1b[m \x1b[92m{CHANNEL}\x1b[m] \
@@ -239,7 +239,7 @@ class DevicesCommand:
     @cmd.function_command
     def audio_output(self, device, samplerate=None, channels=None, format=None):
         """Configure audio output.
-        
+
         usage: devices \x1b[94maudio_output\x1b[m \x1b[92m{device}\x1b[m \
 [\x1b[95m--samplerate\x1b[m \x1b[92m{RATE}\x1b[m] \
 [\x1b[95m--channel\x1b[m \x1b[92m{CHANNEL}\x1b[m] \

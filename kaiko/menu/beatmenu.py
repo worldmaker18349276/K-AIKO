@@ -322,7 +322,7 @@ class KAIKOMenu:
     @cmd.function_command
     def play(self, beatmap):
         """Let's beat with the song!
-        
+
         usage: \x1b[94mplay\x1b[m \x1b[92m{beatmap}\x1b[m
                          ╲
                Path, the path to the
@@ -360,7 +360,7 @@ class KAIKOMenu:
     @cmd.function_command
     def add(self, beatmap):
         """Add beatmap/beatmapset to your songs folder.
-        
+
         usage: \x1b[94madd\x1b[m \x1b[92m{beatmap}\x1b[m
                         ╲
               Path, the path to the
@@ -378,7 +378,7 @@ class KAIKOMenu:
     @cmd.function_command
     def remove(self, beatmap):
         """Remove beatmap/beatmapset in your songs folder.
-        
+
         usage: \x1b[94mremove\x1b[m \x1b[92m{beatmap}\x1b[m
                            ╲
                  Path, the path to the
@@ -444,7 +444,7 @@ class KAIKOMenu:
     @cmd.function_command
     def say(self, message, escape=False):
         """Say something to... yourself.
-        
+
         usage: \x1b[94msay\x1b[m \x1b[92m{message}\x1b[m [\x1b[95m--escape\x1b[m \x1b[92m{ESCAPE}\x1b[m]
                       ╱                    ╲
             text, the message               ╲

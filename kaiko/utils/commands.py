@@ -724,10 +724,13 @@ def getcmddesc(obj, name):
     doc = descriptor.__doc__
     if doc is None:
         return None
-    # outdent docstring
-    m = re.search("\\n[ ]*", doc)
+
+    return outdent(doc)
+
+def outdent(doc):
+    m = re.search(r"\n+[ ]*", doc)
     level = len(m.group(0)[1:]) if m else 0
-    return re.sub("\\n[ ]{,%d}"%level, "\\n", doc)
+    return re.sub(r"\n[ ]{,%d}"%level, r"\n", doc)
 
 class CommandDescriptor:
     r"""Command descriptor."""
