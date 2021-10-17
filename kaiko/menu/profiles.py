@@ -58,10 +58,8 @@ class ProfileManager:
 
         self.update()
 
-        if self.default_name in self.profiles:
-            self.use(self.default_name)
-        else:
-            self.new()
+        self.current_name = None
+        self.current = None
 
     def update(self):
         """Update the list of profiles.
@@ -98,6 +96,8 @@ class ProfileManager:
         ProfileTypeError
             If file type is wrong.
         """
+        if self.current_name is None:
+            raise ValueError("No profile")
         if not self.path.exists():
             raise ProfileTypeError("No such profile directory: " + str(self.path))
         self.default_name = self.current_name
@@ -116,6 +116,8 @@ class ProfileManager:
         EncodeError
             If encoding fails.
         """
+        if self.current_name is None:
+            raise ValueError("No profile")
         if not self.path.exists():
             raise ProfileTypeError("No such profile directory: " + str(self.path))
 
@@ -137,6 +139,8 @@ class ProfileManager:
         DecodeError
             If decoding fails.
         """
+        if self.current_name is None:
+            raise ValueError("No profile")
         self.current = self.config_type()
 
         current_path = self.path / (self.current_name + self.extension)
@@ -253,6 +257,8 @@ class ProfileManager:
         ProfileNameError
             If there is a duplicated profile name.
         """
+        if self.current_name is None:
+            raise ValueError("No profile")
         if self.current_name == name:
             return
 
@@ -312,7 +318,7 @@ class ConfigCommand:
     @cmd.function_command
     def show(self):
         """Show configuration."""
-        self.logger.print("profile: " + self.config.current_name)
+        self.logger.print(self.logger.emph(self.config.current_name+self.config.extension))
         self.logger.print(self.config.current.as_string(name=self.config.settings_name))
 
     @cmd.function_command

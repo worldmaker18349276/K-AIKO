@@ -5,6 +5,7 @@ import contextlib
 import threading
 from kaiko.utils import wcbuffers as wcb
 from kaiko.utils import datanodes as dn
+from kaiko.utils import config as cfg
 from kaiko.utils import commands as cmd
 
 
@@ -72,14 +73,33 @@ def prepare_pyaudio(logger):
     finally:
         manager.terminate()
 
+class KAIKOMenuSettings(cfg.Configurable):
+    data_icon: str = "\x1b[92m🗀 \x1b[m"
+    info_icon: str = "\x1b[94m🛠 \x1b[m"
+    hint_icon: str = "\x1b[93m💡 \x1b[m"
+
+    verb_attr: str = "2"
+    emph_attr: str = "1"
+    warn_attr: str = "31"
+
+    best_screen_size: int = 80
+    adjust_screen_delay: float = 1.0
+
 class KAIKOLogger:
-    def __init__(self, config):
+    def __init__(self, config=None):
         self.config = config
         self.level = 1
 
+    @property
+    def settings(self):
+        return self.config.current.menu if self.config else KAIKOMenuSettings()
+
+    def set_config(self, config):
+        self.config = config
+
     @contextlib.contextmanager
     def verb(self):
-        verb_attr = self.config.current.menu.verb_attr
+        verb_attr = self.settings.verb_attr
         level = self.level
         self.level = 0
         try:
@@ -91,7 +111,7 @@ class KAIKOLogger:
 
     @contextlib.contextmanager
     def warn(self):
-        warn_attr = self.config.current.menu.warn_attr
+        warn_attr = self.settings.warn_attr
         level = self.level
         self.level = 2
         try:
@@ -102,17 +122,17 @@ class KAIKOLogger:
             print("\x1b[m", flush=True)
 
     def emph(self, msg):
-        return wcb.add_attr(msg, self.config.current.menu.emph_attr)
+        return wcb.add_attr(msg, self.settings.emph_attr)
 
     def print(self, msg="", prefix=None, end="\n", flush=False):
         if prefix is None:
             print(msg, end=end, flush=flush)
         elif prefix == "data":
-            print(self.config.current.menu.data_icon + " " + msg, end=end, flush=flush)
+            print(self.settings.data_icon + " " + msg, end=end, flush=flush)
         elif prefix == "info":
-            print(self.config.current.menu.info_icon + " " + msg, end=end, flush=flush)
+            print(self.settings.info_icon + " " + msg, end=end, flush=flush)
         elif prefix == "hint":
-            print(self.config.current.menu.hint_icon + " " + msg, end=end, flush=flush)
+            print(self.settings.hint_icon + " " + msg, end=end, flush=flush)
 
     def fit_screen(self):
         r"""Guide user to adjust screen size.
@@ -122,8 +142,8 @@ class KAIKOLogger:
         fit_task : dn.DataNode
             The datanode to manage this process.
         """
-        width = self.config.current.menu.best_screen_size
-        delay = self.config.current.menu.adjust_screen_delay
+        width = self.settings.best_screen_size
+        delay = self.settings.adjust_screen_delay
 
         skip_event = threading.Event()
 

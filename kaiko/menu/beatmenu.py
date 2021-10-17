@@ -19,9 +19,9 @@ from kaiko.beats import beatshell
 from kaiko.beats import beatmaps
 from kaiko.beats import beatsheets
 from kaiko.beats import beatanalyzer
-from .profiles import ProfileManager, ConfigCommand
+from .profiles import ProfileManager, ConfigCommand, ProfileNameError, ProfileTypeError
 from .songs import BeatmapManager, KAIKOBGMController, BGMCommand
-from .devices import prepare_pyaudio, KAIKOLogger, DevicesCommand
+from .devices import prepare_pyaudio, KAIKOMenuSettings, KAIKOLogger, DevicesCommand
 
 
 logo = """
@@ -92,18 +92,6 @@ def echo_str(escaped_str):
 
     return re.sub(regex, repl, escaped_str)
 
-
-class KAIKOMenuSettings(cfg.Configurable):
-    data_icon: str = "\x1b[92m🗀 \x1b[m"
-    info_icon: str = "\x1b[94m🛠 \x1b[m"
-    hint_icon: str = "\x1b[93m💡 \x1b[m"
-
-    verb_attr: str = "2"
-    emph_attr: str = "1"
-    warn_attr: str = "31"
-
-    best_screen_size: int = 80
-    adjust_screen_delay: float = 1.0
 
 class KAIKOSettings(cfg.Configurable):
     menu = KAIKOMenuSettings
@@ -208,11 +196,28 @@ class KAIKOMenu:
     @contextlib.contextmanager
     def init(clz):
         r"""Initialize KAIKOMenu within a context manager."""
+        logger = KAIKOLogger()
+
         # load user data
         user = KAIKOUser.create()
         user.prepare()
         config = ProfileManager(KAIKOSettings, user.config_dir)
-        logger = KAIKOLogger(config)
+
+        # load config
+        if config.default_name is None:
+            config.new()
+
+        else:
+            try:
+                config.use()
+            except (ProfileNameError, ProfileTypeError, bp.DecodeError):
+                with logger.warn():
+                    logger.print("Failed to load default configuration")
+                    logger.print(traceback.format_exc(), end="")
+
+                config.new()
+
+        logger.set_config(config)
 
         # load PyAudio
         logger.print(f"Load PyAudio...", prefix="info")
