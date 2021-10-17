@@ -85,6 +85,8 @@ class KAIKOMenuSettings(cfg.Configurable):
     best_screen_size: int = 80
     adjust_screen_delay: float = 1.0
 
+    editor: str = "nano"
+
 class KAIKOLogger:
     def __init__(self, config=None):
         self.config = config

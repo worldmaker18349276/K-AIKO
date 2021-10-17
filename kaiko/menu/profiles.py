@@ -1,8 +1,26 @@
+import os
 import traceback
+import tempfile
+import subprocess
 from pathlib import Path
 from kaiko.utils import config as cfg
 from kaiko.utils import biparsers as bp
 from kaiko.utils import commands as cmd
+
+def exists(program):
+    if os.name == 'nt':
+        rc = subprocess.call(["where", program], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    else:
+        rc = subprocess.call(["which", program], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return rc == 0
+
+def edit(text, editor):
+    with tempfile.NamedTemporaryFile(mode="w+", suffix=".tmp") as file:
+        file.write(text)
+        file.flush()
+        subprocess.call([editor, file.name])
+        file.seek(0)
+        return file.read()
 
 class ProfileTypeError(Exception):
     pass
@@ -361,10 +379,53 @@ class ConfigCommand:
         """
         self.config.current.unset(field)
 
+    @cmd.function_command
+    def edit(self, field):
+        """Edit the value of this field in the configuration.
+
+        usage: \x1b[94mconfig\x1b[m \x1b[94medit\x1b[m \x1b[92m{field}\x1b[m
+                             ╱
+                      The field name.
+        """
+        editor = self.config.current.menu.editor
+        parser = self._set_value_parser(field)
+
+        if self.config.current.has(field):
+            value = self.config.current.get(field)
+            value_str = parser.biparser.encode(value)
+        else:
+            value_str = ""
+
+        # open editor
+        if not exists(editor):
+            with self.logger.warn():
+                self.logger.print(f"Unknown editor: {editor}")
+                return
+
+        res_str = edit(value_str, editor)
+
+        # parse result
+        res_str = res_str.strip()
+
+        if res_str is "":
+            self.config.current.unset(field)
+            return
+
+        try:
+            res = parser.parse(res_str)
+
+        except cmd.CommandParseError as e:
+            with self.logger.warn():
+                self.logger.print(e)
+
+        else:
+            self.config.current.set(field, res)
+
     @get.arg_parser("field")
     @has.arg_parser("field")
     @unset.arg_parser("field")
     @set.arg_parser("field")
+    @edit.arg_parser("field")
     def _field_parser(self):
         return FieldParser(self.config.config_type)
 
