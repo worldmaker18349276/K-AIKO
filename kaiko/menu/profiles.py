@@ -297,6 +297,11 @@ class FieldParser(cmd.ArgumentParser):
 
         return sugg
 
+    def info(self, token):
+        fields = self.parse(token)
+        field_hints = self.config_type.__field_hints__
+        return field_hints.get(fields, (None, None))[1]
+
 class ConfigCommand:
     def __init__(self, config, logger):
         self.config = config
@@ -359,7 +364,7 @@ class ConfigCommand:
 
     @set.arg_parser("value")
     def _set_value_parser(self, field):
-        annotation = self.config.config_type.get_configurable_fields()[field]
+        annotation, _ = self.config.config_type.__field_hints__[field]
         default = self.config.current.get(field)
         return cmd.LiteralParser(annotation, default)
 

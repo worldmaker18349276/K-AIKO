@@ -77,7 +77,7 @@ class ConfigurationBiparser(bp.Biparser):
         self.field_biparser = FieldBiparser(config_type)
 
     def decode(self, text, index=0, partial=False):
-        field_hints = self.config_type.get_configurable_fields()
+        field_hints = self.config_type.__field_hints__
 
         while index < len(text):
             m, index = bp.match(self.vindent, ["\n"], text, index, optional=True, partial=True)
@@ -99,7 +99,7 @@ class ConfigurationBiparser(bp.Biparser):
 
             _, index = bp.match(self.equal, [" = "], text, index, partial=True)
 
-            value_biparser = bp.from_type_hint(field_hints[field])
+            value_biparser = bp.from_type_hint(field_hints[field][0])
             value, index = value_biparser.decode(text, index, partial=True)
             config.set(field, value)
 
@@ -112,7 +112,7 @@ class ConfigurationBiparser(bp.Biparser):
 
         res += f"{self.name} = {self.config_type.__name__}()\n"
 
-        for field_key, field_type in self.config_type.get_configurable_fields().items():
+        for field_key, (field_type, field_doc) in self.config_type.__field_hints__.items():
             if not value.has(field_key):
                 continue
             field_value = value.get(field_key)
@@ -122,6 +122,11 @@ class ConfigurationBiparser(bp.Biparser):
             res += f"{self.name}.{field_name} = {field_value_str}\n"
 
         return res
+
+def outdent(doc):
+    m = re.search(r"\n+[ ]*", doc)
+    level = len(m.group(0)[1:]) if m else 0
+    return re.sub(r"\n[ ]{,%d}"%level, r"\n", doc)
 
 class ConfigurableMeta(type):
     def __init__(self, name, supers, attrs):
@@ -136,7 +141,13 @@ class ConfigurableMeta(type):
                     fields[name] = annotations[name]
                 elif isinstance(getattr(self, name), ConfigurableMeta):
                     fields[name] = getattr(self, name)
+
+        fields_doc = self._parse_fields_doc(self.__doc__)
+        field_hints = self._make_field_hints(fields, fields_doc)
+
         self.__configurable_fields__ = fields
+        self.__configurable_fields_doc__ = fields_doc
+        self.__field_hints__ = field_hints
 
     def __configurable_init__(self, instance):
         for field_name, field_type in self.__configurable_fields__.items():
@@ -149,24 +160,64 @@ class ConfigurableMeta(type):
         self.__init__(instance, *args, **kwargs)
         return instance
 
-    def get_configurable_fields(self):
-        """Get configurable fields of this configuration.
+    @staticmethod
+    def _parse_fields_doc(doc):
+        # r"""
+        # Fields
+        # ------
+        # field1 : type1
+        #     This is the field-level description for field 1.
+        # field2 : type2 or sth...
+        #     This is the field 2.
+        #     And bla bla bla.
+        # """
+
+        res = {}
+
+        if doc is None:
+            return res
+
+        doc = outdent(doc)
+
+        m = re.search(r"Fields\n------\n", doc)
+        if not m:
+            return res
+        doc = doc[m.end(0):]
+
+        while True:
+            m = re.match(r"([0-9a-zA-Z_]+) : [^\n]+(\n+(?:[ ]+[^\n]*\n+)*)", doc)
+            if not m:
+                return res
+            res[m.group(1)] = outdent(m.group(2)).strip()
+            doc = doc[m.end(0):]
+
+    @staticmethod
+    def _make_field_hints(fields, fields_doc):
+        """Make hints for configurable fields of this configuration.
+
+        Parameters
+        ----------
+        fields : dict
+            Dictionary of configurable fields.
+        fields_doc : dict
+            Docstring of configurable fields.
 
         Returns
         -------
         field_hints : dict
             A dictionary which maps a series of field names to its field type.
-            If it has item `(('a', 'b', 'c'), float)`, then this configuration
-            should have the field `config.a.b.c` with type `float`.
+            If it has item `(('a', 'b', 'c'), (float, "floating point number"))`,
+            then this configuration should have the field `config.a.b.c` with
+            type `float`.
         """
         field_hints = {}
-        for field_name, field_type in self.__configurable_fields__.items():
-            if not hasattr(field_type, '__configurable_fields__'):
-                field_hints[(field_name,)] = field_type
+        for field_name, field_type in fields.items():
+            if not isinstance(field_type, ConfigurableMeta):
+                field_doc = fields_doc.get(field_name, None)
+                field_hints[(field_name,)] = (field_type, field_doc)
             else:
-                subfield_hints = field_type.get_configurable_fields()
-                for subfield_names, subfield_type in subfield_hints.items():
-                    field_hints[(field_name, *subfield_names)] = subfield_type
+                for subfield_names, subfield_hint in field_type.__field_hints__.items():
+                    field_hints[(field_name, *subfield_names)] = subfield_hint
         return field_hints
 
 class Configurable(metaclass=ConfigurableMeta):
