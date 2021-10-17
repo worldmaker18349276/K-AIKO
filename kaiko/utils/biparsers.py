@@ -332,8 +332,9 @@ class ListBiparser(Biparser):
     delimiter = r"\s*,\s*"
     end = r"\s*\]"
 
-    def __init__(self, elem_biparser):
+    def __init__(self, elem_biparser, multiline=False):
         self.elem_biparser = elem_biparser
+        self.multiline = multiline
 
     def decode(self, text, index=0, partial=False):
         res = []
@@ -365,7 +366,12 @@ class ListBiparser(Biparser):
                 raise EncodeError(value, f"[{i}]{e.pos}", e.expected)
             elems_strs.append(elem_str)
 
-        return "[" + ", ".join(elems_strs) + "]"
+        if not self.multiline:
+            return "[" + ", ".join(elems_strs) + "]"
+        elif not elems_strs:
+            return "[]"
+        else:
+            return "[\n    " + ",\n".join(elems_strs).replace("\n", "\n    ") + "\n]"
 
 class SetBiparser(Biparser):
     empty = "set\(\)"
@@ -373,8 +379,9 @@ class SetBiparser(Biparser):
     delimiter = r"\s*,\s*"
     end = r"\s*\}"
 
-    def __init__(self, elem_biparser):
+    def __init__(self, elem_biparser, multiline=False):
         self.elem_biparser = elem_biparser
+        self.multiline = multiline
 
     def decode(self, text, index=0, partial=False):
         res = set()
@@ -409,7 +416,12 @@ class SetBiparser(Biparser):
                 raise EncodeError(value, f"[{i}]{e.pos}", e.expected)
             elems_strs.append(elem_str)
 
-        return "{" + ", ".join(elems_strs) + "}"
+        if not self.multiline:
+            return "{" + ", ".join(elems_strs) + "}"
+        elif not elems_strs:
+            return "set()"
+        else:
+            return "{\n    " + ",\n".join(elems_strs).replace("\n", "\n    ") + "\n}"
 
 class DictBiparser(Biparser):
     start = r"\{\s*"
@@ -417,9 +429,10 @@ class DictBiparser(Biparser):
     delimiter = r"\s*,\s*"
     end = r"\s*\}"
 
-    def __init__(self, key_biparser, value_biparser):
+    def __init__(self, key_biparser, value_biparser, multiline=False):
         self.key_biparser = key_biparser
         self.value_biparser = value_biparser
+        self.multiline = multiline
 
     def decode(self, text, index=0, partial=False):
         res = dict()
@@ -459,15 +472,21 @@ class DictBiparser(Biparser):
 
             items_str.append(key_str + ": " + value_str)
 
-        return "{" + ", ".join(items_str) + "}"
+        if not self.multiline:
+            return "{" + ", ".join(items_str) + "}"
+        elif not items_str:
+            return "{}"
+        else:
+            return "{\n    " + ",\n".join(items_str).replace("\n", "\n    ") + "\n}"
 
 class TupleBiparser(Biparser):
     start = r"\(\s*"
     delimiter = r"\s*,\s*"
     end = r"\s*\)"
 
-    def __init__(self, elems_biparsers):
+    def __init__(self, elems_biparsers, multiline=False):
         self.elems_biparsers = elems_biparsers
+        self.multiline = multiline
 
     def decode(self, text, index=0, partial=False):
         res = []
@@ -503,8 +522,10 @@ class TupleBiparser(Biparser):
             return "()"
         elif length == 1:
             return "(" + elems_str[0] + ",)"
-        else:
+        elif not self.multiline:
             return "(" + ", ".join(elems_str) + ")"
+        else:
+            return "(\n    " + ",\n".join(elems_str).replace("\n", "\n    ") + "\n)"
 
 class DataclassBiparser(Biparser):
     start = r"\(\s*"
@@ -512,9 +533,10 @@ class DataclassBiparser(Biparser):
     delimiter = r"\s*,\s*"
     end = r"\s*\)"
 
-    def __init__(self, clz, fields_biparsers):
+    def __init__(self, clz, fields_biparsers, multiline=False):
         self.clz = clz
         self.fields_biparsers = fields_biparsers
+        self.multiline = multiline
 
     def decode(self, text, index=0, partial=False):
         res = dict()
@@ -547,7 +569,12 @@ class DataclassBiparser(Biparser):
 
             fields_str.append(name + "=" + value_str)
 
-        return self.clz.__name__ + "(" + ", ".join(fields_str) + ")"
+        if not self.multiline:
+            return self.clz.__name__ + "(" + ", ".join(fields_str) + ")"
+        elif not fields_str:
+            return self.clz.__name__ + "()"
+        else:
+            return self.clz.__name__ + "(\n    " + ",\n".join(fields_str).replace("\n", "\n    ") + "\n)"
 
 
 class UnionBiparser(Biparser):
@@ -598,13 +625,14 @@ class EnumBiparser(Biparser):
         return self.enum_class.__name__ + "." + value.name
 
 
-def from_type_hint(type_hint):
+def from_type_hint(type_hint, multiline=False):
     """Make Biparser from type hint.
 
     Parameters
     ----------
     type_hint : type or type hint
         the type to parse.
+    multiline : bool, optional
 
     Returns
     -------
@@ -635,35 +663,36 @@ def from_type_hint(type_hint):
     elif type_hint == bytes:
         return BytesBiparser()
 
-    elif isinstance(type_hint, type) and dataclasses.is_dataclass(type_hint):
-        fields = {field.name : from_type_hint(field.type) for field in type_hint.__dataclass_fields__.values()}
-        return DataclassBiparser(type_hint, fields)
-
     elif isinstance(type_hint, type) and issubclass(type_hint, enum.Enum):
         return EnumBiparser(type_hint)
 
+    elif isinstance(type_hint, type) and dataclasses.is_dataclass(type_hint):
+        fields = {field.name : from_type_hint(field.type, multiline)
+                  for field in type_hint.__dataclass_fields__.values()}
+        return DataclassBiparser(type_hint, fields, multiline)
+
     elif getattr(type_hint, '__origin__', None) == typing.List:
-        elem = from_type_hint(type_hint.__args__[0])
-        return ListBiparser(elem)
+        elem = from_type_hint(type_hint.__args__[0], multiline)
+        return ListBiparser(elem, multiline)
 
     elif getattr(type_hint, '__origin__', None) == typing.Set:
-        elem = from_type_hint(type_hint.__args__[0])
-        return SetBiparser(elem)
+        elem = from_type_hint(type_hint.__args__[0], multiline)
+        return SetBiparser(elem, multiline)
 
     elif getattr(type_hint, '__origin__', None) == typing.Tuple:
         if len(type_hint.__args__) == 1 and type_hint.__args__[0] == ():
             elems = []
         else:
-            elems = [from_type_hint(arg) for arg in type_hint.__args__]
-        return TupleBiparser(elems)
+            elems = [from_type_hint(arg, multiline) for arg in type_hint.__args__]
+        return TupleBiparser(elems, multiline)
 
     elif getattr(type_hint, '__origin__', None) == typing.Dict:
-        key = from_type_hint(type_hint.__args__[0])
-        value = from_type_hint(type_hint.__args__[1])
-        return DictBiparser(key, value)
+        key = from_type_hint(type_hint.__args__[0], False)
+        value = from_type_hint(type_hint.__args__[1], multiline)
+        return DictBiparser(key, value, multiline)
 
     elif getattr(type_hint, '__origin__', None) == typing.Union:
-        options = [from_type_hint(arg) for arg in type_hint.__args__]
+        options = [from_type_hint(arg, multiline) for arg in type_hint.__args__]
         return UnionBiparser(options)
 
     else:

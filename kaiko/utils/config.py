@@ -99,7 +99,7 @@ class ConfigurationBiparser(bp.Biparser):
 
             _, index = bp.match(self.equal, [" = "], text, index, partial=True)
 
-            value_biparser = bp.from_type_hint(field_hints[field][0])
+            value_biparser = bp.from_type_hint(field_hints[field][0], multiline=True)
             value, index = value_biparser.decode(text, index, partial=True)
             config.set(field, value)
 
@@ -117,7 +117,7 @@ class ConfigurationBiparser(bp.Biparser):
                 continue
             field_value = value.get(field_key)
             field_name = self.field_biparser.encode(field_key)
-            value_biparser = bp.from_type_hint(field_type)
+            value_biparser = bp.from_type_hint(field_type, multiline=True)
             field_value_str = value_biparser.encode(field_value)
             res += f"{self.name}.{field_name} = {field_value_str}\n"
 

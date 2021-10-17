@@ -388,11 +388,13 @@ class ConfigCommand:
                       The field name.
         """
         editor = self.config.current.menu.editor
-        parser = self._set_value_parser(field)
+
+        annotation, _ = self.config.config_type.__field_hints__[field]
+        biparser = bp.from_type_hint(annotation, multiline=True)
 
         if self.config.current.has(field):
             value = self.config.current.get(field)
-            value_str = parser.biparser.encode(value)
+            value_str = biparser.encode(value)
         else:
             value_str = ""
 
@@ -407,15 +409,16 @@ class ConfigCommand:
         # parse result
         res_str = res_str.strip()
 
-        if res_str is "":
+        if res_str == "":
             self.config.current.unset(field)
             return
 
         try:
-            res = parser.parse(res_str)
+            res, _ = biparser.decode(res_str)
 
-        except cmd.CommandParseError as e:
+        except bp.DecodeError as e:
             with self.logger.warn():
+                self.logger.print("Failed to parse value:")
                 self.logger.print(e)
 
         else:
