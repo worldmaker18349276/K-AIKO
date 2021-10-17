@@ -187,30 +187,13 @@ class KAIKOMenu:
 
     @staticmethod
     def main():
-        dt = 0.01
-        with KAIKOMenu.init() as menu:
-            menu.run().exhaust(dt=dt, interruptible=True)
-
-    @classmethod
-    @contextlib.contextmanager
-    def init(clz):
-        r"""Initialize KAIKOMenu within a context manager."""
         # print logo
         print(logo, flush=True)
 
         try:
-            # load user data
-            user = KAIKOUser.create()
-            user.prepare()
-            config = ProfileManager(KAIKOSettings, user.config_dir)
-            logger = KAIKOLogger(config)
-
-            # load PyAudio
-            logger.print(f"Load PyAudio...", prefix="info")
-            logger.print()
-
-            with prepare_pyaudio(logger) as manager:
-                yield clz(config, user, manager, logger)
+            dt = 0.01
+            with KAIKOMenu.init() as menu:
+                menu.run().exhaust(dt=dt, interruptible=True)
 
         except KeyboardInterrupt:
             pass
@@ -220,6 +203,23 @@ class KAIKOMenu:
             print("\x1b[31m", end="")
             print(traceback.format_exc(), end="")
             print(f"\x1b[m", end="")
+
+    @classmethod
+    @contextlib.contextmanager
+    def init(clz):
+        r"""Initialize KAIKOMenu within a context manager."""
+        # load user data
+        user = KAIKOUser.create()
+        user.prepare()
+        config = ProfileManager(KAIKOSettings, user.config_dir)
+        logger = KAIKOLogger(config)
+
+        # load PyAudio
+        logger.print(f"Load PyAudio...", prefix="info")
+        logger.print()
+
+        with prepare_pyaudio(logger) as manager:
+            yield clz(config, user, manager, logger)
 
     @dn.datanode
     def run(self):
