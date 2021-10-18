@@ -6,6 +6,7 @@ from pathlib import Path
 from kaiko.utils import config as cfg
 from kaiko.utils import biparsers as bp
 from kaiko.utils import commands as cmd
+from kaiko.utils import datanodes as dn
 
 def exists(program):
     if os.name == 'nt':
@@ -14,13 +15,16 @@ def exists(program):
         rc = subprocess.call(["which", program], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     return rc == 0
 
+@dn.datanode
 def edit(text, editor):
-    with tempfile.NamedTemporaryFile(mode="w+", suffix=".tmp") as file:
+    with tempfile.NamedTemporaryFile(mode='w+', suffix=".tmp") as file:
         file.write(text)
         file.flush()
-        subprocess.call([editor, file.name])
-        file.seek(0)
-        return file.read()
+
+        with dn.subprocess_task([editor, file.name]) as task:
+            yield from task.join((yield))
+
+        return open(file.name, mode='r').read()
 
 class ProfileTypeError(Exception):
     pass
@@ -382,6 +386,7 @@ class ConfigCommand:
         self.config.current.unset(field)
 
     @cmd.function_command
+    @dn.datanode
     def edit(self, field):
         """Edit the value of this field in the configuration.
 
@@ -400,13 +405,17 @@ class ConfigCommand:
         else:
             value_str = ""
 
+        yield
+
         # open editor
         if not exists(editor):
             with self.logger.warn():
                 self.logger.print(f"Unknown editor: {editor}")
                 return
 
-        res_str = edit(value_str, editor)
+        with edit(value_str, editor) as edit_task:
+            yield from edit_task.join((yield))
+            res_str = edit_task.result
 
         # parse result
         res_str = res_str.strip()

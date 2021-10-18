@@ -7,6 +7,7 @@ from collections import OrderedDict
 import contextlib
 import queue
 import threading
+import subprocess
 import signal
 import shutil
 import termios
@@ -1110,6 +1111,18 @@ def _stream_task(stream, error):
         stream.close()
         if not error.empty():
             raise error.get()
+
+@datanode
+def subprocess_task(command):
+    yield
+    proc = subprocess.Popen(command)
+    try:
+        yield
+        while proc.poll() is None:
+            yield
+    finally:
+        proc.kill()
+    return proc.returncode
 
 @datanode
 def create_task(func):
