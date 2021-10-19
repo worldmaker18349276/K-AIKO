@@ -77,11 +77,16 @@ class ProfileManager:
 
         self.config_type = config_type
         self.path = path
+        self.profiles = []
+        self.default_name = None
+        self.current_name = None
+        self.current = None
+        self._profiles_mtime = None
 
         self.update()
 
-        self.current_name = None
-        self.current = None
+    def is_uptodate(self):
+        return self._profiles_mtime == os.stat(str(self.path)).st_mtime
 
     def update(self):
         """Update the list of profiles.
@@ -91,6 +96,8 @@ class ProfileManager:
         ProfileTypeError
             If file type is wrong.
         """
+        self._profiles_mtime = os.stat(str(self.path)).st_mtime
+
         self.profiles = []
         self.default_name = None
 
@@ -452,6 +459,31 @@ class ConfigCommand:
     # profiles
 
     @cmd.function_command
+    def profiles(self):
+        """Show all profiles.
+
+        usage: \x1b[94mconfig\x1b[m \x1b[94mprofiles\x1b[m
+        """
+        logger = self.logger
+
+        if not self.config.is_uptodate():
+            self.config.update()
+
+        try:
+            for profile in self.config.profiles:
+                note = ""
+                if profile == self.config.default_name:
+                    note += " (default)"
+                if profile == self.config.current_name:
+                    note += " (current)"
+                logger.print(logger.emph(profile + self.config.extension) + note)
+
+        except (ProfileNameError, ProfileTypeError, bp.DecodeError):
+            with self.logger.warn():
+                self.logger.print("Failed to load configuration")
+                self.logger.print(traceback.format_exc(), end="")
+
+    @cmd.function_command
     def reload(self):
         """Reload configuration."""
         logger = self.logger
@@ -459,7 +491,8 @@ class ConfigCommand:
         logger.print(f"Load configuration from {logger.emph(self.config.path.as_uri())}...", prefix="data")
         logger.print()
 
-        self.config.update()
+        if not self.config.is_uptodate():
+            self.config.update()
 
         try:
             self.config.load()
@@ -476,6 +509,9 @@ class ConfigCommand:
         logger.print(f"Save configuration to {logger.emph(self.config.path.as_uri())}...", prefix="data")
         logger.print()
 
+        if not self.config.is_uptodate():
+            self.config.update()
+
         try:
             self.config.save()
         except (ProfileNameError, ProfileTypeError, bp.EncodeError):
@@ -489,6 +525,9 @@ class ConfigCommand:
 
         usage: \x1b[94mconfig\x1b[m \x1b[94mset_default\x1b[m
         """
+        if not self.config.is_uptodate():
+            self.config.update()
+
         try:
             self.config.set_default()
         except (ProfileNameError, ProfileTypeError):
@@ -504,6 +543,9 @@ class ConfigCommand:
                               ╱
                      The profile name.
         """
+        if not self.config.is_uptodate():
+            self.config.update()
+
         try:
             self.config.use(profile)
         except (ProfileNameError, ProfileTypeError, bp.DecodeError):
@@ -519,6 +561,9 @@ class ConfigCommand:
                                 ╱
                       The profile name.
         """
+        if not self.config.is_uptodate():
+            self.config.update()
+
         if not profile.isprintable() or "/" in profile:
             with self.logger.warn():
                 self.logger.print("Invalid profile name.")
@@ -544,6 +589,9 @@ class ConfigCommand:
                               ╱                    ╲
                      The profile name.      The profile to be cloned.
         """
+        if not self.config.is_uptodate():
+            self.config.update()
+
         if not profile.isprintable() or "/" in profile:
             with self.logger.warn():
                 self.logger.print("Invalid profile name.")
@@ -569,6 +617,9 @@ class ConfigCommand:
                                 ╱
                        he profile name.
         """
+        if not self.config.is_uptodate():
+            self.config.update()
+
         try:
             self.config.delete(profile)
         except (ProfileNameError, ProfileTypeError):
