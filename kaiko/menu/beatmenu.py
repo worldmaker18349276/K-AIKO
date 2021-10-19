@@ -7,6 +7,7 @@ import dataclasses
 import traceback
 import zipfile
 import getpass
+import shutil
 import pkgutil
 from pathlib import Path
 import appdirs
@@ -127,12 +128,9 @@ class KAIKOUser:
 
         return True
 
-    def prepare(self):
+    def prepare(self, logger):
         if self.is_prepared():
             return
-
-        config = ProfileManager(KAIKOSettings, self.config_dir)
-        logger = KAIKOLogger(config)
 
         # start up
         logger.print(f"Prepare your profile...", prefix="data")
@@ -153,6 +151,14 @@ class KAIKOUser:
 
         logger.print(f"Your data will be stored in {logger.emph(self.data_dir.as_uri())}", prefix="data")
         logger.print(flush=True)
+
+    def remove(self, logger):
+        logger.print(f"Remove config directory {logger.emph(self.config_dir.as_uri())}...", prefix="data")
+        shutil.rmtree(str(self.config_dir))
+        logger.print(f"Remove songs directory {logger.emph(self.songs_dir.as_uri())}...", prefix="data")
+        shutil.rmtree(str(self.songs_dir))
+        logger.print(f"Remove data directory {logger.emph(self.data_dir.as_uri())}...", prefix="data")
+        shutil.rmtree(str(self.data_dir))
 
 
 class KAIKOMenu:
@@ -200,7 +206,7 @@ class KAIKOMenu:
 
         # load user data
         user = KAIKOUser.create()
-        user.prepare()
+        user.prepare(logger)
         config = ProfileManager(KAIKOSettings, user.config_dir)
 
         # load config
@@ -480,10 +486,32 @@ class KAIKOMenu:
                                             " the default is False.")
 
     @cmd.function_command
-    def exit(self):
+    def bye(self):
         """Close K-AIKO."""
-        self.logger.print("bye~")
+        self.logger.print("Bye~")
         raise KeyboardInterrupt
+
+    @cmd.function_command
+    def bye_forever(self):
+        """Clean up all your data and close K-AIKO."""
+        logger = self.logger
+
+        logger.print("This command will clean up all your data.")
+        logger.print(f"Do you really want to do that? [y/{logger.emph('n')}]:", end="")
+        res = input()
+
+        while True:
+            if res in ("y", "Y"):
+                self.user.remove(logger)
+                logger.print("Good luck~")
+                raise KeyboardInterrupt
+
+            elif res in ("n", "N", ""):
+                return
+
+            logger.print(f"Please reply {logger.emph('y')} or {logger.emph('n')}:", end="")
+            res = input()
+
 
 
 class KAIKOPlay:
