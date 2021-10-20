@@ -697,7 +697,7 @@ class Controller:
                     elif keycode.isprintable():
                         keyname = "PRINTABLE"
                     else:
-                        keyname = None
+                        keyname = repr(keycode)
 
                     time_ = time - ref_time
                     try:
