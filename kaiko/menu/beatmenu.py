@@ -22,7 +22,7 @@ from kaiko.beats import beatsheets
 from kaiko.beats import beatanalyzer
 from .profiles import ProfileManager, ConfigCommand, ProfileNameError, ProfileTypeError
 from .songs import BeatmapManager, KAIKOBGMController, BGMCommand
-from .devices import prepare_pyaudio, KAIKOMenuSettings, KAIKOLogger, DevicesCommand
+from .devices import prepare_pyaudio, KAIKOMenuSettings, KAIKOLogger, DevicesCommand, determine_unicode_version
 
 
 logo = """
@@ -186,6 +186,10 @@ class KAIKOMenu:
 
         try:
             dt = 0.01
+
+            with KAIKOMenu.pre() as pre_task:
+                pre_task.exhaust(dt=dt, interruptible=True)
+
             with KAIKOMenu.init() as menu:
                 menu.run().exhaust(dt=dt, interruptible=True)
 
@@ -197,6 +201,18 @@ class KAIKOMenu:
             print("\x1b[31m", end="")
             print(traceback.format_exc(), end="")
             print(f"\x1b[m", end="")
+
+    @staticmethod
+    @dn.datanode
+    def pre():
+        if "UNICODE_VERSION" in os.environ:
+            yield
+            return
+        with determine_unicode_version() as task:
+            yield from task.join((yield))
+            version = task.result
+        if version is not None:
+            os.environ["UNICODE_VERSION"] = version
 
     @classmethod
     @contextlib.contextmanager
