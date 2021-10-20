@@ -243,8 +243,13 @@ class KAIKOMenu:
             raise ValueError("please connect to interactive terminal device.")
 
         # fit screen size
-        with logger.fit_screen() as fit_task:
-            yield from fit_task.join((yield))
+        size = shutil.get_terminal_size()
+        width = self.settings.menu.best_screen_size
+        if size.columns < width:
+            logger.print("Your screen size seems too small.")
+
+            with logger.fit_screen() as fit_task:
+                yield from fit_task.join((yield))
 
         # load songs
         self.reload()

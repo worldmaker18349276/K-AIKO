@@ -1,4 +1,5 @@
 import os
+import time
 import shutil
 import pyaudio
 import contextlib
@@ -156,45 +157,43 @@ class KAIKOLogger:
             size = yield
             current_width = 0
 
-            if size.columns < width:
-                t = time.time()
+            t = time.time()
 
-                self.print("Your screen size seems too small.")
-                self.print(f"Can you adjust the width to (or bigger than) {width}?")
-                self.print(f"Or {self.emph('Esc')} to skip this process.")
-                self.print("You can try to fit the line below.")
-                self.print("━"*width, flush=True)
+            self.print(f"Can you adjust the width to (or bigger than) {width}?")
+            self.print(f"Or {self.emph('Esc')} to skip this process.")
+            self.print("You can try to fit the line below.")
+            self.print("━"*width, flush=True)
 
-                while current_width < width or time.time() < t+delay:
-                    if skip_event.is_set():
-                        self.print()
-                        break
-
-                    if current_width != size.columns:
-                        current_width = size.columns
-                        t = time.time()
-                        if current_width < width - 5:
-                            hint = "(too small!)"
-                        elif current_width < width:
-                            hint = "(very close!)"
-                        elif current_width == width:
-                            hint = "(perfect!)"
-                        else:
-                            hint = "(great!)"
-                        self.print(f"\r\x1b[KCurrent width: {current_width} {hint}", end="", flush=True)
-
-                    size = yield
-
-                else:
+            while current_width < width or time.time() < t+delay:
+                if skip_event.is_set():
                     self.print()
-                    self.print("Thanks!")
+                    break
 
-                self.print("You can adjust the screen size at any time.\n", flush=True)
+                if current_width != size.columns:
+                    current_width = size.columns
+                    t = time.time()
+                    if current_width < width - 5:
+                        hint = "(too small!)"
+                    elif current_width < width:
+                        hint = "(very close!)"
+                    elif current_width == width:
+                        hint = "(perfect!)"
+                    else:
+                        hint = "(great!)"
+                    self.print(f"\r\x1b[KCurrent width: {current_width} {hint}", end="", flush=True)
 
-                # sleep
-                t = time.time()
-                while time.time() < t+delay:
-                    yield
+                size = yield
+
+            else:
+                self.print()
+                self.print("Thanks!")
+
+            self.print("You can adjust the screen size at any time.\n", flush=True)
+
+            # sleep
+            t = time.time()
+            while time.time() < t+delay:
+                yield
 
         return dn.pipe(skip, dn.terminal_size(), fit())
 
@@ -349,6 +348,12 @@ class DevicesCommand:
         self.logger.print(f"VTE version: {vte}")
         self.logger.print(f"unicode version: {uni}")
         self.logger.print(f"terminal size: {size.columns}×{size.lines}")
+
+    @cmd.function_command
+    def fit_screen(self):
+        """Fit your terminal screen."""
+
+        return self.logger.fit_screen()
 
 class PyAudioDeviceParser(cmd.ArgumentParser):
     def __init__(self, manager, is_input):
