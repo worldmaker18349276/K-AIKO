@@ -1133,7 +1133,7 @@ def create_task(func):
     def run():
         try:
             res.put(func(stop_event))
-        except e:
+        except Exception as e:
             error.put(e)
 
     thread = threading.Thread(target=run)

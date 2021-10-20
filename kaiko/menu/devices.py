@@ -1,9 +1,11 @@
 import os
+import re
 import time
 import shutil
 import pyaudio
 import contextlib
 import threading
+import queue
 from kaiko.utils import wcbuffers as wcb
 from kaiko.utils import datanodes as dn
 from kaiko.utils import config as cfg
@@ -197,6 +199,63 @@ class KAIKOLogger:
 
         return dn.pipe(skip, dn.terminal_size(), fit())
 
+@dn.datanode
+def determine_unicode_version():
+    pattern = re.compile(r"\x1b\[(\d*);(\d*)R")
+    channel = queue.Queue()
+
+    def get_pos(arg):
+        m = pattern.match(arg[1])
+        if not m:
+            return
+        x = int(m.group(2) or "1") - 1
+        channel.put(x)
+
+    @dn.datanode
+    def query_pos():
+        previous_version = '4.1.0'
+        wide_by_version = [
+            ('5.1.0', '龼'),
+            ('5.2.0', '🈯'),
+            ('6.0.0', '🈁'),
+            ('8.0.0', '🉐'),
+            ('9.0.0', '🐹'),
+            ('10.0.0', '🦖'),
+            ('11.0.0', '🧪'),
+            ('12.0.0', '🪐'),
+            ('12.1.0', '㋿'),
+            ('13.0.0', '🫕'),
+        ]
+
+        yield
+
+        for version, wchar in wide_by_version:
+            print("\r\x1b[K", end="", flush=True)
+            print(wchar, end="", flush=True)
+            print("\x1b[6n", end="", flush=True)
+
+            while True:
+                yield
+                try:
+                    x = channel.get(False)
+                except queue.Empty:
+                    continue
+                else:
+                    break
+
+            if x == 1:
+                break
+
+            previous_version = version
+
+        print("\r\x1b[K", end="", flush=True)
+        return previous_version
+
+    query_task = query_pos()
+    with dn.pipe(dn.input(get_pos), query_task) as task:
+        yield from task.join((yield))
+    return query_task.result
+
 class DevicesCommand:
     def __init__(self, config, logger, manager):
         self.config = config
@@ -383,6 +442,21 @@ class DevicesCommand:
                     return
 
         return dn.input(handler())
+
+    @cmd.function_command
+    @dn.datanode
+    def ucs_detect(self):
+        """Determines the unicode version of your terminal."""
+        with determine_unicode_version() as task:
+            yield from task.join((yield))
+            version = task.result
+
+        if version is None:
+            with self.logger.warn():
+                self.logger.print("Fail to determine unicode version")
+        else:
+            self.logger.print(f"Your unicode version: {self.logger.emph(version)}")
+
 
 class PyAudioDeviceParser(cmd.ArgumentParser):
     def __init__(self, manager, is_input):
