@@ -355,6 +355,35 @@ class DevicesCommand:
 
         return self.logger.fit_screen()
 
+    @cmd.function_command
+    def keylog(self):
+        """Test your keyboard."""
+
+        logger = self.logger
+        keycodes = self.config.current.devices.controller.keycodes
+
+        logger.print(f"Press {logger.emph('Esc')} to end keylog.")
+        logger.print()
+        logger.print(f"{logger.emph('<keyname>')} (<keycode>)")
+
+        @dn.datanode
+        def handler():
+            while True:
+                _, code = yield
+                if code in keycodes:
+                    keyname = keycodes[code]
+                elif code.isprintable():
+                    keyname = "PRINTABLE"
+                else:
+                    keyname = repr(code)
+
+                logger.print(f"{logger.emph(keyname)} ({repr(code)})")
+
+                if code == '\x1b':
+                    return
+
+        return dn.input(handler())
+
 class PyAudioDeviceParser(cmd.ArgumentParser):
     def __init__(self, manager, is_input):
         self.manager = manager
