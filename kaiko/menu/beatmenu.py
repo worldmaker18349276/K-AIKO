@@ -22,7 +22,8 @@ from kaiko.beats import beatsheets
 from kaiko.beats import beatanalyzer
 from .profiles import ProfileManager, ConfigCommand, ProfileNameError, ProfileTypeError
 from .songs import BeatmapManager, KAIKOBGMController, BGMCommand
-from .devices import prepare_pyaudio, KAIKOMenuSettings, KAIKOLogger, DevicesCommand, determine_unicode_version
+from .devices import (prepare_pyaudio, KAIKOMenuSettings, KAIKOLogger, DevicesCommand,
+    determine_unicode_version, fit_screen)
 
 
 logo = """
@@ -257,7 +258,7 @@ class KAIKOMenu:
         if size.columns < width:
             logger.print("Your screen size seems too small.", prefix="hint")
 
-            with logger.fit_screen() as fit_task:
+            with fit_screen(logger) as fit_task:
                 yield from fit_task.join((yield))
 
         # load songs

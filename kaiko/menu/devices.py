@@ -81,6 +81,70 @@ def prepare_pyaudio(logger):
     finally:
         manager.terminate()
 
+def fit_screen(logger):
+    r"""Guide user to adjust screen size.
+
+    Parameters
+    ----------
+    logger : KAIKOLogger
+
+    Returns
+    -------
+    fit_task : dn.DataNode
+        The datanode to manage this process.
+    """
+    width = logger.settings.best_screen_size
+    delay = logger.settings.adjust_screen_delay
+
+    skip_event = threading.Event()
+
+    skip = dn.input(lambda a: skip_event.set() if a[1] == '\x1b' else None)
+
+    @dn.datanode
+    def fit():
+        size = yield
+        current_width = 0
+
+        t = time.time()
+
+        logger.print(f"Can you adjust the width to (or bigger than) {width}?")
+        logger.print(f"Or {logger.emph('Esc')} to skip this process.")
+        logger.print("You can try to fit the line below.")
+        logger.print("━"*width, flush=True)
+
+        while current_width < width or time.time() < t+delay:
+            if skip_event.is_set():
+                logger.print()
+                break
+
+            if current_width != size.columns:
+                current_width = size.columns
+                t = time.time()
+                if current_width < width - 5:
+                    hint = "(too small!)"
+                elif current_width < width:
+                    hint = "(very close!)"
+                elif current_width == width:
+                    hint = "(perfect!)"
+                else:
+                    hint = "(great!)"
+                logger.print(f"\r\x1b[KCurrent width: {current_width} {hint}", end="", flush=True)
+
+            size = yield
+
+        else:
+            logger.print()
+            logger.print("Thanks!")
+
+        logger.print("You can adjust the screen size at any time.\n", flush=True)
+
+        # sleep
+        t = time.time()
+        while time.time() < t+delay:
+            yield
+
+    return dn.pipe(skip, dn.terminal_size(), fit())
+
 class KAIKOMenuSettings(cfg.Configurable):
     data_icon: str = "\x1b[92m🗀 \x1b[m"
     info_icon: str = "\x1b[94m🛠 \x1b[m"
@@ -143,66 +207,6 @@ class KAIKOLogger:
             print(self.settings.info_icon + " " + msg, end=end, flush=flush)
         elif prefix == "hint":
             print(self.settings.hint_icon + " " + msg, end=end, flush=flush)
-
-    def fit_screen(self):
-        r"""Guide user to adjust screen size.
-
-        Returns
-        -------
-        fit_task : dn.DataNode
-            The datanode to manage this process.
-        """
-        width = self.settings.best_screen_size
-        delay = self.settings.adjust_screen_delay
-
-        skip_event = threading.Event()
-
-        skip = dn.input(lambda a: skip_event.set() if a[1] == '\x1b' else None)
-
-        @dn.datanode
-        def fit():
-            size = yield
-            current_width = 0
-
-            t = time.time()
-
-            self.print(f"Can you adjust the width to (or bigger than) {width}?")
-            self.print(f"Or {self.emph('Esc')} to skip this process.")
-            self.print("You can try to fit the line below.")
-            self.print("━"*width, flush=True)
-
-            while current_width < width or time.time() < t+delay:
-                if skip_event.is_set():
-                    self.print()
-                    break
-
-                if current_width != size.columns:
-                    current_width = size.columns
-                    t = time.time()
-                    if current_width < width - 5:
-                        hint = "(too small!)"
-                    elif current_width < width:
-                        hint = "(very close!)"
-                    elif current_width == width:
-                        hint = "(perfect!)"
-                    else:
-                        hint = "(great!)"
-                    self.print(f"\r\x1b[KCurrent width: {current_width} {hint}", end="", flush=True)
-
-                size = yield
-
-            else:
-                self.print()
-                self.print("Thanks!")
-
-            self.print("You can adjust the screen size at any time.\n", flush=True)
-
-            # sleep
-            t = time.time()
-            while time.time() < t+delay:
-                yield
-
-        return dn.pipe(skip, dn.terminal_size(), fit())
 
 @dn.datanode
 def determine_unicode_version(logger):
@@ -456,7 +460,7 @@ class DevicesCommand:
     def fit_screen(self):
         """Fit your terminal screen."""
 
-        return self.logger.fit_screen()
+        return fit_screen(self.logger)
 
     @cmd.function_command
     def keylog(self):
