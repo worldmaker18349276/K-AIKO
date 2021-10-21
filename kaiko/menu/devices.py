@@ -287,7 +287,26 @@ class DevicesCommand:
 
     @cmd.function_command
     def audio(self):
-        print_pyaudio_info(self.manager, self.logger)
+        logger = self.logger
+        print_pyaudio_info(self.manager, logger)
+
+        logger.print()
+
+        device = self.config.current.devices.detector.input_device
+        if device == -1:
+            device = "default"
+        samplerate = self.config.current.devices.detector.input_samplerate
+        channels = self.config.current.devices.detector.input_channels
+        format = self.config.current.devices.detector.input_format
+        logger.print(f"current input device: {device} ({samplerate/1000} kHz, {channels} ch)")
+
+        device = self.config.current.devices.mixer.output_device
+        if device == -1:
+            device = "default"
+        samplerate = self.config.current.devices.mixer.output_samplerate
+        channels = self.config.current.devices.mixer.output_channels
+        format = self.config.current.devices.mixer.output_format
+        logger.print(f"current output device: {device} ({samplerate/1000} kHz, {channels} ch)")
 
     @cmd.function_command
     def set_audio_input(self, device, samplerate=None, channels=None, format=None):
