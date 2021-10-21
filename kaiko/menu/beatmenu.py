@@ -208,7 +208,7 @@ class KAIKOMenu:
         # load user data
         user = KAIKOUser.create()
         user.prepare(logger)
-        config = ProfileManager(KAIKOSettings, user.config_dir)
+        config = ProfileManager(KAIKOSettings, user.config_dir, logger)
 
         # load config
         if config.default_name is None:
