@@ -290,17 +290,17 @@ class DevicesCommand:
         print_pyaudio_info(self.manager, self.logger)
 
     @cmd.function_command
-    def audio_input(self, device, samplerate=None, channels=None, format=None):
+    def set_audio_input(self, device, samplerate=None, channels=None, format=None):
         """Configure audio input.
 
-        usage: devices \x1b[94maudio_input\x1b[m \x1b[92m{device}\x1b[m \
+        usage: devices \x1b[94mset_audio_input\x1b[m \x1b[92m{device}\x1b[m \
 [\x1b[95m--samplerate\x1b[m \x1b[92m{RATE}\x1b[m] \
 [\x1b[95m--channel\x1b[m \x1b[92m{CHANNEL}\x1b[m] \
 [\x1b[95m--format\x1b[m \x1b[92m{FORMAT}\x1b[m]
-                                     ╱                     ╱                      ╲                    ╲
-                           the index of input        the sample rate       the channel of audio    the data format
-                            device, -1 is the       of recorded sound.      input: 1 for mono,    of recorded sound.
-                             default device.                                 2 for stereo.
+                                         ╱                     ╱                      ╲                    ╲
+                               the index of input        the sample rate       the channel of audio    the data format
+                                device, -1 is the       of recorded sound.      input: 1 for mono,    of recorded sound.
+                                 default device.                                 2 for stereo.
         """
         logger = self.logger
 
@@ -342,17 +342,17 @@ class DevicesCommand:
                 self.config.set('devices.detector.input_format', format)
 
     @cmd.function_command
-    def audio_output(self, device, samplerate=None, channels=None, format=None):
+    def set_audio_output(self, device, samplerate=None, channels=None, format=None):
         """Configure audio output.
 
-        usage: devices \x1b[94maudio_output\x1b[m \x1b[92m{device}\x1b[m \
+        usage: devices \x1b[94mset_audio_output\x1b[m \x1b[92m{device}\x1b[m \
 [\x1b[95m--samplerate\x1b[m \x1b[92m{RATE}\x1b[m] \
 [\x1b[95m--channel\x1b[m \x1b[92m{CHANNEL}\x1b[m] \
 [\x1b[95m--format\x1b[m \x1b[92m{FORMAT}\x1b[m]
-                                      ╱                     ╱                      ╲                    ╲
-                            the index of output       the sample rate       the channel of audio    the data format
-                             device, -1 is the        of played sound.       output: 1 for mono,    of played sound.
-                              default device.                                 2 for stereo.
+                                          ╱                     ╱                      ╲                    ╲
+                                the index of output       the sample rate       the channel of audio    the data format
+                                 device, -1 is the        of played sound.       output: 1 for mono,    of played sound.
+                                  default device.                                 2 for stereo.
         """
         logger = self.logger
 
@@ -393,27 +393,27 @@ class DevicesCommand:
             if format is not None:
                 self.config.set('devices.mixer.output_format', format)
 
-    @audio_input.arg_parser("device")
-    def _audio_input_device_parser(self):
+    @set_audio_input.arg_parser("device")
+    def _set_audio_input_device_parser(self):
         return PyAudioDeviceParser(self.manager, True)
 
-    @audio_output.arg_parser("device")
-    def _audio_output_device_parser(self):
+    @set_audio_output.arg_parser("device")
+    def _set_audio_output_device_parser(self):
         return PyAudioDeviceParser(self.manager, False)
 
-    @audio_input.arg_parser("samplerate")
-    @audio_output.arg_parser("samplerate")
+    @set_audio_input.arg_parser("samplerate")
+    @set_audio_output.arg_parser("samplerate")
     def _audio_samplerate_parser(self, device, **__):
         options = [44100, 48000, 88200, 96000, 32000, 22050, 11025, 8000]
         return cmd.OptionParser({str(rate): rate for rate in options})
 
-    @audio_input.arg_parser("channels")
-    @audio_output.arg_parser("channels")
+    @set_audio_input.arg_parser("channels")
+    @set_audio_output.arg_parser("channels")
     def _audio_channels_parser(self, device, **__):
         return cmd.OptionParser({'2': 2, '1': 1})
 
-    @audio_input.arg_parser("format")
-    @audio_output.arg_parser("format")
+    @set_audio_input.arg_parser("format")
+    @set_audio_output.arg_parser("format")
     def _audio_format_parser(self, device, **__):
         return cmd.OptionParser(['f4', 'i4', 'i2', 'i1', 'u1'])
 
