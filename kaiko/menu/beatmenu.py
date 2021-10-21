@@ -186,10 +186,6 @@ class KAIKOMenu:
 
         try:
             dt = 0.01
-
-            with KAIKOMenu.pre() as pre_task:
-                pre_task.exhaust(dt=dt, interruptible=True)
-
             with KAIKOMenu.init() as menu:
                 menu.run().exhaust(dt=dt, interruptible=True)
 
@@ -201,18 +197,6 @@ class KAIKOMenu:
             print("\x1b[31m", end="")
             print(traceback.format_exc(), end="")
             print(f"\x1b[m", end="")
-
-    @staticmethod
-    @dn.datanode
-    def pre():
-        if "UNICODE_VERSION" in os.environ:
-            yield
-            return
-        with determine_unicode_version() as task:
-            yield from task.join((yield))
-            version = task.result
-        if version is not None:
-            os.environ["UNICODE_VERSION"] = version
 
     @classmethod
     @contextlib.contextmanager
@@ -258,11 +242,20 @@ class KAIKOMenu:
         if not sys.stdout.isatty():
             raise ValueError("please connect to interactive terminal device.")
 
+        #deterimine unicode version
+        if "UNICODE_VERSION" not in os.environ:
+            with determine_unicode_version(logger) as task:
+                yield from task.join((yield))
+                version = task.result
+                if version is not None:
+                    os.environ["UNICODE_VERSION"] = version
+            logger.print()
+
         # fit screen size
         size = shutil.get_terminal_size()
         width = self.settings.menu.best_screen_size
         if size.columns < width:
-            logger.print("Your screen size seems too small.")
+            logger.print("Your screen size seems too small.", prefix="hint")
 
             with logger.fit_screen() as fit_task:
                 yield from fit_task.join((yield))
