@@ -202,7 +202,8 @@ class KAIKOBGMController:
         self._action_queue = queue.Queue()
         self.beatmap_manager = beatmap_manager
 
-    def load_bgm(self, manager):
+    @dn.datanode
+    def load_mixer(self, manager):
         try:
             mixer_task, mixer = engines.Mixer.create(self.config.current.devices.mixer, manager)
 
@@ -211,44 +212,66 @@ class KAIKOBGMController:
                 self.logger.print("Failed to load mixer")
                 self.logger.print(traceback.format_exc(), end="")
 
-            return dn.DataNode.wrap(lambda _:None)
-
-        else:
-            return dn.pipe(mixer_task, self._bgm_rountine(mixer))
+        self.mixer = mixer
+        try:
+            with mixer_task:
+                yield from mixer_task.join((yield))
+        finally:
+            self.mixer = None
 
     @dn.datanode
-    def _bgm_rountine(self, mixer):
+    def play_song(self, song, start):
+        with dn.create_task(lambda event: self.mixer.load_sound(song.path, event)) as task:
+            yield from task.join((yield))
+            node = dn.DataNode.wrap(task.result)
+
+        self._current_bgm = song
+        try:
+            with self.mixer.play(node, start=start, volume=song.volume) as song_handler:
+                yield
+                while not song_handler.is_finalized():
+                    yield
+        finally:
+            self._current_bgm = None
+
+    @dn.datanode
+    def load_bgm(self, manager):
+        self.mixer = None
         self._current_bgm = None
 
-        yield
         while True:
+            yield
+
             if self._action_queue.empty():
-                yield
                 continue
 
-            action = self._action_queue.get()
-            while action:
-                song, start = action
-                self._current_bgm = song
+            while not self._action_queue.empty():
+                song, start = self._action_queue.get()
+            if song is None:
+                continue
 
-                with dn.create_task(lambda event: mixer.load_sound(self._current_bgm.path, event)) as task:
-                    yield from task.join((yield))
-                    node = dn.DataNode.wrap(task.result)
+            with self.load_mixer(manager) as mixer_task:
+                while song is not None:
+                    with self.play_song(song, start) as song_task:
+                        while True:
+                            try:
+                                mixer_task.send(None)
+                            except StopIteration:
+                                song, start = None, None
+                                break
 
-                with mixer.play(node, start=start, volume=song.volume) as bgm_key:
-                    while not bgm_key.is_finalized():
-                        if self._action_queue.empty():
+                            try:
+                                song_task.send(None)
+                            except StopIteration:
+                                song, start = self.random_song(), None
+                                break
+
+                            if not self._action_queue.empty():
+                                while not self._action_queue.empty():
+                                    song, start = self._action_queue.get()
+                                break
+
                             yield
-                            continue
-
-                        action = self._action_queue.get()
-                        break
-
-                    else:
-                        next_song = self.random_song()
-                        action = next_song, None
-
-                self._current_bgm = None
 
     def random_song(self):
         songs = self.beatmap_manager.get_songs()
@@ -257,7 +280,7 @@ class KAIKOBGMController:
         return random.choice(songs) if songs else None
 
     def stop(self):
-        self._action_queue.put(None)
+        self._action_queue.put((None, None))
 
     def play(self, song, start=None):
         self._action_queue.put((song, start))
