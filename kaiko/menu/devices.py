@@ -10,6 +10,7 @@ from kaiko.utils import wcbuffers as wcb
 from kaiko.utils import datanodes as dn
 from kaiko.utils import config as cfg
 from kaiko.utils import commands as cmd
+from kaiko.utils import engines
 
 
 def print_pyaudio_info(manager, logger):
@@ -496,6 +497,47 @@ class DevicesCommand:
         """Determines the unicode version of your terminal."""
 
         return determine_unicode_version(self.logger)
+
+    # detector
+    @cmd.function_command
+    def knock(self):
+        """Test knock detection."""
+        settings = self.config.current.devices.detector
+        ref_time = 0.0
+        return KnockTest(ref_time, settings, self.logger)
+
+class KnockTest:
+    def __init__(self, ref_time, settings, logger):
+        self.ref_time = ref_time
+        self.settings = settings
+        self.logger = logger
+        self.hit_queue = queue.Queue()
+
+    def execute(self, manager):
+        self.logger.print("Press any key to stop detecting")
+
+        detector_task, detector = engines.Detector.create(self.settings, manager, self.ref_time)
+        detector.add_listener(self.hit_listener())
+        exit_task = dn.input([])
+
+        return dn.pipe(detector_task, self.show_hit(), exit_task)
+
+    @dn.datanode
+    def show_hit(self):
+        while True:
+            yield
+
+            while not self.hit_queue.empty():
+                time, strength = self.hit_queue.get()
+                self.logger.print(f"[{time:07.3f}s] {strength:.4f}")
+
+    @dn.datanode
+    def hit_listener(self):
+        while True:
+            _, time, strength, detected = yield
+
+            if detected:
+                self.hit_queue.put((time, strength))
 
 class PyAudioDeviceParser(cmd.ArgumentParser):
     def __init__(self, manager, is_input):
