@@ -1143,12 +1143,6 @@ def create_task(func):
     return res.get()
 
 @datanode
-def until(event):
-    yield
-    while not event.is_set():
-        yield
-
-@datanode
 def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
     producer = DataNode.wrap(producer)
     consumer = DataNode.wrap(consumer)

@@ -494,7 +494,7 @@ class DevicesCommand:
         controller_task, controller = engines.Controller.create(self.config.current.devices.controller)
         controller.add_handler(handler)
 
-        return dn.pipe(controller_task, dn.until(stop_event))
+        return dn.pipe(controller_task, dn.take(lambda _: not stop_event.is_set()))
 
     @cmd.function_command
     def knock(self):
