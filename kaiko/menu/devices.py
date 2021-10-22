@@ -292,6 +292,8 @@ class DevicesCommand:
 
     @cmd.function_command
     def audio(self):
+        """Show your audio configuration."""
+
         logger = self.logger
         print_pyaudio_info(self.manager, logger)
 
