@@ -464,41 +464,36 @@ class DevicesCommand:
         return fit_screen(self.logger)
 
     @cmd.function_command
-    def keylog(self):
-        """Test your keyboard."""
-
-        logger = self.logger
-        keycodes = self.config.current.devices.controller.keycodes
-
-        logger.print(f"Press {logger.emph('Esc')} to end keylog.")
-        logger.print()
-        logger.print(f"{logger.emph('<keyname>')} (<keycode>)")
-
-        @dn.datanode
-        def handler():
-            while True:
-                _, code = yield
-                if code in keycodes:
-                    keyname = keycodes[code]
-                elif code.isprintable():
-                    keyname = "PRINTABLE"
-                else:
-                    keyname = repr(code)
-
-                logger.print(f"{logger.emph(keyname)} ({repr(code)})")
-
-                if code == '\x1b':
-                    return
-
-        return dn.input(handler())
-
-    @cmd.function_command
     def ucs_detect(self):
         """Determines the unicode version of your terminal."""
 
         return determine_unicode_version(self.logger)
 
-    # detector
+    # engines
+
+    @cmd.function_command
+    def keylog(self):
+        """Test your keyboard."""
+
+        logger = self.logger
+
+        logger.print(f"Press {logger.emph('Esc')} to end keylog.")
+        logger.print()
+        logger.print(f"[ <time>  ] {logger.emph('<keyname>')} (<keycode>)")
+
+        stop_event = threading.Event()
+
+        def handler(arg):
+            _, time, keyname, keycode = arg
+            logger.print(f"[{time:07.3f} s] {logger.emph(keyname)} ({repr(keycode)})")
+            if keycode == '\x1b':
+                stop_event.set()
+
+        controller_task, controller = engines.Controller.create(self.config.current.devices.controller)
+        controller.add_handler(handler)
+
+        return dn.pipe(controller_task, dn.until(stop_event))
+
     @cmd.function_command
     def knock(self):
         """Test knock detection."""
