@@ -108,6 +108,7 @@ class KAIKOUser:
     config_dir: Path
     data_dir: Path
     songs_dir: Path
+    history_file: Path
 
     @classmethod
     def create(clz):
@@ -115,9 +116,13 @@ class KAIKOUser:
         data_dir = Path(appdirs.user_data_dir("K-AIKO", username))
         config_dir = data_dir / "config"
         songs_dir = data_dir / "songs"
-        return clz(username, config_dir, data_dir, songs_dir)
+        history_file = data_dir / ".beatshell_history"
+        return clz(username, config_dir, data_dir, songs_dir, history_file)
 
     def is_prepared(self):
+        if not self.history_file.exists():
+            return False
+
         if not self.config_dir.exists():
             return False
 
@@ -138,6 +143,7 @@ class KAIKOUser:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.songs_dir.mkdir(parents=True, exist_ok=True)
+        self.history_file.touch()
 
         (self.data_dir / "samples/").mkdir(exist_ok=True)
         resources = ["samples/soft.wav",
@@ -291,7 +297,7 @@ class KAIKOMenu:
     @dn.datanode
     def repl(self):
         r"""Start REPL."""
-        input = beatshell.BeatInput(self)
+        input = beatshell.BeatInput(self, self.user.history_file)
         while True:
             # parse command
             with input.prompt(self.settings.devices, self.settings.shell) as prompt_task:
@@ -466,6 +472,7 @@ class KAIKOMenu:
         logger.print(f"data directory: {logger.emph(self.user.data_dir.as_uri())}")
         logger.print(f"config directory: {logger.emph(self.user.config_dir.as_uri())}")
         logger.print(f"songs directory: {logger.emph(self.user.songs_dir.as_uri())}")
+        logger.print(f"command history: {logger.emph(self.user.history_file.as_uri())}")
 
     @cmd.function_command
     def say(self, message, escape=False):

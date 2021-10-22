@@ -313,8 +313,10 @@ class BeatInput:
     ----------
     command : cmd.RootCommandParser
         The root command parser for beatshell.
-    history : list of str
-        The input history.
+    history : Path
+        The file of input history.
+    prev_command : str or None
+        The previous command.
     buffers : list of list of str
         The editable buffers of input history.
     buffer_index : int
@@ -342,18 +344,19 @@ class BeatInput:
     state : str
         The input state.
     """
-    def __init__(self, promptable, history=None):
+    def __init__(self, promptable, history):
         r"""Constructor.
 
         Parameters
         ----------
         promptable : object
             The root command.
-        history : list of str
-            The input history.
+        history : Path
+            The file of input history.
         """
         self.command = cmd.RootCommandParser(promptable)
-        self.history = history if history is not None else []
+        self.history = history
+        self.prev_command = None
         self.tab_state = None
         self.state = "FIN"
         self.lock = threading.RLock()
@@ -406,11 +409,12 @@ class BeatInput:
             Recording current input state.
         """
         if record_current:
-            command = "".join(self.buffer)
-            if command and (not self.history or self.history[-1] != command):
-                self.history.append(command)
+            command = "".join(self.buffer).strip()
+            if command and command != self.prev_command:
+                open(self.history, "a").write("\n" + command)
 
-        self.buffers = [list(history_buffer) for history_buffer in self.history]
+        self.buffers = list(list(command.strip()) for command in open(self.history) if command.strip())
+        self.prev_command = "".join(self.buffers[-1]) if self.buffers else None
         self.buffers.append([])
         self.buffer_index = -1
 
