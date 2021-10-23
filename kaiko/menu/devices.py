@@ -317,6 +317,18 @@ class DevicesCommand:
         logger.print(f"current output device: {device} ({samplerate/1000} kHz, {channels} ch)")
 
     @cmd.function_command
+    def test_audio_input(self, device):
+        """Test audio input.
+
+        usage: devices \x1b[94mset_audio_input\x1b[m \x1b[92m{device}\x1b[m
+                                         ╱
+                               the index of input
+                                device, -1 is the
+                                 default device.
+        """
+        return TestMic(device, self.logger)
+
+    @cmd.function_command
     def test_audio_output(self, device):
         """Test audio output.
 
@@ -414,6 +426,7 @@ class DevicesCommand:
             if format is not None:
                 self.config.set('devices.mixer.output_format', format)
 
+    @test_audio_input.arg_parser("device")
     @set_audio_input.arg_parser("device")
     def _set_audio_input_device_parser(self):
         return PyAudioDeviceParser(self.manager, True)
@@ -627,3 +640,69 @@ class TestSpeaker:
             yield
         self.logger.print(flush=True)
 
+class TestMic:
+    def __init__(self, device, logger, width=12, decay_time=0.1):
+        self.device = device
+        self.logger = logger
+        self.width = width
+        self.decay_time = decay_time
+
+    def execute(self, manager):
+        device = self.device
+
+        if device == -1:
+            device = manager.get_default_input_device_info()['index']
+        device_info = manager.get_device_info_by_index(device)
+
+        samplerate = int(device_info['defaultSampleRate'])
+        channels = 1
+        buffer_length = engines.DetectorSettings.input_buffer_length
+        format = engines.DetectorSettings.input_format
+
+        try:
+            engines.validate_input_device(manager, device, samplerate, channels, format)
+
+        except ValueError:
+            with self.logger.warn():
+                self.logger.print(traceback.format_exc(), end="")
+            return dn.DataNode.wrap([])
+
+        else:
+            self.logger.print(PyAudioDeviceParser(manager, True).info(str(device)))
+            return self.test_mic(manager, device, samplerate)
+
+    @dn.datanode
+    def test_mic(self, manager, device, samplerate):
+        channels = 1
+        buffer_length = engines.DetectorSettings.input_buffer_length
+        format = engines.DetectorSettings.input_format
+
+        vol = dn.branch(self.draw_volume(samplerate, buffer_length))
+
+        exit_task = dn.input([])
+        mic_task = dn.record(manager, vol, samplerate=samplerate,
+                                           buffer_shape=(buffer_length, channels),
+                                           format=format, device=device)
+
+        self.logger.print("Press any key to end testing")
+        with dn.pipe(mic_task, exit_task) as task:
+            yield from task.join((yield))
+
+    @dn.datanode
+    def draw_volume(self, samplerate, buffer_length):
+        decay_time = self.decay_time
+        width = self.width
+
+        decay = buffer_length / samplerate / decay_time
+        volume_of = lambda x: dn.power2db((x**2).mean(), scale=(1e-5, 1e6)) / 60.0
+
+        vol = 0.0
+        try:
+            while True:
+                data = yield
+                vol = max(0.0, vol-decay, min(1.0, volume_of(data)))
+                size = int(vol * width)
+                self.logger.print("[" + "▮" * size + " " * (width-size) + "]\r", end="", flush=True)
+
+        finally:
+            self.logger.print()
