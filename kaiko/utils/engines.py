@@ -222,7 +222,39 @@ class Mixer:
 
 
 class DetectorSettings(cfg.Configurable):
-    # input
+    r"""
+    Fields
+    ------
+    input_device : int
+        The index of input device, or -1 for default device.
+    input_samplerate : int
+        The samplerate of input device.
+    input_buffer_length : int
+        The buffer length of input device.
+        Note that too large will affect the reaction time, but too small will affect the efficiency.
+    input_channels : int
+        The number of channels of input device.
+    input_format : str
+        The data format of input device.  The valid formats are 'f4', 'i4', 'i2', 'i1', 'u1'.
+
+    detector_time_res : float
+    detector_freq_res : float
+    detector_pre_max : float
+    detector_post_max : float
+    detector_pre_avg : float
+    detector_post_avg : float
+    detector_wait : float
+    detector_delta : float
+
+    knock_delay : float
+        The delay of clock of the detector.
+    knock_energy : float
+        The reference volume of the detector.
+
+    debug_timeit : bool
+        Whether or not to record the execution time of the detector.
+        This is used for debugging.
+    """
     input_device: int = -1
     input_samplerate: int = 44100
     input_buffer_length: int = 512
@@ -236,10 +268,10 @@ class DetectorSettings(cfg.Configurable):
     detector_pre_avg: float = 0.03
     detector_post_avg: float = 0.03
     detector_wait: float = 0.03
-    detector_delta: float = 5.48e-6
+    detector_delta: float = 5.48e-6 # ~ noise_power * 20
 
     knock_delay: float = 0.0
-    knock_energy: float = 1.0e-3
+    knock_energy: float = 1.0e-3 # ~ Dt / knock_max_energy
 
     debug_timeit: bool = False
 
@@ -481,11 +513,25 @@ def print_below(text, width, height, tabsize=8):
     return "\n" + "".join(res) + f"\x1b[m\x1b[{y+1}A"
 
 class RendererSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    display_framerate : float
+        The framerate of the renderer.
+    display_delay : float
+        The delay of clock of the renderer.
+    resize_delay : float
+        The delay time to redraw display after resizing.
+
+    debug_timeit : bool
+        Whether or not to record the execution time of the renderer.
+        This is used for debugging.
+    """
     display_framerate: float = 160.0 # ~ 2 / detector_time_res
     display_delay: float = 0.0
+    resize_delay: float = 0.5
 
     debug_timeit: bool = False
-    resize_delay: float = 0.5
 
 class Renderer:
     def __init__(self, drawers_scheduler):
@@ -623,6 +669,12 @@ class Renderer:
 
 
 class ControllerSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    keycodes : dict
+        The maps from keycodes to keynames.
+    """
     keycodes: Dict[str, str] = {
         "\x1b"       : "Esc",
         "\x1b\x1b"   : "Alt_Esc",
