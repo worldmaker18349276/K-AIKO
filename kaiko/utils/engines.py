@@ -27,8 +27,60 @@ def prepare_pyaudio():
     finally:
         manager.terminate()
 
+def validate_input_device(manager, device, samplerate, channels, format):
+    if device == -1:
+        device = manager.get_default_input_device_info()['index']
+
+    format = {
+        'f4': pyaudio.paFloat32,
+        'i4': pyaudio.paInt32,
+        'i2': pyaudio.paInt16,
+        'i1': pyaudio.paInt8,
+        'u1': pyaudio.paUInt8,
+    }[format]
+
+    manager.is_format_supported(samplerate,
+        input_device=device, input_channels=channels, input_format=format)
+
+def validate_output_device(manager, device, samplerate, channels, format):
+    if device == -1:
+        device = manager.get_default_output_device_info()['index']
+
+    format = {
+        'f4': pyaudio.paFloat32,
+        'i4': pyaudio.paInt32,
+        'i2': pyaudio.paInt16,
+        'i1': pyaudio.paInt8,
+        'u1': pyaudio.paUInt8,
+    }[format]
+
+    manager.is_format_supported(samplerate,
+        output_device=device, output_channels=channels, output_format=format)
+
 
 class MixerSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    output_device : int
+        The index of output device, or -1 for default device.
+    output_samplerate : int
+        The samplerate of output device.
+    output_buffer_length : int
+        The buffer length of output device.
+        Note that too large will affect the reaction time, but too small will affect the efficiency.
+    output_channels : int
+        The number of channels of output device.
+    output_format : str
+        The data format of output device.  The valid formats are 'f4', 'i4', 'i2', 'i1', 'u1'.
+
+    sound_delay : float
+        The delay of clock of the mixer.
+
+    debug_timeit : bool
+        Whether or not to record the execution time of the mixer.
+        This is used for debugging.
+    """
     output_device: int = -1
     output_samplerate: int = 44100
     output_buffer_length: int = 512*4

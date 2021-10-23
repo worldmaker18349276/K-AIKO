@@ -2,10 +2,11 @@ import os
 import re
 import time
 import shutil
-import pyaudio
+import traceback
 import contextlib
 import threading
 import queue
+import pyaudio
 from kaiko.utils import wcbuffers as wcb
 from kaiko.utils import datanodes as dn
 from kaiko.utils import config as cfg
@@ -316,6 +317,18 @@ class DevicesCommand:
         logger.print(f"current output device: {device} ({samplerate/1000} kHz, {channels} ch)")
 
     @cmd.function_command
+    def test_audio_output(self, device):
+        """Test audio output.
+
+        usage: devices \x1b[94mset_audio_output\x1b[m \x1b[92m{device}\x1b[m
+                                          ╱
+                                the index of output
+                                 device, -1 is the
+                                  default device.
+        """
+        return TestSpeaker(device, self.logger)
+
+    @cmd.function_command
     def set_audio_input(self, device, samplerate=None, channels=None, format=None):
         """Configure audio input.
 
@@ -330,28 +343,19 @@ class DevicesCommand:
         """
         logger = self.logger
 
-        pa_device = device
         pa_samplerate = samplerate
         pa_channels = channels
+        pa_format = format
 
-        if pa_device == -1:
-            pa_device = self.manager.get_default_input_device_info()['index']
         if pa_samplerate is None:
-            pa_samplerate = self.config.get('devices.detector.input_samplerate')
+            pa_samplerate = self.config.get('devices.mixer.input_samplerate')
         if pa_channels is None:
-            pa_channels = self.config.get('devices.detector.input_channels')
-
-        pa_format = {
-            'f4': pyaudio.paFloat32,
-            'i4': pyaudio.paInt32,
-            'i2': pyaudio.paInt16,
-            'i1': pyaudio.paInt8,
-            'u1': pyaudio.paUInt8,
-        }[format or self.config.get('devices.detector.input_format')]
+            pa_channels = self.config.get('devices.mixer.input_channels')
+        if pa_format is None:
+            pa_format = self.config.get('devices.mixer.input_format')
 
         try:
-            self.manager.is_format_supported(pa_samplerate,
-                input_device=pa_device, input_channels=pa_channels, input_format=pa_format)
+            engines.validate_input_device(self.manager, device, pa_samplerate, pa_channels, pa_format)
 
         except ValueError as e:
             info = e.args[0]
@@ -382,28 +386,19 @@ class DevicesCommand:
         """
         logger = self.logger
 
-        pa_device = device
         pa_samplerate = samplerate
         pa_channels = channels
+        pa_format = format
 
-        if pa_device == -1:
-            pa_device = self.manager.get_default_output_device_info()['index']
         if pa_samplerate is None:
             pa_samplerate = self.config.get('devices.mixer.output_samplerate')
         if pa_channels is None:
             pa_channels = self.config.get('devices.mixer.output_channels')
-
-        pa_format = {
-            'f4': pyaudio.paFloat32,
-            'i4': pyaudio.paInt32,
-            'i2': pyaudio.paInt16,
-            'i1': pyaudio.paInt8,
-            'u1': pyaudio.paUInt8,
-        }[format or self.config.get('devices.mixer.output_format')]
+        if pa_format is None:
+            pa_format = self.config.get('devices.mixer.output_format')
 
         try:
-            self.manager.is_format_supported(pa_samplerate,
-                output_device=pa_device, output_channels=pa_channels, output_format=pa_format)
+            engines.validate_output_device(self.manager, device, pa_samplerate, pa_channels, pa_format)
 
         except ValueError as e:
             info = e.args[0]
@@ -423,6 +418,7 @@ class DevicesCommand:
     def _set_audio_input_device_parser(self):
         return PyAudioDeviceParser(self.manager, True)
 
+    @test_audio_output.arg_parser("device")
     @set_audio_output.arg_parser("device")
     def _set_audio_output_device_parser(self):
         return PyAudioDeviceParser(self.manager, False)
@@ -569,3 +565,65 @@ class PyAudioDeviceParser(cmd.ArgumentParser):
         ch_out = device_info['maxOutputChannels']
 
         return f"{name} by {api} ({freq} kHz, in: {ch_in}, out: {ch_out})"
+
+class TestSpeaker:
+    def __init__(self, device, logger, tempo=120.0, delay=0.5):
+        self.device = device
+        self.logger = logger
+        self.tempo = tempo
+        self.delay = delay
+
+    def execute(self, manager):
+        device = self.device
+
+        if device == -1:
+            device = manager.get_default_output_device_info()['index']
+        device_info = manager.get_device_info_by_index(device)
+
+        samplerate = int(device_info['defaultSampleRate'])
+        nchannels = min(device_info['maxOutputChannels'], 2)
+        format = engines.MixerSettings.output_format
+
+        try:
+            engines.validate_output_device(manager, device, samplerate, nchannels, format)
+
+        except ValueError:
+            with self.logger.warn():
+                self.logger.print(traceback.format_exc(), end="")
+            return dn.DataNode.wrap([])
+
+        else:
+            self.logger.print(PyAudioDeviceParser(manager, False).info(str(device)))
+            return self.test_speaker(manager, device, samplerate, nchannels)
+
+    def test_speaker(self, manager, device, samplerate, nchannels):
+        settings = engines.MixerSettings()
+        settings.output_device = device
+        settings.output_samplerate = samplerate
+        settings.output_channels = nchannels
+
+        mixer_task, mixer = engines.Mixer.create(settings, manager)
+
+        dt = 60.0/self.tempo
+        t0 = self.delay
+        click_task = dn.interval(producer=self.make_click(mixer, samplerate, nchannels), dt=dt, t0=t0)
+
+        return dn.pipe(mixer_task, click_task)
+
+    @dn.datanode
+    def make_click(self, mixer, samplerate, nchannels):
+        click = dn.pulse(samplerate=samplerate)
+        yield
+
+        for n in range(nchannels):
+            sound = click[:,None] * [[m==n for m in range(nchannels)]]
+            self.logger.print(">", end="", flush=True)
+            yield
+            for m in range(4):
+                mixer.play(dn.DataNode.wrap([sound]))
+                self.logger.print(".", end="", flush=True)
+                yield
+            self.logger.print("|", end="", flush=True)
+            yield
+        self.logger.print(flush=True)
+
