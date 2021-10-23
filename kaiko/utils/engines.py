@@ -237,15 +237,6 @@ class DetectorSettings(cfg.Configurable):
     input_format : str
         The data format of input device.  The valid formats are 'f4', 'i4', 'i2', 'i1', 'u1'.
 
-    detector_time_res : float
-    detector_freq_res : float
-    detector_pre_max : float
-    detector_post_max : float
-    detector_pre_avg : float
-    detector_post_avg : float
-    detector_wait : float
-    detector_delta : float
-
     knock_delay : float
         The delay of clock of the detector.
     knock_energy : float
@@ -261,14 +252,15 @@ class DetectorSettings(cfg.Configurable):
     input_channels: int = 1
     input_format: str = 'f4'
 
-    detector_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
-    detector_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
-    detector_pre_max: float = 0.03
-    detector_post_max: float = 0.03
-    detector_pre_avg: float = 0.03
-    detector_post_avg: float = 0.03
-    detector_wait: float = 0.03
-    detector_delta: float = 5.48e-6 # ~ noise_power * 20
+    class detect(cfg.Configurable):
+        time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
+        freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
+        pre_max: float = 0.03
+        post_max: float = 0.03
+        pre_avg: float = 0.03
+        post_avg: float = 0.03
+        wait: float = 0.03
+        delta: float = 5.48e-6 # ~ noise_power * 20
 
     knock_delay: float = 0.0
     knock_energy: float = 1.0e-3 # ~ Dt / knock_max_energy
@@ -287,62 +279,12 @@ class Detector:
         format = settings.input_format
         device = settings.input_device
 
-        time_res = settings.detector_time_res
-        freq_res = settings.detector_freq_res
+        time_res = settings.detect.time_res
         hop_length = round(samplerate*time_res)
-        win_length = round(samplerate/freq_res)
-
-        pre_max  = round(settings.detector_pre_max  / time_res)
-        post_max = round(settings.detector_post_max / time_res)
-        pre_avg  = round(settings.detector_pre_avg  / time_res)
-        post_avg = round(settings.detector_post_avg / time_res)
-        wait     = round(settings.detector_wait     / time_res)
-        delta    =       settings.detector_delta
-
-        knock_delay = settings.knock_delay
-        knock_energy = settings.knock_energy
 
         debug_timeit = settings.debug_timeit
 
-        @dn.datanode
-        def _node():
-            prepare = max(post_max, post_avg)
-
-            window = dn.get_half_Hann_window(win_length)
-            onset = dn.pipe(
-                dn.frame(win_length=win_length, hop_length=hop_length),
-                dn.power_spectrum(win_length=win_length,
-                                  samplerate=samplerate,
-                                  windowing=window,
-                                  weighting=True),
-                dn.onset_strength(1))
-            picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
-
-            with scheduler, onset, picker:
-                data = yield
-                buffer = [(knock_delay, 0.0)]*prepare
-                index = 0
-                while True:
-                    try:
-                        strength = onset.send(data)
-                        detected = picker.send(strength)
-                    except StopIteration:
-                        return
-                    time = index * hop_length / samplerate + knock_delay - ref_time
-                    strength = strength / knock_energy
-
-                    buffer.append((time, strength))
-                    time, strength = buffer.pop(0)
-
-                    try:
-                        scheduler.send((None, time, strength, detected))
-                    except StopIteration:
-                        return
-                    data = yield
-
-                    index += 1
-
-        input_node = _node()
+        input_node = Detector._detect_node(scheduler, ref_time, settings)
         if buffer_length != hop_length:
             input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
         if debug_timeit:
@@ -354,6 +296,68 @@ class Detector:
                          format=format,
                          device=device,
                          )
+
+    @staticmethod
+    @dn.datanode
+    def _detect_node(scheduler, ref_time, settings):
+        samplerate = settings.input_samplerate
+
+        time_res = settings.detect.time_res
+        freq_res = settings.detect.freq_res
+        hop_length = round(samplerate*time_res)
+        win_length = round(samplerate/freq_res)
+
+        pre_max  = round(settings.detect.pre_max  / time_res)
+        post_max = round(settings.detect.post_max / time_res)
+        pre_avg  = round(settings.detect.pre_avg  / time_res)
+        post_avg = round(settings.detect.post_avg / time_res)
+        wait     = round(settings.detect.wait     / time_res)
+        delta    =       settings.detect.delta
+
+        knock_delay = settings.knock_delay
+        knock_energy = settings.knock_energy
+
+        prepare = max(post_max, post_avg)
+
+        window = dn.get_half_Hann_window(win_length)
+        onset = dn.pipe(
+            dn.frame(win_length=win_length, hop_length=hop_length),
+            dn.power_spectrum(win_length=win_length,
+                              samplerate=samplerate,
+                              windowing=window,
+                              weighting=True),
+            dn.onset_strength(1))
+        delay = dn.delay((index * hop_length / samplerate + knock_delay - ref_time, 0.0) for index in range(-prepare, 0))
+        picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
+
+        with scheduler, onset, delay, picker:
+            data = yield
+            index = 0
+            while True:
+                try:
+                    strength = onset.send(data)
+                except StopIteration:
+                    return
+
+                time = index * hop_length / samplerate + knock_delay - ref_time
+                normalized_strength = strength / knock_energy
+                try:
+                    time, normalized_strength = delay.send((time, normalized_strength))
+                except StopIteration:
+                    return
+
+                try:
+                    detected = picker.send(strength)
+                except StopIteration:
+                    return
+
+                try:
+                    scheduler.send((None, time, normalized_strength, detected))
+                except StopIteration:
+                    return
+                data = yield
+
+                index += 1
 
     @classmethod
     def create(clz, settings, manager, ref_time=0.0):
@@ -527,7 +531,7 @@ class RendererSettings(cfg.Configurable):
         Whether or not to record the execution time of the renderer.
         This is used for debugging.
     """
-    display_framerate: float = 160.0 # ~ 2 / detector_time_res
+    display_framerate: float = 160.0 # ~ 2 / detect.time_res
     display_delay: float = 0.0
     resize_delay: float = 0.5
 

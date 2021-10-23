@@ -538,8 +538,16 @@ def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
     buffer = numpy.zeros(center+delay+1, dtype=numpy.float32)
     max_buffer = buffer[center-pre_max:center+post_max+1]
     avg_buffer = buffer[center-pre_avg:center+post_avg+1]
-    index = -delay
-    prev_index = -wait
+    index = -1-delay
+    prev_index = -1-wait
+
+    #               center
+    #     pre_avg     |    post_avg
+    #   ___________   |   ___________
+    #  /           \  v  /           \
+    # [x, x, x, x, x, x, x, x, x, x, x]
+    #        \_____/     \_____/      \____ new data
+    #        pre_max     post_max
 
     buffer[-1] = yield
     while True:
