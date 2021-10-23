@@ -378,7 +378,7 @@ class KAIKOMenu:
 
     @loop.arg_parser("pattern")
     def _loop_pattern_parser(self):
-        return cmd.RawParser(desc="It should be a pattern.", default="x [_ x] o x | x [x x] o _")
+        return cmd.RawParser(desc="It should be a pattern.", default="x x o x | x [x x] o _")
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
