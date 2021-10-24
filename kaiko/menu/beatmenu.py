@@ -514,26 +514,19 @@ class KAIKOMenu:
         raise KeyboardInterrupt
 
     @cmd.function_command
+    @dn.datanode
     def bye_forever(self):
         """Clean up all your data and close K-AIKO."""
         logger = self.logger
 
         logger.print("This command will clean up all your data.")
-        logger.print(f"Do you really want to do that? [y/{logger.emph('n')}]:", end="")
-        res = input()
 
-        while True:
-            if res in ("y", "Y"):
+        with logger.ask("Do you really want to do that?", False) as task:
+            yield from task.join((yield))
+            if task.result:
                 self.user.remove(logger)
                 logger.print("Good luck~")
                 raise KeyboardInterrupt
-
-            elif res in ("n", "N", ""):
-                return
-
-            logger.print(f"Please reply {logger.emph('y')} or {logger.emph('n')}:", end="")
-            res = input()
-
 
 
 class KAIKOPlay:

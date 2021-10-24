@@ -210,6 +210,31 @@ class KAIKOLogger:
         elif prefix == "hint":
             print(self.settings.hint_icon + " " + msg, end=end, flush=flush)
 
+    @dn.datanode
+    def ask(self, prompt, default=True):
+        yield
+        hint = self.emph("y")+"/n" if default == True else "y/"+self.emph("n")
+        self.print(f"{prompt} [{hint}]: ", end="", flush=True)
+
+        while True:
+            res_queue = queue.Queue()
+            input_task = dn.input(lambda a: res_queue.put(a[1]))
+            try:
+                with dn.pipe(input_task, dn.take(lambda _: res_queue.empty())) as task:
+                    yield from task.join((yield))
+            finally:
+                self.print(flush=True)
+            res = res_queue.get() if not res_queue.empty() else ""
+
+            if res == "\n":
+                return default
+            if res in ("y", "Y"):
+                return True
+            elif res in ("n", "N"):
+                return False
+
+            self.print(f"Please reply {self.emph('y')} or {self.emph('n')}: ", end="", flush=True)
+
 @dn.datanode
 def determine_unicode_version(logger):
     pattern = re.compile(r"\x1b\[(\d*);(\d*)R")
