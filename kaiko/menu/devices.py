@@ -317,45 +317,45 @@ class DevicesCommand:
         logger.print(f"current output device: {device} ({samplerate/1000} kHz, {channels} ch)")
 
     @cmd.function_command
-    def test_audio_input(self, device):
+    def test_mic(self, device):
         """Test audio input.
 
-        usage: devices \x1b[94mset_audio_input\x1b[m \x1b[92m{device}\x1b[m
-                                         ╱
-                               the index of input
-                                device, -1 is the
-                                 default device.
+        usage: devices \x1b[94mtest_mic\x1b[m \x1b[92m{device}\x1b[m
+                                      ╱
+                            the index of input
+                             device, -1 is the
+                              default device.
         """
-        return TestMic(device, self.logger)
+        return MicTest(device, self.logger)
 
     @cmd.function_command
-    def test_audio_output(self, device):
+    def test_speaker(self, device):
         """Test audio output.
 
-        usage: devices \x1b[94mset_audio_output\x1b[m \x1b[92m{device}\x1b[m
-                                          ╱
-                                the index of output
-                                 device, -1 is the
-                                  default device.
+        usage: devices \x1b[94mtest_speaker\x1b[m \x1b[92m{device}\x1b[m
+                                      ╱
+                            the index of output
+                             device, -1 is the
+                              default device.
         """
-        return TestSpeaker(device, self.logger)
+        return SpeakerTest(device, self.logger)
 
     @cmd.function_command
-    def set_audio_input(self, device, rate=None, ch=None, len=None, fmt=None):
+    def set_mic(self, device, rate=None, ch=None, len=None, fmt=None):
         """Configure audio input.
         
-                                                  the sample rate        the buffer length
-                                                 of recorded sound.       of input device.
-                                                          ╲                         ╲
-        usage: devices \x1b[94mset_audio_input\x1b[m \x1b[92m{device}\x1b[m \
+                                          the sample rate        the buffer length
+                                         of recorded sound.       of input device.
+                                                  ╲                         ╲
+        usage: devices \x1b[94mset_mic\x1b[m \x1b[92m{device}\x1b[m \
 [\x1b[95m--rate\x1b[m \x1b[92m{RATE}\x1b[m] \
 [\x1b[95m--ch\x1b[m \x1b[92m{CH}\x1b[m] \
 [\x1b[95m--len\x1b[m \x1b[92m{LEN}\x1b[m] \
 [\x1b[95m--fmt\x1b[m \x1b[92m{FMT}\x1b[m]
-                                         ╱                             ╱                          ╱
-                               the index of input           the channel of audio         the data format
-                                device, -1 is the            input: 1 for mono,         of recorded sound.
-                                 default device.               2 for stereo.
+                                 ╱                             ╱                          ╱
+                       the index of input           the channel of audio         the data format
+                        device, -1 is the            input: 1 for mono,         of recorded sound.
+                         default device.               2 for stereo.
         """
         logger = self.logger
 
@@ -390,21 +390,21 @@ class DevicesCommand:
                 self.config.current.devices.detector.input_format = fmt
 
     @cmd.function_command
-    def set_audio_output(self, device, rate=None, ch=None, len=None, fmt=None):
+    def set_speaker(self, device, rate=None, ch=None, len=None, fmt=None):
         """Configure audio output.
         
-                                                   the sample rate        the buffer length
-                                                   of played sound.       of output device.
-                                                           ╲                         ╲
-        usage: devices \x1b[94mset_audio_output\x1b[m \x1b[92m{device}\x1b[m \
+                                              the sample rate        the buffer length
+                                              of played sound.       of output device.
+                                                      ╲                         ╲
+        usage: devices \x1b[94mset_speaker\x1b[m \x1b[92m{device}\x1b[m \
 [\x1b[95m--rate\x1b[m \x1b[92m{RATE}\x1b[m] \
 [\x1b[95m--ch\x1b[m \x1b[92m{CH}\x1b[m] \
 [\x1b[95m--len\x1b[m \x1b[92m{LEN}\x1b[m] \
 [\x1b[95m--fmt\x1b[m \x1b[92m{FMT}\x1b[m]
-                                          ╱                             ╱                          ╱
-                                the index of output          the channel of audio         the data format
-                                 device, -1 is the           output: 1 for mono,          of played sound.
-                                  default device.               2 for stereo.
+                                     ╱                             ╱                          ╱
+                           the index of output          the channel of audio         the data format
+                            device, -1 is the           output: 1 for mono,          of played sound.
+                             default device.               2 for stereo.
         """
         logger = self.logger
 
@@ -438,34 +438,34 @@ class DevicesCommand:
             if fmt is not None:
                 self.config.current.devices.mixer.output_format = fmt
 
-    @test_audio_input.arg_parser("device")
-    @set_audio_input.arg_parser("device")
-    def _set_audio_input_device_parser(self):
+    @test_mic.arg_parser("device")
+    @set_mic.arg_parser("device")
+    def _set_mic_device_parser(self):
         return PyAudioDeviceParser(self.manager, True)
 
-    @test_audio_output.arg_parser("device")
-    @set_audio_output.arg_parser("device")
-    def _set_audio_output_device_parser(self):
+    @test_speaker.arg_parser("device")
+    @set_speaker.arg_parser("device")
+    def _set_speaker_device_parser(self):
         return PyAudioDeviceParser(self.manager, False)
 
-    @set_audio_input.arg_parser("rate")
-    @set_audio_output.arg_parser("rate")
+    @set_mic.arg_parser("rate")
+    @set_speaker.arg_parser("rate")
     def _audio_samplerate_parser(self, device, **__):
         options = [44100, 48000, 88200, 96000, 32000, 22050, 11025, 8000]
         return cmd.OptionParser({str(rate): rate for rate in options})
 
-    @set_audio_input.arg_parser("ch")
-    @set_audio_output.arg_parser("ch")
+    @set_mic.arg_parser("ch")
+    @set_speaker.arg_parser("ch")
     def _audio_channels_parser(self, device, **__):
         return cmd.OptionParser({'2': 2, '1': 1})
 
-    @set_audio_input.arg_parser("len")
-    @set_audio_output.arg_parser("len")
+    @set_mic.arg_parser("len")
+    @set_speaker.arg_parser("len")
     def _audio_buffer_length_parser(self, device, **__):
         return cmd.OptionParser({"512": 512, "1024": 1024, "2048": 2048})
 
-    @set_audio_input.arg_parser("fmt")
-    @set_audio_output.arg_parser("fmt")
+    @set_mic.arg_parser("fmt")
+    @set_speaker.arg_parser("fmt")
     def _audio_format_parser(self, device, **__):
         return cmd.OptionParser(['f4', 'i4', 'i2', 'i1', 'u1'])
 
@@ -605,7 +605,7 @@ class PyAudioDeviceParser(cmd.ArgumentParser):
 
         return f"{name} by {api} ({freq} kHz, in: {ch_in}, out: {ch_out})"
 
-class TestSpeaker:
+class SpeakerTest:
     def __init__(self, device, logger, tempo=120.0, delay=0.5):
         self.device = device
         self.logger = logger
@@ -632,7 +632,8 @@ class TestSpeaker:
             return dn.DataNode.wrap([])
 
         else:
-            self.logger.print(PyAudioDeviceParser(manager, False).info(str(device)))
+            info = PyAudioDeviceParser(manager, False).info(str(device))
+            self.logger.print(f"Test output device {self.logger.emph(info)}...")
             return self.test_speaker(manager, device, samplerate, nchannels)
 
     def test_speaker(self, manager, device, samplerate, nchannels):
@@ -656,17 +657,16 @@ class TestSpeaker:
 
         for n in range(nchannels):
             sound = click[:,None] * [[m==n for m in range(nchannels)]]
-            self.logger.print(">", end="", flush=True)
+            self.logger.print(f"Test channel {n}: ", end="", flush=True)
             yield
             for m in range(4):
                 mixer.play(dn.DataNode.wrap([sound]))
                 self.logger.print(".", end="", flush=True)
                 yield
-            self.logger.print("|", end="", flush=True)
+            self.logger.print(flush=True)
             yield
-        self.logger.print(flush=True)
 
-class TestMic:
+class MicTest:
     def __init__(self, device, logger, width=12, decay_time=0.1):
         self.device = device
         self.logger = logger
@@ -694,7 +694,8 @@ class TestMic:
             return dn.DataNode.wrap([])
 
         else:
-            self.logger.print(PyAudioDeviceParser(manager, True).info(str(device)))
+            info = PyAudioDeviceParser(manager, True).info(str(device))
+            self.logger.print(f"Test input device {self.logger.emph(info)}...")
             return self.test_mic(manager, device, samplerate)
 
     @dn.datanode
@@ -710,13 +711,15 @@ class TestMic:
                                            buffer_shape=(buffer_length, channels),
                                            format=format, device=device)
 
-        self.logger.print("Press any key to end testing")
+        self.logger.print("Press any key to end testing.", prefix="hint")
         with dn.pipe(mic_task, exit_task) as task:
             yield from task.join((yield))
 
     @dn.datanode
     def draw_volume(self, samplerate, buffer_length):
         decay_time = self.decay_time
+        tick0 = " "
+        tick1 = "▮"
         width = self.width
 
         decay = buffer_length / samplerate / decay_time
@@ -728,7 +731,7 @@ class TestMic:
                 data = yield
                 vol = max(0.0, vol-decay, min(1.0, volume_of(data)))
                 size = int(vol * width)
-                self.logger.print("[" + "▮" * size + " " * (width-size) + "]\r", end="", flush=True)
+                self.logger.print("[" + tick1 * size + tick0 * (width-size) + "]\r", end="", flush=True)
 
         finally:
             self.logger.print()
