@@ -105,7 +105,6 @@ class Mixer:
         nchannels = settings.output_channels
         format = settings.output_format
         device = settings.output_device
-        sound_delay = settings.sound_delay
         debug_timeit = settings.debug_timeit
 
         @dn.datanode
@@ -114,7 +113,7 @@ class Mixer:
             with scheduler:
                 yield
                 while True:
-                    time = index * buffer_length / samplerate + sound_delay - ref_time
+                    time = index * buffer_length / samplerate + settings.sound_delay - ref_time
                     data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
                     try:
                         data = scheduler.send((data, time))
@@ -314,9 +313,6 @@ class Detector:
         wait     = round(settings.detect.wait     / time_res)
         delta    =       settings.detect.delta
 
-        knock_delay = settings.knock_delay
-        knock_energy = settings.knock_energy
-
         prepare = max(post_max, post_avg)
 
         window = dn.get_half_Hann_window(win_length)
@@ -327,7 +323,8 @@ class Detector:
                               windowing=window,
                               weighting=True),
             dn.onset_strength(1))
-        delay = dn.delay((index * hop_length / samplerate + knock_delay - ref_time, 0.0) for index in range(-prepare, 0))
+        delay = dn.delay((index * hop_length / samplerate + settings.knock_delay - ref_time, 0.0)
+                         for index in range(-prepare, 0))
         picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
 
         with scheduler, onset, delay, picker:
@@ -339,8 +336,8 @@ class Detector:
                 except StopIteration:
                     return
 
-                time = index * hop_length / samplerate + knock_delay - ref_time
-                normalized_strength = strength / knock_energy
+                time = index * hop_length / samplerate + settings.knock_delay - ref_time
+                normalized_strength = strength / settings.knock_energy
                 try:
                     time, normalized_strength = delay.send((time, normalized_strength))
                 except StopIteration:
@@ -544,7 +541,6 @@ class Renderer:
     @staticmethod
     def get_task(scheduler, settings, ref_time):
         framerate = settings.display_framerate
-        display_delay = settings.display_delay
         debug_timeit = settings.debug_timeit
         resize_delay = settings.resize_delay
 
@@ -559,7 +555,7 @@ class Renderer:
             with scheduler, size_node:
                 shown = yield
                 while True:
-                    time = index / framerate + display_delay - ref_time
+                    time = index / framerate + settings.display_delay - ref_time
 
                     try:
                         size = size_node.send(None)
