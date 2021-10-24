@@ -557,6 +557,18 @@ class KAIKOPlay:
                 logger.print(traceback.format_exc(), end="")
 
         else:
+            stop_key = self.gameplay_settings.controls.stop_key
+            sound_keys = self.gameplay_settings.controls.sound_delay_adjust_keys
+            display_keys = self.gameplay_settings.controls.display_delay_adjust_keys
+            knock_keys = self.gameplay_settings.controls.knock_delay_adjust_keys
+            energy_keys = self.gameplay_settings.controls.knock_energy_adjust_keys
+            logger.print(f"Press {logger.emph(stop_key)} to end the game.", prefix="hint")
+            logger.print(f"Use {logger.emph(sound_keys[0])} and {logger.emph(sound_keys[1])} to adjust click sound delay.", prefix="hint")
+            logger.print(f"Use {logger.emph(display_keys[0])} and {logger.emph(display_keys[1])} to adjust display delay.", prefix="hint")
+            logger.print(f"Use {logger.emph(knock_keys[0])} and {logger.emph(knock_keys[1])} to adjust hit delay.", prefix="hint")
+            logger.print(f"Use {logger.emph(energy_keys[0])} and {logger.emph(energy_keys[1])} to adjust hit strength.", prefix="hint")
+            logger.print()
+
             with beatmap.play(manager, self.data_dir, self.devices_settings, self.gameplay_settings) as task:
                 yield from task.join((yield))
                 score = task.result
@@ -588,6 +600,18 @@ class KAIKOLoop:
 
         else:
             beatmap = beatmaps.Loop(tempo=self.tempo, offset=self.offset, width=width, events=events)
+
+            stop_key = self.gameplay_settings.controls.stop_key
+            sound_keys = self.gameplay_settings.controls.sound_delay_adjust_keys
+            display_keys = self.gameplay_settings.controls.display_delay_adjust_keys
+            knock_keys = self.gameplay_settings.controls.knock_delay_adjust_keys
+            energy_keys = self.gameplay_settings.controls.knock_energy_adjust_keys
+            logger.print(f"Press {logger.emph(stop_key)} to end the game.", prefix="hint")
+            logger.print(f"Use {logger.emph(sound_keys[0])} and {logger.emph(sound_keys[1])} to adjust click sound delay.", prefix="hint")
+            logger.print(f"Use {logger.emph(display_keys[0])} and {logger.emph(display_keys[1])} to adjust display delay.", prefix="hint")
+            logger.print(f"Use {logger.emph(knock_keys[0])} and {logger.emph(knock_keys[1])} to adjust hit delay.", prefix="hint")
+            logger.print(f"Use {logger.emph(energy_keys[0])} and {logger.emph(energy_keys[1])} to adjust hit strength.", prefix="hint")
+            logger.print()
 
             with beatmap.play(manager, self.data_dir, self.devices_settings, self.gameplay_settings) as task:
                 yield from task.join((yield))
