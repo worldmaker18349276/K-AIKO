@@ -200,44 +200,21 @@ class BeatShellSettings(cfg.Configurable):
         t0: float = 0.0
         tempo: float = 130.0
 
-        headers: List[str] = [
-            "\x1b[96;1m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;255m❯ \x1b[m",
-            "\x1b[96;1m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;255m❯ \x1b[m",
-            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;254m❯ \x1b[m",
-            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;254m❯ \x1b[m",
-            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;253m❯ \x1b[m",
-            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;253m❯ \x1b[m",
-            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;252m❯ \x1b[m",
-            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;252m❯ \x1b[m",
-
-            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;251m❯ \x1b[m",
-            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;251m❯ \x1b[m",
-            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;250m❯ \x1b[m",
-            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;250m❯ \x1b[m",
-            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;249m❯ \x1b[m",
-            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;249m❯ \x1b[m",
-            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;248m❯ \x1b[m",
-            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;248m❯ \x1b[m",
-
-            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;247m❯ \x1b[m",
-            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;247m❯ \x1b[m",
-            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;246m❯ \x1b[m",
-            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;246m❯ \x1b[m",
-            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;245m❯ \x1b[m",
-            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;245m❯ \x1b[m",
-            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;244m❯ \x1b[m",
-            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;244m❯ \x1b[m",
-
-            "\x1b[96m⠶⠦⣚⠀⠶\x1b[m\x1b[38;5;243m❯ \x1b[m",
-            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m\x1b[38;5;243m❯ \x1b[m",
-            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m\x1b[38;5;242m❯ \x1b[m",
-            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m\x1b[38;5;242m❯ \x1b[m",
-            "\x1b[96m⠶⠀⡭⠲⠶\x1b[m\x1b[38;5;241m❯ \x1b[m",
-            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m\x1b[38;5;241m❯ \x1b[m",
-            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m\x1b[38;5;240m❯ \x1b[m",
-            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m\x1b[38;5;240m❯ \x1b[m",
+        icons: List[str] = [
+            "\x1b[36m⠶⠦⣚⠀⠶\x1b[m",
+            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m",
+            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m",
+            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m",
+            "\x1b[36m⠶⠀⡭⠲⠶\x1b[m",
+            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m",
+            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m",
+            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m",
         ]
-        header_width: int = 7
+        icon_width: int = 5
+
+        marker: str = "❯ "
+        marker_attr: Tuple[str, str] = ("", "1")
+        marker_width: int = 2
 
         caret_attr: Tuple[str, str] = ("7;2", "7;1")
         caret_blink_ratio: float = 0.3
@@ -1284,12 +1261,16 @@ class BeatPrompt:
 
         Yields
         ------
-        header : str
-            The rendered header.
+        icon: str
+            The rendered icon.
+        marker : str
+            The rendered marker.
         caret : function or None
             The function that add a caret to the text, or None for no caret.
         """
-        headers = self.settings.prompt.headers
+        icons = self.settings.prompt.icons
+        marker = self.settings.prompt.marker
+        marker_attr = self.settings.prompt.marker_attr
 
         caret_attr = self.settings.prompt.caret_attr
         caret_blink_ratio = self.settings.prompt.caret_blink_ratio
@@ -1318,11 +1299,16 @@ class BeatPrompt:
             else:
                 caret = None
 
-            # render header
-            ind = int(t / 4 * len(headers) // 1) % len(headers)
-            header = headers[ind]
+            # render icon, marker
+            ind = int(t * len(icons) // 1) % len(icons)
+            icon = icons[ind]
 
-            clean, time = yield header, caret
+            if t % 4 < min(1, caret_blink_ratio):
+                marker_ = wcb.add_attr(marker, marker_attr[1])
+            else:
+                marker_ = wcb.add_attr(marker, marker_attr[0])
+
+            clean, time = yield icon, marker_, caret
             t = (time - self.t0)/(60/self.tempo)
 
     @dn.datanode
@@ -1493,13 +1479,15 @@ class BeatPrompt:
         view : list of str
             The buffer of the rendered view.
         """
-        header_width = self.settings.prompt.header_width
-        header_ran = slice(None, header_width)
-        input_ran = slice(header_width, None)
+        icon_width = self.settings.prompt.icon_width
+        marker_width = self.settings.prompt.marker_width
+        icon_ran = slice(None, icon_width)
+        marker_ran = slice(icon_width, icon_width+marker_width)
+        input_ran = slice(icon_width+marker_width, None)
 
         input_offset = 0
 
-        view, width, (header, caret), (text, typeahead, caret_pos) = yield
+        view, width, (icon, marker, caret), (text, typeahead, caret_pos) = yield
 
         while True:
             input_width = len(range(width)[input_ran])
@@ -1522,7 +1510,8 @@ class BeatPrompt:
                 wcb.addtext1(view, width, input_ran.start+input_width-1, "…", input_ran)
 
             # draw header
-            wcb.addtext1(view, width, 0, header, header_ran)
+            wcb.addtext1(view, width, 0, icon, icon_ran)
+            wcb.addtext1(view, width, marker_ran.start, marker, marker_ran)
 
             # draw caret
             if caret:
@@ -1530,4 +1519,4 @@ class BeatPrompt:
                 caret_ran = wcb.select1(view, width, slice(caret_x, caret_x+1))
                 view[caret_ran.start] = caret(view[caret_ran.start])
 
-            view, width, (header, caret), (text, typeahead, caret_pos) = yield view
+            view, width, (icon, marker, caret), (text, typeahead, caret_pos) = yield view
