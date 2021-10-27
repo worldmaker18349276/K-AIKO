@@ -805,7 +805,30 @@ class Spin(Target):
 
 # beatmap
 class BeatmapSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    resources : Dict[str, str]
+        The resource name and file path.
+    """
+
     class difficulty(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        performance_tolerance : float
+            The minimal timing tolerance to judge performance.
+        soft_threshold : float
+            The maximum strength to succeed soft note.
+        loud_threshold : float
+            The minimum strength to succeed loud note.
+        incr_threshold : float
+            The threshold of increasing strength to succeed incr note.
+        roll_tolerance : float
+            The timing tolerance to succeed roll note.
+        spin_tolerance : float
+            The timing tolerance to succeed spin note.
+        """
         performance_tolerance: float = 0.02
         soft_threshold: float = 0.5
         loud_threshold: float = 0.5
@@ -819,6 +842,16 @@ class BeatmapSettings(cfg.Configurable):
         failed_tolerance  = property(lambda self: self.performance_tolerance*7)
 
     class scores(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        performances_scores : Dict[PerformanceGrade, int]
+            The grades of different performance.
+        roll_rock_score : int
+            The score of each rock in the roll note.
+        spin_score : int
+            The score of sping note.
+        """
         performances_scores: Dict[PerformanceGrade, int] = {
             PerformanceGrade.MISS               : 0,
 
@@ -845,6 +878,47 @@ class BeatmapSettings(cfg.Configurable):
         spin_score: int = 16
 
     class notes(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        soft_approach_appearance : Union[str, Tuple[str, str]]
+            The appearance of approaching soft note.
+        soft_wrong_appearance : Union[str, Tuple[str, str]]
+            The appearance of wrong soft note.
+        soft_sound : str
+            The name of sound of soft note.
+
+        loud_approach_appearance : Union[str, Tuple[str, str]]
+            The appearance of approaching loud note.
+        loud_wrong_appearance : Union[str, Tuple[str, str]]
+            The appearance of wrong loud note.
+        loud_sound : str
+            The name of sound of loud note.
+
+        incr_approach_appearance : Union[str, Tuple[str, str]]
+            The appearance of approaching incr note.
+        incr_wrong_appearance : Union[str, Tuple[str, str]]
+            The appearance of wrong incr note.
+        incr_sound : str
+            The name of sound of incr note.
+
+        roll_rock_approach_appearance : Union[str, Tuple[str, str]]
+            The appearance of approaching roll in the rock note.
+        roll_rock_sound : str
+            The name of sound of roll in the rock note.
+
+        spin_disk_appearances : Union[List[str], List[Tuple[str, str]]]
+            The spinning appearance of spin note.
+        spin_finishing_appearance : Union[str, Tuple[str, str]]
+            The finishing appearance of spin note.
+        spin_finish_sustain_time : float
+            The sustain time for the finishing spin note.
+        spin_disk_sound : str
+            The name of sound of spin note.
+
+        event_leadin_time : float
+            The minimum time of silence before and after the gameplay.
+        """
         soft_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[96m□\x1b[m"
         soft_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[96m⬚\x1b[m"
         soft_sound: str = 'soft'
@@ -863,6 +937,7 @@ class BeatmapSettings(cfg.Configurable):
         spin_finishing_appearance: Union[str, Tuple[str, str]] = "\x1b[94m☺\x1b[m"
         spin_finish_sustain_time: float = 0.1
         spin_disk_sound: str = 'disk'
+
         event_leadin_time: float = 1.0
 
     resources: Dict[str, str] = {
@@ -877,6 +952,40 @@ class GameplaySettings(cfg.Configurable):
     beatbar = BeatbarSettings
 
     class controls(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        skip_time : float
+        load_time : float
+            The minimum time before the first event.
+        prepare_time : float
+            The time between preparing the event and the lifespan of the event.
+        tickrate : float
+            The event updating rate.
+
+        stop_key : str
+            The key to stop the game.
+        sound_delay_adjust_keys : Tuple[str, str]
+            The keys to adjust click sound delay.
+            The first/second string is the key to adjust faster/slower.
+        sound_delay_adjust_step : float
+            The adjustment interval of click sound delay.
+        display_delay_adjust_keys : Tuple[str, str]
+            The keys to adjust display delay.
+            The first/second string is the key to adjust faster/slower.
+        display_delay_adjust_step : float
+            The adjustment interval of display delay.
+        knock_delay_adjust_keys : Tuple[str, str]
+            The keys to adjust knock delay.
+            The first/second string is the key to adjust slower/faster.
+        knock_delay_adjust_step : float
+            The adjustment interval of knock delay.
+        knock_energy_adjust_keys : Tuple[str, str]
+            The keys to adjust knock energy.
+            The first/second string is the key to adjust softer/louder.
+        knock_energy_adjust_step : float
+            The adjustment interval of knock energy.
+        """
         skip_time: float = 8.0
         load_time: float = 0.5
         prepare_time: float = 0.1
