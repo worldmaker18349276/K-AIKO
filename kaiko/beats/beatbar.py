@@ -92,11 +92,57 @@ class Performance:
 # beatbar
 class BeatbarSettings(cfg.Configurable):
     class layout(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        icon_width : int
+            The width of icon.
+
+             ⣠⣴⣤⣿⣤⣦ [00000/00400]       □  ⛶     □                 ■   [11.3%|00:09]
+            ^^^^^^^^
+              here
+
+        header_width : int
+            The width of header.
+
+             ⣠⣴⣤⣿⣤⣦ [00000/00400]       □  ⛶     □                 ■   [11.3%|00:09]
+                    ^^^^^^^^^^^^^
+                        here
+
+        footer_width : int
+            The width of footer.
+
+             ⣠⣴⣤⣿⣤⣦ [00000/00400]       □  ⛶     □                 ■   [11.3%|00:09]
+                                                                       ^^^^^^^^^^^^^
+                                                                            here
+        """
         icon_width: int = 8
         header_width: int = 13
         footer_width: int = 13
 
     class scrollingbar(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        sight_appearances : Union[List[str], List[Tuple[str, str]]]
+            The appearances of the judgement line.
+            The first string is default appearance, and the rest is the appearances
+            for the different hitting strength (from soft to loud).
+            If the element is tuple of strings, then the first/second string is
+            used for right-to-left/left-to-right direction.
+        hit_decay_time : float
+            The decay time of the hitting strength is displayed on the sight.
+        hit_sustain_time : float
+            The minimum time of the hitting strength is displayed on the sight.
+            If the hitting strength is too soft, the style of the sight will
+            sustain until this time.
+
+        performances_appearances : Dict[PerformanceGrade, Tuple[str, str]]
+            The hint for different performance, which will be drawn on the sight.
+            The first/second string is used for right-to-left/left-to-right notes.
+        performance_sustain_time : float
+            The sustain time of performance hint.
+        """
         performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
             PerformanceGrade.MISS               : (""   , ""     ),
 
@@ -574,7 +620,7 @@ class AccuracyMeterWidget:
     def load(self):
         meter_width = self.settings.meter_width
         meter_decay_time = self.settings.meter_decay_time
-        meter_tolerance = self.settings.meter_tolerance
+        meter_radius = self.settings.meter_radius
 
         length = meter_width*2
         hit = [0.0]*length
@@ -587,7 +633,7 @@ class AccuracyMeterWidget:
             while len(perfs) > self.last_perf:
                 err = perfs[self.last_perf].err
                 if err is not None:
-                    new_err.append(max(min(int((err-meter_tolerance)/-meter_tolerance/2 * length//1), length-1), 0))
+                    new_err.append(max(min(int((err-meter_radius)/-meter_radius/2 * length//1), length-1), 0))
                 self.last_perf += 1
 
             decay = max(0.0, time - self.last_time) / meter_decay_time
@@ -700,28 +746,84 @@ class Widget(Enum):
                 where.set(load_task.result)
 
 class WidgetSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    icon_widget : Widget
+        The widget on the icon.
+    header_widget : Widget
+        The widget on the header.
+    footer_widget : Widget
+        The widget on the footer.
+    """
     icon_widget: Widget = Widget.spectrum
     header_widget: Widget = Widget.score
     footer_widget: Widget = Widget.progress
 
     class spectrum(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        attr : str
+            The text attribute for the spectrum.
+        spec_width : int
+            The text width of spectrum.
+        spec_decay_time : float
+            The decay time of pillars on the spectrum.
+        spec_time_res : float
+            The time resolution of the spectrum.
+            The preferred value is `hop_length/samplerate`.
+        spec_freq_res : float
+            The frequency resolution of the spectrum.
+            The preferred value is `samplerate/win_length`.
+        """
         attr: str = "95"
         spec_width: int = 6
         spec_decay_time: float = 0.01
-        spec_time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
-        spec_freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
+        spec_time_res: float = 0.0116099773
+        spec_freq_res: float = 21.5332031
 
     class volume_indicator(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        attr : str
+            The text attribute for the volume indicator.
+        vol_decay_time : float
+            The decay time of pillar on the volume indicator.
+        """
         attr: str = "95"
         vol_decay_time: float = 0.01
 
     class score(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        attr : str
+            The text attribute for the score indicator.
+        """
         attr: str = "38;5;93"
 
     class progress(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        attr : str
+            The text attribute for the progress indicator.
+        """
         attr: str = "38;5;93"
 
     class accuracy_meter(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        meter_width : int
+            The text width of the meter.
+        meter_decay_time : float
+            The decay time of hitting lines on the meter.
+        meter_radius : float
+            The maximum accuracy error that will be displayed on the meter.
+        """
         meter_width: int = 8
         meter_decay_time: float = 1.5
-        meter_tolerance: float = 0.10
+        meter_radius: float = 0.10
