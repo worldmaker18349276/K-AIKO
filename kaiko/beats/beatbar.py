@@ -457,18 +457,252 @@ def pc_format(value, width):
     if width >= 4:
         return f"{value:>{width}.0%}" if value == 1 else f"{value:>{width}.{width-4}%}"
 
+class SpectrumWidget:
+    def __init__(self, settings, *, state, beatbar, devices_settings, **_):
+        self.settings = settings
+        self.state = state
+        self.beatbar = beatbar
+        self.devices_settings = devices_settings
+        self.spectrum = ""
+
+    def draw_spectrum(self):
+        spec_width = self.settings.spec_width
+        samplerate = self.devices_settings.mixer.output_samplerate
+        hop_length = round(samplerate * self.settings.spec_time_res)
+        win_length = round(samplerate / self.settings.spec_freq_res)
+        spec_decay_time = self.settings.spec_decay_time
+
+        df = samplerate/win_length
+        n_fft = win_length//2+1
+        n = numpy.linspace(1, 88, spec_width*2+1)
+        f = 440 * 2**((n-49)/12) # frequency of n-th piano key
+        sec = numpy.minimum(n_fft-1, (f/df).round().astype(int))
+        slices = [slice(start, stop) for start, stop in zip(sec[:-1], (sec+1)[1:])]
+
+        decay = hop_length / samplerate / spec_decay_time / 4
+        volume_of = lambda J: dn.power2db(J.mean() * samplerate / 2, scale=(1e-5, 1e6)) / 60.0
+
+        A = numpy.cumsum([0, 2**6, 2**2, 2**1, 2**0])
+        B = numpy.cumsum([0, 2**7, 2**5, 2**4, 2**3])
+        draw_bar = lambda a, b: chr(0x2800 + A[int(a*4)] + B[int(b*4)])
+
+        node = dn.pipe(dn.frame(win_length, hop_length), dn.power_spectrum(win_length, samplerate=samplerate))
+
+        @dn.datanode
+        def draw():
+            with node:
+                vols = [0.0]*(spec_width*2)
+
+                data = yield
+                while True:
+                    try:
+                        J = node.send(data)
+                    except StopIteration:
+                        return
+
+                    vols = [max(0.0, prev-decay, min(1.0, volume_of(J[slic])))
+                            for slic, prev in zip(slices, vols)]
+                    data = yield "".join(map(draw_bar, vols[0::2], vols[1::2]))
+
+        return draw()
+
+    @dn.datanode
+    def load(self):
+        attr = self.settings.attr
+        spec_width = self.settings.spec_width
+        samplerate = self.devices_settings.mixer.output_samplerate
+        nchannels = self.devices_settings.mixer.output_channels
+        hop_length = round(samplerate * self.settings.spec_time_res)
+
+        self.spectrum = "\u2800"*spec_width
+        draw = dn.pipe(self.draw_spectrum(), lambda v: setattr(self, "spectrum", v))
+        handler = dn.pipe(lambda a:a[0], dn.branch(dn.unchunk(draw, (hop_length, nchannels))))
+        self.beatbar.mixer.add_effect(handler, zindex=(-1,))
+
+        def widget_func(time, ran):
+            width = ran.stop - ran.start
+            return f"\x1b[{attr}m{self.spectrum:^{width}.{width}s}\x1b[m"
+
+        yield
+        return widget_func
+
+class VolumeIndicatorWidget:
+    def __init__(self, settings, *, beatbar, devices_settings, **_):
+        self.settings = settings
+        self.beatbar = beatbar
+        self.devices_settings = devices_settings
+        self.volume = 0.0
+
+    @dn.datanode
+    def load(self):
+        attr = self.settings.attr
+        vol_decay_time = self.settings.vol_decay_time
+        buffer_length = self.devices_settings.mixer.output_buffer_length
+        samplerate = self.devices_settings.mixer.output_samplerate
+
+        decay = buffer_length / samplerate / vol_decay_time
+
+        volume_of = lambda x: dn.power2db((x**2).mean(), scale=(1e-5, 1e6)) / 60.0
+
+        @dn.datanode
+        def volume_indicator():
+            vol = 0.0
+
+            while True:
+                data = yield
+                vol = max(0.0, vol-decay, min(1.0, volume_of(data)))
+                self.volume = vol
+
+        handler = dn.pipe(lambda a:a[0], dn.branch(volume_indicator()))
+        self.beatbar.mixer.add_effect(handler, zindex=(-1,))
+
+        def widget_func(time, ran):
+            width = ran.stop - ran.start
+            return f"\x1b[{attr}m" + "▮" * int(self.volume * width) + "\x1b[m"
+
+        yield
+        return widget_func
+
+class AccuracyMeterWidget:
+    def __init__(self, settings, *, state, **_):
+        self.settings = settings
+        self.state = state
+        self.last_perf = 0
+        self.last_time = float("inf")
+
+    @dn.datanode
+    def load(self):
+        meter_width = self.settings.meter_width
+        meter_decay_time = self.settings.meter_decay_time
+        meter_tolerance = self.settings.meter_tolerance
+
+        length = meter_width*2
+        hit = [0.0]*length
+        nlevel = 24
+
+        def widget_func(time, ran):
+            perfs = self.state.perfs
+
+            new_err = []
+            while len(perfs) > self.last_perf:
+                err = perfs[self.last_perf].err
+                if err is not None:
+                    new_err.append(max(min(int((err-meter_tolerance)/-meter_tolerance/2 * length//1), length-1), 0))
+                self.last_perf += 1
+
+            decay = max(0.0, time - self.last_time) / meter_decay_time
+            self.last_time = time
+
+            for i in range(meter_width*2):
+                if i in new_err:
+                    hit[i] = 1.0
+                else:
+                    hit[i] = max(0.0, hit[i] - decay)
+
+            return "".join(f"\x1b[48;5;{232+int(i*(nlevel-1))};38;5;{232+int(j*(nlevel-1))}m▐\x1b[m"
+                           for i, j in zip(hit[::2], hit[1::2]))
+
+        yield
+        return widget_func
+
+class ScoreWidget:
+    def __init__(self, settings, *, state, **_):
+        self.settings = settings
+        self.state = state
+
+    @dn.datanode
+    def load(self):
+        attr = self.settings.attr
+        def widget_func(time, ran):
+            score = self.state.score
+            full_score = self.state.full_score
+            width = ran.stop - ran.start
+
+            if width == 0:
+                return ""
+            if width == 1:
+                return f"\x1b[{attr};1m|\x1b[m"
+            if width == 2:
+                return f"\x1b[{attr};1m[]\x1b[m"
+            if width <= 7:
+                score_str = uint_format(score, width-2, True)
+                return f"\x1b[{attr};1m[\x1b[22m{score_str}\x1b[1m]\x1b[m"
+
+            w1 = max((width-3)//2, 5)
+            w2 = (width-3) - w1
+            score_str = uint_format(score, w1, True)
+            full_score_str = uint_format(full_score, w2, True)
+            return f"\x1b[{attr};1m[\x1b[22m{score_str}\x1b[1m/\x1b[22m{full_score_str}\x1b[1m]\x1b[m"
+
+        yield
+        return widget_func
+
+class ProgressWidget:
+    def __init__(self, settings, *, state, **_):
+        self.settings = settings
+        self.state = state
+
+    @dn.datanode
+    def load(self):
+        attr = self.settings.attr
+        def widget_func(time, ran):
+            finished_subjects = self.state.finished_subjects
+            total_subjects = self.state.total_subjects
+            time = self.state.time
+
+            progress = min(1.0, finished_subjects/total_subjects) if total_subjects>0 else 1.0
+            time = int(max(0.0, time))
+            width = ran.stop - ran.start
+
+            if width == 0:
+                return ""
+            if width == 1:
+                return f"\x1b[{attr};1m|\x1b[m"
+            if width == 2:
+                return f"\x1b[{attr};1m[]\x1b[m"
+            if width <= 7:
+                progress_str = pc_format(progress, width-2)
+                return f"\x1b[{attr};1m[\x1b[22m{progress_str}\x1b[1m]\x1b[m"
+
+            w1 = max((width-3)//2, 5)
+            w2 = (width-3) - w1
+            progress_str = pc_format(progress, w1)
+            time_str = time_format(time, w2)
+            return f"\x1b[{attr};1m[\x1b[22m{progress_str}\x1b[1m|\x1b[22m{time_str}\x1b[1m]\x1b[m"
+
+        yield
+        return widget_func
+
 class Widget(Enum):
-    spectrum = "spectrum"
-    volume_indicator = "volume_indicator"
-    score = "score"
-    progress = "progress"
-    accuracy_meter = "accuracy_meter"
+    spectrum = SpectrumWidget
+    volume_indicator = VolumeIndicatorWidget
+    accuracy_meter = AccuracyMeterWidget
+    score = ScoreWidget
+    progress = ProgressWidget
 
     def __repr__(self):
         return f"Widget.{self.name}"
 
+    @staticmethod
+    @dn.datanode
+    def install_widgets(field, settings, **params):
+        widgets = [
+            (settings.icon_widget, field.current_icon),
+            (settings.header_widget, field.current_header),
+            (settings.footer_widget, field.current_footer),
+        ]
+        for widget, where in widgets:
+            widget_settings = settings.get((widget.name,))
+            widget_object = widget.value(widget_settings, **params)
+            yield
+            with widget_object.load() as load_task:
+                yield from load_task.join((yield))
+                where.set(load_task.result)
+
 class WidgetSettings(cfg.Configurable):
-    use: List[Widget] = [Widget.spectrum, Widget.score, Widget.progress]
+    icon_widget: Widget = Widget.spectrum
+    header_widget: Widget = Widget.score
+    footer_widget: Widget = Widget.progress
 
     class spectrum(cfg.Configurable):
         attr: str = "95"
@@ -491,189 +725,3 @@ class WidgetSettings(cfg.Configurable):
         meter_width: int = 8
         meter_decay_time: float = 1.5
         meter_tolerance: float = 0.10
-
-class WidgetManager:
-    @staticmethod
-    def use_widget(name, state, beatbar, devices_settings, settings):
-        func = getattr(WidgetManager, name.value, None)
-        if func is None:
-            raise ValueError("no such widget: " + name)
-        func(state, beatbar, settings, devices_settings)
-
-    @staticmethod
-    def spectrum(state, beatbar, settings, devices_settings):
-        attr = settings.spectrum.attr
-        spec_width = settings.spectrum.spec_width
-        samplerate = devices_settings.mixer.output_samplerate
-        nchannels = devices_settings.mixer.output_channels
-        hop_length = round(samplerate * settings.spectrum.spec_time_res)
-        win_length = round(samplerate / settings.spectrum.spec_freq_res)
-        spec_decay_time = settings.spectrum.spec_decay_time
-
-        df = samplerate/win_length
-        n_fft = win_length//2+1
-        n = numpy.linspace(1, 88, spec_width*2+1)
-        f = 440 * 2**((n-49)/12) # frequency of n-th piano key
-        sec = numpy.minimum(n_fft-1, (f/df).round().astype(int))
-        slices = [slice(start, stop) for start, stop in zip(sec[:-1], (sec+1)[1:])]
-
-        decay = hop_length / samplerate / spec_decay_time / 4
-        volume_of = lambda J: dn.power2db(J.mean() * samplerate / 2, scale=(1e-5, 1e6)) / 60.0
-
-        A = numpy.cumsum([0, 2**6, 2**2, 2**1, 2**0])
-        B = numpy.cumsum([0, 2**7, 2**5, 2**4, 2**3])
-        draw_bar = lambda a, b: chr(0x2800 + A[int(a*4)] + B[int(b*4)])
-
-        node = dn.pipe(dn.frame(win_length, hop_length), dn.power_spectrum(win_length, samplerate=samplerate))
-
-        @dn.datanode
-        def draw_spectrum():
-            with node:
-                vols = [0.0]*(spec_width*2)
-
-                while True:
-                    data = yield
-                    try:
-                        J = node.send(data)
-                    except StopIteration:
-                        return
-
-                    vols = [max(0.0, prev-decay, min(1.0, volume_of(J[slic])))
-                            for slic, prev in zip(slices, vols)]
-                    beatbar.spectrum = "".join(map(draw_bar, vols[0::2], vols[1::2]))
-
-        handler = dn.pipe(lambda a:a[0], dn.branch(dn.unchunk(draw_spectrum(), (hop_length, nchannels))))
-        beatbar.spectrum = "\u2800"*spec_width
-        beatbar.mixer.add_effect(handler, zindex=(-1,))
-
-        def widget_func(time, ran):
-            spectrum = beatbar.spectrum
-            width = ran.stop - ran.start
-            return f"\x1b[{attr}m{spectrum:^{width}.{width}s}\x1b[m"
-
-        beatbar.current_icon.set(widget_func)
-
-    @staticmethod
-    def volume_indicator(state, beatbar, settings, devices_settings):
-        attr = settings.volume_indicator.attr
-        vol_decay_time = settings.volume_indicator.vol_decay_time
-        buffer_length = devices_settings.mixer.output_buffer_length
-        samplerate = devices_settings.mixer.output_samplerate
-
-        decay = buffer_length / samplerate / vol_decay_time
-
-        volume_of = lambda x: dn.power2db((x**2).mean(), scale=(1e-5, 1e6)) / 60.0
-
-        @dn.datanode
-        def volume_indicator():
-            vol = 0.0
-
-            while True:
-                data = yield
-                vol = max(0.0, vol-decay, min(1.0, volume_of(data)))
-                beatbar.volume_indicator = vol
-
-        handler = dn.pipe(lambda a:a[0], dn.branch(volume_indicator()))
-        beatbar.volume_indicator = 0.0
-        beatbar.mixer.add_effect(handler, zindex=(-1,))
-
-        def widget_func(time, ran):
-            volume_indicator = beatbar.volume_indicator
-            width = ran.stop - ran.start
-            return f"\x1b[{attr}m" + "▮" * int(volume_indicator * width) + "\x1b[m"
-
-        beatbar.current_icon.set(widget_func)
-
-    @staticmethod
-    def score(state, beatbar, settings, devices_settings):
-        attr = settings.score.attr
-        def widget_func(time, ran):
-            score = state.score
-            full_score = state.full_score
-            width = ran.stop - ran.start
-
-            if width == 0:
-                return ""
-            if width == 1:
-                return f"\x1b[{attr};1m|\x1b[m"
-            if width == 2:
-                return f"\x1b[{attr};1m[]\x1b[m"
-            if width <= 7:
-                score_str = uint_format(score, width-2, True)
-                return f"\x1b[{attr};1m[\x1b[22m{score_str}\x1b[1m]\x1b[m"
-
-            w1 = max((width-3)//2, 5)
-            w2 = (width-3) - w1
-            score_str = uint_format(score, w1, True)
-            full_score_str = uint_format(full_score, w2, True)
-            return f"\x1b[{attr};1m[\x1b[22m{score_str}\x1b[1m/\x1b[22m{full_score_str}\x1b[1m]\x1b[m"
-
-        beatbar.current_header.set(widget_func)
-
-    @staticmethod
-    def progress(state, beatbar, settings, devices_settings):
-        attr = settings.progress.attr
-        def widget_func(time, ran):
-            finished_subjects = state.finished_subjects
-            total_subjects = state.total_subjects
-            time = state.time
-
-            progress = min(1.0, finished_subjects/total_subjects) if total_subjects>0 else 1.0
-            time = int(max(0.0, time))
-            width = ran.stop - ran.start
-
-            if width == 0:
-                return ""
-            if width == 1:
-                return f"\x1b[{attr};1m|\x1b[m"
-            if width == 2:
-                return f"\x1b[{attr};1m[]\x1b[m"
-            if width <= 7:
-                progress_str = pc_format(progress, width-2)
-                return f"\x1b[{attr};1m[\x1b[22m{progress_str}\x1b[1m]\x1b[m"
-
-            w1 = max((width-3)//2, 5)
-            w2 = (width-3) - w1
-            progress_str = pc_format(progress, w1)
-            time_str = time_format(time, w2)
-            return f"\x1b[{attr};1m[\x1b[22m{progress_str}\x1b[1m|\x1b[22m{time_str}\x1b[1m]\x1b[m"
-
-        beatbar.current_footer.set(widget_func)
-
-    @staticmethod
-    def accuracy_meter(state, beatbar, settings, devices_settings):
-        meter_width = settings.accuracy_meter.meter_width
-        meter_decay_time = settings.accuracy_meter.meter_decay_time
-        meter_tolerance = settings.accuracy_meter.meter_tolerance
-
-        length = meter_width*2
-        last_perf = 0
-        last_time = float("inf")
-        hit = [0.0]*length
-        nlevel = 24
-
-        def widget_func(time, ran):
-            nonlocal last_perf, last_time
-            perfs = state.perfs
-
-            new_err = []
-            while len(perfs) > last_perf:
-                err = perfs[last_perf].err
-                if err is not None:
-                    new_err.append(max(min(int((err-meter_tolerance)/-meter_tolerance/2 * length//1), length-1), 0))
-                last_perf += 1
-
-            decay = max(0.0, time - last_time) / meter_decay_time
-            last_time = time
-
-            for i in range(meter_width*2):
-                if i in new_err:
-                    hit[i] = 1.0
-                else:
-                    hit[i] = max(0.0, hit[i] - decay)
-
-            return "".join(f"\x1b[48;5;{232+int(i*(nlevel-1))};38;5;{232+int(j*(nlevel-1))}m▐\x1b[m"
-                           for i, j in zip(hit[::2], hit[1::2]))
-
-        beatbar.current_icon.set(widget_func)
-

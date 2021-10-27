@@ -12,7 +12,7 @@ from kaiko.utils import config as cfg
 from kaiko.utils import datanodes as dn
 from kaiko.utils import wcbuffers as wcb
 from kaiko.utils import engines
-from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings, WidgetManager, WidgetSettings
+from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings, Widget, WidgetSettings
 
 
 @dataclass
@@ -1038,13 +1038,14 @@ class Beatmap:
         beatbar.add_handler(incr_knock_energy, gameplay_settings.controls.knock_energy_adjust_keys[0])
         beatbar.add_handler(decr_knock_energy, gameplay_settings.controls.knock_energy_adjust_keys[1])
 
+        # install widgets
+        widget_params = dict(state=score, beatbar=beatbar, devices_settings=devices_settings)
+        with Widget.install_widgets(beatbar, gameplay_settings.widgets, **widget_params) as install_task:
+            yield from install_task.join((yield))
+
         # play music
         if self.audionode is not None:
             beatbar.mixer.play(self.audionode, time=0.0, zindex=(-3,))
-
-        # install widgets
-        for widget in gameplay_settings.widgets.use:
-            WidgetManager.use_widget(widget, score, beatbar, devices_settings, gameplay_settings.widgets)
 
         # game loop
         updater = self.update_events(events, score, beatbar, start_time, end_time, tickrate, prepare_time, stop_event)
