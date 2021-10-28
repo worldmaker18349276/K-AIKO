@@ -148,6 +148,31 @@ def fit_screen(logger):
     return dn.pipe(skip, dn.terminal_size(), fit())
 
 class KAIKOMenuSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    data_icon : str
+        The marker of data log.
+    info_icon : str
+        The marker of info log.
+    hint_icon : str
+        The marker of hint log.
+
+    verb_attr : str
+        The text attribute of verb log.
+    emph_attr : str
+        The text attribute of emph log.
+    warn_attr : str
+        The text attribute of warn log.
+
+    best_screen_size : int
+        The best screen size.
+    adjust screen delay : float
+        The delay time to complete the screen adjustment.
+
+    editor : str
+        The editor to edit long text.
+    """
     data_icon: str = "\x1b[92m🗀 \x1b[m"
     info_icon: str = "\x1b[94m🛠 \x1b[m"
     hint_icon: str = "\x1b[93m💡 \x1b[m"
