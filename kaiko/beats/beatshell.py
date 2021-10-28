@@ -175,6 +175,16 @@ def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
 
 class BeatShellSettings(cfg.Configurable):
     class input(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        confirm_key : str
+            The key for confirming input.
+        help_key : str
+            The key for help.
+        autocomplete_keys : Tuple[str, str, str]
+            The keys for finding the next, previous and canceling suggestions.
+        """
         confirm_key: str = "Enter"
         help_key: str = "Alt_Enter"
         autocomplete_keys: Tuple[str, str, str] = ("Tab", "Shift_Tab", "Esc")
@@ -197,6 +207,28 @@ class BeatShellSettings(cfg.Configurable):
         }
 
     class prompt(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        to : float
+        tempo : float
+        icons : List[str]
+            The appearances of icon.
+        icon_width : int
+            The text width of icon.
+
+        marker : str
+            The appearance of marker.
+        marker_attr : Tuple[str, str]
+            The text attribute of the normal/blinking-style marker.
+        marker_width : int
+            The text width of marker.
+
+        caret_attr : Tuple[str, str]
+            The text attribute of the normal/blinking-style caret.
+        caret_blink_ratio : float
+            The ratio to blink.
+        """
         t0: float = 0.0
         tempo: float = 130.0
 
@@ -220,6 +252,41 @@ class BeatShellSettings(cfg.Configurable):
         caret_blink_ratio: float = 0.3
 
     class text(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        error_message_attr : str
+            The text attribute of the error message.
+        info_message_attr : str
+            The text attribute of the info message.
+        message_max_lines : str
+            The maximum number of lines of the message.
+
+        escape_attr : str
+            The text attribute of the escaped string.
+        typeahead_attr
+            The text attribute of the type-ahead.
+        whitespace : str
+            The replacement text of the escaped whitespace.
+
+        suggestions_lines : int
+            The maximum number of lines of the suggestions.
+        suggestions_selected_attr : str
+            The text attribute of the selected suggestion.
+        suggestions_bullet : str
+            The list bullet of the suggestions.
+
+        token_unknown_attr : str
+            The text attribute of the unknown token.
+        token_command_attr : str
+            The text attribute of the command token.
+        token_keyword_attr : str
+            The text attribute of the keyword token.
+        token_argument_attr : str
+            The text attribute of the argument token.
+        token_highlight_attr : str
+            The text attribute of the highlighted token.
+        """
         error_message_attr: str = "31"
         info_message_attr: str = "2"
         message_max_lines: int = 16
