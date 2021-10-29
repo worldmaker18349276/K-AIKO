@@ -497,6 +497,7 @@ class DevicesCommand:
     # engines
 
     @cmd.function_command
+    @dn.datanode
     def test_keyboard(self):
         """Test your keyboard."""
 
@@ -505,19 +506,29 @@ class DevicesCommand:
 
         logger.print(f"Press {logger.emph(exit_key)} to end test.", prefix="hint")
         logger.print()
-        logger.print(f"[ <time>  ] {logger.emph('<keyname>')} (<keycode>)")
+        logger.print(f"[ <time>  ] {logger.emph('<keyname>')} (<keycode>)", end="\r")
 
         stop_event = threading.Event()
 
         def handler(arg):
             _, time, keyname, keycode = arg
-            logger.print(f"[{time:07.3f} s] {logger.emph(keyname)} ({repr(keycode)})")
+            logger.print(f"\x1b[K[{time:07.3f} s] {logger.emph(keyname)} ({repr(keycode)})")
+            logger.print(f"[ <time>  ] {logger.emph('<keyname>')} (<keycode>)", end="\r")
 
         controller_task, controller = engines.Controller.create(self.config.current.devices.controller)
         controller.add_handler(handler)
         controller.add_handler(lambda _: stop_event.set(), exit_key)
 
-        return dn.pipe(controller_task, dn.take(lambda _: not stop_event.is_set()))
+        try:
+            with controller_task:
+                while not stop_event.is_set():
+                    try:
+                        controller_task.send(None)
+                    except StopIteration:
+                        return
+                    yield
+        finally:
+            logger.print()
 
     @cmd.function_command
     def test_knock(self):
@@ -536,7 +547,6 @@ class KnockTest:
     def execute(self, manager):
         self.logger.print("Press any key to end test.", prefix="hint")
         self.logger.print()
-        self.logger.print(f"[ <time>  ] │{self.logger.emph('<strength>')}│ (<value>)")
 
         detector_task, detector = engines.Detector.create(self.settings, manager, self.ref_time)
         detector.add_listener(self.hit_listener())
@@ -550,15 +560,21 @@ class KnockTest:
         nticks = len(ticks) - 1
         length = 10
         loud_attr = "1"
-        while True:
-            yield
+        try:
+            while True:
+                self.logger.print(f"[ <time>  ] │{self.logger.emph('<strength>')}│ (<value>)", end="\r")
 
-            while not self.hit_queue.empty():
+                while self.hit_queue.empty():
+                    yield
+
                 time, strength = self.hit_queue.get()
                 value = int(strength * length * nticks)
                 level = "".join(ticks[min(nticks, max(0, value - i * nticks))] for i in range(length))
                 level = level[:length//2] + wcb.add_attr(level[length//2:], loud_attr)
                 self.logger.print(f"[{time:07.3f} s] │{level}│ ({strength:.5f})")
+
+        finally:
+            self.logger.print()
 
     @dn.datanode
     def hit_listener(self):
