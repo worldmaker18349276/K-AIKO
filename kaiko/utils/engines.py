@@ -13,6 +13,7 @@ import audioread
 from . import config as cfg
 from . import datanodes as dn
 from . import wcbuffers as wcb
+from . import terminals as term
 
 
 @contextlib.contextmanager
@@ -546,7 +547,7 @@ class Renderer:
 
         @dn.datanode
         def _node():
-            size_node = dn.terminal_size()
+            size_node = term.terminal_size()
 
             curr_msg = ""
             index = 0
@@ -606,7 +607,7 @@ class Renderer:
         display_node = _node()
         if debug_timeit:
             display_node = dn.timeit(display_node, lambda msg: print("display: " + msg))
-        return dn.show(display_node, 1/framerate, hide_cursor=True)
+        return term.show(display_node, 1/framerate, hide_cursor=True)
 
     @classmethod
     def create(clz, settings, ref_time=0.0):
@@ -809,7 +810,7 @@ class Controller:
                     except StopIteration:
                         return
 
-        return dn.input(_node())
+        return term.inkey(_node())
 
     @classmethod
     def create(clz, settings, ref_time=0.0):

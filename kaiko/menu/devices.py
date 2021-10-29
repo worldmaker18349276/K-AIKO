@@ -1,5 +1,4 @@
 import os
-import re
 import time
 import shutil
 import traceback
@@ -11,6 +10,7 @@ from kaiko.utils import wcbuffers as wcb
 from kaiko.utils import datanodes as dn
 from kaiko.utils import config as cfg
 from kaiko.utils import commands as cmd
+from kaiko.utils import terminals as term
 from kaiko.utils import engines
 
 
@@ -100,7 +100,7 @@ def fit_screen(logger):
 
     skip_event = threading.Event()
 
-    skip = dn.input(lambda a: skip_event.set() if a[1] == '\x1b' else None)
+    skip = term.inkey(lambda a: skip_event.set() if a[1] == '\x1b' else None)
 
     @dn.datanode
     def fit():
@@ -145,7 +145,7 @@ def fit_screen(logger):
         while time.time() < t+delay:
             yield
 
-    return dn.pipe(skip, dn.terminal_size(), fit())
+    return dn.pipe(skip, term.terminal_size(), fit())
 
 class KAIKOMenuSettings(cfg.Configurable):
     r"""
@@ -243,7 +243,7 @@ class KAIKOLogger:
 
         while True:
             res_queue = queue.Queue()
-            input_task = dn.input(lambda a: res_queue.put(a[1]))
+            input_task = term.inkey(lambda a: res_queue.put(a[1]))
             try:
                 with dn.pipe(input_task, dn.take(lambda _: res_queue.empty())) as task:
                     yield from task.join((yield))
@@ -262,65 +262,12 @@ class KAIKOLogger:
 
 @dn.datanode
 def determine_unicode_version(logger):
-    pattern = re.compile(r"\x1b\[(\d*);(\d*)R")
-    channel = queue.Queue()
-
-    def get_pos(arg):
-        m = pattern.match(arg[1])
-        if not m:
-            return
-        x = int(m.group(2) or "1") - 1
-        channel.put(x)
-
-    @dn.datanode
-    def query_pos():
-        previous_version = '4.1.0'
-        wide_by_version = [
-            ('5.1.0', '龼'),
-            ('5.2.0', '🈯'),
-            ('6.0.0', '🈁'),
-            ('8.0.0', '🉐'),
-            ('9.0.0', '🐹'),
-            ('10.0.0', '🦖'),
-            ('11.0.0', '🧪'),
-            ('12.0.0', '🪐'),
-            ('12.1.0', '㋿'),
-            ('13.0.0', '🫕'),
-        ]
-
-        yield
-
-        for version, wchar in wide_by_version:
-            print(wchar, end="", flush=True)
-            print("\x1b[6n", end="", flush=True)
-
-            while True:
-                yield
-                try:
-                    x = channel.get(False)
-                except queue.Empty:
-                    continue
-                else:
-                    break
-
-            print(f"\twidth={x}", end="\n", flush=True)
-            if x == 1:
-                break
-            elif x == 2:
-                previous_version = version
-                continue
-            else:
-                return
-
-        return previous_version
-
     logger.print("Determine unicode version...", prefix="info")
 
     with logger.verb():
-        query_task = query_pos()
-        with dn.pipe(dn.input(get_pos), query_task) as task:
-            yield from task.join((yield))
-        version = query_task.result
+        with term.ucs_detect() as detect_task:
+            yield from detect_task.join((yield))
+            version = detect_task.result
 
     if version is None:
         with logger.warn():
@@ -593,7 +540,7 @@ class KnockTest:
 
         detector_task, detector = engines.Detector.create(self.settings, manager, self.ref_time)
         detector.add_listener(self.hit_listener())
-        exit_task = dn.input([])
+        exit_task = term.inkey([])
 
         return dn.pipe(detector_task, self.show_hit(), exit_task)
 
@@ -756,7 +703,7 @@ class MicTest:
 
         vol = dn.branch(self.draw_volume(samplerate, buffer_length))
 
-        exit_task = dn.input([])
+        exit_task = term.inkey([])
         mic_task = dn.record(manager, vol, samplerate=samplerate,
                                            buffer_shape=(buffer_length, channels),
                                            format=format, device=device)

@@ -9,10 +9,6 @@ import queue
 import threading
 import subprocess
 import signal
-import shutil
-import termios
-import select
-import tty
 import bisect
 import numpy
 import scipy
@@ -1077,21 +1073,6 @@ def timeit(node, log=print):
                     log(f"count={count}, avg={avg*1000:5.3f}±{dev*1000:5.3f}ms"
                         f" ({best_time*1000:5.3f}ms ~ {worst_time*1000:5.3f}ms) ({eff: >6.1%})")
 
-@datanode
-def terminal_size():
-    resize_event = threading.Event()
-    def SIGWINCH_handler(sig, frame):
-        resize_event.set()
-    resize_event.set()
-    signal.signal(signal.SIGWINCH, SIGWINCH_handler)
-
-    yield
-    while True:
-        if resize_event.is_set():
-            resize_event.clear()
-            size = shutil.get_terminal_size()
-        yield size
-
 
 # async processes
 def _thread_task(thread, stop_event, error):
@@ -1314,108 +1295,6 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
 
     with node:
         yield from _stream_task(output_stream, error)
-
-@contextlib.contextmanager
-def input_ctxt(stream, raw=False):
-    fd = stream.fileno()
-    old_attrs = termios.tcgetattr(fd)
-    old_blocking = os.get_blocking(fd)
-
-    try:
-        tty.setcbreak(fd, termios.TCSANOW)
-        if raw:
-            tty.setraw(fd, termios.TCSANOW)
-        os.set_blocking(fd, False)
-
-        yield
-
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
-        os.set_blocking(fd, old_blocking)
-
-@datanode
-def input(node, stream=None, raw=False):
-    node = DataNode.wrap(node)
-    dt = 0.01
-
-    if stream is None:
-        stream = sys.stdin
-    fd = stream.fileno()
-
-    def run(stop_event):
-        ref_time = time.time()
-        while True:
-            ready, _, _ = select.select([fd], [], [], dt)
-            if stop_event.is_set():
-                break
-            if fd not in ready:
-                continue
-
-            data = stream.read()
-
-            try:
-                node.send((time.time()-ref_time, data))
-            except StopIteration:
-                return
-
-    with input_ctxt(stream, raw):
-        with node:
-            with create_task(run) as task:
-                yield from task.join((yield))
-
-@contextlib.contextmanager
-def show_ctxt(stream, hide_cursor=False, end="\n"):
-    hide_cursor = hide_cursor and stream == sys.stdout
-
-    try:
-        if hide_cursor:
-            stream.write("\x1b[?25l")
-
-        yield
-
-    finally:
-        if hide_cursor:
-            stream.write("\x1b[?25h")
-        stream.write(end)
-        stream.flush()
-
-@datanode
-def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
-    node = DataNode.wrap(node)
-    if stream is None:
-        stream = sys.stdout
-
-    def run(stop_event):
-        ref_time = time.time()
-
-        # stream.write("\n")
-        # dropped = 0
-        shown = False
-        i = -1
-        while True:
-            try:
-                view = node.send(shown)
-            except StopIteration:
-                break
-            shown = False
-            i += 1
-
-            delta = ref_time+t0+i*dt - time.time()
-            if delta < 0:
-                # dropped += 1
-                continue
-            if stop_event.wait(delta):
-                break
-
-            # stream.write(f"\x1b[A(spend:{(dt-delta)/dt:.3f}, drop:{dropped})\n")
-            stream.write(view)
-            stream.flush()
-            shown = True
-
-    with show_ctxt(stream, hide_cursor, end):
-        with node:
-            with create_task(run) as task:
-                yield from task.join((yield))
 
 
 # not data nodes
