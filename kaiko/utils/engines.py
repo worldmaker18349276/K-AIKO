@@ -14,19 +14,8 @@ from . import config as cfg
 from . import datanodes as dn
 from . import wcbuffers as wcb
 from . import terminals as term
+from . import audios as aud
 
-
-@contextlib.contextmanager
-def nullcontext(value):
-    yield value
-
-@contextlib.contextmanager
-def prepare_pyaudio():
-    try:
-        manager = pyaudio.PyAudio()
-        yield manager
-    finally:
-        manager.terminate()
 
 def validate_input_device(manager, device, samplerate, channels, format):
     if device == -1:
@@ -127,12 +116,12 @@ class Mixer:
         if debug_timeit:
             output_node = dn.timeit(output_node, lambda msg: print(" output: " + msg))
 
-        return dn.play(manager, output_node,
-                       samplerate=samplerate,
-                       buffer_shape=(buffer_length, nchannels),
-                       format=format,
-                       device=device,
-                       )
+        return aud.play(manager, output_node,
+                        samplerate=samplerate,
+                        buffer_shape=(buffer_length, nchannels),
+                        format=format,
+                        device=device,
+                        )
 
     @classmethod
     def create(clz, settings, manager, ref_time=0.0):
@@ -290,12 +279,12 @@ class Detector:
         if debug_timeit:
             input_node = dn.timeit(input_node, lambda msg: print("  input: " + msg))
 
-        return dn.record(manager, input_node,
-                         samplerate=samplerate,
-                         buffer_shape=(buffer_length, nchannels),
-                         format=format,
-                         device=device,
-                         )
+        return aud.record(manager, input_node,
+                          samplerate=samplerate,
+                          buffer_shape=(buffer_length, nchannels),
+                          format=format,
+                          device=device,
+                          )
 
     @staticmethod
     @dn.datanode

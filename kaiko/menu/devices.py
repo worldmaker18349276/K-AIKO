@@ -1,3 +1,4 @@
+import sys
 import os
 import time
 import shutil
@@ -5,53 +6,14 @@ import traceback
 import contextlib
 import threading
 import queue
-import pyaudio
 from kaiko.utils import wcbuffers as wcb
 from kaiko.utils import datanodes as dn
 from kaiko.utils import config as cfg
 from kaiko.utils import commands as cmd
 from kaiko.utils import terminals as term
+from kaiko.utils import audios as aud
 from kaiko.utils import engines
 
-
-def print_pyaudio_info(manager, logger):
-    logger.print("portaudio version:")
-    logger.print("  " + pyaudio.get_portaudio_version_text())
-    logger.print()
-
-    logger.print("available devices:")
-    apis_list = [manager.get_host_api_info_by_index(i)['name'] for i in range(manager.get_host_api_count())]
-
-    table = []
-    for index in range(manager.get_device_count()):
-        info = manager.get_device_info_by_index(index)
-
-        ind = str(index)
-        name = info['name']
-        api = apis_list[info['hostApi']]
-        freq = str(info['defaultSampleRate']/1000)
-        chin = str(info['maxInputChannels'])
-        chout = str(info['maxOutputChannels'])
-
-        table.append((ind, name, api, freq, chin, chout))
-
-    ind_len   = max(len(entry[0]) for entry in table)
-    name_len  = max(len(entry[1]) for entry in table)
-    api_len   = max(len(entry[2]) for entry in table)
-    freq_len  = max(len(entry[3]) for entry in table)
-    chin_len  = max(len(entry[4]) for entry in table)
-    chout_len = max(len(entry[5]) for entry in table)
-
-    for ind, name, api, freq, chin, chout in table:
-        logger.print(f"  {ind:>{ind_len}}. {name:{name_len}}  by  {api:{api_len}}"
-              f"  ({freq:>{freq_len}} kHz, in: {chin:>{chin_len}}, out: {chout:>{chout_len}})")
-
-    logger.print()
-
-    default_input_device_index = manager.get_default_input_device_info()['index']
-    default_output_device_index = manager.get_default_output_device_info()['index']
-    logger.print(f"default input device: {default_input_device_index}")
-    logger.print(f"default output device: {default_output_device_index}")
 
 @contextlib.contextmanager
 def prepare_pyaudio(logger):
@@ -69,19 +31,16 @@ def prepare_pyaudio(logger):
     ------
     manager : PyAudio
     """
+
     with logger.verb():
-        manager = pyaudio.PyAudio()
+        with aud.create_manager() as manager:
+            logger.print()
 
-        logger.print()
+            aud.print_pyaudio_info(manager)
 
-        print_pyaudio_info(manager, logger)
-
-    logger.print()
-
-    try:
-        yield manager
-    finally:
-        manager.terminate()
+            with logger.normal():
+                logger.print()
+                yield manager
 
 def fit_screen(logger):
     r"""Guide user to adjust screen size.
@@ -211,6 +170,16 @@ class KAIKOLogger:
             print("\x1b[m", end="", flush=True)
 
     @contextlib.contextmanager
+    def normal(self):
+        level = self.level
+        self.level = 1
+        try:
+            print(f"\x1b[m", end="", flush=True)
+            yield
+        finally:
+            self.level = level
+
+    @contextlib.contextmanager
     def warn(self):
         warn_attr = self.settings.warn_attr
         level = self.level
@@ -293,7 +262,7 @@ class DevicesCommand:
         """Show your audio configuration."""
 
         logger = self.logger
-        print_pyaudio_info(self.manager, logger)
+        aud.print_pyaudio_info(self.manager)
 
         logger.print()
 
@@ -720,9 +689,9 @@ class MicTest:
         vol = dn.branch(self.draw_volume(samplerate, buffer_length))
 
         exit_task = term.inkey([])
-        mic_task = dn.record(manager, vol, samplerate=samplerate,
-                                           buffer_shape=(buffer_length, channels),
-                                           format=format, device=device)
+        mic_task = aud.record(manager, vol, samplerate=samplerate,
+                                            buffer_shape=(buffer_length, channels),
+                                            format=format, device=device)
 
         self.logger.print("Press any key to end testing.", prefix="hint")
         with dn.pipe(mic_task, exit_task) as task:

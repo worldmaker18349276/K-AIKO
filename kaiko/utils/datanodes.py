@@ -13,7 +13,6 @@ import bisect
 import numpy
 import scipy
 import scipy.signal
-import pyaudio
 import wave
 import audioread
 
@@ -1089,19 +1088,6 @@ def _thread_task(thread, stop_event, error):
         if not error.empty():
             raise error.get()
 
-def _stream_task(stream, error):
-    yield
-    stream.start_stream()
-    try:
-        yield
-        while stream.is_active():
-            yield
-    finally:
-        stream.stop_stream()
-        stream.close()
-        if not error.empty():
-            raise error.get()
-
 @datanode
 def subprocess_task(command):
     yield
@@ -1153,148 +1139,6 @@ def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
     with producer, consumer:
         with create_task(run) as task:
             yield from task.join((yield))
-
-@datanode
-def record(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device=-1):
-    """A context manager of input stream processing by given node.
-
-    Parameters
-    ----------
-    manager : pyaudio.PyAudio
-        The PyAudio object.
-    node : DataNode
-        The data node to process recorded sound.
-    samplerate : int, optional
-        The sample rate of input signal, default is `44100`.
-    buffer_shape : int or tuple, optional
-        The shape of input signal, default is `1024`.
-    format : str, optional
-        The sample format of input signal, default is `'f4'`.
-    device : int, optional
-        The input device index, and `-1` for default input device.
-
-    Yields
-    ------
-    input_stream : pyaudio.Stream
-        The stopped input stream to record sound.
-    """
-    node = DataNode.wrap(node)
-    pa_format = {'f4': pyaudio.paFloat32,
-                 'i4': pyaudio.paInt32,
-                 'i2': pyaudio.paInt16,
-                 'i1': pyaudio.paInt8,
-                 'u1': pyaudio.paUInt8,
-                 }[format]
-
-    scale = 2.0 ** (8*int(format[1]) - 1)
-    normalize = {'f4': (lambda d: d),
-                 'i4': (lambda d: d / scale),
-                 'i2': (lambda d: d / scale),
-                 'i1': (lambda d: d / scale),
-                 'u1': (lambda d: (d - 64) / 64),
-                 }[format]
-
-    if device == -1:
-        device = None
-
-    error = queue.Queue()
-    length, channels = (buffer_shape, 1) if isinstance(buffer_shape, int) else buffer_shape
-
-    def input_callback(in_data, frame_count, time_info, status):
-        try:
-            data = normalize(numpy.frombuffer(in_data, dtype=format).reshape(buffer_shape))
-            node.send(data)
-
-            return b"", pyaudio.paContinue
-        except StopIteration:
-            return b"", pyaudio.paComplete
-        except Exception as e:
-            error.put(e)
-            return b"", pyaudio.paComplete
-
-    input_stream = manager.open(format=pa_format,
-                                channels=channels,
-                                rate=samplerate,
-                                input=True,
-                                output=False,
-                                input_device_index=device,
-                                frames_per_buffer=length,
-                                stream_callback=input_callback,
-                                start=False)
-
-    with node:
-        yield from _stream_task(input_stream, error)
-
-@datanode
-def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device=-1):
-    """A context manager of output stream processing by given node.
-
-    Parameters
-    ----------
-    manager : pyaudio.PyAudio
-        The PyAudio object.
-    node : DataNode
-        The data node to process playing sound.
-    samplerate : int, optional
-        The sample rate of output signal, default is `44100`.
-    buffer_shape : int or tuple, optional
-        The length of output signal, default is `1024`.
-    format : str, optional
-        The sample format of output signal, default is `'f4'`.
-    device : int, optional
-        The output device index, and `-1` for default output device.
-
-    Yields
-    ------
-    output_stream : pyaudio.Stream
-        The stopped output stream to play sound.
-    """
-    node = DataNode.wrap(node)
-    pa_format = {'f4': pyaudio.paFloat32,
-                 'i4': pyaudio.paInt32,
-                 'i2': pyaudio.paInt16,
-                 'i1': pyaudio.paInt8,
-                 'u1': pyaudio.paUInt8,
-                 }[format]
-
-    scale = 2.0 ** (8*int(format[1]) - 1)
-    normalize = {'f4': (lambda d: d),
-                 'i4': (lambda d: d * scale),
-                 'i2': (lambda d: d * scale),
-                 'i1': (lambda d: d * scale),
-                 'u1': (lambda d: d * 64 + 64),
-                 }[format]
-
-    if device == -1:
-        device = None
-
-    error = queue.Queue()
-    length, channels = (buffer_shape, 1) if isinstance(buffer_shape, int) else buffer_shape
-
-    def output_callback(in_data, frame_count, time_info, status):
-        try:
-            data = node.send(None)
-            out_data = normalize(data).astype(format).tobytes()
-
-            return out_data, pyaudio.paContinue
-        except StopIteration:
-            return b"", pyaudio.paComplete
-        except Exception as e:
-            error.put(e)
-            return b"", pyaudio.paComplete
-
-    output_stream = manager.open(format=pa_format,
-                                 channels=channels,
-                                 rate=samplerate,
-                                 input=False,
-                                 output=True,
-                                 output_device_index=device,
-                                 frames_per_buffer=length,
-                                 stream_callback=output_callback,
-                                 start=False)
-
-    with node:
-        yield from _stream_task(output_stream, error)
 
 
 # not data nodes
