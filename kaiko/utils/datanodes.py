@@ -1155,29 +1155,23 @@ def create_task(func):
 def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
     producer = DataNode.wrap(producer)
     consumer = DataNode.wrap(consumer)
-    stop_event = threading.Event()
-    error = queue.Queue()
 
-    def run():
-        try:
-            ref_time = time.time()
+    def run(stop_event):
+        ref_time = time.time()
 
-            for i, data in enumerate(producer):
-                delta = ref_time+t0+i*dt - time.time()
-                if stop_event.wait(delta) if delta > 0 else stop_event.is_set():
-                    break
+        for i, data in enumerate(producer):
+            delta = ref_time+t0+i*dt - time.time()
+            if stop_event.wait(delta) if delta > 0 else stop_event.is_set():
+                break
 
-                try:
-                    consumer.send(data)
-                except StopIteration:
-                    return
-
-        except Exception as e:
-            error.put(e)
+            try:
+                consumer.send(data)
+            except StopIteration:
+                return
 
     with producer, consumer:
-        thread = threading.Thread(target=run)
-        yield from _thread_task(thread, stop_event, error)
+        with create_task(run) as task:
+            yield from task.join((yield))
 
 @datanode
 def record(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device=-1):
@@ -1348,33 +1342,26 @@ def input(node, stream=None, raw=False):
         stream = sys.stdin
     fd = stream.fileno()
 
-    stop_event = threading.Event()
-    error = queue.Queue()
+    def run(stop_event):
+        ref_time = time.time()
+        while True:
+            ready, _, _ = select.select([fd], [], [], dt)
+            if stop_event.is_set():
+                break
+            if fd not in ready:
+                continue
+
+            data = stream.read()
+
+            try:
+                node.send((time.time()-ref_time, data))
+            except StopIteration:
+                return
 
     with input_ctxt(stream, raw):
-        def run():
-            try:
-                ref_time = time.time()
-                while True:
-                    ready, _, _ = select.select([fd], [], [], dt)
-                    if stop_event.is_set():
-                        break
-                    if fd not in ready:
-                        continue
-
-                    data = stream.read()
-
-                    try:
-                        node.send((time.time()-ref_time, data))
-                    except StopIteration:
-                        return
-
-            except Exception as e:
-                error.put(e)
-
         with node:
-            thread = threading.Thread(target=run)
-            yield from _thread_task(thread, stop_event, error)
+            with create_task(run) as task:
+                yield from task.join((yield))
 
 @contextlib.contextmanager
 def show_ctxt(stream, hide_cursor=False, end="\n"):
@@ -1398,44 +1385,37 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
     if stream is None:
         stream = sys.stdout
 
-    stop_event = threading.Event()
-    error = queue.Queue()
+    def run(stop_event):
+        ref_time = time.time()
 
-    def run():
-        try:
-            ref_time = time.time()
-
-            # stream.write("\n")
-            # dropped = 0
+        # stream.write("\n")
+        # dropped = 0
+        shown = False
+        i = -1
+        while True:
+            try:
+                view = node.send(shown)
+            except StopIteration:
+                break
             shown = False
-            i = -1
-            while True:
-                try:
-                    view = node.send(shown)
-                except StopIteration:
-                    break
-                shown = False
-                i += 1
+            i += 1
 
-                delta = ref_time+t0+i*dt - time.time()
-                if delta < 0:
-                    # dropped += 1
-                    continue
-                if stop_event.wait(delta):
-                    break
+            delta = ref_time+t0+i*dt - time.time()
+            if delta < 0:
+                # dropped += 1
+                continue
+            if stop_event.wait(delta):
+                break
 
-                # stream.write(f"\x1b[A(spend:{(dt-delta)/dt:.3f}, drop:{dropped})\n")
-                stream.write(view)
-                stream.flush()
-                shown = True
-
-        except Exception as e:
-            error.put(e)
+            # stream.write(f"\x1b[A(spend:{(dt-delta)/dt:.3f}, drop:{dropped})\n")
+            stream.write(view)
+            stream.flush()
+            shown = True
 
     with show_ctxt(stream, hide_cursor, end):
         with node:
-            thread = threading.Thread(target=run)
-            yield from _thread_task(thread, stop_event, error)
+            with create_task(run) as task:
+                yield from task.join((yield))
 
 
 # not data nodes
