@@ -11,7 +11,8 @@ import subprocess
 import signal
 import shutil
 import termios
-import fcntl
+import select
+import tty
 import bisect
 import numpy
 import scipy
@@ -1321,68 +1322,52 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
         yield from _stream_task(output_stream, error)
 
 @contextlib.contextmanager
-def input_ctxt(stream):
+def input_ctxt(stream, raw=False):
     fd = stream.fileno()
     old_attrs = termios.tcgetattr(fd)
-    new_attrs = list(old_attrs)
-    new_attrs[3] = new_attrs[3] & ~termios.ICANON & ~termios.ECHO
-    old_flags = fcntl.fcntl(fd, fcntl.F_SETFL)
-    new_flags = old_flags | os.O_NONBLOCK | os.O_ASYNC
-    old_owner = fcntl.fcntl(fd, fcntl.F_GETOWN)
-    new_owner = os.getpid()
-
-    io_event = threading.Event()
-    def SIGIO_handler(signal, frame):
-        io_event.set()
-    signal.signal(signal.SIGIO, SIGIO_handler)
+    old_blocking = os.get_blocking(fd)
 
     try:
-        fcntl.fcntl(fd, fcntl.F_SETFL, new_flags)
-        fcntl.fcntl(fd, fcntl.F_SETOWN, new_owner)
-        termios.tcsetattr(fd, termios.TCSANOW, new_attrs)
+        tty.setcbreak(fd, termios.TCSANOW)
+        if raw:
+            tty.setraw(fd, termios.TCSANOW)
+        os.set_blocking(fd, False)
 
-        yield io_event
+        yield
 
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
-        fcntl.fcntl(fd, fcntl.F_SETOWN, old_owner)
-        fcntl.fcntl(fd, fcntl.F_SETFL, old_flags)
+        os.set_blocking(fd, old_blocking)
 
 @datanode
-def input(node, stream=None):
+def input(node, stream=None, raw=False):
     node = DataNode.wrap(node)
-    MAX_KEY_LEN = 16
     dt = 0.01
 
     if stream is None:
         stream = sys.stdin
+    fd = stream.fileno()
 
     stop_event = threading.Event()
     error = queue.Queue()
 
-    with input_ctxt(stream) as io_event:
+    with input_ctxt(stream, raw):
         def run():
             try:
                 ref_time = time.time()
-
                 while True:
-                    occured = io_event.wait(dt)
+                    ready, _, _ = select.select([fd], [], [], dt)
                     if stop_event.is_set():
                         break
-                    if not occured:
+                    if fd not in ready:
                         continue
 
-                    io_event.clear()
+                    data = stream.read()
 
-                    key = stream.read(MAX_KEY_LEN)
-
-                    if key:
-                        try:
-                            node.send((time.time()-ref_time, key))
-                        except StopIteration:
-                            return
-                        if len(key) == MAX_KEY_LEN:
-                            io_event.set()
+                    try:
+                        node.send((time.time()-ref_time, data))
+                    except StopIteration:
+                        return
 
             except Exception as e:
                 error.put(e)
