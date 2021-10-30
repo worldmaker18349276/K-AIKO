@@ -593,29 +593,18 @@ class Renderer:
         with text_node:
             (view, msg), time, width = yield
             while True:
-                # normalize mask without clamp
-                if xmask.start is None:
-                    xstart = 0
-                elif xmask.start < 0:
-                    xstart = width+xmask.start
-                else:
-                    xstart = xmask.start
-                if xmask.stop is None:
-                    xstop = width
-                elif xmask.stop < 0:
-                    xstop = width+xmask.stop
-                else:
-                    xstop = xmask.stop
-                xran = range(xstart, xstop)
+                xran = wcb.locate(xmask, width)
 
                 try:
-                    text = text_node.send((time, xran))
+                    res = text_node.send((time, xran))
                 except StopIteration:
                     return
 
-                if clear:
-                    view = wcb.clear1(view, width, xmask=xmask)
-                view, _ = wcb.addtext1(view, width, xran.start, text, xmask=xmask)
+                if res is not None:
+                    xshift, text = res
+                    if clear:
+                        view = wcb.clear1(view, width, xmask=xmask)
+                    view, _ = wcb.addtext1(view, width, xran.start+xshift, text, xmask=xmask)
 
                 (view, msg), time, width = yield (view, msg)
 

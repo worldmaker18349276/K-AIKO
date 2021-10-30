@@ -8,7 +8,6 @@ import threading
 import numpy
 from kaiko.utils import config as cfg
 from kaiko.utils import datanodes as dn
-from kaiko.utils import wcbuffers as wcb
 
 
 # performance
@@ -194,8 +193,7 @@ class Beatbar:
 
         self.icon_mask = slice(None, icon_width)
         self.header_mask = slice(icon_width, icon_width+header_width)
-        self.content_mask = (slice(icon_width+header_width, -footer_width)
-                             if footer_width > 0 else slice(icon_width+header_width, None))
+        self.content_mask = slice(icon_width+header_width, -footer_width if footer_width > 0 else None)
         self.footer_mask = slice(-footer_width, None) if footer_width > 0 else slice(0, 0)
 
         self.current_icon = dn.TimedVariable(value=lambda time, ran: "")
@@ -222,9 +220,9 @@ class Beatbar:
         hit_handler = Beatbar._hit_handler(self.current_hit_hint, self.target_queue)
 
         # register handlers
-        icon_drawer = lambda arg: self.current_icon.get(arg[0])(arg[0], arg[1])
-        header_drawer = lambda arg: self.current_header.get(arg[0])(arg[0], arg[1])
-        footer_drawer = lambda arg: self.current_footer.get(arg[0])(arg[0], arg[1])
+        icon_drawer = lambda arg: (0, self.current_icon.get(arg[0])(arg[0], arg[1]))
+        header_drawer = lambda arg: (0, self.current_header.get(arg[0])(arg[0], arg[1]))
+        footer_drawer = lambda arg: (0, self.current_footer.get(arg[0])(arg[0], arg[1]))
 
         renderer.add_text(icon_drawer, xmask=self.icon_mask, clear=True, zindex=(1,))
         renderer.add_text(header_drawer, xmask=self.header_mask, clear=True, zindex=(2,))
@@ -245,78 +243,73 @@ class Beatbar:
         footer_func = footer if hasattr(footer, '__call__') else lambda time, ran: footer
         self.current_footer.set(footer_func, start, duration)
 
-    def _draw_content(self, view, width, pos, text):
-        mask = self.content_mask
+    @dn.datanode
+    def _content_node(self, pos_func, text_func, start, duration):
+        time, ran = yield
 
-        pos = pos + self.bar_shift
-        if self.bar_flip:
-            pos = 1 - pos
+        if start is None:
+            start = time
 
-        content_start, content_end, _ = mask.indices(width)
-        index = content_start + pos * max(0, content_end - content_start - 1)
-        if not math.isfinite(index):
-            return view
-        index = round(index)
+        while time < start:
+            time, ran = yield None
 
-        if isinstance(text, tuple):
-            text = text[self.bar_flip]
+        while duration is None or time < start + duration:
+            pos = pos_func(time)
+            text = text_func(time)
+            shift = self.bar_shift
+            flip = self.bar_flip
 
-        return wcb.addtext1(view, width, index, text, xmask=mask)
+            pos = pos + shift
+            if flip:
+                pos = 1 - pos
+
+            index = pos * max(0, len(ran)-1)
+            if not math.isfinite(index):
+                time, ran = yield None
+                continue
+
+            index = round(index)
+            if isinstance(text, tuple):
+                text = text[flip]
+            time, ran = yield index, text
 
     def draw_content(self, pos, text, start=None, duration=None, zindex=(0,)):
         pos_func = pos if hasattr(pos, '__call__') else lambda time: pos
         text_func = text if hasattr(text, '__call__') else lambda time: text
 
-        @dn.datanode
-        def _content_node(pos, text, start, duration):
-            (view, msg), time, width = yield
-
-            if start is None:
-                start = time
-
-            while time < start:
-                (view, msg), time, width = yield (view, msg)
-
-            while duration is None or time < start + duration:
-                view, _ = self._draw_content(view, width, pos_func(time), text_func(time))
-                (view, msg), time, width = yield (view, msg)
-
-        node = _content_node(pos, text, start, duration)
+        node = self._content_node(pos_func, text_func, start, duration)
         zindex_ = (lambda: (0, *zindex())) if hasattr(zindex, '__call__') else (0, *zindex)
-        return self.renderer.add_drawer(node, zindex=zindex_)
+        return self.renderer.add_text(node, self.content_mask, zindex=zindex_)
 
-    def _draw_title(self, view, width, pos, text):
-        mask = self.content_mask
+    @dn.datanode
+    def _title_node(self, pos_func, text_func, start, duration):
+        time, ran = yield
 
-        content_start, content_end, _ = mask.indices(width)
-        index = content_start + pos * max(0, content_end - content_start - 1)
-        if not math.isfinite(index):
-            return view
-        index = round(index)
+        if start is None:
+            start = time
 
-        return wcb.addtext1(view, width, index, text, xmask=mask)
+        while time < start:
+            time, ran = yield None
+
+        while duration is None or time < start + duration:
+            pos = pos_func(time)
+            text = text_func(time)
+
+            index = pos * max(0, len(ran)-1)
+            if not math.isfinite(index):
+                time, ran = yield None
+                continue
+
+            index = round(index)
+            time, ran = yield index, text
 
     def draw_title(self, pos, text, start=None, duration=None, zindex=(10,)):
         pos_func = pos if hasattr(pos, '__call__') else lambda time: pos
         text_func = text if hasattr(text, '__call__') else lambda time: text
 
-        @dn.datanode
-        def _content_node(pos, text, start, duration):
-            (view, msg), time, width = yield
-
-            if start is None:
-                start = time
-
-            while time < start:
-                (view, msg), time, width = yield (view, msg)
-
-            while duration is None or time < start + duration:
-                view, _ = self._draw_title(view, width, pos_func(time), text_func(time))
-                (view, msg), time, width = yield (view, msg)
-
-        node = _content_node(pos, text, start, duration)
+        node = self._title_node(pos_func, text_func, start, duration)
         zindex_ = (lambda: (0, *zindex())) if hasattr(zindex, '__call__') else (0, *zindex)
-        return self.renderer.add_drawer(node, zindex=zindex_)
+        return self.renderer.add_text(node, self.content_mask, zindex=zindex_)
 
     def remove_content_drawer(self, key):
         self.renderer.remove_drawer(key)
@@ -547,7 +540,7 @@ class SpectrumWidget:
         self.beatbar.mixer.add_effect(handler, zindex=(-1,))
 
         def widget_func(time, ran):
-            width = max(0, ran.stop - ran.start)
+            width = len(ran)
             return f"\x1b[{attr}m{self.spectrum:^{width}.{width}s}\x1b[m"
 
         yield
@@ -584,7 +577,7 @@ class VolumeIndicatorWidget:
         self.beatbar.mixer.add_effect(handler, zindex=(-1,))
 
         def widget_func(time, ran):
-            width = max(0, ran.stop - ran.start)
+            width = len(ran)
             return f"\x1b[{attr}m" + "▮" * int(self.volume * width) + "\x1b[m"
 
         yield
@@ -643,7 +636,7 @@ class ScoreWidget:
         def widget_func(time, ran):
             score = self.state.score
             full_score = self.state.full_score
-            width = max(0, ran.stop - ran.start)
+            width = len(ran)
 
             if width == 0:
                 return ""
@@ -679,7 +672,7 @@ class ProgressWidget:
 
             progress = min(1.0, finished_subjects/total_subjects) if total_subjects>0 else 1.0
             time = int(max(0.0, time))
-            width = max(0, ran.stop - ran.start)
+            width = len(ran)
 
             if width == 0:
                 return ""

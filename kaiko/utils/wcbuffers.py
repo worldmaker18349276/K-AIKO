@@ -56,6 +56,24 @@ def clamp(ran, ran_):
     stop = max(min(ran.stop, ran_.stop), ran.start)
     return range(start, stop)
 
+def locate(slice, width):
+    # positioning position of slice without clamp
+    if slice.start is None:
+        xstart = 0
+    elif slice.start < 0:
+        xstart = width+slice.start
+    else:
+        xstart = slice.start
+
+    if slice.stop is None:
+        xend = width
+    elif slice.stop < 0:
+        xend = width+slice.stop
+    else:
+        xend = slice.stop
+
+    return range(xstart, xend)
+
 
 def addtext1(view, width, x, text, xmask=slice(None,None)):
     xran = range(width)
