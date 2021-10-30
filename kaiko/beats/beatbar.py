@@ -198,7 +198,6 @@ class Beatbar:
                              if footer_width > 0 else slice(icon_width+header_width, None))
         self.footer_mask = slice(-footer_width, None) if footer_width > 0 else slice(0, 0)
 
-        self.content_scheduler = dn.Scheduler()
         self.current_icon = dn.TimedVariable(value=lambda time, ran: "")
         self.current_header = dn.TimedVariable(value=lambda time, ran: "")
         self.current_footer = dn.TimedVariable(value=lambda time, ran: "")
@@ -227,7 +226,6 @@ class Beatbar:
         header_drawer = lambda arg: self.current_header.get(arg[0])(arg[0], arg[1])
         footer_drawer = lambda arg: self.current_footer.get(arg[0])(arg[0], arg[1])
 
-        renderer.add_drawer(self.content_scheduler, zindex=(0,))
         renderer.add_text(icon_drawer, xmask=self.icon_mask, clear=True, zindex=(1,))
         renderer.add_text(header_drawer, xmask=self.header_mask, clear=True, zindex=(2,))
         renderer.add_text(footer_drawer, xmask=self.footer_mask, clear=True, zindex=(3,))
@@ -246,9 +244,6 @@ class Beatbar:
     def set_footer(self, footer, start=None, duration=None):
         footer_func = footer if hasattr(footer, '__call__') else lambda time, ran: footer
         self.current_footer.set(footer_func, start, duration)
-
-    def add_content_drawer(self, node, zindex=(0,)):
-        return self.content_scheduler.add_node(node, zindex=zindex)
 
     def _draw_content(self, view, width, pos, text):
         mask = self.content_mask
@@ -287,7 +282,8 @@ class Beatbar:
                 (view, msg), time, width = yield (view, msg)
 
         node = _content_node(pos, text, start, duration)
-        return self.add_content_drawer(node, zindex=zindex)
+        zindex_ = (lambda: (0, *zindex())) if hasattr(zindex, '__call__') else (0, *zindex)
+        return self.renderer.add_drawer(node, zindex=zindex_)
 
     def _draw_title(self, view, width, pos, text):
         mask = self.content_mask
@@ -319,10 +315,11 @@ class Beatbar:
                 (view, msg), time, width = yield (view, msg)
 
         node = _content_node(pos, text, start, duration)
-        return self.add_content_drawer(node, zindex=zindex)
+        zindex_ = (lambda: (0, *zindex())) if hasattr(zindex, '__call__') else (0, *zindex)
+        return self.renderer.add_drawer(node, zindex=zindex_)
 
     def remove_content_drawer(self, key):
-        self.content_scheduler.remove_node(key)
+        self.renderer.remove_drawer(key)
 
 
     @staticmethod
