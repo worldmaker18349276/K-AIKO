@@ -13,8 +13,6 @@ import bisect
 import numpy
 import scipy
 import scipy.signal
-import wave
-import audioread
 
 
 def datanode(gen_func):
@@ -785,99 +783,6 @@ def tslice(node, samplerate, start=None, end=None):
             if end is not None and index > end:
                 break
 
-class IOCancelledError(Exception):
-    pass
-
-@datanode
-def load(filename, stop_event=None):
-    """A data node to load sound file.
-
-    Parameters
-    ----------
-    filename : str
-        The sound file to load.
-    stop_event : threading.Event
-        The event to cancel loading file.
-
-    Yields
-    ------
-    data : ndarray
-        The loaded signal.
-    """
-    if stop_event is None:
-        stop_event = threading.Event()
-
-    if filename.endswith(".wav"):
-        with wave.open(filename, 'rb') as file:
-            nchannels = file.getnchannels()
-            width = file.getsampwidth()
-            scale = 2.0 ** (1 - 8*width)
-            fmt = f'<i{width}'
-            def frombuffer(data):
-                return scale * numpy.frombuffer(data, fmt).astype(numpy.float32).reshape(-1, nchannels)
-
-            remaining = file.getnframes()
-            while remaining > 0:
-                data = file.readframes(256)
-                remaining -= len(data)//width
-                yield frombuffer(data)
-                if stop_event.is_set():
-                    raise IOCancelledError(f"The operation of loading file {filename} has been cancelled.")
-
-    else:
-        with audioread.audio_open(filename) as file:
-            width = 2
-            scale = 2.0 ** (1 - 8*width)
-            fmt = f'<i{width}'
-            def frombuffer(data):
-                return scale * numpy.frombuffer(data, fmt).astype(numpy.float32).reshape(-1, file.channels)
-
-            for data in file:
-                yield frombuffer(data)
-                if stop_event.is_set():
-                    raise IOCancelledError(f"The operation of loading file {filename} has been cancelled.")
-
-@datanode
-def save(filename, samplerate=44100, channels=1, width=2, stop_event=None):
-    """A data node to save as .wav file.
-
-    Parameters
-    ----------
-    filename : str
-        The sound file to save.
-    samplerate : int, optional
-        The sample rate, default is `44100`.
-    channels : int, optional
-        The number of channels, default is `1`.
-    width : int, optional
-        The sample width in bytes.
-    stop_event : threading.Event
-        The event to cancel saving file.
-
-    Receives
-    ------
-    data : ndarray
-        The signal to save.
-    """
-    if stop_event is None:
-        stop_event = threading.Event()
-
-    with wave.open(filename, 'wb') as file:
-        scale = 2.0 ** (8*width - 1)
-        fmt = f'<i{width}'
-        def tobuffer(data):
-            return (data * scale).astype(fmt).tobytes()
-
-        file.setsampwidth(width)
-        file.setnchannels(channels)
-        file.setframerate(samplerate)
-        file.setnframes(0)
-
-        while True:
-            file.writeframes(tobuffer((yield)))
-            if stop_event.is_set():
-                raise IOCancelledError(f"The operation of saving file {filename} has been cancelled.")
-
 
 # others
 class TimedVariable:
@@ -1192,55 +1097,4 @@ def get_A_weight(samplerate, win_length):
     weight[f>20000] = 0.0
 
     return weight
-
-def load_sound(filepath, samplerate=None, channels=None, volume=0.0, start=None, end=None, chunk_length=1024, stop_event=None):
-    with audioread.audio_open(filepath) as file:
-        file_samplerate = file.samplerate
-
-    filenode = load(filepath, stop_event)
-
-    if start is not None or end is not None:
-        filenode = tslice(filenode, file_samplerate, start, end)
-
-    with filenode:
-        sound = numpy.concatenate(tuple(filenode), axis=0)
-
-    if volume != 0:
-        sound = sound * 10**(volume/20)
-
-    # resample
-    if samplerate is not None and file_samplerate != samplerate:
-        length = int(sound.shape[0] * samplerate/file_samplerate)
-        sound = scipy.signal.resample(sound, length, axis=0)
-
-    # rechannel
-    if sound.ndim == 1:
-        sound = sound[:,None]
-
-    if isinstance(channels, int):
-        if channels == 0:
-            sound = numpy.mean(sound, axis=1)
-
-        elif channels != sound.shape[1]:
-            sound = numpy.mean(sound, axis=1, keepdims=True)
-            sound = sound[:, [0]*channels]
-
-    elif isinstance(channels, list):
-        sound = sound[:, channels]
-
-    elif channels is None:
-        pass
-
-    else:
-        raise ValueError(f"invalid channel map: {repr(channels)}")
-
-    # chunk
-    if chunk_length is not None:
-        shape = (chunk_length, *sound.shape[1:])
-        with chunk([sound], shape) as node:
-            sound = list(node)
-    else:
-        sound = [sound]
-
-    return sound
 

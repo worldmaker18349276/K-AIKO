@@ -10,7 +10,7 @@ import numpy
 import audioread
 from kaiko.utils import config as cfg
 from kaiko.utils import datanodes as dn
-from kaiko.utils import wcbuffers as wcb
+from kaiko.utils import audios as aud
 from kaiko.utils import engines
 from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings, Widget, WidgetSettings
 
@@ -1182,7 +1182,7 @@ class Beatmap:
     def _load_resources(self, output_samplerate, output_nchannels, data_dir, stop_event):
         if self.audio is not None:
             audio_path = os.path.join(self.root, self.audio)
-            self.audionode = dn.DataNode.wrap(dn.load_sound(audio_path,
+            self.audionode = dn.DataNode.wrap(aud.load_sound(audio_path,
                                               samplerate=output_samplerate,
                                               channels=output_nchannels,
                                               volume=self.volume,
@@ -1190,10 +1190,10 @@ class Beatmap:
 
         for name, path in self.settings.resources.items():
             sound_path = os.path.join(data_dir, path)
-            self.resources[name] = dn.load_sound(sound_path,
-                                                 samplerate=output_samplerate,
-                                                 channels=output_nchannels,
-                                                 stop_event=stop_event)
+            self.resources[name] = aud.load_sound(sound_path,
+                                                  samplerate=output_samplerate,
+                                                  channels=output_nchannels,
+                                                  stop_event=stop_event)
 
     def prepare_events(self):
         r"""Prepare events asynchronously.
