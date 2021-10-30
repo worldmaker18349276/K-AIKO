@@ -337,7 +337,7 @@ class DevicesCommand:
             pa_format = self.config.current.devices.detector.input_format
 
         try:
-            engines.validate_input_device(self.manager, device, pa_samplerate, pa_channels, pa_format)
+            aud.validate_input_device(self.manager, device, pa_samplerate, pa_channels, pa_format)
 
         except ValueError as e:
             info = e.args[0]
@@ -386,7 +386,7 @@ class DevicesCommand:
             pa_format = self.config.current.devices.mixer.output_format
 
         try:
-            engines.validate_output_device(self.manager, device, pa_samplerate, pa_channels, pa_format)
+            aud.validate_output_device(self.manager, device, pa_samplerate, pa_channels, pa_format)
 
         except ValueError as e:
             info = e.args[0]
@@ -606,7 +606,7 @@ class SpeakerTest:
         format = engines.MixerSettings.output_format
 
         try:
-            engines.validate_output_device(manager, device, samplerate, nchannels, format)
+            aud.validate_output_device(manager, device, samplerate, nchannels, format)
 
         except ValueError:
             with self.logger.warn():
@@ -668,7 +668,7 @@ class MicTest:
         format = engines.DetectorSettings.input_format
 
         try:
-            engines.validate_input_device(manager, device, samplerate, channels, format)
+            aud.validate_input_device(manager, device, samplerate, channels, format)
 
         except ValueError:
             with self.logger.warn():

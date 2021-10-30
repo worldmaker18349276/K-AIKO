@@ -52,6 +52,36 @@ def create_manager():
     finally:
         manager.terminate()
 
+def validate_input_device(manager, device, samplerate, channels, format):
+    if device == -1:
+        device = manager.get_default_input_device_info()['index']
+
+    format = {
+        'f4': pyaudio.paFloat32,
+        'i4': pyaudio.paInt32,
+        'i2': pyaudio.paInt16,
+        'i1': pyaudio.paInt8,
+        'u1': pyaudio.paUInt8,
+    }[format]
+
+    manager.is_format_supported(samplerate,
+        input_device=device, input_channels=channels, input_format=format)
+
+def validate_output_device(manager, device, samplerate, channels, format):
+    if device == -1:
+        device = manager.get_default_output_device_info()['index']
+
+    format = {
+        'f4': pyaudio.paFloat32,
+        'i4': pyaudio.paInt32,
+        'i2': pyaudio.paInt16,
+        'i1': pyaudio.paInt8,
+        'u1': pyaudio.paUInt8,
+    }[format]
+
+    manager.is_format_supported(samplerate,
+        output_device=device, output_channels=channels, output_format=format)
+
 
 def _stream_task(stream, error):
     yield
