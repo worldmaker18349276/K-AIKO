@@ -573,8 +573,8 @@ class Renderer:
     def add_message(self, msg, zindex=(0,)):
         return self.add_drawer(self._msg_drawer(msg), zindex)
 
-    def add_text(self, text_node, x=0, xmask=slice(None,None), zindex=(0,)):
-        return self.add_drawer(self._text_drawer(text_node, x, xmask), zindex)
+    def add_text(self, text_node, xmask=slice(None,None), clear=False, zindex=(0,)):
+        return self.add_drawer(self._text_drawer(text_node, xmask, clear), zindex)
 
     def add_pad(self, pad_node, xmask=slice(None,None), zindex=(0,)):
         return self.add_drawer(self._pad_drawer(pad_node, xmask), zindex)
@@ -588,16 +588,34 @@ class Renderer:
 
     @staticmethod
     @dn.datanode
-    def _text_drawer(text_node, x=0, xmask=slice(None,None)):
+    def _text_drawer(text_node, xmask=slice(None,None), clear=False):
         text_node = dn.DataNode.wrap(text_node)
         with text_node:
             (view, msg), time, width = yield
             while True:
+                # normalize mask without clamp
+                if xmask.start is None:
+                    xstart = 0
+                elif xmask.start < 0:
+                    xstart = width+xmask.start
+                else:
+                    xstart = xmask.start
+                if xmask.stop is None:
+                    xstop = width
+                elif xmask.stop < 0:
+                    xstop = width+xmask.stop
+                else:
+                    xstop = xmask.stop
+                xran = range(xstart, xstop)
+
                 try:
-                    text = text_node.send((time, range(-x, width-x)[xmask]))
+                    text = text_node.send((time, xran))
                 except StopIteration:
                     return
-                view, _ = wcb.addtext1(view, width, x, text, xmask=xmask)
+
+                if clear:
+                    view = wcb.clear1(view, width, xmask=xmask)
+                view, _ = wcb.addtext1(view, width, xran.start, text, xmask=xmask)
 
                 (view, msg), time, width = yield (view, msg)
 

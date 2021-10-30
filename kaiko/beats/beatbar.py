@@ -203,10 +203,6 @@ class Beatbar:
         self.current_header = dn.TimedVariable(value=lambda time, ran: "")
         self.current_footer = dn.TimedVariable(value=lambda time, ran: "")
 
-        icon_drawer = Beatbar._masked_node(self.current_icon, self.icon_mask)
-        header_drawer = Beatbar._masked_node(self.current_header, self.header_mask)
-        footer_drawer = Beatbar._masked_node(self.current_footer, self.footer_mask)
-
         # sight
         hit_decay_time = settings.scrollingbar.hit_decay_time
         hit_sustain_time = settings.scrollingbar.hit_sustain_time
@@ -227,29 +223,17 @@ class Beatbar:
         hit_handler = Beatbar._hit_handler(self.current_hit_hint, self.target_queue)
 
         # register handlers
+        icon_drawer = lambda arg: self.current_icon.get(arg[0])(arg[0], arg[1])
+        header_drawer = lambda arg: self.current_header.get(arg[0])(arg[0], arg[1])
+        footer_drawer = lambda arg: self.current_footer.get(arg[0])(arg[0], arg[1])
+
         renderer.add_drawer(self.content_scheduler, zindex=(0,))
-        renderer.add_drawer(icon_drawer, zindex=(1,))
-        renderer.add_drawer(header_drawer, zindex=(2,))
-        renderer.add_drawer(footer_drawer, zindex=(3,))
+        renderer.add_text(icon_drawer, xmask=self.icon_mask, clear=True, zindex=(1,))
+        renderer.add_text(header_drawer, xmask=self.header_mask, clear=True, zindex=(2,))
+        renderer.add_text(footer_drawer, xmask=self.footer_mask, clear=True, zindex=(3,))
         detector.add_listener(hit_handler)
 
         self.draw_content(0.0, self._sight_drawer, zindex=(2,))
-
-    @staticmethod
-    @dn.datanode
-    def _masked_node(variable, mask):
-        (view, msg), time, width = yield
-
-        while True:
-            mask_ran = range(width)[mask]
-            func = variable.get(time)
-            text = func(time, mask_ran)
-            start = mask_ran.start
-
-            view = wcb.clear1(view, width, xmask=mask)
-            view, _ = wcb.addtext1(view, width, start, text, xmask=mask)
-
-            (view, msg), time, width = yield (view, msg)
 
     def set_icon(self, icon, start=None, duration=None):
         icon_func = icon if hasattr(icon, '__call__') else lambda time, ran: icon
@@ -566,7 +550,7 @@ class SpectrumWidget:
         self.beatbar.mixer.add_effect(handler, zindex=(-1,))
 
         def widget_func(time, ran):
-            width = ran.stop - ran.start
+            width = max(0, ran.stop - ran.start)
             return f"\x1b[{attr}m{self.spectrum:^{width}.{width}s}\x1b[m"
 
         yield
@@ -603,7 +587,7 @@ class VolumeIndicatorWidget:
         self.beatbar.mixer.add_effect(handler, zindex=(-1,))
 
         def widget_func(time, ran):
-            width = ran.stop - ran.start
+            width = max(0, ran.stop - ran.start)
             return f"\x1b[{attr}m" + "▮" * int(self.volume * width) + "\x1b[m"
 
         yield
@@ -662,7 +646,7 @@ class ScoreWidget:
         def widget_func(time, ran):
             score = self.state.score
             full_score = self.state.full_score
-            width = ran.stop - ran.start
+            width = max(0, ran.stop - ran.start)
 
             if width == 0:
                 return ""
@@ -698,7 +682,7 @@ class ProgressWidget:
 
             progress = min(1.0, finished_subjects/total_subjects) if total_subjects>0 else 1.0
             time = int(max(0.0, time))
-            width = ran.stop - ran.start
+            width = max(0, ran.stop - ran.start)
 
             if width == 0:
                 return ""
@@ -733,17 +717,17 @@ class Widget(Enum):
     @dn.datanode
     def install_widgets(field, settings, **params):
         widgets = [
-            (settings.icon_widget, field.current_icon),
-            (settings.header_widget, field.current_header),
-            (settings.footer_widget, field.current_footer),
+            (settings.icon_widget, field.set_icon),
+            (settings.header_widget, field.set_header),
+            (settings.footer_widget, field.set_footer),
         ]
-        for widget, where in widgets:
+        for widget, setter in widgets:
             widget_settings = settings.get((widget.name,))
             widget_object = widget.value(widget_settings, **params)
             yield
             with widget_object.load() as load_task:
                 yield from load_task.join((yield))
-                where.set(load_task.result)
+                setter(load_task.result)
 
 class WidgetSettings(cfg.Configurable):
     r"""
