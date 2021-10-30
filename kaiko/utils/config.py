@@ -124,9 +124,11 @@ class ConfigurationBiparser(bp.Biparser):
         return res
 
 def outdent(doc):
-    m = re.search(r"\n+[ ]*", doc)
-    level = len(m.group(0)[1:]) if m else 0
-    return re.sub(r"\n[ ]{,%d}"%level, r"\n", doc)
+    m = re.search(r"\n[ ]*$", doc)
+    if not m:
+        return doc
+    level = len(m.group(0))-1
+    return re.sub(r"\n[ ]{,%d}"%level, r"\n", doc[:-1-level])
 
 class ConfigurableMeta(type):
     def __init__(self, name, supers, attrs):
