@@ -1430,29 +1430,24 @@ class BeatPrompt:
                 # render unknown token
                 if type is None:
                     if mask.stop is not None or clean:
-                        for index in indices[mask]:
-                            buffer[index] = wcb.add_attr(buffer[index], token_unknown_attr)
+                        wcb.add_attr_inplace(buffer, mask, token_unknown_attr)
 
                 # render command token
-                if type is cmd.TOKEN_TYPE.COMMAND:
-                    for index in indices[mask]:
-                        buffer[index] = wcb.add_attr(buffer[index], token_command_attr)
+                elif type is cmd.TOKEN_TYPE.COMMAND:
+                    wcb.add_attr_inplace(buffer, mask, token_command_attr)
 
                 # render keyword token
                 elif type is cmd.TOKEN_TYPE.KEYWORD:
-                    for index in indices[mask]:
-                        buffer[index] = wcb.add_attr(buffer[index], token_keyword_attr)
+                    wcb.add_attr_inplace(buffer, mask, token_keyword_attr)
 
                 # render argument token
                 elif type is cmd.TOKEN_TYPE.ARGUMENT:
-                    for index in indices[mask]:
-                        buffer[index] = wcb.add_attr(buffer[index], token_argument_attr)
+                    wcb.add_attr_inplace(buffer, mask, token_argument_attr)
 
             if highlighted in range(len(tokens)):
                 # render highlighted token
                 _, _, mask, _ = tokens[highlighted]
-                for index in indices[mask]:
-                    buffer[index] = wcb.add_attr(buffer[index], token_highlight_attr)
+                wcb.add_attr_inplace(buffer, mask, token_highlight_attr)
 
             rendered_text = "".join(buffer)
 

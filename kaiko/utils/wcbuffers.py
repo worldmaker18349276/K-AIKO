@@ -46,6 +46,18 @@ def add_attr(text, attrs=""):
     text_ = text.replace("\x1b[m", f"\x1b[m\x1b[{attrs}m")
     return f"\x1b[{attrs}m{text_}\x1b[m"
 
+def add_attr_inplace(buffer, mask, attrs=""):
+    if not attrs:
+        return
+
+    ran = range(len(buffer))[mask]
+    for i in ran:
+        buffer[i] = buffer[i].replace("\x1b[m", f"\x1b[m\x1b[{attrs}m")
+
+    if len(ran) > 0:
+        buffer[ran.start] = f"\x1b[{attrs}m" + buffer[ran.start]
+        buffer[ran.stop-1] = buffer[ran.stop-1] + "\x1b[m"
+
 def cover(*rans):
     start = min(ran.start for ran in rans)
     stop = max(ran.stop for ran in rans)
