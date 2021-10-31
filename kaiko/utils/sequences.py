@@ -267,8 +267,8 @@ class AttributeSequence(Sequence):
         yield from self._close_tag()
 
     def construct(self, ctxt=()):
-        opener = "" if self.attr == "" else f"\x1b[{';'.join(map(str, self.attr))}m"
-        closer = "" if self.attr == "" else "\x1b[m"
+        opener = "" if not self.attr else f"\x1b[{';'.join(map(str, self.attr))}m"
+        closer = "" if not self.attr else "\x1b[m"
 
         yield opener
 
