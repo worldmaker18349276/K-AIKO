@@ -83,6 +83,9 @@ class AttributeSequence(Sequence):
         self.children = children
         self.attr = attr
 
+    def replace(self, children):
+        return type(self)(children, self.attr)
+
     @classmethod
     def parse_param(clz, param):
         if param is None:
@@ -113,7 +116,7 @@ class AttributeSequence(Sequence):
         for buffer in self.children:
             index += len(buffer)
             if key < index:
-                return AttributeSequence([buffer[key-index]], self.attr)
+                return self.replace([buffer[key-index]])
 
         raise RuntimeError("invalid state")
 
@@ -125,7 +128,7 @@ class AttributeSequence(Sequence):
             return RawSequence("")
 
         index = 0
-        res = AttributeSequence([], self.attr)
+        res = self.replace([])
         for buffer in self.children:
             index += len(buffer)
             if stop < index:
@@ -135,15 +138,21 @@ class AttributeSequence(Sequence):
                 res.children.append(buffer[start-index:])
         return res
 
-    def represent(self):
+    def _open_tag(self):
         if self.attr:
             yield f"[{self.tag}={';'.join(map(str, self.attr))}]"
+
+    def _close_tag(self):
+        if self.attr:
+            yield f"[/{self.tag}]"
+
+    def represent(self):
+        yield from self._open_tag()
 
         for buffer in self.children:
             yield from buffer.represent()
 
-        if self.attr:
-            yield "[/attr]"
+        yield from self._close_tag()
 
     def construct(self, ctxt=()):
         opener = "" if self.attr == "" else f"\x1b[{';'.join(map(str, self.attr))}m"
@@ -161,6 +170,80 @@ class AttributeSequence(Sequence):
                 yield from buffer.construct((*ctxt, opener))
 
         yield closer
+
+class SimpleAttributeSequence(AttributeSequence):
+    def __init__(self, children, option=True):
+        self.option = option
+        super().__init__(children, (self._attrs[option],))
+
+    def replace(self, children):
+        type(self)(children, self.option)
+
+    @classmethod
+    def parse_param(clz, param):
+        if param is None:
+            return next(iter(clz._attrs.keys()))
+        if param not in clz._attrs:
+            raise SequenceParseError(f"invalid parameter for tag [{clz.tag}/]: {param}")
+        return param
+
+    def _open_tag(self):
+        if self.option == next(iter(self._attrs.keys())):
+            yield f"[{self.tag}]"
+        else:
+            yield f"[{self.tag}={self.option}]"
+
+    def _close_tag(self):
+        yield f"[/{self.tag}]"
+
+simple_attrs = {
+    "normal": {"on": 0},
+    "weight": {"bold": 1, "dim": 2, "normal": 21},
+    "italic": {"on": 3, "off": 23},
+    "underline": {"on": 4, "off": 24},
+    "strike": {"on": 9, "off": 29},
+    "blink": {"on": 5, "off": 25},
+    "invert": {"on": 7, "off": 27},
+    "hide": {"on": 8, "off": 28},
+    "color": {
+        "default": 39,
+        "black": 30,
+        "red": 31,
+        "green": 32,
+        "yellow": 33,
+        "blue": 34,
+        "magenta": 35,
+        "cyan": 36,
+        "white": 37,
+        "bright_black": 90,
+        "bright_red": 91,
+        "bright_green": 92,
+        "bright_yellow": 93,
+        "bright_blue": 94,
+        "bright_magenta": 95,
+        "bright_cyan": 96,
+        "bright_white": 97,
+        },
+    "bgcolor": {
+        "default": 49,
+        "black": 40,
+        "red": 41,
+        "green": 42,
+        "yellow": 43,
+        "blue": 44,
+        "magenta": 45,
+        "cyan": 46,
+        "white": 47,
+        "bright_black": 100,
+        "bright_red": 101,
+        "bright_green": 102,
+        "bright_yellow": 103,
+        "bright_blue": 104,
+        "bright_magenta": 105,
+        "bright_cyan": 106,
+        "bright_white": 107,
+        },
+}
 
 class Bra:
     tag = "bra"
@@ -218,6 +301,9 @@ default_singles = {
 default_pairs = {
     AttributeSequence.tag: AttributeSequence,
 }
+for name, attrs in simple_attrs.items():
+    seq = type(name.capitalize() + "Sequence", (SimpleAttributeSequence,), {'tag': name, '_attrs': attrs})
+    default_pairs[seq.tag] = seq
 
 class SequenceParseError(Exception):
     pass
