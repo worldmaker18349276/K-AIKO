@@ -43,6 +43,7 @@ class RawSequence(Sequence):
     def construct(self, ctxt=()):
         yield from self.buffer
 
+
 class ControlSequence(Sequence):
     tag = "ctrl"
 
@@ -75,6 +76,117 @@ class ControlSequence(Sequence):
 
     def construct(self, ctxt=()):
         yield "\x1b[" + self.code
+
+class MoveSequence(ControlSequence):
+    tag = "move"
+
+    def __init__(self, args):
+        self.args = args
+
+    @classmethod
+    def parse_param(clz, param):
+        if param is None:
+            raise SequenceParseError(f"missing parameter for tag [{clz.tag}/]")
+        try:
+            args = tuple(int(n) for n in param.split(","))
+        except ValueError:
+            raise SequenceParseError(f"invalid parameter for tag [{clz.tag}/]: {param}")
+        if len(args) != 2:
+            raise SequenceParseError(f"invalid parameter for tag [{clz.tag}/]: {param}")
+        return args
+
+    def represent(self):
+        yield f"[{self.tag}={','.join(map(str, self.args))}/]"
+
+    def construct(self, ctxt=()):
+        x, y = self.args
+        if x > 0:
+            yield f"\x1b[{x}C"
+        elif x < 0:
+            yield f"\x1b[{-x}D"
+        if y > 0:
+            yield f"\x1b[{y}B"
+        elif y < 0:
+            yield f"\x1b[{-y}A"
+
+class PosSequence(ControlSequence):
+    tag = "pos"
+
+    def __init__(self, args):
+        self.args = args
+
+    @classmethod
+    def parse_param(clz, param):
+        if param is None:
+            raise SequenceParseError(f"missing parameter for tag [{clz.tag}/]")
+        try:
+            args = tuple(int(n) for n in param.split(","))
+        except ValueError:
+            raise SequenceParseError(f"invalid parameter for tag [{clz.tag}/]: {param}")
+        if len(args) != 2:
+            raise SequenceParseError(f"invalid parameter for tag [{clz.tag}/]: {param}")
+        return args
+
+    def represent(self):
+        yield f"[{self.tag}={','.join(map(str, self.args))}/]"
+
+    def construct(self, ctxt=()):
+        x, y = self.args
+        yield f"\x1b[{y+1};{x+1}H"
+
+class ScrollSequence(ControlSequence):
+    tag = "scroll"
+
+    def __init__(self, arg):
+        self.arg = arg
+
+    @classmethod
+    def parse_param(clz, param):
+        if param is None:
+            raise SequenceParseError(f"missing parameter for tag [{clz.tag}/]")
+        try:
+            param = int(param)
+        except ValueError:
+            raise SequenceParseError(f"invalid parameter for tag [{clz.tag}/]: {param}")
+        return param
+
+    def represent(self):
+        yield f"[{self.tag}={self.arg}/]"
+
+    def construct(self, ctxt=()):
+        if self.arg > 0:
+            yield f"\x1b[{x}T"
+        elif self.arg < 0:
+            yield f"\x1b[{-x}S"
+
+class ClearSequence(ControlSequence):
+    tag = "clear"
+    _options = {
+        "to_right": "0K",
+        "to_left": "1K",
+        "line": "2K",
+        "to_end": "0J",
+        "to_beginning": "1J",
+        "screen": "2J",
+    }
+
+    def __init__(self, option):
+        self.option = option
+
+    @classmethod
+    def parse_param(clz, param):
+        if param is None:
+            raise SequenceParseError(f"missing parameter for tag [{clz.tag}/]")
+        if param not in clz._options:
+            raise SequenceParseError(f"invalid parameter for tag [{clz.tag}/]: {param}")
+        return param
+
+    def represent(self):
+        yield f"[{self.tag}={self.option}/]"
+
+    def construct(self, ctxt=()):
+        yield "\x1b[" + self._options[self.option]
+
 
 class AttributeSequence(Sequence):
     tag = "attr"
@@ -245,6 +357,7 @@ simple_attrs = {
         },
 }
 
+
 class Bra:
     tag = "bra"
 
@@ -294,6 +407,10 @@ class Chr:
 
 default_singles = {
     ControlSequence.tag: ControlSequence,
+    MoveSequence.tag: MoveSequence,
+    PosSequence.tag: PosSequence,
+    ScrollSequence.tag: ScrollSequence,
+    ClearSequence.tag: ClearSequence,
     Bra.tag: Bra,
     Ket.tag: Ket,
     Chr.tag: Chr,
