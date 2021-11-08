@@ -21,7 +21,7 @@ def parse_markup(markup, tags=[]):
     tags_dict = {tag.name: tag for tag in tags}
     stack = [Group([])]
 
-    for match in re.finditer(r"(?P<tag>\[([^\]]*)\])|(?P<text>([^\[\\]|\\.)+)", markup):
+    for match in re.finditer(r"(?P<tag>\[[^\]]*\])|(?P<text>([^\[\\]|\\[\s\S])+)", markup):
         tag = match.group('tag')
         text = match.group('text')
 
@@ -32,19 +32,19 @@ def parse_markup(markup, tags=[]):
             raw = re.sub(r"(?<!\\)(\\\\)*\\\]", r"\1]", raw) # \] => ]
             raw = re.sub(r"(?<!\\)(\\\\)*'", r"\1\\'", raw)  # ' => \'
             try:
-                raw = ast.literal_eval("'" + raw + "'")
+                raw = ast.literal_eval("'''" + raw + "'''")
             except SyntaxError:
                 raise MarkupParseError(f"invalid text: {repr(text)}")
             stack[-1].children.append(Text(raw))
             continue
 
-        if tag == "/": # [/]
+        if tag == "[/]": # [/]
             if len(stack) <= 1:
                 raise MarkupParseError(f"too many closing tag: [/]")
             stack.pop()
             continue
 
-        match = re.match("^(\w+)(?:=(.*))?/$", tag) # [tag=param/]
+        match = re.match("^\[(\w+)(?:=(.*))?/\]$", tag) # [tag=param/]
         if match:
             name = match.group(1)
             param = match.group(2)
@@ -54,7 +54,7 @@ def parse_markup(markup, tags=[]):
             stack[-1].children.append(res)
             continue
 
-        match = re.match("^(\w+)(?:=(.*))?$", tag) # [tag=param]
+        match = re.match("^\[(\w+)(?:=(.*))?\]$", tag) # [tag=param]
         if match:
             name = match.group(1)
             param = match.group(2)
@@ -65,7 +65,7 @@ def parse_markup(markup, tags=[]):
             stack.append(res)
             continue
 
-        raise MarkupParseError(f"invalid tag: [{tag}]")
+        raise MarkupParseError(f"invalid tag: {tag}")
 
     return stack[0]
 
@@ -150,15 +150,15 @@ class Pair(Tag):
         return dataclasses.replace(self, children=[child.expand() for child in self.children])
 
 
-def render_ansi(node, *reopens):
+def _render_ansi(node, *reopens):
     if isinstance(node, Text):
         yield from node.string
 
-    if isinstance(node, Group):
+    elif isinstance(node, Group):
         for child in node.children:
-            yield from render_ansi(child, *reopens)
+            yield from _render_ansi(child, *reopens)
 
-    if isinstance(node, CSI):
+    elif isinstance(node, CSI):
         yield f"\x1b[{node.code}"
 
     elif isinstance(node, SGR):
@@ -170,7 +170,7 @@ def render_ansi(node, *reopens):
         if open:
             yield open
         for child in node.children:
-            yield from render_ansi(child, open, *reopens)
+            yield from _render_ansi(child, open, *reopens)
         if close:
             yield close
         for reopen in reopens[::-1]:
@@ -179,6 +179,9 @@ def render_ansi(node, *reopens):
 
     else:
         raise TypeError(f"unknown node type: {type(node)}")
+
+def render_ansi(node):
+    return "".join(_render_ansi(node))
 
 # ctrl code
 @dataclasses.dataclass
@@ -218,14 +221,14 @@ class Move(Single):
 
     def expand(self):
         res = []
-        if x > 0:
-            res.append(CSI(f"{x}C"))
-        elif x < 0:
-            res.append(CSI(f"{-x}D"))
-        if y > 0:
-            res.append(CSI(f"{y}B"))
-        elif y < 0:
-            res.append(CSI(f"{-y}A"))
+        if self.x > 0:
+            res.append(CSI(f"{self.x}C"))
+        elif self.x < 0:
+            res.append(CSI(f"{-self.x}D"))
+        if self.y > 0:
+            res.append(CSI(f"{self.y}B"))
+        elif self.y < 0:
+            res.append(CSI(f"{-self.y}A"))
         return Group(res)
 
 @dataclasses.dataclass
@@ -271,9 +274,9 @@ class Scroll(Single):
         return str(self.x)
 
     def expand(self):
-        if x > 0:
+        if self.x > 0:
             return CSI(f"{self.x}T")
-        elif x < 0:
+        elif self.x < 0:
             return CSI(f"{-self.x}S")
         else:
             return Group([])
@@ -288,9 +291,11 @@ class ClearRegion(enum.Enum):
 
 @dataclasses.dataclass
 class Clear(Single):
+    name = "clear"
     region: ClearRegion
 
-    def parse(self, param):
+    @classmethod
+    def parse(clz, param):
         if param is None:
             raise MarkupParseError(f"missing parameter for tag [{clz.name}/]")
         if all(param != region.name for region in ClearRegion):
@@ -305,6 +310,14 @@ class Clear(Single):
 
     def expand(self):
         return CSI(f"{self.region.value}")
+
+ctrls = [
+    CSI,
+    Move,
+    Pos,
+    Scroll,
+    Clear,
+]
 
 
 # attr code
@@ -332,8 +345,13 @@ class SGR(Pair):
 
 @dataclasses.dataclass
 class SimpleAttr(Pair):
-    param: str
+    option: str
 
+    @property
+    def param(self):
+        return self.option
+
+    @classmethod
     def parse(clz, param):
         if param is None:
             param = next(iter(clz._options.keys()))
@@ -342,7 +360,7 @@ class SimpleAttr(Pair):
         return clz([], param)
 
     def expand(self):
-        yield SGR(self.children, (self._options[self.param],))
+        return SGR([child.expand() for child in self.children], (self._options[self.option],))
 
 @dataclasses.dataclass
 class Reset(SimpleAttr):
@@ -425,6 +443,19 @@ class BgColor(SimpleAttr):
         "bright_white": 107,
     }
 
+attrs = [
+    SGR,
+    Reset,
+    Weight,
+    Italic,
+    Underline,
+    Strike,
+    Blink,
+    Invert,
+    Color,
+    BgColor,
+]
+
 
 # template
 @dataclasses.dataclass
@@ -443,15 +474,17 @@ class SingleTemplate(Single):
         return None
 
     def expand(self):
-        return self._template
+        return self._template.expand()
 
 @dataclasses.dataclass
 class Slot(Single):
     name = "slot"
 
+    @classmethod
     def parse(clz, param):
         if param is not None:
             raise MarkupParseError(f"no parameter is needed for tag [{clz.name}/]")
+        return clz()
 
     @property
     def param(self):
@@ -487,9 +520,9 @@ class PairTemplate(Pair):
 
 def make_single_template(name, template, tags=[]):
     temp = parse_markup(template, tags=tags)
-    return type(name + "Template", (SingleTemplate,), dict(name=name, _template=temp))
+    return type(name.capitalize(), (SingleTemplate,), dict(name=name, _template=temp))
 
 def make_pair_template(name, template, tags=[]):
-    temp = parse_markup(template, tags=list(Slot, *tags))
-    return type(name + "Template", (PairTemplate,), dict(name=name, _template=temp))
+    temp = parse_markup(template, tags=[Slot, *tags])
+    return type(name.capitalize(), (PairTemplate,), dict(name=name, _template=temp))
 
