@@ -10,6 +10,7 @@ from kaiko.utils import datanodes as dn
 from kaiko.utils import biparsers as bp
 from kaiko.utils import wcbuffers as wcb
 from kaiko.utils import config as cfg
+from kaiko.utils import markups as mu
 from kaiko.utils import commands as cmd
 from kaiko.utils import engines
 
@@ -217,10 +218,8 @@ class BeatShellSettings(cfg.Configurable):
         icon_width : int
             The text width of icon.
 
-        marker : str
-            The appearance of marker.
-        marker_attr : Tuple[str, str]
-            The text attribute of the normal/blinking-style marker.
+        markers : Tuple[str, str]
+            The appearance of normal and blinking-style markers.
         marker_width : int
             The text width of marker.
 
@@ -233,22 +232,22 @@ class BeatShellSettings(cfg.Configurable):
         tempo: float = 130.0
 
         icons: List[str] = [
-            "\x1b[36m⠶⠦⣚⠀⠶\x1b[m",
-            "\x1b[36m⢎⣀⡛⠀⠶\x1b[m",
-            "\x1b[36m⢖⣄⠻⠀⠶\x1b[m",
-            "\x1b[36m⠖⠐⡩⠂⠶\x1b[m",
-            "\x1b[36m⠶⠀⡭⠲⠶\x1b[m",
-            "\x1b[36m⠶⠀⣬⠉⡱\x1b[m",
-            "\x1b[36m⠶⠀⣦⠙⠵\x1b[m",
-            "\x1b[36m⠶⠠⣊⠄⠴\x1b[m",
+            "[color=cyan]⠶⠦⣚⠀⠶[/]",
+            "[color=cyan]⢎⣀⡛⠀⠶[/]",
+            "[color=cyan]⢖⣄⠻⠀⠶[/]",
+            "[color=cyan]⠖⠐⡩⠂⠶[/]",
+            "[color=cyan]⠶⠀⡭⠲⠶[/]",
+            "[color=cyan]⠶⠀⣬⠉⡱[/]",
+            "[color=cyan]⠶⠀⣦⠙⠵[/]",
+            "[color=cyan]⠶⠠⣊⠄⠴[/]",
         ]
         icon_width: int = 5
 
-        marker: str = "❯ "
-        marker_attr: Tuple[str, str] = ("", "1")
+        markers: Tuple[str, str] = ("❯ ", "[weight=bold]❯ [/]")
         marker_width: int = 2
 
         caret_attr: Tuple[str, str] = ("7;2", "7;1")
+        # carets = "[weight=dim][invert][slot/][/][/]", "[weight=bold][invert][slot/][/][/]"
         caret_blink_ratio: float = 0.3
 
     class text(cfg.Configurable):
@@ -287,23 +286,24 @@ class BeatShellSettings(cfg.Configurable):
         token_highlight_attr : str
             The text attribute of the highlighted token.
         """
-        error_message_attr: str = "31"
-        info_message_attr: str = "2"
+        error_message_attr: str = "31" # "[color=red][slot/][/]"
+        info_message_attr: str = "2" # "[weight=dim][slot/][/]"
         message_max_lines: int = 16
 
-        escape_attr: str = "2"
-        typeahead_attr: str = "2"
-        whitespace: str = "\x1b[2m⌴\x1b[m"
+        escape_attr: str = "2" # "[weight=dim][slot/][/]"
+        typeahead_attr: str = "2" # "[weight=dim][slot/][/]"
+        whitespace: str = "[weight=dim]⌴[/]"
 
         suggestions_lines: int = 8
         suggestions_selected_attr: str = "7"
         suggestions_bullet: str = "• "
+        # suggestion_items = "• [slot/]", "• [invert][slot/][/]"
 
-        token_unknown_attr: str = "31"
-        token_command_attr: str = "94"
-        token_keyword_attr: str = "95"
-        token_argument_attr: str = "92"
-        token_highlight_attr: str = "4"
+        token_unknown_attr: str = "31" # "[color=red][slot/][/]"
+        token_command_attr: str = "94" # "[color=bright_blue][slot/][/]"
+        token_keyword_attr: str = "95" # "[color=bright_magenta][slot/][/]"
+        token_argument_attr: str = "92" # "[color=bright_green][slot/][/]"
+        token_highlight_attr: str = "4" # "[underline][slot/][/]"
 
 
 class InputWarn:
@@ -1336,11 +1336,13 @@ class BeatPrompt:
             The function that add a caret to the text, or None for no caret.
         """
         icons = self.settings.prompt.icons
-        marker = self.settings.prompt.marker
-        marker_attr = self.settings.prompt.marker_attr
+        markers = self.settings.prompt.markers
 
         caret_attr = self.settings.prompt.caret_attr
         caret_blink_ratio = self.settings.prompt.caret_blink_ratio
+
+        rendered_icons = [mu.render(icon) for icon in icons]
+        rendered_markers = mu.render(markers[0]), mu.render(markers[1])
 
         self.t0 = self.settings.prompt.t0
         self.tempo = self.settings.prompt.tempo
@@ -1367,15 +1369,15 @@ class BeatPrompt:
                 caret = None
 
             # render icon, marker
-            ind = int(t * len(icons) // 1) % len(icons)
-            icon = icons[ind]
+            ind = int(t * len(rendered_icons) // 1) % len(rendered_icons)
+            rendered_icon = rendered_icons[ind]
 
             if t % 4 < min(1, caret_blink_ratio):
-                marker_ = wcb.add_attr(marker, marker_attr[1])
+                rendered_marker = rendered_markers[1]
             else:
-                marker_ = wcb.add_attr(marker, marker_attr[0])
+                rendered_marker = rendered_markers[0]
 
-            clean, time = yield icon, marker_, caret
+            clean, time = yield rendered_icon, rendered_marker, caret
             t = (time - self.t0)/(60/self.tempo)
 
     @dn.datanode
@@ -1411,6 +1413,8 @@ class BeatPrompt:
         token_keyword_attr   = self.settings.text.token_keyword_attr
         token_argument_attr  = self.settings.text.token_argument_attr
         token_highlight_attr = self.settings.text.token_highlight_attr
+
+        whitespace = mu.render(whitespace)
 
         # render buffer
         buffer, tokens, typeahead, pos, highlighted, clean = yield None

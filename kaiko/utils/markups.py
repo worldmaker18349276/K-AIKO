@@ -17,7 +17,9 @@ import dataclasses
 class MarkupParseError(Exception):
     pass
 
-def parse_markup(markup, tags=[]):
+def parse_markup(markup, tags=None):
+    if tags is None:
+        tags = default_tags
     tags_dict = {tag.name: tag for tag in tags}
     stack = [Group([])]
 
@@ -150,13 +152,13 @@ class Pair(Tag):
         return dataclasses.replace(self, children=[child.expand() for child in self.children])
 
 
-def _render_ansi(node, *reopens):
+def _to_ansi(node, *reopens):
     if isinstance(node, Text):
         yield from node.string
 
     elif isinstance(node, Group):
         for child in node.children:
-            yield from _render_ansi(child, *reopens)
+            yield from _to_ansi(child, *reopens)
 
     elif isinstance(node, CSI):
         yield f"\x1b[{node.code}"
@@ -170,7 +172,7 @@ def _render_ansi(node, *reopens):
         if open:
             yield open
         for child in node.children:
-            yield from _render_ansi(child, open, *reopens)
+            yield from _to_ansi(child, open, *reopens)
         if close:
             yield close
         for reopen in reopens[::-1]:
@@ -180,8 +182,11 @@ def _render_ansi(node, *reopens):
     else:
         raise TypeError(f"unknown node type: {type(node)}")
 
-def render_ansi(node):
-    return "".join(_render_ansi(node))
+def to_ansi(node):
+    return "".join(_to_ansi(node))
+
+def render(markup):
+    return to_ansi(parse_markup(markup).expand())
 
 # ctrl code
 @dataclasses.dataclass
@@ -311,14 +316,6 @@ class Clear(Single):
     def expand(self):
         return CSI(f"{self.region.value}")
 
-ctrls = [
-    CSI,
-    Move,
-    Pos,
-    Scroll,
-    Clear,
-]
-
 
 # attr code
 @dataclasses.dataclass
@@ -443,8 +440,7 @@ class BgColor(SimpleAttr):
         "bright_white": 107,
     }
 
-attrs = [
-    SGR,
+default_tags = [
     Reset,
     Weight,
     Italic,
@@ -518,11 +514,15 @@ class PairTemplate(Pair):
     def expand(self):
         return replace_slot(self._template, self.children).expand()
 
-def make_single_template(name, template, tags=[]):
+def make_single_template(name, template, tags=None):
+    if tags is None:
+        tags = default_tags
     temp = parse_markup(template, tags=tags)
     return type(name.capitalize(), (SingleTemplate,), dict(name=name, _template=temp))
 
-def make_pair_template(name, template, tags=[]):
+def make_pair_template(name, template, tags=None):
+    if tags is None:
+        tags = default_tags
     temp = parse_markup(template, tags=[Slot, *tags])
     return type(name.capitalize(), (PairTemplate,), dict(name=name, _template=temp))
 
