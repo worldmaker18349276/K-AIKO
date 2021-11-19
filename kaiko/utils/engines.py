@@ -150,22 +150,7 @@ class Mixer:
         format = settings.output_format
         device = settings.output_device
 
-        @dn.datanode
-        def _node():
-            index = 0
-            with scheduler:
-                yield
-                while True:
-                    time = index * buffer_length / samplerate + settings.sound_delay - ref_time
-                    data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
-                    try:
-                        data = scheduler.send((data, time))
-                    except StopIteration:
-                        return
-                    yield data
-                    index += 1
-
-        output_node = _node()
+        output_node = Mixer._mix_node(scheduler, settings, ref_time)
         if monitor:
             output_node = monitor.monitoring(output_node)
 
@@ -175,6 +160,28 @@ class Mixer:
                         format=format,
                         device=device,
                         )
+
+    @staticmethod
+    @dn.datanode
+    def _mix_node(scheduler, settings, ref_time):
+        samplerate = settings.output_samplerate
+        buffer_length = settings.output_buffer_length
+        nchannels = settings.output_channels
+        format = settings.output_format
+        device = settings.output_device
+
+        index = 0
+        with scheduler:
+            yield
+            while True:
+                time = index * buffer_length / samplerate + settings.sound_delay - ref_time
+                data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
+                try:
+                    data = scheduler.send((data, time))
+                except StopIteration:
+                    return
+                yield data
+                index += 1
 
     @classmethod
     def create(clz, settings, manager, ref_time=0.0, monitor=None):
@@ -572,71 +579,73 @@ class Renderer:
     @staticmethod
     def get_task(scheduler, settings, ref_time, monitor):
         framerate = settings.display_framerate
-        resize_delay = settings.resize_delay
 
-        @dn.datanode
-        def _node():
-            size_node = term.terminal_size()
+        display_node = Renderer._render_node(scheduler, settings, ref_time)
+        if monitor:
+            display_node = monitor.monitoring(display_node)
+        return term.show(display_node, 1/framerate, hide_cursor=True)
 
-            curr_msg = ""
-            index = 0
-            width = 0
-            resize_time = None
-            with scheduler, size_node:
-                shown = yield
-                while True:
-                    time = index / framerate + settings.display_delay - ref_time
+    @staticmethod
+    @dn.datanode
+    def _render_node(scheduler, settings, ref_time):
+        framerate = settings.display_framerate
 
-                    try:
-                        size = size_node.send(None)
-                    except StopIteration:
-                        return
+        size_node = term.terminal_size()
 
-                    if resize_time is not None:
-                        if size.columns < width:
-                            resize_time = time
-                        if time < resize_time + resize_delay:
-                            yield "\r\x1b[Kresizing...\r"
-                            index += 1
-                            width = size.columns
-                            continue
+        curr_msg = ""
+        index = 0
+        width = 0
+        resize_time = None
+        with scheduler, size_node:
+            shown = yield
+            while True:
+                time = index / framerate + settings.display_delay - ref_time
 
-                    elif size.columns < width:
+                try:
+                    size = size_node.send(None)
+                except StopIteration:
+                    return
+
+                if resize_time is not None:
+                    if size.columns < width:
                         resize_time = time
-                        yield "\n\x1b[Jresizing...\r"
+                    if time < resize_time + settings.resize_delay:
+                        yield "\r\x1b[Kresizing...\r"
                         index += 1
                         width = size.columns
                         continue
 
-                    width = size.columns
-                    view = wcb.newwin1(width)
-                    msg = ""
-                    try:
-                        view, msg = scheduler.send(((view, msg), time, width))
-                    except StopIteration:
-                        return
-
-                    # track changes of the message
-                    if resize_time is None and curr_msg == msg:
-                        res_text = "\r\x1b[K" + "".join(view).rstrip() + "\r"
-                    elif msg == "":
-                        res_text = "\r\x1b[J" + "".join(view).rstrip() + "\r"
-                    else:
-                        res_text = "\r\x1b[J" + "".join(view).rstrip() + print_below(msg, width, size.lines) + "\r"
-
-                    if resize_time is not None:
-                        res_text = "\x1b[2J\x1b[H" + res_text
-
-                    shown = yield res_text
-                    if shown:
-                        curr_msg = msg
-                        resize_time = None
+                elif size.columns < width:
+                    resize_time = time
+                    yield "\n\x1b[Jresizing...\r"
                     index += 1
+                    width = size.columns
+                    continue
 
-        display_node = _node()
-        if monitor:
-            display_node = monitor.monitoring(display_node)
-        return term.show(display_node, 1/framerate, hide_cursor=True)
+                width = size.columns
+                view = wcb.newwin1(width)
+                msg = ""
+                try:
+                    view, msg = scheduler.send(((view, msg), time, width))
+                except StopIteration:
+                    return
+
+                # track changes of the message
+                if resize_time is None and curr_msg == msg:
+                    res_text = "\r\x1b[K" + "".join(view).rstrip() + "\r"
+                elif msg == "":
+                    res_text = "\r\x1b[J" + "".join(view).rstrip() + "\r"
+                else:
+                    res_text = "\r\x1b[J" + "".join(view).rstrip() + print_below(msg, width, size.lines) + "\r"
+
+                if resize_time is not None:
+                    res_text = "\x1b[2J\x1b[H" + res_text
+
+                shown = yield res_text
+                if shown:
+                    curr_msg = msg
+                    resize_time = None
+                index += 1
 
     @classmethod
     def create(clz, settings, ref_time=0.0, monitor=None):
@@ -826,27 +835,29 @@ class Controller:
 
     @staticmethod
     def get_task(scheduler, settings, ref_time):
+        return term.inkey(Controller._control_node(scheduler, settings, ref_time))
+
+    @staticmethod
+    @dn.datanode
+    def _control_node(scheduler, settings, ref_time):
         keycodes = settings.keycodes
-        @dn.datanode
-        def _node():
-            with scheduler:
-                while True:
-                    time, keycode = yield
 
-                    if keycode in keycodes:
-                        keyname = keycodes[keycode]
-                    elif keycode.isprintable():
-                        keyname = "PRINTABLE"
-                    else:
-                        keyname = repr(keycode)
+        with scheduler:
+            while True:
+                time, keycode = yield
 
-                    time_ = time - ref_time
-                    try:
-                        scheduler.send((None, time_, keyname, keycode))
-                    except StopIteration:
-                        return
+                if keycode in keycodes:
+                    keyname = keycodes[keycode]
+                elif keycode.isprintable():
+                    keyname = "PRINTABLE"
+                else:
+                    keyname = repr(keycode)
 
-        return term.inkey(_node())
+                time_ = time - ref_time
+                try:
+                    scheduler.send((None, time_, keyname, keycode))
+                except StopIteration:
+                    return
 
     @classmethod
     def create(clz, settings, ref_time=0.0):
