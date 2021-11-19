@@ -167,8 +167,6 @@ class Mixer:
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
-        format = settings.output_format
-        device = settings.output_device
 
         index = 0
         with scheduler:
@@ -580,48 +578,19 @@ class Renderer:
     def get_task(scheduler, settings, ref_time, monitor):
         framerate = settings.display_framerate
 
-        display_node = Renderer._render_node(scheduler, settings, ref_time)
+        display_node = Renderer._resize_node(Renderer._render_node(scheduler), settings, ref_time)
         if monitor:
             display_node = monitor.monitoring(display_node)
         return term.show(display_node, 1/framerate, hide_cursor=True)
 
     @staticmethod
     @dn.datanode
-    def _render_node(scheduler, settings, ref_time):
-        framerate = settings.display_framerate
-
-        size_node = term.terminal_size()
-
+    def _render_node(scheduler):
         curr_msg = ""
-        index = 0
         width = 0
-        resize_time = None
-        with scheduler, size_node:
-            shown = yield
+        with scheduler:
+            shown, resized, time, size = yield
             while True:
-                time = index / framerate + settings.display_delay - ref_time
-
-                try:
-                    size = size_node.send(None)
-                except StopIteration:
-                    return
-
-                if resize_time is not None:
-                    if size.columns < width:
-                        resize_time = time
-                    if time < resize_time + settings.resize_delay:
-                        yield "\r\x1b[Kresizing...\r"
-                        index += 1
-                        width = size.columns
-                        continue
-
-                elif size.columns < width:
-                    resize_time = time
-                    yield "\n\x1b[Jresizing...\r"
-                    index += 1
-                    width = size.columns
-                    continue
-
                 width = size.columns
                 view = wcb.newwin1(width)
                 msg = ""
@@ -631,21 +600,57 @@ class Renderer:
                     return
 
                 # track changes of the message
-                if resize_time is None and curr_msg == msg:
+                if not resized and curr_msg == msg:
                     res_text = "\r\x1b[K" + "".join(view).rstrip() + "\r"
                 elif msg == "":
                     res_text = "\r\x1b[J" + "".join(view).rstrip() + "\r"
                 else:
                     res_text = "\r\x1b[J" + "".join(view).rstrip() + print_below(msg, width, size.lines) + "\r"
 
-                if resize_time is not None:
+                shown, resized, time, size = yield res_text
+                if shown:
+                    curr_msg = msg
+
+    @staticmethod
+    @dn.datanode
+    def _resize_node(render_node, settings, ref_time):
+        framerate = settings.display_framerate
+
+        size_node = term.terminal_size()
+
+        index = -1
+        width = 0
+        resize_time = 0.0
+        resized = False
+        with render_node, size_node:
+            shown = yield
+            while True:
+                index += 1
+                time = index / framerate + settings.display_delay - ref_time
+
+                try:
+                    size = size_node.send(None)
+                except StopIteration:
+                    return
+
+                if size.columns < width:
+                    resize_time = time
+                    resized = True
+                if resized and time < resize_time + settings.resize_delay:
+                    yield "\r\x1b[Kresizing...\r"
+                    width = size.columns
+                    continue
+
+                try:
+                    res_text = render_node.send((shown, resized, time, size))
+                except StopIteration:
+                    return
+                if resized:
                     res_text = "\x1b[2J\x1b[H" + res_text
 
                 shown = yield res_text
                 if shown:
-                    curr_msg = msg
-                    resize_time = None
-                index += 1
+                    resized = False
 
     @classmethod
     def create(clz, settings, ref_time=0.0, monitor=None):
@@ -664,9 +669,6 @@ class Renderer:
 
     def add_text(self, text_node, xmask=slice(None,None), clear=False, zindex=(0,)):
         return self.add_drawer(self._text_drawer(text_node, xmask, clear), zindex)
-
-    def add_pad(self, pad_node, xmask=slice(None,None), zindex=(0,)):
-        return self.add_drawer(self._pad_drawer(pad_node, xmask), zindex)
 
     @staticmethod
     @dn.datanode
@@ -694,22 +696,6 @@ class Renderer:
                     if clear:
                         view = wcb.clear1(view, width, xmask=xmask)
                     view, _ = wcb.addtext1(view, width, xran.start+xshift, text, xmask=xmask)
-
-                (view, msg), time, width = yield (view, msg)
-
-    @staticmethod
-    @dn.datanode
-    def _pad_drawer(pad_node, xmask=slice(None,None)):
-        pad_node = dn.DataNode.wrap(pad_node)
-        with pad_node:
-            (view, msg), time, width = yield
-            while True:
-                subview, x, subwidth = wcb.newpad1(view, width, xmask=xmask)
-                try:
-                    subview = pad_node.send(((time, subwidth), subview))
-                except StopIteration:
-                    return
-                view, xran = wcb.addpad1(view, width, x, subview, subwidth)
 
                 (view, msg), time, width = yield (view, msg)
 
