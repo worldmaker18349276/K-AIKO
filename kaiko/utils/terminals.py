@@ -27,7 +27,7 @@ def ucs_detect():
 
     @dn.datanode
     def query_pos():
-        previous_version = '4.1.0'
+        old_version = '4.1.0'
         wide_by_version = [
             ('5.1.0', '龼'),
             ('5.2.0', '🈯'),
@@ -43,7 +43,8 @@ def ucs_detect():
 
         yield
 
-        for version, wchar in wide_by_version:
+        xs = []
+        for _, wchar in wide_by_version:
             print(wchar, end="", flush=True)
             print("\x1b[6n", end="", flush=True)
 
@@ -57,15 +58,12 @@ def ucs_detect():
                     break
 
             print(f"\twidth={x}", end="\n", flush=True)
-            if x == 1:
-                break
-            elif x == 2:
-                previous_version = version
-                continue
-            else:
-                return
+            xs.append(x)
 
-        return previous_version
+        index = xs.index(1) if 1 in xs else len(wide_by_version)
+        version = old_version if index == 0 else wide_by_version[index-1][0]
+
+        return version
 
     query_task = query_pos()
     with dn.pipe(inkey(get_pos), query_task) as task:
@@ -160,8 +158,6 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
     def run(stop_event):
         ref_time = time.perf_counter()
 
-        # stream.write("\n")
-        # dropped = 0
         shown = False
         i = -1
         while True:
@@ -174,12 +170,10 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
 
             delta = ref_time+t0+i*dt - time.perf_counter()
             if delta < 0:
-                # dropped += 1
                 continue
             if stop_event.wait(delta):
                 break
 
-            # stream.write(f"\x1b[A(spend:{(dt-delta)/dt:.3f}, drop:{dropped})\n")
             stream.write(view)
             stream.flush()
             shown = True
