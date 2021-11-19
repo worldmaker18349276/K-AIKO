@@ -66,21 +66,21 @@ def fit_screen(logger):
         size = yield
         current_width = 0
 
-        t = time.time()
+        t = time.perf_counter()
 
         logger.print(f"Can you adjust the width to (or bigger than) {width}?")
         logger.print(f"Or {logger.emph('Esc')} to skip this process.")
         logger.print("You can try to fit the line below.")
         logger.print("━"*width, flush=True)
 
-        while current_width < width or time.time() < t+delay:
+        while current_width < width or time.perf_counter() < t+delay:
             if skip_event.is_set():
                 logger.print()
                 break
 
             if current_width != size.columns:
                 current_width = size.columns
-                t = time.time()
+                t = time.perf_counter()
                 if current_width < width - 5:
                     hint = "(too small!)"
                 elif current_width < width:
@@ -100,8 +100,8 @@ def fit_screen(logger):
         logger.print("You can adjust the screen size at any time.\n", flush=True)
 
         # sleep
-        t = time.time()
-        while time.time() < t+delay:
+        t = time.perf_counter()
+        while time.perf_counter() < t+delay:
             yield
 
     return dn.pipe(skip, term.terminal_size(), fit())

@@ -903,14 +903,14 @@ class Scheduler(DataNode):
 def tick(dt, t0=0.0, shift=0.0, stop_event=None):
     if stop_event is None:
         stop_event = threading.Event()
-    ref_time = time.time()
+    ref_time = time.perf_counter()
 
     yield
     for i in itertools.count():
-        if stop_event.wait(max(0.0, ref_time+t0+i*dt - time.time())):
+        if stop_event.wait(max(0.0, ref_time+t0+i*dt - time.perf_counter())):
             break
 
-        yield time.time()-ref_time+shift
+        yield time.perf_counter()-ref_time+shift
 
 @datanode
 def timeit(node, log=print):
@@ -934,14 +934,14 @@ def timeit(node, log=print):
         try:
             data = yield
 
-            start = stop = time.time()
+            start = stop = time.perf_counter()
 
             while True:
 
                 t0 = get_time()
                 data = node.send(data)
                 t = get_time() - t0
-                stop = time.time()
+                stop = time.perf_counter()
 
                 count += 1
                 total += t
@@ -957,7 +957,7 @@ def timeit(node, log=print):
             return
 
         finally:
-            stop = time.time()
+            stop = time.perf_counter()
 
             if count == 0:
                 log(f"count=0")
@@ -1029,10 +1029,10 @@ def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
     consumer = DataNode.wrap(consumer)
 
     def run(stop_event):
-        ref_time = time.time()
+        ref_time = time.perf_counter()
 
         for i, data in enumerate(producer):
-            delta = ref_time+t0+i*dt - time.time()
+            delta = ref_time+t0+i*dt - time.perf_counter()
             if stop_event.wait(delta) if delta > 0 else stop_event.is_set():
                 break
 

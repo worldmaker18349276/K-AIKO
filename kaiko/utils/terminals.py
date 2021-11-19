@@ -115,7 +115,7 @@ def inkey(node, stream=None, raw=False):
     fd = stream.fileno()
 
     def run(stop_event):
-        ref_time = time.time()
+        ref_time = time.perf_counter()
         while True:
             ready, _, _ = select.select([fd], [], [], dt)
             if stop_event.is_set():
@@ -126,7 +126,7 @@ def inkey(node, stream=None, raw=False):
             data = stream.read()
 
             try:
-                node.send((time.time()-ref_time, data))
+                node.send((time.perf_counter()-ref_time, data))
             except StopIteration:
                 return
 
@@ -158,7 +158,7 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
         stream = sys.stdout
 
     def run(stop_event):
-        ref_time = time.time()
+        ref_time = time.perf_counter()
 
         # stream.write("\n")
         # dropped = 0
@@ -172,7 +172,7 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
             shown = False
             i += 1
 
-            delta = ref_time+t0+i*dt - time.time()
+            delta = ref_time+t0+i*dt - time.perf_counter()
             if delta < 0:
                 # dropped += 1
                 continue
