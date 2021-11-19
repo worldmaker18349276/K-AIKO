@@ -305,6 +305,8 @@ class BeatShellSettings(cfg.Configurable):
         token_argument_attr: str = "92" # "[color=bright_green][slot/][/]"
         token_highlight_attr: str = "4" # "[underline][slot/][/]"
 
+    debug_monitor: bool = False
+
 
 class InputWarn:
     def __init__(self, tokens, message):
@@ -425,10 +427,12 @@ class BeatInput:
         if settings is None:
             settings = BeatShellSettings()
 
+        debug_monitor = settings.debug_monitor
+        renderer_monitor = engines.Monitor("prompt_monitor.csv") if debug_monitor else None
         input_task, controller = engines.Controller.create(devices_settings.controller)
-        display_task, renderer = engines.Renderer.create(devices_settings.renderer)
+        display_task, renderer = engines.Renderer.create(devices_settings.renderer, monitor=renderer_monitor)
         stroke = BeatStroke(self, settings.input)
-        prompt = BeatPrompt(stroke, self, settings)
+        prompt = BeatPrompt(stroke, self, settings, renderer_monitor)
 
         stroke.register(controller)
         prompt.register(renderer)
@@ -1256,7 +1260,7 @@ class BeatStroke:
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
-    def __init__(self, stroke, input, settings):
+    def __init__(self, stroke, input, settings, monitor):
         r"""Constructor.
 
         Parameters
@@ -1264,11 +1268,13 @@ class BeatPrompt:
         stroke : BeatStroke
         input : BeatInput
         settings : BeatShellSettings
+        monitor : engines.Monitor or None
         """
         self.stroke = stroke
 
         self.input = input
         self.settings = settings
+        self.monitor = monitor
         self.fin_event = threading.Event()
         self.t0 = None
         self.tempo = None
@@ -1336,7 +1342,10 @@ class BeatPrompt:
             The function that add a caret to the text, or None for no caret.
         """
         icons = self.settings.prompt.icons
+        icon_width = self.settings.prompt.icon_width
         markers = self.settings.prompt.markers
+        ticks = " ▏▎▍▌▋▊▉█"
+        ticks_len = len(ticks)
 
         caret_attr = self.settings.prompt.caret_attr
         caret_blink_ratio = self.settings.prompt.caret_blink_ratio
@@ -1369,8 +1378,12 @@ class BeatPrompt:
                 caret = None
 
             # render icon, marker
-            ind = int(t * len(rendered_icons) // 1) % len(rendered_icons)
-            rendered_icon = rendered_icons[ind]
+            if self.monitor:
+                level = int((self.monitor.eff or 0.0) * icon_width*(ticks_len-1))
+                rendered_icon = "".join(ticks[max(0, min(ticks_len-1, level-i*(ticks_len-1)))] for i in range(icon_width))
+            else:
+                ind = int(t * len(rendered_icons) // 1) % len(rendered_icons)
+                rendered_icon = rendered_icons[ind]
 
             if t % 4 < min(1, caret_blink_ratio):
                 rendered_marker = rendered_markers[1]
