@@ -1,3 +1,5 @@
+import time
+import bisect
 import functools
 from typing import Dict
 import numpy
@@ -6,6 +8,103 @@ from . import datanodes as dn
 from . import wcbuffers as wcb
 from . import terminals as term
 from . import audios as aud
+
+
+class Monitor:
+    def __init__(self, filename, N=1):
+        self.filename = filename
+        self.N = N
+
+        # state
+        self.count = None
+        self.eff = None
+        self.avg = None
+        self.best = None
+        self.worst = None
+
+        # statistics
+        self.total_avg = None
+        self.total_dev = None
+        self.total_eff = None
+
+    @dn.datanode
+    def monitoring(self, node):
+        if hasattr(time, 'thread_time'):
+            get_time = time.thread_time
+        elif hasattr(time, 'clock_gettime'):
+            get_time = lambda: time.clock_gettime(time.CLOCK_THREAD_CPUTIME_ID)
+        else:
+            get_time = time.perf_counter
+
+        N = 10
+        start = prev = 0.0
+        stop = numpy.inf
+        self.count = 0
+        total = 0.0
+        total2 = 0.0
+        spend_N = [0.0]*N
+        recent_N = [0.0]*N
+        best_N = [numpy.inf]*N
+        worst_N = [-numpy.inf]*N
+
+        with open(self.filename, 'w') as file:
+            with node:
+                try:
+                    data = yield
+
+                    start = stop = prev = time.perf_counter()
+
+                    while True:
+
+                        t0 = get_time()
+                        data = node.send(data)
+                        t = get_time() - t0
+                        stop = time.perf_counter()
+                        spend = stop - prev
+                        prev = stop
+                        print(f"{spend}\t{t}", file=file)
+
+                        self.count += 1
+                        total += t
+                        total2 += t**2
+                        spend_N.insert(0, spend)
+                        spend_N.pop()
+                        recent_N.insert(0, t)
+                        recent_N.pop()
+                        bisect.insort_left(best_N, t)
+                        best_N.pop()
+                        bisect.insort(worst_N, t)
+                        worst_N.pop(0)
+                        self.avg = sum(recent_N)/self.N
+                        self.eff = sum(recent_N)/sum(spend_N)
+                        self.best = sum(best_N)/self.N
+                        self.worst = sum(worst_N)/self.N
+
+                        data = yield data
+
+                except StopIteration:
+                    return
+
+                finally:
+                    stop = time.perf_counter()
+
+                    if self.count > 0:
+                        self.total_avg = total/self.count
+                        self.total_dev = (total2/self.count - self.avg**2)**0.5
+                        self.total_eff = total/(stop - start)
+
+    def __str__(self):
+        if self.count is None:
+            return f"UNINITIALIZED"
+
+        if self.total_avg is None:
+            return f"count={self.count}"
+
+        if self.best == float('inf'):
+            return f"count={self.count}, avg={self.total_avg*1000:5.3f}±{self.total_dev*1000:5.3f}ms ({self.total_eff: >6.1%})"
+
+        return (f"count={self.count}, avg={self.total_avg*1000:5.3f}±{self.total_dev*1000:5.3f}ms"
+                f" ({self.best*1000:5.3f}ms ~ {self.worst*1000:5.3f}ms) ({self.total_eff: >6.1%})")
 
 
 class MixerSettings(cfg.Configurable):
@@ -26,10 +125,6 @@ class MixerSettings(cfg.Configurable):
 
     sound_delay : float
         The delay of clock of the mixer.
-
-    debug_timeit : bool
-        Whether or not to record the execution time of the mixer.
-        This is used for debugging.
     """
     output_device: int = -1
     output_samplerate: int = 44100
@@ -39,23 +134,21 @@ class MixerSettings(cfg.Configurable):
 
     sound_delay: float = 0.0
 
-    debug_timeit: bool = False
-
 class Mixer:
-    def __init__(self, effects_scheduler, samplerate, buffer_length, nchannels):
+    def __init__(self, effects_scheduler, samplerate, buffer_length, nchannels, monitor):
         self.effects_scheduler = effects_scheduler
         self.samplerate = samplerate
         self.buffer_length = buffer_length
         self.nchannels = nchannels
+        self.monitor = monitor
 
     @staticmethod
-    def get_task(scheduler, settings, manager, ref_time):
+    def get_task(scheduler, settings, manager, ref_time, monitor):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
         format = settings.output_format
         device = settings.output_device
-        debug_timeit = settings.debug_timeit
 
         @dn.datanode
         def _node():
@@ -73,8 +166,8 @@ class Mixer:
                     index += 1
 
         output_node = _node()
-        if debug_timeit:
-            output_node = dn.timeit(output_node, lambda msg: print(" output: " + msg))
+        if monitor:
+            output_node = monitor.monitoring(output_node)
 
         return aud.play(manager, output_node,
                         samplerate=samplerate,
@@ -84,14 +177,14 @@ class Mixer:
                         )
 
     @classmethod
-    def create(clz, settings, manager, ref_time=0.0):
+    def create(clz, settings, manager, ref_time=0.0, monitor=None):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
 
         scheduler = dn.Scheduler()
-        task = clz.get_task(scheduler, settings, manager, ref_time)
-        return task, clz(scheduler, samplerate, buffer_length, nchannels)
+        task = clz.get_task(scheduler, settings, manager, ref_time, monitor)
+        return task, clz(scheduler, samplerate, buffer_length, nchannels, monitor)
 
     def add_effect(self, node, time=None, zindex=(0,)):
         if time is not None:
@@ -190,10 +283,6 @@ class DetectorSettings(cfg.Configurable):
         The delay of clock of the detector.
     knock_energy : float
         The reference volume of the detector.
-
-    debug_timeit : bool
-        Whether or not to record the execution time of the detector.
-        This is used for debugging.
     """
     input_device: int = -1
     input_samplerate: int = 44100
@@ -214,14 +303,13 @@ class DetectorSettings(cfg.Configurable):
     knock_delay: float = 0.0
     knock_energy: float = 1.0e-3 # ~ Dt / knock_max_energy
 
-    debug_timeit: bool = False
-
 class Detector:
-    def __init__(self, listeners_scheduler):
+    def __init__(self, listeners_scheduler, monitor):
         self.listeners_scheduler = listeners_scheduler
+        self.monitor = monitor
 
     @staticmethod
-    def get_task(scheduler, settings, manager, ref_time):
+    def get_task(scheduler, settings, manager, ref_time, monitor):
         samplerate = settings.input_samplerate
         buffer_length = settings.input_buffer_length
         nchannels = settings.input_channels
@@ -231,13 +319,11 @@ class Detector:
         time_res = settings.detect.time_res
         hop_length = round(samplerate*time_res)
 
-        debug_timeit = settings.debug_timeit
-
         input_node = Detector._detect_node(scheduler, ref_time, settings)
         if buffer_length != hop_length:
             input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
-        if debug_timeit:
-            input_node = dn.timeit(input_node, lambda msg: print("  input: " + msg))
+        if monitor:
+            input_node = monitor.monitoring(input_node)
 
         return aud.record(manager, input_node,
                           samplerate=samplerate,
@@ -307,10 +393,10 @@ class Detector:
                 index += 1
 
     @classmethod
-    def create(clz, settings, manager, ref_time=0.0):
+    def create(clz, settings, manager, ref_time=0.0, monitor=None):
         scheduler = dn.Scheduler()
-        task = clz.get_task(scheduler, settings, manager, ref_time)
-        return task, clz(scheduler)
+        task = clz.get_task(scheduler, settings, manager, ref_time, monitor)
+        return task, clz(scheduler, monitor)
 
     def add_listener(self, node):
         return self.listeners_scheduler.add_node(node, (0,))
@@ -473,25 +559,19 @@ class RendererSettings(cfg.Configurable):
         The delay of clock of the renderer.
     resize_delay : float
         The delay time to redraw display after resizing.
-
-    debug_timeit : bool
-        Whether or not to record the execution time of the renderer.
-        This is used for debugging.
     """
     display_framerate: float = 160.0 # ~ 2 / detect.time_res
     display_delay: float = 0.0
     resize_delay: float = 0.5
 
-    debug_timeit: bool = False
-
 class Renderer:
-    def __init__(self, drawers_scheduler):
+    def __init__(self, drawers_scheduler, monitor):
         self.drawers_scheduler = drawers_scheduler
+        self.monitor = monitor
 
     @staticmethod
-    def get_task(scheduler, settings, ref_time):
+    def get_task(scheduler, settings, ref_time, monitor):
         framerate = settings.display_framerate
-        debug_timeit = settings.debug_timeit
         resize_delay = settings.resize_delay
 
         @dn.datanode
@@ -554,15 +634,15 @@ class Renderer:
                     index += 1
 
         display_node = _node()
-        if debug_timeit:
-            display_node = dn.timeit(display_node, lambda msg: print("display: " + msg))
+        if monitor:
+            display_node = monitor.monitoring(display_node)
         return term.show(display_node, 1/framerate, hide_cursor=True)
 
     @classmethod
-    def create(clz, settings, ref_time=0.0):
+    def create(clz, settings, ref_time=0.0, monitor=None):
         scheduler = dn.Scheduler()
-        task = clz.get_task(scheduler, settings, ref_time)
-        return task, clz(scheduler)
+        task = clz.get_task(scheduler, settings, ref_time, monitor)
+        return task, clz(scheduler, monitor)
 
     def add_drawer(self, node, zindex=(0,)):
         return self.drawers_scheduler.add_node(node, zindex=zindex)
