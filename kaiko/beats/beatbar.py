@@ -625,6 +625,42 @@ class AccuracyMeterWidget:
         yield
         return widget_func
 
+class MonitorTarget(Enum):
+    mixer = "mixer"
+    detector = "detector"
+    renderer = "renderer"
+
+class MonitorWidget:
+    def __init__(self, settings, *, beatbar, **_):
+        self.settings = settings
+        self.beatbar = beatbar
+
+    @dn.datanode
+    def load(self):
+        ticks = " ▏▎▍▌▋▊▉█"
+        ticks_len = len(ticks)
+        monitor_target = self.settings.target
+        if monitor_target is MonitorTarget.mixer:
+            monitor = self.beatbar.mixer.monitor
+        elif monitor_target is MonitorTarget.detector:
+            monitor = self.beatbar.detector.monitor
+        elif monitor_target is MonitorTarget.renderer:
+            monitor = self.beatbar.renderer.monitor
+        else:
+            monitor = None
+
+        def widget_func(time, ran):
+            if monitor is None:
+                return ""
+            if monitor.eff is None:
+                return ""
+            width = len(ran)
+            level = int(monitor.eff * width*(ticks_len-1))
+            return "".join(ticks[max(0, min(ticks_len-1, level-i*(ticks_len-1)))] for i in range(width))
+
+        yield
+        return widget_func
+
 class ScoreWidget:
     def __init__(self, settings, *, state, **_):
         self.settings = settings
@@ -697,6 +733,7 @@ class Widget(Enum):
     spectrum = SpectrumWidget
     volume_indicator = VolumeIndicatorWidget
     accuracy_meter = AccuracyMeterWidget
+    monitor = MonitorWidget
     score = ScoreWidget
     progress = ProgressWidget
 
@@ -801,3 +838,6 @@ class WidgetSettings(cfg.Configurable):
         meter_width: int = 8
         meter_decay_time: float = 1.5
         meter_radius: float = 0.10
+
+    class monitor(cfg.Configurable):
+        target: MonitorTarget = MonitorTarget.renderer

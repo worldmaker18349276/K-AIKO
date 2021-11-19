@@ -949,6 +949,8 @@ class BeatmapSettings(cfg.Configurable):
     }
 
 class GameplaySettings(cfg.Configurable):
+    debug_monitor: bool = False
+
     beatbar = BeatbarSettings
 
     class controls(cfg.Configurable):
@@ -1099,6 +1101,7 @@ class Beatmap:
         load_time = gameplay_settings.controls.load_time
         tickrate = gameplay_settings.controls.tickrate
         prepare_time = gameplay_settings.controls.prepare_time
+        debug_monitor = gameplay_settings.debug_monitor
 
         # prepare
         with self.load_resources(samplerate, nchannels, data_dir) as task:
@@ -1107,10 +1110,16 @@ class Beatmap:
             yield from task.join((yield))
             total_subjects, start_time, end_time, events = task.result
 
+        mixer_monitor = detector_monitor = renderer_monitor = None
+        if debug_monitor:
+            mixer_monitor = engines.Monitor("mixer_monitor.csv")
+            detector_monitor = engines.Monitor("detector_monitor.csv")
+            renderer_monitor = engines.Monitor("renderer_monitor.csv")
+
         ref_time = load_time + abs(start_time)
-        mixer_task, mixer = engines.Mixer.create(devices_settings.mixer, manager, ref_time)
-        detector_task, detector = engines.Detector.create(devices_settings.detector, manager, ref_time)
-        renderer_task, renderer = engines.Renderer.create(devices_settings.renderer, ref_time)
+        mixer_task, mixer = engines.Mixer.create(devices_settings.mixer, manager, ref_time, mixer_monitor)
+        detector_task, detector = engines.Detector.create(devices_settings.detector, manager, ref_time, detector_monitor)
+        renderer_task, renderer = engines.Renderer.create(devices_settings.renderer, ref_time, renderer_monitor)
         controller_task, controller = engines.Controller.create(devices_settings.controller, ref_time)
 
         beatbar = Beatbar(mixer, detector, renderer, controller,
@@ -1162,6 +1171,12 @@ class Beatmap:
 
         with dn.pipe(event_task, mixer_task, detector_task, renderer_task, controller_task) as task:
             yield from task.join((yield))
+
+        if debug_monitor:
+            print()
+            print("   mixer: " + str(mixer_monitor))
+            print("detector: " + str(detector_monitor))
+            print("renderer: " + str(renderer_monitor))
 
         return score
 
