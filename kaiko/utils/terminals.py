@@ -10,6 +10,9 @@ import shutil
 import termios
 import select
 import tty
+import enum
+import dataclasses
+from . import markups as mu
 from . import datanodes as dn
 
 
@@ -182,3 +185,305 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
         with node:
             with dn.create_task(run) as task:
                 yield from task.join((yield))
+
+
+# ctrl code
+@dataclasses.dataclass
+class CSI(mu.Single):
+    name = "csi"
+    code: str
+
+    @classmethod
+    def parse(clz, param):
+        if param is None:
+            raise mu.MarkupParseError(f"missing parameter for tag [{clz.name}/]")
+        return clz(param)
+
+    @property
+    def param(self):
+        return self.code
+
+@dataclasses.dataclass
+class Move(mu.Single):
+    name = "move"
+    x: int
+    y: int
+
+    @classmethod
+    def parse(clz, param):
+        if param is None:
+            raise mu.MarkupParseError(f"missing parameter for tag [{clz.name}/]")
+        try:
+            x, y = tuple(int(n) for n in param.split(","))
+        except ValueError:
+            raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}/]: {param}")
+        return clz(x, y)
+
+    @property
+    def param(self):
+        return f"{self.x},{self.y}"
+
+    def expand(self):
+        res = []
+        if self.x > 0:
+            res.append(CSI(f"{self.x}C"))
+        elif self.x < 0:
+            res.append(CSI(f"{-self.x}D"))
+        if self.y > 0:
+            res.append(CSI(f"{self.y}B"))
+        elif self.y < 0:
+            res.append(CSI(f"{-self.y}A"))
+        return mu.Group(res)
+
+@dataclasses.dataclass
+class Pos(mu.Single):
+    name = "pos"
+    x: int
+    y: int
+
+    @classmethod
+    def parse(clz, param):
+        if param is None:
+            raise mu.MarkupParseError(f"missing parameter for tag [{clz.name}/]")
+        try:
+            x, y = tuple(int(n) for n in param.split(","))
+        except ValueError:
+            raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}/]: {param}")
+        return clz(x, y)
+
+    @property
+    def param(self):
+        return f"{self.x},{self.y}"
+
+    def expand(self):
+        return CSI(f"{self.y+1};{self.x+1}H")
+
+@dataclasses.dataclass
+class Scroll(mu.Single):
+    name = "scroll"
+    x: int
+
+    @classmethod
+    def parse(clz, param):
+        if param is None:
+            raise mu.MarkupParseError(f"missing parameter for tag [{clz.name}/]")
+        try:
+            x = int(param)
+        except ValueError:
+            raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}/]: {param}")
+        return clz(x)
+
+    @property
+    def param(self):
+        return str(self.x)
+
+    def expand(self):
+        if self.x > 0:
+            return CSI(f"{self.x}T")
+        elif self.x < 0:
+            return CSI(f"{-self.x}S")
+        else:
+            return mu.Group([])
+
+class ClearRegion(enum.Enum):
+    to_right = "0K"
+    to_left = "1K"
+    line = "2K"
+    to_end = "0J"
+    to_beginning = "1J"
+    screen = "2J"
+
+@dataclasses.dataclass
+class Clear(mu.Single):
+    name = "clear"
+    region: ClearRegion
+
+    @classmethod
+    def parse(clz, param):
+        if param is None:
+            raise mu.MarkupParseError(f"missing parameter for tag [{clz.name}/]")
+        if all(param != region.name for region in ClearRegion):
+            raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}/]: {param}")
+        region = ClearRegion[param]
+
+        return clz(region)
+
+    @property
+    def param(self):
+        return self.region.name
+
+    def expand(self):
+        return CSI(f"{self.region.value}")
+
+
+# attr code
+@dataclasses.dataclass
+class SGR(mu.Pair):
+    name = "sgr"
+    attr: tuple
+
+    @classmethod
+    def parse(clz, param):
+        if param is None:
+            return clz([], ())
+
+        try:
+            attr = tuple(int(n or "0") for n in param.split(";"))
+        except ValueError:
+            raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
+        return clz([], attr)
+
+    @property
+    def param(self):
+        if not self.attr:
+            return None
+        return ';'.join(map(str, self.attr))
+
+@dataclasses.dataclass
+class SimpleAttr(mu.Pair):
+    option: str
+
+    @property
+    def param(self):
+        return self.option
+
+    @classmethod
+    def parse(clz, param):
+        if param is None:
+            param = next(iter(clz._options.keys()))
+        if param not in clz._options:
+            raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
+        return clz([], param)
+
+    def expand(self):
+        return SGR([child.expand() for child in self.children], (self._options[self.option],))
+
+@dataclasses.dataclass
+class Reset(SimpleAttr):
+    name = "reset"
+    _options = {"on": 0}
+
+@dataclasses.dataclass
+class Weight(SimpleAttr):
+    name = "weight"
+    _options = {"bold": 1, "dim": 2, "normal": 22}
+
+@dataclasses.dataclass
+class Italic(SimpleAttr):
+    name = "italic"
+    _options = {"on": 3, "off": 23}
+
+@dataclasses.dataclass
+class Underline(SimpleAttr):
+    name = "underline"
+    _options = {"on": 4, "double": 21, "off": 24}
+
+@dataclasses.dataclass
+class Strike(SimpleAttr):
+    name = "strike"
+    _options = {"on": 9, "off": 29}
+
+@dataclasses.dataclass
+class Blink(SimpleAttr):
+    name = "blink"
+    _options = {"on": 5, "off": 25}
+
+@dataclasses.dataclass
+class Invert(SimpleAttr):
+    name = "invert"
+    _options = {"on": 7, "off": 27}
+
+@dataclasses.dataclass
+class Color(SimpleAttr):
+    name = "color"
+    _options = {
+        "default": 39,
+        "black": 30,
+        "red": 31,
+        "green": 32,
+        "yellow": 33,
+        "blue": 34,
+        "magenta": 35,
+        "cyan": 36,
+        "white": 37,
+        "bright_black": 90,
+        "bright_red": 91,
+        "bright_green": 92,
+        "bright_yellow": 93,
+        "bright_blue": 94,
+        "bright_magenta": 95,
+        "bright_cyan": 96,
+        "bright_white": 97,
+    }
+
+@dataclasses.dataclass
+class BgColor(SimpleAttr):
+    name = "bgcolor"
+    _options = {
+        "default": 49,
+        "black": 40,
+        "red": 41,
+        "green": 42,
+        "yellow": 43,
+        "blue": 44,
+        "magenta": 45,
+        "cyan": 46,
+        "white": 47,
+        "bright_black": 100,
+        "bright_red": 101,
+        "bright_green": 102,
+        "bright_yellow": 103,
+        "bright_blue": 104,
+        "bright_magenta": 105,
+        "bright_cyan": 106,
+        "bright_white": 107,
+    }
+
+
+default_tags = [
+    Reset,
+    Weight,
+    Italic,
+    Underline,
+    Strike,
+    Blink,
+    Invert,
+    Color,
+    BgColor,
+]
+
+def _to_ansi(node, *reopens):
+    if isinstance(node, mu.Text):
+        yield from node.string
+
+    elif isinstance(node, mu.Group):
+        for child in node.children:
+            yield from _to_ansi(child, *reopens)
+
+    elif isinstance(node, CSI):
+        yield f"\x1b[{node.code}"
+
+    elif isinstance(node, SGR):
+        open = close = None
+        if node.attr:
+            open = f"\x1b[{';'.join(map(str, node.attr))}m"
+            close = "\x1b[m"
+
+        if open:
+            yield open
+        for child in node.children:
+            yield from _to_ansi(child, open, *reopens)
+        if close:
+            yield close
+        for reopen in reopens[::-1]:
+            if reopen:
+                yield reopen
+
+    else:
+        raise TypeError(f"unknown node type: {type(node)}")
+
+def to_ansi(node):
+    return "".join(_to_ansi(node))
+
+def render(markup):
+    return to_ansi(mu.parse_markup(markup, tags=default_tags).expand())

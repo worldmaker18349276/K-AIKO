@@ -10,7 +10,7 @@ from kaiko.utils import datanodes as dn
 from kaiko.utils import biparsers as bp
 from kaiko.utils import wcbuffers as wcb
 from kaiko.utils import config as cfg
-from kaiko.utils import markups as mu
+from kaiko.utils import terminals as term
 from kaiko.utils import commands as cmd
 from kaiko.utils import engines
 
@@ -1350,8 +1350,8 @@ class BeatPrompt:
         caret_attr = self.settings.prompt.caret_attr
         caret_blink_ratio = self.settings.prompt.caret_blink_ratio
 
-        rendered_icons = [mu.render(icon) for icon in icons]
-        rendered_markers = mu.render(markers[0]), mu.render(markers[1])
+        rendered_icons = [term.render(icon) for icon in icons]
+        rendered_markers = term.render(markers[0]), term.render(markers[1])
 
         self.t0 = self.settings.prompt.t0
         self.tempo = self.settings.prompt.tempo
@@ -1427,7 +1427,7 @@ class BeatPrompt:
         token_argument_attr  = self.settings.text.token_argument_attr
         token_highlight_attr = self.settings.text.token_highlight_attr
 
-        whitespace = mu.render(whitespace)
+        whitespace = term.render(whitespace)
 
         # render buffer
         buffer, tokens, typeahead, pos, highlighted, clean = yield None
