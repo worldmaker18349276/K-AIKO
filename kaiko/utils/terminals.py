@@ -203,6 +203,10 @@ class CSI(mu.Single):
     def param(self):
         return self.code
 
+    @property
+    def ansi_code(self):
+        return f"\x1b[{self.code}"
+
 @dataclasses.dataclass
 class Move(mu.Single):
     name = "move"
@@ -339,6 +343,13 @@ class SGR(mu.Pair):
             return None
         return ';'.join(map(str, self.attr))
 
+    @property
+    def ansi_delimiters(self):
+        if self.attr:
+            return f"\x1b[{';'.join(map(str, self.attr))}m", "\x1b[m"
+        else:
+            return None, None
+
 @dataclasses.dataclass
 class SimpleAttr(mu.Pair):
     option: str
@@ -461,13 +472,10 @@ def _to_ansi(node, *reopens):
             yield from _to_ansi(child, *reopens)
 
     elif isinstance(node, CSI):
-        yield f"\x1b[{node.code}"
+        yield node.ansi_code
 
     elif isinstance(node, SGR):
-        open = close = None
-        if node.attr:
-            open = f"\x1b[{';'.join(map(str, node.attr))}m"
-            close = "\x1b[m"
+        open, close = node.ansi_delimiters
 
         if open:
             yield open
