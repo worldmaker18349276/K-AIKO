@@ -12,6 +12,7 @@ import select
 import tty
 import enum
 import dataclasses
+import wcwidth
 from . import markups as mu
 from . import datanodes as dn
 
@@ -495,3 +496,68 @@ def to_ansi(node):
 
 def render(markup):
     return to_ansi(mu.parse_markup(markup, tags=default_tags).expand())
+
+
+def _less(node, size, pos=(0,0), reopens=(), wrap=True):
+    if pos is None:
+        return None
+
+    elif isinstance(node, mu.Text):
+        x, y = pos
+        for ch in node.string:
+            if ch == "\n":
+                y += 1
+                x = 0
+
+            else:
+                w = wcwidth.wcwidth(ch)
+                if w == -1:
+                    raise ValueError(f"unprintable character: {repr(ch)}")
+                x += w
+                if wrap and x > size.columns:
+                    y += 1
+                    x = w
+
+            if y == size.lines:
+                return None
+            if x <= size.columns:
+                yield ch
+        return x, y
+
+    elif isinstance(node, mu.Group):
+        for child in node.children:
+            pos = yield from _less(child, size, pos, reopens, wrap=wrap)
+        return pos
+
+    elif isinstance(node, SGR):
+        open, close = node.ansi_delimiters
+
+        if open:
+            yield open
+        for child in node.children:
+            pos = yield from _less(child, size, pos, (open, *reopens), wrap=wrap)
+        if close:
+            yield close
+        for reopen in reopens[::-1]:
+            if reopen:
+                yield reopen
+        return pos
+
+    else:
+        raise TypeError(f"unknown node type: {type(node)}")
+
+def less(node, size, pos=(0,0), wrap=True, restore=True):
+    def _restore_pos(node, size, pos, wrap):
+        x0, y0 = pos
+        pos = yield from _less(node, size, pos, wrap=wrap)
+        x, y = pos or (None, size.lines-1)
+        if y > y0:
+            yield f"\x1b[{y-y0}A"
+        yield "\r"
+        if x0 > 0:
+            yield f"\x1b[{x0}C"
+
+    if restore:
+        node = _restore_pos(node, size, pos, wrap)
+    return "".join(node)
+

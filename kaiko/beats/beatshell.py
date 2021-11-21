@@ -10,6 +10,7 @@ from kaiko.utils import datanodes as dn
 from kaiko.utils import biparsers as bp
 from kaiko.utils import wcbuffers as wcb
 from kaiko.utils import config as cfg
+from kaiko.utils import markups as mu
 from kaiko.utils import terminals as term
 from kaiko.utils import commands as cmd
 from kaiko.utils import engines
@@ -254,23 +255,23 @@ class BeatShellSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        error_message_attr : str
+        error_message_attr : list of int
             The text attribute of the error message.
-        info_message_attr : str
+        info_message_attr : list of int
             The text attribute of the info message.
-        message_max_lines : str
+        message_max_lines : int
             The maximum number of lines of the message.
 
         escape_attr : str
             The text attribute of the escaped string.
-        typeahead_attr
+        typeahead_attr : str
             The text attribute of the type-ahead.
         whitespace : str
             The replacement text of the escaped whitespace.
 
         suggestions_lines : int
             The maximum number of lines of the suggestions.
-        suggestions_selected_attr : str
+        suggestions_selected_attr : list of int
             The text attribute of the selected suggestion.
         suggestions_bullet : str
             The list bullet of the suggestions.
@@ -286,8 +287,8 @@ class BeatShellSettings(cfg.Configurable):
         token_highlight_attr : str
             The text attribute of the highlighted token.
         """
-        error_message_attr: str = "31" # "[color=red][slot/][/]"
-        info_message_attr: str = "2" # "[weight=dim][slot/][/]"
+        error_message_attr: List[int] = [31] # "[color=red][slot/][/]"
+        info_message_attr: List[int] = [2] # "[weight=dim][slot/][/]"
         message_max_lines: int = 16
 
         escape_attr: str = "2" # "[weight=dim][slot/][/]"
@@ -295,7 +296,7 @@ class BeatShellSettings(cfg.Configurable):
         whitespace: str = "[weight=dim]⌴[/]"
 
         suggestions_lines: int = 8
-        suggestions_selected_attr: str = "7"
+        suggestions_selected_attr: List[int] = [7]
         suggestions_bullet: str = "• "
         # suggestion_items = "• [slot/]", "• [invert][slot/][/]"
 
@@ -1310,7 +1311,7 @@ class BeatPrompt:
                 text_data = text_node.send((buffer, tokens, typeahead, pos, highlighted, clean))
 
                 # draw hint
-                msg = hint_node.send(hint)
+                hint_node.send((msg, hint))
 
                 # render view
                 view = render_node.send((view, width, header_data, text_data))
@@ -1485,58 +1486,66 @@ class BeatPrompt:
 
         Receives
         --------
-        hint : InputWarn or InputMessage or InputSuggestions
-
-        Yields
-        ------
-        msg : str
+        msg_node : markups.Group
             The rendered hint.
+        hint : InputWarn or InputMessage or InputSuggestions
         """
         message_max_lines = self.settings.text.message_max_lines
         error_message_attr = self.settings.text.error_message_attr
         info_message_attr = self.settings.text.info_message_attr
 
-        suggestions_lines = self.settings.text.suggestions_lines
-        suggestions_selected_attr = self.settings.text.suggestions_selected_attr
-        suggestions_bullet = self.settings.text.suggestions_bullet
+        sugg_lines = self.settings.text.suggestions_lines
+        sugg_selected_attr = self.settings.text.suggestions_selected_attr
+        sugg_bullet = self.settings.text.suggestions_bullet
 
         current_hint = None
-        msg = ""
-        hint = yield
+        msg_node, hint = yield
         while True:
             # track changes of the hint
             if hint is current_hint:
-                hint = yield msg
+                msg_node, hint = yield
                 continue
 
             current_hint = hint
+            msg_node.children.clear()
 
             # draw hint
             if hint is None:
-                msg = ""
+                pass
 
             elif isinstance(hint, InputSuggestions):
-                sugg_start = hint.selected // suggestions_lines * suggestions_lines
-                sugg_end = sugg_start + suggestions_lines
-                sugg = hint.suggestions[sugg_start:sugg_end]
-                sugg[hint.selected-sugg_start] = wcb.add_attr(sugg[hint.selected-sugg_start], suggestions_selected_attr)
-                msg = "\n".join(suggestions_bullet + s for s in sugg)
+                sugg_start = hint.selected // sugg_lines * sugg_lines
+                sugg_end = sugg_start + sugg_lines
+                suggs = hint.suggestions[sugg_start:sugg_end]
+                for i, sugg in enumerate(suggs):
+                    sugg = mu.Text(sugg)
+                    if i == hint.selected-sugg_start:
+                        sugg = term.SGR([sugg], tuple(sugg_selected_attr))
+                    sugg = mu.Group([mu.Text(sugg_bullet), sugg])
+                    msg_node.children.append(sugg)
+                    if i != len(suggs)-1:
+                        msg_node.children.append(mu.Text("\n"))
                 if sugg_start > 0:
-                    msg = "…\n" + msg
+                    msg_node.children.insert(0, mu.Text("…\n"))
                 if sugg_end < len(hint.suggestions):
-                    msg = msg + "\n…"
+                    msg_node.children.append(mu.Text("\n…"))
 
-            else:
+            elif isinstance(hint, (InputWarn, InputMessage)):
                 msg = hint.message or ""
-                if msg.count("\n") >= message_max_lines:
-                    msg = "\n".join(msg.split("\n")[:message_max_lines]) + "\x1b[m\n…"
+                # if msg.count("\n") >= message_max_lines:
+                #     msg = "\n".join(msg.split("\n")[:message_max_lines]) + "\x1b[m\n…"
 
                 if msg:
+                    msg = mu.Text(msg)
                     if isinstance(hint, InputWarn):
-                        msg = wcb.add_attr(msg, error_message_attr)
-                    msg = wcb.add_attr(msg, info_message_attr)
+                        msg = term.SGR([msg], tuple(error_message_attr))
+                    msg = term.SGR([msg], tuple(info_message_attr))
+                    msg_node.children.append(msg)
 
-            hint = yield msg
+            else:
+                raise TypeError
+
+            msg_node, hint = yield
 
     @dn.datanode
     def render_node(self):

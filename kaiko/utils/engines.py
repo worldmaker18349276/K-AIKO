@@ -6,6 +6,7 @@ import numpy
 from . import config as cfg
 from . import datanodes as dn
 from . import wcbuffers as wcb
+from . import markups as mu
 from . import terminals as term
 from . import audios as aud
 
@@ -431,129 +432,6 @@ class Detector:
             _, time, strength, detected = yield
 
 
-def pt_walk(text, width, x=0, tabsize=8):
-    r"""Predict the position after print the given text in the terminal (GNOME terminal).
-
-    Parameters
-    ----------
-    text : str
-        The string to print.
-    width : int
-        The width of terminal.
-    x : int, optional
-        The initial position before printing.
-    tabsize : int, optional
-        The tab size of terminal.
-
-    Returns
-    -------
-    x : int
-    y : int
-        The final position after printing.
-    """
-    y = 0
-
-    for ch, w in wcb.parse_attr(text):
-        if ch == "\t":
-            if tabsize > 0 and x < width:
-                x = min((x+1) // -tabsize * -tabsize, width-1)
-
-        elif ch == "\b":
-            x = max(min(x, width-1)-1, 0)
-
-        elif ch == "\r":
-            x = 0
-
-        elif ch == "\n":
-            y += 1
-            x = 0
-
-        elif ch == "\v":
-            y += 1
-
-        elif ch == "\f":
-            y += 1
-
-        elif ch == "\x00":
-            pass
-
-        elif ch[0] == "\x1b":
-            pass
-
-        else:
-            x += w
-            if x > width:
-                y += 1
-                x = w
-
-    return x, y
-
-def print_below(text, width, height, tabsize=8):
-    r"""Print the given text below the current position (GNOME terminal).
-
-    Parameters
-    ----------
-    text : str
-        The string to print.
-    width : int
-        The width of terminal.
-    height : int
-        The height of terminal.
-    tabsize : int, optional
-        The tab size of terminal.
-
-    Returns
-    -------
-    res : str
-    """
-    if height == 1:
-        return ""
-
-    x = 0
-    y = 0
-
-    res = []
-    for ch, w in wcb.parse_attr(text):
-        if ch == "\t":
-            if tabsize > 0 and x < width:
-                x = min((x+1) // -tabsize * -tabsize, width-1)
-
-        elif ch == "\b":
-            x = max(min(x, width-1)-1, 0)
-
-        elif ch == "\r":
-            x = 0
-
-        elif ch == "\n":
-            y += 1
-            x = 0
-
-        elif ch == "\v":
-            y += 1
-
-        elif ch == "\f":
-            y += 1
-
-        elif ch == "\x00":
-            pass
-
-        elif ch[0] == "\x1b":
-            pass
-
-        else:
-            x += w
-            if x > width:
-                y += 1
-                x = w
-
-        if y < height-1:
-            res.append(ch)
-        else:
-            y = height-2
-            break
-
-    return "\n" + "".join(res) + f"\x1b[m\x1b[{y+1}A"
-
 class RendererSettings(cfg.Configurable):
     r"""
     Fields
@@ -586,14 +464,14 @@ class Renderer:
     @staticmethod
     @dn.datanode
     def _render_node(scheduler):
-        curr_msg = ""
         width = 0
+        msg = mu.Group([])
+        curr_msg = mu.Group(list(msg.children))
         with scheduler:
             shown, resized, time, size = yield
             while True:
                 width = size.columns
                 view = wcb.newwin1(width)
-                msg = ""
                 try:
                     view, msg = scheduler.send(((view, msg), time, width))
                 except StopIteration:
@@ -602,14 +480,15 @@ class Renderer:
                 # track changes of the message
                 if not resized and curr_msg == msg:
                     res_text = "\r\x1b[K" + "".join(view).rstrip() + "\r"
-                elif msg == "":
+                elif not msg.children:
                     res_text = "\r\x1b[J" + "".join(view).rstrip() + "\r"
                 else:
-                    res_text = "\r\x1b[J" + "".join(view).rstrip() + print_below(msg, width, size.lines) + "\r"
+                    msg_text = term.less(mu.Group([mu.Text("\n"), *msg.children]), size)
+                    res_text = "\r\x1b[J" + "".join(view).rstrip() + "\r" + msg_text
 
                 shown, resized, time, size = yield res_text
                 if shown:
-                    curr_msg = msg
+                    curr_msg = mu.Group(list(msg.children))
 
     @staticmethod
     @dn.datanode
@@ -674,8 +553,8 @@ class Renderer:
     @dn.datanode
     def _msg_drawer(msg):
         (view, premsg), _, _ = yield
-        while True:
-            (view, premsg), _, _ = yield (view, premsg+msg)
+        premsg.children.append(msg)
+        yield (view, premsg)
 
     @staticmethod
     @dn.datanode
