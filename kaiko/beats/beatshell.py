@@ -1288,7 +1288,7 @@ class BeatPrompt:
             mu.make_pair_template("kw", f"[sgr={text_settings.token_keyword_attr}][slot/][/]", tags),
             mu.make_pair_template("arg", f"[sgr={text_settings.token_argument_attr}][slot/][/]", tags),
             mu.make_pair_template("emph", f"[sgr={text_settings.token_highlight_attr}][slot/][/]", tags),
-            mu.make_pair_template("ws", text_settings.whitespace, tags),
+            mu.make_single_template("ws", text_settings.whitespace, tags),
             mu.make_pair_template("esc", f"[sgr={text_settings.escape_attr}][slot/][/]", tags),
             mu.make_pair_template("typeahead", f"[sgr={text_settings.typeahead_attr}][slot/][/]", tags),
         ]
@@ -1546,8 +1546,16 @@ class BeatPrompt:
             elif isinstance(hint, (InputWarn, InputMessage)):
                 if hint.message:
                     msg = mu.parse_markup(hint.message, self.markup_tags)
-                    # if msg.count("\n") >= message_max_lines:
-                    #     msg = "\n".join(msg.split("\n")[:message_max_lines]) + "\x1b[m\n…"
+                    lines = 0
+                    def trim_lines(text):
+                        nonlocal lines
+                        if lines >= message_max_lines:
+                            return ""
+                        lines += text.count("\n")
+                        if lines >= message_max_lines:
+                            text = "\n".join(text.split("\n")[:message_max_lines-lines-1]) + "\n…"
+                        return text
+                    msg = mu.map_text(msg, trim_lines)
 
                     if isinstance(hint, InputWarn):
                         msg = term.SGR([msg], tuple(error_message_attr))

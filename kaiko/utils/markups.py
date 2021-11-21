@@ -218,3 +218,14 @@ def make_pair_template(name, template, tags):
     temp = parse_markup(template, tags=[Slot, *tags])
     return type(name.capitalize(), (PairTemplate,), dict(name=name, _template=temp))
 
+
+def map_text(node, func):
+    if isinstance(node, Single):
+        return node
+    elif isinstance(node, (Pair, Group)):
+        return dataclasses.replace(node, children=[map_text(child, func) for child in node.children])
+    elif isinstance(node, Text):
+        return Text(func(node.string))
+    else:
+        raise TypeError
+
