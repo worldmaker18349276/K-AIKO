@@ -1280,6 +1280,19 @@ class BeatPrompt:
         self.t0 = None
         self.tempo = None
 
+        text_settings = settings.text
+        tags = [term.SGR, *term.default_tags]
+        self.markup_tags = [
+            mu.make_pair_template("unknown", f"[sgr={text_settings.token_unknown_attr}][slot/][/]", tags),
+            mu.make_pair_template("cmd", f"[sgr={text_settings.token_command_attr}][slot/][/]", tags),
+            mu.make_pair_template("kw", f"[sgr={text_settings.token_keyword_attr}][slot/][/]", tags),
+            mu.make_pair_template("arg", f"[sgr={text_settings.token_argument_attr}][slot/][/]", tags),
+            mu.make_pair_template("emph", f"[sgr={text_settings.token_highlight_attr}][slot/][/]", tags),
+            mu.make_pair_template("ws", text_settings.whitespace, tags),
+            mu.make_pair_template("esc", f"[sgr={text_settings.escape_attr}][slot/][/]", tags),
+            mu.make_pair_template("typeahead", f"[sgr={text_settings.typeahead_attr}][slot/][/]", tags),
+        ]
+
     def register(self, renderer):
         renderer.add_drawer(self.output_handler())
 
@@ -1531,12 +1544,11 @@ class BeatPrompt:
                     msg_node.children.append(mu.Text("\n…"))
 
             elif isinstance(hint, (InputWarn, InputMessage)):
-                msg = hint.message or ""
-                # if msg.count("\n") >= message_max_lines:
-                #     msg = "\n".join(msg.split("\n")[:message_max_lines]) + "\x1b[m\n…"
+                if hint.message:
+                    msg = mu.parse_markup(hint.message, self.markup_tags)
+                    # if msg.count("\n") >= message_max_lines:
+                    #     msg = "\n".join(msg.split("\n")[:message_max_lines]) + "\x1b[m\n…"
 
-                if msg:
-                    msg = mu.Text(msg)
                     if isinstance(hint, InputWarn):
                         msg = term.SGR([msg], tuple(error_message_attr))
                     msg = term.SGR([msg], tuple(info_message_attr))

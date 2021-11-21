@@ -388,7 +388,7 @@ class ConfigCommand:
     def has(self, field):
         """Check whether this field is set in the configuration.
 
-        usage: \x1b[94mconfig\x1b[m \x1b[94mhas\x1b[m \x1b[92m{field}\x1b[m
+        usage: [cmd]config[/] [cmd]has[/] [arg]{field}[/]
                             ╱
                      The field name.
         """
@@ -398,7 +398,7 @@ class ConfigCommand:
     def get(self, field):
         """Get the value of this field in the configuration.
 
-        usage: \x1b[94mconfig\x1b[m \x1b[94mget\x1b[m \x1b[92m{field}\x1b[m
+        usage: [cmd]config[/] [cmd]get[/] [arg]{field}[/]
                             ╱
                      The field name.
         """
@@ -408,7 +408,7 @@ class ConfigCommand:
     def set(self, field, value):
         """Set this field in the configuration.
 
-        usage: \x1b[94mconfig\x1b[m \x1b[94mset\x1b[m \x1b[92m{field}\x1b[m \x1b[92m{value}\x1b[m
+        usage: [cmd]config[/] [cmd]set[/] [arg]{field}[/] [arg]{value}[/]
                             ╱         ╲
                    The field name.   The value.
         """
@@ -418,7 +418,7 @@ class ConfigCommand:
     def unset(self, field):
         """Unset this field in the configuration.
 
-        usage: \x1b[94mconfig\x1b[m \x1b[94munset\x1b[m \x1b[92m{field}\x1b[m
+        usage: [cmd]config[/] [cmd]unset[/] [arg]{field}[/]
                               ╱
                        The field name.
         """
@@ -429,7 +429,7 @@ class ConfigCommand:
     def edit(self, field):
         """Edit the value of this field in the configuration.
 
-        usage: \x1b[94mconfig\x1b[m \x1b[94medit\x1b[m \x1b[92m{field}\x1b[m
+        usage: [cmd]config[/] [cmd]edit[/] [arg]{field}[/]
                              ╱
                       The field name.
         """
@@ -494,7 +494,7 @@ class ConfigCommand:
     def profiles(self):
         """Show all profiles.
 
-        usage: \x1b[94mconfig\x1b[m \x1b[94mprofiles\x1b[m
+        usage: [cmd]config[/] [cmd]profiles[/]
         """
         logger = self.logger
 
@@ -533,7 +533,7 @@ class ConfigCommand:
     def set_default(self):
         """Set the current configuration profile as default.
 
-        usage: \x1b[94mconfig\x1b[m \x1b[94mset_default\x1b[m
+        usage: [cmd]config[/] [cmd]set_default[/]
         """
         if not self.config.is_uptodate():
             self.config.update()
@@ -544,7 +544,7 @@ class ConfigCommand:
     def use(self, profile):
         """Change the current configuration profile.
 
-        usage: \x1b[94mconfig\x1b[m \x1b[94muse\x1b[m \x1b[92m{profile}\x1b[m
+        usage: [cmd]config[/] [cmd]use[/] [arg]{profile}[/]
                               ╱
                      The profile name.
         """
@@ -558,7 +558,7 @@ class ConfigCommand:
     def rename(self, profile):
         """Rename current configuration profile.
 
-        usage: \x1b[94mconfig\x1b[m \x1b[94mrename\x1b[m \x1b[92m{profile}\x1b[m
+        usage: [cmd]config[/] [cmd]rename[/] [arg]{profile}[/]
                                 ╱
                       The profile name.
         """
@@ -571,7 +571,7 @@ class ConfigCommand:
     def new(self, profile, clone=None):
         """Make new configuration profile.
 
-        usage: \x1b[94mconfig\x1b[m \x1b[94mnew\x1b[m \x1b[92m{profile}\x1b[m [\x1b[95m--clone\x1b[m \x1b[92m{PROFILE}\x1b[m]
+        usage: [cmd]config[/] [cmd]new[/] [arg]{profile}[/] \[[kw]--clone[/] [arg]{PROFILE}[/]]
                               ╱                    ╲
                      The profile name.      The profile to be cloned.
         """
@@ -584,7 +584,7 @@ class ConfigCommand:
     def delete(self, profile):
         """Delete a configuration profile.
 
-        usage: \x1b[94mconfig\x1b[m \x1b[94mdelete\x1b[m \x1b[92m{profile}\x1b[m
+        usage: [cmd]config[/] [cmd]delete[/] [arg]{profile}[/]
                                 ╱
                        he profile name.
         """

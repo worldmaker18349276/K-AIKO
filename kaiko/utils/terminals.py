@@ -557,6 +557,7 @@ def less(node, size, pos=(0,0), wrap=True, restore=True):
         if x0 > 0:
             yield f"\x1b[{x0}C"
 
+    node = node.expand()
     if restore:
         node = _restore_pos(node, size, pos, wrap)
     return "".join(node)

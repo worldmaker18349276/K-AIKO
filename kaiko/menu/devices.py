@@ -286,11 +286,11 @@ class DevicesCommand:
     def test_mic(self, device):
         """Test audio input.
 
-        usage: devices \x1b[94mtest_mic\x1b[m \x1b[92m{device}\x1b[m
-                                      ╱
-                            the index of input
-                             device, -1 is the
-                              default device.
+        usage: [cmd]devices[/] [cmd]test_mic[/] [arg]{device}[/]
+                                  ╱
+                        the index of input
+                         device, -1 is the
+                          default device.
         """
         return MicTest(device, self.logger)
 
@@ -298,7 +298,7 @@ class DevicesCommand:
     def test_speaker(self, device):
         """Test audio output.
 
-        usage: devices \x1b[94mtest_speaker\x1b[m \x1b[92m{device}\x1b[m
+        usage: [cmd]devices[/] [cmd]test_speaker[/] [arg]{device}[/]
                                       ╱
                             the index of output
                              device, -1 is the
@@ -309,15 +309,15 @@ class DevicesCommand:
     @cmd.function_command
     def set_mic(self, device, rate=None, ch=None, len=None, fmt=None):
         """Configure audio input.
-        
+
                                           the sample rate        the buffer length
                                          of recorded sound.       of input device.
                                                   ╲                         ╲
-        usage: devices \x1b[94mset_mic\x1b[m \x1b[92m{device}\x1b[m \
-[\x1b[95m--rate\x1b[m \x1b[92m{RATE}\x1b[m] \
-[\x1b[95m--ch\x1b[m \x1b[92m{CH}\x1b[m] \
-[\x1b[95m--len\x1b[m \x1b[92m{LEN}\x1b[m] \
-[\x1b[95m--fmt\x1b[m \x1b[92m{FMT}\x1b[m]
+        usage: [cmd]devices[/] [cmd]set_mic[/] [arg]{device}[/] \
+\[[kw]--rate[/] [arg]{RATE}[/]] \
+\[[kw]--ch[/] [arg]{CH}[/]] \
+\[[kw]--len[/] [arg]{LEN}[/]] \
+\[[kw]--fmt[/] [arg]{FMT}[/]]
                                  ╱                             ╱                          ╱
                        the index of input           the channel of audio         the data format
                         device, -1 is the            input: 1 for mono,         of recorded sound.
@@ -358,15 +358,15 @@ class DevicesCommand:
     @cmd.function_command
     def set_speaker(self, device, rate=None, ch=None, len=None, fmt=None):
         """Configure audio output.
-        
+
                                               the sample rate        the buffer length
                                               of played sound.       of output device.
                                                       ╲                         ╲
-        usage: devices \x1b[94mset_speaker\x1b[m \x1b[92m{device}\x1b[m \
-[\x1b[95m--rate\x1b[m \x1b[92m{RATE}\x1b[m] \
-[\x1b[95m--ch\x1b[m \x1b[92m{CH}\x1b[m] \
-[\x1b[95m--len\x1b[m \x1b[92m{LEN}\x1b[m] \
-[\x1b[95m--fmt\x1b[m \x1b[92m{FMT}\x1b[m]
+        usage: [cmd]devices[/] [cmd]set_speaker[/] [arg]{device}[/] \
+\[[kw]--rate[/] [arg]{RATE}[/]] \
+\[[kw]--ch[/] [arg]{CH}[/]] \
+\[[kw]--len[/] [arg]{LEN}[/]] \
+\[[kw]--fmt[/] [arg]{FMT}[/]]
                                      ╱                             ╱                          ╱
                            the index of output          the channel of audio         the data format
                             device, -1 is the           output: 1 for mono,          of played sound.
