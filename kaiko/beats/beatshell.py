@@ -1281,7 +1281,7 @@ class BeatPrompt:
         self.tempo = None
 
         text_settings = settings.text
-        tags = [term.SGR, *term.default_tags]
+        tags = [term.SGR, *term.style_tags]
         self.markup_tags = [
             mu.make_pair_template("unknown", f"[sgr={text_settings.token_unknown_attr}][slot/][/]", tags),
             mu.make_pair_template("cmd", f"[sgr={text_settings.token_command_attr}][slot/][/]", tags),
@@ -1364,8 +1364,11 @@ class BeatPrompt:
         caret_attr = self.settings.prompt.caret_attr
         caret_blink_ratio = self.settings.prompt.caret_blink_ratio
 
-        rendered_icons = [term.render(icon) for icon in icons]
-        rendered_markers = term.render(markers[0]), term.render(markers[1])
+        rendered_icons = [term.render(mu.parse_markup(icon, tags=term.style_tags)) for icon in icons]
+        rendered_markers = (
+            term.render(mu.parse_markup(markers[0], tags=term.style_tags)),
+            term.render(mu.parse_markup(markers[1], tags=term.style_tags)),
+        )
 
         self.t0 = self.settings.prompt.t0
         self.tempo = self.settings.prompt.tempo
@@ -1441,7 +1444,7 @@ class BeatPrompt:
         token_argument_attr  = self.settings.text.token_argument_attr
         token_highlight_attr = self.settings.text.token_highlight_attr
 
-        whitespace = term.render(whitespace)
+        whitespace = term.render(mu.parse_markup(whitespace, tags=term.style_tags))
 
         # render buffer
         buffer, tokens, typeahead, pos, highlighted, clean = yield None

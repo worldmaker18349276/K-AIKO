@@ -452,7 +452,7 @@ class BgColor(SimpleAttr):
     }
 
 
-default_tags = [
+style_tags = [
     Reset,
     Weight,
     Italic,
@@ -464,13 +464,13 @@ default_tags = [
     BgColor,
 ]
 
-def _to_ansi(node, *reopens):
+def _render(node, reopens=()):
     if isinstance(node, mu.Text):
         yield from node.string
 
     elif isinstance(node, mu.Group):
         for child in node.children:
-            yield from _to_ansi(child, *reopens)
+            yield from _render(child, reopens)
 
     elif isinstance(node, CSI):
         yield node.ansi_code
@@ -481,7 +481,7 @@ def _to_ansi(node, *reopens):
         if open:
             yield open
         for child in node.children:
-            yield from _to_ansi(child, open, *reopens)
+            yield from _render(child, (open, *reopens))
         if close:
             yield close
         for reopen in reopens[::-1]:
@@ -491,11 +491,8 @@ def _to_ansi(node, *reopens):
     else:
         raise TypeError(f"unknown node type: {type(node)}")
 
-def to_ansi(node):
-    return "".join(_to_ansi(node))
-
-def render(markup):
-    return to_ansi(mu.parse_markup(markup, tags=default_tags).expand())
+def render(node):
+    return "".join(_render(node.expand()))
 
 
 def _less(node, size, pos=(0,0), reopens=(), wrap=True):
