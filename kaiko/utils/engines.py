@@ -546,8 +546,8 @@ class Renderer:
     def add_message(self, msg, zindex=(0,)):
         return self.add_drawer(self._msg_drawer(msg), zindex)
 
-    def add_text(self, text_node, xmask=slice(None,None), clear=False, zindex=(0,)):
-        return self.add_drawer(self._text_drawer(text_node, xmask, clear), zindex)
+    def add_text(self, text_node, xmask=slice(None,None), zindex=(0,)):
+        return self.add_drawer(self._text_drawer(text_node, xmask), zindex)
 
     @staticmethod
     @dn.datanode
@@ -558,7 +558,7 @@ class Renderer:
 
     @staticmethod
     @dn.datanode
-    def _text_drawer(text_node, xmask=slice(None,None), clear=False):
+    def _text_drawer(text_node, xmask=slice(None,None)):
         text_node = dn.DataNode.wrap(text_node)
         with text_node:
             (view, msg), time, width = yield
@@ -573,8 +573,6 @@ class Renderer:
                 if res is not None:
                     xshift, text = res
                     text = term.render(text)
-                    if clear:
-                        view = wcb.clear1(view, width, xmask=xmask)
                     view, _ = wcb.addtext1(view, width, xran.start+xshift, text, xmask=xmask)
 
                 (view, msg), time, width = yield (view, msg)

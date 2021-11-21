@@ -228,9 +228,9 @@ class Beatbar:
         header_drawer = lambda arg: (0, self.current_header.get(arg[0])(arg[0], arg[1]))
         footer_drawer = lambda arg: (0, self.current_footer.get(arg[0])(arg[0], arg[1]))
 
-        renderer.add_text(icon_drawer, xmask=self.icon_mask, clear=True, zindex=(1,))
-        renderer.add_text(header_drawer, xmask=self.header_mask, clear=True, zindex=(2,))
-        renderer.add_text(footer_drawer, xmask=self.footer_mask, clear=True, zindex=(3,))
+        renderer.add_text(icon_drawer, xmask=self.icon_mask, zindex=(1,))
+        renderer.add_text(header_drawer, xmask=self.header_mask, zindex=(2,))
+        renderer.add_text(footer_drawer, xmask=self.footer_mask, zindex=(3,))
         detector.add_listener(hit_handler)
 
         self.draw_content(0.0, self._sight_drawer, zindex=(2,))
