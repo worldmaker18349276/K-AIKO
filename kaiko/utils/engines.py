@@ -91,7 +91,7 @@ class Monitor:
 
                     if self.count > 0:
                         self.total_avg = total/self.count
-                        self.total_dev = (total2/self.count - self.avg**2)**0.5
+                        self.total_dev = (total2/self.count - self.total_avg**2)**0.5
                         self.total_eff = total/(stop - start)
 
     def __str__(self):

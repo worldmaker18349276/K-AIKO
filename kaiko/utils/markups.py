@@ -27,9 +27,10 @@ def parse_markup(markup, tags):
         if text is not None:
             # process backslash escapes
             raw = text
-            raw = re.sub(r"(?<!\\)(\\\\)*\\\[", r"\1[", raw) # \[ => [
-            raw = re.sub(r"(?<!\\)(\\\\)*\\\]", r"\1]", raw) # \] => ]
-            raw = re.sub(r"(?<!\\)(\\\\)*'", r"\1\\'", raw)  # ' => \'
+            raw = re.sub(r"(?<!\\)((\\\\)*)\\\[", r"\1[", raw) # \[ => [
+            raw = re.sub(r"(?<!\\)((\\\\)*)\\\]", r"\1]", raw) # \] => ]
+            raw = re.sub(r"(?<!\\)((\\\\)*)'", r"\1\\'", raw)  # ' => \'
+            raw = re.sub(r"(?<!\\)((\\\\)*)\r", r"\1\\r", raw)  # '\r' => \r
             try:
                 raw = ast.literal_eval("'''" + raw + "'''")
             except SyntaxError:
