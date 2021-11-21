@@ -8,6 +8,8 @@ import threading
 import numpy
 from kaiko.utils import config as cfg
 from kaiko.utils import datanodes as dn
+from kaiko.utils import markups as mu
+from kaiko.utils import terminals as term
 
 
 # performance
@@ -123,7 +125,7 @@ class BeatbarSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        sight_appearances : Union[List[str], List[Tuple[str, str]]]
+        sight_appearances : List[Tuple[str, str]]
             The appearances of the judgement line.
             The first string is default appearance, and the rest is the appearances
             for the different hitting strength (from soft to loud).
@@ -145,31 +147,33 @@ class BeatbarSettings(cfg.Configurable):
         performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
             PerformanceGrade.MISS               : (""   , ""     ),
 
-            PerformanceGrade.LATE_FAILED        : ("\b\x1b[95m⟪\x1b[m", "\t\t\x1b[95m⟫\x1b[m"),
-            PerformanceGrade.LATE_BAD           : ("\b\x1b[95m⟨\x1b[m", "\t\t\x1b[95m⟩\x1b[m"),
-            PerformanceGrade.LATE_GOOD          : ("\b\x1b[95m‹\x1b[m", "\t\t\x1b[95m›\x1b[m"),
+            PerformanceGrade.LATE_FAILED        : ("\b[color=bright_magenta]⟪[/]", "\t\t[color=bright_magenta]⟫[/]"),
+            PerformanceGrade.LATE_BAD           : ("\b[color=bright_magenta]⟨[/]", "\t\t[color=bright_magenta]⟩[/]"),
+            PerformanceGrade.LATE_GOOD          : ("\b[color=bright_magenta]‹[/]", "\t\t[color=bright_magenta]›[/]"),
             PerformanceGrade.PERFECT            : (""   , ""     ),
-            PerformanceGrade.EARLY_GOOD         : ("\t\t\x1b[95m›\x1b[m", "\b\x1b[95m‹\x1b[m"),
-            PerformanceGrade.EARLY_BAD          : ("\t\t\x1b[95m⟩\x1b[m", "\b\x1b[95m⟨\x1b[m"),
-            PerformanceGrade.EARLY_FAILED       : ("\t\t\x1b[95m⟫\x1b[m", "\b\x1b[95m⟪\x1b[m"),
+            PerformanceGrade.EARLY_GOOD         : ("\t\t[color=bright_magenta]›[/]", "\b[color=bright_magenta]‹[/]"),
+            PerformanceGrade.EARLY_BAD          : ("\t\t[color=bright_magenta]⟩[/]", "\b[color=bright_magenta]⟨[/]"),
+            PerformanceGrade.EARLY_FAILED       : ("\t\t[color=bright_magenta]⟫[/]", "\b[color=bright_magenta]⟪[/]"),
 
-            PerformanceGrade.LATE_FAILED_WRONG  : ("\b\x1b[95m⟪\x1b[m", "\t\t\x1b[95m⟫\x1b[m"),
-            PerformanceGrade.LATE_BAD_WRONG     : ("\b\x1b[95m⟨\x1b[m", "\t\t\x1b[95m⟩\x1b[m"),
-            PerformanceGrade.LATE_GOOD_WRONG    : ("\b\x1b[95m‹\x1b[m", "\t\t\x1b[95m›\x1b[m"),
+            PerformanceGrade.LATE_FAILED_WRONG  : ("\b[color=bright_magenta]⟪[/]", "\t\t[color=bright_magenta]⟫[/]"),
+            PerformanceGrade.LATE_BAD_WRONG     : ("\b[color=bright_magenta]⟨[/]", "\t\t[color=bright_magenta]⟩[/]"),
+            PerformanceGrade.LATE_GOOD_WRONG    : ("\b[color=bright_magenta]‹[/]", "\t\t[color=bright_magenta]›[/]"),
             PerformanceGrade.PERFECT_WRONG      : (""   , ""     ),
-            PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t\x1b[95m›\x1b[m", "\b\x1b[95m‹\x1b[m"),
-            PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t\x1b[95m⟩\x1b[m", "\b\x1b[95m⟨\x1b[m"),
-            PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t\x1b[95m⟫\x1b[m", "\b\x1b[95m⟪\x1b[m"),
+            PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t[color=bright_magenta]›[/]", "\b[color=bright_magenta]‹[/]"),
+            PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t[color=bright_magenta]⟩[/]", "\b[color=bright_magenta]⟨[/]"),
+            PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t[color=bright_magenta]⟫[/]", "\b[color=bright_magenta]⟪[/]"),
             }
         performance_sustain_time: float = 0.1
 
-        sight_appearances: Union[List[str], List[Tuple[str, str]]] = ["\x1b[95m⛶\x1b[m",
-                                                                      "\x1b[38;5;201m🞎\x1b[m",
-                                                                      "\x1b[38;5;200m🞏\x1b[m",
-                                                                      "\x1b[38;5;199m🞐\x1b[m",
-                                                                      "\x1b[38;5;198m🞑\x1b[m",
-                                                                      "\x1b[38;5;197m🞒\x1b[m",
-                                                                      "\x1b[38;5;196m🞓\x1b[m"]
+        sight_appearances: List[Tuple[str, str]] = [
+            ("[color=bright_magenta]⛶[/]", "[color=bright_magenta]⛶[/]"),
+            ("[sgr=38;5;201]🞎[/]", "[sgr=38;5;201]🞎[/]"),
+            ("[sgr=38;5;200]🞏[/]", "[sgr=38;5;200]🞏[/]"),
+            ("[sgr=38;5;199]🞐[/]", "[sgr=38;5;199]🞐[/]"),
+            ("[sgr=38;5;198]🞑[/]", "[sgr=38;5;198]🞑[/]"),
+            ("[sgr=38;5;197]🞒[/]", "[sgr=38;5;197]🞒[/]"),
+            ("[sgr=38;5;196]🞓[/]", "[sgr=38;5;196]🞓[/]"),
+        ]
         hit_decay_time: float = 0.4
         hit_sustain_time: float = 0.1
 
@@ -196,9 +200,9 @@ class Beatbar:
         self.content_mask = slice(icon_width+header_width, -footer_width if footer_width > 0 else None)
         self.footer_mask = slice(-footer_width, None) if footer_width > 0 else slice(0, 0)
 
-        self.current_icon = dn.TimedVariable(value=lambda time, ran: "")
-        self.current_header = dn.TimedVariable(value=lambda time, ran: "")
-        self.current_footer = dn.TimedVariable(value=lambda time, ran: "")
+        self.current_icon = dn.TimedVariable(value=lambda time, ran: mu.Text(""))
+        self.current_header = dn.TimedVariable(value=lambda time, ran: mu.Text(""))
+        self.current_footer = dn.TimedVariable(value=lambda time, ran: mu.Text(""))
 
         # sight
         hit_decay_time = settings.scrollingbar.hit_decay_time
@@ -314,6 +318,10 @@ class Beatbar:
     def remove_content_drawer(self, key):
         self.renderer.remove_drawer(key)
 
+    def on_before_render(self, node):
+        node = dn.pipe(dn.branch(lambda a:a[1:], node), lambda a:a[0])
+        return self.renderer.add_drawer(node, zindex=())
+
 
     @staticmethod
     @dn.datanode
@@ -385,17 +393,19 @@ class Beatbar:
 
     @staticmethod
     def _get_default_sight(hit_decay_time, hit_sustain_time, perf_appearances, sight_appearances):
+        perf_appearances = {key: (term.parse(appearance1), term.parse(appearance2))
+                            for key, (appearance1, appearance2) in perf_appearances.items()}
+        sight_appearances = [(term.parse(appearance1), term.parse(appearance2))
+                             for appearance1, appearance2 in sight_appearances]
+
         def _default_sight(time, hit_hint, perf_hint):
             hit_strength, hit_time, _ = hit_hint
             (perf, perf_is_reversed), perf_time, _ = perf_hint
 
             # draw perf hint
-            if perf is not None:
-                perf_text = perf_appearances[perf.grade]
-                if perf_is_reversed:
-                    perf_text = perf_text[::-1]
-            else:
-                perf_text = ("", "")
+            perf_ap = perf_appearances[perf.grade] if perf is not None else (mu.Text(""), mu.Text(""))
+            if perf_is_reversed:
+                perf_ap = perf_ap[::-1]
 
             # draw sight
             if hit_strength is not None:
@@ -404,15 +414,15 @@ class Beatbar:
                 loudness = int(strength * (len(sight_appearances) - 1))
                 if time - hit_time < hit_sustain_time:
                     loudness = max(1, loudness)
-                sight_text = sight_appearances[loudness]
+                sight_ap = sight_appearances[loudness]
 
             else:
-                sight_text = sight_appearances[0]
+                sight_ap = sight_appearances[0]
 
-            if isinstance(sight_text, str):
-                sight_text = (sight_text, sight_text)
-
-            return (perf_text[0]+"\r"+sight_text[0], perf_text[1]+"\r"+sight_text[1])
+            return (
+                mu.Group([perf_ap[0], mu.Text("\r"), sight_ap[0]]),
+                mu.Group([perf_ap[1], mu.Text("\r"), sight_ap[1]])
+            )
 
         return _default_sight
 
@@ -426,10 +436,6 @@ class Beatbar:
 
     def remove_handler(self, key):
         self.controller.remove_handler(key)
-
-    def on_before_render(self, node):
-        node = dn.pipe(dn.branch(lambda a:a[1:], node), lambda a:a[0])
-        return self.renderer.add_drawer(node, zindex=())
 
 
 # widgets
@@ -541,7 +547,7 @@ class SpectrumWidget:
 
         def widget_func(time, ran):
             width = len(ran)
-            return f"\x1b[{attr}m{self.spectrum:^{width}.{width}s}\x1b[m"
+            return term.SGR([mu.Text(f"{self.spectrum:^{width}.{width}s}")], (*attr,))
 
         yield
         return widget_func
@@ -578,7 +584,7 @@ class VolumeIndicatorWidget:
 
         def widget_func(time, ran):
             width = len(ran)
-            return f"\x1b[{attr}m" + "▮" * int(self.volume * width) + "\x1b[m"
+            return term.SGR([mu.Text("▮" * int(self.volume * width))], (*attr,))
 
         yield
         return widget_func
@@ -619,8 +625,10 @@ class AccuracyMeterWidget:
                 else:
                     hit[i] = max(0.0, hit[i] - decay)
 
-            return "".join(f"\x1b[48;5;{232+int(i*(nlevel-1))};38;5;{232+int(j*(nlevel-1))}m▐\x1b[m"
-                           for i, j in zip(hit[::2], hit[1::2]))
+            return mu.Group([
+                term.SGR([mu.Text("▐")], (48, 5, 232+int(i*(nlevel-1)), 38, 5, 232+int(j*(nlevel-1))))
+                for i, j in zip(hit[::2], hit[1::2])
+            ])
 
         yield
         return widget_func
@@ -651,12 +659,12 @@ class MonitorWidget:
 
         def widget_func(time, ran):
             if monitor is None:
-                return ""
+                return mu.Text("")
             if monitor.eff is None:
-                return ""
+                return mu.Text("")
             width = len(ran)
             level = int(monitor.eff * width*(ticks_len-1))
-            return "".join(ticks[max(0, min(ticks_len-1, level-i*(ticks_len-1)))] for i in range(width))
+            return mu.Text("".join(ticks[max(0, min(ticks_len-1, level-i*(ticks_len-1)))] for i in range(width)))
 
         yield
         return widget_func
@@ -675,20 +683,30 @@ class ScoreWidget:
             width = len(ran)
 
             if width == 0:
-                return ""
+                return mu.Text("")
             if width == 1:
-                return f"\x1b[{attr};1m|\x1b[m"
+                return term.SGR([mu.Text("|")], (*attr, 1))
             if width == 2:
-                return f"\x1b[{attr};1m[]\x1b[m"
+                return term.SGR([mu.Text("[]")], (*attr, 1))
             if width <= 7:
                 score_str = uint_format(score, width-2, True)
-                return f"\x1b[{attr};1m[\x1b[22m{score_str}\x1b[1m]\x1b[m"
+                return term.SGR([
+                    term.SGR([mu.Text("[")], (1,)),
+                    mu.Text(score_str),
+                    term.SGR([mu.Text("]")], (1,)),
+                ], (*attr,))
 
             w1 = max((width-3)//2, 5)
             w2 = (width-3) - w1
             score_str = uint_format(score, w1, True)
             full_score_str = uint_format(full_score, w2, True)
-            return f"\x1b[{attr};1m[\x1b[22m{score_str}\x1b[1m/\x1b[22m{full_score_str}\x1b[1m]\x1b[m"
+            return term.SGR([
+                term.SGR([mu.Text("[")], (1,)),
+                mu.Text(score_str),
+                term.SGR([mu.Text("/")], (1,)),
+                mu.Text(full_score_str),
+                term.SGR([mu.Text("]")], (1,)),
+            ], (*attr,))
 
         yield
         return widget_func
@@ -711,20 +729,30 @@ class ProgressWidget:
             width = len(ran)
 
             if width == 0:
-                return ""
+                return mu.Text("")
             if width == 1:
-                return f"\x1b[{attr};1m|\x1b[m"
+                return term.SGR([mu.Text("|")], (*attr, 1))
             if width == 2:
-                return f"\x1b[{attr};1m[]\x1b[m"
+                return term.SGR([mu.Text("[]")], (*attr, 1))
             if width <= 7:
                 progress_str = pc_format(progress, width-2)
-                return f"\x1b[{attr};1m[\x1b[22m{progress_str}\x1b[1m]\x1b[m"
+                return term.SGR([
+                    term.SGR([mu.Text("[")], (1,)),
+                    mu.Text(progress_str),
+                    term.SGR([mu.Text("]")], (1,)),
+                ], (*attr,))
 
             w1 = max((width-3)//2, 5)
             w2 = (width-3) - w1
             progress_str = pc_format(progress, w1)
             time_str = time_format(time, w2)
-            return f"\x1b[{attr};1m[\x1b[22m{progress_str}\x1b[1m|\x1b[22m{time_str}\x1b[1m]\x1b[m"
+            return term.SGR([
+                term.SGR([mu.Text("[")], (1,)),
+                mu.Text(progress_str),
+                term.SGR([mu.Text("/")], (1,)),
+                mu.Text(time_str),
+                term.SGR([mu.Text("]")], (1,)),
+            ], (*attr,))
 
         yield
         return widget_func
@@ -788,7 +816,7 @@ class WidgetSettings(cfg.Configurable):
             The frequency resolution of the spectrum.
             The preferred value is `samplerate/win_length`.
         """
-        attr: str = "95"
+        attr: str = [95]
         spec_width: int = 6
         spec_decay_time: float = 0.01
         spec_time_res: float = 0.0116099773
@@ -803,7 +831,7 @@ class WidgetSettings(cfg.Configurable):
         vol_decay_time : float
             The decay time of pillar on the volume indicator.
         """
-        attr: str = "95"
+        attr: str = [95]
         vol_decay_time: float = 0.01
 
     class score(cfg.Configurable):
@@ -813,7 +841,7 @@ class WidgetSettings(cfg.Configurable):
         attr : str
             The text attribute for the score indicator.
         """
-        attr: str = "38;5;93"
+        attr: str = [38,5,93]
 
     class progress(cfg.Configurable):
         r"""
@@ -822,7 +850,7 @@ class WidgetSettings(cfg.Configurable):
         attr : str
             The text attribute for the progress indicator.
         """
-        attr: str = "38;5;93"
+        attr: str = [38,5,93]
 
     class accuracy_meter(cfg.Configurable):
         r"""

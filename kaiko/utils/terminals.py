@@ -494,6 +494,9 @@ def _render(node, reopens=()):
 def render(node):
     return "".join(_render(node.expand()))
 
+def parse(markup):
+    return mu.parse_markup(markup, [SGR, *style_tags])
+
 
 def _less(node, size, pos=(0,0), reopens=(), wrap=True):
     if pos is None:

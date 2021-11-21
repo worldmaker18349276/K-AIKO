@@ -141,7 +141,7 @@ def addtext1(view, width, x, text, xmask=slice(None,None)):
             x += 2
 
         else:
-            raise ValueError
+            raise ValueError(f"invalid string: {repr(ch)} in {repr(text)}")
 
     return view, x
 

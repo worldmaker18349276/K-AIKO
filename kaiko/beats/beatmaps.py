@@ -11,6 +11,8 @@ import audioread
 from kaiko.utils import config as cfg
 from kaiko.utils import datanodes as dn
 from kaiko.utils import audios as aud
+from kaiko.utils import markups as mu
+from kaiko.utils import terminals as term
 from kaiko.utils import engines
 from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings, Widget, WidgetSettings
 
@@ -158,7 +160,7 @@ class Text(Event):
 
     def register(self, state, field):
         if self.text is not None:
-            field.draw_content(self.pos, self.text, zindex=self.zindex,
+            field.draw_content(self.pos, mu.Text(self.text), zindex=self.zindex,
                                start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
 
 @dataclass
@@ -190,7 +192,7 @@ class Title(Event):
 
     def register(self, state, field):
         if self.text is not None:
-            field.draw_title(self.pos, self.text, zindex=self.zindex,
+            field.draw_title(self.pos, mu.Text(self.text), zindex=self.zindex,
                              start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
 
 @dataclass
@@ -357,9 +359,9 @@ class OneshotTarget(Target):
     ----------
     sound : DataNode or None
         The sound of the auditory cue of this target.
-    approach_appearance : str
+    approach_appearance : Tuple[markups.Node, markups.Node]
         The appearance of approaching target.
-    wrong_appearance : str
+    wrong_appearance : Tuple[markups.Node, markups.Node]
         The appearance of wrong-shot target.
 
     Methods
@@ -393,7 +395,7 @@ class OneshotTarget(Target):
         elif self.perf.is_wrong:
             return self.wrong_appearance
         else:
-            return ""
+            return (mu.Text(""), mu.Text(""))
 
     @property
     def score(self):
@@ -451,8 +453,14 @@ class Soft(OneshotTarget):
     nofeedback: Optional[bool] = None
 
     def prepare(self, beatmap, context):
-        self.approach_appearance = beatmap.settings.notes.soft_approach_appearance
-        self.wrong_appearance = beatmap.settings.notes.soft_wrong_appearance
+        self.approach_appearance = (
+            term.parse(beatmap.settings.notes.soft_approach_appearance[0]),
+            term.parse(beatmap.settings.notes.soft_approach_appearance[1]),
+        )
+        self.wrong_appearance = (
+            term.parse(beatmap.settings.notes.soft_wrong_appearance[0]),
+            term.parse(beatmap.settings.notes.soft_wrong_appearance[1]),
+        )
         sound = beatmap.resources.get(beatmap.settings.notes.soft_sound, None)
         self.sound = dn.DataNode.wrap(sound) if sound is not None else None
         self.threshold = beatmap.settings.difficulty.soft_threshold
@@ -495,8 +503,14 @@ class Loud(OneshotTarget):
     nofeedback: Optional[bool] = None
 
     def prepare(self, beatmap, context):
-        self.approach_appearance = beatmap.settings.notes.loud_approach_appearance
-        self.wrong_appearance = beatmap.settings.notes.loud_wrong_appearance
+        self.approach_appearance = (
+            term.parse(beatmap.settings.notes.loud_approach_appearance[0]),
+            term.parse(beatmap.settings.notes.loud_approach_appearance[1]),
+        )
+        self.wrong_appearance = (
+            term.parse(beatmap.settings.notes.loud_wrong_appearance[0]),
+            term.parse(beatmap.settings.notes.loud_wrong_appearance[1]),
+        )
         sound = beatmap.resources.get(beatmap.settings.notes.loud_sound, None)
         self.sound = dn.DataNode.wrap(sound) if sound is not None else None
         self.threshold = beatmap.settings.difficulty.loud_threshold
@@ -557,8 +571,14 @@ class Incr(OneshotTarget):
     nofeedback: Optional[float] = None
 
     def prepare(self, beatmap, context):
-        self.approach_appearance = beatmap.settings.notes.incr_approach_appearance
-        self.wrong_appearance = beatmap.settings.notes.incr_wrong_appearance
+        self.approach_appearance = (
+            term.parse(beatmap.settings.notes.incr_approach_appearance[0]),
+            term.parse(beatmap.settings.notes.incr_approach_appearance[1]),
+        )
+        self.wrong_appearance = (
+            term.parse(beatmap.settings.notes.incr_wrong_appearance[0]),
+            term.parse(beatmap.settings.notes.incr_wrong_appearance[1]),
+        )
         sound = beatmap.resources.get(beatmap.settings.notes.incr_sound, None)
         self.sound = dn.DataNode.wrap(sound) if sound is not None else None
         self.incr_threshold = beatmap.settings.difficulty.incr_threshold
@@ -642,7 +662,10 @@ class Roll(Target):
     def prepare(self, beatmap, context):
         self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
         self.tolerance = beatmap.settings.difficulty.roll_tolerance
-        self.rock_appearance = beatmap.settings.notes.roll_rock_appearance
+        self.rock_appearance = (
+            term.parse(beatmap.settings.notes.roll_rock_appearance[0]),
+            term.parse(beatmap.settings.notes.roll_rock_appearance[1]),
+        )
         sound = beatmap.resources.get(beatmap.settings.notes.roll_rock_sound, None)
         self.sound = sound
         self.rock_score = beatmap.settings.scores.roll_rock_score
@@ -671,7 +694,7 @@ class Roll(Target):
         return lambda time: (self.times[index]-time) * 0.5 * self.speed
 
     def appearance_of(self, index):
-        return lambda time: self.rock_appearance if self.nofeedback or self.roll <= index else ""
+        return lambda time: self.rock_appearance if self.nofeedback or self.roll <= index else (mu.Text(""), mu.Text(""))
 
     def approach(self, state, field):
         for i, time in enumerate(self.times):
@@ -732,8 +755,12 @@ class Spin(Target):
 
     def prepare(self, beatmap, context):
         self.tolerance = beatmap.settings.difficulty.spin_tolerance
-        self.disk_appearances = beatmap.settings.notes.spin_disk_appearances
-        self.finishing_appearance = beatmap.settings.notes.spin_finishing_appearance
+        self.disk_appearances = [(term.parse(spin_disk_appearance[0]), term.parse(spin_disk_appearance[1]))
+                                 for spin_disk_appearance in beatmap.settings.notes.spin_disk_appearances]
+        self.finishing_appearance = (
+            term.parse(beatmap.settings.notes.spin_finishing_appearance[0]),
+            term.parse(beatmap.settings.notes.spin_finishing_appearance[1]),
+        )
         self.finish_sustain_time = beatmap.settings.notes.spin_finish_sustain_time
         sound = beatmap.resources.get(beatmap.settings.notes.spin_disk_sound, None)
         self.sound = dn.DataNode.wrap(sound) if sound is not None else None
@@ -765,7 +792,7 @@ class Spin(Target):
         if self.nofeedback or not self.is_finished:
             return self.disk_appearances[int(self.charge) % len(self.disk_appearances)]
         else:
-            return ""
+            return (mu.Text(""), mu.Text(""))
 
     def approach(self, state, field):
         for time in self.times:
@@ -774,7 +801,7 @@ class Spin(Target):
 
         field.draw_content(self.pos, self.appearance, zindex=self.zindex,
                            start=self.lifespan[0], duration=self.lifespan[1]-self.lifespan[0])
-        field.draw_sight("", start=self.range[0], duration=self.range[1]-self.range[0])
+        field.draw_sight((mu.Text(""), mu.Text("")), start=self.range[0], duration=self.range[1]-self.range[0])
 
     def hit(self, state, field, time, strength):
         self.charge = min(self.charge + min(1.0, strength), self.capacity)
@@ -799,7 +826,7 @@ class Spin(Target):
 
         if not self.nofeedback:
             appearance = self.finishing_appearance
-            if isinstance(appearance, tuple) and self.speed < 0:
+            if self.speed < 0:
                 appearance = appearance[::-1]
             field.draw_sight(appearance, duration=self.finish_sustain_time)
 
@@ -881,35 +908,35 @@ class BeatmapSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        soft_approach_appearance : Union[str, Tuple[str, str]]
+        soft_approach_appearance : Tuple[str, str]
             The appearance of approaching soft note.
-        soft_wrong_appearance : Union[str, Tuple[str, str]]
+        soft_wrong_appearance : Tuple[str, str]
             The appearance of wrong soft note.
         soft_sound : str
             The name of sound of soft note.
 
-        loud_approach_appearance : Union[str, Tuple[str, str]]
+        loud_approach_appearance : Tuple[str, str]
             The appearance of approaching loud note.
-        loud_wrong_appearance : Union[str, Tuple[str, str]]
+        loud_wrong_appearance : Tuple[str, str]
             The appearance of wrong loud note.
         loud_sound : str
             The name of sound of loud note.
 
-        incr_approach_appearance : Union[str, Tuple[str, str]]
+        incr_approach_appearance : Tuple[str, str]
             The appearance of approaching incr note.
-        incr_wrong_appearance : Union[str, Tuple[str, str]]
+        incr_wrong_appearance : Tuple[str, str]
             The appearance of wrong incr note.
         incr_sound : str
             The name of sound of incr note.
 
-        roll_rock_approach_appearance : Union[str, Tuple[str, str]]
+        roll_rock_approach_appearance : Tuple[str, str]
             The appearance of approaching roll in the rock note.
         roll_rock_sound : str
             The name of sound of roll in the rock note.
 
-        spin_disk_appearances : Union[List[str], List[Tuple[str, str]]]
+        spin_disk_appearances : List[Tuple[str, str]]
             The spinning appearance of spin note.
-        spin_finishing_appearance : Union[str, Tuple[str, str]]
+        spin_finishing_appearance : Tuple[str, str]
             The finishing appearance of spin note.
         spin_finish_sustain_time : float
             The sustain time for the finishing spin note.
@@ -919,22 +946,22 @@ class BeatmapSettings(cfg.Configurable):
         event_leadin_time : float
             The minimum time of silence before and after the gameplay.
         """
-        soft_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[96m□\x1b[m"
-        soft_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[96m⬚\x1b[m"
+        soft_approach_appearance:  Tuple[str, str] = ("[color=bright_cyan]□[/]", "[color=bright_cyan]□[/]")
+        soft_wrong_appearance:     Tuple[str, str] = ("[color=bright_cyan]⬚[/]", "[color=bright_cyan]⬚[/]")
         soft_sound: str = 'soft'
-        loud_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[94m■\x1b[m"
-        loud_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[94m⬚\x1b[m"
+        loud_approach_appearance:  Tuple[str, str] = ("[color=bright_blue]■[/]", "[color=bright_blue]■[/]")
+        loud_wrong_appearance:     Tuple[str, str] = ("[color=bright_blue]⬚[/]", "[color=bright_blue]⬚[/]")
         loud_sound: str = 'loud'
-        incr_approach_appearance:  Union[str, Tuple[str, str]] = "\x1b[94m⬒\x1b[m"
-        incr_wrong_appearance:     Union[str, Tuple[str, str]] = "\x1b[94m⬚\x1b[m"
+        incr_approach_appearance:  Tuple[str, str] = ("[color=bright_blue]⬒[/]", "[color=bright_blue]⬒[/]")
+        incr_wrong_appearance:     Tuple[str, str] = ("[color=bright_blue]⬚[/]", "[color=bright_blue]⬚[/]")
         incr_sound: str = 'incr'
-        roll_rock_appearance:      Union[str, Tuple[str, str]] = "\x1b[96m◎\x1b[m"
+        roll_rock_appearance:      Tuple[str, str] = ("[color=bright_cyan]◎[/]", "[color=bright_cyan]◎[/]")
         roll_rock_sound: str = 'rock'
-        spin_disk_appearances:     Union[List[str], List[Tuple[str, str]]] = ["\x1b[94m◴\x1b[m",
-                                                                              "\x1b[94m◵\x1b[m",
-                                                                              "\x1b[94m◶\x1b[m",
-                                                                              "\x1b[94m◷\x1b[m"]
-        spin_finishing_appearance: Union[str, Tuple[str, str]] = "\x1b[94m☺\x1b[m"
+        spin_disk_appearances:     List[Tuple[str, str]] = [("[color=bright_blue]◴[/]", "[color=bright_blue]◴[/]"),
+                                                            ("[color=bright_blue]◵[/]", "[color=bright_blue]◵[/]"),
+                                                            ("[color=bright_blue]◶[/]", "[color=bright_blue]◶[/]"),
+                                                            ("[color=bright_blue]◷[/]", "[color=bright_blue]◷[/]")]
+        spin_finishing_appearance: Tuple[str, str] = ("[color=bright_blue]☺[/]", "[color=bright_blue]☺[/]")
         spin_finish_sustain_time: float = 0.1
         spin_disk_sound: str = 'disk'
 

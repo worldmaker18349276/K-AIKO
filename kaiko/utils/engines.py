@@ -572,6 +572,7 @@ class Renderer:
 
                 if res is not None:
                     xshift, text = res
+                    text = term.render(text)
                     if clear:
                         view = wcb.clear1(view, width, xmask=xmask)
                     view, _ = wcb.addtext1(view, width, xran.start+xshift, text, xmask=xmask)
