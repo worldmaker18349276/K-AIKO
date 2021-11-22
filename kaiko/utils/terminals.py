@@ -498,6 +498,74 @@ def parse(markup):
     return mu.parse_markup(markup, [SGR, *style_tags])
 
 
+def addmarkup1(view, width, x, node, xmask=slice(None,None), x0=None, attrs=()):
+    xran = range(width)
+    if x0 is None:
+        x0 = x
+
+    if isinstance(node, mu.Text):
+        for ch in node.string:
+            w = wcwidth.wcwidth(ch)
+
+            if ch == "\t":
+                x += 1
+
+            elif ch == "\b":
+                x -= 1
+
+            elif ch == "\r":
+                x = x0
+
+            elif ch == "\x00":
+                pass
+
+            elif w == 0:
+                x_ = x - 1
+                if x_ in xran and view[x_] == "":
+                    x_ -= 1
+                if x_ in xran[xmask]:
+                    view[x_] += ch
+
+            elif w == 1:
+                if x in xran[xmask]:
+                    if x-1 in xran and view[x] == "":
+                        view[x-1] = " "
+                    if x+1 in xran and view[x+1] == "":
+                        view[x+1] = " "
+                    view[x] = ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}\x1b[m"
+                x += 1
+
+            elif w == 2:
+                x_ = x + 1
+                if x in xran[xmask] and x_ in xran[xmask]:
+                    if x-1 in xran and view[x] == "":
+                        view[x-1] = " "
+                    if x_+1 in xran and view[x_+1] == "":
+                        view[x_+1] = " "
+                    view[x] = ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}\x1b[m"
+                    view[x_] = ""
+                x += 2
+
+            else:
+                raise ValueError(f"invalid string: {repr(ch)} in {repr(node.string)}")
+
+        return x
+
+    elif isinstance(node, mu.Group):
+        for child in node.children:
+            x = addmarkup1(view, width, x, child, xmask, x0, attrs)
+        return x
+
+    elif isinstance(node, SGR):
+        attrs = (*attrs, *node.attr)
+        for child in node.children:
+            x = addmarkup1(view, width, x, child, xmask, x0, attrs)
+        return x
+
+    else:
+        raise TypeError(f"unknown node type: {type(node)}")
+
+
 def _less(node, size, pos=(0,0), reopens=(), wrap=True):
     if pos is None:
         return None
