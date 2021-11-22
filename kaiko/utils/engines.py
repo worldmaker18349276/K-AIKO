@@ -12,7 +12,7 @@ from . import audios as aud
 
 
 class Monitor:
-    def __init__(self, filename, N=1):
+    def __init__(self, filename, N=10):
         self.filename = filename
         self.N = N
 
@@ -37,7 +37,7 @@ class Monitor:
         else:
             get_time = time.perf_counter
 
-        N = 10
+        N = self.N
         start = prev = 0.0
         stop = numpy.inf
         self.count = 0
@@ -76,10 +76,10 @@ class Monitor:
                         best_N.pop()
                         bisect.insort(worst_N, t)
                         worst_N.pop(0)
-                        self.avg = sum(recent_N)/self.N
+                        self.avg = sum(recent_N)/N
                         self.eff = sum(recent_N)/sum(spend_N)
-                        self.best = sum(best_N)/self.N
-                        self.worst = sum(worst_N)/self.N
+                        self.best = sum(best_N)/N
+                        self.worst = sum(worst_N)/N
 
                         data = yield data
 
@@ -101,7 +101,7 @@ class Monitor:
         if self.total_avg is None:
             return f"count={self.count}"
 
-        if self.best == float('inf'):
+        if self.best is None or self.best == float('inf'):
             return f"count={self.count}, avg={self.total_avg*1000:5.3f}±{self.total_dev*1000:5.3f}ms ({self.total_eff: >6.1%})"
 
         return (f"count={self.count}, avg={self.total_avg*1000:5.3f}±{self.total_dev*1000:5.3f}ms"
