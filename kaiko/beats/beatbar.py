@@ -393,9 +393,9 @@ class Beatbar:
 
     @staticmethod
     def _get_default_sight(hit_decay_time, hit_sustain_time, perf_appearances, sight_appearances):
-        perf_appearances = {key: (term.parse(appearance1), term.parse(appearance2))
+        perf_appearances = {key: (term.parse(appearance1).expand(), term.parse(appearance2).expand())
                             for key, (appearance1, appearance2) in perf_appearances.items()}
-        sight_appearances = [(term.parse(appearance1), term.parse(appearance2))
+        sight_appearances = [(term.parse(appearance1).expand(), term.parse(appearance2).expand())
                              for appearance1, appearance2 in sight_appearances]
 
         def _default_sight(time, hit_hint, perf_hint):

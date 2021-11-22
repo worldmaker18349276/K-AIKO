@@ -574,7 +574,6 @@ class Renderer:
                     xshift, text = res
                     # text = term.render(text)
                     # view, _ = wcb.addtext1(view, width, xran.start+xshift, text, xmask=xmask)
-                    text = text.expand()
                     term.addmarkup1(view, width, xran.start+xshift, text, xmask=xmask)
 
                 (view, msg), time, width = yield (view, msg)
