@@ -535,11 +535,12 @@ class SpectrumWidget:
 
     @dn.datanode
     def load(self):
-        attr = self.settings.attr
         spec_width = self.settings.spec_width
         samplerate = self.devices_settings.mixer.output_samplerate
         nchannels = self.devices_settings.mixer.output_channels
         hop_length = round(samplerate * self.settings.spec_time_res)
+
+        template = term.RichTextParser().parse(self.settings.template, slotted=True)
 
         self.spectrum = "\u2800"*spec_width
         draw = dn.pipe(self.draw_spectrum(), lambda v: setattr(self, "spectrum", v))
@@ -548,7 +549,8 @@ class SpectrumWidget:
 
         def widget_func(time, ran):
             width = len(ran)
-            return term.SGR([mu.Text(f"{self.spectrum:^{width}.{width}s}")], (*attr,))
+            text = mu.Text(f"{self.spectrum:^{width}.{width}s}")
+            return template.traverse(mu.Slot, lambda _: text)
 
         yield
         return widget_func
@@ -562,10 +564,11 @@ class VolumeIndicatorWidget:
 
     @dn.datanode
     def load(self):
-        attr = self.settings.attr
         vol_decay_time = self.settings.vol_decay_time
         buffer_length = self.devices_settings.mixer.output_buffer_length
         samplerate = self.devices_settings.mixer.output_samplerate
+
+        template = term.RichTextParser().parse(self.settings.template, slotted=True)
 
         decay = buffer_length / samplerate / vol_decay_time
 
@@ -585,7 +588,8 @@ class VolumeIndicatorWidget:
 
         def widget_func(time, ran):
             width = len(ran)
-            return term.SGR([mu.Text("▮" * int(self.volume * width))], (*attr,))
+            text = mu.Text("▮" * int(self.volume * width))
+            return template.traverse(mu.Slot, lambda _: text)
 
         yield
         return widget_func
@@ -677,7 +681,8 @@ class ScoreWidget:
 
     @dn.datanode
     def load(self):
-        attr = self.settings.attr
+        template = term.RichTextParser().parse(self.settings.template, slotted=True)
+
         def widget_func(time, ran):
             score = self.state.score
             full_score = self.state.full_score
@@ -686,28 +691,18 @@ class ScoreWidget:
             if width == 0:
                 return mu.Text("")
             if width == 1:
-                return term.SGR([mu.Text("|")], (*attr, 1))
+                return template.traverse(mu.Slot, lambda _: mu.Text("|"))
             if width == 2:
-                return term.SGR([mu.Text("[]")], (*attr, 1))
+                return template.traverse(mu.Slot, lambda _: mu.Text("[]"))
             if width <= 7:
                 score_str = uint_format(score, width-2, True)
-                return term.SGR([
-                    term.SGR([mu.Text("[")], (1,)),
-                    mu.Text(score_str),
-                    term.SGR([mu.Text("]")], (1,)),
-                ], (*attr,))
+                return template.traverse(mu.Slot, lambda _: mu.Text(f"[{score_str}]"))
 
             w1 = max((width-3)//2, 5)
             w2 = (width-3) - w1
             score_str = uint_format(score, w1, True)
             full_score_str = uint_format(full_score, w2, True)
-            return term.SGR([
-                term.SGR([mu.Text("[")], (1,)),
-                mu.Text(score_str),
-                term.SGR([mu.Text("/")], (1,)),
-                mu.Text(full_score_str),
-                term.SGR([mu.Text("]")], (1,)),
-            ], (*attr,))
+            return template.traverse(mu.Slot, lambda _: mu.Text(f"[{score_str}/{full_score_str}]"))
 
         yield
         return widget_func
@@ -719,7 +714,8 @@ class ProgressWidget:
 
     @dn.datanode
     def load(self):
-        attr = self.settings.attr
+        template = term.RichTextParser().parse(self.settings.template, slotted=True)
+
         def widget_func(time, ran):
             finished_subjects = self.state.finished_subjects
             total_subjects = self.state.total_subjects
@@ -732,28 +728,18 @@ class ProgressWidget:
             if width == 0:
                 return mu.Text("")
             if width == 1:
-                return term.SGR([mu.Text("|")], (*attr, 1))
+                return template.traverse(mu.Slot, lambda _: mu.Text("|"))
             if width == 2:
-                return term.SGR([mu.Text("[]")], (*attr, 1))
+                return template.traverse(mu.Slot, lambda _: mu.Text("[]"))
             if width <= 7:
                 progress_str = pc_format(progress, width-2)
-                return term.SGR([
-                    term.SGR([mu.Text("[")], (1,)),
-                    mu.Text(progress_str),
-                    term.SGR([mu.Text("]")], (1,)),
-                ], (*attr,))
+                return template.traverse(mu.Slot, lambda _: mu.Text(f"[{progress_str}]"))
 
             w1 = max((width-3)//2, 5)
             w2 = (width-3) - w1
             progress_str = pc_format(progress, w1)
             time_str = time_format(time, w2)
-            return term.SGR([
-                term.SGR([mu.Text("[")], (1,)),
-                mu.Text(progress_str),
-                term.SGR([mu.Text("/")], (1,)),
-                mu.Text(time_str),
-                term.SGR([mu.Text("]")], (1,)),
-            ], (*attr,))
+            return template.traverse(mu.Slot, lambda _: mu.Text(f"[{progress_str}/{time_str}]"))
 
         yield
         return widget_func
@@ -804,8 +790,8 @@ class WidgetSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        attr : str
-            The text attribute for the spectrum.
+        template : str
+            The template for the spectrum.
         spec_width : int
             The text width of spectrum.
         spec_decay_time : float
@@ -817,7 +803,7 @@ class WidgetSettings(cfg.Configurable):
             The frequency resolution of the spectrum.
             The preferred value is `samplerate/win_length`.
         """
-        attr: str = [95]
+        template: str = "[color=bright_magenta][slot/][/]"
         spec_width: int = 6
         spec_decay_time: float = 0.01
         spec_time_res: float = 0.0116099773
@@ -827,31 +813,31 @@ class WidgetSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        attr : str
-            The text attribute for the volume indicator.
+        template : str
+            The template for the volume indicator.
         vol_decay_time : float
             The decay time of pillar on the volume indicator.
         """
-        attr: str = [95]
+        template: str = "[color=bright_magenta][slot/][/]"
         vol_decay_time: float = 0.01
 
     class score(cfg.Configurable):
         r"""
         Fields
         ------
-        attr : str
-            The text attribute for the score indicator.
+        template : str
+            The template for the score indicator.
         """
-        attr: str = [38,5,93]
+        template: str = "[sgr=38;5;93][slot/][/]"
 
     class progress(cfg.Configurable):
         r"""
         Fields
         ------
-        attr : str
-            The text attribute for the progress indicator.
+        template : str
+            The template for the progress indicator.
         """
-        attr: str = [38,5,93]
+        template: str = "[sgr=38;5;93][slot/][/]"
 
     class accuracy_meter(cfg.Configurable):
         r"""
