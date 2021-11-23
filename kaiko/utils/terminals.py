@@ -11,6 +11,7 @@ import termios
 import select
 import tty
 import enum
+from typing import Optional
 import dataclasses
 import wcwidth
 from . import markups as mu
@@ -606,71 +607,188 @@ class RichTextParser:
         return "".join(markup)
 
 
-def addmarkup1(view, width, x, markup, xmask=slice(None,None), x0=None, attrs=()):
-    xran = range(width)
-    if x0 is None:
-        x0 = x
+# bar position
+@dataclasses.dataclass
+class At(mu.Single):
+    name = "at"
+    x: int
 
-    if isinstance(markup, mu.Text):
-        for ch in markup.string:
-            w = wcwidth.wcwidth(ch)
+    @classmethod
+    def parse(clz, param):
+        if param is None:
+            raise mu.MarkupParseError(f"missing parameter for tag [{clz.name}]")
+        try:
+            x = int(param)
+        except ValueError:
+            raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
+        return clz(x)
 
-            if ch == "\t":
-                x += 1
+    @property
+    def param(self):
+        return str(self.x)
 
-            elif ch == "\b":
-                x -= 1
+@dataclasses.dataclass
+class Shift(mu.Single):
+    name = "shift"
+    x: int
 
-            elif ch == "\r":
-                x = x0
+    @classmethod
+    def parse(clz, param):
+        if param is None:
+            raise mu.MarkupParseError(f"missing parameter for tag [{clz.name}]")
+        try:
+            x = int(param)
+        except ValueError:
+            raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
+        return clz(x)
 
-            elif ch == "\x00":
-                pass
+    @property
+    def param(self):
+        return str(self.x)
 
-            elif w == 0:
-                x_ = x - 1
-                if x_ in xran and view[x_] == "":
-                    x_ -= 1
-                if x_ in xran[xmask]:
-                    view[x_] += ch
+@dataclasses.dataclass
+class Restore(mu.Pair):
+    name = "restore"
 
-            elif w == 1:
-                if x in xran[xmask]:
-                    if x-1 in xran and view[x] == "":
-                        view[x-1] = " "
-                    if x+1 in xran and view[x+1] == "":
-                        view[x+1] = " "
-                    view[x] = ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}\x1b[m"
-                x += 1
+    @classmethod
+    def parse(clz, param):
+        if param is not None:
+            raise mu.MarkupParseError(f"no parameter is needed for tag [{clz.name}]")
+        return clz([])
 
-            elif w == 2:
-                x_ = x + 1
-                if x in xran[xmask] and x_ in xran[xmask]:
-                    if x-1 in xran and view[x] == "":
-                        view[x-1] = " "
-                    if x_+1 in xran and view[x_+1] == "":
-                        view[x_+1] = " "
-                    view[x] = ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}\x1b[m"
-                    view[x_] = ""
-                x += 2
+    @property
+    def param(self):
+        return None
 
-            else:
-                raise ValueError(f"invalid string: {repr(ch)} in {repr(markup.string)}")
+@dataclasses.dataclass
+class Mask(mu.Pair):
+    name = "mask"
+    start: Optional[int]
+    stop: Optional[int]
 
-        return x
+    @classmethod
+    def parse(clz, param):
+        try:
+            start, stop = [int(p) if p else None for p in (param or ":").split(":")]
+        except ValueError:
+            raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
+        return clz([], start, stop)
 
-    elif isinstance(markup, mu.Group):
-        for child in markup.children:
-            x = addmarkup1(view, width, x, child, xmask, x0, attrs)
-        return x
+    @property
+    def param(self):
+        return f"{self.start}:{self.stop}"
 
-    elif isinstance(markup, SGR):
-        attrs = (*attrs, *markup.attr)
-        for child in markup.children:
-            x = addmarkup1(view, width, x, child, xmask, x0, attrs)
-        return x
+def clamp(ran, ran_):
+    start = min(max(ran.start, ran_.start), ran.stop)
+    stop = max(min(ran.stop, ran_.stop), ran.start)
+    return range(start, stop)
 
-    else:
-        raise TypeError(f"unknown markup type: {type(markup)}")
 
+class RichBarParser:
+    default_tags = [
+        SGR, # TODO: remove it
+        Reset,
+        Weight,
+        Italic,
+        Underline,
+        Strike,
+        Blink,
+        Invert,
+        Color,
+        BgColor,
+        Wide,
+        At,
+        Shift,
+        Mask,
+    ]
+
+    def __init__(self):
+        self.tags = list(RichBarParser.default_tags)
+
+    def parse(self, markup_str, expand=True):
+        markup = mu.parse_markup(markup_str, self.tags)
+        if expand:
+            markup = markup.expand()
+        return markup
+
+    def add_single_template(self, name, template):
+        self.tags.append(mu.make_single_template(name, template, self.tags))
+
+    def add_pair_template(self, name, template):
+        self.tags.append(mu.make_pair_template(name, template, self.tags))
+
+    @staticmethod
+    def _render(view, width, markup, x=0, xmask=slice(None,None), attrs=()):
+        xran = range(width)
+        if isinstance(markup, mu.Text):
+            for ch in markup.string:
+                w = wcwidth.wcwidth(ch)
+
+                if w == 0:
+                    x_ = x - 1
+                    if x_ in xran and view[x_] == "":
+                        x_ -= 1
+                    if x_ in xran[xmask]:
+                        view[x_] += ch
+
+                elif w == 1:
+                    if x in xran[xmask]:
+                        if x-1 in xran and view[x] == "":
+                            view[x-1] = " "
+                        if x+1 in xran and view[x+1] == "":
+                            view[x+1] = " "
+                        view[x] = ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}\x1b[m"
+                    x += 1
+
+                elif w == 2:
+                    x_ = x + 1
+                    if x in xran[xmask] and x_ in xran[xmask]:
+                        if x-1 in xran and view[x] == "":
+                            view[x-1] = " "
+                        if x_+1 in xran and view[x_+1] == "":
+                            view[x_+1] = " "
+                        view[x] = ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}\x1b[m"
+                        view[x_] = ""
+                    x += 2
+
+                else:
+                    raise ValueError(f"invalid string: {repr(ch)} in {repr(markup.string)}")
+
+            return x
+
+        elif isinstance(markup, mu.Group):
+            for child in markup.children:
+                x = RichBarParser._render(view, width, child, x, xmask, attrs)
+            return x
+
+        elif isinstance(markup, SGR):
+            attrs = (*attrs, *markup.attr)
+            for child in markup.children:
+                x = RichBarParser._render(view, width, child, x, xmask, attrs)
+            return x
+
+        elif isinstance(markup, At):
+            return markup.x
+
+        elif isinstance(markup, Shift):
+            return x+markup.x
+
+        elif isinstance(markup, Restore):
+            x0 = x
+            for child in markup.children:
+                x = RichBarParser._render(view, width, child, x, xmask, attrs)
+            return x0
+
+        elif isinstance(markup, Mask):
+            xmask = slice(markup.start, markup.stop)
+            for child in markup.children:
+                x = RichBarParser._render(view, width, child, x, xmask, attrs)
+            return x
+
+        else:
+            raise TypeError(f"unknown markup type: {type(markup)}")
+
+    @staticmethod
+    def render(view, width, markup):
+        RichBarParser._render(view, width, markup)
 

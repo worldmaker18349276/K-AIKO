@@ -147,21 +147,21 @@ class BeatbarSettings(cfg.Configurable):
         performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
             PerformanceGrade.MISS               : (""   , ""     ),
 
-            PerformanceGrade.LATE_FAILED        : ("\b[color=bright_magenta]⟪[/]", "\t\t[color=bright_magenta]⟫[/]"),
-            PerformanceGrade.LATE_BAD           : ("\b[color=bright_magenta]⟨[/]", "\t\t[color=bright_magenta]⟩[/]"),
-            PerformanceGrade.LATE_GOOD          : ("\b[color=bright_magenta]‹[/]", "\t\t[color=bright_magenta]›[/]"),
+            PerformanceGrade.LATE_FAILED        : ("[shift=-1/][color=bright_magenta]⟪[/]", "[shift=2/][color=bright_magenta]⟫[/]"),
+            PerformanceGrade.LATE_BAD           : ("[shift=-1/][color=bright_magenta]⟨[/]", "[shift=2/][color=bright_magenta]⟩[/]"),
+            PerformanceGrade.LATE_GOOD          : ("[shift=-1/][color=bright_magenta]‹[/]", "[shift=2/][color=bright_magenta]›[/]"),
             PerformanceGrade.PERFECT            : (""   , ""     ),
-            PerformanceGrade.EARLY_GOOD         : ("\t\t[color=bright_magenta]›[/]", "\b[color=bright_magenta]‹[/]"),
-            PerformanceGrade.EARLY_BAD          : ("\t\t[color=bright_magenta]⟩[/]", "\b[color=bright_magenta]⟨[/]"),
-            PerformanceGrade.EARLY_FAILED       : ("\t\t[color=bright_magenta]⟫[/]", "\b[color=bright_magenta]⟪[/]"),
+            PerformanceGrade.EARLY_GOOD         : ("[shift=2/][color=bright_magenta]›[/]", "[shift=-1/][color=bright_magenta]‹[/]"),
+            PerformanceGrade.EARLY_BAD          : ("[shift=2/][color=bright_magenta]⟩[/]", "[shift=-1/][color=bright_magenta]⟨[/]"),
+            PerformanceGrade.EARLY_FAILED       : ("[shift=2/][color=bright_magenta]⟫[/]", "[shift=-1/][color=bright_magenta]⟪[/]"),
 
-            PerformanceGrade.LATE_FAILED_WRONG  : ("\b[color=bright_magenta]⟪[/]", "\t\t[color=bright_magenta]⟫[/]"),
-            PerformanceGrade.LATE_BAD_WRONG     : ("\b[color=bright_magenta]⟨[/]", "\t\t[color=bright_magenta]⟩[/]"),
-            PerformanceGrade.LATE_GOOD_WRONG    : ("\b[color=bright_magenta]‹[/]", "\t\t[color=bright_magenta]›[/]"),
+            PerformanceGrade.LATE_FAILED_WRONG  : ("[shift=-1/][color=bright_magenta]⟪[/]", "[shift=2/][color=bright_magenta]⟫[/]"),
+            PerformanceGrade.LATE_BAD_WRONG     : ("[shift=-1/][color=bright_magenta]⟨[/]", "[shift=2/][color=bright_magenta]⟩[/]"),
+            PerformanceGrade.LATE_GOOD_WRONG    : ("[shift=-1/][color=bright_magenta]‹[/]", "[shift=2/][color=bright_magenta]›[/]"),
             PerformanceGrade.PERFECT_WRONG      : (""   , ""     ),
-            PerformanceGrade.EARLY_GOOD_WRONG   : ("\t\t[color=bright_magenta]›[/]", "\b[color=bright_magenta]‹[/]"),
-            PerformanceGrade.EARLY_BAD_WRONG    : ("\t\t[color=bright_magenta]⟩[/]", "\b[color=bright_magenta]⟨[/]"),
-            PerformanceGrade.EARLY_FAILED_WRONG : ("\t\t[color=bright_magenta]⟫[/]", "\b[color=bright_magenta]⟪[/]"),
+            PerformanceGrade.EARLY_GOOD_WRONG   : ("[shift=2/][color=bright_magenta]›[/]", "[shift=-1/][color=bright_magenta]‹[/]"),
+            PerformanceGrade.EARLY_BAD_WRONG    : ("[shift=2/][color=bright_magenta]⟩[/]", "[shift=-1/][color=bright_magenta]⟨[/]"),
+            PerformanceGrade.EARLY_FAILED_WRONG : ("[shift=2/][color=bright_magenta]⟫[/]", "[shift=-1/][color=bright_magenta]⟪[/]"),
             }
         performance_sustain_time: float = 0.1
 
@@ -393,7 +393,7 @@ class Beatbar:
 
     @staticmethod
     def _get_default_sight(hit_decay_time, hit_sustain_time, perf_appearances, sight_appearances):
-        rich = term.RichTextParser()
+        rich = term.RichBarParser()
         perf_appearances = {key: (rich.parse(appearance1), rich.parse(appearance2))
                             for key, (appearance1, appearance2) in perf_appearances.items()}
         sight_appearances = [(rich.parse(appearance1), rich.parse(appearance2))
@@ -421,8 +421,8 @@ class Beatbar:
                 sight_ap = sight_appearances[0]
 
             return (
-                mu.Group([perf_ap[0], mu.Text("\r"), sight_ap[0]]),
-                mu.Group([perf_ap[1], mu.Text("\r"), sight_ap[1]])
+                mu.Group([term.Restore([perf_ap[0]]), sight_ap[0]]),
+                mu.Group([term.Restore([perf_ap[1]]), sight_ap[1]])
             )
 
         return _default_sight

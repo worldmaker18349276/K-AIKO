@@ -453,7 +453,7 @@ class Soft(OneshotTarget):
     nofeedback: Optional[bool] = None
 
     def prepare(self, beatmap, context):
-        rich = term.RichTextParser()
+        rich = term.RichBarParser()
         self.approach_appearance = (
             rich.parse(beatmap.settings.notes.soft_approach_appearance[0]),
             rich.parse(beatmap.settings.notes.soft_approach_appearance[1]),
@@ -504,7 +504,7 @@ class Loud(OneshotTarget):
     nofeedback: Optional[bool] = None
 
     def prepare(self, beatmap, context):
-        rich = term.RichTextParser()
+        rich = term.RichBarParser()
         self.approach_appearance = (
             rich.parse(beatmap.settings.notes.loud_approach_appearance[0]),
             rich.parse(beatmap.settings.notes.loud_approach_appearance[1]),
@@ -573,7 +573,7 @@ class Incr(OneshotTarget):
     nofeedback: Optional[float] = None
 
     def prepare(self, beatmap, context):
-        rich = term.RichTextParser()
+        rich = term.RichBarParser()
         self.approach_appearance = (
             rich.parse(beatmap.settings.notes.incr_approach_appearance[0]),
             rich.parse(beatmap.settings.notes.incr_approach_appearance[1]),
@@ -663,7 +663,7 @@ class Roll(Target):
     nofeedback: Optional[bool] = None
 
     def prepare(self, beatmap, context):
-        rich = term.RichTextParser()
+        rich = term.RichBarParser()
         self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
         self.tolerance = beatmap.settings.difficulty.roll_tolerance
         self.rock_appearance = (
@@ -758,7 +758,7 @@ class Spin(Target):
     nofeedback: Optional[bool] = None
 
     def prepare(self, beatmap, context):
-        rich = term.RichTextParser()
+        rich = term.RichBarParser()
         self.tolerance = beatmap.settings.difficulty.spin_tolerance
         self.disk_appearances = [(rich.parse(spin_disk_appearance[0]), rich.parse(spin_disk_appearance[1]))
                                  for spin_disk_appearance in beatmap.settings.notes.spin_disk_appearances]
