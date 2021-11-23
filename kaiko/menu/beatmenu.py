@@ -139,7 +139,7 @@ class KAIKOUser:
             return
 
         # start up
-        logger.print(f"Prepare your profile...", prefix="data")
+        logger.print("[data/] Prepare your profile...")
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.songs_dir.mkdir(parents=True, exist_ok=True)
@@ -152,19 +152,19 @@ class KAIKOUser:
                      "samples/rock.wav",
                      "samples/disk.wav"]
         for rspath in resources:
-            logger.print(f"Load resource {rspath}...", prefix="data")
+            logger.print(f"[data/] Load resource {logger.escape(rspath)}...")
             data = pkgutil.get_data("kaiko", rspath)
             open(self.data_dir / rspath, 'wb').write(data)
 
-        logger.print(f"Your data will be stored in {logger.emph(self.data_dir.as_uri())}", prefix="data")
+        logger.print(f"[data/] Your data will be stored in {logger.emph(self.data_dir.as_uri())}")
         logger.print(flush=True)
 
     def remove(self, logger):
-        logger.print(f"Remove config directory {logger.emph(self.config_dir.as_uri())}...", prefix="data")
+        logger.print(f"[data/] Remove config directory {logger.emph(self.config_dir.as_uri())}...")
         shutil.rmtree(str(self.config_dir))
-        logger.print(f"Remove songs directory {logger.emph(self.songs_dir.as_uri())}...", prefix="data")
+        logger.print(f"[data/] Remove songs directory {logger.emph(self.songs_dir.as_uri())}...")
         shutil.rmtree(str(self.songs_dir))
-        logger.print(f"Remove data directory {logger.emph(self.data_dir.as_uri())}...", prefix="data")
+        logger.print(f"[data/] Remove data directory {logger.emph(self.data_dir.as_uri())}...")
         shutil.rmtree(str(self.data_dir))
 
 
@@ -226,14 +226,14 @@ class KAIKOMenu:
             except (ProfileNameError, ProfileTypeError, bp.DecodeError):
                 with logger.warn():
                     logger.print("Failed to load default configuration")
-                    logger.print(traceback.format_exc(), end="")
+                    logger.print(traceback.format_exc(), end="", markup=False)
 
                 config.new()
 
         logger.set_config(config)
 
         # load PyAudio
-        logger.print(f"Load PyAudio...", prefix="info")
+        logger.print("[info/] Load PyAudio...")
         logger.print()
 
         with prepare_pyaudio(logger) as manager:
@@ -262,7 +262,7 @@ class KAIKOMenu:
         size = shutil.get_terminal_size()
         width = self.settings.menu.best_screen_size
         if size.columns < width:
-            logger.print("Your screen size seems too small.", prefix="hint")
+            logger.print("[hint/] Your screen size seems too small.")
 
             with fit_screen(logger) as fit_task:
                 yield from fit_task.join((yield))
@@ -284,9 +284,9 @@ class KAIKOMenu:
         confirm_key = self.settings.shell.input.confirm_key
         help_key = self.settings.shell.input.help_key
         tab_key, _, _ = self.settings.shell.input.autocomplete_keys
-        logger.print(f"Type command and press {logger.emph(confirm_key)} to execute.", prefix="hint")
-        logger.print(f"Use {logger.emph(tab_key)} to autocomplete command.", prefix="hint")
-        logger.print(f"If you need help, press {logger.emph(help_key)}.", prefix="hint")
+        logger.print(f"[hint/] Type command and press {logger.emph(confirm_key)} to execute.")
+        logger.print(f"[hint/] Use {logger.emph(tab_key)} to autocomplete command.")
+        logger.print(f"[hint/] If you need help, press {logger.emph(help_key)}.")
         logger.print()
 
         # prompt
@@ -306,7 +306,7 @@ class KAIKOMenu:
             # execute result
             if isinstance(input.result, beatshell.InputError):
                 with self.logger.warn():
-                    self.logger.print(input.result.value)
+                    self.logger.print(input.result.value, markup=False)
                 input.prev_session()
             else:
                 with self.execute(input.result.value) as command_task:
@@ -342,7 +342,7 @@ class KAIKOMenu:
 
         elif result is not None:
             yield
-            self.logger.print(repr(result))
+            self.logger.print(repr(result), markup=False)
 
     @property
     def settings(self):
@@ -437,7 +437,7 @@ class KAIKOMenu:
 
         for beatmapset in self.beatmap_manager._beatmaps.values():
             for beatmap in beatmapset:
-                self.logger.print("• " + str(beatmap))
+                self.logger.print("• " + self.logger.escape(str(beatmap)))
 
     @cmd.subcommand
     @property
@@ -486,14 +486,14 @@ class KAIKOMenu:
         """
 
         if escape:
-            self.logger.print(echo_str(message))
+            self.logger.print(echo_str(message), markup=False)
         else:
-            self.logger.print(message)
+            self.logger.print(message, markup=False)
 
     @cmd.function_command
     def clean(self):
         """Clean screen."""
-        self.logger.print("\x1b[2J\x1b[H")
+        self.logger.clear()
 
     @say.arg_parser("message")
     def _say_message_parser(self):
@@ -546,8 +546,8 @@ class KAIKOPlay:
 
         except beatsheets.BeatmapParseError:
             with logger.warn():
-                logger.print(f"Failed to read beatmap {str(self.filepath)}")
-                logger.print(traceback.format_exc(), end="")
+                logger.print(f"Failed to read beatmap {logger.escape(str(self.filepath))}")
+                logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
             stop_key = self.gameplay_settings.controls.stop_key
@@ -555,11 +555,11 @@ class KAIKOPlay:
             display_keys = self.gameplay_settings.controls.display_delay_adjust_keys
             knock_keys = self.gameplay_settings.controls.knock_delay_adjust_keys
             energy_keys = self.gameplay_settings.controls.knock_energy_adjust_keys
-            logger.print(f"Press {logger.emph(stop_key)} to end the game.", prefix="hint")
-            logger.print(f"Use {logger.emph(sound_keys[0])} and {logger.emph(sound_keys[1])} to adjust click sound delay.", prefix="hint")
-            logger.print(f"Use {logger.emph(display_keys[0])} and {logger.emph(display_keys[1])} to adjust display delay.", prefix="hint")
-            logger.print(f"Use {logger.emph(knock_keys[0])} and {logger.emph(knock_keys[1])} to adjust hit delay.", prefix="hint")
-            logger.print(f"Use {logger.emph(energy_keys[0])} and {logger.emph(energy_keys[1])} to adjust hit strength.", prefix="hint")
+            logger.print(f"[hint/] Press {logger.emph(stop_key)} to end the game.")
+            logger.print(f"[hint/] Use {logger.emph(sound_keys[0])} and {logger.emph(sound_keys[1])} to adjust click sound delay.")
+            logger.print(f"[hint/] Use {logger.emph(display_keys[0])} and {logger.emph(display_keys[1])} to adjust display delay.")
+            logger.print(f"[hint/] Use {logger.emph(knock_keys[0])} and {logger.emph(knock_keys[1])} to adjust hit delay.")
+            logger.print(f"[hint/] Use {logger.emph(energy_keys[0])} and {logger.emph(energy_keys[1])} to adjust hit strength.")
             logger.print()
 
             with beatmap.play(manager, self.data_dir, self.devices_settings, self.gameplay_settings) as task:
@@ -589,7 +589,7 @@ class KAIKOLoop:
         except beatsheets.BeatmapParseError:
             with logger.warn():
                 logger.print(f"Failed to parse pattern.")
-                logger.print(traceback.format_exc(), end="")
+                logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
             beatmap = beatmaps.Loop(tempo=self.tempo, offset=self.offset, width=width, events=events)
@@ -599,11 +599,11 @@ class KAIKOLoop:
             display_keys = self.gameplay_settings.controls.display_delay_adjust_keys
             knock_keys = self.gameplay_settings.controls.knock_delay_adjust_keys
             energy_keys = self.gameplay_settings.controls.knock_energy_adjust_keys
-            logger.print(f"Press {logger.emph(stop_key)} to end the game.", prefix="hint")
-            logger.print(f"Use {logger.emph(sound_keys[0])} and {logger.emph(sound_keys[1])} to adjust click sound delay.", prefix="hint")
-            logger.print(f"Use {logger.emph(display_keys[0])} and {logger.emph(display_keys[1])} to adjust display delay.", prefix="hint")
-            logger.print(f"Use {logger.emph(knock_keys[0])} and {logger.emph(knock_keys[1])} to adjust hit delay.", prefix="hint")
-            logger.print(f"Use {logger.emph(energy_keys[0])} and {logger.emph(energy_keys[1])} to adjust hit strength.", prefix="hint")
+            logger.print(f"[hint/] Press {logger.emph(stop_key)} to end the game.")
+            logger.print(f"[hint/] Use {logger.emph(sound_keys[0])} and {logger.emph(sound_keys[1])} to adjust click sound delay.")
+            logger.print(f"[hint/] Use {logger.emph(display_keys[0])} and {logger.emph(display_keys[1])} to adjust display delay.")
+            logger.print(f"[hint/] Use {logger.emph(knock_keys[0])} and {logger.emph(knock_keys[1])} to adjust hit delay.")
+            logger.print(f"[hint/] Use {logger.emph(energy_keys[0])} and {logger.emph(energy_keys[1])} to adjust hit strength.")
             logger.print()
 
             with beatmap.play(manager, self.data_dir, self.devices_settings, self.gameplay_settings) as task:

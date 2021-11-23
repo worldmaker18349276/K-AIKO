@@ -69,6 +69,9 @@ def parse_markup(markup_str, tags):
 
     return stack[0]
 
+def escape(text):
+    return text.replace("[", "\\[").replace("\\", r"\\")
+
 class Markup:
     def _represent(self):
         raise NotImplementedError

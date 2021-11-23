@@ -537,17 +537,22 @@ class RichTextParser:
     def __init__(self):
         self.tags = list(RichTextParser.default_tags)
 
-    def parse(self, markup_str, expand=True):
-        markup = mu.parse_markup(markup_str, self.tags)
+    def parse(self, markup_str, expand=True, slotted=False):
+        tags = self.tags if not slotted else [mu.Slot, *self.tags]
+        markup = mu.parse_markup(markup_str, tags)
         if expand:
             markup = markup.expand()
         return markup
 
     def add_single_template(self, name, template):
-        self.tags.append(mu.make_single_template(name, template, self.tags))
+        tag = mu.make_single_template(name, template, self.tags)
+        self.tags.append(tag)
+        return tag
 
     def add_pair_template(self, name, template):
-        self.tags.append(mu.make_pair_template(name, template, self.tags))
+        tag = mu.make_pair_template(name, template, self.tags)
+        self.tags.append(tag)
+        return tag
 
     @staticmethod
     def _render(markup, reopens=()):
@@ -580,6 +585,49 @@ class RichTextParser:
     @staticmethod
     def render(markup):
         return "".join(RichTextParser._render(markup))
+
+    @staticmethod
+    def _render_context(markup, printer, reopens=()):
+        if isinstance(markup, mu.Text):
+            printer(markup.string)
+
+        elif isinstance(markup, CSI):
+            printer(markup.ansi_code)
+
+        elif isinstance(markup, mu.Slot):
+            yield
+
+        elif isinstance(markup, mu.Group):
+            if not markup.children:
+                return
+            child = markup.children[0]
+            try:
+                yield from RichTextParser._render_context(child, printer, reopens)
+            finally:
+                yield from RichTextParser._render_context(mu.Group(markup.children[1:]), printer, reopens)
+
+        elif isinstance(markup, SGR):
+            open, close = markup.ansi_delimiters
+
+            if open:
+                printer(open)
+
+            try:
+                yield from RichTextParser._render_context(mu.Group(markup.children), printer, (open, *reopens))
+            finally:
+                if close:
+                    printer(close)
+                for reopen in reopens[::-1]:
+                    if reopen:
+                        printer(reopen)
+
+        else:
+            raise TypeError(f"unknown markup type: {type(markup)}")
+
+    @staticmethod
+    @contextlib.contextmanager
+    def render_context(markup, printer):
+        yield from RichTextParser._render_context(markup, printer)
 
     @staticmethod
     def _less(markup, size, pos=(0,0), reopens=(), wrap=True):

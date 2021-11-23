@@ -10,6 +10,7 @@ from kaiko.utils import wcbuffers as wcb
 from kaiko.utils import datanodes as dn
 from kaiko.utils import config as cfg
 from kaiko.utils import commands as cmd
+from kaiko.utils import markups as mu
 from kaiko.utils import terminals as term
 from kaiko.utils import audios as aud
 from kaiko.utils import engines
@@ -65,12 +66,11 @@ def fit_screen(logger):
     def fit():
         size = yield
         current_width = 0
-        clear_line = str(term.Clear(term.ClearRegion.to_right))
 
         t = time.perf_counter()
 
         logger.print(f"Can you adjust the width to (or bigger than) {width}?")
-        logger.print(f"Or {logger.emph('Esc')} to skip this process.")
+        logger.print("Or [emph]Esc[/] to skip this process.")
         logger.print("You can try to fit the line below.")
         logger.print("━"*width, flush=True)
 
@@ -90,7 +90,8 @@ def fit_screen(logger):
                     hint = "(perfect!)"
                 else:
                     hint = "(great!)"
-                logger.print(f"\r{clear_line}Current width: {current_width} {hint}", end="", flush=True)
+                logger.clear_line()
+                logger.print(f"Current width: {current_width} {hint}", end="", flush=True)
 
             size = yield
 
@@ -112,18 +113,18 @@ class KAIKOMenuSettings(cfg.Configurable):
     Fields
     ------
     data_icon : str
-        The marker of data log.
+        The template of data icon.
     info_icon : str
-        The marker of info log.
+        The template of info icon.
     hint_icon : str
-        The marker of hint log.
+        The template of hint icon.
 
-    verb_attr : str
-        The text attribute of verb log.
-    emph_attr : str
-        The text attribute of emph log.
-    warn_attr : str
-        The text attribute of warn log.
+    verb : str
+        The template of verb log.
+    emph : str
+        The template of emph log.
+    warn : str
+        The template of warn log.
 
     best_screen_size : int
         The best screen size.
@@ -137,9 +138,9 @@ class KAIKOMenuSettings(cfg.Configurable):
     info_icon: str = "[color=bright_blue][wide=🛠/][/]"
     hint_icon: str = "[color=bright_yellow][wide=💡/][/]"
 
-    verb_attr: str = "2"
-    emph_attr: str = "1"
-    warn_attr: str = "31"
+    verb: str = "[weight=dim][slot/][/]"
+    emph: str = "[weight=bold][slot/][/]"
+    warn: str = "[color=red][slot/][/]"
 
     best_screen_size: int = 80
     adjust_screen_delay: float = 1.0
@@ -151,6 +152,12 @@ class KAIKOLogger:
         self.config = config
         self.level = 1
         self.rich = term.RichTextParser()
+        self.rich.add_single_template("data", self.settings.data_icon)
+        self.rich.add_single_template("info", self.settings.info_icon)
+        self.rich.add_single_template("hint", self.settings.hint_icon)
+        self.rich.add_pair_template("verb", self.settings.verb)
+        self.rich.add_pair_template("emph", self.settings.emph)
+        self.rich.add_pair_template("warn", self.settings.warn)
 
     @property
     def settings(self):
@@ -161,56 +168,65 @@ class KAIKOLogger:
 
     @contextlib.contextmanager
     def verb(self):
-        verb_attr = self.settings.verb_attr
         level = self.level
+        template = self.rich.parse("[verb][slot/][/]", slotted=True)
         self.level = 0
         try:
-            print(f"\x1b[{verb_attr}m", end="", flush=True)
-            yield
+            with self.rich.render_context(template, lambda text: print(text, end="", flush=True)):
+                yield
         finally:
             self.level = level
-            print("\x1b[m", end="", flush=True)
 
     @contextlib.contextmanager
     def normal(self):
         level = self.level
+        template = self.rich.parse("[reset][slot/][/]", slotted=True)
         self.level = 1
         try:
-            print(f"\x1b[m", end="", flush=True)
-            yield
+            with self.rich.render_context(template, lambda text: print(text, end="", flush=True)):
+                yield
         finally:
             self.level = level
 
     @contextlib.contextmanager
     def warn(self):
-        warn_attr = self.settings.warn_attr
         level = self.level
+        template = self.rich.parse("[warn][slot/][/]", slotted=True)
         self.level = 2
         try:
-            print(f"\x1b[{warn_attr}m", end="", flush=True)
-            yield
+            with self.rich.render_context(template, lambda text: print(text, end="", flush=True)):
+                yield
         finally:
             self.level = level
-            print("\x1b[m", end="", flush=True)
 
-    def emph(self, msg):
-        return wcb.add_attr(msg, self.settings.emph_attr)
+    def escape(self, text):
+        return mu.escape(text)
 
-    def print(self, msg="", prefix=None, end="\n", flush=False):
-        if prefix is None:
+    def emph(self, text):
+        return f"[emph]{self.escape(text)}[/]"
+
+    def print(self, msg="", end="\n", flush=False, markup=True):
+        if not markup:
             print(msg, end=end, flush=flush)
-        elif prefix == "data":
-            print(self.rich.render(self.rich.parse(self.settings.data_icon)) + " " + msg, end=end, flush=flush)
-        elif prefix == "info":
-            print(self.rich.render(self.rich.parse(self.settings.info_icon)) + " " + msg, end=end, flush=flush)
-        elif prefix == "hint":
-            print(self.rich.render(self.rich.parse(self.settings.hint_icon)) + " " + msg, end=end, flush=flush)
+            return
+
+        if isinstance(msg, str):
+            msg = self.rich.parse(msg)
+        print(self.rich.render(msg), end=end, flush=flush)
+
+    def clear_line(self, flush=False):
+        clear_line = str(term.Clear(term.ClearRegion.to_right))
+        print("\r" + clear_line, end="", flush=flush)
+
+    def clear(self, flush=False):
+        clear_screen = str(term.Clear(term.ClearRegion.screen)) + str(term.Pos(0,0))
+        print(clear_screen, end="", flush=flush)
 
     @dn.datanode
     def ask(self, prompt, default=True):
         yield
-        hint = self.emph("y")+"/n" if default == True else "y/"+self.emph("n")
-        self.print(f"{prompt} [{hint}]: ", end="", flush=True)
+        hint = "[emph]y[/]/n" if default else "y/[emph]n[/]"
+        self.print(f"{self.escape(prompt)} \[{hint}]: ", end="", flush=True)
 
         while True:
             res_queue = queue.Queue()
@@ -229,11 +245,11 @@ class KAIKOLogger:
             elif res in ("n", "N"):
                 return False
 
-            self.print(f"Please reply {self.emph('y')} or {self.emph('n')}: ", end="", flush=True)
+            self.print("Please reply [emph]y[/] or [emph]n[/]: ", end="", flush=True)
 
 @dn.datanode
 def determine_unicode_version(logger):
-    logger.print("Determine unicode version...", prefix="info")
+    logger.print("[info/] Determine unicode version...")
 
     with logger.verb():
         with term.ucs_detect() as detect_task:
@@ -245,9 +261,9 @@ def determine_unicode_version(logger):
             logger.print("Fail to determine unicode version")
 
     else:
-        logger.print(f"Your unicode version is {logger.emph(version)}")
-        logger.print("You can put this command into your settings file:", prefix="hint")
-        logger.print(logger.emph(f"UNICODE_VERSION={version}; export UNICODE_VERSION"))
+        logger.print(f"Your unicode version is [emph]{version}[/]")
+        logger.print("[hint/] You can put this command into your settings file:")
+        logger.print(f"[emph]UNICODE_VERSION={version}; export UNICODE_VERSION[/]")
 
     return version
 
@@ -344,7 +360,7 @@ class DevicesCommand:
         except ValueError as e:
             info = e.args[0]
             with logger.warn():
-                logger.print(info)
+                logger.print(info, markup=False)
 
         else:
             self.config.current.devices.detector.input_device = device
@@ -393,7 +409,7 @@ class DevicesCommand:
         except ValueError as e:
             info = e.args[0]
             with logger.warn():
-                logger.print(info)
+                logger.print(info, markup=False)
 
         else:
             self.config.current.devices.mixer.output_device = device
@@ -472,20 +488,20 @@ class DevicesCommand:
     def test_keyboard(self):
         """Test your keyboard."""
 
-        clear_line = str(term.Clear(term.ClearRegion.to_right))
         logger = self.logger
         exit_key = 'Esc'
 
-        logger.print(f"Press {logger.emph(exit_key)} to end test.", prefix="hint")
+        logger.print(f"[hint/] Press {logger.emph(exit_key)} to end test.")
         logger.print()
-        logger.print(f"[ <time>  ] {logger.emph('<keyname>')} (<keycode>)", end="\r")
+        logger.print("\[ <time>  ] [emph]<keyname>[/] (<keycode>)", end="\r")
 
         stop_event = threading.Event()
 
         def handler(arg):
             _, time, keyname, keycode = arg
-            logger.print(f"{clear_line}[{time:07.3f} s] {logger.emph(keyname)} ({repr(keycode)})")
-            logger.print(f"[ <time>  ] {logger.emph('<keyname>')} (<keycode>)", end="\r")
+            logger.clear_line()
+            logger.print(f"\[{time:07.3f} s] {logger.emph(keyname)} ({logger.escape(repr(keycode))})")
+            logger.print("\[ <time>  ] [emph]<keyname>[/] (<keycode>)", end="\r")
 
         controller_task, controller = engines.Controller.create(self.config.current.devices.controller)
         controller.add_handler(handler)
@@ -517,7 +533,7 @@ class KnockTest:
         self.hit_queue = queue.Queue()
 
     def execute(self, manager):
-        self.logger.print("Press any key to end test.", prefix="hint")
+        self.logger.print("[hint/] Press any key to end test.")
         self.logger.print()
 
         detector_task, detector = engines.Detector.create(self.settings, manager, self.ref_time)
@@ -531,10 +547,9 @@ class KnockTest:
         ticks = " ▏▎▍▌▋▊▉█"
         nticks = len(ticks) - 1
         length = 10
-        loud_attr = "1"
         try:
             while True:
-                self.logger.print(f"[ <time>  ] │{self.logger.emph('<strength>')}│ (<value>)", end="\r")
+                self.logger.print("\[ <time>  ] │[emph]<strength>[/]│ (<value>)", end="\r")
 
                 while self.hit_queue.empty():
                     yield
@@ -542,8 +557,8 @@ class KnockTest:
                 time, strength = self.hit_queue.get()
                 value = int(strength * length * nticks)
                 level = "".join(ticks[min(nticks, max(0, value - i * nticks))] for i in range(length))
-                level = level[:length//2] + wcb.add_attr(level[length//2:], loud_attr)
-                self.logger.print(f"[{time:07.3f} s] │{level}│ ({strength:.5f})")
+                level = f"{level[:length//2]}[weight=bold]{level[length//2:]}[/]"
+                self.logger.print(f"\[{time:07.3f} s] │{level}│ ({strength:.5f})")
 
         finally:
             self.logger.print()
@@ -613,7 +628,7 @@ class SpeakerTest:
 
         except ValueError:
             with self.logger.warn():
-                self.logger.print(traceback.format_exc(), end="")
+                self.logger.print(traceback.format_exc(), end="", markup=False)
             return dn.DataNode.wrap([])
 
         else:
@@ -675,7 +690,7 @@ class MicTest:
 
         except ValueError:
             with self.logger.warn():
-                self.logger.print(traceback.format_exc(), end="")
+                self.logger.print(traceback.format_exc(), end="", markup=False)
             return dn.DataNode.wrap([])
 
         else:
@@ -696,7 +711,7 @@ class MicTest:
                                             buffer_shape=(buffer_length, channels),
                                             format=format, device=device)
 
-        self.logger.print("Press any key to end testing.", prefix="hint")
+        self.logger.print("[hint/] Press any key to end testing.")
         with dn.pipe(mic_task, exit_task) as task:
             yield from task.join((yield))
 
@@ -716,7 +731,7 @@ class MicTest:
                 data = yield
                 vol = max(0.0, vol-decay, min(1.0, volume_of(data)))
                 size = int(vol * width)
-                self.logger.print("[" + tick1 * size + tick0 * (width-size) + "]\r", end="", flush=True)
+                self.logger.print("[" + tick1 * size + tick0 * (width-size) + "]\r", end="", flush=True, markup=False)
 
         finally:
             self.logger.print()

@@ -55,20 +55,20 @@ class BeatmapManager:
         logger = self.logger
         songs_dir = self.path
 
-        logger.print(f"Load songs from {logger.emph(songs_dir.as_uri())}...", prefix="data")
+        logger.print(f"[data/] Load songs from {logger.emph(songs_dir.as_uri())}...")
 
         for file in songs_dir.iterdir():
             if file.is_file() and file.suffix == ".osz":
                 distpath = file.parent / file.stem
                 if distpath.exists():
                     continue
-                logger.print(f"Unzip file {logger.emph(file.as_uri())}...", prefix="data")
+                logger.print(f"[data/] Unzip file {logger.emph(file.as_uri())}...")
                 distpath.mkdir()
                 zf = zipfile.ZipFile(str(file), 'r')
                 zf.extractall(path=str(distpath))
                 file.unlink()
 
-        logger.print("Load beatmaps...", prefix="data")
+        logger.print("[data/] Load beatmaps...")
 
         self._beatmaps_mtime = os.stat(str(songs_dir)).st_mtime
         self._beatmaps = {}
@@ -83,7 +83,7 @@ class BeatmapManager:
                     self._beatmaps[song.relative_to(songs_dir)] = beatmapset
 
         if len(self._beatmaps) == 0:
-            logger.print("There is no song in the folder yet!", prefix="data")
+            logger.print("[data/] There is no song in the folder yet!")
         logger.print(flush=True)
 
     def add(self, beatmap):
@@ -92,14 +92,14 @@ class BeatmapManager:
 
         if not beatmap.exists():
             with logger.warn():
-                logger.print(f"File not found: {str(beatmap)}")
+                logger.print(f"File not found: {logger.escape(str(beatmap))}")
             return
         if not beatmap.is_file() and not beatmap.is_dir():
             with logger.warn():
-                logger.print(f"Not a file or directory: {str(beatmap)}")
+                logger.print(f"Not a file or directory: {logger.escape(str(beatmap))}")
             return
 
-        logger.print(f"Add a new song from {logger.emph(beatmap.as_uri())}...", prefix="data")
+        logger.print(f"[data/] Add a new song from {logger.emph(beatmap.as_uri())}...")
 
         distpath = songs_dir / beatmap.name
         n = 1
@@ -107,7 +107,7 @@ class BeatmapManager:
             n += 1
             distpath = songs_dir / f"{beatmap.stem} ({n}){beatmap.suffix}"
         if n != 1:
-            logger.print(f"Name conflict! Rename to {logger.emph(distpath.name)}", prefix="data")
+            logger.print(f"[data/] Name conflict! Rename to {logger.emph(distpath.name)}")
 
         if beatmap.is_file():
             shutil.copy(str(beatmap), str(songs_dir))
@@ -122,18 +122,18 @@ class BeatmapManager:
 
         beatmap_path = songs_dir / beatmap
         if beatmap_path.is_file():
-            logger.print(f"Remove the beatmap at {logger.emph(beatmap_path.as_uri())}...", prefix="data")
+            logger.print(f"[data/] Remove the beatmap at {logger.emph(beatmap_path.as_uri())}...")
             beatmap_path.unlink()
             self.reload()
 
         elif beatmap_path.is_dir():
-            logger.print(f"Remove the beatmapset at {logger.emph(beatmap_path.as_uri())}...", prefix="data")
+            logger.print(f"[data/] Remove the beatmapset at {logger.emph(beatmap_path.as_uri())}...")
             shutil.rmtree(str(beatmap_path))
             self.reload()
 
         else:
             with logger.warn():
-                logger.print(f"Not a file: {str(beatmap)}")
+                logger.print(f"Not a file: {logger.escape(str(beatmap))}")
 
     def is_beatmapset(self, path):
         return path in self._beatmaps
@@ -210,7 +210,7 @@ class KAIKOBGMController:
         except Exception:
             with self.logger.warn():
                 self.logger.print("Failed to load mixer")
-                self.logger.print(traceback.format_exc(), end="")
+                self.logger.print(traceback.format_exc(), end="", markup=False)
 
         self.mixer = mixer
         try:
@@ -297,16 +297,16 @@ class BGMCommand:
 
         if self.bgm_controller._current_bgm is not None:
             logger.print("now playing:")
-            logger.print(self.bgm_controller._current_bgm.get_info(logger))
+            logger.print(self.bgm_controller._current_bgm.get_info(logger), markup=False)
             return
 
         song = self.bgm_controller.random_song()
         if song is None:
-            logger.print("There is no song in the folder yet!", prefix="data")
+            logger.print("[data/] There is no song in the folder yet!")
             return
 
         logger.print("will play:")
-        logger.print(song.get_info(logger))
+        logger.print(song.get_info(logger), markup=False)
         self.bgm_controller.play(song)
 
     @cmd.function_command
@@ -318,7 +318,7 @@ class BGMCommand:
         if self.bgm_controller._current_bgm is not None:
             song = self.bgm_controller.random_song()
             self.logger.print("will play:")
-            self.logger.print(song.get_info(self.logger))
+            self.logger.print(song.get_info(self.logger), markup=False)
             self.bgm_controller.play(song)
 
     @cmd.function_command
@@ -338,7 +338,7 @@ class BGMCommand:
             return
 
         logger.print("will play:")
-        logger.print(song.get_info(logger))
+        logger.print(song.get_info(logger), markup=False)
         self.bgm_controller.play(song, start)
 
     @play.arg_parser("beatmap")
@@ -352,4 +352,4 @@ class BGMCommand:
             self.logger.print("no song")
         else:
             self.logger.print("now playing:")
-            self.logger.print(current.get_info(self.logger))
+            self.logger.print(current.get_info(self.logger), markup=False)

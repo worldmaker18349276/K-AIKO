@@ -98,7 +98,7 @@ class ProfileManager:
         self.profiles = []
         self.default_name = None
 
-        logger.print(f"Update profiles...", prefix="data")
+        logger.print("[data/] Update profiles...")
 
         if not self.path.exists():
             with logger.warn():
@@ -126,7 +126,7 @@ class ProfileManager:
         """Set the current configuration as default configuration."""
         logger = self.logger
 
-        logger.print(f"Set {logger.emph(self.default_name)} as the default configuration...", prefix="data")
+        logger.print(f"[data/] Set {logger.emph(self.default_name)} as the default configuration...")
 
         if self.current_name is None:
             raise ValueError("No profile")
@@ -153,7 +153,7 @@ class ProfileManager:
             raise ValueError("No profile")
 
         current_path = self.path / (self.current_name + self.extension)
-        logger.print(f"Save configuration to {logger.emph(current_path.as_uri())}...", prefix="data")
+        logger.print(f"[data/] Save configuration to {logger.emph(current_path.as_uri())}...")
 
         if not self.path.exists():
             with logger.warn():
@@ -170,7 +170,7 @@ class ProfileManager:
         except bp.EncodeError:
             with logger.warn():
                 logger.print("Fail to encode configuration")
-                logger.print(traceback.format_exc(), end="")
+                logger.print(traceback.format_exc(), end="", markup=False)
 
         self.update()
 
@@ -182,7 +182,7 @@ class ProfileManager:
             raise ValueError("No profile")
 
         current_path = self.path / (self.current_name + self.extension)
-        logger.print(f"Load configuration from {logger.emph(current_path.as_uri())}...", prefix="data")
+        logger.print(f"[data/] Load configuration from {logger.emph(current_path.as_uri())}...")
 
         self.current = self.config_type()
 
@@ -199,7 +199,7 @@ class ProfileManager:
         except bp.DecodeError:
             with logger.warn():
                 logger.print("Fail to decode configuration")
-                logger.print(traceback.format_exc(), end="")
+                logger.print(traceback.format_exc(), end="", markup=False)
 
     def use(self, name=None):
         """change the current profile of configuration.
@@ -282,7 +282,7 @@ class ProfileManager:
         logger = self.logger
 
         target_path = self.path / (name + self.extension)
-        logger.print(f"Delete configuration {logger.emph(target_path.as_uri())}...", prefix="data")
+        logger.print(f"[data/] Delete configuration {logger.emph(target_path.as_uri())}...")
 
         if name not in self.profiles:
             with logger.warn():
@@ -318,7 +318,7 @@ class ProfileManager:
         target_path = self.path / (name + self.extension)
         current_name = logger.emph(current_path.as_uri())
         target_name = logger.emph(target_path.as_uri())
-        logger.print(f"Rename configuration file {current_name} to {target_name}...", prefix="data")
+        logger.print(f"[data/] Rename configuration file {current_name} to {target_name}...")
 
         if not name.isprintable() or "/" in name:
             with logger.warn():
@@ -382,7 +382,7 @@ class ConfigCommand:
         text = biparser.encode(self.config.current)
 
         self.logger.print(f"profile name: {self.logger.emph(self.config.current_name)}")
-        self.logger.print(text)
+        self.logger.print(text, markup=False)
 
     @cmd.function_command
     def has(self, field):
@@ -449,7 +449,7 @@ class ConfigCommand:
         # open editor
         if not exists(editor):
             with self.logger.warn():
-                self.logger.print(f"Unknown editor: {editor}")
+                self.logger.print(f"Unknown editor: {self.logger.escape(editor)}")
                 return
 
         with edit(value_str, editor) as edit_task:
@@ -469,7 +469,7 @@ class ConfigCommand:
         except bp.DecodeError as e:
             with self.logger.warn():
                 self.logger.print("Invalid syntax:")
-                self.logger.print(e)
+                self.logger.print(e, markup=False)
 
         else:
             self.config.current.set(field, res)
