@@ -70,11 +70,11 @@ def parse_markup(markup_str, tags):
     return stack[0]
 
 class Markup:
-    def represent(self):
+    def _represent(self):
         raise NotImplementedError
 
-    def __str__(self):
-        return "".join(self.represent())
+    def represent(self):
+        return "".join(self._represent())
 
     def expand(self):
         return self
@@ -87,7 +87,7 @@ class Text(Markup):
     def parse(clz, param):
         raise ValueError("no parser for text")
 
-    def represent(self):
+    def _represent(self):
         for ch in self.string:
             if ch == "\\":
                 yield r"\\"
@@ -104,9 +104,9 @@ class Group(Markup):
     def parse(clz, param):
         raise ValueError("no parser for group")
 
-    def represent(self):
+    def _represent(self):
         for child in self.children:
-            yield from child.represent()
+            yield from child._represent()
 
     def expand(self):
         return dataclasses.replace(self, children=[child.expand() for child in self.children])
@@ -124,7 +124,7 @@ class Single(Tag):
     def param(self):
         raise NotImplementedError
 
-    def represent(self):
+    def _represent(self):
         param = self.param
         param_str = f"={param}" if param is not None else ""
         yield f"[{self.name}{param_str}/]"
@@ -138,12 +138,12 @@ class Pair(Tag):
     def param(self):
         raise NotImplementedError
 
-    def represent(self):
+    def _represent(self):
         param = self.param
         param_str = f"={param}" if param is not None else ""
         yield f"[{self.name}{param_str}]"
         for child in self.children:
-            yield from child.represent()
+            yield from child._represent()
         yield f"[/]"
 
     def expand(self):

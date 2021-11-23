@@ -209,6 +209,9 @@ class CSI(mu.Single):
     def ansi_code(self):
         return f"\x1b[{self.code}"
 
+    def __str__(self):
+        return self.ansi_code
+
 @dataclasses.dataclass
 class Move(mu.Single):
     name = "move"
@@ -241,6 +244,18 @@ class Move(mu.Single):
             res.append(CSI(f"{-self.y}A"))
         return mu.Group(res)
 
+    def __str__(self):
+        res = ""
+        if self.x > 0:
+            res += f"\x1b[{self.x}C"
+        elif self.x < 0:
+            res += f"\x1b[{-self.x}D"
+        if self.y > 0:
+            res += f"\x1b[{self.y}B"
+        elif self.y < 0:
+            res += f"\x1b[{-self.y}A"
+        return res
+
 @dataclasses.dataclass
 class Pos(mu.Single):
     name = "pos"
@@ -263,6 +278,9 @@ class Pos(mu.Single):
 
     def expand(self):
         return CSI(f"{self.y+1};{self.x+1}H")
+
+    def __str__(self):
+        return f"\x1b[{self.y+1};{self.x+1}H"
 
 @dataclasses.dataclass
 class Scroll(mu.Single):
@@ -290,6 +308,14 @@ class Scroll(mu.Single):
             return CSI(f"{-self.x}S")
         else:
             return mu.Group([])
+
+    def __str__(self):
+        if self.x > 0:
+            return f"\x1b[{self.x}T"
+        elif self.x < 0:
+            return f"\x1b[{-self.x}S"
+        else:
+            return ""
 
 class ClearRegion(enum.Enum):
     to_right = "0K"
@@ -320,6 +346,9 @@ class Clear(mu.Single):
 
     def expand(self):
         return CSI(f"{self.region.value}")
+
+    def __str__(self):
+        return f"\x1b[{self.region.value}"
 
 
 # attr code
@@ -352,6 +381,9 @@ class SGR(mu.Pair):
         else:
             return None, None
 
+    def __str__(self):
+        return self.ansi_delimiters[0] or ""
+
 @dataclasses.dataclass
 class SimpleAttr(mu.Pair):
     option: str
@@ -370,6 +402,9 @@ class SimpleAttr(mu.Pair):
 
     def expand(self):
         return SGR([child.expand() for child in self.children], (self._options[self.option],))
+
+    def __str__(self):
+        return f"\x1b[{self._options[self.option]}m"
 
 @dataclasses.dataclass
 class Reset(SimpleAttr):
