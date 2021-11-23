@@ -463,6 +463,8 @@ class Renderer:
     @staticmethod
     @dn.datanode
     def _render_node(scheduler):
+        clear_line = str(term.Clear(term.ClearRegion.to_right))
+        clear_below = str(term.Clear(term.ClearRegion.to_end))
         width = 0
         msg = mu.Group([])
         curr_msg = mu.Group(list(msg.children))
@@ -477,13 +479,14 @@ class Renderer:
                     return
 
                 # track changes of the message
+                view_str = "".join(view).rstrip()
                 if not resized and curr_msg == msg:
-                    res_text = "\r\x1b[K" + "".join(view).rstrip() + "\r"
+                    res_text = f"\r{clear_line}{view_str}\r"
                 elif not msg.children:
-                    res_text = "\r\x1b[J" + "".join(view).rstrip() + "\r"
+                    res_text = f"\r{clear_below}{view_str}\r"
                 else:
                     msg_text = term.RichTextParser.render_less(mu.Group([mu.Text("\n"), msg]), size)
-                    res_text = "\r\x1b[J" + "".join(view).rstrip() + "\r" + msg_text
+                    res_text = f"\r{clear_below}{view_str}\r{msg_text}"
 
                 shown, resized, time, size = yield res_text
                 if shown:
@@ -494,6 +497,8 @@ class Renderer:
     def _resize_node(render_node, settings, ref_time):
         framerate = settings.display_framerate
 
+        clear_line = str(term.Clear(term.ClearRegion.to_right))
+        to_home = str(term.Clear(term.ClearRegion.screen)) + str(term.Pos(0, 0))
         size_node = term.terminal_size()
 
         index = -1
@@ -515,16 +520,17 @@ class Renderer:
                     resize_time = time
                     resized = True
                 if resized and time < resize_time + settings.resize_delay:
-                    yield "\r\x1b[Kresizing...\r"
+                    yield f"\r{clear_line}resizing...\r"
                     width = size.columns
                     continue
 
+                width = size.columns
                 try:
                     res_text = render_node.send((shown, resized, time, size))
                 except StopIteration:
                     return
                 if resized:
-                    res_text = "\x1b[2J\x1b[H" + res_text
+                    res_text = to_home + res_text
 
                 shown = yield res_text
                 if shown:
