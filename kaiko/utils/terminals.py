@@ -452,6 +452,32 @@ class BgColor(SimpleAttr):
     }
 
 
+# others
+@dataclasses.dataclass
+class Wide(mu.Single):
+    name = "wide"
+    char: str
+
+    @classmethod
+    def parse(clz, param):
+        if param is None:
+            raise mu.MarkupParseError(f"missing parameter for tag [{clz.name}/]")
+        if len(char) != 1 or not char.isprintable():
+            raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}/]: {param}")
+        return clz([], param)
+
+    @property
+    def param(self):
+        return self.char
+
+    def expand(self):
+        w = wcwidth.wcwidth(self.char)
+        if w == 1:
+            return mu.Text(self.char+" ")
+        else:
+            return mu.Text(self.char)
+
+
 class RichTextParser:
     default_tags = [
         SGR, # TODO: remove it
@@ -464,6 +490,7 @@ class RichTextParser:
         Invert,
         Color,
         BgColor,
+        Wide,
     ]
 
     def __init__(self):
