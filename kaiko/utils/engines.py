@@ -5,7 +5,6 @@ from typing import Dict
 import numpy
 from . import config as cfg
 from . import datanodes as dn
-from . import wcbuffers as wcb
 from . import markups as mu
 from . import terminals as term
 from . import audios as aud
@@ -471,7 +470,7 @@ class Renderer:
             shown, resized, time, size = yield
             while True:
                 width = size.columns
-                view = wcb.newwin1(width)
+                view = [" "]*width
                 try:
                     view, msg = scheduler.send(((view, msg), time, width))
                 except StopIteration:
@@ -563,7 +562,7 @@ class Renderer:
         with text_node:
             (view, msg), time, width = yield
             while True:
-                xran = wcb.locate(xmask, width)
+                xran = term.to_range(xmask, width)
 
                 try:
                     res = text_node.send((time, xran))

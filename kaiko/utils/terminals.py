@@ -682,6 +682,24 @@ def clamp(ran, mask):
     stop = max(min(mask.stop, ran.stop), mask.start)
     return range(start, stop)
 
+def to_range(slice, width):
+    # range of slice without clamp
+    if slice.start is None:
+        start = 0
+    elif slice.start < 0:
+        start = width+slice.start
+    else:
+        start = slice.start
+
+    if slice.stop is None:
+        stop = width
+    elif slice.stop < 0:
+        stop = width+slice.stop
+    else:
+        stop = slice.stop
+
+    return range(start, stop)
+
 
 class RichBarParser:
     default_tags = [
