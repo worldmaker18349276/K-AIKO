@@ -574,8 +574,7 @@ class Renderer:
                     xshift, text = res
                     # text = term.RichTextParser.render(text)
                     # view, _ = wcb.addtext1(view, width, xran.start+xshift, text, xmask=xmask)
-                    text = mu.Group([term.At(xran.start+xshift), term.Mask([text], xmask.start, xmask.stop)])
-                    term.RichBarParser.render(view, width, text)
+                    term.RichBarParser._render(view, width, text, x=xran.start+xshift, xmask=xmask, attrs=())
 
                 (view, msg), time, width = yield (view, msg)
 

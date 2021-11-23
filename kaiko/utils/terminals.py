@@ -663,8 +663,7 @@ class Restore(mu.Pair):
 @dataclasses.dataclass
 class Mask(mu.Pair):
     name = "mask"
-    start: Optional[int]
-    stop: Optional[int]
+    mask: slice
 
     @classmethod
     def parse(clz, param):
@@ -672,11 +671,11 @@ class Mask(mu.Pair):
             start, stop = [int(p) if p else None for p in (param or ":").split(":")]
         except ValueError:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
-        return clz([], start, stop)
+        return clz([], slice(start, stop))
 
     @property
     def param(self):
-        return f"{self.start}:{self.stop}"
+        return f"{self.mask.start if self.mask.start is not None else ''}:{self.mask.stop if self.mask.stop is not None else ''}"
 
 def clamp(ran, ran_):
     start = min(max(ran.start, ran_.start), ran.stop)
@@ -780,7 +779,7 @@ class RichBarParser:
             return x0
 
         elif isinstance(markup, Mask):
-            xmask = slice(markup.start, markup.stop)
+            xmask = markup.mask
             for child in markup.children:
                 x = RichBarParser._render(view, width, child, x, xmask, attrs)
             return x
