@@ -3,7 +3,7 @@ from enum import Enum
 import functools
 import re
 import threading
-from typing import List, Set, Tuple
+from typing import List, Set, Tuple, Dict
 from dataclasses import dataclass
 import wcwidth
 from kaiko.utils import datanodes as dn
@@ -186,26 +186,37 @@ class BeatShellSettings(cfg.Configurable):
             The key for help.
         autocomplete_keys : Tuple[str, str, str]
             The keys for finding the next, previous and canceling suggestions.
+
+        keymap : dict of str
+            The keymap of beatshell.  The key of dict is the keystroke, and the
+            value of dict is the action to activate.  The format of action is just
+            like a normal python code: `input.insert_typeahead() or input.move_right()`.
+            The syntax are::
+
+                <function> ::= "input." /(?!_)\w+/ "()"
+                <operator> ::= " | " | " & " | " and " | " or "
+                <action> ::= (<function> <operator>)* <function>
+
         """
         confirm_key: str = "Enter"
         help_key: str = "Alt_Enter"
         autocomplete_keys: Tuple[str, str, str] = ("Tab", "Shift_Tab", "Esc")
 
-        keymap = {
-            "Backspace"     : lambda input: input.backspace(),
-            "Alt_Backspace" : lambda input: input.delete_all(),
-            "Delete"        : lambda input: input.delete(),
-            "Left"          : lambda input: input.move_left(),
-            "Right"         : lambda input: input.insert_typeahead() or input.move_right(),
-            "Up"            : lambda input: input.prev(),
-            "Down"          : lambda input: input.next(),
-            "Home"          : lambda input: input.move_to_start(),
-            "End"           : lambda input: input.move_to_end(),
-            "Ctrl_Left"     : lambda input: input.move_to_word_start(),
-            "Ctrl_Right"    : lambda input: input.move_to_word_end(),
-            "Ctrl_Backspace": lambda input: input.delete_to_word_start(),
-            "Ctrl_Delete"   : lambda input: input.delete_to_word_end(),
-            "Esc"           : lambda input: (input.cancel_typeahead(), input.cancel_hint()),
+        keymap: Dict[str, str] = {
+            "Backspace"     : "input.backspace()",
+            "Alt_Backspace" : "input.delete_all()",
+            "Delete"        : "input.delete()",
+            "Left"          : "input.move_left()",
+            "Right"         : "input.insert_typeahead() or input.move_right()",
+            "Up"            : "input.prev()",
+            "Down"          : "input.next()",
+            "Home"          : "input.move_to_start()",
+            "End"           : "input.move_to_end()",
+            "Ctrl_Left"     : "input.move_to_word_start()",
+            "Ctrl_Right"    : "input.move_to_word_end()",
+            "Ctrl_Backspace": "input.delete_to_word_start()",
+            "Ctrl_Delete"   : "input.delete_to_word_end()",
+            "Esc"           : "input.cancel_typeahead() | input.cancel_hint()",
         }
 
     class prompt(cfg.Configurable):
@@ -1241,7 +1252,12 @@ class BeatStroke:
         return handler
 
     def action_handler(self, func):
-        return lambda args: func(self.input)
+        fn = r"input\.(?!_)\w+\(\)"
+        op = "(%s)" % "|".join(map(re.escape, (" | ", " & ", " and ", " or ")))
+        regex = f"({fn}{op})*{fn}"
+        if not re.match(regex, func):
+            raise ValueError(f"invalid action: {repr(func)}")
+        return lambda args: eval(func, {}, {"input": self.input})
 
     def printable_handler(self):
         return lambda args: self.input.input(args[3])
