@@ -1553,16 +1553,16 @@ class BeatPrompt:
                         nonlocal lines
                         if lines >= message_max_lines:
                             return ""
-                        res_text = []
-                        for ch in text:
+                        res_string = []
+                        for ch in text.string:
                             if ch == "\n":
                                 lines += 1
-                            res_text.append(ch)
+                            res_string.append(ch)
                             if lines == message_max_lines:
-                                res_text.append("…")
+                                res_string.append("…")
                                 break
-                        return "".join(res_text)
-                    msg = mu.map_text(msg, trim_lines)
+                        return mu.Text("".join(res_string))
+                    msg = msg.traverse(mu.Text, trim_lines)
 
                     if isinstance(hint, InputWarn):
                         msg = term.SGR([msg], tuple(error_message_attr))

@@ -79,6 +79,9 @@ class Markup:
     def expand(self):
         return self
 
+    def traverse(self, markup_type, func):
+        raise NotImplementedError
+
 @dataclasses.dataclass
 class Text(Markup):
     string: str
@@ -96,6 +99,12 @@ class Text(Markup):
             else:
                 yield repr(ch)[1:-1]
 
+    def traverse(self, markup_type, func):
+        if isinstance(self, markup_type):
+            return func(self)
+        else:
+            return self
+
 @dataclasses.dataclass
 class Group(Markup):
     children: list
@@ -110,6 +119,9 @@ class Group(Markup):
 
     def expand(self):
         return dataclasses.replace(self, children=[child.expand() for child in self.children])
+
+    def traverse(self, markup_type, func):
+        return dataclasses.replace(self, children=[child.traverse(markup_type, func) for child in self.children])
 
 class Tag(Markup):
     @classmethod
@@ -128,6 +140,12 @@ class Single(Tag):
         param = self.param
         param_str = f"={param}" if param is not None else ""
         yield f"[{self.name}{param_str}/]"
+
+    def traverse(self, markup_type, func):
+        if isinstance(self, markup_type):
+            return func(self)
+        else:
+            return self
 
 @dataclasses.dataclass
 class Pair(Tag):
@@ -148,6 +166,12 @@ class Pair(Tag):
 
     def expand(self):
         return dataclasses.replace(self, children=[child.expand() for child in self.children])
+
+    def traverse(self, markup_type, func):
+        if isinstance(self, markup_type):
+            return func(self)
+        else:
+            return dataclasses.replace(self, children=[child.traverse(markup_type, func) for child in self.children])
 
 
 # template
@@ -183,16 +207,6 @@ class Slot(Single):
     def param(self):
         return None
 
-def replace_slot(markup, children):
-    if isinstance(markup, Slot):
-        return Group(children)
-    elif isinstance(markup, (Single, Text)):
-        return markup
-    elif isinstance(markup, (Pair, Group)):
-        return dataclasses.replace(markup, children=[replace_slot(child, children) for child in markup.children])
-    else:
-        raise TypeError(f"unknown markup type {type(markup)}")
-
 @dataclasses.dataclass
 class PairTemplate(Pair):
     # name
@@ -209,7 +223,14 @@ class PairTemplate(Pair):
         return None
 
     def expand(self):
-        return replace_slot(self._template, self.children).expand()
+        injected = False
+        def inject_once(slot):
+            nonlocal injected
+            if injected:
+                return Group([])
+            injected = True
+            return Group(self.children)
+        return self._template.traverse(Slot, inject_once).expand()
 
 def make_single_template(name, template, tags):
     temp = parse_markup(template, tags=tags)
@@ -218,15 +239,4 @@ def make_single_template(name, template, tags):
 def make_pair_template(name, template, tags):
     temp = parse_markup(template, tags=[Slot, *tags])
     return type(name.capitalize(), (PairTemplate,), dict(name=name, _template=temp))
-
-
-def map_text(markup, func):
-    if isinstance(markup, Single):
-        return markup
-    elif isinstance(markup, (Pair, Group)):
-        return dataclasses.replace(markup, children=[map_text(child, func) for child in markup.children])
-    elif isinstance(markup, Text):
-        return Text(func(markup.string))
-    else:
-        raise TypeError
 
