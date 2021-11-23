@@ -18,6 +18,8 @@ from . import markups as mu
 from . import datanodes as dn
 
 
+unicode_version = "latest"
+
 @dn.datanode
 def ucs_detect():
     pattern = re.compile(r"\x1b\[(\d*);(\d*)R")
@@ -32,6 +34,8 @@ def ucs_detect():
 
     @dn.datanode
     def query_pos():
+        global unicode_version
+
         old_version = '4.1.0'
         wide_by_version = [
             ('5.1.0', '龼'),
@@ -67,6 +71,7 @@ def ucs_detect():
 
         index = xs.index(1) if 1 in xs else len(wide_by_version)
         version = old_version if index == 0 else wide_by_version[index-1][0]
+        unicode_version = version
 
         return version
 
@@ -498,16 +503,16 @@ class Wide(mu.Single):
     def parse(clz, param):
         if param is None:
             raise mu.MarkupParseError(f"missing parameter for tag [{clz.name}/]")
-        if len(char) != 1 or not char.isprintable():
+        if len(param) != 1 or not param.isprintable():
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}/]: {param}")
-        return clz([], param)
+        return clz(param)
 
     @property
     def param(self):
         return self.char
 
     def expand(self):
-        w = wcwidth.wcwidth(self.char)
+        w = wcwidth.wcwidth(self.char, unicode_version)
         if w == 1:
             return mu.Text(self.char+" ")
         else:
@@ -589,7 +594,7 @@ class RichTextParser:
                     x = 0
 
                 else:
-                    w = wcwidth.wcwidth(ch)
+                    w = wcwidth.wcwidth(ch, unicode_version)
                     if w == -1:
                         raise ValueError(f"unprintable character: {repr(ch)}")
                     x += w
@@ -772,7 +777,7 @@ class RichBarParser:
     @staticmethod
     def _render_text(view, string, x, xran, xmask, attrs):
         for ch in string:
-            w = wcwidth.wcwidth(ch)
+            w = wcwidth.wcwidth(ch, unicode_version)
 
             if w == 0:
                 x_ = x - 1

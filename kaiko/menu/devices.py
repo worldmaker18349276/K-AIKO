@@ -65,6 +65,7 @@ def fit_screen(logger):
     def fit():
         size = yield
         current_width = 0
+        clear_line = str(term.Clear(term.ClearRegion.to_right))
 
         t = time.perf_counter()
 
@@ -89,7 +90,7 @@ def fit_screen(logger):
                     hint = "(perfect!)"
                 else:
                     hint = "(great!)"
-                logger.print(f"\r\x1b[KCurrent width: {current_width} {hint}", end="", flush=True)
+                logger.print(f"\r{clear_line}Current width: {current_width} {hint}", end="", flush=True)
 
             size = yield
 
@@ -132,9 +133,9 @@ class KAIKOMenuSettings(cfg.Configurable):
     editor : str
         The editor to edit long text.
     """
-    data_icon: str = "\x1b[92m🗀 \x1b[m"
-    info_icon: str = "\x1b[94m🛠 \x1b[m"
-    hint_icon: str = "\x1b[93m💡 \x1b[m"
+    data_icon: str = "[color=bright_green][wide=🗀/][/]"
+    info_icon: str = "[color=bright_blue][wide=🛠/][/]"
+    hint_icon: str = "[color=bright_yellow][wide=💡/][/]"
 
     verb_attr: str = "2"
     emph_attr: str = "1"
@@ -149,6 +150,7 @@ class KAIKOLogger:
     def __init__(self, config=None):
         self.config = config
         self.level = 1
+        self.rich = term.RichTextParser()
 
     @property
     def settings(self):
@@ -198,11 +200,11 @@ class KAIKOLogger:
         if prefix is None:
             print(msg, end=end, flush=flush)
         elif prefix == "data":
-            print(self.settings.data_icon + " " + msg, end=end, flush=flush)
+            print(self.rich.render(self.rich.parse(self.settings.data_icon)) + " " + msg, end=end, flush=flush)
         elif prefix == "info":
-            print(self.settings.info_icon + " " + msg, end=end, flush=flush)
+            print(self.rich.render(self.rich.parse(self.settings.info_icon)) + " " + msg, end=end, flush=flush)
         elif prefix == "hint":
-            print(self.settings.hint_icon + " " + msg, end=end, flush=flush)
+            print(self.rich.render(self.rich.parse(self.settings.hint_icon)) + " " + msg, end=end, flush=flush)
 
     @dn.datanode
     def ask(self, prompt, default=True):
@@ -470,6 +472,7 @@ class DevicesCommand:
     def test_keyboard(self):
         """Test your keyboard."""
 
+        clear_line = str(term.Clear(term.ClearRegion.to_right))
         logger = self.logger
         exit_key = 'Esc'
 
@@ -481,7 +484,7 @@ class DevicesCommand:
 
         def handler(arg):
             _, time, keyname, keycode = arg
-            logger.print(f"\x1b[K[{time:07.3f} s] {logger.emph(keyname)} ({repr(keycode)})")
+            logger.print(f"{clear_line}[{time:07.3f} s] {logger.emph(keyname)} ({repr(keycode)})")
             logger.print(f"[ <time>  ] {logger.emph('<keyname>')} (<keycode>)", end="\r")
 
         controller_task, controller = engines.Controller.create(self.config.current.devices.controller)
