@@ -453,13 +453,14 @@ class Soft(OneshotTarget):
     nofeedback: Optional[bool] = None
 
     def prepare(self, beatmap, context):
+        rich = term.RichTextParser()
         self.approach_appearance = (
-            term.parse(beatmap.settings.notes.soft_approach_appearance[0]).expand(),
-            term.parse(beatmap.settings.notes.soft_approach_appearance[1]).expand(),
+            rich.parse(beatmap.settings.notes.soft_approach_appearance[0]),
+            rich.parse(beatmap.settings.notes.soft_approach_appearance[1]),
         )
         self.wrong_appearance = (
-            term.parse(beatmap.settings.notes.soft_wrong_appearance[0]).expand(),
-            term.parse(beatmap.settings.notes.soft_wrong_appearance[1]).expand(),
+            rich.parse(beatmap.settings.notes.soft_wrong_appearance[0]),
+            rich.parse(beatmap.settings.notes.soft_wrong_appearance[1]),
         )
         sound = beatmap.resources.get(beatmap.settings.notes.soft_sound, None)
         self.sound = dn.DataNode.wrap(sound) if sound is not None else None
@@ -503,13 +504,14 @@ class Loud(OneshotTarget):
     nofeedback: Optional[bool] = None
 
     def prepare(self, beatmap, context):
+        rich = term.RichTextParser()
         self.approach_appearance = (
-            term.parse(beatmap.settings.notes.loud_approach_appearance[0]).expand(),
-            term.parse(beatmap.settings.notes.loud_approach_appearance[1]).expand(),
+            rich.parse(beatmap.settings.notes.loud_approach_appearance[0]),
+            rich.parse(beatmap.settings.notes.loud_approach_appearance[1]),
         )
         self.wrong_appearance = (
-            term.parse(beatmap.settings.notes.loud_wrong_appearance[0]).expand(),
-            term.parse(beatmap.settings.notes.loud_wrong_appearance[1]).expand(),
+            rich.parse(beatmap.settings.notes.loud_wrong_appearance[0]),
+            rich.parse(beatmap.settings.notes.loud_wrong_appearance[1]),
         )
         sound = beatmap.resources.get(beatmap.settings.notes.loud_sound, None)
         self.sound = dn.DataNode.wrap(sound) if sound is not None else None
@@ -571,13 +573,14 @@ class Incr(OneshotTarget):
     nofeedback: Optional[float] = None
 
     def prepare(self, beatmap, context):
+        rich = term.RichTextParser()
         self.approach_appearance = (
-            term.parse(beatmap.settings.notes.incr_approach_appearance[0]).expand(),
-            term.parse(beatmap.settings.notes.incr_approach_appearance[1]).expand(),
+            rich.parse(beatmap.settings.notes.incr_approach_appearance[0]),
+            rich.parse(beatmap.settings.notes.incr_approach_appearance[1]),
         )
         self.wrong_appearance = (
-            term.parse(beatmap.settings.notes.incr_wrong_appearance[0]).expand(),
-            term.parse(beatmap.settings.notes.incr_wrong_appearance[1]).expand(),
+            rich.parse(beatmap.settings.notes.incr_wrong_appearance[0]),
+            rich.parse(beatmap.settings.notes.incr_wrong_appearance[1]),
         )
         sound = beatmap.resources.get(beatmap.settings.notes.incr_sound, None)
         self.sound = dn.DataNode.wrap(sound) if sound is not None else None
@@ -660,11 +663,12 @@ class Roll(Target):
     nofeedback: Optional[bool] = None
 
     def prepare(self, beatmap, context):
+        rich = term.RichTextParser()
         self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
         self.tolerance = beatmap.settings.difficulty.roll_tolerance
         self.rock_appearance = (
-            term.parse(beatmap.settings.notes.roll_rock_appearance[0]).expand(),
-            term.parse(beatmap.settings.notes.roll_rock_appearance[1]).expand(),
+            rich.parse(beatmap.settings.notes.roll_rock_appearance[0]),
+            rich.parse(beatmap.settings.notes.roll_rock_appearance[1]),
         )
         sound = beatmap.resources.get(beatmap.settings.notes.roll_rock_sound, None)
         self.sound = sound
@@ -754,12 +758,13 @@ class Spin(Target):
     nofeedback: Optional[bool] = None
 
     def prepare(self, beatmap, context):
+        rich = term.RichTextParser()
         self.tolerance = beatmap.settings.difficulty.spin_tolerance
-        self.disk_appearances = [(term.parse(spin_disk_appearance[0]).expand(), term.parse(spin_disk_appearance[1]).expand())
+        self.disk_appearances = [(rich.parse(spin_disk_appearance[0]), rich.parse(spin_disk_appearance[1]))
                                  for spin_disk_appearance in beatmap.settings.notes.spin_disk_appearances]
         self.finishing_appearance = (
-            term.parse(beatmap.settings.notes.spin_finishing_appearance[0]).expand(),
-            term.parse(beatmap.settings.notes.spin_finishing_appearance[1]).expand(),
+            rich.parse(beatmap.settings.notes.spin_finishing_appearance[0]),
+            rich.parse(beatmap.settings.notes.spin_finishing_appearance[1]),
         )
         self.finish_sustain_time = beatmap.settings.notes.spin_finish_sustain_time
         sound = beatmap.resources.get(beatmap.settings.notes.spin_disk_sound, None)

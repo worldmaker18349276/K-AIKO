@@ -452,50 +452,131 @@ class BgColor(SimpleAttr):
     }
 
 
-style_tags = [
-    Reset,
-    Weight,
-    Italic,
-    Underline,
-    Strike,
-    Blink,
-    Invert,
-    Color,
-    BgColor,
-]
+class RichTextParser:
+    default_tags = [
+        SGR, # TODO: remove it
+        Reset,
+        Weight,
+        Italic,
+        Underline,
+        Strike,
+        Blink,
+        Invert,
+        Color,
+        BgColor,
+    ]
 
-def _render(markup, reopens=()):
-    if isinstance(markup, mu.Text):
-        yield from markup.string
+    def __init__(self):
+        self.tags = list(RichTextParser.default_tags)
 
-    elif isinstance(markup, mu.Group):
-        for child in markup.children:
-            yield from _render(child, reopens)
+    def parse(self, markup_str, expand=True):
+        markup = mu.parse_markup(markup_str, self.tags)
+        if expand:
+            markup = markup.expand()
+        return markup
 
-    elif isinstance(markup, CSI):
-        yield markup.ansi_code
+    def add_single_template(self, name, template):
+        self.tags.append(mu.make_single_template(name, template, self.tags))
 
-    elif isinstance(markup, SGR):
-        open, close = markup.ansi_delimiters
+    def add_pair_template(self, name, template):
+        self.tags.append(mu.make_pair_template(name, template, self.tags))
 
-        if open:
-            yield open
-        for child in markup.children:
-            yield from _render(child, (open, *reopens))
-        if close:
-            yield close
-        for reopen in reopens[::-1]:
-            if reopen:
-                yield reopen
+    @staticmethod
+    def _render(markup, reopens=()):
+        if isinstance(markup, mu.Text):
+            yield from markup.string
 
-    else:
-        raise TypeError(f"unknown markup type: {type(markup)}")
+        elif isinstance(markup, mu.Group):
+            for child in markup.children:
+                yield from RichTextParser._render(child, reopens)
 
-def render(markup):
-    return "".join(_render(markup.expand()))
+        elif isinstance(markup, CSI):
+            yield markup.ansi_code
 
-def parse(markup_str):
-    return mu.parse_markup(markup_str, [SGR, *style_tags])
+        elif isinstance(markup, SGR):
+            open, close = markup.ansi_delimiters
+
+            if open:
+                yield open
+            for child in markup.children:
+                yield from RichTextParser._render(child, (open, *reopens))
+            if close:
+                yield close
+            for reopen in reopens[::-1]:
+                if reopen:
+                    yield reopen
+
+        else:
+            raise TypeError(f"unknown markup type: {type(markup)}")
+
+    @staticmethod
+    def render(markup):
+        return "".join(RichTextParser._render(markup))
+
+    @staticmethod
+    def _less(markup, size, pos=(0,0), reopens=(), wrap=True):
+        if pos is None:
+            return None
+
+        elif isinstance(markup, mu.Text):
+            x, y = pos
+            for ch in markup.string:
+                if ch == "\n":
+                    y += 1
+                    x = 0
+
+                else:
+                    w = wcwidth.wcwidth(ch)
+                    if w == -1:
+                        raise ValueError(f"unprintable character: {repr(ch)}")
+                    x += w
+                    if wrap and x > size.columns:
+                        y += 1
+                        x = w
+
+                if y == size.lines:
+                    return None
+                if x <= size.columns:
+                    yield ch
+            return x, y
+
+        elif isinstance(markup, mu.Group):
+            for child in markup.children:
+                pos = yield from RichTextParser._less(child, size, pos, reopens, wrap=wrap)
+            return pos
+
+        elif isinstance(markup, SGR):
+            open, close = markup.ansi_delimiters
+
+            if open:
+                yield open
+            for child in markup.children:
+                pos = yield from RichTextParser._less(child, size, pos, (open, *reopens), wrap=wrap)
+            if close:
+                yield close
+            for reopen in reopens[::-1]:
+                if reopen:
+                    yield reopen
+            return pos
+
+        else:
+            raise TypeError(f"unknown markup type: {type(markup)}")
+
+    @staticmethod
+    def render_less(markup, size, pos=(0,0), wrap=True, restore=True):
+        def _restore_pos(markup, size, pos, wrap):
+            x0, y0 = pos
+            pos = yield from RichTextParser._less(markup, size, pos, wrap=wrap)
+            x, y = pos or (None, size.lines-1)
+            if y > y0:
+                yield f"\x1b[{y-y0}A"
+            yield "\r"
+            if x0 > 0:
+                yield f"\x1b[{x0}C"
+
+        if restore:
+            markup = _restore_pos(markup, size, pos, wrap)
+        return "".join(markup)
 
 
 def addmarkup1(view, width, x, markup, xmask=slice(None,None), x0=None, attrs=()):
@@ -565,68 +646,4 @@ def addmarkup1(view, width, x, markup, xmask=slice(None,None), x0=None, attrs=()
     else:
         raise TypeError(f"unknown markup type: {type(markup)}")
 
-
-def _less(markup, size, pos=(0,0), reopens=(), wrap=True):
-    if pos is None:
-        return None
-
-    elif isinstance(markup, mu.Text):
-        x, y = pos
-        for ch in markup.string:
-            if ch == "\n":
-                y += 1
-                x = 0
-
-            else:
-                w = wcwidth.wcwidth(ch)
-                if w == -1:
-                    raise ValueError(f"unprintable character: {repr(ch)}")
-                x += w
-                if wrap and x > size.columns:
-                    y += 1
-                    x = w
-
-            if y == size.lines:
-                return None
-            if x <= size.columns:
-                yield ch
-        return x, y
-
-    elif isinstance(markup, mu.Group):
-        for child in markup.children:
-            pos = yield from _less(child, size, pos, reopens, wrap=wrap)
-        return pos
-
-    elif isinstance(markup, SGR):
-        open, close = markup.ansi_delimiters
-
-        if open:
-            yield open
-        for child in markup.children:
-            pos = yield from _less(child, size, pos, (open, *reopens), wrap=wrap)
-        if close:
-            yield close
-        for reopen in reopens[::-1]:
-            if reopen:
-                yield reopen
-        return pos
-
-    else:
-        raise TypeError(f"unknown markup type: {type(markup)}")
-
-def less(markup, size, pos=(0,0), wrap=True, restore=True):
-    def _restore_pos(markup, size, pos, wrap):
-        x0, y0 = pos
-        pos = yield from _less(markup, size, pos, wrap=wrap)
-        x, y = pos or (None, size.lines-1)
-        if y > y0:
-            yield f"\x1b[{y-y0}A"
-        yield "\r"
-        if x0 > 0:
-            yield f"\x1b[{x0}C"
-
-    markup = markup.expand()
-    if restore:
-        markup = _restore_pos(markup, size, pos, wrap)
-    return "".join(markup)
 

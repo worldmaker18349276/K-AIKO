@@ -1280,18 +1280,15 @@ class BeatPrompt:
         self.t0 = None
         self.tempo = None
 
-        text_settings = settings.text
-        tags = [term.SGR, *term.style_tags]
-        self.markup_tags = [
-            mu.make_pair_template("unknown", f"[sgr={text_settings.token_unknown_attr}][slot/][/]", tags),
-            mu.make_pair_template("cmd", f"[sgr={text_settings.token_command_attr}][slot/][/]", tags),
-            mu.make_pair_template("kw", f"[sgr={text_settings.token_keyword_attr}][slot/][/]", tags),
-            mu.make_pair_template("arg", f"[sgr={text_settings.token_argument_attr}][slot/][/]", tags),
-            mu.make_pair_template("emph", f"[sgr={text_settings.token_highlight_attr}][slot/][/]", tags),
-            mu.make_single_template("ws", text_settings.whitespace, tags),
-            mu.make_pair_template("esc", f"[sgr={text_settings.escape_attr}][slot/][/]", tags),
-            mu.make_pair_template("typeahead", f"[sgr={text_settings.typeahead_attr}][slot/][/]", tags),
-        ]
+        self.rich = term.RichTextParser()
+        self.rich.add_pair_template("unknown", f"[sgr={settings.text.token_unknown_attr}][slot/][/]")
+        self.rich.add_pair_template("cmd", f"[sgr={settings.text.token_command_attr}][slot/][/]")
+        self.rich.add_pair_template("kw", f"[sgr={settings.text.token_keyword_attr}][slot/][/]")
+        self.rich.add_pair_template("arg", f"[sgr={settings.text.token_argument_attr}][slot/][/]")
+        self.rich.add_pair_template("emph", f"[sgr={settings.text.token_highlight_attr}][slot/][/]")
+        self.rich.add_single_template("ws", settings.text.whitespace)
+        self.rich.add_pair_template("esc", f"[sgr={settings.text.escape_attr}][slot/][/]")
+        self.rich.add_pair_template("typeahead", f"[sgr={settings.text.typeahead_attr}][slot/][/]")
 
     def register(self, renderer):
         renderer.add_drawer(self.output_handler())
@@ -1364,10 +1361,11 @@ class BeatPrompt:
         caret_attr = self.settings.prompt.caret_attr
         caret_blink_ratio = self.settings.prompt.caret_blink_ratio
 
-        rendered_icons = [term.render(mu.parse_markup(icon, tags=term.style_tags)) for icon in icons]
+        rich = term.RichTextParser()
+        rendered_icons = [rich.render(rich.parse(icon)) for icon in icons]
         rendered_markers = (
-            term.render(mu.parse_markup(markers[0], tags=term.style_tags)),
-            term.render(mu.parse_markup(markers[1], tags=term.style_tags)),
+            rich.render(rich.parse(markers[0])),
+            rich.render(rich.parse(markers[1])),
         )
 
         self.t0 = self.settings.prompt.t0
@@ -1444,7 +1442,8 @@ class BeatPrompt:
         token_argument_attr  = self.settings.text.token_argument_attr
         token_highlight_attr = self.settings.text.token_highlight_attr
 
-        whitespace = term.render(mu.parse_markup(whitespace, tags=term.style_tags))
+        rich = term.RichTextParser()
+        whitespace = rich.render(rich.parse(whitespace))
 
         # render buffer
         buffer, tokens, typeahead, pos, highlighted, clean = yield None
@@ -1548,7 +1547,7 @@ class BeatPrompt:
 
             elif isinstance(hint, (InputWarn, InputMessage)):
                 if hint.message:
-                    msg = mu.parse_markup(hint.message, self.markup_tags)
+                    msg = self.rich.parse(hint.message)
                     lines = 0
                     def trim_lines(text):
                         nonlocal lines

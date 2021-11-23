@@ -483,7 +483,7 @@ class Renderer:
                 elif not msg.children:
                     res_text = "\r\x1b[J" + "".join(view).rstrip() + "\r"
                 else:
-                    msg_text = term.less(mu.Group([mu.Text("\n"), *msg.children]), size)
+                    msg_text = term.RichTextParser.render_less(mu.Group([mu.Text("\n"), msg]), size)
                     res_text = "\r\x1b[J" + "".join(view).rstrip() + "\r" + msg_text
 
                 shown, resized, time, size = yield res_text
@@ -572,7 +572,7 @@ class Renderer:
 
                 if res is not None:
                     xshift, text = res
-                    # text = term.render(text)
+                    # text = term.RichTextParser.render(text)
                     # view, _ = wcb.addtext1(view, width, xran.start+xshift, text, xmask=xmask)
                     term.addmarkup1(view, width, xran.start+xshift, text, xmask=xmask)
 
