@@ -609,8 +609,8 @@ class RichTextParser:
 
 # bar position
 @dataclasses.dataclass
-class At(mu.Single):
-    name = "at"
+class X(mu.Single):
+    name = "x"
     x: int
 
     @classmethod
@@ -628,23 +628,23 @@ class At(mu.Single):
         return str(self.x)
 
 @dataclasses.dataclass
-class Shift(mu.Single):
-    name = "shift"
-    x: int
+class DX(mu.Single):
+    name = "dx"
+    dx: int
 
     @classmethod
     def parse(clz, param):
         if param is None:
             raise mu.MarkupParseError(f"missing parameter for tag [{clz.name}]")
         try:
-            x = int(param)
+            dx = int(param)
         except ValueError:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
-        return clz(x)
+        return clz(dx)
 
     @property
     def param(self):
-        return str(self.x)
+        return str(self.dx)
 
 @dataclasses.dataclass
 class Restore(mu.Pair):
@@ -696,8 +696,8 @@ class RichBarParser:
         Color,
         BgColor,
         Wide,
-        At,
-        Shift,
+        X,
+        DX,
         Mask,
     ]
 
@@ -766,11 +766,11 @@ class RichBarParser:
                 x = RichBarParser._render(view, width, child, x, xmask, attrs)
             return x
 
-        elif isinstance(markup, At):
+        elif isinstance(markup, X):
             return markup.x
 
-        elif isinstance(markup, Shift):
-            return x+markup.x
+        elif isinstance(markup, DX):
+            return x+markup.dx
 
         elif isinstance(markup, Restore):
             x0 = x

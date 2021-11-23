@@ -147,21 +147,21 @@ class BeatbarSettings(cfg.Configurable):
         performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
             PerformanceGrade.MISS               : (""   , ""     ),
 
-            PerformanceGrade.LATE_FAILED        : ("[shift=-1/][color=bright_magenta]⟪[/]", "[shift=2/][color=bright_magenta]⟫[/]"),
-            PerformanceGrade.LATE_BAD           : ("[shift=-1/][color=bright_magenta]⟨[/]", "[shift=2/][color=bright_magenta]⟩[/]"),
-            PerformanceGrade.LATE_GOOD          : ("[shift=-1/][color=bright_magenta]‹[/]", "[shift=2/][color=bright_magenta]›[/]"),
+            PerformanceGrade.LATE_FAILED        : ("[dx=-1/][color=bright_magenta]⟪[/]", "[dx=2/][color=bright_magenta]⟫[/]"),
+            PerformanceGrade.LATE_BAD           : ("[dx=-1/][color=bright_magenta]⟨[/]", "[dx=2/][color=bright_magenta]⟩[/]"),
+            PerformanceGrade.LATE_GOOD          : ("[dx=-1/][color=bright_magenta]‹[/]", "[dx=2/][color=bright_magenta]›[/]"),
             PerformanceGrade.PERFECT            : (""   , ""     ),
-            PerformanceGrade.EARLY_GOOD         : ("[shift=2/][color=bright_magenta]›[/]", "[shift=-1/][color=bright_magenta]‹[/]"),
-            PerformanceGrade.EARLY_BAD          : ("[shift=2/][color=bright_magenta]⟩[/]", "[shift=-1/][color=bright_magenta]⟨[/]"),
-            PerformanceGrade.EARLY_FAILED       : ("[shift=2/][color=bright_magenta]⟫[/]", "[shift=-1/][color=bright_magenta]⟪[/]"),
+            PerformanceGrade.EARLY_GOOD         : ("[dx=2/][color=bright_magenta]›[/]", "[dx=-1/][color=bright_magenta]‹[/]"),
+            PerformanceGrade.EARLY_BAD          : ("[dx=2/][color=bright_magenta]⟩[/]", "[dx=-1/][color=bright_magenta]⟨[/]"),
+            PerformanceGrade.EARLY_FAILED       : ("[dx=2/][color=bright_magenta]⟫[/]", "[dx=-1/][color=bright_magenta]⟪[/]"),
 
-            PerformanceGrade.LATE_FAILED_WRONG  : ("[shift=-1/][color=bright_magenta]⟪[/]", "[shift=2/][color=bright_magenta]⟫[/]"),
-            PerformanceGrade.LATE_BAD_WRONG     : ("[shift=-1/][color=bright_magenta]⟨[/]", "[shift=2/][color=bright_magenta]⟩[/]"),
-            PerformanceGrade.LATE_GOOD_WRONG    : ("[shift=-1/][color=bright_magenta]‹[/]", "[shift=2/][color=bright_magenta]›[/]"),
+            PerformanceGrade.LATE_FAILED_WRONG  : ("[dx=-1/][color=bright_magenta]⟪[/]", "[dx=2/][color=bright_magenta]⟫[/]"),
+            PerformanceGrade.LATE_BAD_WRONG     : ("[dx=-1/][color=bright_magenta]⟨[/]", "[dx=2/][color=bright_magenta]⟩[/]"),
+            PerformanceGrade.LATE_GOOD_WRONG    : ("[dx=-1/][color=bright_magenta]‹[/]", "[dx=2/][color=bright_magenta]›[/]"),
             PerformanceGrade.PERFECT_WRONG      : (""   , ""     ),
-            PerformanceGrade.EARLY_GOOD_WRONG   : ("[shift=2/][color=bright_magenta]›[/]", "[shift=-1/][color=bright_magenta]‹[/]"),
-            PerformanceGrade.EARLY_BAD_WRONG    : ("[shift=2/][color=bright_magenta]⟩[/]", "[shift=-1/][color=bright_magenta]⟨[/]"),
-            PerformanceGrade.EARLY_FAILED_WRONG : ("[shift=2/][color=bright_magenta]⟫[/]", "[shift=-1/][color=bright_magenta]⟪[/]"),
+            PerformanceGrade.EARLY_GOOD_WRONG   : ("[dx=2/][color=bright_magenta]›[/]", "[dx=-1/][color=bright_magenta]‹[/]"),
+            PerformanceGrade.EARLY_BAD_WRONG    : ("[dx=2/][color=bright_magenta]⟩[/]", "[dx=-1/][color=bright_magenta]⟨[/]"),
+            PerformanceGrade.EARLY_FAILED_WRONG : ("[dx=2/][color=bright_magenta]⟫[/]", "[dx=-1/][color=bright_magenta]⟪[/]"),
             }
         performance_sustain_time: float = 0.1
 
