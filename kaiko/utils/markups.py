@@ -16,11 +16,11 @@ import dataclasses
 class MarkupParseError(Exception):
     pass
 
-def parse_markup(markup, tags):
+def parse_markup(markup_str, tags):
     tags_dict = {tag.name: tag for tag in tags}
     stack = [Group([])]
 
-    for match in re.finditer(r"(?P<tag>\[[^\]]*\])|(?P<text>([^\[\\]|\\[\s\S])+)", markup):
+    for match in re.finditer(r"(?P<tag>\[[^\]]*\])|(?P<text>([^\[\\]|\\[\s\S])+)", markup_str):
         tag = match.group('tag')
         text = match.group('text')
 
@@ -69,7 +69,7 @@ def parse_markup(markup, tags):
 
     return stack[0]
 
-class Node:
+class Markup:
     def represent(self):
         raise NotImplementedError
 
@@ -80,7 +80,7 @@ class Node:
         return self
 
 @dataclasses.dataclass
-class Text(Node):
+class Text(Markup):
     string: str
 
     @classmethod
@@ -97,7 +97,7 @@ class Text(Node):
                 yield repr(ch)[1:-1]
 
 @dataclasses.dataclass
-class Group(Node):
+class Group(Markup):
     children: list
 
     @classmethod
@@ -111,7 +111,7 @@ class Group(Node):
     def expand(self):
         return dataclasses.replace(self, children=[child.expand() for child in self.children])
 
-class Tag(Node):
+class Tag(Markup):
     @classmethod
     def parse(clz, param):
         raise NotImplementedError
@@ -183,15 +183,15 @@ class Slot(Single):
     def param(self):
         return None
 
-def replace_slot(node, children):
-    if isinstance(node, Slot):
+def replace_slot(markup, children):
+    if isinstance(markup, Slot):
         return Group(children)
-    elif isinstance(node, (Single, Text)):
-        return node
-    elif isinstance(node, (Pair, Group)):
-        return dataclasses.replace(node, children=[replace_slot(child, children) for child in node.children])
+    elif isinstance(markup, (Single, Text)):
+        return markup
+    elif isinstance(markup, (Pair, Group)):
+        return dataclasses.replace(markup, children=[replace_slot(child, children) for child in markup.children])
     else:
-        raise TypeError(f"unknown node type {type(node)}")
+        raise TypeError(f"unknown markup type {type(markup)}")
 
 @dataclasses.dataclass
 class PairTemplate(Pair):
@@ -220,13 +220,13 @@ def make_pair_template(name, template, tags):
     return type(name.capitalize(), (PairTemplate,), dict(name=name, _template=temp))
 
 
-def map_text(node, func):
-    if isinstance(node, Single):
-        return node
-    elif isinstance(node, (Pair, Group)):
-        return dataclasses.replace(node, children=[map_text(child, func) for child in node.children])
-    elif isinstance(node, Text):
-        return Text(func(node.string))
+def map_text(markup, func):
+    if isinstance(markup, Single):
+        return markup
+    elif isinstance(markup, (Pair, Group)):
+        return dataclasses.replace(markup, children=[map_text(child, func) for child in markup.children])
+    elif isinstance(markup, Text):
+        return Text(func(markup.string))
     else:
         raise TypeError
 

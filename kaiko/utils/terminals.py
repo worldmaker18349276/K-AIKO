@@ -464,23 +464,23 @@ style_tags = [
     BgColor,
 ]
 
-def _render(node, reopens=()):
-    if isinstance(node, mu.Text):
-        yield from node.string
+def _render(markup, reopens=()):
+    if isinstance(markup, mu.Text):
+        yield from markup.string
 
-    elif isinstance(node, mu.Group):
-        for child in node.children:
+    elif isinstance(markup, mu.Group):
+        for child in markup.children:
             yield from _render(child, reopens)
 
-    elif isinstance(node, CSI):
-        yield node.ansi_code
+    elif isinstance(markup, CSI):
+        yield markup.ansi_code
 
-    elif isinstance(node, SGR):
-        open, close = node.ansi_delimiters
+    elif isinstance(markup, SGR):
+        open, close = markup.ansi_delimiters
 
         if open:
             yield open
-        for child in node.children:
+        for child in markup.children:
             yield from _render(child, (open, *reopens))
         if close:
             yield close
@@ -489,22 +489,22 @@ def _render(node, reopens=()):
                 yield reopen
 
     else:
-        raise TypeError(f"unknown node type: {type(node)}")
+        raise TypeError(f"unknown markup type: {type(markup)}")
 
-def render(node):
-    return "".join(_render(node.expand()))
+def render(markup):
+    return "".join(_render(markup.expand()))
 
-def parse(markup):
-    return mu.parse_markup(markup, [SGR, *style_tags])
+def parse(markup_str):
+    return mu.parse_markup(markup_str, [SGR, *style_tags])
 
 
-def addmarkup1(view, width, x, node, xmask=slice(None,None), x0=None, attrs=()):
+def addmarkup1(view, width, x, markup, xmask=slice(None,None), x0=None, attrs=()):
     xran = range(width)
     if x0 is None:
         x0 = x
 
-    if isinstance(node, mu.Text):
-        for ch in node.string:
+    if isinstance(markup, mu.Text):
+        for ch in markup.string:
             w = wcwidth.wcwidth(ch)
 
             if ch == "\t":
@@ -547,32 +547,32 @@ def addmarkup1(view, width, x, node, xmask=slice(None,None), x0=None, attrs=()):
                 x += 2
 
             else:
-                raise ValueError(f"invalid string: {repr(ch)} in {repr(node.string)}")
+                raise ValueError(f"invalid string: {repr(ch)} in {repr(markup.string)}")
 
         return x
 
-    elif isinstance(node, mu.Group):
-        for child in node.children:
+    elif isinstance(markup, mu.Group):
+        for child in markup.children:
             x = addmarkup1(view, width, x, child, xmask, x0, attrs)
         return x
 
-    elif isinstance(node, SGR):
-        attrs = (*attrs, *node.attr)
-        for child in node.children:
+    elif isinstance(markup, SGR):
+        attrs = (*attrs, *markup.attr)
+        for child in markup.children:
             x = addmarkup1(view, width, x, child, xmask, x0, attrs)
         return x
 
     else:
-        raise TypeError(f"unknown node type: {type(node)}")
+        raise TypeError(f"unknown markup type: {type(markup)}")
 
 
-def _less(node, size, pos=(0,0), reopens=(), wrap=True):
+def _less(markup, size, pos=(0,0), reopens=(), wrap=True):
     if pos is None:
         return None
 
-    elif isinstance(node, mu.Text):
+    elif isinstance(markup, mu.Text):
         x, y = pos
-        for ch in node.string:
+        for ch in markup.string:
             if ch == "\n":
                 y += 1
                 x = 0
@@ -592,17 +592,17 @@ def _less(node, size, pos=(0,0), reopens=(), wrap=True):
                 yield ch
         return x, y
 
-    elif isinstance(node, mu.Group):
-        for child in node.children:
+    elif isinstance(markup, mu.Group):
+        for child in markup.children:
             pos = yield from _less(child, size, pos, reopens, wrap=wrap)
         return pos
 
-    elif isinstance(node, SGR):
-        open, close = node.ansi_delimiters
+    elif isinstance(markup, SGR):
+        open, close = markup.ansi_delimiters
 
         if open:
             yield open
-        for child in node.children:
+        for child in markup.children:
             pos = yield from _less(child, size, pos, (open, *reopens), wrap=wrap)
         if close:
             yield close
@@ -612,12 +612,12 @@ def _less(node, size, pos=(0,0), reopens=(), wrap=True):
         return pos
 
     else:
-        raise TypeError(f"unknown node type: {type(node)}")
+        raise TypeError(f"unknown markup type: {type(markup)}")
 
-def less(node, size, pos=(0,0), wrap=True, restore=True):
-    def _restore_pos(node, size, pos, wrap):
+def less(markup, size, pos=(0,0), wrap=True, restore=True):
+    def _restore_pos(markup, size, pos, wrap):
         x0, y0 = pos
-        pos = yield from _less(node, size, pos, wrap=wrap)
+        pos = yield from _less(markup, size, pos, wrap=wrap)
         x, y = pos or (None, size.lines-1)
         if y > y0:
             yield f"\x1b[{y-y0}A"
@@ -625,8 +625,8 @@ def less(node, size, pos=(0,0), wrap=True, restore=True):
         if x0 > 0:
             yield f"\x1b[{x0}C"
 
-    node = node.expand()
+    markup = markup.expand()
     if restore:
-        node = _restore_pos(node, size, pos, wrap)
-    return "".join(node)
+        markup = _restore_pos(markup, size, pos, wrap)
+    return "".join(markup)
 
