@@ -572,9 +572,9 @@ class Renderer:
 
                 if res is not None:
                     xshift, text = res
-                    # text = term.RichTextParser.render(text)
-                    # view, _ = wcb.addtext1(view, width, xran.start+xshift, text, xmask=xmask)
-                    term.RichBarParser._render(view, width, text, x=xran.start+xshift, xmask=xmask)
+                    # text = term.Mask([term.X(xran.start+xshift), text], xmask)
+                    # term.RichBarParser.render(view, width, text)
+                    term.RichBarParser._render(view, text, x=xran.start+xshift, xran=range(width), xmask=range(width)[xmask], attrs=())
 
                 (view, msg), time, width = yield (view, msg)
 
