@@ -1554,10 +1554,15 @@ class BeatPrompt:
                         nonlocal lines
                         if lines >= message_max_lines:
                             return ""
-                        lines += text.count("\n")
-                        if lines >= message_max_lines:
-                            text = "\n".join(text.split("\n")[:message_max_lines-lines-1]) + "\n…"
-                        return text
+                        res_text = []
+                        for ch in text:
+                            if ch == "\n":
+                                lines += 1
+                            res_text.append(ch)
+                            if lines == message_max_lines:
+                                res_text.append("…")
+                                break
+                        return "".join(res_text)
                     msg = mu.map_text(msg, trim_lines)
 
                     if isinstance(hint, InputWarn):
