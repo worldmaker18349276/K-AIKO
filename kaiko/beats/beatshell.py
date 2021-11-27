@@ -401,6 +401,8 @@ class BeatInput:
         The result of input.
     state : str
         The input state.
+    modified_event : int
+        The event counter for modifying buffer.
     """
     def __init__(self, promptable, history):
         r"""Constructor.
@@ -418,6 +420,7 @@ class BeatInput:
         self.tab_state = None
         self.state = "FIN"
         self.lock = threading.RLock()
+        self.modified_event = 0
 
         self.new_session(False)
 
@@ -481,10 +484,8 @@ class BeatInput:
         self.buffer = self.buffers[self.buffer_index]
         self.pos = len(self.buffer)
         self.typeahead = ""
-
-        self.tokens = []
-        self.lex_state = SHLEXER_STATE.SPACED
         self.highlighted = None
+        self.update_buffer()
 
         self.hint = None
         self.result = None
@@ -511,7 +512,7 @@ class BeatInput:
         return True
 
     @locked
-    def parse_syntax(self):
+    def update_buffer(self):
         """Parse syntax.
 
         Returns
@@ -533,6 +534,7 @@ class BeatInput:
         types, _ = self.command.parse_command(token for token, _, _ in tokens)
         types.extend([None]*(len(tokens) - len(types)))
         self.tokens = [(token, type, mask, ignored) for (token, mask, ignored), type in zip(tokens, types)]
+        self.modified_event += 1
         return True
 
     @locked
@@ -702,7 +704,7 @@ class BeatInput:
         self.buffer[self.pos:self.pos] = self.typeahead
         self.pos += len(self.typeahead)
         self.typeahead = ""
-        self.parse_syntax()
+        self.update_buffer()
 
         return True
 
@@ -738,7 +740,7 @@ class BeatInput:
 
         self.buffer[self.pos:self.pos] = text
         self.pos += len(text)
-        self.parse_syntax()
+        self.update_buffer()
 
         self.make_typeahead()
         self.update_hint()
@@ -760,7 +762,7 @@ class BeatInput:
 
         self.pos -= 1
         del self.buffer[self.pos]
-        self.parse_syntax()
+        self.update_buffer()
         self.cancel_typeahead()
         self.update_hint()
 
@@ -780,7 +782,7 @@ class BeatInput:
             return False
 
         del self.buffer[self.pos]
-        self.parse_syntax()
+        self.update_buffer()
         self.cancel_typeahead()
         self.update_hint()
 
@@ -800,7 +802,7 @@ class BeatInput:
 
         del self.buffer[:]
         self.pos = 0
-        self.parse_syntax()
+        self.update_buffer()
         self.cancel_typeahead()
         self.update_hint()
 
@@ -828,7 +830,7 @@ class BeatInput:
 
         del self.buffer[start:end]
         self.pos = start
-        self.parse_syntax()
+        self.update_buffer()
         self.cancel_typeahead()
         self.update_hint()
 
@@ -995,7 +997,7 @@ class BeatInput:
 
         self.buffer = self.buffers[self.buffer_index]
         self.pos = len(self.buffer)
-        self.parse_syntax()
+        self.update_buffer()
         self.cancel_typeahead()
         self.cancel_hint()
 
@@ -1016,7 +1018,7 @@ class BeatInput:
 
         self.buffer = self.buffers[self.buffer_index]
         self.pos = len(self.buffer)
-        self.parse_syntax()
+        self.update_buffer()
         self.cancel_typeahead()
         self.cancel_hint()
 
@@ -1160,7 +1162,7 @@ class BeatInput:
             self.pos = selection.start + len(suggestions[sugg_index])
             self.tab_state.selection = slice(selection.start, self.pos)
 
-            self.parse_syntax()
+            self.update_buffer()
             self.set_hint(InputSuggestions, self.tab_state.token_index, suggestions, sugg_index)
             return True
 
@@ -1170,7 +1172,7 @@ class BeatInput:
             self.pos = self.tab_state.original_pos
 
             self.tab_state = None
-            self.parse_syntax()
+            self.update_buffer()
             self.update_hint()
             return False
 
@@ -1317,13 +1319,18 @@ class BeatPrompt:
         text_node = self.text_node()
         hint_node = self.hint_node()
         render_node = self.render_node()
+        modified_event = None
+        buffer = []
+        tokens = []
         with header_node, text_node, hint_node, render_node:
             (view, msg), time, width = yield
             while True:
                 # extract input state
                 with self.input.lock:
-                    buffer = list(self.input.buffer)
-                    tokens = list(self.input.tokens)
+                    if self.input.modified_event != modified_event:
+                        modified_event = self.input.modified_event
+                        buffer = list(self.input.buffer)
+                        tokens = list(self.input.tokens)
                     pos = self.input.pos
                     highlighted = self.input.highlighted
 
@@ -1492,6 +1499,8 @@ class BeatPrompt:
         # render buffer
         buffer, tokens, typeahead, pos, highlighted, clean = yield None
         while True:
+            buffer = list(buffer)
+            tokens = list(tokens)
             indices = range(len(buffer))
 
             for _, type, mask, ignored in tokens:
