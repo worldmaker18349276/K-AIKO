@@ -667,25 +667,25 @@ class Wide(mu.Single):
 
 
 class RichTextParser:
-    default_tags = [
-        SGR, # TODO: remove it
-        Reset,
-        Weight,
-        Italic,
-        Underline,
-        Strike,
-        Blink,
-        Invert,
-        Color,
-        BgColor,
-        Wide,
-    ]
+    default_tags = {
+        SGR.name: SGR, # TODO: remove it
+        Reset.name: Reset,
+        Weight.name: Weight,
+        Italic.name: Italic,
+        Underline.name: Underline,
+        Strike.name: Strike,
+        Blink.name: Blink,
+        Invert.name: Invert,
+        Color.name: Color,
+        BgColor.name: BgColor,
+        Wide.name: Wide,
+    }
 
     def __init__(self):
-        self.tags = list(RichTextParser.default_tags)
+        self.tags = dict(RichTextParser.default_tags)
 
     def parse(self, markup_str, expand=True, slotted=False):
-        tags = self.tags if not slotted else [mu.Slot, *self.tags]
+        tags = self.tags if not slotted else dict(self.tags, slot=mu.Slot)
         markup = mu.parse_markup(markup_str, tags)
         if expand:
             markup = markup.expand()
@@ -693,12 +693,12 @@ class RichTextParser:
 
     def add_single_template(self, name, template):
         tag = mu.make_single_template(name, template, self.tags)
-        self.tags.append(tag)
+        self.tags[tag.name] = tag
         return tag
 
     def add_pair_template(self, name, template):
         tag = mu.make_pair_template(name, template, self.tags)
-        self.tags.append(tag)
+        self.tags[tag.name] = tag
         return tag
 
     @staticmethod
@@ -937,25 +937,25 @@ def to_range(slice, width):
 
 
 class RichBarParser:
-    default_tags = [
-        SGR, # TODO: remove it
-        Reset,
-        Weight,
-        Italic,
-        Underline,
-        Strike,
-        Blink,
-        Invert,
-        Color,
-        BgColor,
-        Wide,
-        X,
-        DX,
-        Mask,
-    ]
+    default_tags = {
+        SGR.name: SGR, # TODO: remove it
+        Reset.name: Reset,
+        Weight.name: Weight,
+        Italic.name: Italic,
+        Underline.name: Underline,
+        Strike.name: Strike,
+        Blink.name: Blink,
+        Invert.name: Invert,
+        Color.name: Color,
+        BgColor.name: BgColor,
+        Wide.name: Wide,
+        X.name: X,
+        DX.name: DX,
+        Mask.name: Mask,
+    }
 
     def __init__(self):
-        self.tags = list(RichBarParser.default_tags)
+        self.tags = dict(RichBarParser.default_tags)
 
     def parse(self, markup_str, expand=True):
         markup = mu.parse_markup(markup_str, self.tags)
@@ -964,10 +964,14 @@ class RichBarParser:
         return markup
 
     def add_single_template(self, name, template):
-        self.tags.append(mu.make_single_template(name, template, self.tags))
+        tag = mu.make_single_template(name, template, self.tags)
+        self.tags[tag.name] = tag
+        return tag
 
     def add_pair_template(self, name, template):
-        self.tags.append(mu.make_pair_template(name, template, self.tags))
+        tag = mu.make_pair_template(name, template, self.tags)
+        self.tags[tag.name] = tag
+        return tag
 
     @staticmethod
     def _render_text(view, string, x, xran, xmask, attrs):

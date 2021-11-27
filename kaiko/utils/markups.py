@@ -17,7 +17,6 @@ class MarkupParseError(Exception):
     pass
 
 def parse_markup(markup_str, tags):
-    tags_dict = {tag.name: tag for tag in tags}
     stack = [Group([])]
 
     for match in re.finditer(r"(?P<tag>\[[^\]]*\])|(?P<text>([^\[\\]|\\[\s\S])+)", markup_str):
@@ -48,9 +47,9 @@ def parse_markup(markup_str, tags):
         if match:
             name = match.group(1)
             param = match.group(2)
-            if name not in tags_dict or not issubclass(tags_dict[name], Single):
+            if name not in tags or not issubclass(tags[name], Single):
                 raise MarkupParseError(f"unknown tag: [{name}/]")
-            res = tags_dict[name].parse(param)
+            res = tags[name].parse(param)
             stack[-1].children.append(res)
             continue
 
@@ -58,9 +57,9 @@ def parse_markup(markup_str, tags):
         if match:
             name = match.group(1)
             param = match.group(2)
-            if name not in tags_dict or not issubclass(tags_dict[name], Pair):
+            if name not in tags or not issubclass(tags[name], Pair):
                 raise MarkupParseError(f"unknown tag: [{name}]")
-            res = tags_dict[name].parse(param)
+            res = tags[name].parse(param)
             stack[-1].children.append(res)
             stack.append(res)
             continue
@@ -240,6 +239,6 @@ def make_single_template(name, template, tags):
     return type(name.capitalize(), (SingleTemplate,), dict(name=name, _template=temp))
 
 def make_pair_template(name, template, tags):
-    temp = parse_markup(template, tags=[Slot, *tags])
+    temp = parse_markup(template, tags=dict(tags, slot=Slot))
     return type(name.capitalize(), (PairTemplate,), dict(name=name, _template=temp))
 
