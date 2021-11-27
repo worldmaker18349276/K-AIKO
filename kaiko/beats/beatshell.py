@@ -59,6 +59,7 @@ def shlexer_tokenize(raw):
     BACKSLASH = "\\"
     QUOTE = "'"
 
+    length = len(raw)
     raw = enumerate(raw)
 
     while True:
@@ -88,7 +89,7 @@ def shlexer_tokenize(raw):
                 try:
                     index, char = next(raw)
                 except StopIteration:
-                    yield "".join(token), slice(start, None), ignored
+                    yield "".join(token), slice(start, length), ignored
                     return SHLEXER_STATE.BACKSLASHED
 
                 token.append(char)
@@ -101,7 +102,7 @@ def shlexer_tokenize(raw):
                     try:
                         index, char = next(raw)
                     except StopIteration:
-                        yield "".join(token), slice(start, None), ignored
+                        yield "".join(token), slice(start, length), ignored
                         return SHLEXER_STATE.QUOTED
 
                     if char == QUOTE:
@@ -117,7 +118,7 @@ def shlexer_tokenize(raw):
             try:
                 index, char = next(raw)
             except StopIteration:
-                yield "".join(token), slice(start, None), ignored
+                yield "".join(token), slice(start, length), ignored
                 return SHLEXER_STATE.PLAIN
 
 def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
@@ -1527,7 +1528,7 @@ class BeatPrompt:
 
                 # render unknown token
                 if type is None:
-                    if mask.stop is not None or clean:
+                    if mask.stop < len(buffer) or clean:
                         wcb.add_attr_inplace(buffer, mask, token_unknown_attr)
 
                 # render command token
