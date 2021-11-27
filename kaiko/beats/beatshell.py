@@ -1405,9 +1405,9 @@ class BeatPrompt:
         def caret_func(period, force=False):
             if force or period % 1 < caret_blink_ratio:
                 if period % 4 < 1:
-                    return lambda s: wcb.add_attr(s, caret_attr[1])
+                    return caret_attr[1]
                 else:
-                    return lambda s: wcb.add_attr(s, caret_attr[0])
+                    return caret_attr[0]
             else:
                 return None
 
@@ -1682,9 +1682,9 @@ class BeatPrompt:
             wcb.addtext1(view, width, marker_ran.start, marker, marker_ran)
 
             # draw caret
-            if caret:
+            if caret is not None:
                 caret_x = input_ran.start - input_offset + caret_pos
                 caret_ran = wcb.select1(view, width, slice(caret_x, caret_x+1))
-                view[caret_ran.start] = caret(view[caret_ran.start])
+                view[caret_ran.start] = wcb.add_attr(view[caret_ran.start], caret)
 
             view, width, (icon, marker, caret), (text, typeahead, caret_pos) = yield view
