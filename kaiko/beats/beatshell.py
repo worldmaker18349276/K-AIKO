@@ -46,9 +46,9 @@ def shlexer_tokenize(raw):
         The tokenized string.
     mask : slice
         The position of this token.
-    ignored : list of int
+    quotes : list of int
         The indices of all backslashes and quotation marks used for escaping.
-        The token is equal to `''.join(raw[i] for i in range(*slice.indices(len(raw))) if i not in ignored)`.
+        The token is equal to `''.join(raw[i] for i in range(*slice.indices(len(raw))) if i not in quotes)`.
 
     Returns
     -------
@@ -75,38 +75,38 @@ def shlexer_tokenize(raw):
         # parse token
         start = index
         token = []
-        ignored = []
+        quotes = []
         while True:
             if char == SPACE:
                 # end parsing token
-                yield "".join(token), slice(start, index), ignored
+                yield "".join(token), slice(start, index), quotes
                 break
 
             elif char == BACKSLASH:
                 # escape the next character
-                ignored.append(index)
+                quotes.append(index)
 
                 try:
                     index, char = next(raw)
                 except StopIteration:
-                    yield "".join(token), slice(start, length), ignored
+                    yield "".join(token), slice(start, length), quotes
                     return SHLEXER_STATE.BACKSLASHED
 
                 token.append(char)
 
             elif char == QUOTE:
                 # escape the following characters until the next quotation mark
-                ignored.append(index)
+                quotes.append(index)
 
                 while True:
                     try:
                         index, char = next(raw)
                     except StopIteration:
-                        yield "".join(token), slice(start, length), ignored
+                        yield "".join(token), slice(start, length), quotes
                         return SHLEXER_STATE.QUOTED
 
                     if char == QUOTE:
-                        ignored.append(index)
+                        quotes.append(index)
                         break
                     else:
                         token.append(char)
@@ -118,7 +118,7 @@ def shlexer_tokenize(raw):
             try:
                 index, char = next(raw)
             except StopIteration:
-                yield "".join(token), slice(start, length), ignored
+                yield "".join(token), slice(start, length), quotes
                 return SHLEXER_STATE.PLAIN
 
 def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
@@ -390,7 +390,7 @@ class BeatInput:
     typeahead : str
         The type ahead of input.
     tokens : list
-        The tokens info, which is a list of tuple `(token, type, mask, ignored)`,
+        The tokens info, which is a list of tuple `(token, type, mask, quotes)`,
         where `type` is cmd.TOKEN_TYPE or None, and the rest are the same as the
         values yielded by `shlexer_tokenize`.
     lex_state : SHLEXER_STATE
@@ -528,16 +528,16 @@ class BeatInput:
         tokens = []
         while True:
             try:
-                token, mask, ignored = next(tokenizer)
+                token, mask, quotes = next(tokenizer)
             except StopIteration as e:
                 self.lex_state = e.value
                 break
 
-            tokens.append((token, mask, ignored))
+            tokens.append((token, mask, quotes))
 
         types, _ = self.command.parse_command(token for token, _, _ in tokens)
         types.extend([None]*(len(tokens) - len(types)))
-        self.tokens = [(token, type, mask, ignored) for (token, mask, ignored), type in zip(tokens, types)]
+        self.tokens = [(token, type, mask, quotes) for (token, mask, quotes), type in zip(tokens, types)]
         self.modified_event += 1
         return True
 
@@ -1511,14 +1511,14 @@ class BeatPrompt:
             tokens = list(tokens)
             indices = range(len(buffer))
 
-            for _, type, mask, ignored in tokens:
+            for _, type, mask, quotes in tokens:
                 # render whitespace
                 for index in indices[mask]:
                     if buffer[index] == " ":
                         buffer[index] = whitespace
 
                 # render quotation and backslash
-                for index in ignored:
+                for index in quotes:
                     if buffer[index] == "'":
                         buffer[index] = quotation
                     elif buffer[index] == "\\":
