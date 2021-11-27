@@ -828,7 +828,7 @@ class WidgetSettings(cfg.Configurable):
         template : str
             The template for the score indicator.
         """
-        template: str = "[color=8700ff][slot/][/]"
+        template: str = "[color=bright_blue][slot/][/]"
 
     class progress(cfg.Configurable):
         r"""
@@ -837,7 +837,7 @@ class WidgetSettings(cfg.Configurable):
         template : str
             The template for the progress indicator.
         """
-        template: str = "[color=8700ff][slot/][/]"
+        template: str = "[color=bright_blue][slot/][/]"
 
     class accuracy_meter(cfg.Configurable):
         r"""
