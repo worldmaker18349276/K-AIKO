@@ -1348,6 +1348,62 @@ class BeatPrompt:
                 if state == "FIN" and not self.fin_event.is_set():
                     self.fin_event.set()
 
+    def get_monitor_func(self):
+        ticks = " ▏▎▍▌▋▊▉█"
+        ticks_len = len(ticks)
+        icon_width = self.settings.prompt.icon_width
+
+        def monitor_func(period):
+            level = int((self.monitor.eff or 0.0) * icon_width*(ticks_len-1))
+            return "".join(ticks[max(0, min(ticks_len-1, level-i*(ticks_len-1)))] for i in range(icon_width))
+
+        return monitor_func
+
+    def get_icon_func(self):
+        icons = self.settings.prompt.icons
+
+        rich = term.RichTextParser()
+        rendered_icons = [rich.render(rich.parse(icon)) for icon in icons]
+
+        def icon_func(period):
+            ind = int(period * len(rendered_icons) // 1) % len(rendered_icons)
+            return rendered_icons[ind]
+
+        return icon_func
+
+    def get_marker_func(self):
+        markers = self.settings.prompt.markers
+        caret_blink_ratio = self.settings.prompt.caret_blink_ratio
+
+        rich = term.RichTextParser()
+        rendered_markers = (
+            rich.render(rich.parse(markers[0])),
+            rich.render(rich.parse(markers[1])),
+        )
+
+        def marker_func(period):
+            if period % 4 < min(1, caret_blink_ratio):
+                return rendered_markers[1]
+            else:
+                return rendered_markers[0]
+
+        return marker_func
+
+    def get_caret_func(self):
+        caret_attr = self.settings.prompt.caret_attr
+        caret_blink_ratio = self.settings.prompt.caret_blink_ratio
+
+        def caret_func(period, force=False):
+            if force or period % 1 < caret_blink_ratio:
+                if period % 4 < 1:
+                    return lambda s: wcb.add_attr(s, caret_attr[1])
+                else:
+                    return lambda s: wcb.add_attr(s, caret_attr[0])
+            else:
+                return None
+
+        return caret_func
+
     @dn.datanode
     def header_node(self):
         r"""The datanode to render header and caret.
@@ -1368,61 +1424,30 @@ class BeatPrompt:
         caret : function or None
             The function that add a caret to the text, or None for no caret.
         """
-        icons = self.settings.prompt.icons
-        icon_width = self.settings.prompt.icon_width
-        markers = self.settings.prompt.markers
-        ticks = " ▏▎▍▌▋▊▉█"
-        ticks_len = len(ticks)
-
-        caret_attr = self.settings.prompt.caret_attr
-        caret_blink_ratio = self.settings.prompt.caret_blink_ratio
-
-        rich = term.RichTextParser()
-        rendered_icons = [rich.render(rich.parse(icon)) for icon in icons]
-        rendered_markers = (
-            rich.render(rich.parse(markers[0])),
-            rich.render(rich.parse(markers[1])),
-        )
+        icon_func = self.get_monitor_func() if self.monitor else self.get_icon_func()
+        marker_func = self.get_marker_func()
+        caret_func = self.get_caret_func()
 
         self.t0 = self.settings.prompt.t0
         self.tempo = self.settings.prompt.tempo
 
         clean, time = yield
 
-        t = (0 - self.t0)/(60/self.tempo)
-        tr = t // 1
+        period = (0 - self.t0)/(60/self.tempo)
+        period_start = period // 1
         while True:
             # don't blink while key pressing
             if self.stroke.key_event.is_set():
                 self.stroke.key_event.clear()
-                tr = t // -1 * -1
+                period_start = period // -1 * -1
 
-            # render caret
-            if clean:
-                caret = None
-            elif t < tr or t % 1 < caret_blink_ratio:
-                if t % 4 < 1:
-                    caret = lambda s: wcb.add_attr(s, caret_attr[1])
-                else:
-                    caret = lambda s: wcb.add_attr(s, caret_attr[0])
-            else:
-                caret = None
+            # render icon, marker, caret
+            icon = icon_func(period)
+            marker = marker_func(period)
+            caret = None if clean else caret_func(period, period < period_start)
 
-            # render icon, marker
-            if self.monitor:
-                level = int((self.monitor.eff or 0.0) * icon_width*(ticks_len-1))
-                rendered_icon = "".join(ticks[max(0, min(ticks_len-1, level-i*(ticks_len-1)))] for i in range(icon_width))
-            else:
-                ind = int(t * len(rendered_icons) // 1) % len(rendered_icons)
-                rendered_icon = rendered_icons[ind]
-
-            if t % 4 < min(1, caret_blink_ratio):
-                rendered_marker = rendered_markers[1]
-            else:
-                rendered_marker = rendered_markers[0]
-
-            clean, time = yield rendered_icon, rendered_marker, caret
-            t = (time - self.t0)/(60/self.tempo)
+            clean, time = yield icon, marker, caret
+            period = (time - self.t0)/(60/self.tempo)
 
     @dn.datanode
     def text_node(self):
