@@ -11,7 +11,7 @@ import termios
 import select
 import tty
 import enum
-from typing import Optional
+from typing import Optional, Union
 import dataclasses
 import wcwidth
 from . import markups as mu
@@ -446,51 +446,198 @@ class Invert(SimpleAttr):
     name = "invert"
     _options = {"on": 7, "off": 27}
 
-@dataclasses.dataclass
-class Color(SimpleAttr):
-    name = "color"
-    _options = {
-        "default": 39,
-        "black": 30,
-        "red": 31,
-        "green": 32,
-        "yellow": 33,
-        "blue": 34,
-        "magenta": 35,
-        "cyan": 36,
-        "white": 37,
-        "bright_black": 90,
-        "bright_red": 91,
-        "bright_green": 92,
-        "bright_yellow": 93,
-        "bright_blue": 94,
-        "bright_magenta": 95,
-        "bright_cyan": 96,
-        "bright_white": 97,
-    }
+
+# colors
+colors_16 = [
+    (0x00, 0x00, 0x00),
+    (0x80, 0x00, 0x00),
+    (0x00, 0x80, 0x00),
+    (0x80, 0x80, 0x00),
+    (0x00, 0x00, 0x80),
+    (0x80, 0x00, 0x80),
+    (0x00, 0x80, 0x80),
+    (0xc0, 0xc0, 0xc0),
+    (0x80, 0x80, 0x80),
+    (0xff, 0x00, 0x00),
+    (0x00, 0xff, 0x00),
+    (0xff, 0xff, 0x00),
+    (0x00, 0x00, 0xff),
+    (0xff, 0x00, 0xff),
+    (0x00, 0xff, 0xff),
+    (0xff, 0xff, 0xff),
+]
+colors_256 = []
+for r in (0, *range(95, 256, 40)):
+    for g in (0, *range(95, 256, 40)):
+        for b in (0, *range(95, 256, 40)):
+            colors_256.append((r, g, b))
+for gray in range(8, 248, 10):
+    colors_256.append((gray, gray, gray))
+
+# TODO: determine them
+support_truecolor = True
+support_256color = True
+support_16color = True
+
+def sRGB(c1, c2):
+    r1, g1, b1 = c1
+    r2, g2, b2 = c2
+
+    if r1 + r2 < 256:
+        return 2*(r1-r2)**2 + 4*(g1-g2)**2 + 3*(b1-b2)**2
+    else:
+        return 3*(r1-r2)**2 + 4*(g1-g2)**2 + 2*(b1-b2)**2
+
+def find_256color(code):
+    code = min(colors_256, key=lambda c: sRGB(c, code))
+    return colors_256.index(code) + 16
+
+def find_16color(code):
+    code = min(colors_16, key=lambda c: sRGB(c, code))
+    return colors_16.index(code)
+
+class Palette(enum.Enum):
+    DEFAULT = "default"
+    BLACK = "black"
+    RED = "red"
+    GREEN = "green"
+    YELLOW = "yellow"
+    BLUE = "blue"
+    MAGENTA = "magenta"
+    CYAN = "cyan"
+    WHITE = "white"
+    BRIGHT_BLACK = "bright_black"
+    BRIGHT_RED = "bright_red"
+    BRIGHT_GREEN = "bright_green"
+    BRIGHT_YELLOW = "bright_yellow"
+    BRIGHT_BLUE = "bright_blue"
+    BRIGHT_MAGENTA = "bright_magenta"
+    BRIGHT_CYAN = "bright_cyan"
+    BRIGHT_WHITE = "bright_white"
+
+color_names = [color.value for color in Palette]
 
 @dataclasses.dataclass
-class BgColor(SimpleAttr):
-    name = "bgcolor"
-    _options = {
-        "default": 49,
-        "black": 40,
-        "red": 41,
-        "green": 42,
-        "yellow": 43,
-        "blue": 44,
-        "magenta": 45,
-        "cyan": 46,
-        "white": 47,
-        "bright_black": 100,
-        "bright_red": 101,
-        "bright_green": 102,
-        "bright_yellow": 103,
-        "bright_blue": 104,
-        "bright_magenta": 105,
-        "bright_cyan": 106,
-        "bright_white": 107,
+class Color(mu.Pair):
+    name = "color"
+    _palette = {
+        Palette.DEFAULT: 39,
+        Palette.BLACK: 30,
+        Palette.RED: 31,
+        Palette.GREEN: 32,
+        Palette.YELLOW: 33,
+        Palette.BLUE: 34,
+        Palette.MAGENTA: 35,
+        Palette.CYAN: 36,
+        Palette.WHITE: 37,
+        Palette.BRIGHT_BLACK: 90,
+        Palette.BRIGHT_RED: 91,
+        Palette.BRIGHT_GREEN: 92,
+        Palette.BRIGHT_YELLOW: 93,
+        Palette.BRIGHT_BLUE: 94,
+        Palette.BRIGHT_MAGENTA: 95,
+        Palette.BRIGHT_CYAN: 96,
+        Palette.BRIGHT_WHITE: 97,
     }
+    rgb: Union[Palette, int]
+
+    @classmethod
+    def parse(clz, param):
+        if param is None:
+            param = "default"
+
+        try:
+            rgb = Palette(param) if param in color_names else int(param, 16)
+        except ValueError:
+            raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
+        return clz([], rgb)
+
+    @property
+    def param(self):
+        return self.rgb.value if isinstance(self.rgb, Palette) else f"{self.rgb:06x}"
+
+    def expand(self):
+        if isinstance(self.rgb, Palette):
+            return SGR([child.expand() for child in self.children], (self._palette[self.rgb],))
+
+        r = (self.rgb & 0xff0000) >> 16
+        g = (self.rgb & 0x00ff00) >> 8
+        b = (self.rgb & 0x0000ff)
+        if support_truecolor:
+            return SGR([child.expand() for child in self.children], (38,2,r,g,b))
+        elif support_256color:
+            c = find_256color((r,g,b))
+            return SGR([child.expand() for child in self.children], (38,5,c))
+        elif support_16color:
+            c = find_16color((r,g,b))
+            if c < 8:
+                c += 30
+            else:
+                c += 82
+            return SGR([child.expand() for child in self.children], (c,))
+        else:
+            return Group([child.expand() for child in self.children])
+
+@dataclasses.dataclass
+class BgColor(mu.Pair):
+    name = "bgcolor"
+    _palette = {
+        Palette.DEFAULT: 49,
+        Palette.BLACK: 40,
+        Palette.RED: 41,
+        Palette.GREEN: 42,
+        Palette.YELLOW: 43,
+        Palette.BLUE: 44,
+        Palette.MAGENTA: 45,
+        Palette.CYAN: 46,
+        Palette.WHITE: 47,
+        Palette.BRIGHT_BLACK: 100,
+        Palette.BRIGHT_RED: 101,
+        Palette.BRIGHT_GREEN: 102,
+        Palette.BRIGHT_YELLOW: 103,
+        Palette.BRIGHT_BLUE: 104,
+        Palette.BRIGHT_MAGENTA: 105,
+        Palette.BRIGHT_CYAN: 106,
+        Palette.BRIGHT_WHITE: 107,
+    }
+    rgb: Union[Palette, int]
+
+    @classmethod
+    def parse(clz, param):
+        if param is None:
+            param = "default"
+
+        try:
+            rgb = Palette(param) if param in color_names else int(param, 16)
+        except ValueError:
+            raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
+        return clz([], rgb)
+
+    @property
+    def param(self):
+        return self.rgb.value if isinstance(self.rgb, Palette) else f"{self.rgb:06x}"
+
+    def expand(self):
+        if isinstance(self.rgb, Palette):
+            return SGR([child.expand() for child in self.children], (self._palette[self.rgb],))
+
+        r = (self.rgb & 0xff0000) >> 16
+        g = (self.rgb & 0x00ff00) >> 8
+        b = (self.rgb & 0x0000ff)
+        if support_truecolor:
+            return SGR([child.expand() for child in self.children], (48,2,r,g,b))
+        elif support_256color:
+            c = find_256color((r,g,b))
+            return SGR([child.expand() for child in self.children], (48,5,c))
+        elif support_16color:
+            c = find_16color((r,g,b))
+            if c < 8:
+                c += 40
+            else:
+                c += 92
+            return SGR([child.expand() for child in self.children], (c,))
+        else:
+            return Group([child.expand() for child in self.children])
 
 
 # others

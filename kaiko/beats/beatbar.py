@@ -166,13 +166,13 @@ class BeatbarSettings(cfg.Configurable):
         performance_sustain_time: float = 0.1
 
         sight_appearances: List[Tuple[str, str]] = [
-            ("[color=bright_magenta]⛶[/]", "[color=bright_magenta]⛶[/]"),
-            ("[sgr=38;5;201]🞎[/]", "[sgr=38;5;201]🞎[/]"),
-            ("[sgr=38;5;200]🞏[/]", "[sgr=38;5;200]🞏[/]"),
-            ("[sgr=38;5;199]🞐[/]", "[sgr=38;5;199]🞐[/]"),
-            ("[sgr=38;5;198]🞑[/]", "[sgr=38;5;198]🞑[/]"),
-            ("[sgr=38;5;197]🞒[/]", "[sgr=38;5;197]🞒[/]"),
-            ("[sgr=38;5;196]🞓[/]", "[sgr=38;5;196]🞓[/]"),
+            ("[color=ff00ff]⛶[/]", "[color=ff00ff]⛶[/]"),
+            ("[color=ff00ff]🞎[/]", "[color=ff00ff]🞎[/]"),
+            ("[color=ff00d7]🞏[/]", "[color=ff00d7]🞏[/]"),
+            ("[color=ff00af]🞐[/]", "[color=ff00af]🞐[/]"),
+            ("[color=ff0087]🞑[/]", "[color=ff0087]🞑[/]"),
+            ("[color=ff005f]🞒[/]", "[color=ff005f]🞒[/]"),
+            ("[color=ff0000]🞓[/]", "[color=ff0000]🞓[/]"),
         ]
         hit_decay_time: float = 0.4
         hit_sustain_time: float = 0.1
@@ -828,7 +828,7 @@ class WidgetSettings(cfg.Configurable):
         template : str
             The template for the score indicator.
         """
-        template: str = "[sgr=38;5;93][slot/][/]"
+        template: str = "[color=8700ff][slot/][/]"
 
     class progress(cfg.Configurable):
         r"""
@@ -837,7 +837,7 @@ class WidgetSettings(cfg.Configurable):
         template : str
             The template for the progress indicator.
         """
-        template: str = "[sgr=38;5;93][slot/][/]"
+        template: str = "[color=8700ff][slot/][/]"
 
     class accuracy_meter(cfg.Configurable):
         r"""
