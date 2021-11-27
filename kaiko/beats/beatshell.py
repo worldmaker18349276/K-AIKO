@@ -1208,7 +1208,7 @@ class BeatStroke:
     def __init__(self, input, settings):
         self.input = input
         self.settings = settings
-        self.key_event = threading.Event()
+        self.key_event = 0
 
     def register(self, controller):
         r"""Register handler to the given controller.
@@ -1230,7 +1230,9 @@ class BeatStroke:
         controller.add_handler(self.unknown_handler(self.settings))
 
     def keypress_handler(self):
-        return lambda args: self.key_event.set()
+        def keypress(args):
+            self.key_event += 1
+        return keypress
 
     def confirm_handler(self):
         return lambda args: self.input.confirm()
@@ -1434,11 +1436,12 @@ class BeatPrompt:
         clean, time = yield
 
         period = (0 - self.t0)/(60/self.tempo)
-        period_start = period // 1
+        period_start = period // -1 * -1
+        key_event = None
         while True:
             # don't blink while key pressing
-            if self.stroke.key_event.is_set():
-                self.stroke.key_event.clear()
+            if self.stroke.key_event != key_event:
+                key_event = self.stroke.key_event
                 period_start = period // -1 * -1
 
             # render icon, marker, caret
