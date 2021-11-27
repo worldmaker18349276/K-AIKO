@@ -273,12 +273,14 @@ class BeatShellSettings(cfg.Configurable):
         message_max_lines : int
             The maximum number of lines of the message.
 
-        escape_attr : str
-            The text attribute of the escaped string.
+        quotation : str
+            The replacement text for quotation marks.
+        backslash : str
+            The replacement text for backslashes.
+        whitespace : str
+            The replacement text for escaped whitespaces.
         typeahead_attr : str
             The text attribute of the type-ahead.
-        whitespace : str
-            The replacement text of the escaped whitespace.
 
         suggestions_lines : int
             The maximum number of lines of the suggestions.
@@ -302,9 +304,10 @@ class BeatShellSettings(cfg.Configurable):
         info_message_attr: List[int] = [2] # "[weight=dim][slot/][/]"
         message_max_lines: int = 16
 
-        escape_attr: str = "2" # "[weight=dim][slot/][/]"
-        typeahead_attr: str = "2" # "[weight=dim][slot/][/]"
+        quotation: str = "[weight=dim]'[/]"
+        backslash: str = r"[weight=dim]\\[/]"
         whitespace: str = "[weight=dim]⌴[/]"
+        typeahead_attr: str = "2" # "[weight=dim][slot/][/]"
 
         suggestions_lines: int = 8
         suggestions_selected_attr: List[int] = [7]
@@ -1307,7 +1310,8 @@ class BeatPrompt:
         self.rich.add_pair_template("arg", f"[sgr={settings.text.token_argument_attr}][slot/][/]")
         self.rich.add_pair_template("emph", f"[sgr={settings.text.token_highlight_attr}][slot/][/]")
         self.rich.add_single_template("ws", settings.text.whitespace)
-        self.rich.add_pair_template("esc", f"[sgr={settings.text.escape_attr}][slot/][/]")
+        self.rich.add_single_template("qt", settings.text.quotation)
+        self.rich.add_single_template("bs", settings.text.backslash)
         self.rich.add_pair_template("typeahead", f"[sgr={settings.text.typeahead_attr}][slot/][/]")
 
     def register(self, renderer):
@@ -1483,9 +1487,10 @@ class BeatPrompt:
         caret_pos : int
             The position of caret.
         """
-        escape_attr     = self.settings.text.escape_attr
-        typeahead_attr  = self.settings.text.typeahead_attr
+        quotation       = self.settings.text.quotation
+        backslash       = self.settings.text.backslash
         whitespace      = self.settings.text.whitespace
+        typeahead_attr  = self.settings.text.typeahead_attr
 
         token_unknown_attr   = self.settings.text.token_unknown_attr
         token_command_attr   = self.settings.text.token_command_attr
@@ -1494,6 +1499,8 @@ class BeatPrompt:
         token_highlight_attr = self.settings.text.token_highlight_attr
 
         rich = term.RichTextParser()
+        quotation  = rich.render(rich.parse(quotation))
+        backslash  = rich.render(rich.parse(backslash))
         whitespace = rich.render(rich.parse(whitespace))
 
         # render buffer
@@ -1509,9 +1516,14 @@ class BeatPrompt:
                     if buffer[index] == " ":
                         buffer[index] = whitespace
 
-                # render escape
+                # render quotation and backslash
                 for index in ignored:
-                    buffer[index] = wcb.add_attr(buffer[index], escape_attr)
+                    if buffer[index] == "'":
+                        buffer[index] = quotation
+                    elif buffer[index] == "\\":
+                        buffer[index] = backslash
+                    else:
+                        assert False
 
                 # render unknown token
                 if type is None:
