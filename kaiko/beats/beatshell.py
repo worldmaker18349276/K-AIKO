@@ -1322,12 +1322,12 @@ class BeatPrompt:
     def output_handler(self):
         header_node = self.header_node()
         text_node = self.text_node()
-        hint_node = self.hint_node()
         render_node = self.render_node()
         modified_event = None
+        current_hint = None
         buffer = []
         tokens = []
-        with header_node, text_node, hint_node, render_node:
+        with header_node, text_node, render_node:
             (view, msg), time, width = yield
             while True:
                 # extract input state
@@ -1351,7 +1351,9 @@ class BeatPrompt:
                 text_data = text_node.send((buffer, tokens, typeahead, pos, highlighted, clean))
 
                 # draw hint
-                hint_node.send((msg, hint))
+                if hint is not current_hint:
+                    self.markup_hint(msg, hint)
+                    current_hint = hint
 
                 # render view
                 view = render_node.send((view, width, header_data, text_data))
@@ -1561,12 +1563,11 @@ class BeatPrompt:
 
             buffer, tokens, typeahead, pos, highlighted, clean = yield rendered_text, rendered_typeahead, caret_pos
 
-    @dn.datanode
-    def hint_node(self):
-        r"""The datanode to render hint.
+    def markup_hint(self, msg_node, hint):
+        r"""Render hint.
 
-        Receives
-        --------
+        Parameters
+        ----------
         msg_node : markups.Group
             The rendered hint.
         hint : InputWarn or InputMessage or InputSuggestions
@@ -1579,66 +1580,55 @@ class BeatPrompt:
         sugg_selected_attr = self.settings.text.suggestions_selected_attr
         sugg_bullet = self.settings.text.suggestions_bullet
 
-        current_hint = None
-        msg_node, hint = yield
-        while True:
-            # track changes of the hint
-            if hint is current_hint:
-                msg_node, hint = yield
-                continue
+        msg_node.children.clear()
 
-            current_hint = hint
-            msg_node.children.clear()
+        # draw hint
+        if hint is None:
+            pass
 
-            # draw hint
-            if hint is None:
-                pass
+        elif isinstance(hint, InputSuggestions):
+            sugg_start = hint.selected // sugg_lines * sugg_lines
+            sugg_end = sugg_start + sugg_lines
+            suggs = hint.suggestions[sugg_start:sugg_end]
+            for i, sugg in enumerate(suggs):
+                sugg = mu.Text(sugg)
+                if i == hint.selected-sugg_start:
+                    sugg = term.SGR([sugg], tuple(sugg_selected_attr))
+                sugg = mu.Group([mu.Text(sugg_bullet), sugg])
+                msg_node.children.append(sugg)
+                if i != len(suggs)-1:
+                    msg_node.children.append(mu.Text("\n"))
+            if sugg_start > 0:
+                msg_node.children.insert(0, mu.Text("…\n"))
+            if sugg_end < len(hint.suggestions):
+                msg_node.children.append(mu.Text("\n…"))
 
-            elif isinstance(hint, InputSuggestions):
-                sugg_start = hint.selected // sugg_lines * sugg_lines
-                sugg_end = sugg_start + sugg_lines
-                suggs = hint.suggestions[sugg_start:sugg_end]
-                for i, sugg in enumerate(suggs):
-                    sugg = mu.Text(sugg)
-                    if i == hint.selected-sugg_start:
-                        sugg = term.SGR([sugg], tuple(sugg_selected_attr))
-                    sugg = mu.Group([mu.Text(sugg_bullet), sugg])
-                    msg_node.children.append(sugg)
-                    if i != len(suggs)-1:
-                        msg_node.children.append(mu.Text("\n"))
-                if sugg_start > 0:
-                    msg_node.children.insert(0, mu.Text("…\n"))
-                if sugg_end < len(hint.suggestions):
-                    msg_node.children.append(mu.Text("\n…"))
+        elif isinstance(hint, (InputWarn, InputMessage)):
+            if hint.message:
+                msg = self.rich.parse(hint.message)
+                lines = 0
+                def trim_lines(text):
+                    nonlocal lines
+                    if lines >= message_max_lines:
+                        return ""
+                    res_string = []
+                    for ch in text.string:
+                        if ch == "\n":
+                            lines += 1
+                        res_string.append(ch)
+                        if lines == message_max_lines:
+                            res_string.append("…")
+                            break
+                    return mu.Text("".join(res_string))
+                msg = msg.traverse(mu.Text, trim_lines)
 
-            elif isinstance(hint, (InputWarn, InputMessage)):
-                if hint.message:
-                    msg = self.rich.parse(hint.message)
-                    lines = 0
-                    def trim_lines(text):
-                        nonlocal lines
-                        if lines >= message_max_lines:
-                            return ""
-                        res_string = []
-                        for ch in text.string:
-                            if ch == "\n":
-                                lines += 1
-                            res_string.append(ch)
-                            if lines == message_max_lines:
-                                res_string.append("…")
-                                break
-                        return mu.Text("".join(res_string))
-                    msg = msg.traverse(mu.Text, trim_lines)
+                if isinstance(hint, InputWarn):
+                    msg = term.SGR([msg], tuple(error_message_attr))
+                msg = term.SGR([msg], tuple(info_message_attr))
+                msg_node.children.append(msg)
 
-                    if isinstance(hint, InputWarn):
-                        msg = term.SGR([msg], tuple(error_message_attr))
-                    msg = term.SGR([msg], tuple(info_message_attr))
-                    msg_node.children.append(msg)
-
-            else:
-                raise TypeError
-
-            msg_node, hint = yield
+        else:
+            assert False
 
     @dn.datanode
     def render_node(self):
