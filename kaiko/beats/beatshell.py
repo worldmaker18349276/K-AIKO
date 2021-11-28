@@ -1525,53 +1525,53 @@ class BeatPrompt:
                     assert False
 
         # markup caret
-        buffer[pos] = Caret([buffer[pos]])
+        buffer[pos] = Caret((buffer[pos],))
 
-        markup = mu.Group([])
+        markup_children = []
         prev_index = 0
         for n, (_, type, mask, _) in enumerate(tokens):
             # markup delimiter
-            markup.children.extend(buffer[prev_index:mask.start])
+            markup_children.extend(buffer[prev_index:mask.start])
             prev_index = mask.stop
 
             # markup token
             if type is None:
                 if mask.stop < text_length or clean:
-                    token = self.rich.tags['unknown'](buffer[mask])
+                    token = self.rich.tags['unknown'](tuple(buffer[mask]))
                 else:
-                    token = mu.Group(buffer[mask])
+                    token = mu.Group(tuple(buffer[mask]))
             elif type is cmd.TOKEN_TYPE.COMMAND:
-                token = self.rich.tags['cmd'](buffer[mask])
+                token = self.rich.tags['cmd'](tuple(buffer[mask]))
             elif type is cmd.TOKEN_TYPE.KEYWORD:
-                token = self.rich.tags['kw'](buffer[mask])
+                token = self.rich.tags['kw'](tuple(buffer[mask]))
             elif type is cmd.TOKEN_TYPE.ARGUMENT:
-                token = self.rich.tags['arg'](buffer[mask])
+                token = self.rich.tags['arg'](tuple(buffer[mask]))
             else:
                 assert False
 
             # highlight
             if highlighted == n:
-                token = self.rich.tags['emph']([token])
+                token = self.rich.tags['emph']((token,))
 
-            markup.children.append(token)
+            markup_children.append(token)
 
         # markup typeahead
         if typeahead_length:
-            markup.children.extend(buffer[prev_index:typeahead_mask.start])
-            token = self.rich.tags['typeahead'](buffer[typeahead_mask])
-            markup.children.append(token)
+            markup_children.extend(buffer[prev_index:typeahead_mask.start])
+            token = self.rich.tags['typeahead'](tuple(buffer[typeahead_mask]))
+            markup_children.append(token)
         else:
-            markup.children.extend(buffer[prev_index:])
+            markup_children.extend(buffer[prev_index:])
 
-        markup = markup.expand()
+        markup = mu.Group(tuple(markup_children)).expand()
         return markup, text_width, typeahead_width, caret_dis
 
-    def markup_hint(self, msg_node, hint):
+    def markup_hint(self, messages, hint):
         r"""Render hint.
 
         Parameters
         ----------
-        msg_node : markups.Group
+        messages : list of Markup
             The rendered hint.
         hint : InputWarn or InputMessage or InputSuggestions
         """
@@ -1585,7 +1585,7 @@ class BeatPrompt:
             self.rich.parse(sugg_items[1], slotted=True),
         )
 
-        msg_node.children.clear()
+        messages.clear()
 
         # draw hint
         if hint is None:
@@ -1601,13 +1601,13 @@ class BeatPrompt:
                     sugg = mu.replace_slot(sugg_items[1], sugg)
                 else:
                     sugg = mu.replace_slot(sugg_items[0], sugg)
-                msg_node.children.append(sugg)
+                messages.append(sugg)
                 if i != len(suggs)-1:
-                    msg_node.children.append(mu.Text("\n"))
+                    messages.append(mu.Text("\n"))
             if sugg_start > 0:
-                msg_node.children.insert(0, mu.Text("…\n"))
+                messages.insert(0, mu.Text("…\n"))
             if sugg_end < len(hint.suggestions):
-                msg_node.children.append(mu.Text("\n…"))
+                messages.append(mu.Text("\n…"))
 
         elif isinstance(hint, (InputWarn, InputMessage)):
             if hint.message:
@@ -1629,10 +1629,10 @@ class BeatPrompt:
                 msg = msg.traverse(mu.Text, trim_lines)
 
                 if isinstance(hint, InputWarn):
-                    msg = self.rich.tags['error']([msg])
-                msg = self.rich.tags['info']([msg])
+                    msg = self.rich.tags['error']((msg,))
+                msg = self.rich.tags['info']((msg,))
                 msg = msg.expand()
-                msg_node.children.append(msg)
+                messages.append(msg)
 
         else:
             assert False
@@ -1707,7 +1707,7 @@ class BeatPrompt:
             view, width, (icon, marker, caret), (markup, text_width, typeahead_width, caret_dis) = yield view
 
 
-@dataclass
+@dataclass(frozen=True)
 class Caret(mu.Pair):
     name = "caret"
 

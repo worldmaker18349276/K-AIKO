@@ -1,5 +1,6 @@
 import re
 import ast
+from typing import Sequence
 import dataclasses
 
 # pair: [tag=param]...[/]
@@ -17,7 +18,7 @@ class MarkupParseError(Exception):
     pass
 
 def parse_markup(markup_str, tags):
-    stack = [Group([])]
+    stack = [(Group(()), [])]
 
     for match in re.finditer(r"(?P<tag>\[[^\]]*\])|(?P<text>([^\[\\]|\\[\s\S])+)", markup_str):
         tag = match.group('tag')
@@ -34,13 +35,15 @@ def parse_markup(markup_str, tags):
                 raw = ast.literal_eval("'''" + raw + "'''")
             except SyntaxError:
                 raise MarkupParseError(f"invalid text: {repr(text)}")
-            stack[-1].children.append(Text(raw))
+            stack[-1][1].append(Text(raw))
             continue
 
         if tag == "[/]": # [/]
             if len(stack) <= 1:
                 raise MarkupParseError(f"too many closing tag: [/]")
-            stack.pop()
+            markup, children = stack.pop()
+            markup = dataclasses.replace(markup, children=tuple(children))
+            stack[-1][1].append(markup)
             continue
 
         match = re.match("^\[(\w+)(?:=(.*))?/\]$", tag) # [tag=param/]
@@ -49,8 +52,8 @@ def parse_markup(markup_str, tags):
             param = match.group(2)
             if name not in tags or not issubclass(tags[name], Single):
                 raise MarkupParseError(f"unknown tag: [{name}/]")
-            res = tags[name].parse(param)
-            stack[-1].children.append(res)
+            markup = tags[name].parse(param)
+            stack[-1][1].append(markup)
             continue
 
         match = re.match("^\[(\w+)(?:=(.*))?\]$", tag) # [tag=param]
@@ -59,14 +62,19 @@ def parse_markup(markup_str, tags):
             param = match.group(2)
             if name not in tags or not issubclass(tags[name], Pair):
                 raise MarkupParseError(f"unknown tag: [{name}]")
-            res = tags[name].parse(param)
-            stack[-1].children.append(res)
-            stack.append(res)
+            markup = tags[name].parse(param)
+            stack.append((markup, []))
             continue
 
         raise MarkupParseError(f"invalid tag: {tag}")
 
-    return stack[0]
+    for i in range(len(stack)-1, 0, -1):
+        markup, children = stack[i]
+        markup = dataclasses.replace(markup, children=tuple(children))
+        stack[i-1][1].append(markup)
+    markup, children = stack[0]
+    markup = dataclasses.replace(markup, children=tuple(children))
+    return markup
 
 def escape(text):
     return text.replace("[", "\\[").replace("\\", r"\\")
@@ -84,7 +92,7 @@ class Markup:
     def traverse(self, markup_type, func):
         raise NotImplementedError
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Text(Markup):
     string: str
 
@@ -107,9 +115,9 @@ class Text(Markup):
         else:
             return self
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Group(Markup):
-    children: list
+    children: Sequence[Markup]
 
     @classmethod
     def parse(clz, param):
@@ -120,17 +128,17 @@ class Group(Markup):
             yield from child._represent()
 
     def expand(self):
-        return dataclasses.replace(self, children=[child.expand() for child in self.children])
+        return dataclasses.replace(self, children=tuple(child.expand() for child in self.children))
 
     def traverse(self, markup_type, func):
-        return dataclasses.replace(self, children=[child.traverse(markup_type, func) for child in self.children])
+        return dataclasses.replace(self, children=tuple(child.traverse(markup_type, func) for child in self.children))
 
 class Tag(Markup):
     @classmethod
     def parse(clz, param):
         raise NotImplementedError
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Single(Tag):
     # name
 
@@ -149,10 +157,10 @@ class Single(Tag):
         else:
             return self
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Pair(Tag):
     # name
-    children: list
+    children: Sequence[Markup]
 
     @property
     def param(self):
@@ -167,17 +175,17 @@ class Pair(Tag):
         yield f"[/]"
 
     def expand(self):
-        return dataclasses.replace(self, children=[child.expand() for child in self.children])
+        return dataclasses.replace(self, children=tuple(child.expand() for child in self.children))
 
     def traverse(self, markup_type, func):
         if isinstance(self, markup_type):
             return func(self)
         else:
-            return dataclasses.replace(self, children=[child.traverse(markup_type, func) for child in self.children])
+            return dataclasses.replace(self, children=tuple(child.traverse(markup_type, func) for child in self.children))
 
 
 # template
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class SingleTemplate(Single):
     # name
     # _template
@@ -195,7 +203,7 @@ class SingleTemplate(Single):
     def expand(self):
         return self._template.expand()
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Slot(Single):
     name = "slot"
 
@@ -209,7 +217,7 @@ class Slot(Single):
     def param(self):
         return None
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class PairTemplate(Pair):
     # name
     # _template
@@ -218,7 +226,7 @@ class PairTemplate(Pair):
     def parse(clz, param):
         if param is not None:
             raise MarkupParseError("no parameter is needed for template tag")
-        return clz([])
+        return clz(())
 
     @property
     def param(self):
@@ -239,9 +247,12 @@ def replace_slot(template, markup):
 
 def make_single_template(name, template, tags):
     temp = parse_markup(template, tags=tags)
-    return type(name.capitalize(), (SingleTemplate,), dict(name=name, _template=temp))
+    clz = type(name.capitalize(), (SingleTemplate,), dict(name=name, _template=temp))
+    clz = dataclasses.dataclass(frozen=True)(clz)
+    return clz
 
 def make_pair_template(name, template, tags):
     temp = parse_markup(template, tags=dict(tags, slot=Slot))
-    return type(name.capitalize(), (PairTemplate,), dict(name=name, _template=temp))
-
+    clz = type(name.capitalize(), (PairTemplate,), dict(name=name, _template=temp))
+    clz = dataclasses.dataclass(frozen=True)(clz)
+    return clz

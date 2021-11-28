@@ -195,7 +195,7 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
 
 
 # ctrl code
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class CSI(mu.Single):
     name = "csi"
     code: str
@@ -217,7 +217,7 @@ class CSI(mu.Single):
     def __str__(self):
         return self.ansi_code
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Move(mu.Single):
     name = "move"
     x: int
@@ -247,7 +247,7 @@ class Move(mu.Single):
             res.append(CSI(f"{self.y}B"))
         elif self.y < 0:
             res.append(CSI(f"{-self.y}A"))
-        return mu.Group(res)
+        return mu.Group(tuple(res))
 
     def __str__(self):
         res = ""
@@ -261,7 +261,7 @@ class Move(mu.Single):
             res += f"\x1b[{-self.y}A"
         return res
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Pos(mu.Single):
     name = "pos"
     x: int
@@ -287,7 +287,7 @@ class Pos(mu.Single):
     def __str__(self):
         return f"\x1b[{self.y+1};{self.x+1}H"
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Scroll(mu.Single):
     name = "scroll"
     x: int
@@ -312,7 +312,7 @@ class Scroll(mu.Single):
         elif self.x < 0:
             return CSI(f"{-self.x}S")
         else:
-            return mu.Group([])
+            return mu.Group(())
 
     def __str__(self):
         if self.x > 0:
@@ -330,7 +330,7 @@ class ClearRegion(enum.Enum):
     to_beginning = "1J"
     screen = "2J"
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Clear(mu.Single):
     name = "clear"
     region: ClearRegion
@@ -357,7 +357,7 @@ class Clear(mu.Single):
 
 
 # attr code
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class SGR(mu.Pair):
     name = "sgr"
     attr: tuple
@@ -365,13 +365,13 @@ class SGR(mu.Pair):
     @classmethod
     def parse(clz, param):
         if param is None:
-            return clz([], ())
+            return clz((), ())
 
         try:
             attr = tuple(int(n or "0") for n in param.split(";"))
         except ValueError:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
-        return clz([], attr)
+        return clz((), attr)
 
     @property
     def param(self):
@@ -389,7 +389,7 @@ class SGR(mu.Pair):
     def __str__(self):
         return self.ansi_delimiters[0] or ""
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class SimpleAttr(mu.Pair):
     option: str
 
@@ -403,45 +403,45 @@ class SimpleAttr(mu.Pair):
             param = next(iter(clz._options.keys()))
         if param not in clz._options:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
-        return clz([], param)
+        return clz((), param)
 
     def expand(self):
-        return SGR([child.expand() for child in self.children], (self._options[self.option],))
+        return SGR(tuple(child.expand() for child in self.children), (self._options[self.option],))
 
     def __str__(self):
         return f"\x1b[{self._options[self.option]}m"
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Reset(SimpleAttr):
     name = "reset"
     _options = {"on": 0}
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Weight(SimpleAttr):
     name = "weight"
     _options = {"bold": 1, "dim": 2, "normal": 22}
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Italic(SimpleAttr):
     name = "italic"
     _options = {"on": 3, "off": 23}
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Underline(SimpleAttr):
     name = "underline"
     _options = {"on": 4, "double": 21, "off": 24}
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Strike(SimpleAttr):
     name = "strike"
     _options = {"on": 9, "off": 29}
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Blink(SimpleAttr):
     name = "blink"
     _options = {"on": 5, "off": 25}
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Invert(SimpleAttr):
     name = "invert"
     _options = {"on": 7, "off": 27}
@@ -517,7 +517,7 @@ class Palette(enum.Enum):
 
 color_names = [color.value for color in Palette]
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Color(mu.Pair):
     name = "color"
     _palette = {
@@ -550,7 +550,7 @@ class Color(mu.Pair):
             rgb = Palette(param) if param in color_names else int(param, 16)
         except ValueError:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
-        return clz([], rgb)
+        return clz((), rgb)
 
     @property
     def param(self):
@@ -558,27 +558,27 @@ class Color(mu.Pair):
 
     def expand(self):
         if isinstance(self.rgb, Palette):
-            return SGR([child.expand() for child in self.children], (self._palette[self.rgb],))
+            return SGR(tuple(child.expand() for child in self.children), (self._palette[self.rgb],))
 
         r = (self.rgb & 0xff0000) >> 16
         g = (self.rgb & 0x00ff00) >> 8
         b = (self.rgb & 0x0000ff)
         if support_truecolor:
-            return SGR([child.expand() for child in self.children], (38,2,r,g,b))
+            return SGR(tuple(child.expand() for child in self.children), (38,2,r,g,b))
         elif support_256color:
             c = find_256color((r,g,b))
-            return SGR([child.expand() for child in self.children], (38,5,c))
+            return SGR(tuple(child.expand() for child in self.children), (38,5,c))
         elif support_16color:
             c = find_16color((r,g,b))
             if c < 8:
                 c += 30
             else:
                 c += 82
-            return SGR([child.expand() for child in self.children], (c,))
+            return SGR(tuple(child.expand() for child in self.children), (c,))
         else:
-            return Group([child.expand() for child in self.children])
+            return Group(tuple(child.expand() for child in self.children))
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class BgColor(mu.Pair):
     name = "bgcolor"
     _palette = {
@@ -611,7 +611,7 @@ class BgColor(mu.Pair):
             rgb = Palette(param) if param in color_names else int(param, 16)
         except ValueError:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
-        return clz([], rgb)
+        return clz((), rgb)
 
     @property
     def param(self):
@@ -619,25 +619,25 @@ class BgColor(mu.Pair):
 
     def expand(self):
         if isinstance(self.rgb, Palette):
-            return SGR([child.expand() for child in self.children], (self._palette[self.rgb],))
+            return SGR(tuple(child.expand() for child in self.children), (self._palette[self.rgb],))
 
         r = (self.rgb & 0xff0000) >> 16
         g = (self.rgb & 0x00ff00) >> 8
         b = (self.rgb & 0x0000ff)
         if support_truecolor:
-            return SGR([child.expand() for child in self.children], (48,2,r,g,b))
+            return SGR(tuple(child.expand() for child in self.children), (48,2,r,g,b))
         elif support_256color:
             c = find_256color((r,g,b))
-            return SGR([child.expand() for child in self.children], (48,5,c))
+            return SGR(tuple(child.expand() for child in self.children), (48,5,c))
         elif support_16color:
             c = find_16color((r,g,b))
             if c < 8:
                 c += 40
             else:
                 c += 92
-            return SGR([child.expand() for child in self.children], (c,))
+            return SGR(tuple(child.expand() for child in self.children), (c,))
         else:
-            return Group([child.expand() for child in self.children])
+            return Group(tuple(child.expand() for child in self.children))
 
 
 # others
@@ -650,7 +650,7 @@ def widthof(text):
         width += w
     return width
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Wide(mu.Single):
     name = "wide"
     char: str
@@ -852,7 +852,7 @@ class RichTextParser:
 
 
 # bar position
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class X(mu.Single):
     name = "x"
     x: int
@@ -871,7 +871,7 @@ class X(mu.Single):
     def param(self):
         return str(self.x)
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class DX(mu.Single):
     name = "dx"
     dx: int
@@ -890,7 +890,7 @@ class DX(mu.Single):
     def param(self):
         return str(self.dx)
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Restore(mu.Pair):
     name = "restore"
 
@@ -898,13 +898,13 @@ class Restore(mu.Pair):
     def parse(clz, param):
         if param is not None:
             raise mu.MarkupParseError(f"no parameter is needed for tag [{clz.name}]")
-        return clz([])
+        return clz(())
 
     @property
     def param(self):
         return None
 
-@dataclasses.dataclass
+@dataclasses.dataclass(frozen=True)
 class Mask(mu.Pair):
     name = "mask"
     mask: slice
@@ -915,7 +915,7 @@ class Mask(mu.Pair):
             start, stop = [int(p) if p else None for p in (param or ":").split(":")]
         except ValueError:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
-        return clz([], slice(start, stop))
+        return clz((), slice(start, stop))
 
     @property
     def param(self):

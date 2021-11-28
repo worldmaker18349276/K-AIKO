@@ -421,8 +421,8 @@ class Beatbar:
                 sight_ap = sight_appearances[0]
 
             return (
-                mu.Group([term.Restore([perf_ap[0]]), sight_ap[0]]),
-                mu.Group([term.Restore([perf_ap[1]]), sight_ap[1]])
+                mu.Group((term.Restore((perf_ap[0],)), sight_ap[0])),
+                mu.Group((term.Restore((perf_ap[1],)), sight_ap[1]))
             )
 
         return _default_sight
@@ -630,10 +630,10 @@ class AccuracyMeterWidget:
                 else:
                     hit[i] = max(0.0, hit[i] - decay)
 
-            return mu.Group([
-                term.SGR([mu.Text("▐")], (48, 5, 232+int(i*(nlevel-1)), 38, 5, 232+int(j*(nlevel-1))))
+            return mu.Group(tuple(
+                term.SGR((mu.Text("▐"),), (48, 5, 232+int(i*(nlevel-1)), 38, 5, 232+int(j*(nlevel-1))))
                 for i, j in zip(hit[::2], hit[1::2])
-            ])
+            ))
 
         yield
         return widget_func

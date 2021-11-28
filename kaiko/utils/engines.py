@@ -466,31 +466,31 @@ class Renderer:
         clear_line = str(term.Clear(term.ClearRegion.to_right))
         clear_below = str(term.Clear(term.ClearRegion.to_end))
         width = 0
-        msg = mu.Group([])
-        curr_msg = mu.Group(list(msg.children))
+        msgs = []
+        curr_msgs = list(msgs)
         with scheduler:
             shown, resized, time, size = yield
             while True:
                 width = size.columns
                 view = [" "]*width
                 try:
-                    view, msg = scheduler.send(((view, msg), time, width))
+                    view, msgs = scheduler.send(((view, msgs), time, width))
                 except StopIteration:
                     return
 
                 # track changes of the message
                 view_str = "".join(view).rstrip()
-                if not resized and curr_msg == msg:
+                if not resized and curr_msgs == msgs:
                     res_text = f"\r{clear_line}{view_str}\r"
-                elif not msg.children:
+                elif not msgs:
                     res_text = f"\r{clear_below}{view_str}\r"
                 else:
-                    msg_text = term.RichTextParser.render_less(mu.Group([mu.Text("\n"), msg]), size)
+                    msg_text = term.RichTextParser.render_less(mu.Group((mu.Text("\n"), *msgs)), size)
                     res_text = f"\r{clear_below}{view_str}\r{msg_text}"
 
                 shown, resized, time, size = yield res_text
                 if shown:
-                    curr_msg = mu.Group(list(msg.children))
+                    curr_msgs = list(msgs)
 
     @staticmethod
     @dn.datanode
