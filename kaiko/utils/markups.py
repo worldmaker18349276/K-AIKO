@@ -225,14 +225,17 @@ class PairTemplate(Pair):
         return None
 
     def expand(self):
-        injected = False
-        def inject_once(slot):
-            nonlocal injected
-            if injected:
-                return Group([])
-            injected = True
-            return Group(self.children)
-        return self._template.traverse(Slot, inject_once).expand()
+        return replace_slot(self._template, Group(self.children)).expand()
+
+def replace_slot(template, markup):
+    injected = False
+    def inject_once(slot):
+        nonlocal injected
+        if injected:
+            return Group([])
+        injected = True
+        return markup
+    return template.traverse(Slot, inject_once)
 
 def make_single_template(name, template, tags):
     temp = parse_markup(template, tags=tags)

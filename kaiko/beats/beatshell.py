@@ -1598,9 +1598,9 @@ class BeatPrompt:
             for i, sugg in enumerate(suggs):
                 sugg = mu.Text(sugg)
                 if i == hint.selected-sugg_start:
-                    sugg = sugg_items[1].traverse(mu.Slot, lambda _: sugg)
+                    sugg = mu.replace_slot(sugg_items[1], sugg)
                 else:
-                    sugg = sugg_items[0].traverse(mu.Slot, lambda _: sugg)
+                    sugg = mu.replace_slot(sugg_items[0], sugg)
                 msg_node.children.append(sugg)
                 if i != len(suggs)-1:
                     msg_node.children.append(mu.Text("\n"))
@@ -1689,7 +1689,7 @@ class BeatPrompt:
 
             # draw caret
             if caret is not None:
-                markup = markup.traverse(Caret, lambda m: caret.traverse(mu.Slot, lambda _: mu.Group(m.children)))
+                markup = markup.traverse(Caret, lambda m: mu.replace_slot(caret, mu.Group(m.children)))
             else:
                 markup = markup.traverse(Caret, lambda m: mu.Group(m.children))
 

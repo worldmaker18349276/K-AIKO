@@ -550,7 +550,7 @@ class SpectrumWidget:
         def widget_func(time, ran):
             width = len(ran)
             text = mu.Text(f"{self.spectrum:^{width}.{width}s}")
-            return template.traverse(mu.Slot, lambda _: text)
+            return mu.replace_slot(template, text)
 
         yield
         return widget_func
@@ -589,7 +589,7 @@ class VolumeIndicatorWidget:
         def widget_func(time, ran):
             width = len(ran)
             text = mu.Text("▮" * int(self.volume * width))
-            return template.traverse(mu.Slot, lambda _: text)
+            return mu.replace_slot(template, text)
 
         yield
         return widget_func
@@ -691,18 +691,18 @@ class ScoreWidget:
             if width == 0:
                 return mu.Text("")
             if width == 1:
-                return template.traverse(mu.Slot, lambda _: mu.Text("|"))
+                return mu.replace_slot(template, mu.Text("|"))
             if width == 2:
-                return template.traverse(mu.Slot, lambda _: mu.Text("[]"))
+                return mu.replace_slot(template, mu.Text("[]"))
             if width <= 7:
                 score_str = uint_format(score, width-2, True)
-                return template.traverse(mu.Slot, lambda _: mu.Text(f"[{score_str}]"))
+                return mu.replace_slot(template, mu.Text(f"[{score_str}]"))
 
             w1 = max((width-3)//2, 5)
             w2 = (width-3) - w1
             score_str = uint_format(score, w1, True)
             full_score_str = uint_format(full_score, w2, True)
-            return template.traverse(mu.Slot, lambda _: mu.Text(f"[{score_str}/{full_score_str}]"))
+            return mu.replace_slot(template, mu.Text(f"[{score_str}/{full_score_str}]"))
 
         yield
         return widget_func
@@ -728,18 +728,18 @@ class ProgressWidget:
             if width == 0:
                 return mu.Text("")
             if width == 1:
-                return template.traverse(mu.Slot, lambda _: mu.Text("|"))
+                return mu.replace_slot(template, mu.Text("|"))
             if width == 2:
-                return template.traverse(mu.Slot, lambda _: mu.Text("[]"))
+                return mu.replace_slot(template, mu.Text("[]"))
             if width <= 7:
                 progress_str = pc_format(progress, width-2)
-                return template.traverse(mu.Slot, lambda _: mu.Text(f"[{progress_str}]"))
+                return mu.replace_slot(template, mu.Text(f"[{progress_str}]"))
 
             w1 = max((width-3)//2, 5)
             w2 = (width-3) - w1
             progress_str = pc_format(progress, w1)
             time_str = time_format(time, w2)
-            return template.traverse(mu.Slot, lambda _: mu.Text(f"[{progress_str}/{time_str}]"))
+            return mu.replace_slot(template, mu.Text(f"[{progress_str}/{time_str}]"))
 
         yield
         return widget_func
