@@ -236,6 +236,9 @@ class BeatShellSettings(cfg.Configurable):
         marker_width : int
             The text width of marker.
 
+        input_margin : int
+            The width of margin of input field.
+
         caret_attr : Tuple[str, str]
             The text attribute of the normal/blinking-style caret.
         caret_blink_ratio : float
@@ -258,6 +261,8 @@ class BeatShellSettings(cfg.Configurable):
 
         markers: Tuple[str, str] = ("❯ ", "[weight=bold]❯ [/]")
         marker_width: int = 2
+
+        input_margin: int = 2
 
         caret_attr: Tuple[str, str] = ("7;2", "7;1")
         # carets = "[weight=dim][invert][slot/][/][/]", "[weight=bold][invert][slot/][/][/]"
@@ -1652,6 +1657,7 @@ class BeatPrompt:
         """
         icon_width = self.settings.prompt.icon_width
         marker_width = self.settings.prompt.marker_width
+        input_margin = self.settings.prompt.input_margin
         icon_ran = slice(None, icon_width)
         marker_ran = slice(icon_width, icon_width+marker_width)
         input_ran = slice(icon_width+marker_width, None)
@@ -1666,12 +1672,18 @@ class BeatPrompt:
             _, typeahead_width = wcb.textrange1(0, typeahead)
 
             # adjust input offset
-            if text_width - input_offset < input_width - 1:
-                input_offset = max(0, text_width-input_width+1)
-            if caret_pos - input_offset >= input_width:
-                input_offset = caret_pos - input_width + 1
-            elif caret_pos - input_offset < 0:
-                input_offset = caret_pos
+            if text_width - input_offset < input_width - 1 - input_margin:
+                # from: ......[....I...    ]
+                #   to: ...[.......I... ]
+                input_offset = max(0, text_width-input_width+1+input_margin)
+            if caret_pos - input_offset >= input_width - input_margin:
+                # from: ...[............]..I....
+                #   to: ........[..........I.]..
+                input_offset = caret_pos - input_width + input_margin + 1
+            elif caret_pos - input_offset - input_margin < 0:
+                # from: .....I...[............]...
+                #   to: ...[.I..........].........
+                input_offset = max(caret_pos - input_margin, 0)
 
             # draw input
             wcb.addtext1(view, width, input_ran.start-input_offset, text+typeahead, input_ran)
