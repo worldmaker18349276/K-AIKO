@@ -270,10 +270,10 @@ class BeatShellSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        error_message_attr : list of int
-            The text attribute of the error message.
-        info_message_attr : list of int
-            The text attribute of the info message.
+        error_message : str
+            The markup template for the error message.
+        info_message : str
+            The markup template for the info message.
         message_max_lines : int
             The maximum number of lines of the message.
 
@@ -283,8 +283,8 @@ class BeatShellSettings(cfg.Configurable):
             The replacement text for backslashes.
         whitespace : str
             The replacement text for escaped whitespaces.
-        typeahead_attr : str
-            The text attribute of the type-ahead.
+        typeahead : str
+            The markup template for the type-ahead.
 
         suggestions_lines : int
             The maximum number of lines of the suggestions.
@@ -293,36 +293,36 @@ class BeatShellSettings(cfg.Configurable):
         suggestions_bullet : str
             The list bullet of the suggestions.
 
-        token_unknown_attr : str
-            The text attribute of the unknown token.
-        token_command_attr : str
-            The text attribute of the command token.
-        token_keyword_attr : str
-            The text attribute of the keyword token.
-        token_argument_attr : str
-            The text attribute of the argument token.
-        token_highlight_attr : str
-            The text attribute of the highlighted token.
+        token_unknown : str
+            The markup template for the unknown token.
+        token_command : str
+            The markup template for the command token.
+        token_keyword : str
+            The markup template for the keyword token.
+        token_argument : str
+            The markup template for the argument token.
+        token_highlight : str
+            The markup template for the highlighted token.
         """
-        error_message_attr: List[int] = [31] # "[color=red][slot/][/]"
-        info_message_attr: List[int] = [2] # "[weight=dim][slot/][/]"
+        error_message: str = "[color=red][slot/][/]"
+        info_message: str = "[weight=dim][slot/][/]"
         message_max_lines: int = 16
 
         quotation: str = "[weight=dim]'[/]"
         backslash: str = r"[weight=dim]\\[/]"
         whitespace: str = "[weight=dim]⌴[/]"
-        typeahead_attr: str = "2" # "[weight=dim][slot/][/]"
+        typeahead: str = "[weight=dim][slot/][/]"
 
         suggestions_lines: int = 8
         suggestions_selected_attr: List[int] = [7]
         suggestions_bullet: str = "• "
         # suggestion_items = "• [slot/]", "• [invert][slot/][/]"
 
-        token_unknown_attr: str = "31" # "[color=red][slot/][/]"
-        token_command_attr: str = "94" # "[color=bright_blue][slot/][/]"
-        token_keyword_attr: str = "95" # "[color=bright_magenta][slot/][/]"
-        token_argument_attr: str = "92" # "[color=bright_green][slot/][/]"
-        token_highlight_attr: str = "4" # "[underline][slot/][/]"
+        token_unknown: str = "[color=red][slot/][/]"
+        token_command: str = "[color=bright_blue][slot/][/]"
+        token_keyword: str = "[color=bright_magenta][slot/][/]"
+        token_argument: str = "[color=bright_green][slot/][/]"
+        token_highlight: str = "[underline][slot/][/]"
 
     debug_monitor: bool = False
 
@@ -1308,15 +1308,17 @@ class BeatPrompt:
         self.tempo = None
 
         self.rich = term.RichTextParser()
-        self.rich.add_pair_template("unknown", f"[sgr={settings.text.token_unknown_attr}][slot/][/]")
-        self.rich.add_pair_template("cmd", f"[sgr={settings.text.token_command_attr}][slot/][/]")
-        self.rich.add_pair_template("kw", f"[sgr={settings.text.token_keyword_attr}][slot/][/]")
-        self.rich.add_pair_template("arg", f"[sgr={settings.text.token_argument_attr}][slot/][/]")
-        self.rich.add_pair_template("emph", f"[sgr={settings.text.token_highlight_attr}][slot/][/]")
+        self.rich.add_pair_template("error", settings.text.error_message)
+        self.rich.add_pair_template("info", settings.text.info_message)
+        self.rich.add_pair_template("unknown", settings.text.token_unknown)
+        self.rich.add_pair_template("cmd", settings.text.token_command)
+        self.rich.add_pair_template("kw", settings.text.token_keyword)
+        self.rich.add_pair_template("arg", settings.text.token_argument)
+        self.rich.add_pair_template("emph", settings.text.token_highlight)
         self.rich.add_single_template("ws", settings.text.whitespace)
         self.rich.add_single_template("qt", settings.text.quotation)
         self.rich.add_single_template("bs", settings.text.backslash)
-        self.rich.add_pair_template("typeahead", f"[sgr={settings.text.typeahead_attr}][slot/][/]")
+        self.rich.add_pair_template("typeahead", settings.text.typeahead)
 
     def register(self, renderer):
         renderer.add_drawer(self.output_handler())
@@ -1580,8 +1582,6 @@ class BeatPrompt:
         hint : InputWarn or InputMessage or InputSuggestions
         """
         message_max_lines = self.settings.text.message_max_lines
-        error_message_attr = self.settings.text.error_message_attr
-        info_message_attr = self.settings.text.info_message_attr
 
         sugg_lines = self.settings.text.suggestions_lines
         sugg_selected_attr = self.settings.text.suggestions_selected_attr
@@ -1630,8 +1630,9 @@ class BeatPrompt:
                 msg = msg.traverse(mu.Text, trim_lines)
 
                 if isinstance(hint, InputWarn):
-                    msg = term.SGR([msg], tuple(error_message_attr))
-                msg = term.SGR([msg], tuple(info_message_attr))
+                    msg = self.rich.tags['error']([msg])
+                msg = self.rich.tags['info']([msg])
+                msg = msg.expand()
                 msg_node.children.append(msg)
 
         else:
