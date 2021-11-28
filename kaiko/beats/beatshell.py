@@ -238,8 +238,8 @@ class BeatShellSettings(cfg.Configurable):
         input_margin : int
             The width of margin of input field.
 
-        caret_attr : Tuple[str, str]
-            The text attribute of the normal/blinking-style caret.
+        caret : Tuple[str, str, str]
+            The markup template of the normal/blinking/highlighted-style caret.
         caret_blink_ratio : float
             The ratio to blink.
         """
@@ -263,8 +263,7 @@ class BeatShellSettings(cfg.Configurable):
 
         input_margin: int = 2
 
-        caret_attr: Tuple[str, str] = ("7;2", "7;1")
-        # carets = "[weight=dim][invert][slot/][/][/]", "[weight=bold][invert][slot/][/][/]"
+        caret: Tuple[str, str, str] = ("[slot/]", "[weight=dim][invert][slot/][/][/]", "[weight=bold][invert][slot/][/][/]")
         caret_blink_ratio: float = 0.3
 
     class text(cfg.Configurable):
@@ -1409,17 +1408,23 @@ class BeatPrompt:
         return marker_func
 
     def get_caret_func(self):
-        caret_attr = self.settings.prompt.caret_attr
+        caret = self.settings.prompt.caret
         caret_blink_ratio = self.settings.prompt.caret_blink_ratio
+
+        markuped_caret = [
+            self.rich.parse(caret[0], slotted=True),
+            self.rich.parse(caret[1], slotted=True),
+            self.rich.parse(caret[2], slotted=True),
+        ]
 
         def caret_func(period, force=False):
             if force or period % 1 < caret_blink_ratio:
                 if period % 4 < 1:
-                    return caret_attr[1]
+                    return markuped_caret[2]
                 else:
-                    return caret_attr[0]
+                    return markuped_caret[1]
             else:
-                return None
+                return markuped_caret[0]
 
         return caret_func
 
@@ -1684,7 +1689,7 @@ class BeatPrompt:
 
             # draw caret
             if caret is not None:
-                markup = markup.traverse(Caret, lambda m: term.SGR(m.children, tuple(int(c) for c in caret.split(";"))))
+                markup = markup.traverse(Caret, lambda m: caret.traverse(mu.Slot, lambda _: mu.Group(m.children)))
             else:
                 markup = markup.traverse(Caret, lambda m: mu.Group(m.children))
 
