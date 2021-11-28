@@ -641,6 +641,15 @@ class BgColor(mu.Pair):
 
 
 # others
+def widthof(text):
+    width = 0
+    for ch in text:
+        w = wcwidth.wcwidth(ch, unicode_version)
+        if w == -1:
+            return -1
+        width += w
+    return width
+
 @dataclasses.dataclass
 class Wide(mu.Single):
     name = "wide"

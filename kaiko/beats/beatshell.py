@@ -1,14 +1,13 @@
 import os
 from enum import Enum
 import functools
+import itertools
 import re
 import threading
 from typing import List, Set, Tuple, Dict
 from dataclasses import dataclass
-import wcwidth
 from kaiko.utils import datanodes as dn
 from kaiko.utils import biparsers as bp
-from kaiko.utils import wcbuffers as wcb
 from kaiko.utils import config as cfg
 from kaiko.utils import markups as mu
 from kaiko.utils import terminals as term
@@ -744,7 +743,7 @@ class BeatInput:
             del self.buffer[self.pos-1]
             self.pos = self.pos-1
 
-        if wcwidth.wcswidth("".join(self.buffer)) == -1:
+        if term.widthof(self.buffer) == -1:
             raise ValueError("invalid text to insert: " + repr("".join(self.buffer)))
 
         self.buffer[self.pos:self.pos] = text
@@ -1326,13 +1325,12 @@ class BeatPrompt:
     @dn.datanode
     def output_handler(self):
         header_node = self.header_node()
-        text_node = self.text_node()
         render_node = self.render_node()
         modified_event = None
         current_hint = None
         buffer = []
         tokens = []
-        with header_node, text_node, render_node:
+        with header_node, render_node:
             (view, msg), time, width = yield
             while True:
                 # extract input state
@@ -1353,7 +1351,7 @@ class BeatPrompt:
                 header_data = header_node.send((clean, time))
 
                 # draw text
-                text_data = text_node.send((buffer, tokens, typeahead, pos, highlighted, clean))
+                text_data = self.markup_text(buffer, tokens, typeahead, pos, highlighted, clean)
 
                 # draw hint
                 if hint is not current_hint:
@@ -1471,12 +1469,11 @@ class BeatPrompt:
             clean, time = yield icon, marker, caret
             period = (time - self.t0)/(60/self.tempo)
 
-    @dn.datanode
-    def text_node(self):
-        r"""The datanode to render input text.
+    def markup_text(self, buffer, tokens, typeahead, pos, highlighted, clean):
+        r"""Markup input text.
 
-        Receives
-        --------
+        Parameters
+        ----------
         buffer : list of str
         tokens : list
         typeahead : str
@@ -1486,87 +1483,87 @@ class BeatPrompt:
         clean : bool
             Render text in the clean style: hide type ahead.
 
-        Yields
-        ------
-        rendered_text : str
+        Returns
+        -------
+        markup : markups.Markup
             The rendered input text.
-        rendered_typeahead : str
-            The rendered type ahead.
-        caret_pos : int
+        text_width : int
+            The width of rendered input text.
+        typeahead_width : int
+            The width of rendered type ahead.
+        caret_dis : int
             The position of caret.
         """
-        quotation       = self.settings.text.quotation
-        backslash       = self.settings.text.backslash
-        whitespace      = self.settings.text.whitespace
-        typeahead_attr  = self.settings.text.typeahead_attr
+        if clean:
+            typeahead = ""
 
-        token_unknown_attr   = self.settings.text.token_unknown_attr
-        token_command_attr   = self.settings.text.token_command_attr
-        token_keyword_attr   = self.settings.text.token_keyword_attr
-        token_argument_attr  = self.settings.text.token_argument_attr
-        token_highlight_attr = self.settings.text.token_highlight_attr
+        text_length = len(buffer)
+        typeahead_length = len(typeahead)
+        text_width = term.widthof(buffer)
+        typeahead_width = term.widthof(typeahead)
+        caret_dis = term.widthof(buffer[:pos])
 
-        rich = term.RichTextParser()
-        quotation  = rich.render(rich.parse(quotation))
-        backslash  = rich.render(rich.parse(backslash))
-        whitespace = rich.render(rich.parse(whitespace))
+        # concat text and typeahead
+        buffer = [mu.Text(ch) for ch in buffer]
+        typeahead_mask = slice(text_length, text_length + typeahead_length)
+        buffer.extend(mu.Text(ch) for ch in (typeahead or " "))
 
-        # render buffer
-        buffer, tokens, typeahead, pos, highlighted, clean = yield None
-        while True:
-            buffer = list(buffer)
-            tokens = list(tokens)
-            indices = range(len(buffer))
+        for _, type, mask, quotes in tokens:
+            # markup whitespace
+            for index in range(mask.start, mask.stop):
+                if isinstance(buffer[index], mu.Text) and buffer[index].string == " ":
+                    buffer[index] = self.rich.tags['ws']()
 
-            for _, type, mask, quotes in tokens:
-                # render whitespace
-                for index in indices[mask]:
-                    if buffer[index] == " ":
-                        buffer[index] = whitespace
+            # markup escape
+            for index in quotes:
+                if isinstance(buffer[index], mu.Text) and buffer[index].string == "'":
+                    buffer[index] = self.rich.tags['qt']()
+                elif isinstance(buffer[index], mu.Text) and buffer[index].string == "\\":
+                    buffer[index] = self.rich.tags['bs']()
+                else:
+                    assert False
 
-                # render quotation and backslash
-                for index in quotes:
-                    if buffer[index] == "'":
-                        buffer[index] = quotation
-                    elif buffer[index] == "\\":
-                        buffer[index] = backslash
-                    else:
-                        assert False
+        # markup caret
+        buffer[pos] = Caret([buffer[pos]])
 
-                # render unknown token
-                if type is None:
-                    if mask.stop < len(buffer) or clean:
-                        wcb.add_attr_inplace(buffer, mask, token_unknown_attr)
+        markup = mu.Group([])
+        prev_index = 0
+        for n, (_, type, mask, _) in enumerate(tokens):
+            # markup delimiter
+            markup.children.extend(buffer[prev_index:mask.start])
+            prev_index = mask.stop
 
-                # render command token
-                elif type is cmd.TOKEN_TYPE.COMMAND:
-                    wcb.add_attr_inplace(buffer, mask, token_command_attr)
-
-                # render keyword token
-                elif type is cmd.TOKEN_TYPE.KEYWORD:
-                    wcb.add_attr_inplace(buffer, mask, token_keyword_attr)
-
-                # render argument token
-                elif type is cmd.TOKEN_TYPE.ARGUMENT:
-                    wcb.add_attr_inplace(buffer, mask, token_argument_attr)
-
-            if highlighted in range(len(tokens)):
-                # render highlighted token
-                _, _, mask, _ = tokens[highlighted]
-                wcb.add_attr_inplace(buffer, mask, token_highlight_attr)
-
-            rendered_text = "".join(buffer)
-
-            # render typeahead
-            if typeahead and not clean:
-                rendered_typeahead = wcb.add_attr(typeahead, typeahead_attr)
+            # markup token
+            if type is None:
+                if mask.stop < text_length or clean:
+                    token = self.rich.tags['unknown'](buffer[mask])
+                else:
+                    token = mu.Group(buffer[mask])
+            elif type is cmd.TOKEN_TYPE.COMMAND:
+                token = self.rich.tags['cmd'](buffer[mask])
+            elif type is cmd.TOKEN_TYPE.KEYWORD:
+                token = self.rich.tags['kw'](buffer[mask])
+            elif type is cmd.TOKEN_TYPE.ARGUMENT:
+                token = self.rich.tags['arg'](buffer[mask])
             else:
-                rendered_typeahead = ""
+                assert False
 
-            # compute caret position
-            _, caret_pos = wcb.textrange1(0, "".join(buffer[:pos]))
+            # highlight
+            if highlighted == n:
+                token = self.rich.tags['emph']([token])
 
-            buffer, tokens, typeahead, pos, highlighted, clean = yield rendered_text, rendered_typeahead, caret_pos
+            markup.children.append(token)
+
+        # markup typeahead
+        if typeahead_length:
+            markup.children.extend(buffer[prev_index:typeahead_mask.start])
+            token = self.rich.tags['typeahead'](buffer[typeahead_mask])
+            markup.children.append(token)
+        else:
+            markup.children.extend(buffer[prev_index:])
+
+        markup = markup.expand()
+        return markup, text_width, typeahead_width, caret_dis
 
     def markup_hint(self, msg_node, hint):
         r"""Render hint.
@@ -1664,42 +1661,48 @@ class BeatPrompt:
 
         input_offset = 0
 
-        view, width, (icon, marker, caret), (text, typeahead, caret_pos) = yield
+        view, width, (icon, marker, caret), (markup, text_width, typeahead_width, caret_dis) = yield
 
         while True:
-            input_width = len(range(width)[input_ran])
-            _, text_width = wcb.textrange1(0, text)
-            _, typeahead_width = wcb.textrange1(0, typeahead)
+            xran = range(width)
+            xmask = range(width)[input_ran]
+            input_width = len(xmask)
 
             # adjust input offset
             if text_width - input_offset < input_width - 1 - input_margin:
                 # from: ......[....I...    ]
                 #   to: ...[.......I... ]
                 input_offset = max(0, text_width-input_width+1+input_margin)
-            if caret_pos - input_offset >= input_width - input_margin:
+            if caret_dis - input_offset >= input_width - input_margin:
                 # from: ...[............]..I....
                 #   to: ........[..........I.]..
-                input_offset = caret_pos - input_width + input_margin + 1
-            elif caret_pos - input_offset - input_margin < 0:
+                input_offset = caret_dis - input_width + input_margin + 1
+            elif caret_dis - input_offset - input_margin < 0:
                 # from: .....I...[............]...
                 #   to: ...[.I..........].........
-                input_offset = max(caret_pos - input_margin, 0)
-
-            # draw input
-            wcb.addtext1(view, width, input_ran.start-input_offset, text+typeahead, input_ran)
-            if input_offset > 0:
-                wcb.addtext1(view, width, input_ran.start, "…", input_ran)
-            if text_width + typeahead_width - input_offset > input_width - 1:
-                wcb.addtext1(view, width, input_ran.start+input_width-1, "…", input_ran)
-
-            # draw header
-            wcb.addtext1(view, width, 0, self.rich.render(icon), icon_ran)
-            wcb.addtext1(view, width, marker_ran.start, self.rich.render(marker), marker_ran)
+                input_offset = max(caret_dis - input_margin, 0)
 
             # draw caret
             if caret is not None:
-                caret_x = input_ran.start - input_offset + caret_pos
-                caret_ran = wcb.select1(view, width, slice(caret_x, caret_x+1))
-                view[caret_ran.start] = wcb.add_attr(view[caret_ran.start], caret)
+                markup = markup.traverse(Caret, lambda m: term.SGR(m.children, tuple(int(c) for c in caret.split(";"))))
+            else:
+                markup = markup.traverse(Caret, lambda m: mu.Group(m.children))
 
-            view, width, (icon, marker, caret), (text, typeahead, caret_pos) = yield view
+            # draw input
+            term.RichBarParser._render(view, markup, x=xmask.start-input_offset, xran=xran, xmask=xmask, attrs=())
+            if input_offset > 0:
+                term.RichBarParser._render_text(view, "…", x=xmask.start, xran=xran, xmask=xmask, attrs=())
+            if text_width + typeahead_width - input_offset > input_width - 1:
+                term.RichBarParser._render_text(view, "…", x=xmask.stop-1, xran=xran, xmask=xmask, attrs=())
+
+            # draw header
+            term.RichBarParser._render(view, icon, x=0, xran=xran, xmask=xran[icon_ran], attrs=())
+            term.RichBarParser._render(view, marker, x=marker_ran.start, xran=xran, xmask=xran[marker_ran], attrs=())
+
+            view, width, (icon, marker, caret), (markup, text_width, typeahead_width, caret_dis) = yield view
+
+
+@dataclass
+class Caret(mu.Pair):
+    name = "caret"
+
