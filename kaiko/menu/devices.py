@@ -6,7 +6,6 @@ import traceback
 import contextlib
 import threading
 import queue
-from kaiko.utils import wcbuffers as wcb
 from kaiko.utils import datanodes as dn
 from kaiko.utils import config as cfg
 from kaiko.utils import commands as cmd
