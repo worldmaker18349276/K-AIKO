@@ -288,10 +288,8 @@ class BeatShellSettings(cfg.Configurable):
 
         suggestions_lines : int
             The maximum number of lines of the suggestions.
-        suggestions_selected_attr : list of int
-            The text attribute of the selected suggestion.
-        suggestions_bullet : str
-            The list bullet of the suggestions.
+        suggestion_items : tuple
+            The markup templates for the unselected/selected suggestion.
 
         token_unknown : str
             The markup template for the unknown token.
@@ -314,9 +312,7 @@ class BeatShellSettings(cfg.Configurable):
         typeahead: str = "[weight=dim][slot/][/]"
 
         suggestions_lines: int = 8
-        suggestions_selected_attr: List[int] = [7]
-        suggestions_bullet: str = "• "
-        # suggestion_items = "• [slot/]", "• [invert][slot/][/]"
+        suggestion_items: Tuple[str, str] = ("• [slot/]", "• [invert][slot/][/]")
 
         token_unknown: str = "[color=red][slot/][/]"
         token_command: str = "[color=bright_blue][slot/][/]"
@@ -1584,8 +1580,12 @@ class BeatPrompt:
         message_max_lines = self.settings.text.message_max_lines
 
         sugg_lines = self.settings.text.suggestions_lines
-        sugg_selected_attr = self.settings.text.suggestions_selected_attr
-        sugg_bullet = self.settings.text.suggestions_bullet
+        sugg_items = self.settings.text.suggestion_items
+
+        sugg_items = (
+            self.rich.parse(sugg_items[0], slotted=True),
+            self.rich.parse(sugg_items[1], slotted=True),
+        )
 
         msg_node.children.clear()
 
@@ -1600,8 +1600,9 @@ class BeatPrompt:
             for i, sugg in enumerate(suggs):
                 sugg = mu.Text(sugg)
                 if i == hint.selected-sugg_start:
-                    sugg = term.SGR([sugg], tuple(sugg_selected_attr))
-                sugg = mu.Group([mu.Text(sugg_bullet), sugg])
+                    sugg = sugg_items[1].traverse(mu.Slot, lambda _: sugg)
+                else:
+                    sugg = sugg_items[0].traverse(mu.Slot, lambda _: sugg)
                 msg_node.children.append(sugg)
                 if i != len(suggs)-1:
                     msg_node.children.append(mu.Text("\n"))
