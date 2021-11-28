@@ -651,6 +651,40 @@ def widthof(text):
     return width
 
 @dataclasses.dataclass(frozen=True)
+class Newline(mu.Single):
+    name = "nl"
+
+    @classmethod
+    def parse(clz, param):
+        if param is not None:
+            raise mu.MarkupParseError(f"no parameter is needed for tag [{clz.name}/]")
+        return clz()
+
+    @property
+    def param(self):
+        return None
+
+    def expand(self):
+        return mu.Text("\n")
+
+@dataclasses.dataclass(frozen=True)
+class Space(mu.Single):
+    name = "sp"
+
+    @classmethod
+    def parse(clz, param):
+        if param is not None:
+            raise mu.MarkupParseError(f"no parameter is needed for tag [{clz.name}/]")
+        return clz()
+
+    @property
+    def param(self):
+        return None
+
+    def expand(self):
+        return mu.Text(" ")
+
+@dataclasses.dataclass(frozen=True)
 class Wide(mu.Single):
     name = "wide"
     char: str
@@ -686,6 +720,8 @@ class RichTextParser:
         Invert.name: Invert,
         Color.name: Color,
         BgColor.name: BgColor,
+        Newline.name: Newline,
+        Space.name: Space,
         Wide.name: Wide,
     }
 
@@ -955,6 +991,8 @@ class RichBarParser:
         Invert.name: Invert,
         Color.name: Color,
         BgColor.name: BgColor,
+        Newline.name: Newline,
+        Space.name: Space,
         Wide.name: Wide,
         X.name: X,
         DX.name: DX,
