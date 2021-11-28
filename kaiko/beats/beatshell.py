@@ -1376,7 +1376,7 @@ class BeatPrompt:
 
         def monitor_func(period):
             level = int((self.monitor.eff or 0.0) * icon_width*(ticks_len-1))
-            return "".join(ticks[max(0, min(ticks_len-1, level-i*(ticks_len-1)))] for i in range(icon_width))
+            return mu.Text("".join(ticks[max(0, min(ticks_len-1, level-i*(ticks_len-1)))] for i in range(icon_width)))
 
         return monitor_func
 
@@ -1384,11 +1384,11 @@ class BeatPrompt:
         icons = self.settings.prompt.icons
 
         rich = term.RichTextParser()
-        rendered_icons = [rich.render(rich.parse(icon)) for icon in icons]
+        markuped_icons = [rich.parse(icon) for icon in icons]
 
         def icon_func(period):
-            ind = int(period * len(rendered_icons) // 1) % len(rendered_icons)
-            return rendered_icons[ind]
+            ind = int(period * len(markuped_icons) // 1) % len(markuped_icons)
+            return markuped_icons[ind]
 
         return icon_func
 
@@ -1397,16 +1397,16 @@ class BeatPrompt:
         caret_blink_ratio = self.settings.prompt.caret_blink_ratio
 
         rich = term.RichTextParser()
-        rendered_markers = (
-            rich.render(rich.parse(markers[0])),
-            rich.render(rich.parse(markers[1])),
+        markuped_markers = (
+            rich.parse(markers[0]),
+            rich.parse(markers[1]),
         )
 
         def marker_func(period):
             if period % 4 < min(1, caret_blink_ratio):
-                return rendered_markers[1]
+                return markuped_markers[1]
             else:
-                return rendered_markers[0]
+                return markuped_markers[0]
 
         return marker_func
 
@@ -1693,8 +1693,8 @@ class BeatPrompt:
                 wcb.addtext1(view, width, input_ran.start+input_width-1, "…", input_ran)
 
             # draw header
-            wcb.addtext1(view, width, 0, icon, icon_ran)
-            wcb.addtext1(view, width, marker_ran.start, marker, marker_ran)
+            wcb.addtext1(view, width, 0, self.rich.render(icon), icon_ran)
+            wcb.addtext1(view, width, marker_ran.start, self.rich.render(marker), marker_ran)
 
             # draw caret
             if caret is not None:
