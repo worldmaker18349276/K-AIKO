@@ -677,7 +677,6 @@ class Wide(mu.Single):
 
 class RichTextParser:
     default_tags = {
-        SGR.name: SGR, # TODO: remove it
         Reset.name: Reset,
         Weight.name: Weight,
         Italic.name: Italic,
@@ -947,7 +946,6 @@ def to_range(slice, width):
 
 class RichBarParser:
     default_tags = {
-        SGR.name: SGR, # TODO: remove it
         Reset.name: Reset,
         Weight.name: Weight,
         Italic.name: Italic,

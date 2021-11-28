@@ -609,7 +609,11 @@ class AccuracyMeterWidget:
 
         length = meter_width*2
         hit = [0.0]*length
-        nlevel = 24
+
+        rich = term.RichTextParser()
+        colors = [c << 16 | c << 8 | c for c in range(8, 248, 10)]
+        nlevel = len(colors)
+        texts = [[rich.parse(f"[bgcolor={a:06x}][color={b:06x}]▐[/][/]") for b in colors] for a in colors]
 
         def widget_func(time, ran):
             perfs = self.state.perfs
@@ -630,10 +634,7 @@ class AccuracyMeterWidget:
                 else:
                     hit[i] = max(0.0, hit[i] - decay)
 
-            return mu.Group(tuple(
-                term.SGR((mu.Text("▐"),), (48, 5, 232+int(i*(nlevel-1)), 38, 5, 232+int(j*(nlevel-1))))
-                for i, j in zip(hit[::2], hit[1::2])
-            ))
+            return mu.Group(tuple(texts[int(i*(nlevel-1))][int(j*(nlevel-1))] for i, j in zip(hit[::2], hit[1::2])))
 
         yield
         return widget_func
