@@ -1378,8 +1378,7 @@ class BeatPrompt:
     def get_icon_func(self):
         icons = self.settings.prompt.icons
 
-        rich = term.RichTextParser()
-        markuped_icons = [rich.parse(icon) for icon in icons]
+        markuped_icons = [self.rich.parse(icon) for icon in icons]
 
         def icon_func(period):
             ind = int(period * len(markuped_icons) // 1) % len(markuped_icons)
@@ -1391,10 +1390,9 @@ class BeatPrompt:
         markers = self.settings.prompt.markers
         caret_blink_ratio = self.settings.prompt.caret_blink_ratio
 
-        rich = term.RichTextParser()
         markuped_markers = (
-            rich.parse(markers[0]),
-            rich.parse(markers[1]),
+            self.rich.parse(markers[0]),
+            self.rich.parse(markers[1]),
         )
 
         def marker_func(period):
