@@ -1670,8 +1670,7 @@ class BeatPrompt:
 
         while True:
             xran = range(width)
-            xmask = range(width)[input_ran]
-            input_width = len(xmask)
+            input_width = len(xran[input_ran])
 
             # adjust input offset
             if text_width - input_offset < input_width - 1 - input_margin:
@@ -1694,15 +1693,26 @@ class BeatPrompt:
                 markup = markup.traverse(Caret, lambda m: mu.Group(m.children))
 
             # draw input
-            term.RichBarParser._render(view, markup, x=xmask.start-input_offset, xran=xran, xmask=xmask, attrs=())
+            view.add_markup(markup, input_ran, -input_offset)
             if input_offset > 0:
-                term.RichBarParser._render_text(view, "…", x=xmask.start, xran=xran, xmask=xmask, attrs=())
+                view.add_markup(mu.Text("…"), input_ran, 0)
             if text_width + typeahead_width - input_offset > input_width - 1:
-                term.RichBarParser._render_text(view, "…", x=xmask.stop-1, xran=xran, xmask=xmask, attrs=())
+                view.add_markup(mu.Text("…"), input_ran, input_width-1)
 
             # draw header
-            term.RichBarParser._render(view, icon, x=0, xran=xran, xmask=xran[icon_ran], attrs=())
-            term.RichBarParser._render(view, marker, x=marker_ran.start, xran=xran, xmask=xran[marker_ran], attrs=())
+            view.add_markup(icon, icon_ran, 0)
+            view.add_markup(marker, marker_ran, 0)
+
+            # draw input
+            view.add_markup(markup, input_ran, -input_offset)
+            if input_offset > 0:
+                view.add_markup(mu.Text("…"), input_ran, 0)
+            if text_width + typeahead_width - input_offset > input_width - 1:
+                view.add_markup(mu.Text("…"), input_ran, input_width-1)
+
+            # draw header
+            view.add_markup(icon, icon_ran, 0)
+            view.add_markup(marker, marker_ran, 0)
 
             view, width, (icon, marker, caret), (markup, text_width, typeahead_width, caret_dis) = yield view
 

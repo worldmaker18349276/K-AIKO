@@ -431,6 +431,48 @@ class Detector:
             _, time, strength, detected = yield
 
 
+@functools.lru_cache(maxsize=32)
+def to_range(start, stop, width):
+    # range of slice without clamp
+    if start is None:
+        start = 0
+    elif start < 0:
+        start = width+start
+    else:
+        start = start
+
+    if stop is None:
+        stop = width
+    elif stop < 0:
+        stop = width+stop
+    else:
+        stop = stop
+
+    return range(start, stop)
+
+class Bar:
+    def __init__(self):
+        self.markups = []
+
+    def add_markup(self, markup, mask=slice(None,None), shift=0):
+        self.markups.append((markup, mask, shift))
+
+    def draw(self, width):
+        buffer = [" "]*width
+        xran = range(width)
+
+        for markup, mask, shift in self.markups:
+            if mask.start is None:
+                x = shift
+            elif mask.start >= 0:
+                x = shift + mask.start
+            else:
+                x = shift + mask.start + width
+
+            term.RichBarParser._render(buffer, markup, x=x, xran=xran, xmask=xran[mask], attrs=())
+
+        return "".join(buffer).rstrip()
+
 class RendererSettings(cfg.Configurable):
     r"""
     Fields
@@ -472,14 +514,14 @@ class Renderer:
             shown, resized, time, size = yield
             while True:
                 width = size.columns
-                view = [" "]*width
+                view = Bar()
                 try:
                     view, msgs = scheduler.send(((view, msgs), time, width))
                 except StopIteration:
                     return
+                view_str = view.draw(width)
 
                 # track changes of the message
-                view_str = "".join(view).rstrip()
                 if not resized and curr_msgs == msgs:
                     res_text = f"\r{clear_line}{view_str}\r"
                 elif not msgs:
@@ -557,9 +599,9 @@ class Renderer:
     @staticmethod
     @dn.datanode
     def _msg_drawer(msg):
-        (view, premsg), _, _ = yield
-        premsg.children.append(msg)
-        yield (view, premsg)
+        (view, msgs), _, _ = yield
+        msgs.append(msg)
+        yield (view, msgs)
 
     @staticmethod
     @dn.datanode
@@ -568,7 +610,7 @@ class Renderer:
         with text_node:
             (view, msg), time, width = yield
             while True:
-                xran = term.to_range(xmask, width)
+                xran = to_range(xmask.start, xmask.stop, width)
 
                 try:
                     res = text_node.send((time, xran))
@@ -577,9 +619,7 @@ class Renderer:
 
                 if res is not None:
                     xshift, text = res
-                    # text = term.Mask([term.X(xran.start+xshift), text], xmask)
-                    # term.RichBarParser.render(view, width, text)
-                    term.RichBarParser._render(view, text, x=xran.start+xshift, xran=range(width), xmask=range(width)[xmask], attrs=())
+                    view.add_markup(text, xmask, xshift)
 
                 (view, msg), time, width = yield (view, msg)
 
