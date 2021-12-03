@@ -131,7 +131,14 @@ class Group(Markup):
         return dataclasses.replace(self, children=tuple(child.expand() for child in self.children))
 
     def traverse(self, markup_type, func):
-        return dataclasses.replace(self, children=tuple(child.traverse(markup_type, func) for child in self.children))
+        children = []
+        modified = False
+        for child in self.children:
+            child_ = child.traverse(markup_type, func)
+            children.append(child_)
+            modified = modified or child_ is not child
+
+        return self if not modified else dataclasses.replace(self, children=tuple(children))
 
 class Tag(Markup):
     @classmethod
@@ -181,7 +188,14 @@ class Pair(Tag):
         if isinstance(self, markup_type):
             return func(self)
         else:
-            return dataclasses.replace(self, children=tuple(child.traverse(markup_type, func) for child in self.children))
+            children = []
+            modified = False
+            for child in self.children:
+                child_ = child.traverse(markup_type, func)
+                children.append(child_)
+                modified = modified or child_ is not child
+
+            return self if not modified else dataclasses.replace(self, children=tuple(children))
 
 
 # template
