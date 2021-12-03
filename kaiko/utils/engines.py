@@ -469,7 +469,7 @@ class Bar:
             else:
                 x = shift + mask.start + width
 
-            term.RichBarParser._render(buffer, markup, x=x, xran=xran, xmask=xran[mask], attrs=())
+            term.RichBarParser._render(buffer, markup, x=x, width=width, xmask=xran[mask], attrs=())
 
         return "".join(buffer).rstrip()
 

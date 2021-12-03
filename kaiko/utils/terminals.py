@@ -1000,56 +1000,64 @@ class RichBarParser:
         return tag
 
     @staticmethod
-    def _render_text(buffer, string, x, xran, xmask, attrs):
+    def _render_text(buffer, string, x, width, xmask, attrs):
+        start = xmask.start
+        stop = xmask.stop
         for ch in string:
             w = wcwidth.wcwidth(ch, unicode_version)
+            if w == -1:
+                raise ValueError(f"invalid string: {repr(ch)} in {repr(string)}")
+
+            if x+w > stop:
+                break
+
+            if x < start:
+                x += w
+                continue
+
+            # assert start <= x <= x+w <= stop
 
             if w == 0:
                 x_ = x - 1
-                if x_ in xran and buffer[x_] == "":
+                if 0 <= x_ and buffer[x_] == "":
                     x_ -= 1
-                if x_ in xmask:
+                if start <= x_:
                     buffer[x_] += ch
 
             elif w == 1:
-                if x in xmask:
-                    if x-1 in xran and buffer[x] == "":
-                        buffer[x-1] = " "
-                    if x+1 in xran and buffer[x+1] == "":
-                        buffer[x+1] = " "
-                    buffer[x] = ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}\x1b[m"
+                if 0 <= x-1 and buffer[x] == "":
+                    buffer[x-1] = " "
+                if x+1 < width and buffer[x+1] == "":
+                    buffer[x+1] = " "
+                buffer[x] = ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}\x1b[m"
                 x += 1
 
-            elif w == 2:
-                x_ = x + 1
-                if x in xmask and x_ in xmask:
-                    if x-1 in xran and buffer[x] == "":
-                        buffer[x-1] = " "
-                    if x_+1 in xran and buffer[x_+1] == "":
-                        buffer[x_+1] = " "
-                    buffer[x] = ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}\x1b[m"
-                    buffer[x_] = ""
-                x += 2
-
             else:
-                raise ValueError(f"invalid string: {repr(ch)} in {repr(markup.string)}")
+                x_ = x + 1
+                if 0 <= x-1 and buffer[x] == "":
+                    buffer[x-1] = " "
+                if x_+1 < width and buffer[x_+1] == "":
+                    buffer[x_+1] = " "
+                buffer[x] = ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}\x1b[m"
+                buffer[x_] = ""
+                x += 2
 
         return x
 
     @staticmethod
-    def _render(buffer, markup, x, xran, xmask, attrs):
+    def _render(buffer, markup, x, width, xmask, attrs):
         if isinstance(markup, mu.Text):
-            return RichBarParser._render_text(buffer, markup.string, x, xran, xmask, attrs)
+            return RichBarParser._render_text(buffer, markup.string, x, width, xmask, attrs)
 
         elif isinstance(markup, mu.Group):
             for child in markup.children:
-                x = RichBarParser._render(buffer, child, x, xran, xmask, attrs)
+                x = RichBarParser._render(buffer, child, x, width, xmask, attrs)
             return x
 
         elif isinstance(markup, SGR):
             attrs = (*attrs, *markup.attr)
             for child in markup.children:
-                x = RichBarParser._render(buffer, child, x, xran, xmask, attrs)
+                x = RichBarParser._render(buffer, child, x, width, xmask, attrs)
             return x
 
         elif isinstance(markup, X):
@@ -1061,13 +1069,13 @@ class RichBarParser:
         elif isinstance(markup, Restore):
             x0 = x
             for child in markup.children:
-                x = RichBarParser._render(buffer, child, x, xran, xmask, attrs)
+                x = RichBarParser._render(buffer, child, x, width, xmask, attrs)
             return x0
 
         elif isinstance(markup, Mask):
-            xmask = clamp(xran[markup.mask], xmask)
+            xmask = clamp(range(width)[markup.mask], xmask)
             for child in markup.children:
-                x = RichBarParser._render(buffer, child, x, xran, xmask, attrs)
+                x = RichBarParser._render(buffer, child, x, width, xmask, attrs)
             return x
 
         else:
@@ -1076,10 +1084,6 @@ class RichBarParser:
     @staticmethod
     def render(width, markup):
         buffer = [" "]*width
-        x = 0
-        xran = range(width)
-        xmask = xran
-        attrs = ()
-        RichBarParser._render(buffer, markup, x, xran, xmask, attrs)
+        RichBarParser._render(buffer, markup, 0, width, range(width), ())
         return "".join(buffer).rstrip()
 
