@@ -558,7 +558,10 @@ class Color(mu.Pair):
 
     def expand(self):
         if isinstance(self.rgb, Palette):
-            return SGR(tuple(child.expand() for child in self.children), (self._palette[self.rgb],))
+            if support_16color:
+                return SGR(tuple(child.expand() for child in self.children), (self._palette[self.rgb],))
+            else:
+                return mu.Group(tuple(child.expand() for child in self.children))
 
         r = (self.rgb & 0xff0000) >> 16
         g = (self.rgb & 0x00ff00) >> 8
@@ -576,7 +579,7 @@ class Color(mu.Pair):
                 c += 82
             return SGR(tuple(child.expand() for child in self.children), (c,))
         else:
-            return Group(tuple(child.expand() for child in self.children))
+            return mu.Group(tuple(child.expand() for child in self.children))
 
 @dataclasses.dataclass(frozen=True)
 class BgColor(mu.Pair):
@@ -619,7 +622,10 @@ class BgColor(mu.Pair):
 
     def expand(self):
         if isinstance(self.rgb, Palette):
-            return SGR(tuple(child.expand() for child in self.children), (self._palette[self.rgb],))
+            if support_16color:
+                return SGR(tuple(child.expand() for child in self.children), (self._palette[self.rgb],))
+            else:
+                return mu.Group(tuple(child.expand() for child in self.children))
 
         r = (self.rgb & 0xff0000) >> 16
         g = (self.rgb & 0x00ff00) >> 8
@@ -637,7 +643,7 @@ class BgColor(mu.Pair):
                 c += 92
             return SGR(tuple(child.expand() for child in self.children), (c,))
         else:
-            return Group(tuple(child.expand() for child in self.children))
+            return mu.Group(tuple(child.expand() for child in self.children))
 
 
 # others
