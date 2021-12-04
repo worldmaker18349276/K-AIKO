@@ -826,7 +826,7 @@ class BeatInput:
             del self.buffer[self.pos-1]
             self.pos = self.pos-1
 
-        if term.widthof(self.buffer) == -1:
+        if not all(ch.isprintable() for ch in self.buffer):
             raise ValueError("invalid text to insert: " + repr("".join(self.buffer)))
 
         self.buffer[self.pos:self.pos] = text
@@ -1714,9 +1714,9 @@ class BeatPrompt:
         return markup
 
     def input_geometry(self, buffer, typeahead, pos):
-        text_width = term.widthof(buffer)
-        typeahead_width = term.widthof(typeahead)
-        caret_dis = term.widthof(buffer[:pos])
+        text_width = self.rich.widthof(buffer)
+        typeahead_width = self.rich.widthof(typeahead)
+        caret_dis = self.rich.widthof(buffer[:pos])
         return text_width, typeahead_width, caret_dis
 
     @dn.datanode

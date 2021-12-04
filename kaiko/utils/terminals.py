@@ -651,16 +651,6 @@ class BgColor(mu.Pair):
             return mu.Group(tuple(child.expand() for child in self.children))
 
 
-# others
-def widthof(text):
-    width = 0
-    for ch in text:
-        w = wcwidth.wcwidth(ch, unicode_version)
-        if w == -1:
-            return -1
-        width += w
-    return width
-
 @dataclasses.dataclass(frozen=True)
 class Newline(mu.Single):
     name = "nl"
@@ -766,6 +756,15 @@ class RichTextRenderer:
         tag = mu.make_pair_template(name, template, self.tags, self.props)
         self.tags[tag.name] = tag
         return tag
+
+    def widthof(self, text):
+        width = 0
+        for ch in text:
+            w = wcwidth.wcwidth(ch, self.unicode_version)
+            if w == -1:
+                return -1
+            width += w
+        return width
 
     def _render(self, markup, reopens=()):
         if isinstance(markup, mu.Text):
@@ -1008,6 +1007,7 @@ class RichBarRenderer:
             Color.name: (self.color_support,),
             BgColor.name: (self.color_support,),
         }
+
     def parse(self, markup_str, expand=True):
         markup = mu.parse_markup(markup_str, self.tags, self.props)
         if expand:
@@ -1023,6 +1023,15 @@ class RichBarRenderer:
         tag = mu.make_pair_template(name, template, self.tags, self.props)
         self.tags[tag.name] = tag
         return tag
+
+    def widthof(self, text):
+        width = 0
+        for ch in text:
+            w = wcwidth.wcwidth(ch, self.unicode_version)
+            if w == -1:
+                return -1
+            width += w
+        return width
 
     def _render_text(self, buffer, string, x, width, xmask, attrs):
         start = xmask.start
