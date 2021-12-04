@@ -1469,20 +1469,6 @@ class BeatStroke:
                 self.input.unknown_key(key or repr(code))
         return handler
 
-@dn.datanode
-def cache_datanode(func, key):
-    args = yield
-    res_key = key(*args)
-    res = func(*args)
-
-    while True:
-        args = yield res
-        res_key_ = key(*args)
-        if res_key == res_key_:
-            continue
-        res_key = res_key_
-        res = func(*args)
-
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
@@ -1526,7 +1512,7 @@ class BeatPrompt:
     def output_handler(self):
         header_node = self.header_node()
         text_node = self.text_node()
-        hint_node = cache_datanode(self.markup_hint, lambda msg, hint: hint)
+        hint_node = dn.starcache(self.markup_hint, lambda msg, hint: hint)
         render_node = self.render_node()
         modified_event = None
         buffer = []
@@ -1736,13 +1722,13 @@ class BeatPrompt:
     @dn.datanode
     def text_node(self):
         syntax_key = lambda buffer, tokens, typeahead: (id(buffer), typeahead)
-        syntax_node = cache_datanode(self.markup_syntax, syntax_key)
+        syntax_node = dn.starcache(self.markup_syntax, syntax_key)
 
         dec_key = lambda markup, pos, highlighted, clean: (id(markup), pos, highlighted, clean)
-        dec_node = cache_datanode(self.decorate_tokens, dec_key)
+        dec_node = dn.starcache(self.decorate_tokens, dec_key)
 
         geo_key = lambda buffer, typeahead, pos: (id(buffer), typeahead, pos)
-        geo_node = cache_datanode(self.input_geometry, geo_key)
+        geo_node = dn.starcache(self.input_geometry, geo_key)
 
         text_data = None
         with syntax_node, dec_node, geo_node:
