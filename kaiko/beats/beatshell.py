@@ -267,6 +267,8 @@ class BeatShellSettings(cfg.Configurable):
             The key for help.
         autocomplete_keys : Tuple[str, str, str]
             The keys for finding the next, previous and canceling suggestions.
+        search_keys : Tuple[str, str, str]
+            The keys for finding the next, previous and canceling command history.
 
         keymap : dict of str
             The keymap of beatshell.  The key of dict is the keystroke, and the
@@ -282,6 +284,7 @@ class BeatShellSettings(cfg.Configurable):
         confirm_key: str = "Enter"
         help_key: str = "Alt_Enter"
         autocomplete_keys: Tuple[str, str, str] = ("Tab", "Shift_Tab", "Esc")
+        search_keys: Tuple[str, str, str] = ("Alt_Up", "Alt_Down", "Esc")
 
         keymap: Dict[str, str] = {
             "Backspace"     : "input.backspace()",
@@ -480,6 +483,8 @@ class BeatInput:
         The index of highlighted token.
     tab_state : TabState or None
         The state of autocomplete.
+    search_state : SearchState or None
+        The state of search history.
     hint : InputWarn or InputMessage or InputSuggestions or None
         The hint of input.
     result : InputError or InputComplete or None
@@ -503,6 +508,7 @@ class BeatInput:
         self.history = history
         self.prev_command = None
         self.tab_state = None
+        self.search_state = None
         self.state = "FIN"
         self.lock = threading.RLock()
         self.modified_event = 0
@@ -1276,6 +1282,85 @@ class BeatInput:
         return True
 
     @locked
+    @onstate("EDIT")
+    def search_history(self, action=+1):
+        """Search history.
+        Search the command history with given prefix.
+
+        Parameters
+        ----------
+        action : +1 or -1 or 0
+            Indicating direction for exploration of search results.  `+1` for older
+            result; `-1` for newer result; `0` for canceling the process.
+
+        Returns
+        -------
+        succ : bool
+            `False` for canceling the process.
+        """
+
+        if self.search_state is None and action == 0:
+            return False
+
+        if self.search_state is None:
+            self.cancel_typeahead()
+
+            # search history
+            length = len(self.buffer)
+            buffers_num = len(self.buffers)
+            results = []
+            res_index = None
+            for index, buffer in enumerate(self.buffers):
+                if buffer[:length] == self.buffer and all(buffer != self.buffers[i] for i in results):
+                    results.append(index-buffers_num)
+                    if buffer == self.buffer:
+                        res_index = len(results)-1
+
+            # assert res_index is not None
+
+            self.search_state = SearchState(
+                results=results,
+                res_index=res_index,
+                original_index=self.buffer_index
+            )
+
+        if action == +1:
+            self.search_state.res_index = max(self.search_state.res_index-1, 0)
+        elif action == -1:
+            self.search_state.res_index = min(self.search_state.res_index+1, len(self.search_state.results)-1)
+        elif action == 0:
+            self.search_state.res_index = None
+        else:
+            raise ValueError
+
+        if self.search_state.res_index is None:
+            self.buffer_index = self.search_state.original_index
+            self.search_state = None
+        else:
+            self.buffer_index = self.search_state.results[self.search_state.res_index]
+
+        self.buffer = self.buffers[self.buffer_index]
+        self.pos = len(self.buffer)
+        self.typeahead = ""
+        self.highlighted = None
+        self.update_buffer()
+
+        return True
+
+    @locked
+    @onstate("EDIT")
+    def finish_search_history(self):
+        r"""Finish search history.
+
+        Returns
+        -------
+        succ : bool
+        """
+        if self.search_state is not None:
+            self.search_state = None
+        return True
+
+    @locked
     def unknown_key(self, key):
         self.set_result(InputError, ValueError(f"Unknown key: " + key), None)
         self.finish()
@@ -1288,6 +1373,12 @@ class TabState:
     original_token: List[str]
     original_pos: int
     selection: slice
+
+@dataclasses.dataclass
+class SearchState:
+    results: List[int]
+    res_index: int
+    original_index: int
 
 class BeatStroke:
     r"""Keyboard controller for beatshell."""
@@ -1307,6 +1398,7 @@ class BeatStroke:
         controller.add_handler(self.keypress_handler())
 
         controller.add_handler(self.autocomplete_handler(self.settings.autocomplete_keys, self.settings.help_key))
+        controller.add_handler(self.search_handler(self.settings.search_keys))
         controller.add_handler(self.printable_handler(), "PRINTABLE")
 
         for key, func in self.settings.keymap.items():
@@ -1340,6 +1432,19 @@ class BeatStroke:
                 self.input.finish_autocomplete()
         return handler
 
+    def search_handler(self, keys):
+        def handler(args):
+            key = args[2]
+            if key == keys[0]:
+                self.input.search_history(+1)
+            elif key == keys[1]:
+                self.input.search_history(-1)
+            elif key == keys[2]:
+                self.input.search_history(0)
+            else:
+                self.input.finish_search_history()
+        return handler
+
     def action_handler(self, func):
         fn = r"input\.(?!_)\w+\(\)"
         op = "(%s)" % "|".join(map(re.escape, (" | ", " & ", " and ", " or ")))
@@ -1356,6 +1461,7 @@ class BeatStroke:
         keys.append(settings.confirm_key)
         keys.append(settings.help_key)
         keys.extend(settings.autocomplete_keys)
+        keys.extend(settings.search_keys)
         keys.append("PRINTABLE")
         def handler(args):
             _, _, key, code = args
