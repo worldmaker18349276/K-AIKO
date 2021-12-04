@@ -453,7 +453,7 @@ def to_range(start, stop, width):
 class Bar:
     def __init__(self):
         self.markups = []
-        self.rich = term.RichBarParser()
+        self.rich = term.RichBarRenderer()
 
     def add_markup(self, markup, mask=slice(None,None), shift=0):
         self.markups.append((markup, mask, shift))
@@ -508,7 +508,7 @@ class Renderer:
     def _render_node(scheduler):
         clear_line = str(term.Clear(term.ClearRegion.to_right))
         clear_below = str(term.Clear(term.ClearRegion.to_end))
-        rich = term.RichTextParser()
+        rich = term.RichTextRenderer()
         width = 0
         msgs = []
         curr_msgs = list(msgs)

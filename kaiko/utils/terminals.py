@@ -716,7 +716,7 @@ class Wide(mu.Single):
             return mu.Text(self.char)
 
 
-class RichTextParser:
+class RichTextRenderer:
     default_tags = {
         Reset.name: Reset,
         Weight.name: Weight,
@@ -733,7 +733,7 @@ class RichTextParser:
     }
 
     def __init__(self):
-        self.tags = dict(RichTextParser.default_tags)
+        self.tags = dict(RichTextRenderer.default_tags)
         self.unicode_version = unicode_version
 
     def parse(self, markup_str, expand=True, slotted=False):
@@ -972,7 +972,7 @@ def clamp(ran, mask):
     stop = max(min(mask.stop, ran.stop), mask.start)
     return range(start, stop)
 
-class RichBarParser:
+class RichBarRenderer:
     default_tags = {
         Reset.name: Reset,
         Weight.name: Weight,
@@ -992,7 +992,7 @@ class RichBarParser:
     }
 
     def __init__(self):
-        self.tags = dict(RichBarParser.default_tags)
+        self.tags = dict(RichBarRenderer.default_tags)
         self.unicode_version = unicode_version
 
     def parse(self, markup_str, expand=True):

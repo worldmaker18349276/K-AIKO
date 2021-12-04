@@ -393,7 +393,7 @@ class Beatbar:
 
     @staticmethod
     def _get_default_sight(hit_decay_time, hit_sustain_time, perf_appearances, sight_appearances):
-        rich = term.RichBarParser()
+        rich = term.RichBarRenderer()
         perf_appearances = {key: (rich.parse(appearance1), rich.parse(appearance2))
                             for key, (appearance1, appearance2) in perf_appearances.items()}
         sight_appearances = [(rich.parse(appearance1), rich.parse(appearance2))
@@ -540,7 +540,7 @@ class SpectrumWidget:
         nchannels = self.devices_settings.mixer.output_channels
         hop_length = round(samplerate * self.settings.spec_time_res)
 
-        template = term.RichTextParser().parse(self.settings.template, slotted=True)
+        template = term.RichTextRenderer().parse(self.settings.template, slotted=True)
 
         self.spectrum = "\u2800"*spec_width
         draw = dn.pipe(self.draw_spectrum(), lambda v: setattr(self, "spectrum", v))
@@ -568,7 +568,7 @@ class VolumeIndicatorWidget:
         buffer_length = self.devices_settings.mixer.output_buffer_length
         samplerate = self.devices_settings.mixer.output_samplerate
 
-        template = term.RichTextParser().parse(self.settings.template, slotted=True)
+        template = term.RichTextRenderer().parse(self.settings.template, slotted=True)
 
         decay = buffer_length / samplerate / vol_decay_time
 
@@ -610,7 +610,7 @@ class AccuracyMeterWidget:
         length = meter_width*2
         hit = [0.0]*length
 
-        rich = term.RichTextParser()
+        rich = term.RichTextRenderer()
         colors = [c << 16 | c << 8 | c for c in range(8, 248, 10)]
         nlevel = len(colors)
         texts = [[rich.parse(f"[bgcolor={a:06x}][color={b:06x}]▐[/][/]") for b in colors] for a in colors]
@@ -682,7 +682,7 @@ class ScoreWidget:
 
     @dn.datanode
     def load(self):
-        template = term.RichTextParser().parse(self.settings.template, slotted=True)
+        template = term.RichTextRenderer().parse(self.settings.template, slotted=True)
 
         def widget_func(time, ran):
             score = self.state.score
@@ -715,7 +715,7 @@ class ProgressWidget:
 
     @dn.datanode
     def load(self):
-        template = term.RichTextParser().parse(self.settings.template, slotted=True)
+        template = term.RichTextRenderer().parse(self.settings.template, slotted=True)
 
         def widget_func(time, ran):
             finished_subjects = self.state.finished_subjects

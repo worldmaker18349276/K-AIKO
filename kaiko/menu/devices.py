@@ -150,7 +150,7 @@ class KAIKOLogger:
     def __init__(self, config=None):
         self.config = config
         self.level = 1
-        self.rich = term.RichTextParser()
+        self.rich = term.RichTextRenderer()
         self.rich.add_single_template("data", self.settings.data_icon)
         self.rich.add_single_template("info", self.settings.info_icon)
         self.rich.add_single_template("hint", self.settings.hint_icon)
