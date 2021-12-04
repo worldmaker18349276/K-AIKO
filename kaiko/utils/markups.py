@@ -17,7 +17,7 @@ import dataclasses
 class MarkupParseError(Exception):
     pass
 
-def parse_markup(markup_str, tags):
+def parse_markup(markup_str, tags, props={}):
     stack = [(Group, [])]
 
     for match in re.finditer(r"(?P<tag>\[[^\]]*\])|(?P<text>([^\[\\]|\\[\s\S])+)", markup_str):
@@ -53,6 +53,8 @@ def parse_markup(markup_str, tags):
             if name not in tags or not issubclass(tags[name], Single):
                 raise MarkupParseError(f"unknown tag: [{name}/]")
             param = tags[name].parse(param_str)
+            if name in props:
+                param += props[name]
             stack[-1][1].append(tags[name](*param))
             continue
 
@@ -63,6 +65,8 @@ def parse_markup(markup_str, tags):
             if name not in tags or not issubclass(tags[name], Pair):
                 raise MarkupParseError(f"unknown tag: [{name}]")
             param = tags[name].parse(param_str)
+            if name in props:
+                param += props[name]
             stack.append((tags[name], [], *param))
             continue
 
@@ -251,14 +255,14 @@ def replace_slot(template, markup):
         return markup
     return template.traverse(Slot, inject_once)
 
-def make_single_template(name, template, tags):
-    temp = parse_markup(template, tags=tags)
+def make_single_template(name, template, tags, props={}):
+    temp = parse_markup(template, tags=tags, props=props)
     clz = type(name.capitalize(), (SingleTemplate,), dict(name=name, _template=temp))
     clz = dataclasses.dataclass(frozen=True)(clz)
     return clz
 
-def make_pair_template(name, template, tags):
-    temp = parse_markup(template, tags=dict(tags, slot=Slot))
+def make_pair_template(name, template, tags, props={}):
+    temp = parse_markup(template, tags=dict(tags, slot=Slot), props=props)
     clz = type(name.capitalize(), (PairTemplate,), dict(name=name, _template=temp))
     clz = dataclasses.dataclass(frozen=True)(clz)
     return clz

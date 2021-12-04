@@ -694,6 +694,7 @@ class Space(mu.Single):
 class Wide(mu.Single):
     name = "wide"
     char: str
+    unicode_version: str
 
     @classmethod
     def parse(clz, param):
@@ -708,7 +709,7 @@ class Wide(mu.Single):
         return self.char
 
     def expand(self):
-        w = wcwidth.wcwidth(self.char, unicode_version)
+        w = wcwidth.wcwidth(self.char, self.unicode_version)
         if w == 1:
             return mu.Text(self.char+" ")
         else:
@@ -733,32 +734,41 @@ class RichTextParser:
 
     def __init__(self):
         self.tags = dict(RichTextParser.default_tags)
+        self.unicode_version = unicode_version
 
     def parse(self, markup_str, expand=True, slotted=False):
         tags = self.tags if not slotted else dict(self.tags, slot=mu.Slot)
-        markup = mu.parse_markup(markup_str, tags)
+        props = {
+            Wide.name: (self.unicode_version,),
+        }
+        markup = mu.parse_markup(markup_str, tags, props)
         if expand:
             markup = markup.expand()
         return markup
 
     def add_single_template(self, name, template):
-        tag = mu.make_single_template(name, template, self.tags)
+        props = {
+            Wide.name: (self.unicode_version,),
+        }
+        tag = mu.make_single_template(name, template, self.tags, props)
         self.tags[tag.name] = tag
         return tag
 
     def add_pair_template(self, name, template):
-        tag = mu.make_pair_template(name, template, self.tags)
+        props = {
+            Wide.name: (self.unicode_version,),
+        }
+        tag = mu.make_pair_template(name, template, self.tags, props)
         self.tags[tag.name] = tag
         return tag
 
-    @staticmethod
-    def _render(markup, reopens=()):
+    def _render(self, markup, reopens=()):
         if isinstance(markup, mu.Text):
             yield from markup.string
 
         elif isinstance(markup, mu.Group):
             for child in markup.children:
-                yield from RichTextParser._render(child, reopens)
+                yield from self._render(child, reopens)
 
         elif isinstance(markup, CSI):
             yield markup.ansi_code
@@ -769,7 +779,7 @@ class RichTextParser:
             if open:
                 yield open
             for child in markup.children:
-                yield from RichTextParser._render(child, (open, *reopens))
+                yield from self._render(child, (open, *reopens))
             if close:
                 yield close
             for reopen in reopens[::-1]:
@@ -779,12 +789,10 @@ class RichTextParser:
         else:
             raise TypeError(f"unknown markup type: {type(markup)}")
 
-    @staticmethod
-    def render(markup):
-        return "".join(RichTextParser._render(markup))
+    def render(self, markup):
+        return "".join(self._render(markup))
 
-    @staticmethod
-    def _render_context(markup, printer, reopens=()):
+    def _render_context(self, markup, printer, reopens=()):
         if isinstance(markup, mu.Text):
             printer(markup.string)
 
@@ -799,9 +807,9 @@ class RichTextParser:
                 return
             child = markup.children[0]
             try:
-                yield from RichTextParser._render_context(child, printer, reopens)
+                yield from self._render_context(child, printer, reopens)
             finally:
-                yield from RichTextParser._render_context(mu.Group(markup.children[1:]), printer, reopens)
+                yield from self._render_context(mu.Group(markup.children[1:]), printer, reopens)
 
         elif isinstance(markup, SGR):
             open, close = markup.ansi_delimiters
@@ -810,7 +818,7 @@ class RichTextParser:
                 printer(open)
 
             try:
-                yield from RichTextParser._render_context(mu.Group(markup.children), printer, (open, *reopens))
+                yield from self._render_context(mu.Group(markup.children), printer, (open, *reopens))
             finally:
                 if close:
                     printer(close)
@@ -821,13 +829,11 @@ class RichTextParser:
         else:
             raise TypeError(f"unknown markup type: {type(markup)}")
 
-    @staticmethod
     @contextlib.contextmanager
-    def render_context(markup, printer):
-        yield from RichTextParser._render_context(markup, printer)
+    def render_context(self, markup, printer):
+        yield from self._render_context(markup, printer)
 
-    @staticmethod
-    def _less(markup, size, pos=(0,0), reopens=(), wrap=True):
+    def _less(self, markup, size, pos=(0,0), reopens=(), wrap=True):
         if pos is None:
             return None
 
@@ -839,7 +845,7 @@ class RichTextParser:
                     x = 0
 
                 else:
-                    w = wcwidth.wcwidth(ch, unicode_version)
+                    w = wcwidth.wcwidth(ch, self.unicode_version)
                     if w == -1:
                         raise ValueError(f"unprintable character: {repr(ch)}")
                     x += w
@@ -855,7 +861,7 @@ class RichTextParser:
 
         elif isinstance(markup, mu.Group):
             for child in markup.children:
-                pos = yield from RichTextParser._less(child, size, pos, reopens, wrap=wrap)
+                pos = yield from self._less(child, size, pos, reopens, wrap=wrap)
             return pos
 
         elif isinstance(markup, SGR):
@@ -864,7 +870,7 @@ class RichTextParser:
             if open:
                 yield open
             for child in markup.children:
-                pos = yield from RichTextParser._less(child, size, pos, (open, *reopens), wrap=wrap)
+                pos = yield from self._less(child, size, pos, (open, *reopens), wrap=wrap)
             if close:
                 yield close
             for reopen in reopens[::-1]:
@@ -875,11 +881,10 @@ class RichTextParser:
         else:
             raise TypeError(f"unknown markup type: {type(markup)}")
 
-    @staticmethod
-    def render_less(markup, size, pos=(0,0), wrap=True, restore=True):
+    def render_less(self, markup, size, pos=(0,0), wrap=True, restore=True):
         def _restore_pos(markup, size, pos, wrap):
             x0, y0 = pos
-            pos = yield from RichTextParser._less(markup, size, pos, wrap=wrap)
+            pos = yield from self._less(markup, size, pos, wrap=wrap)
             x, y = pos or (None, size.lines-1)
             if y > y0:
                 yield f"\x1b[{y-y0}A"
@@ -988,29 +993,38 @@ class RichBarParser:
 
     def __init__(self):
         self.tags = dict(RichBarParser.default_tags)
+        self.unicode_version = unicode_version
 
     def parse(self, markup_str, expand=True):
-        markup = mu.parse_markup(markup_str, self.tags)
+        props = {
+            Wide.name: (self.unicode_version,),
+        }
+        markup = mu.parse_markup(markup_str, self.tags, props)
         if expand:
             markup = markup.expand()
         return markup
 
     def add_single_template(self, name, template):
-        tag = mu.make_single_template(name, template, self.tags)
+        props = {
+            Wide.name: (self.unicode_version,),
+        }
+        tag = mu.make_single_template(name, template, self.tags, props)
         self.tags[tag.name] = tag
         return tag
 
     def add_pair_template(self, name, template):
-        tag = mu.make_pair_template(name, template, self.tags)
+        props = {
+            Wide.name: (self.unicode_version,),
+        }
+        tag = mu.make_pair_template(name, template, self.tags, props)
         self.tags[tag.name] = tag
         return tag
 
-    @staticmethod
-    def _render_text(buffer, string, x, width, xmask, attrs):
+    def _render_text(self, buffer, string, x, width, xmask, attrs):
         start = xmask.start
         stop = xmask.stop
         for ch in string:
-            w = wcwidth.wcwidth(ch, unicode_version)
+            w = wcwidth.wcwidth(ch, self.unicode_version)
             if w == -1:
                 raise ValueError(f"invalid string: {repr(ch)} in {repr(string)}")
 
@@ -1050,20 +1064,19 @@ class RichBarParser:
 
         return x
 
-    @staticmethod
-    def _render(buffer, markup, x, width, xmask, attrs):
+    def _render(self, buffer, markup, x, width, xmask, attrs):
         if isinstance(markup, mu.Text):
-            return RichBarParser._render_text(buffer, markup.string, x, width, xmask, attrs)
+            return self._render_text(buffer, markup.string, x, width, xmask, attrs)
 
         elif isinstance(markup, mu.Group):
             for child in markup.children:
-                x = RichBarParser._render(buffer, child, x, width, xmask, attrs)
+                x = self._render(buffer, child, x, width, xmask, attrs)
             return x
 
         elif isinstance(markup, SGR):
             attrs = (*attrs, *markup.attr)
             for child in markup.children:
-                x = RichBarParser._render(buffer, child, x, width, xmask, attrs)
+                x = self._render(buffer, child, x, width, xmask, attrs)
             return x
 
         elif isinstance(markup, X):
@@ -1075,21 +1088,20 @@ class RichBarParser:
         elif isinstance(markup, Restore):
             x0 = x
             for child in markup.children:
-                x = RichBarParser._render(buffer, child, x, width, xmask, attrs)
+                x = self._render(buffer, child, x, width, xmask, attrs)
             return x0
 
         elif isinstance(markup, Mask):
             xmask = clamp(range(width)[markup.mask], xmask)
             for child in markup.children:
-                x = RichBarParser._render(buffer, child, x, width, xmask, attrs)
+                x = self._render(buffer, child, x, width, xmask, attrs)
             return x
 
         else:
             raise TypeError(f"unknown markup type: {type(markup)}")
 
-    @staticmethod
-    def render(width, markup):
+    def render(self, width, markup):
         buffer = [" "]*width
-        RichBarParser._render(buffer, markup, 0, width, range(width), ())
+        self._render(buffer, markup, 0, width, range(width), ())
         return "".join(buffer).rstrip()
 

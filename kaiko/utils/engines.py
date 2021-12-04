@@ -453,6 +453,7 @@ def to_range(start, stop, width):
 class Bar:
     def __init__(self):
         self.markups = []
+        self.rich = term.RichBarParser()
 
     def add_markup(self, markup, mask=slice(None,None), shift=0):
         self.markups.append((markup, mask, shift))
@@ -469,7 +470,7 @@ class Bar:
             else:
                 x = shift + mask.start + width
 
-            term.RichBarParser._render(buffer, markup, x=x, width=width, xmask=xran[mask], attrs=())
+            self.rich._render(buffer, markup, x=x, width=width, xmask=xran[mask], attrs=())
 
         return "".join(buffer).rstrip()
 
@@ -507,6 +508,7 @@ class Renderer:
     def _render_node(scheduler):
         clear_line = str(term.Clear(term.ClearRegion.to_right))
         clear_below = str(term.Clear(term.ClearRegion.to_end))
+        rich = term.RichTextParser()
         width = 0
         msgs = []
         curr_msgs = list(msgs)
@@ -527,7 +529,7 @@ class Renderer:
                 elif not msgs:
                     res_text = f"\r{clear_below}{view_str}\r"
                 else:
-                    msg_text = term.RichTextParser.render_less(mu.Group((mu.Text("\n"), *msgs)), size)
+                    msg_text = rich.render_less(mu.Group((mu.Text("\n"), *msgs)), size)
                     res_text = f"\r{clear_below}{view_str}\r{msg_text}"
 
                 shown, resized, time, size = yield res_text
