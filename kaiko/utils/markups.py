@@ -18,7 +18,7 @@ class MarkupParseError(Exception):
     pass
 
 def parse_markup(markup_str, tags):
-    stack = [(Group(()), [])]
+    stack = [(Group, [])]
 
     for match in re.finditer(r"(?P<tag>\[[^\]]*\])|(?P<text>([^\[\\]|\\[\s\S])+)", markup_str):
         tag = match.group('tag')
@@ -41,39 +41,39 @@ def parse_markup(markup_str, tags):
         if tag == "[/]": # [/]
             if len(stack) <= 1:
                 raise MarkupParseError(f"too many closing tag: [/]")
-            markup, children = stack.pop()
-            markup = dataclasses.replace(markup, children=tuple(children))
+            markup_type, children, *param = stack.pop()
+            markup = markup_type(tuple(children), *param)
             stack[-1][1].append(markup)
             continue
 
         match = re.match("^\[(\w+)(?:=(.*))?/\]$", tag) # [tag=param/]
         if match:
             name = match.group(1)
-            param = match.group(2)
+            param_str = match.group(2)
             if name not in tags or not issubclass(tags[name], Single):
                 raise MarkupParseError(f"unknown tag: [{name}/]")
-            markup = tags[name].parse(param)
-            stack[-1][1].append(markup)
+            param = tags[name].parse(param_str)
+            stack[-1][1].append(tags[name](*param))
             continue
 
         match = re.match("^\[(\w+)(?:=(.*))?\]$", tag) # [tag=param]
         if match:
             name = match.group(1)
-            param = match.group(2)
+            param_str = match.group(2)
             if name not in tags or not issubclass(tags[name], Pair):
                 raise MarkupParseError(f"unknown tag: [{name}]")
-            markup = tags[name].parse(param)
-            stack.append((markup, []))
+            param = tags[name].parse(param_str)
+            stack.append((tags[name], [], *param))
             continue
 
         raise MarkupParseError(f"invalid tag: {tag}")
 
     for i in range(len(stack)-1, 0, -1):
-        markup, children = stack[i]
-        markup = dataclasses.replace(markup, children=tuple(children))
+        markup_type, children, *param = stack[i]
+        markup = markup_type(tuple(children), *param)
         stack[i-1][1].append(markup)
-    markup, children = stack[0]
-    markup = dataclasses.replace(markup, children=tuple(children))
+    markup_type, children, *param = stack[0]
+    markup = markup_type(tuple(children), *param)
     return markup
 
 def escape(text):
@@ -96,10 +96,6 @@ class Markup:
 class Text(Markup):
     string: str
 
-    @classmethod
-    def parse(clz, param):
-        raise ValueError("no parser for text")
-
     def _represent(self):
         for ch in self.string:
             if ch == "\\":
@@ -118,10 +114,6 @@ class Text(Markup):
 @dataclasses.dataclass(frozen=True)
 class Group(Markup):
     children: Sequence[Markup]
-
-    @classmethod
-    def parse(clz, param):
-        raise ValueError("no parser for group")
 
     def _represent(self):
         for child in self.children:
@@ -208,7 +200,7 @@ class SingleTemplate(Single):
     def parse(clz, param):
         if param is not None:
             raise MarkupParseError("no parameter is needed for template tag")
-        return clz()
+        return ()
 
     @property
     def param(self):
@@ -225,7 +217,7 @@ class Slot(Single):
     def parse(clz, param):
         if param is not None:
             raise MarkupParseError(f"no parameter is needed for tag [{clz.name}/]")
-        return clz()
+        return ()
 
     @property
     def param(self):
@@ -240,7 +232,7 @@ class PairTemplate(Pair):
     def parse(clz, param):
         if param is not None:
             raise MarkupParseError("no parameter is needed for template tag")
-        return clz(())
+        return ()
 
     @property
     def param(self):

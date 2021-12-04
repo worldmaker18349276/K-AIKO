@@ -204,7 +204,7 @@ class CSI(mu.Single):
     def parse(clz, param):
         if param is None:
             raise mu.MarkupParseError(f"missing parameter for tag [{clz.name}/]")
-        return clz(param)
+        return param,
 
     @property
     def param(self):
@@ -231,7 +231,7 @@ class Move(mu.Single):
             x, y = tuple(int(n) for n in param.split(","))
         except ValueError:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}/]: {param}")
-        return clz(x, y)
+        return x, y
 
     @property
     def param(self):
@@ -275,7 +275,7 @@ class Pos(mu.Single):
             x, y = tuple(int(n) for n in param.split(","))
         except ValueError:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}/]: {param}")
-        return clz(x, y)
+        return x, y
 
     @property
     def param(self):
@@ -300,7 +300,7 @@ class Scroll(mu.Single):
             x = int(param)
         except ValueError:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}/]: {param}")
-        return clz(x)
+        return x,
 
     @property
     def param(self):
@@ -343,7 +343,7 @@ class Clear(mu.Single):
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}/]: {param}")
         region = ClearRegion[param]
 
-        return clz(region)
+        return region,
 
     @property
     def param(self):
@@ -371,7 +371,7 @@ class SGR(mu.Pair):
             attr = tuple(int(n or "0") for n in param.split(";"))
         except ValueError:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
-        return clz((), attr)
+        return attr
 
     @property
     def param(self):
@@ -403,7 +403,7 @@ class SimpleAttr(mu.Pair):
             param = next(iter(clz._options.keys()))
         if param not in clz._options:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
-        return clz((), param)
+        return param,
 
     def expand(self):
         return SGR(tuple(child.expand() for child in self.children), (self._options[self.option],))
@@ -550,7 +550,7 @@ class Color(mu.Pair):
             rgb = Palette(param) if param in color_names else int(param, 16)
         except ValueError:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
-        return clz((), rgb)
+        return rgb,
 
     @property
     def param(self):
@@ -614,7 +614,7 @@ class BgColor(mu.Pair):
             rgb = Palette(param) if param in color_names else int(param, 16)
         except ValueError:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
-        return clz((), rgb)
+        return rgb,
 
     @property
     def param(self):
@@ -664,7 +664,7 @@ class Newline(mu.Single):
     def parse(clz, param):
         if param is not None:
             raise mu.MarkupParseError(f"no parameter is needed for tag [{clz.name}/]")
-        return clz()
+        return ()
 
     @property
     def param(self):
@@ -681,7 +681,7 @@ class Space(mu.Single):
     def parse(clz, param):
         if param is not None:
             raise mu.MarkupParseError(f"no parameter is needed for tag [{clz.name}/]")
-        return clz()
+        return ()
 
     @property
     def param(self):
@@ -701,7 +701,7 @@ class Wide(mu.Single):
             raise mu.MarkupParseError(f"missing parameter for tag [{clz.name}/]")
         if len(param) != 1 or not param.isprintable():
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}/]: {param}")
-        return clz(param)
+        return param,
 
     @property
     def param(self):
@@ -906,7 +906,7 @@ class X(mu.Single):
             x = int(param)
         except ValueError:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
-        return clz(x)
+        return x,
 
     @property
     def param(self):
@@ -925,7 +925,7 @@ class DX(mu.Single):
             dx = int(param)
         except ValueError:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
-        return clz(dx)
+        return dx,
 
     @property
     def param(self):
@@ -939,7 +939,7 @@ class Restore(mu.Pair):
     def parse(clz, param):
         if param is not None:
             raise mu.MarkupParseError(f"no parameter is needed for tag [{clz.name}]")
-        return clz(())
+        return ()
 
     @property
     def param(self):
@@ -956,7 +956,7 @@ class Mask(mu.Pair):
             start, stop = [int(p) if p else None for p in (param or ":").split(":")]
         except ValueError:
             raise mu.MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
-        return clz((), slice(start, stop))
+        return slice(start, stop),
 
     @property
     def param(self):
