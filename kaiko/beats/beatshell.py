@@ -5,7 +5,7 @@ import itertools
 import re
 import threading
 from typing import List, Set, Tuple, Dict
-from dataclasses import dataclass
+import dataclasses
 from kaiko.utils import datanodes as dn
 from kaiko.utils import biparsers as bp
 from kaiko.utils import config as cfg
@@ -174,6 +174,87 @@ def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
 
     return raw if partial else raw + " "
 
+def shlexer_markup(buffer, tokens, typeahead, tags):
+    r"""Markup shlex.
+
+    Parameters
+    ----------
+    buffer : list of str
+    tokens : list
+    typeahead : str
+
+    Returns
+    -------
+    markup : markups.Markup
+        The rendered input text.
+    """
+    # result  ::=  Delimiters + Token + Delimiters + ... + Delimiters + Typeahead
+    # Delimiters  ::=  Group[QuasiText]
+    # Token  ::=  Unknown[QuasiText] | Command[QuasiText] | Keyword[QuasiText] | Argument[QuasiText]
+    # QuasiText  ::=  Text | Whitespace | Quotation | Backslash
+
+    def _wrap(buffer):
+        res = [""]
+        for ch in buffer:
+            if isinstance(ch, str) and isinstance(res[-1], str):
+                res[-1] = res[-1] + ch
+            else:
+                res.append(ch)
+        if not res[0]:
+            res.pop(0)
+        return tuple(mu.Text(e) if isinstance(e, str) else e for e in res)
+
+    length = len(buffer)
+    buffer = list(buffer)
+    if not typeahead:
+        buffer.append(" ")
+
+    for _, type, mask, quotes in tokens:
+        # markup whitespace
+        for index in range(mask.start, mask.stop):
+            if buffer[index] == " ":
+                buffer[index] = tags['ws']()
+
+        # markup escape
+        for index in quotes:
+            if buffer[index] == "'":
+                buffer[index] = tags['qt']()
+            elif buffer[index] == "\\":
+                buffer[index] = tags['bs']()
+            else:
+                assert False
+
+    markup_children = []
+    prev_index = 0
+    for n, (_, type, mask, _) in enumerate(tokens):
+        # markup delimiter
+        markup_children.append(mu.Group(_wrap(buffer[prev_index:mask.start])))
+        prev_index = mask.stop
+
+        # markup token
+        if type is None:
+            if mask.stop == length:
+                markup_children.append(tags['unfinished'](_wrap(buffer[mask])))
+            else:
+                markup_children.append(tags['unknown'](_wrap(buffer[mask])))
+        elif type is cmd.TOKEN_TYPE.COMMAND:
+            markup_children.append(tags['cmd'](_wrap(buffer[mask])))
+        elif type is cmd.TOKEN_TYPE.KEYWORD:
+            markup_children.append(tags['kw'](_wrap(buffer[mask])))
+        elif type is cmd.TOKEN_TYPE.ARGUMENT:
+            markup_children.append(tags['arg'](_wrap(buffer[mask])))
+        else:
+            assert False
+
+    else:
+        markup_children.append(mu.Group(_wrap(buffer[prev_index:])))
+
+        # markup typeahead
+        if typeahead:
+            markup_children.append(tags['typeahead']((mu.Text(typeahead),)))
+
+    return mu.Group(tuple(markup_children))
+
 
 class BeatShellSettings(cfg.Configurable):
     class input(cfg.Configurable):
@@ -261,7 +342,7 @@ class BeatShellSettings(cfg.Configurable):
         markers: Tuple[str, str] = ("❯ ", "[weight=bold]❯ [/]")
         marker_width: int = 2
 
-        input_margin: int = 2
+        input_margin: int = 3
 
         caret: Tuple[str, str, str] = ("[slot/]", "[weight=dim][invert][slot/][/][/]", "[weight=bold][invert][slot/][/][/]")
         caret_blink_ratio: float = 0.3
@@ -315,6 +396,7 @@ class BeatShellSettings(cfg.Configurable):
         suggestion_items: Tuple[str, str] = ("• [slot/]", "• [invert][slot/][/]")
 
         token_unknown: str = "[color=red][slot/][/]"
+        token_unfinished: str = "[slot/]"
         token_command: str = "[color=bright_blue][slot/][/]"
         token_keyword: str = "[color=bright_magenta][slot/][/]"
         token_argument: str = "[color=bright_green][slot/][/]"
@@ -1198,7 +1280,7 @@ class BeatInput:
         self.set_result(InputError, ValueError(f"Unknown key: " + key), None)
         self.finish()
 
-@dataclass
+@dataclasses.dataclass
 class TabState:
     suggestions: List[str]
     sugg_index: int
@@ -1281,6 +1363,20 @@ class BeatStroke:
                 self.input.unknown_key(key or repr(code))
         return handler
 
+@dn.datanode
+def cache_datanode(func, key):
+    args = yield
+    res_key = key(*args)
+    res = func(*args)
+
+    while True:
+        args = yield res
+        res_key_ = key(*args)
+        if res_key == res_key_:
+            continue
+        res_key = res_key_
+        res = func(*args)
+
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
@@ -1307,6 +1403,7 @@ class BeatPrompt:
         self.rich.add_pair_template("error", settings.text.error_message)
         self.rich.add_pair_template("info", settings.text.info_message)
         self.rich.add_pair_template("unknown", settings.text.token_unknown)
+        self.rich.add_pair_template("unfinished", settings.text.token_unfinished)
         self.rich.add_pair_template("cmd", settings.text.token_command)
         self.rich.add_pair_template("kw", settings.text.token_keyword)
         self.rich.add_pair_template("arg", settings.text.token_argument)
@@ -1322,12 +1419,13 @@ class BeatPrompt:
     @dn.datanode
     def output_handler(self):
         header_node = self.header_node()
+        text_node = self.text_node()
+        hint_node = cache_datanode(self.markup_hint, lambda msg, hint: hint)
         render_node = self.render_node()
         modified_event = None
-        current_hint = None
         buffer = []
         tokens = []
-        with header_node, render_node:
+        with header_node, text_node, hint_node, render_node:
             (view, msg), time, width = yield
             while True:
                 # extract input state
@@ -1348,15 +1446,13 @@ class BeatPrompt:
                 header_data = header_node.send((clean, time))
 
                 # draw text
-                text_data = self.markup_text(buffer, tokens, typeahead, pos, highlighted, clean)
-
-                # draw hint
-                if hint is not current_hint:
-                    self.markup_hint(msg, hint)
-                    current_hint = hint
+                text_data = text_node.send((buffer, tokens, typeahead, pos, highlighted, clean))
 
                 # render view
                 view = render_node.send((view, width, header_data, text_data))
+
+                # render hint
+                msg = hint_node.send((msg, hint))
 
                 (view, msg), time, width = yield (view, msg)
 
@@ -1396,33 +1492,26 @@ class BeatPrompt:
         )
 
         def marker_func(period):
-            if period % 4 < min(1, caret_blink_ratio):
+            if period % 4 < min(1.0, caret_blink_ratio):
                 return markuped_markers[1]
             else:
                 return markuped_markers[0]
 
         return marker_func
 
-    def get_caret_func(self):
-        caret = self.settings.prompt.caret
+    def get_caret_index_func(self):
         caret_blink_ratio = self.settings.prompt.caret_blink_ratio
 
-        markuped_caret = [
-            self.rich.parse(caret[0], slotted=True),
-            self.rich.parse(caret[1], slotted=True),
-            self.rich.parse(caret[2], slotted=True),
-        ]
-
-        def caret_func(period, force=False):
+        def caret_index_func(period, force=False):
             if force or period % 1 < caret_blink_ratio:
                 if period % 4 < 1:
-                    return markuped_caret[2]
+                    return 2
                 else:
-                    return markuped_caret[1]
+                    return 1
             else:
-                return markuped_caret[0]
+                return 0
 
-        return caret_func
+        return caret_index_func
 
     @dn.datanode
     def header_node(self):
@@ -1441,12 +1530,12 @@ class BeatPrompt:
             The rendered icon.
         marker : str
             The rendered marker.
-        caret : function or None
-            The function that add a caret to the text, or None for no caret.
+        caret_index : int or None
+            The index of caret style, or None for no caret.
         """
         icon_func = self.get_monitor_func() if self.monitor else self.get_icon_func()
         marker_func = self.get_marker_func()
-        caret_func = self.get_caret_func()
+        caret_index_func = self.get_caret_index_func()
 
         self.t0 = self.settings.prompt.t0
         self.tempo = self.settings.prompt.tempo
@@ -1465,106 +1554,101 @@ class BeatPrompt:
             # render icon, marker, caret
             icon = icon_func(period)
             marker = marker_func(period)
-            caret = None if clean else caret_func(period, period < period_start)
+            caret_index = None if clean else caret_index_func(period, period < period_start)
 
-            clean, time = yield icon, marker, caret
+            clean, time = yield icon, marker, caret_index
             period = (time - self.t0)/(60/self.tempo)
 
-    def markup_text(self, buffer, tokens, typeahead, pos, highlighted, clean):
-        r"""Markup input text.
+    def markup_syntax(self, buffer, tokens, typeahead):
+        r"""Markup syntax of input text.
 
         Parameters
         ----------
         buffer : list of str
         tokens : list
         typeahead : str
-        pos : int
-        highlighted : int or None
-            See `BeatInput`'s attributes.
-        clean : bool
-            Render text in the clean style: hide type ahead.
 
         Returns
         -------
         markup : markups.Markup
-            The rendered input text.
-        text_width : int
-            The width of rendered input text.
-        typeahead_width : int
-            The width of rendered type ahead.
-        caret_dis : int
-            The position of caret.
+            The syntax highlighted input text.
         """
-        if clean:
-            typeahead = ""
 
-        text_length = len(buffer)
-        typeahead_length = len(typeahead)
+        # markup tokens
+        return shlexer_markup(buffer, tokens, typeahead, self.rich.tags)
+
+    def decorate_tokens(self, markup, pos, highlighted, clean):
+        # markup caret
+        i = 0
+        for n, token in enumerate(markup.children):
+            for m, subword in enumerate(token.children):
+                l = len(subword.string) if isinstance(subword, mu.Text) else 1
+                if pos >= i+l:
+                    i += l
+                    continue
+
+                if isinstance(subword, mu.Text):
+                    subwords = (
+                        mu.Text(subword.string[:pos-i]),
+                        Caret((mu.Text(subword.string[pos-i]),)),
+                        mu.Text(subword.string[pos-i+1:]),
+                    )
+                else:
+                    subwords = Caret((subword,)),
+
+                token = dataclasses.replace(token, children=token.children[:m] + subwords + token.children[m+1:])
+                markup = dataclasses.replace(markup, children=markup.children[:n] + (token,) + markup.children[n+1:])
+                break
+            else:
+                continue
+            break
+
+        # unfinished -> unknown
+        if clean and len(markup.children) >= 3:
+            n = -3
+            token = markup.children[n]
+            if isinstance(token, self.rich.tags['unfinished']):
+                token = self.rich.tags['unknown'](token.children)
+                markup = dataclasses.replace(markup, children=markup.children[:n] + (token,) + markup.children[n+1:])
+
+        # highlight
+        if highlighted is not None:
+            n = highlighted*2+1
+            token = markup.children[n]
+            token = self.rich.tags['emph']((token,))
+            markup = dataclasses.replace(markup, children=markup.children[:n] + (token,) + markup.children[n+1:])
+
+        markup = markup.expand()
+        return markup
+
+    def input_geometry(self, buffer, typeahead, pos):
         text_width = term.widthof(buffer)
         typeahead_width = term.widthof(typeahead)
         caret_dis = term.widthof(buffer[:pos])
+        return text_width, typeahead_width, caret_dis
 
-        # concat text and typeahead
-        buffer = [mu.Text(ch) for ch in buffer]
-        typeahead_mask = slice(text_length, text_length + typeahead_length)
-        buffer.extend(mu.Text(ch) for ch in (typeahead or " "))
+    @dn.datanode
+    def text_node(self):
+        syntax_key = lambda buffer, tokens, typeahead: (id(buffer), typeahead)
+        syntax_node = cache_datanode(self.markup_syntax, syntax_key)
 
-        for _, type, mask, quotes in tokens:
-            # markup whitespace
-            for index in range(mask.start, mask.stop):
-                if isinstance(buffer[index], mu.Text) and buffer[index].string == " ":
-                    buffer[index] = self.rich.tags['ws']()
+        dec_key = lambda markup, pos, highlighted, clean: (id(markup), pos, highlighted, clean)
+        dec_node = cache_datanode(self.decorate_tokens, dec_key)
 
-            # markup escape
-            for index in quotes:
-                if isinstance(buffer[index], mu.Text) and buffer[index].string == "'":
-                    buffer[index] = self.rich.tags['qt']()
-                elif isinstance(buffer[index], mu.Text) and buffer[index].string == "\\":
-                    buffer[index] = self.rich.tags['bs']()
-                else:
-                    assert False
+        geo_key = lambda buffer, typeahead, pos: (id(buffer), typeahead, pos)
+        geo_node = cache_datanode(self.input_geometry, geo_key)
 
-        # markup caret
-        buffer[pos] = Caret((buffer[pos],))
+        text_data = None
+        with syntax_node, dec_node, geo_node:
+            while True:
+                buffer, tokens, typeahead, pos, highlighted, clean = yield text_data
+                if clean:
+                    typeahead = ""
 
-        markup_children = []
-        prev_index = 0
-        for n, (_, type, mask, _) in enumerate(tokens):
-            # markup delimiter
-            markup_children.extend(buffer[prev_index:mask.start])
-            prev_index = mask.stop
-
-            # markup token
-            if type is None:
-                if mask.stop < text_length or clean:
-                    token = self.rich.tags['unknown'](tuple(buffer[mask]))
-                else:
-                    token = mu.Group(tuple(buffer[mask]))
-            elif type is cmd.TOKEN_TYPE.COMMAND:
-                token = self.rich.tags['cmd'](tuple(buffer[mask]))
-            elif type is cmd.TOKEN_TYPE.KEYWORD:
-                token = self.rich.tags['kw'](tuple(buffer[mask]))
-            elif type is cmd.TOKEN_TYPE.ARGUMENT:
-                token = self.rich.tags['arg'](tuple(buffer[mask]))
-            else:
-                assert False
-
-            # highlight
-            if highlighted == n:
-                token = self.rich.tags['emph']((token,))
-
-            markup_children.append(token)
-
-        # markup typeahead
-        if typeahead_length:
-            markup_children.extend(buffer[prev_index:typeahead_mask.start])
-            token = self.rich.tags['typeahead'](tuple(buffer[typeahead_mask]))
-            markup_children.append(token)
-        else:
-            markup_children.extend(buffer[prev_index:])
-
-        markup = mu.Group(tuple(markup_children)).expand()
-        return markup, text_width, typeahead_width, caret_dis
+                markup = syntax_node.send((buffer, tokens, typeahead))
+                dec_markup = dec_node.send((markup, pos, highlighted, clean))
+                text_width, typeahead_width, caret_dis = geo_node.send((buffer, typeahead, pos))
+                text_data = dec_markup, text_width, typeahead_width, caret_dis
 
     def markup_hint(self, messages, hint):
         r"""Render hint.
@@ -1637,6 +1721,38 @@ class BeatPrompt:
         else:
             assert False
 
+        return messages
+
+    @dn.datanode
+    def render_caret(self):
+        caret = self.settings.prompt.caret
+
+        markuped_caret = [
+            self.rich.parse(caret[0], slotted=True),
+            self.rich.parse(caret[1], slotted=True),
+            self.rich.parse(caret[2], slotted=True),
+        ]
+
+        markup_id = None
+        cached_res = None
+        res = None
+        while True:
+            markup, caret_index = yield res
+
+            if markup_id != id(markup):
+                markup_id = id(markup)
+                cached_res = [None, None, None, None]
+
+            if caret_index is not None:
+                if cached_res[caret_index] is None:
+                    cached_res[caret_index] = markup.traverse(Caret, lambda m: mu.replace_slot(markuped_caret[caret_index], mu.Group(m.children)))
+                res = cached_res[caret_index]
+
+            else:
+                if cached_res[-1] is None:
+                    cached_res[-1] = markup.traverse(Caret, lambda m: mu.Group(m.children))
+                res = cached_res[-1]
+
     @dn.datanode
     def render_node(self):
         r"""The datanode to render whole view.
@@ -1657,6 +1773,8 @@ class BeatPrompt:
         view : list of str
             The buffer of the rendered view.
         """
+        caret_node = self.render_caret()
+
         icon_width = self.settings.prompt.icon_width
         marker_width = self.settings.prompt.marker_width
         input_margin = self.settings.prompt.input_margin
@@ -1666,58 +1784,45 @@ class BeatPrompt:
 
         input_offset = 0
 
-        view, width, (icon, marker, caret), (markup, text_width, typeahead_width, caret_dis) = yield
+        with caret_node:
+            view, width, (icon, marker, caret_index), (markup, text_width, typeahead_width, caret_dis) = yield
 
-        while True:
-            xran = range(width)
-            input_width = len(xran[input_ran])
+            while True:
+                xran = range(width)
+                input_width = len(xran[input_ran])
 
-            # adjust input offset
-            if text_width - input_offset < input_width - 1 - input_margin:
-                # from: ......[....I...    ]
-                #   to: ...[.......I... ]
-                input_offset = max(0, text_width-input_width+1+input_margin)
-            if caret_dis - input_offset >= input_width - input_margin:
-                # from: ...[............]..I....
-                #   to: ........[..........I.]..
-                input_offset = caret_dis - input_width + input_margin + 1
-            elif caret_dis - input_offset - input_margin < 0:
-                # from: .....I...[............]...
-                #   to: ...[.I..........].........
-                input_offset = max(caret_dis - input_margin, 0)
+                # adjust input offset
+                if text_width - input_offset < input_width - 1 - input_margin:
+                    # from: ......[....I...    ]
+                    #   to: ...[.......I... ]
+                    input_offset = max(0, text_width-input_width+1+input_margin)
+                if caret_dis - input_offset >= input_width - input_margin:
+                    # from: ...[............]..I....
+                    #   to: ........[..........I.]..
+                    input_offset = caret_dis - input_width + input_margin + 1
+                elif caret_dis - input_offset - input_margin < 0:
+                    # from: .....I...[............]...
+                    #   to: ...[.I..........].........
+                    input_offset = max(caret_dis - input_margin, 0)
 
-            # draw caret
-            if caret is not None:
-                markup = markup.traverse(Caret, lambda m: mu.replace_slot(caret, mu.Group(m.children)))
-            else:
-                markup = markup.traverse(Caret, lambda m: mu.Group(m.children))
+                # draw caret
+                markup = caret_node.send((markup, caret_index))
 
-            # draw input
-            view.add_markup(markup, input_ran, -input_offset)
-            if input_offset > 0:
-                view.add_markup(mu.Text("…"), input_ran, 0)
-            if text_width + typeahead_width - input_offset > input_width - 1:
-                view.add_markup(mu.Text("…"), input_ran, input_width-1)
+                # draw input
+                view.add_markup(markup, input_ran, -input_offset)
+                if input_offset > 0:
+                    view.add_markup(mu.Text("…"), input_ran, 0)
+                if text_width + typeahead_width - input_offset > input_width - 1:
+                    view.add_markup(mu.Text("…"), input_ran, input_width-1)
 
-            # draw header
-            view.add_markup(icon, icon_ran, 0)
-            view.add_markup(marker, marker_ran, 0)
+                # draw header
+                view.add_markup(icon, icon_ran, 0)
+                view.add_markup(marker, marker_ran, 0)
 
-            # draw input
-            view.add_markup(markup, input_ran, -input_offset)
-            if input_offset > 0:
-                view.add_markup(mu.Text("…"), input_ran, 0)
-            if text_width + typeahead_width - input_offset > input_width - 1:
-                view.add_markup(mu.Text("…"), input_ran, input_width-1)
-
-            # draw header
-            view.add_markup(icon, icon_ran, 0)
-            view.add_markup(marker, marker_ran, 0)
-
-            view, width, (icon, marker, caret), (markup, text_width, typeahead_width, caret_dis) = yield view
+                view, width, (icon, marker, caret_index), (markup, text_width, typeahead_width, caret_dis) = yield view
 
 
-@dataclass(frozen=True)
+@dataclasses.dataclass(frozen=True)
 class Caret(mu.Pair):
     name = "caret"
 
