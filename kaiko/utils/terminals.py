@@ -14,11 +14,10 @@ import enum
 from typing import Optional, Union
 import dataclasses
 import wcwidth
+from . import config as cfg
 from . import markups as mu
 from . import datanodes as dn
 
-
-unicode_version = "latest"
 
 @dn.datanode
 def ucs_detect():
@@ -34,8 +33,6 @@ def ucs_detect():
 
     @dn.datanode
     def query_pos():
-        global unicode_version
-
         old_version = '4.1.0'
         wide_by_version = [
             ('5.1.0', '龼'),
@@ -71,7 +68,6 @@ def ucs_detect():
 
         index = xs.index(1) if 1 in xs else len(wide_by_version)
         version = old_version if index == 0 else wide_by_version[index-1][0]
-        unicode_version = version
 
         return version
 
@@ -480,7 +476,6 @@ class ColorSupport(enum.Enum):
     STANDARD = "standard"
     COLORS256 = "colors256"
     TRUECOLOR = "truecolor"
-color_support = ColorSupport.TRUECOLOR
 
 def sRGB(c1, c2):
     r1, g1, b1 = c1
@@ -711,6 +706,10 @@ class Wide(mu.Single):
             return mu.Text(self.char)
 
 
+class TerminalSettings(cfg.Configurable):
+    unicode_version: str = "latest"
+    color_support: ColorSupport = ColorSupport.TRUECOLOR
+
 class RichTextRenderer:
     default_tags = {
         Reset.name: Reset,
@@ -727,10 +726,19 @@ class RichTextRenderer:
         Wide.name: Wide,
     }
 
-    def __init__(self):
+    def __init__(self, settings=None):
         self.tags = dict(RichTextRenderer.default_tags)
-        self.unicode_version = unicode_version
-        self.color_support = color_support
+        if settings is None:
+            settings = TerminalSettings()
+        self.settings = settings
+
+    @property
+    def unicode_version(self):
+        return self.settings.unicode_version
+
+    @property
+    def color_support(self):
+        return self.settings.color_support
 
     @property
     def props(self):
@@ -995,10 +1003,19 @@ class RichBarRenderer:
         Mask.name: Mask,
     }
 
-    def __init__(self):
+    def __init__(self, settings=None):
         self.tags = dict(RichBarRenderer.default_tags)
-        self.unicode_version = unicode_version
-        self.color_support = color_support
+        if settings is None:
+            settings = TerminalSettings()
+        self.settings = settings
+
+    @property
+    def unicode_version(self):
+        return self.settings.unicode_version
+
+    @property
+    def color_support(self):
+        return self.settings.color_support
 
     @property
     def props(self):
