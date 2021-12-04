@@ -304,14 +304,15 @@ class KAIKOMenu:
                 yield from prompt_task.join((yield))
 
             # execute result
-            if isinstance(input.result, beatshell.InputError):
-                with self.logger.warn():
-                    self.logger.print(input.result.value, markup=False)
+            result = input.result
+            if isinstance(result, beatshell.InputError):
                 input.prev_session()
+                with self.logger.warn():
+                    self.logger.print(result.value, markup=False)
             else:
-                with self.execute(input.result.value) as command_task:
-                    yield from command_task.join((yield))
                 input.new_session()
+                with self.execute(result.value) as command_task:
+                    yield from command_task.join((yield))
 
     @dn.datanode
     def execute(self, command):
