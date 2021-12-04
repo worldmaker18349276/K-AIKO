@@ -475,9 +475,12 @@ for gray in range(8, 248, 10):
     colors_256.append((gray, gray, gray))
 
 # TODO: determine them
-support_truecolor = True
-support_256color = True
-support_16color = True
+class ColorSupport(enum.Enum):
+    MONO = "mono"
+    STANDARD = "standard"
+    COLORS256 = "colors256"
+    TRUECOLOR = "truecolor"
+color_support = ColorSupport.TRUECOLOR
 
 def sRGB(c1, c2):
     r1, g1, b1 = c1
@@ -540,6 +543,7 @@ class Color(mu.Pair):
         Palette.BRIGHT_WHITE: 97,
     }
     rgb: Union[Palette, int]
+    color_support: ColorSupport
 
     @classmethod
     def parse(clz, param):
@@ -558,7 +562,7 @@ class Color(mu.Pair):
 
     def expand(self):
         if isinstance(self.rgb, Palette):
-            if support_16color:
+            if self.color_support is not ColorSupport.MONO:
                 return SGR(tuple(child.expand() for child in self.children), (self._palette[self.rgb],))
             else:
                 return mu.Group(tuple(child.expand() for child in self.children))
@@ -566,12 +570,12 @@ class Color(mu.Pair):
         r = (self.rgb & 0xff0000) >> 16
         g = (self.rgb & 0x00ff00) >> 8
         b = (self.rgb & 0x0000ff)
-        if support_truecolor:
+        if self.color_support is ColorSupport.TRUECOLOR:
             return SGR(tuple(child.expand() for child in self.children), (38,2,r,g,b))
-        elif support_256color:
+        elif self.color_support is ColorSupport.COLORS256:
             c = find_256color((r,g,b))
             return SGR(tuple(child.expand() for child in self.children), (38,5,c))
-        elif support_16color:
+        elif self.color_support is ColorSupport.STANDARD:
             c = find_16color((r,g,b))
             if c < 8:
                 c += 30
@@ -604,6 +608,7 @@ class BgColor(mu.Pair):
         Palette.BRIGHT_WHITE: 107,
     }
     rgb: Union[Palette, int]
+    color_support: ColorSupport
 
     @classmethod
     def parse(clz, param):
@@ -622,7 +627,7 @@ class BgColor(mu.Pair):
 
     def expand(self):
         if isinstance(self.rgb, Palette):
-            if support_16color:
+            if self.color_support is not ColorSupport.MONO:
                 return SGR(tuple(child.expand() for child in self.children), (self._palette[self.rgb],))
             else:
                 return mu.Group(tuple(child.expand() for child in self.children))
@@ -630,12 +635,12 @@ class BgColor(mu.Pair):
         r = (self.rgb & 0xff0000) >> 16
         g = (self.rgb & 0x00ff00) >> 8
         b = (self.rgb & 0x0000ff)
-        if support_truecolor:
+        if self.color_support is ColorSupport.TRUECOLOR:
             return SGR(tuple(child.expand() for child in self.children), (48,2,r,g,b))
-        elif support_256color:
+        elif self.color_support is ColorSupport.COLORS256:
             c = find_256color((r,g,b))
             return SGR(tuple(child.expand() for child in self.children), (48,5,c))
-        elif support_16color:
+        elif self.color_support is ColorSupport.STANDARD:
             c = find_16color((r,g,b))
             if c < 8:
                 c += 40
@@ -735,30 +740,30 @@ class RichTextRenderer:
     def __init__(self):
         self.tags = dict(RichTextRenderer.default_tags)
         self.unicode_version = unicode_version
+        self.color_support = color_support
+
+    @property
+    def props(self):
+        return {
+            Wide.name: (self.unicode_version,),
+            Color.name: (self.color_support,),
+            BgColor.name: (self.color_support,),
+        }
 
     def parse(self, markup_str, expand=True, slotted=False):
         tags = self.tags if not slotted else dict(self.tags, slot=mu.Slot)
-        props = {
-            Wide.name: (self.unicode_version,),
-        }
-        markup = mu.parse_markup(markup_str, tags, props)
+        markup = mu.parse_markup(markup_str, tags, self.props)
         if expand:
             markup = markup.expand()
         return markup
 
     def add_single_template(self, name, template):
-        props = {
-            Wide.name: (self.unicode_version,),
-        }
-        tag = mu.make_single_template(name, template, self.tags, props)
+        tag = mu.make_single_template(name, template, self.tags, self.props)
         self.tags[tag.name] = tag
         return tag
 
     def add_pair_template(self, name, template):
-        props = {
-            Wide.name: (self.unicode_version,),
-        }
-        tag = mu.make_pair_template(name, template, self.tags, props)
+        tag = mu.make_pair_template(name, template, self.tags, self.props)
         self.tags[tag.name] = tag
         return tag
 
@@ -994,29 +999,28 @@ class RichBarRenderer:
     def __init__(self):
         self.tags = dict(RichBarRenderer.default_tags)
         self.unicode_version = unicode_version
+        self.color_support = color_support
 
-    def parse(self, markup_str, expand=True):
-        props = {
+    @property
+    def props(self):
+        return {
             Wide.name: (self.unicode_version,),
+            Color.name: (self.color_support,),
+            BgColor.name: (self.color_support,),
         }
-        markup = mu.parse_markup(markup_str, self.tags, props)
+    def parse(self, markup_str, expand=True):
+        markup = mu.parse_markup(markup_str, self.tags, self.props)
         if expand:
             markup = markup.expand()
         return markup
 
     def add_single_template(self, name, template):
-        props = {
-            Wide.name: (self.unicode_version,),
-        }
-        tag = mu.make_single_template(name, template, self.tags, props)
+        tag = mu.make_single_template(name, template, self.tags, self.props)
         self.tags[tag.name] = tag
         return tag
 
     def add_pair_template(self, name, template):
-        props = {
-            Wide.name: (self.unicode_version,),
-        }
-        tag = mu.make_pair_template(name, template, self.tags, props)
+        tag = mu.make_pair_template(name, template, self.tags, self.props)
         self.tags[tag.name] = tag
         return tag
 
