@@ -707,7 +707,7 @@ class Wide(mu.Single):
 
 
 class TerminalSettings(cfg.Configurable):
-    unicode_version: str = "latest"
+    unicode_version: str = "auto"
     color_support: ColorSupport = ColorSupport.TRUECOLOR
 
 class RichTextRenderer:
@@ -1025,8 +1025,9 @@ class RichBarRenderer:
             BgColor.name: (self.color_support,),
         }
 
-    def parse(self, markup_str, expand=True):
-        markup = mu.parse_markup(markup_str, self.tags, self.props)
+    def parse(self, markup_str, expand=True, slotted=False):
+        tags = self.tags if not slotted else dict(self.tags, slot=mu.Slot)
+        markup = mu.parse_markup(markup_str, tags, self.props)
         if expand:
             markup = markup.expand()
         return markup

@@ -150,7 +150,11 @@ class KAIKOLogger:
     def __init__(self, config=None):
         self.config = config
         self.level = 1
-        self.rich = term.RichTextRenderer()
+        self.recompile_style()
+
+    def recompile_style(self):
+        settings = self.config.current.devices.terminal if self.config else None
+        self.rich = term.RichTextRenderer(settings)
         self.rich.add_single_template("data", self.settings.data_icon)
         self.rich.add_single_template("info", self.settings.info_icon)
         self.rich.add_single_template("hint", self.settings.hint_icon)
@@ -164,6 +168,7 @@ class KAIKOLogger:
 
     def set_config(self, config):
         self.config = config
+        self.recompile_style()
 
     @contextlib.contextmanager
     def verb(self):
@@ -475,10 +480,17 @@ class DevicesCommand:
         return fit_screen(self.logger)
 
     @cmd.function_command
+    @dn.datanode
     def ucs_detect(self):
         """Determines the unicode version of your terminal."""
 
-        return determine_unicode_version(self.logger)
+        with determine_unicode_version(self.logger) as task:
+            yield from task.join((yield))
+            version = task.result
+            if version is not None:
+                os.environ["UNICODE_VERSION"] = version
+                self.config.current.devices.terminal.unicode_version = version
+                self.logger.recompile_style()
 
     # engines
 

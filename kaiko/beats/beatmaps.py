@@ -29,7 +29,7 @@ class UpdateContext:
 
     update: Dict[str, Union[None, bool, int, Fraction, float, str]]
 
-    def prepare(self, beatmap, context):
+    def prepare(self, beatmap, rich, context):
         context.update(**self.update)
 
 @dataclass
@@ -104,14 +104,14 @@ class Event:
 
     Methods
     -------
-    prepare(beatmap, context)
+    prepare(beatmap, rich, context)
         Prepare resources for this event in the given context.  The context is a
         mutable dictionary, which can be used to transfer parameters between events.
         The context of each track is different, so event cannot affect each others
         between tracks.
     register(state, playfield)
         Schedule handlers for this event.  `state` is the game state of beatmap,
-        `playfield` is an instance of `BeatmapPlayer`, which controls the whole
+        `playfield` is an instance of `Beatmap`, which controls the whole
         gameplay.
     """
 
@@ -146,7 +146,7 @@ class Text(Event):
     text: Optional[str] = None
     speed: Optional[float] = None
 
-    def prepare(self, beatmap, context):
+    def prepare(self, beatmap, rich, context):
         self.time = beatmap.time(self.beat)
         if self.speed is None:
             self.speed = context.get('speed', 1.0)
@@ -183,7 +183,7 @@ class Title(Event):
     text: Optional[str] = None
     pos: float = 0.5
 
-    def prepare(self, beatmap, context):
+    def prepare(self, beatmap, rich, context):
         self.time = beatmap.time(self.beat)
         self.end = beatmap.time(self.beat + self.length)
 
@@ -212,7 +212,7 @@ class Flip(Event):
 
     flip: Optional[bool] = None
 
-    def prepare(self, beatmap, context):
+    def prepare(self, beatmap, rich, context):
         self.time = beatmap.time(self.beat)
         self.lifespan = (self.time, self.time)
 
@@ -252,7 +252,7 @@ class Shift(Event):
     shift: float = 0.0
     span: Union[int, Fraction, float] = 0
 
-    def prepare(self, beatmap, context):
+    def prepare(self, beatmap, rich, context):
         self.time = beatmap.time(self.beat)
         self.end = beatmap.time(self.beat+self.span)
         self.lifespan = (self.time, self.end)
@@ -371,7 +371,7 @@ class OneshotTarget(Target):
 
     has_length = False
 
-    def prepare(self, beatmap, context):
+    def prepare(self, beatmap, rich, context):
         self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
 
         self.time = beatmap.time(self.beat)
@@ -452,8 +452,7 @@ class Soft(OneshotTarget):
     volume: Optional[float] = None
     nofeedback: Optional[bool] = None
 
-    def prepare(self, beatmap, context):
-        rich = term.RichBarRenderer()
+    def prepare(self, beatmap, rich, context):
         self.approach_appearance = (
             rich.parse(beatmap.settings.notes.soft_approach_appearance[0]),
             rich.parse(beatmap.settings.notes.soft_approach_appearance[1]),
@@ -473,7 +472,7 @@ class Soft(OneshotTarget):
         if self.nofeedback is None:
             self.nofeedback = context.get('nofeedback', False)
 
-        super().prepare(beatmap, context)
+        super().prepare(beatmap, rich, context)
 
     def hit(self, state, field, time, strength):
         super().hit(state, field, time, strength, strength < self.threshold)
@@ -503,8 +502,7 @@ class Loud(OneshotTarget):
     volume: Optional[float] = None
     nofeedback: Optional[bool] = None
 
-    def prepare(self, beatmap, context):
-        rich = term.RichBarRenderer()
+    def prepare(self, beatmap, rich, context):
         self.approach_appearance = (
             rich.parse(beatmap.settings.notes.loud_approach_appearance[0]),
             rich.parse(beatmap.settings.notes.loud_approach_appearance[1]),
@@ -524,7 +522,7 @@ class Loud(OneshotTarget):
         if self.nofeedback is None:
             self.nofeedback = context.get('nofeedback', False)
 
-        super().prepare(beatmap, context)
+        super().prepare(beatmap, rich, context)
 
     def hit(self, state, field, time, strength):
         super().hit(state, field, time, strength, strength >= self.threshold)
@@ -572,8 +570,7 @@ class Incr(OneshotTarget):
     group_volume: Optional[float] = None
     nofeedback: Optional[float] = None
 
-    def prepare(self, beatmap, context):
-        rich = term.RichBarRenderer()
+    def prepare(self, beatmap, rich, context):
         self.approach_appearance = (
             rich.parse(beatmap.settings.notes.incr_approach_appearance[0]),
             rich.parse(beatmap.settings.notes.incr_approach_appearance[1]),
@@ -593,7 +590,7 @@ class Incr(OneshotTarget):
         if self.nofeedback is None:
             self.nofeedback = context.get('nofeedback', False)
 
-        super().prepare(beatmap, context)
+        super().prepare(beatmap, rich, context)
 
         if '<incrs>' not in context:
             context['<incrs>'] = OrderedDict()
@@ -662,8 +659,7 @@ class Roll(Target):
     volume: Optional[float] = None
     nofeedback: Optional[bool] = None
 
-    def prepare(self, beatmap, context):
-        rich = term.RichBarRenderer()
+    def prepare(self, beatmap, rich, context):
         self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
         self.tolerance = beatmap.settings.difficulty.roll_tolerance
         self.rock_appearance = (
@@ -757,8 +753,7 @@ class Spin(Target):
     volume: Optional[float] = None
     nofeedback: Optional[bool] = None
 
-    def prepare(self, beatmap, context):
-        rich = term.RichBarRenderer()
+    def prepare(self, beatmap, rich, context):
         self.tolerance = beatmap.settings.difficulty.spin_tolerance
         self.disk_appearances = [(rich.parse(spin_disk_appearance[0]), rich.parse(spin_disk_appearance[1]))
                                  for spin_disk_appearance in beatmap.settings.notes.spin_disk_appearances]
@@ -1135,10 +1130,12 @@ class Beatmap:
         prepare_time = gameplay_settings.controls.prepare_time
         debug_monitor = gameplay_settings.debug_monitor
 
+        rich = term.RichBarRenderer(devices_settings.terminal)
+
         # prepare
         with self.load_resources(samplerate, nchannels, data_dir) as task:
             yield from task.join((yield))
-        with self.prepare_events() as task:
+        with self.prepare_events(rich) as task:
             yield from task.join((yield))
             total_subjects, start_time, end_time, events = task.result
 
@@ -1151,10 +1148,10 @@ class Beatmap:
         ref_time = load_time + abs(start_time)
         mixer_task, mixer = engines.Mixer.create(devices_settings.mixer, manager, ref_time, mixer_monitor)
         detector_task, detector = engines.Detector.create(devices_settings.detector, manager, ref_time, detector_monitor)
-        renderer_task, renderer = engines.Renderer.create(devices_settings.renderer, ref_time, renderer_monitor)
+        renderer_task, renderer = engines.Renderer.create(devices_settings.renderer, devices_settings.terminal, ref_time, renderer_monitor)
         controller_task, controller = engines.Controller.create(devices_settings.controller, ref_time)
 
-        beatbar = Beatbar(mixer, detector, renderer, controller,
+        beatbar = Beatbar(rich, mixer, detector, renderer, controller,
                           self.bar_shift, self.bar_flip, gameplay_settings.beatbar)
 
         score = BeatmapScore()
@@ -1190,7 +1187,7 @@ class Beatmap:
 
         # install widgets
         widget_params = dict(state=score, beatbar=beatbar, devices_settings=devices_settings)
-        with Widget.install_widgets(beatbar, gameplay_settings.widgets, **widget_params) as install_task:
+        with Widget.install_widgets(beatbar, rich, gameplay_settings.widgets, **widget_params) as install_task:
             yield from install_task.join((yield))
 
         # play music
@@ -1242,8 +1239,12 @@ class Beatmap:
                                                   channels=output_nchannels,
                                                   stop_event=stop_event)
 
-    def prepare_events(self):
+    def prepare_events(self, rich):
         r"""Prepare events asynchronously.
+
+        Parameters
+        ----------
+        rich : RichBarRenderer
 
         Returns
         -------
@@ -1252,9 +1253,9 @@ class Beatmap:
         end_time: float
         events: list of Event
         """
-        return dn.create_task(lambda stop_event: self._prepare_events(stop_event))
+        return dn.create_task(lambda stop_event: self._prepare_events(rich, stop_event))
 
-    def _prepare_events(self, stop_event):
+    def _prepare_events(self, rich, stop_event):
         events = []
         for sequence in self.event_sequences:
             context = {}
@@ -1262,7 +1263,7 @@ class Beatmap:
                 if stop_event.is_set():
                     raise RuntimeError("The operation has been cancelled.")
                 event = replace(event)
-                event.prepare(self, context)
+                event.prepare(self, rich, context)
                 if isinstance(event, Event):
                     events.append(event)
 
@@ -1312,7 +1313,7 @@ class Loop(Beatmap):
         super().__init__(tempo=tempo, offset=offset, event_sequences=[events], settings=settings)
         self.width = width
 
-    def repeat_events(self):
+    def repeat_events(self, rich):
         sequence = self.event_sequences[0]
         width = self.width
         context = {}
@@ -1323,7 +1324,7 @@ class Loop(Beatmap):
 
             for event in sequence:
                 event = replace(event, beat=event.beat+n*width)
-                event.prepare(self, context)
+                event.prepare(self, rich, context)
                 if isinstance(event, Event):
                     events.append(event)
 
@@ -1331,11 +1332,11 @@ class Loop(Beatmap):
             yield from events
             n += 1
 
-    def _prepare_events(self, stop_event):
+    def _prepare_events(self, rich, stop_event):
         total_subjects = 0
         start_time = 0.0
         end_time = float('inf')
-        events = self.repeat_events()
+        events = self.repeat_events(rich)
 
         return total_subjects, start_time, end_time, events
 

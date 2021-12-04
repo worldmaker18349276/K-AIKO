@@ -451,9 +451,9 @@ def to_range(start, stop, width):
     return range(start, stop)
 
 class Bar:
-    def __init__(self):
+    def __init__(self, terminal_settings):
         self.markups = []
-        self.rich = term.RichBarRenderer()
+        self.rich = term.RichBarRenderer(terminal_settings)
 
     def add_markup(self, markup, mask=slice(None,None), shift=0):
         self.markups.append((markup, mask, shift))
@@ -495,20 +495,20 @@ class Renderer:
         self.monitor = monitor
 
     @staticmethod
-    def get_task(scheduler, settings, ref_time, monitor):
+    def get_task(scheduler, settings, term_settings, ref_time, monitor):
         framerate = settings.display_framerate
 
-        display_node = Renderer._resize_node(Renderer._render_node(scheduler), settings, ref_time)
+        display_node = Renderer._resize_node(Renderer._render_node(scheduler, term_settings), settings, ref_time)
         if monitor:
             display_node = monitor.monitoring(display_node)
         return term.show(display_node, 1/framerate, hide_cursor=True)
 
     @staticmethod
     @dn.datanode
-    def _render_node(scheduler):
+    def _render_node(scheduler, term_settings):
         clear_line = str(term.Clear(term.ClearRegion.to_right))
         clear_below = str(term.Clear(term.ClearRegion.to_end))
-        rich = term.RichTextRenderer()
+        rich = term.RichTextRenderer(term_settings)
         width = 0
         msgs = []
         curr_msgs = list(msgs)
@@ -516,7 +516,7 @@ class Renderer:
             shown, resized, time, size = yield
             while True:
                 width = size.columns
-                view = Bar()
+                view = Bar(term_settings)
                 try:
                     view, msgs = scheduler.send(((view, msgs), time, width))
                 except StopIteration:
@@ -581,9 +581,9 @@ class Renderer:
                     resized = False
 
     @classmethod
-    def create(clz, settings, ref_time=0.0, monitor=None):
+    def create(clz, settings, term_settings, ref_time=0.0, monitor=None):
         scheduler = dn.Scheduler()
-        task = clz.get_task(scheduler, settings, ref_time, monitor)
+        task = clz.get_task(scheduler, settings, term_settings, ref_time, monitor)
         return task, clz(scheduler, monitor)
 
     def add_drawer(self, node, zindex=(0,)):
@@ -804,3 +804,4 @@ class DevicesSettings(cfg.Configurable):
     detector = DetectorSettings
     renderer = RendererSettings
     controller = ControllerSettings
+    terminal = term.TerminalSettings

@@ -249,13 +249,15 @@ class KAIKOMenu:
         if not sys.stdout.isatty():
             raise ValueError("please connect to interactive terminal device.")
 
-        #deterimine unicode version
-        if "UNICODE_VERSION" not in os.environ:
+        # deterimine unicode version
+        if self.settings.devices.terminal.unicode_version == "auto" and "UNICODE_VERSION" not in os.environ:
             with determine_unicode_version(logger) as task:
                 yield from task.join((yield))
                 version = task.result
                 if version is not None:
                     os.environ["UNICODE_VERSION"] = version
+                    self.settings.devices.terminal.unicode_version = version
+                    logger.recompile_style()
             logger.print()
 
         # fit screen size

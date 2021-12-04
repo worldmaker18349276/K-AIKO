@@ -178,7 +178,7 @@ class BeatbarSettings(cfg.Configurable):
         hit_sustain_time: float = 0.1
 
 class Beatbar:
-    def __init__(self, mixer, detector, renderer, controller, bar_shift, bar_flip, settings=None):
+    def __init__(self, rich, mixer, detector, renderer, controller, bar_shift, bar_flip, settings=None):
         settings = settings or BeatbarSettings()
 
         self.mixer = mixer
@@ -213,7 +213,7 @@ class Beatbar:
         hit_hint_duration = max(hit_decay_time, hit_sustain_time)
 
         default_sight = Beatbar._get_default_sight(hit_decay_time, hit_sustain_time,
-                                                   perf_appearances, sight_appearances)
+                                                   perf_appearances, sight_appearances, rich)
 
         self.current_hit_hint = dn.TimedVariable(value=None, duration=hit_hint_duration)
         self.current_perf_hint = dn.TimedVariable(value=(None, None), duration=perf_sustain_time)
@@ -392,8 +392,7 @@ class Beatbar:
         self.current_sight.reset(start)
 
     @staticmethod
-    def _get_default_sight(hit_decay_time, hit_sustain_time, perf_appearances, sight_appearances):
-        rich = term.RichBarRenderer()
+    def _get_default_sight(hit_decay_time, hit_sustain_time, perf_appearances, sight_appearances, rich):
         perf_appearances = {key: (rich.parse(appearance1), rich.parse(appearance2))
                             for key, (appearance1, appearance2) in perf_appearances.items()}
         sight_appearances = [(rich.parse(appearance1), rich.parse(appearance2))
@@ -485,7 +484,8 @@ def pc_format(value, width):
         return f"{value:>{width}.0%}" if value == 1 else f"{value:>{width}.{width-4}%}"
 
 class SpectrumWidget:
-    def __init__(self, settings, *, state, beatbar, devices_settings, **_):
+    def __init__(self, rich, settings, *, state, beatbar, devices_settings, **_):
+        self.rich = rich
         self.settings = settings
         self.state = state
         self.beatbar = beatbar
@@ -540,7 +540,7 @@ class SpectrumWidget:
         nchannels = self.devices_settings.mixer.output_channels
         hop_length = round(samplerate * self.settings.spec_time_res)
 
-        template = term.RichTextRenderer().parse(self.settings.template, slotted=True)
+        template = self.rich.parse(self.settings.template, slotted=True)
 
         self.spectrum = "\u2800"*spec_width
         draw = dn.pipe(self.draw_spectrum(), lambda v: setattr(self, "spectrum", v))
@@ -556,7 +556,8 @@ class SpectrumWidget:
         return widget_func
 
 class VolumeIndicatorWidget:
-    def __init__(self, settings, *, beatbar, devices_settings, **_):
+    def __init__(self, rich, settings, *, beatbar, devices_settings, **_):
+        self.rich = rich
         self.settings = settings
         self.beatbar = beatbar
         self.devices_settings = devices_settings
@@ -568,7 +569,7 @@ class VolumeIndicatorWidget:
         buffer_length = self.devices_settings.mixer.output_buffer_length
         samplerate = self.devices_settings.mixer.output_samplerate
 
-        template = term.RichTextRenderer().parse(self.settings.template, slotted=True)
+        template = self.rich.parse(self.settings.template, slotted=True)
 
         decay = buffer_length / samplerate / vol_decay_time
 
@@ -595,7 +596,8 @@ class VolumeIndicatorWidget:
         return widget_func
 
 class AccuracyMeterWidget:
-    def __init__(self, settings, *, state, **_):
+    def __init__(self, rich, settings, *, state, **_):
+        self.rich = rich
         self.settings = settings
         self.state = state
         self.last_perf = 0
@@ -610,10 +612,9 @@ class AccuracyMeterWidget:
         length = meter_width*2
         hit = [0.0]*length
 
-        rich = term.RichTextRenderer()
         colors = [c << 16 | c << 8 | c for c in range(8, 248, 10)]
         nlevel = len(colors)
-        texts = [[rich.parse(f"[bgcolor={a:06x}][color={b:06x}]▐[/][/]") for b in colors] for a in colors]
+        texts = [[self.rich.parse(f"[bgcolor={a:06x}][color={b:06x}]▐[/][/]") for b in colors] for a in colors]
 
         def widget_func(time, ran):
             perfs = self.state.perfs
@@ -645,7 +646,8 @@ class MonitorTarget(Enum):
     renderer = "renderer"
 
 class MonitorWidget:
-    def __init__(self, settings, *, beatbar, **_):
+    def __init__(self, rich, settings, *, beatbar, **_):
+        self.rich = rich
         self.settings = settings
         self.beatbar = beatbar
 
@@ -676,13 +678,14 @@ class MonitorWidget:
         return widget_func
 
 class ScoreWidget:
-    def __init__(self, settings, *, state, **_):
+    def __init__(self, rich, settings, *, state, **_):
+        self.rich = rich
         self.settings = settings
         self.state = state
 
     @dn.datanode
     def load(self):
-        template = term.RichTextRenderer().parse(self.settings.template, slotted=True)
+        template = self.rich.parse(self.settings.template, slotted=True)
 
         def widget_func(time, ran):
             score = self.state.score
@@ -709,13 +712,14 @@ class ScoreWidget:
         return widget_func
 
 class ProgressWidget:
-    def __init__(self, settings, *, state, **_):
+    def __init__(self, rich, settings, *, state, **_):
+        self.rich = rich
         self.settings = settings
         self.state = state
 
     @dn.datanode
     def load(self):
-        template = term.RichTextRenderer().parse(self.settings.template, slotted=True)
+        template = self.rich.parse(self.settings.template, slotted=True)
 
         def widget_func(time, ran):
             finished_subjects = self.state.finished_subjects
@@ -758,7 +762,7 @@ class Widget(Enum):
 
     @staticmethod
     @dn.datanode
-    def install_widgets(field, settings, **params):
+    def install_widgets(field, rich, settings, **params):
         widgets = [
             (settings.icon_widget, field.set_icon),
             (settings.header_widget, field.set_header),
@@ -766,7 +770,7 @@ class Widget(Enum):
         ]
         for widget, setter in widgets:
             widget_settings = settings.get((widget.name,))
-            widget_object = widget.value(widget_settings, **params)
+            widget_object = widget.value(rich, widget_settings, **params)
             yield
             with widget_object.load() as load_task:
                 yield from load_task.join((yield))

@@ -536,9 +536,9 @@ class BeatInput:
         debug_monitor = settings.debug_monitor
         renderer_monitor = engines.Monitor("prompt_monitor.csv") if debug_monitor else None
         input_task, controller = engines.Controller.create(devices_settings.controller)
-        display_task, renderer = engines.Renderer.create(devices_settings.renderer, monitor=renderer_monitor)
+        display_task, renderer = engines.Renderer.create(devices_settings.renderer, devices_settings.terminal, monitor=renderer_monitor)
         stroke = BeatStroke(self, settings.input)
-        prompt = BeatPrompt(stroke, self, settings, renderer_monitor)
+        prompt = BeatPrompt(stroke, self, settings, devices_settings.terminal, renderer_monitor)
 
         stroke.register(controller)
         prompt.register(renderer)
@@ -1472,7 +1472,7 @@ class BeatStroke:
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
-    def __init__(self, stroke, input, settings, monitor):
+    def __init__(self, stroke, input, settings, term_settings, monitor):
         r"""Constructor.
 
         Parameters
@@ -1480,6 +1480,7 @@ class BeatPrompt:
         stroke : BeatStroke
         input : BeatInput
         settings : BeatShellSettings
+        term_settings : TerminalSettings
         monitor : engines.Monitor or None
         """
         self.stroke = stroke
@@ -1491,7 +1492,7 @@ class BeatPrompt:
         self.t0 = None
         self.tempo = None
 
-        self.rich = term.RichTextRenderer()
+        self.rich = term.RichTextRenderer(term_settings)
         self.rich.add_pair_template("error", settings.text.error_message)
         self.rich.add_pair_template("info", settings.text.info_message)
         self.rich.add_pair_template("unknown", settings.text.token_unknown)
