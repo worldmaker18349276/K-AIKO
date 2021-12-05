@@ -450,7 +450,7 @@ def to_range(start, stop, width):
 
     return range(start, stop)
 
-class Bar:
+class RichBar:
     def __init__(self, terminal_settings):
         self.markups = []
         self.rich = term.RichBarRenderer(terminal_settings)
@@ -516,7 +516,7 @@ class Renderer:
             shown, resized, time, size = yield
             while True:
                 width = size.columns
-                view = Bar(term_settings)
+                view = RichBar(term_settings)
                 try:
                     view, msgs = scheduler.send(((view, msgs), time, width))
                 except StopIteration:
