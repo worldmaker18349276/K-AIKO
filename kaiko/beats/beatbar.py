@@ -179,7 +179,7 @@ class BeatbarSettings(cfg.Configurable):
         hit_sustain_time: float = 0.1
 
 class Beatbar:
-    def __init__(self, rich, mixer, detector, renderer, controller, bar_shift, bar_flip, settings=None):
+    def __init__(self, rich, mixer, detector, renderer, controller, icon, header, footer, bar_shift, bar_flip, settings=None):
         settings = settings or BeatbarSettings()
 
         self.mixer = mixer
@@ -201,9 +201,9 @@ class Beatbar:
         self.content_mask = slice(icon_width+header_width, -footer_width if footer_width > 0 else None)
         self.footer_mask = slice(-footer_width, None) if footer_width > 0 else slice(0, 0)
 
-        self.current_icon = dn.TimedVariable(value=lambda time, ran: mu.Text(""))
-        self.current_header = dn.TimedVariable(value=lambda time, ran: mu.Text(""))
-        self.current_footer = dn.TimedVariable(value=lambda time, ran: mu.Text(""))
+        self.current_icon = dn.TimedVariable(value=icon)
+        self.current_header = dn.TimedVariable(value=header)
+        self.current_footer = dn.TimedVariable(value=footer)
 
         # sight
         hit_decay_time = settings.scrollingbar.hit_decay_time
@@ -485,11 +485,11 @@ def pc_format(value, width):
         return f"{value:>{width}.0%}" if value == 1 else f"{value:>{width}.{width-4}%}"
 
 class SpectrumWidget:
-    def __init__(self, rich, settings, *, state, beatbar, devices_settings, **_):
+    def __init__(self, rich, settings, *, state, mixer, devices_settings, **_):
         self.rich = rich
         self.settings = settings
         self.state = state
-        self.beatbar = beatbar
+        self.mixer = mixer
         self.devices_settings = devices_settings
         self.spectrum = ""
 
@@ -546,7 +546,7 @@ class SpectrumWidget:
         self.spectrum = "\u2800"*spec_width
         draw = dn.pipe(self.draw_spectrum(), lambda v: setattr(self, "spectrum", v))
         handler = dn.pipe(lambda a:a[0], dn.branch(dn.unchunk(draw, (hop_length, nchannels))))
-        self.beatbar.mixer.add_effect(handler, zindex=(-1,))
+        self.mixer.add_effect(handler, zindex=(-1,))
 
         def widget_func(time, ran):
             width = len(ran)
@@ -557,10 +557,10 @@ class SpectrumWidget:
         return widget_func
 
 class VolumeIndicatorWidget:
-    def __init__(self, rich, settings, *, beatbar, devices_settings, **_):
+    def __init__(self, rich, settings, *, mixer, devices_settings, **_):
         self.rich = rich
         self.settings = settings
-        self.beatbar = beatbar
+        self.mixer = mixer
         self.devices_settings = devices_settings
         self.volume = 0.0
 
@@ -586,7 +586,7 @@ class VolumeIndicatorWidget:
                 self.volume = vol
 
         handler = dn.pipe(lambda a:a[0], dn.branch(volume_indicator()))
-        self.beatbar.mixer.add_effect(handler, zindex=(-1,))
+        self.mixer.add_effect(handler, zindex=(-1,))
 
         def widget_func(time, ran):
             width = len(ran)
@@ -647,10 +647,12 @@ class MonitorTarget(Enum):
     renderer = "renderer"
 
 class MonitorWidget:
-    def __init__(self, rich, settings, *, beatbar, **_):
+    def __init__(self, rich, settings, *, mixer, detector, renderer, **_):
         self.rich = rich
         self.settings = settings
-        self.beatbar = beatbar
+        self.mixer = mixer
+        self.detector = detector
+        self.renderer = renderer
 
     @dn.datanode
     def load(self):
@@ -658,11 +660,11 @@ class MonitorWidget:
         ticks_len = len(ticks)
         monitor_target = self.settings.target
         if monitor_target is MonitorTarget.mixer:
-            monitor = self.beatbar.mixer.monitor
+            monitor = self.mixer.monitor
         elif monitor_target is MonitorTarget.detector:
-            monitor = self.beatbar.detector.monitor
+            monitor = self.detector.monitor
         elif monitor_target is MonitorTarget.renderer:
-            monitor = self.beatbar.renderer.monitor
+            monitor = self.renderer.monitor
         else:
             monitor = None
 
@@ -760,22 +762,6 @@ class Widget(Enum):
 
     def __repr__(self):
         return f"Widget.{self.name}"
-
-    @staticmethod
-    @dn.datanode
-    def install_widgets(field, rich, settings, **params):
-        widgets = [
-            (settings.icon_widget, field.set_icon),
-            (settings.header_widget, field.set_header),
-            (settings.footer_widget, field.set_footer),
-        ]
-        for widget, setter in widgets:
-            widget_settings = settings.get((widget.name,))
-            widget_object = widget.value(rich, widget_settings, **params)
-            yield
-            with widget_object.load() as load_task:
-                yield from load_task.join((yield))
-                setter(load_task.result)
 
 class WidgetSettings(cfg.Configurable):
     r"""

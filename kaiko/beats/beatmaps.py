@@ -1151,11 +1151,41 @@ class Beatmap:
         renderer_task, renderer = engines.Renderer.create(devices_settings.renderer, devices_settings.terminal, ref_time, renderer_monitor)
         controller_task, controller = engines.Controller.create(devices_settings.controller, ref_time)
 
-        beatbar = Beatbar(rich, mixer, detector, renderer, controller,
-                          self.bar_shift, self.bar_flip, gameplay_settings.beatbar)
-
         score = BeatmapScore()
         score.set_total_subjects(total_subjects)
+
+        # load widgets
+        widget_params = dict(
+            state=score,
+            mixer=mixer,
+            detector=detector,
+            renderer=renderer,
+            controller=controller,
+            devices_settings=devices_settings
+        )
+
+        icon_widget = gameplay_settings.widgets.icon_widget
+        icon_widget_settings = gameplay_settings.widgets.get((icon_widget.name,))
+        with icon_widget.value(rich, icon_widget_settings, **widget_params).load() as load_icon_task:
+            yield from load_icon_task.join((yield))
+            icon = load_icon_task.result
+
+        header_widget = gameplay_settings.widgets.header_widget
+        header_widget_settings = gameplay_settings.widgets.get((header_widget.name,))
+        with header_widget.value(rich, header_widget_settings, **widget_params).load() as load_header_task:
+            yield from load_header_task.join((yield))
+            header = load_header_task.result
+
+        footer_widget = gameplay_settings.widgets.footer_widget
+        footer_widget_settings = gameplay_settings.widgets.get((footer_widget.name,))
+        with footer_widget.value(rich, footer_widget_settings, **widget_params).load() as load_footer_task:
+            yield from load_footer_task.join((yield))
+            footer = load_footer_task.result
+
+        # make beatbar
+        beatbar = Beatbar(rich, mixer, detector, renderer, controller,
+                          icon, header, footer,
+                          self.bar_shift, self.bar_flip, gameplay_settings.beatbar)
 
         # handler
         stop_event = threading.Event()
@@ -1184,11 +1214,6 @@ class Beatmap:
         def decr_knock_energy(_): devices_settings.detector.knock_energy -= knock_energy_adjust_step
         beatbar.add_handler(incr_knock_energy, gameplay_settings.controls.knock_energy_adjust_keys[0])
         beatbar.add_handler(decr_knock_energy, gameplay_settings.controls.knock_energy_adjust_keys[1])
-
-        # install widgets
-        widget_params = dict(state=score, beatbar=beatbar, devices_settings=devices_settings)
-        with Widget.install_widgets(beatbar, rich, gameplay_settings.widgets, **widget_params) as install_task:
-            yield from install_task.join((yield))
 
         # play music
         if self.audionode is not None:
