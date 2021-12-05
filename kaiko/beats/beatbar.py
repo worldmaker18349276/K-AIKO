@@ -122,7 +122,7 @@ class BeatbarSettings(cfg.Configurable):
         header_width: int = 13
         footer_width: int = 13
 
-    class scrollingbar(cfg.Configurable):
+    class sight(cfg.Configurable):
         r"""
         Fields
         ------
@@ -179,7 +179,7 @@ class BeatbarSettings(cfg.Configurable):
         hit_sustain_time: float = 0.1
 
 class Beatbar:
-    def __init__(self, rich, mixer, detector, renderer, controller, icon, header, footer, bar_shift, bar_flip, settings=None):
+    def __init__(self, mixer, detector, renderer, controller, icon, header, footer, sight, bar_shift, bar_flip, settings=None):
         settings = settings or BeatbarSettings()
 
         self.mixer = mixer
@@ -206,23 +206,15 @@ class Beatbar:
         self.current_footer = dn.TimedVariable(value=footer)
 
         # sight
-        hit_decay_time = settings.scrollingbar.hit_decay_time
-        hit_sustain_time = settings.scrollingbar.hit_sustain_time
-        perf_appearances = settings.scrollingbar.performances_appearances
-        sight_appearances = settings.scrollingbar.sight_appearances
-        perf_sustain_time = settings.scrollingbar.performance_sustain_time
-        hit_hint_duration = max(hit_decay_time, hit_sustain_time)
+        hit_decay_time = settings.sight.hit_decay_time
+        hit_sustain_time = settings.sight.hit_sustain_time
+        perf_appearances = settings.sight.performances_appearances
+        sight_appearances = settings.sight.sight_appearances
+        perf_sustain_time = settings.sight.performance_sustain_time
 
-        perf_appearances = {key: (rich.parse(appearance1), rich.parse(appearance2))
-                            for key, (appearance1, appearance2) in perf_appearances.items()}
-        sight_appearances = [(rich.parse(appearance1), rich.parse(appearance2))
-                             for appearance1, appearance2 in sight_appearances]
-
-        default_sight = Beatbar._get_default_sight(perf_appearances, sight_appearances)
-
-        self.current_hit_hint = dn.TimedVariable(value=None, duration=hit_hint_duration)
+        self.current_hit_hint = dn.TimedVariable(value=None, duration=hit_sustain_time)
         self.current_perf_hint = dn.TimedVariable(value=(None, None), duration=perf_sustain_time)
-        self.current_sight = dn.TimedVariable(value=default_sight)
+        self.current_sight = dn.TimedVariable(value=sight)
 
         # hit handler
         self.target_queue = queue.Queue()
@@ -396,9 +388,32 @@ class Beatbar:
     def reset_sight(self, start=None):
         self.current_sight.reset(start)
 
-    @staticmethod
-    def _get_default_sight(perf_appearances, sight_appearances):
-        def _default_sight(time, hit_hint, perf_hint):
+    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
+        return self.mixer.play(node, samplerate=samplerate, channels=channels,
+                                     volume=volume, start=start, end=end,
+                                     time=time, zindex=zindex)
+
+    def add_handler(self, node, keyname=None):
+        return self.controller.add_handler(node, keyname)
+
+    def remove_handler(self, key):
+        self.controller.remove_handler(key)
+
+
+# widgets
+class Sight:
+    def __init__(self, rich, settings, **_):
+        self.rich = rich
+        self.settings = settings
+
+    @dn.datanode
+    def load(self):
+        perf_appearances = {key: (self.rich.parse(appearance1), self.rich.parse(appearance2))
+                            for key, (appearance1, appearance2) in self.settings.performances_appearances.items()}
+        sight_appearances = [(self.rich.parse(appearance1), self.rich.parse(appearance2))
+                             for appearance1, appearance2 in self.settings.sight_appearances]
+
+        def sight_func(time, hit_hint, perf_hint):
             hit_strength, hit_time, hit_duration = hit_hint
             (perf, perf_is_reversed), perf_time, _ = perf_hint
 
@@ -423,21 +438,9 @@ class Beatbar:
                 mu.Group((term.Restore((perf_ap[1],)), sight_ap[1]))
             )
 
-        return _default_sight
+        yield
+        return sight_func
 
-    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
-        return self.mixer.play(node, samplerate=samplerate, channels=channels,
-                                     volume=volume, start=start, end=end,
-                                     time=time, zindex=zindex)
-
-    def add_handler(self, node, keyname=None):
-        return self.controller.add_handler(node, keyname)
-
-    def remove_handler(self, key):
-        self.controller.remove_handler(key)
-
-
-# widgets
 def uint_format(value, width, zero_padded=False):
     scales = "KMGTPEZY"
     pad = "0" if zero_padded else " "

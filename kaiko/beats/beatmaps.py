@@ -14,7 +14,7 @@ from kaiko.utils import audios as aud
 from kaiko.utils import markups as mu
 from kaiko.utils import terminals as term
 from kaiko.utils import engines
-from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings, Widget, WidgetSettings
+from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings, Sight, Widget, WidgetSettings
 
 
 @dataclass
@@ -1182,9 +1182,13 @@ class Beatmap:
             yield from load_footer_task.join((yield))
             footer = load_footer_task.result
 
+        with Sight(rich, gameplay_settings.beatbar.sight, **widget_params).load() as load_sight_task:
+            yield from load_sight_task.join((yield))
+            sight = load_sight_task.result
+
         # make beatbar
-        beatbar = Beatbar(rich, mixer, detector, renderer, controller,
-                          icon, header, footer,
+        beatbar = Beatbar(mixer, detector, renderer, controller,
+                          icon, header, footer, sight,
                           self.bar_shift, self.bar_flip, gameplay_settings.beatbar)
 
         # handler
