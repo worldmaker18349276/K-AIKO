@@ -1000,6 +1000,7 @@ class RichBarRenderer:
         Wide.name: Wide,
         X.name: X,
         DX.name: DX,
+        Restore.name: Restore,
         Mask.name: Mask,
     }
 

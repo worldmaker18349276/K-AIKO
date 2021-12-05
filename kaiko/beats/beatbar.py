@@ -9,7 +9,6 @@ import numpy
 from kaiko.utils import config as cfg
 from kaiko.utils import datanodes as dn
 from kaiko.utils import markups as mu
-from kaiko.utils import terminals as term
 
 
 # performance
@@ -408,7 +407,7 @@ class Sight:
 
     @dn.datanode
     def load(self):
-        perf_appearances = {key: (self.rich.parse(appearance1), self.rich.parse(appearance2))
+        perf_appearances = {key: (self.rich.parse(f"[restore]{appearance1}[/]"), self.rich.parse(f"[restore]{appearance2}[/]"))
                             for key, (appearance1, appearance2) in self.settings.performances_appearances.items()}
         sight_appearances = [(self.rich.parse(appearance1), self.rich.parse(appearance2))
                              for appearance1, appearance2 in self.settings.sight_appearances]
@@ -434,8 +433,8 @@ class Sight:
                 sight_ap = sight_appearances[0]
 
             return (
-                mu.Group((term.Restore((perf_ap[0],)), sight_ap[0])),
-                mu.Group((term.Restore((perf_ap[1],)), sight_ap[1]))
+                mu.Group((perf_ap[0], sight_ap[0])),
+                mu.Group((perf_ap[1], sight_ap[1]))
             )
 
         yield
