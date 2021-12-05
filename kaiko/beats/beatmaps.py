@@ -359,9 +359,9 @@ class OneshotTarget(Target):
     ----------
     sound : DataNode or None
         The sound of the auditory cue of this target.
-    approach_appearance : Tuple[markups.Node, markups.Node]
+    approach_appearance : tuple of str and str
         The appearance of approaching target.
-    wrong_appearance : Tuple[markups.Node, markups.Node]
+    wrong_appearance : tuple of str and str
         The appearance of wrong-shot target.
 
     Methods
@@ -835,7 +835,7 @@ class BeatmapSettings(cfg.Configurable):
     r"""
     Fields
     ------
-    resources : Dict[str, str]
+    resources : dict from str to str
         The resource name and file path.
     """
 
@@ -872,7 +872,7 @@ class BeatmapSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        performances_scores : Dict[PerformanceGrade, int]
+        performances_scores : dict from PerformanceGrade to int
             The grades of different performance.
         roll_rock_score : int
             The score of each rock in the roll note.
@@ -908,35 +908,35 @@ class BeatmapSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        soft_approach_appearance : Tuple[str, str]
+        soft_approach_appearance : tuple of str and str
             The appearance of approaching soft note.
-        soft_wrong_appearance : Tuple[str, str]
+        soft_wrong_appearance : tuple of str and str
             The appearance of wrong soft note.
         soft_sound : str
             The name of sound of soft note.
 
-        loud_approach_appearance : Tuple[str, str]
+        loud_approach_appearance : tuple of str and str
             The appearance of approaching loud note.
-        loud_wrong_appearance : Tuple[str, str]
+        loud_wrong_appearance : tuple of str and str
             The appearance of wrong loud note.
         loud_sound : str
             The name of sound of loud note.
 
-        incr_approach_appearance : Tuple[str, str]
+        incr_approach_appearance : tuple of str and str
             The appearance of approaching incr note.
-        incr_wrong_appearance : Tuple[str, str]
+        incr_wrong_appearance : tuple of str and str
             The appearance of wrong incr note.
         incr_sound : str
             The name of sound of incr note.
 
-        roll_rock_approach_appearance : Tuple[str, str]
+        roll_rock_approach_appearance : tuple of str and str
             The appearance of approaching roll in the rock note.
         roll_rock_sound : str
             The name of sound of roll in the rock note.
 
-        spin_disk_appearances : List[Tuple[str, str]]
+        spin_disk_appearances : list of tuple of str and str
             The spinning appearance of spin note.
-        spin_finishing_appearance : Tuple[str, str]
+        spin_finishing_appearance : tuple of str and str
             The finishing appearance of spin note.
         spin_finish_sustain_time : float
             The sustain time for the finishing spin note.
@@ -994,22 +994,22 @@ class GameplaySettings(cfg.Configurable):
 
         stop_key : str
             The key to stop the game.
-        sound_delay_adjust_keys : Tuple[str, str]
+        sound_delay_adjust_keys : tuple of str and str
             The keys to adjust click sound delay.
             The first/second string is the key to adjust faster/slower.
         sound_delay_adjust_step : float
             The adjustment interval of click sound delay.
-        display_delay_adjust_keys : Tuple[str, str]
+        display_delay_adjust_keys : tuple of str and str
             The keys to adjust display delay.
             The first/second string is the key to adjust faster/slower.
         display_delay_adjust_step : float
             The adjustment interval of display delay.
-        knock_delay_adjust_keys : Tuple[str, str]
+        knock_delay_adjust_keys : tuple of str and str
             The keys to adjust knock delay.
             The first/second string is the key to adjust slower/faster.
         knock_delay_adjust_step : float
             The adjustment interval of knock delay.
-        knock_energy_adjust_keys : Tuple[str, str]
+        knock_energy_adjust_keys : tuple of str and str
             The keys to adjust knock energy.
             The first/second string is the key to adjust softer/louder.
         knock_energy_adjust_step : float

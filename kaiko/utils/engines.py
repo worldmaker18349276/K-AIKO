@@ -630,7 +630,7 @@ class ControllerSettings(cfg.Configurable):
     r"""
     Fields
     ------
-    keycodes : dict
+    keycodes : dict from str to str
         The maps from keycodes to keynames.
     """
     keycodes: Dict[str, str] = {

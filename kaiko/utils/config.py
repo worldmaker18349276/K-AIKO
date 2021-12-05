@@ -6,6 +6,7 @@ The format of configuration file is a sub-language of python.
 import re
 import typing
 from collections import OrderedDict
+from inspect import cleandoc
 from pathlib import Path
 from . import biparsers as bp
 
@@ -123,13 +124,6 @@ class ConfigurationBiparser(bp.Biparser):
 
         return res
 
-def outdent(doc):
-    m = re.search(r"\n[ ]*$", doc)
-    if not m:
-        return doc
-    level = len(m.group(0))-1
-    return re.sub(r"\n[ ]{,%d}"%level, r"\n", doc[:-1-level])
-
 class ConfigurableMeta(type):
     def __init__(self, name, supers, attrs):
         if not hasattr(self, '__configurable_excludes__'):
@@ -179,7 +173,7 @@ class ConfigurableMeta(type):
         if doc is None:
             return res
 
-        doc = outdent(doc)
+        doc = cleandoc(doc)
 
         m = re.search(r"Fields\n------\n", doc)
         if not m:
@@ -187,10 +181,10 @@ class ConfigurableMeta(type):
         doc = doc[m.end(0):]
 
         while True:
-            m = re.match(r"([0-9a-zA-Z_]+) : [^\n]+(\n+(?:[ ]+[^\n]*\n+)*)", doc)
+            m = re.match(r"([0-9a-zA-Z_]+) : [^\n]+\n+((?:[ ]+[^\n]*\n+)*)", doc)
             if not m:
                 return res
-            res[m.group(1)] = outdent(m.group(2)).strip()
+            res[m.group(1)] = cleandoc(m.group(2)).strip()
             doc = doc[m.end(0):]
 
     @staticmethod

@@ -265,12 +265,12 @@ class BeatShellSettings(cfg.Configurable):
             The key for confirming input.
         help_key : str
             The key for help.
-        autocomplete_keys : Tuple[str, str, str]
+        autocomplete_keys : tuple of str and str and str
             The keys for finding the next, previous and canceling suggestions.
-        search_keys : Tuple[str, str, str]
+        search_keys : tuple of str and str and str
             The keys for finding the next, previous and canceling command history.
 
-        keymap : dict of str
+        keymap : dict from str to str
             The keymap of beatshell.  The key of dict is the keystroke, and the
             value of dict is the action to activate.  The format of action is just
             like a normal python code: `input.insert_typeahead() or input.move_right()`.
@@ -309,12 +309,12 @@ class BeatShellSettings(cfg.Configurable):
         ------
         to : float
         tempo : float
-        icons : List[str]
+        icons : list of str
             The appearances of icon.
         icon_width : int
             The text width of icon.
 
-        markers : Tuple[str, str]
+        markers : tuple of str and str
             The appearance of normal and blinking-style markers.
         marker_width : int
             The text width of marker.
@@ -322,7 +322,7 @@ class BeatShellSettings(cfg.Configurable):
         input_margin : int
             The width of margin of input field.
 
-        caret : Tuple[str, str, str]
+        caret : tuple of str and str and str
             The markup template of the normal/blinking/highlighted-style caret.
         caret_blink_ratio : float
             The ratio to blink.
@@ -372,11 +372,13 @@ class BeatShellSettings(cfg.Configurable):
 
         suggestions_lines : int
             The maximum number of lines of the suggestions.
-        suggestion_items : tuple
+        suggestion_items : tuple of str and str
             The markup templates for the unselected/selected suggestion.
 
         token_unknown : str
             The markup template for the unknown token.
+        token_unfinished : str
+            The markup template for the unfinished token.
         token_command : str
             The markup template for the command token.
         token_keyword : str

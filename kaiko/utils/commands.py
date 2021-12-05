@@ -2,6 +2,7 @@ import os
 import dataclasses
 from enum import Enum
 from collections import OrderedDict
+from inspect import cleandoc
 import functools
 import re
 import inspect
@@ -725,14 +726,7 @@ def getcmddesc(obj, name):
     if doc is None:
         return None
 
-    return outdent(doc)
-
-def outdent(doc):
-    m = re.search(r"\n[ ]*$", doc)
-    if not m:
-        return doc
-    level = len(m.group(0))-1
-    return re.sub(r"\n[ ]{,%d}"%level, r"\n", doc[:-1-level])
+    return cleandoc(doc)
 
 class CommandDescriptor:
     r"""Command descriptor."""

@@ -99,23 +99,24 @@ class BeatbarSettings(cfg.Configurable):
         icon_width : int
             The width of icon.
 
-             ⣠⣴⣤⣿⣤⣦ [00000/00400]       □  ⛶     □                 ■   [11.3%|00:09]
+             ⣠⣴⣤⣿⣤⣦ \[00000/00400]       □  ⛶     □                 ■   \[11.3%|00:09]
             ^^^^^^^^
               here
 
         header_width : int
             The width of header.
 
-             ⣠⣴⣤⣿⣤⣦ [00000/00400]       □  ⛶     □                 ■   [11.3%|00:09]
+             ⣠⣴⣤⣿⣤⣦ \[00000/00400]       □  ⛶     □                 ■   \[11.3%|00:09]
                     ^^^^^^^^^^^^^
                         here
 
         footer_width : int
             The width of footer.
 
-             ⣠⣴⣤⣿⣤⣦ [00000/00400]       □  ⛶     □                 ■   [11.3%|00:09]
+             ⣠⣴⣤⣿⣤⣦ \[00000/00400]       □  ⛶     □                 ■   \[11.3%|00:09]
                                                                        ^^^^^^^^^^^^^
                                                                             here
+
         """
         icon_width: int = 8
         header_width: int = 13
@@ -125,7 +126,7 @@ class BeatbarSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        sight_appearances : List[Tuple[str, str]]
+        sight_appearances : list of tuple of str and str
             The appearances of the judgement line.
             The first string is default appearance, and the rest is the appearances
             for the different hitting strength (from soft to loud).
@@ -138,7 +139,7 @@ class BeatbarSettings(cfg.Configurable):
             If the hitting strength is too soft, the style of the sight will
             sustain until this time.
 
-        performances_appearances : Dict[PerformanceGrade, Tuple[str, str]]
+        performances_appearances : dict from PerformanceGrade to tuple of str and str
             The hint for different performance, which will be drawn on the sight.
             The first/second string is used for right-to-left/left-to-right notes.
         performance_sustain_time : float
