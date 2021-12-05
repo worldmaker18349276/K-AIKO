@@ -1139,6 +1139,10 @@ class Beatmap:
             yield from task.join((yield))
             total_subjects, start_time, end_time, events = task.result
 
+        score = BeatmapScore()
+        score.set_total_subjects(total_subjects)
+
+        # load engines
         mixer_monitor = detector_monitor = renderer_monitor = None
         if debug_monitor:
             mixer_monitor = engines.Monitor("mixer_monitor.csv")
@@ -1150,9 +1154,6 @@ class Beatmap:
         detector_task, detector = engines.Detector.create(devices_settings.detector, manager, ref_time, detector_monitor)
         renderer_task, renderer = engines.Renderer.create(devices_settings.renderer, devices_settings.terminal, ref_time, renderer_monitor)
         controller_task, controller = engines.Controller.create(devices_settings.controller, ref_time)
-
-        score = BeatmapScore()
-        score.set_total_subjects(total_subjects)
 
         # load widgets
         widget_params = dict(

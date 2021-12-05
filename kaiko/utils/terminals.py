@@ -470,7 +470,6 @@ for r in (0, *range(95, 256, 40)):
 for gray in range(8, 248, 10):
     colors_256.append((gray, gray, gray))
 
-# TODO: determine them
 class ColorSupport(enum.Enum):
     MONO = "mono"
     STANDARD = "standard"
@@ -646,9 +645,10 @@ class BgColor(mu.Pair):
             return mu.Group(tuple(child.expand() for child in self.children))
 
 
+# C0 control characters
 @dataclasses.dataclass(frozen=True)
-class Newline(mu.Single):
-    name = "nl"
+class ControlCharacter(mu.Single):
+    # character
 
     @classmethod
     def parse(clz, param):
@@ -661,11 +661,49 @@ class Newline(mu.Single):
         return None
 
     def expand(self):
-        return mu.Text("\n")
+        return mu.Text(self.character)
+
+@dataclasses.dataclass(frozen=True)
+class BEL(ControlCharacter):
+    name = "bel"
+    character = "\a"
+
+@dataclasses.dataclass(frozen=True)
+class BS(ControlCharacter):
+    name = "bs"
+    character = "\b"
+
+@dataclasses.dataclass(frozen=True)
+class CR(ControlCharacter):
+    name = "cr"
+    character = "\r"
+
+@dataclasses.dataclass(frozen=True)
+class VT(ControlCharacter):
+    name = "vt"
+    character = "\v"
+
+@dataclasses.dataclass(frozen=True)
+class FF(ControlCharacter):
+    name = "ff"
+    character = "\f"
+
+
+# others
+@dataclasses.dataclass(frozen=True)
+class Tab(ControlCharacter):
+    name = "tab"
+    character = "\t"
+
+@dataclasses.dataclass(frozen=True)
+class Newline(ControlCharacter):
+    name = "nl"
+    character = "\n"
 
 @dataclasses.dataclass(frozen=True)
 class Space(mu.Single):
     name = "sp"
+    character = " "
 
     @classmethod
     def parse(clz, param):
@@ -678,7 +716,7 @@ class Space(mu.Single):
         return None
 
     def expand(self):
-        return mu.Text(" ")
+        return mu.Text(self.character)
 
 @dataclasses.dataclass(frozen=True)
 class Wide(mu.Single):
@@ -721,6 +759,7 @@ class RichTextRenderer:
         Invert.name: Invert,
         Color.name: Color,
         BgColor.name: BgColor,
+        Tab.name: Tab,
         Newline.name: Newline,
         Space.name: Space,
         Wide.name: Wide,
@@ -773,6 +812,15 @@ class RichTextRenderer:
                 return -1
             width += w
         return width
+
+    def clear_line(self):
+        return mu.Group((Clear(ClearRegion.line), CR()))
+
+    def clear_below(self):
+        return mu.Group((Clear(ClearRegion.to_end), CR()))
+
+    def clear_screen(self):
+        return mu.Group((Clear(ClearRegion.screen), Pos(0,0)))
 
     def _render(self, markup, reopens=()):
         if isinstance(markup, mu.Text):
@@ -995,7 +1043,6 @@ class RichBarRenderer:
         Invert.name: Invert,
         Color.name: Color,
         BgColor.name: BgColor,
-        Newline.name: Newline,
         Space.name: Space,
         Wide.name: Wide,
         X.name: X,

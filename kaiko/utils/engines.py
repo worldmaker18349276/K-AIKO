@@ -498,7 +498,7 @@ class Renderer:
     def get_task(scheduler, settings, term_settings, ref_time, monitor):
         framerate = settings.display_framerate
 
-        display_node = Renderer._resize_node(Renderer._render_node(scheduler, term_settings), settings, ref_time)
+        display_node = Renderer._resize_node(Renderer._render_node(scheduler, term_settings), settings, term_settings, ref_time)
         if monitor:
             display_node = monitor.monitoring(display_node)
         return term.show(display_node, 1/framerate, hide_cursor=True)
@@ -506,9 +506,9 @@ class Renderer:
     @staticmethod
     @dn.datanode
     def _render_node(scheduler, term_settings):
-        clear_line = str(term.Clear(term.ClearRegion.to_right))
-        clear_below = str(term.Clear(term.ClearRegion.to_end))
         rich = term.RichTextRenderer(term_settings)
+        clear_line = rich.render(rich.clear_line().expand())
+        clear_below = rich.render(rich.clear_below().expand())
         width = 0
         msgs = []
         curr_msgs = list(msgs)
@@ -525,12 +525,12 @@ class Renderer:
 
                 # track changes of the message
                 if not resized and curr_msgs == msgs:
-                    res_text = f"\r{clear_line}{view_str}\r"
+                    res_text = f"{clear_line}{view_str}\r"
                 elif not msgs:
-                    res_text = f"\r{clear_below}{view_str}\r"
+                    res_text = f"{clear_below}{view_str}\r"
                 else:
                     msg_text = rich.render_less(mu.Group((mu.Text("\n"), *msgs)), size)
-                    res_text = f"\r{clear_below}{view_str}\r{msg_text}"
+                    res_text = f"{clear_below}{view_str}\r{msg_text}"
 
                 shown, resized, time, size = yield res_text
                 if shown:
@@ -538,11 +538,12 @@ class Renderer:
 
     @staticmethod
     @dn.datanode
-    def _resize_node(render_node, settings, ref_time):
+    def _resize_node(render_node, settings, term_settings, ref_time):
         framerate = settings.display_framerate
 
-        clear_line = str(term.Clear(term.ClearRegion.to_right))
-        to_home = str(term.Clear(term.ClearRegion.screen)) + str(term.Pos(0, 0))
+        rich = term.RichTextRenderer(term_settings)
+        clear_line = rich.render(rich.clear_line().expand())
+        clear_screen = rich.render(rich.clear_screen().expand())
         size_node = term.terminal_size()
 
         index = -1
@@ -564,7 +565,7 @@ class Renderer:
                     resize_time = time
                     resized = True
                 if resized and time < resize_time + settings.resize_delay:
-                    yield f"\r{clear_line}resizing...\r"
+                    yield f"{clear_line}resizing...\r"
                     width = size.columns
                     continue
 
@@ -574,7 +575,7 @@ class Renderer:
                 except StopIteration:
                     return
                 if resized:
-                    res_text = to_home + res_text
+                    res_text = f"{clear_screen}{res_text}"
 
                 shown = yield res_text
                 if shown:

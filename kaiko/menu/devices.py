@@ -219,12 +219,10 @@ class KAIKOLogger:
         print(self.rich.render(msg), end=end, flush=flush)
 
     def clear_line(self, flush=False):
-        clear_line = str(term.Clear(term.ClearRegion.to_right))
-        print("\r" + clear_line, end="", flush=flush)
+        print(self.rich.render(self.rich.clear_line().expand()), end="", flush=flush)
 
     def clear(self, flush=False):
-        clear_screen = str(term.Clear(term.ClearRegion.screen)) + str(term.Pos(0,0))
-        print(clear_screen, end="", flush=flush)
+        print(self.rich.render(self.rich.clear_screen().expand()), end="", flush=flush)
 
     @dn.datanode
     def ask(self, prompt, default=True):
