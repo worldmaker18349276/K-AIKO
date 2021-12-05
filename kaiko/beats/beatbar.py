@@ -213,8 +213,12 @@ class Beatbar:
         perf_sustain_time = settings.scrollingbar.performance_sustain_time
         hit_hint_duration = max(hit_decay_time, hit_sustain_time)
 
-        default_sight = Beatbar._get_default_sight(hit_decay_time, hit_sustain_time,
-                                                   perf_appearances, sight_appearances, rich)
+        perf_appearances = {key: (rich.parse(appearance1), rich.parse(appearance2))
+                            for key, (appearance1, appearance2) in perf_appearances.items()}
+        sight_appearances = [(rich.parse(appearance1), rich.parse(appearance2))
+                             for appearance1, appearance2 in sight_appearances]
+
+        default_sight = Beatbar._get_default_sight(perf_appearances, sight_appearances)
 
         self.current_hit_hint = dn.TimedVariable(value=None, duration=hit_hint_duration)
         self.current_perf_hint = dn.TimedVariable(value=(None, None), duration=perf_sustain_time)
@@ -222,7 +226,7 @@ class Beatbar:
 
         # hit handler
         self.target_queue = queue.Queue()
-        hit_handler = Beatbar._hit_handler(self.current_hit_hint, self.target_queue)
+        hit_handler = Beatbar._hit_handler(self.current_hit_hint, self.target_queue, hit_decay_time, hit_sustain_time)
 
         # register handlers
         icon_drawer = lambda arg: (0, self.current_icon.get(arg[0])(arg[0], arg[1]))
@@ -326,7 +330,7 @@ class Beatbar:
 
     @staticmethod
     @dn.datanode
-    def _hit_handler(current_hit_hint, target_queue):
+    def _hit_handler(current_hit_hint, target_queue, hit_decay_time, hit_sustain_time):
         target, start, duration = None, None, None
         waiting_targets = []
 
@@ -336,7 +340,7 @@ class Beatbar:
 
             strength = min(1.0, strength)
             if detected:
-                current_hit_hint.set(strength)
+                current_hit_hint.set(strength, duration=max(strength * hit_decay_time, hit_sustain_time))
 
             # update waiting targets
             while not target_queue.empty():
@@ -393,14 +397,9 @@ class Beatbar:
         self.current_sight.reset(start)
 
     @staticmethod
-    def _get_default_sight(hit_decay_time, hit_sustain_time, perf_appearances, sight_appearances, rich):
-        perf_appearances = {key: (rich.parse(appearance1), rich.parse(appearance2))
-                            for key, (appearance1, appearance2) in perf_appearances.items()}
-        sight_appearances = [(rich.parse(appearance1), rich.parse(appearance2))
-                             for appearance1, appearance2 in sight_appearances]
-
+    def _get_default_sight(perf_appearances, sight_appearances):
         def _default_sight(time, hit_hint, perf_hint):
-            hit_strength, hit_time, _ = hit_hint
+            hit_strength, hit_time, hit_duration = hit_hint
             (perf, perf_is_reversed), perf_time, _ = perf_hint
 
             # draw perf hint
@@ -410,11 +409,10 @@ class Beatbar:
 
             # draw sight
             if hit_strength is not None:
-                strength = hit_strength - (time - hit_time) / hit_decay_time
+                strength = hit_strength - hit_strength * (time - hit_time) / hit_duration
                 strength = max(0.0, min(1.0, strength))
                 loudness = int(strength * (len(sight_appearances) - 1))
-                if time - hit_time < hit_sustain_time:
-                    loudness = max(1, loudness)
+                loudness = max(1, loudness)
                 sight_ap = sight_appearances[loudness]
 
             else:
