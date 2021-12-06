@@ -145,6 +145,24 @@ class ProfileManager:
 
         default_meta_path.write_text(self.default_name)
 
+    def is_changed(self):
+        """Check if the current configuration is changed."""
+        if self.current_name is None:
+            raise ValueError("No profile")
+
+        current_path = self.path / (self.current_name + self.extension)
+
+        if not self.path.exists():
+            raise ValueError(f"The profile directory doesn't exist: {self.path}")
+
+        if current_path.exists() and not current_path.is_file():
+            raise ValueError(f"Wrong file type for profile: {current_path}")
+
+        old = open(current_path).read() if current_path.exists() else ""
+        biparser = cfg.ConfigurationBiparser(self.config_type, name=self.settings_name)
+        new = biparser.encode(self.current)
+        return new != old
+
     def save(self):
         """Save the current configuration."""
         logger = self.logger
@@ -380,9 +398,20 @@ class ConfigCommand:
         """Show configuration."""
         biparser = cfg.ConfigurationBiparser(self.config.config_type, name=self.config.settings_name)
         text = biparser.encode(self.config.current)
+        is_changed = self.config.is_changed()
 
-        self.logger.print(f"profile name: {self.logger.emph(self.config.current_name)}")
-        self.logger.print(text, markup=False)
+        width = 80
+        lines = text.split("\n")
+        n = len(str(len(lines)-1))
+        change_mark = "*" if is_changed else ""
+        file_name = self.config.current_name + self.config.extension
+        self.logger.print(f"[verb]{'─'*n}────{'─'*width}[/]")
+        self.logger.print(f" [emph]{self.logger.escape(file_name)}[/]{change_mark}")
+        self.logger.print(f"[verb]{'─'*n}──┬─{'─'*width}[/]")
+        for i, line in enumerate(lines):
+            self.logger.print(f" [verb]{i:>{n}d}[/] [verb]│[/] [color=bright_white]{self.logger.escape(line)}[/]")
+        self.logger.print(f"[verb]{'─'*n}──┴─{'─'*width}[/]")
+        self.logger.print()
 
     @cmd.function_command
     def has(self, field):
