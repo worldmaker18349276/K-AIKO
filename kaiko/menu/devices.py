@@ -237,30 +237,28 @@ class KAIKOLogger:
             self.print(f" [verb]{i:>{n}d}[/] [verb]│[/] [color=bright_white]{self.escape(line)}[/]")
         self.print(f"[verb]{'─'*n}──┴─{'─'*(max(0, width-n-4))}[/]")
 
-    @dn.datanode
     def ask(self, prompt, default=True):
-        yield
-        hint = "[emph]y[/]/n" if default else "y/[emph]n[/]"
-        self.print(f"{self.escape(prompt)} \[{hint}]: ", end="", flush=True)
+        @dn.datanode
+        def _ask():
+            hint = "[emph]y[/]/n" if default else "y/[emph]n[/]"
+            self.print(f"{self.escape(prompt)} \[{hint}]", end="", flush=True)
 
-        while True:
-            res_queue = queue.Queue()
-            input_task = term.inkey(lambda a: res_queue.put(a[1]))
-            try:
-                with dn.pipe(input_task, dn.take(lambda _: res_queue.empty())) as task:
-                    yield from task.join((yield))
-            finally:
-                self.print(flush=True)
-            res = res_queue.get() if not res_queue.empty() else ""
+            while True:
+                try:
+                    _, keycode = yield
+                finally:
+                    self.print(flush=True)
 
-            if res == "\n":
-                return default
-            if res in ("y", "Y"):
-                return True
-            elif res in ("n", "N"):
-                return False
+                if keycode == "\n":
+                    return default
+                if keycode in ("y", "Y"):
+                    return True
+                elif keycode in ("n", "N"):
+                    return False
 
-            self.print("Please reply [emph]y[/] or [emph]n[/]: ", end="", flush=True)
+                self.print("Please reply [emph]y[/] or [emph]n[/]", end="", flush=True)
+
+        return term.inkey(_ask())
 
 @dn.datanode
 def determine_unicode_version(logger):

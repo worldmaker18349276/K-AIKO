@@ -131,13 +131,14 @@ def inkey(node, stream=None, raw=False):
 
             try:
                 node.send((time.perf_counter()-ref_time, data))
-            except StopIteration:
-                return
+            except StopIteration as e:
+                return e.value
 
     with inkey_ctxt(stream, raw):
         with node:
             with dn.create_task(run) as task:
                 yield from task.join((yield))
+                return task.result
 
 @contextlib.contextmanager
 def show_ctxt(stream, hide_cursor=False, end="\n"):
@@ -169,8 +170,8 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
         while True:
             try:
                 view = node.send(shown)
-            except StopIteration:
-                break
+            except StopIteration as e:
+                return e.value
             shown = False
             i += 1
 
@@ -178,7 +179,7 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
             if delta < 0:
                 continue
             if stop_event.wait(delta):
-                break
+                return
 
             stream.write(view)
             stream.flush()
@@ -188,7 +189,7 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
         with node:
             with dn.create_task(run) as task:
                 yield from task.join((yield))
-
+                return task.result
 
 # ctrl code
 @dataclasses.dataclass(frozen=True)
