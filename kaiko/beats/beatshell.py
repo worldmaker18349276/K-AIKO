@@ -301,6 +301,7 @@ class BeatShellSettings(cfg.Configurable):
             "Ctrl_Backspace": "input.delete_to_word_start()",
             "Ctrl_Delete"   : "input.delete_to_word_end()",
             "Esc"           : "input.cancel_typeahead() | input.cancel_hint()",
+            "'\\x04'"       : "input.delete() or input.exit_if_empty()",
         }
 
     class prompt(cfg.Configurable):
@@ -1187,6 +1188,22 @@ class BeatInput:
 
     @locked
     @onstate("EDIT")
+    def exit_if_empty(self):
+        """Finish the command.
+
+        Returns
+        -------
+        succ : bool
+            `False` if the command is wrong.
+        """
+        if self.buffer:
+            return False
+
+        self.input("bye")
+        return self.confirm()
+
+    @locked
+    @onstate("EDIT")
     def autocomplete(self, action=+1):
         """Autocomplete.
         Complete the token on the caret, or fill in suggestions if caret is
@@ -1468,7 +1485,7 @@ class BeatStroke:
         def handler(args):
             _, _, key, code = args
             if key not in keys:
-                self.input.unknown_key(key or repr(code))
+                self.input.unknown_key(key)
         return handler
 
 class BeatPrompt:
