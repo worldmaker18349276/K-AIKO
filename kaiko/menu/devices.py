@@ -224,6 +224,18 @@ class KAIKOLogger:
     def clear(self, flush=False):
         print(self.rich.render(self.rich.clear_screen().expand()), end="", flush=flush)
 
+    def print_code(self, content, title=None, is_changed=False, width=80):
+        lines = content.split("\n")
+        n = len(str(len(lines)-1))
+        if title is not None:
+            change_mark = "*" if is_changed else ""
+            self.print(f"[verb]{'─'*n}────{'─'*width}[/]")
+            self.print(f" [emph]{self.escape(title)}[/]{change_mark}")
+        self.print(f"[verb]{'─'*n}──┬─{'─'*width}[/]")
+        for i, line in enumerate(lines):
+            self.print(f" [verb]{i:>{n}d}[/] [verb]│[/] [color=bright_white]{self.escape(line)}[/]")
+        self.print(f"[verb]{'─'*n}──┴─{'─'*width}[/]")
+
     @dn.datanode
     def ask(self, prompt, default=True):
         yield

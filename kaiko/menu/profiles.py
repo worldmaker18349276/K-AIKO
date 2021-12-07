@@ -399,18 +399,8 @@ class ConfigCommand:
         biparser = cfg.ConfigurationBiparser(self.config.config_type, name=self.config.settings_name)
         text = biparser.encode(self.config.current)
         is_changed = self.config.is_changed()
-
-        width = 80
-        lines = text.split("\n")
-        n = len(str(len(lines)-1))
-        change_mark = "*" if is_changed else ""
-        file_name = self.config.current_name + self.config.extension
-        self.logger.print(f"[verb]{'─'*n}────{'─'*width}[/]")
-        self.logger.print(f" [emph]{self.logger.escape(file_name)}[/]{change_mark}")
-        self.logger.print(f"[verb]{'─'*n}──┬─{'─'*width}[/]")
-        for i, line in enumerate(lines):
-            self.logger.print(f" [verb]{i:>{n}d}[/] [verb]│[/] [color=bright_white]{self.logger.escape(line)}[/]")
-        self.logger.print(f"[verb]{'─'*n}──┴─{'─'*width}[/]")
+        title = self.config.current_name + self.config.extension
+        self.logger.print_code(text, title=title, is_changed=is_changed)
         self.logger.print()
 
     @cmd.function_command
