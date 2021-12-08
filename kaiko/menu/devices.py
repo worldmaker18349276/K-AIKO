@@ -7,12 +7,11 @@ import contextlib
 import threading
 import queue
 from kaiko.utils import datanodes as dn
-from kaiko.utils import config as cfg
 from kaiko.utils import commands as cmd
-from kaiko.utils import markups as mu
 from kaiko.utils import terminals as term
 from kaiko.utils import audios as aud
 from kaiko.utils import engines
+from kaiko.menu import logger
 
 
 @contextlib.contextmanager
@@ -25,7 +24,7 @@ def prepare_pyaudio(logger):
 
     Parameters
     ----------
-    logger : KAIKOLogger
+    logger : logger.KAIKOLogger
 
     Yields
     ------
@@ -59,21 +58,20 @@ def prepare_pyaudio(logger):
         if not has_exited and not hit_except:
             verb_ctxt.__exit__(None, None, None)
 
-
-def fit_screen(logger):
+def fit_screen(logger, menu_settings):
     r"""Guide user to adjust screen size.
 
     Parameters
     ----------
-    logger : KAIKOLogger
+    logger : logger.KAIKOLogger
 
     Returns
     -------
     fit_task : dn.DataNode
         The datanode to manage this process.
     """
-    width = logger.settings.best_screen_size
-    delay = logger.settings.adjust_screen_delay
+    width = menu_settings.best_screen_size
+    delay = menu_settings.adjust_screen_delay
 
     skip_event = threading.Event()
 
@@ -124,160 +122,6 @@ def fit_screen(logger):
             yield
 
     return dn.pipe(skip, term.terminal_size(), fit())
-
-class KAIKOMenuSettings(cfg.Configurable):
-    r"""
-    Fields
-    ------
-    data_icon : str
-        The template of data icon.
-    info_icon : str
-        The template of info icon.
-    hint_icon : str
-        The template of hint icon.
-
-    verb : str
-        The template of verb log.
-    emph : str
-        The template of emph log.
-    warn : str
-        The template of warn log.
-
-    best_screen_size : int
-        The best screen size.
-    adjust screen delay : float
-        The delay time to complete the screen adjustment.
-
-    editor : str
-        The editor to edit long text.
-    """
-    data_icon: str = "[color=bright_green][wide=🗀/][/]"
-    info_icon: str = "[color=bright_blue][wide=🛠/][/]"
-    hint_icon: str = "[color=bright_yellow][wide=💡/][/]"
-
-    verb: str = f"{'─'*80}\n[weight=dim][slot/][/]{'─'*80}\n"
-    emph: str = "[weight=bold][slot/][/]"
-    warn: str = "[color=red][slot/][/]"
-
-    best_screen_size: int = 80
-    adjust_screen_delay: float = 1.0
-
-    editor: str = "nano"
-
-class KAIKOLogger:
-    def __init__(self, config=None):
-        self.config = config
-        self.level = 1
-        self.recompile_style()
-
-    def recompile_style(self):
-        term_settings = self.config.current.devices.terminal if self.config else term.TerminalSettings()
-        self.rich = mu.RichTextRenderer(term_settings.unicode_version, term_settings.color_support)
-
-        self.rich.add_single_template("data", self.settings.data_icon)
-        self.rich.add_single_template("info", self.settings.info_icon)
-        self.rich.add_single_template("hint", self.settings.hint_icon)
-        self.rich.add_pair_template("verb", self.settings.verb)
-        self.rich.add_pair_template("emph", self.settings.emph)
-        self.rich.add_pair_template("warn", self.settings.warn)
-
-    @property
-    def settings(self):
-        return self.config.current.menu if self.config else KAIKOMenuSettings()
-
-    def set_config(self, config):
-        self.config = config
-        self.recompile_style()
-
-    @contextlib.contextmanager
-    def verb(self):
-        level = self.level
-        template = self.rich.parse("[verb][slot/][/]", slotted=True)
-        self.level = 0
-        try:
-            with self.rich.render_context(template, lambda text: print(text, end="", flush=True)):
-                yield
-        finally:
-            self.level = level
-
-    @contextlib.contextmanager
-    def normal(self):
-        level = self.level
-        template = self.rich.parse("[reset][slot/][/]", slotted=True)
-        self.level = 1
-        try:
-            with self.rich.render_context(template, lambda text: print(text, end="", flush=True)):
-                yield
-        finally:
-            self.level = level
-
-    @contextlib.contextmanager
-    def warn(self):
-        level = self.level
-        template = self.rich.parse("[warn][slot/][/]", slotted=True)
-        self.level = 2
-        try:
-            with self.rich.render_context(template, lambda text: print(text, end="", flush=True)):
-                yield
-        finally:
-            self.level = level
-
-    def escape(self, text):
-        return mu.escape(text)
-
-    def emph(self, text):
-        return f"[emph]{self.escape(text)}[/]"
-
-    def print(self, msg="", end="\n", flush=False, markup=True):
-        if not markup:
-            print(msg, end=end, flush=flush)
-            return
-
-        if isinstance(msg, str):
-            msg = self.rich.parse(msg)
-        print(self.rich.render(msg), end=end, flush=flush)
-
-    def clear_line(self, flush=False):
-        print(self.rich.render(self.rich.clear_line().expand()), end="", flush=flush)
-
-    def clear(self, flush=False):
-        print(self.rich.render(self.rich.clear_screen().expand()), end="", flush=flush)
-
-    def print_code(self, content, title=None, is_changed=False):
-        width = 80
-        lines = content.split("\n")
-        n = len(str(len(lines)-1))
-        if title is not None:
-            change_mark = "*" if is_changed else ""
-            self.print(f"[weight=dim]{'─'*n}────{'─'*(max(0, width-n-4))}[/]")
-            self.print(f" [emph]{self.escape(title)}[/]{change_mark}")
-        self.print(f"[weight=dim]{'─'*n}──┬─{'─'*(max(0, width-n-4))}[/]")
-        for i, line in enumerate(lines):
-            self.print(f" [weight=dim]{i:>{n}d}[/] [weight=dim]│[/] [color=bright_white]{self.escape(line)}[/]")
-        self.print(f"[weight=dim]{'─'*n}──┴─{'─'*(max(0, width-n-4))}[/]")
-
-    def ask(self, prompt, default=True):
-        @dn.datanode
-        def _ask():
-            hint = "[emph]y[/]/n" if default else "y/[emph]n[/]"
-            self.print(f"{self.escape(prompt)} \[{hint}]", end="", flush=True)
-
-            while True:
-                try:
-                    _, keycode = yield
-                finally:
-                    self.print(flush=True)
-
-                if keycode == "\n":
-                    return default
-                if keycode in ("y", "Y"):
-                    return True
-                elif keycode in ("n", "N"):
-                    return False
-
-                self.print("Please reply [emph]y[/] or [emph]n[/]", end="", flush=True)
-
-        return term.inkey(_ask())
 
 @dn.datanode
 def determine_unicode_version(logger):
@@ -505,7 +349,7 @@ class DevicesCommand:
     def fit_screen(self):
         """Fit your terminal screen."""
 
-        return fit_screen(self.logger)
+        return fit_screen(self.logger, self.config.current.menu)
 
     @cmd.function_command
     @dn.datanode
@@ -518,6 +362,7 @@ class DevicesCommand:
             if version is not None:
                 os.environ["UNICODE_VERSION"] = version
                 self.config.current.devices.terminal.unicode_version = version
+                self.logger.set_settings(terminal_settings=self.config.current.devices.terminal)
                 self.logger.recompile_style()
 
     # engines

@@ -37,7 +37,7 @@ class ProfileManager:
 
     Attributes
     ----------
-    logger : KAIKOLogger
+    logger : logger.KAIKOLogger
     config_type : type
         The Configurable type to manage.
     path : Path
@@ -391,6 +391,9 @@ class ConfigCommand:
         self.config = config
         self.logger = logger
 
+    def update_logger(self):
+        self.logger.set_settings(self.config.current.devices.terminal, self.config.current.menu)
+
     # configuration
 
     @cmd.function_command
@@ -432,6 +435,7 @@ class ConfigCommand:
                    The field name.   The value.
         """
         self.config.current.set(field, value)
+        self.update_logger()
 
     @cmd.function_command
     def unset(self, field):
@@ -442,6 +446,7 @@ class ConfigCommand:
                        The field name.
         """
         self.config.current.unset(field)
+        self.update_logger()
 
     @cmd.function_command
     @dn.datanode
@@ -480,6 +485,7 @@ class ConfigCommand:
 
         if res_str == "":
             self.config.current.unset(field)
+            self.update_logger()
             return
 
         try:
@@ -492,6 +498,7 @@ class ConfigCommand:
 
         else:
             self.config.current.set(field, res)
+            self.update_logger()
 
     @get.arg_parser("field")
     @has.arg_parser("field")
@@ -537,6 +544,7 @@ class ConfigCommand:
             self.config.update()
 
         self.config.load()
+        self.update_logger()
 
     @cmd.function_command
     def save(self):
@@ -572,6 +580,7 @@ class ConfigCommand:
             self.config.update()
 
         self.config.use(profile)
+        self.update_logger()
 
     @cmd.function_command
     def rename(self, profile):
@@ -598,6 +607,7 @@ class ConfigCommand:
             self.config.update()
 
         self.config.new(profile, clone)
+        self.update_logger()
 
     @cmd.function_command
     def delete(self, profile):
