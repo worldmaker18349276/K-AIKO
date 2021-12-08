@@ -4,7 +4,7 @@ import functools
 import itertools
 import re
 import threading
-from typing import List, Set, Tuple, Dict
+from typing import Union, Optional, List, Set, Tuple, Dict
 import dataclasses
 from kaiko.utils import datanodes as dn
 from kaiko.utils import biparsers as bp
@@ -407,20 +407,17 @@ class BeatShellSettings(cfg.Configurable):
 
 
 class InputWarn:
-    def __init__(self, tokens, message):
+    def __init__(self, message):
         self.message = message
-        self.tokens = tokens
 
 class InputMessage:
-    def __init__(self, tokens, message):
+    def __init__(self, message):
         self.message = message
-        self.tokens = tokens
 
 class InputSuggestions:
-    def __init__(self, tokens, suggestions, selected):
+    def __init__(self, suggestions, selected):
         self.suggestions = suggestions
         self.selected = selected
-        self.tokens = tokens
 
 class InputError:
     def __init__(self, error):
@@ -481,8 +478,8 @@ class BeatInput:
         The index of highlighted token.
     tab_state : TabState or None
         The state of autocomplete.
-    hint : InputWarn or InputMessage or InputSuggestions or None
-        The hint of input.
+    hint_state : HintState or None
+        The hint state of input.
     result : InputError or InputComplete or None
         The result of input.
     state : str
@@ -573,7 +570,7 @@ class BeatInput:
         self.highlighted = None
         self.update_buffer()
 
-        self.hint = None
+        self.hint_state = None
         self.result = None
         self.state = "EDIT"
 
@@ -681,7 +678,7 @@ class BeatInput:
         succ : bool
         """
         self.result = res
-        self.hint = None
+        self.hint_state = None
         return True
 
     @locked
@@ -697,33 +694,31 @@ class BeatInput:
         return True
 
     @locked
-    def set_hint(self, hint_type, index=None, *params):
+    def set_hint(self, hint, index=None):
         """Set hint.
         Show hint below the prompt.
 
         Parameters
         ----------
-        hint_type : InputWarn or InputMessage or InputSuggestions
-            The type of hint.
+        hint : InputWarn or InputMessage or InputSuggestions
+            The hint.
         index : int or None
             Index of the token to which the hint is directed, or `None` for nothing.
-        params : list
-            Parameters of hint.
 
         Returns
         -------
         succ : bool
         """
         self.highlighted = index
-        if hint_type == InputWarn:
-            msg_tokens = self.tokens[:index] if index is not None else None
-        elif hint_type == InputMessage:
-            msg_tokens = self.tokens[:index+1] if index is not None else None
-        elif hint_type == InputSuggestions:
+        if isinstance(hint, InputWarn):
+            msg_tokens = [token for token, _, _, _ in self.tokens[:index]] if index is not None else None
+        elif isinstance(hint, InputMessage):
+            msg_tokens = [token for token, _, _, _ in self.tokens[:index+1]] if index is not None else None
+        elif isinstance(hint, InputSuggestions):
             msg_tokens = None
         else:
             raise ValueError
-        self.hint = hint_type(msg_tokens, *params)
+        self.hint_state = HintState(hint, msg_tokens)
         return True
 
     @locked
@@ -736,7 +731,7 @@ class BeatInput:
         succ : bool
         """
         self.highlighted = None
-        self.hint = None
+        self.hint_state = None
         return True
 
     @locked
@@ -749,20 +744,20 @@ class BeatInput:
         succ : bool
             `False` if there is no hint or the hint isn't removed.
         """
-        if self.hint is None:
+        if self.hint_state is None:
             return False
 
-        if self.hint.tokens is None:
+        if self.hint_state.tokens is None:
             return self.cancel_hint()
 
         if self.highlighted is not None and self.highlighted >= len(self.tokens):
             return self.cancel_hint()
 
-        if len(self.hint.tokens) > len(self.tokens):
+        if len(self.hint_state.tokens) > len(self.tokens):
             return self.cancel_hint()
 
-        for t1, t2 in zip(self.hint.tokens, self.tokens):
-            if t1[0] != t2[0]:
+        for token, (token_, _, _, _) in zip(self.hint_state.tokens, self.tokens):
+            if token != token_:
                 return self.cancel_hint()
 
         return False
@@ -1122,19 +1117,17 @@ class BeatInput:
             if slic.start is None or slic.start <= self.pos:
                 break
         else:
-            self.set_hint(InputMessage, None, None)
+            self.set_hint(InputMessage(None), None)
             return True
 
         parents = [token for token, _, _, _ in self.tokens[:index]]
 
         if token_type is None:
-            msg = self.command.desc_command(parents)
-            hint_type = InputWarn
+            hint = InputWarn(self.command.desc_command(parents))
         else:
-            msg = self.command.info_command(parents, target)
-            hint_type = InputMessage
+            hint = InputMessage(self.command.info_command(parents, target))
 
-        self.set_hint(hint_type, index, msg)
+        self.set_hint(hint, index)
         return True
 
     @locked
@@ -1263,7 +1256,7 @@ class BeatInput:
             self.tab_state.selection = slice(selection.start, self.pos)
 
             self.update_buffer()
-            self.set_hint(InputSuggestions, self.tab_state.token_index, suggestions, sugg_index)
+            self.set_hint(InputSuggestions(suggestions, sugg_index), self.tab_state.token_index)
             return True
 
         else:
@@ -1294,6 +1287,11 @@ class BeatInput:
     def unknown_key(self, key):
         self.set_result(InputError(ValueError(f"Unknown key: " + key)), None)
         self.finish()
+
+@dataclasses.dataclass
+class HintState:
+    hint : Union[InputWarn, InputMessage, InputSuggestions]
+    tokens : Optional[List[str]]
 
 @dataclasses.dataclass
 class TabState:
@@ -1441,7 +1439,7 @@ class BeatPrompt:
 
                     typeahead = self.input.typeahead
                     clean = self.input.result is not None
-                    hint = self.input.hint
+                    hint = self.input.hint_state.hint if self.input.hint_state is not None else None
                     state = self.input.state
 
                 # draw header
