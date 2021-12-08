@@ -1,7 +1,7 @@
 import contextlib
-from . import datanodes as dn
-from . import config as cfg
-from . import markups as mu
+from kaiko.utils import datanodes as dn
+from kaiko.utils import config as cfg
+from kaiko.utils import markups as mu
 from . import terminals as term
 
 

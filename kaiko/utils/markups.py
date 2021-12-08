@@ -5,7 +5,6 @@ import enum
 import dataclasses
 from typing import Union, Sequence
 import wcwidth
-from . import config as cfg
 
 # pair: [tag=param]...[/]
 # single: [tag=param/]

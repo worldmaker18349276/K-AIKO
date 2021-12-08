@@ -11,9 +11,9 @@ import termios
 import select
 import tty
 from typing import Dict
-from . import datanodes as dn
-from . import markups as mu
-from . import config as cfg
+from kaiko.utils import datanodes as dn
+from kaiko.utils import markups as mu
+from kaiko.utils import config as cfg
 
 
 @dn.datanode

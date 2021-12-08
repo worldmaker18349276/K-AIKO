@@ -15,8 +15,8 @@ from kaiko.utils import datanodes as dn
 from kaiko.utils import config as cfg
 from kaiko.utils import biparsers as bp
 from kaiko.utils import commands as cmd
-from kaiko.utils import loggers as log
-from kaiko.utils import engines
+from kaiko.devices import loggers as log
+from kaiko.devices import engines
 from kaiko.beats import beatshell
 from kaiko.beats import beatmaps
 from kaiko.beats import beatsheets

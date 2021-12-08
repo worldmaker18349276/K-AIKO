@@ -8,9 +8,9 @@ import threading
 import queue
 from kaiko.utils import datanodes as dn
 from kaiko.utils import commands as cmd
-from kaiko.utils import terminals as term
-from kaiko.utils import audios as aud
-from kaiko.utils import engines
+from kaiko.devices import terminals as term
+from kaiko.devices import audios as aud
+from kaiko.devices import engines
 
 
 @contextlib.contextmanager
