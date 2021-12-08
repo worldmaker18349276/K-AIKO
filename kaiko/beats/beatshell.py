@@ -1269,7 +1269,7 @@ class BeatInput:
                 target, target_type, _, _ = self.tokens[token_index]
                 if target_type is None:
                     return False
-                msg = self.command.info_command(parents, target[0])
+                msg = self.command.info_command(parents, target)
                 if msg is None:
                     return False
                 hint = InputMessage(msg)
