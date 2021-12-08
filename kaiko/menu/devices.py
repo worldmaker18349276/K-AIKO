@@ -32,15 +32,34 @@ def prepare_pyaudio(logger):
     manager : PyAudio
     """
 
-    with logger.verb():
+    verb_ctxt = logger.verb()
+    verb_ctxt.__enter__()
+    hit_except = False
+    has_exited = False
+
+    try:
         with aud.create_manager() as manager:
             logger.print()
 
             aud.print_pyaudio_info(manager)
+            verb_ctxt.__exit__(None, None, None)
+            has_exited = True
 
-            with logger.normal():
-                logger.print()
-                yield manager
+            logger.print()
+            logger.print()
+            yield manager
+
+    except:
+        if has_exited:
+            raise
+        hit_except = True
+        if not verb_ctxt.__exit__(*sys.exc_info()):
+            raise
+
+    finally:
+        if not has_exited and not hit_except:
+            verb_ctxt.__exit__(None, None, None)
+
 
 def fit_screen(logger):
     r"""Guide user to adjust screen size.
@@ -137,7 +156,7 @@ class KAIKOMenuSettings(cfg.Configurable):
     info_icon: str = "[color=bright_blue][wide=🛠/][/]"
     hint_icon: str = "[color=bright_yellow][wide=💡/][/]"
 
-    verb: str = "[weight=dim][slot/][/]"
+    verb: str = f"{'─'*80}\n[weight=dim][slot/][/]\n{'─'*80}"
     emph: str = "[weight=bold][slot/][/]"
     warn: str = "[color=red][slot/][/]"
 
@@ -226,17 +245,17 @@ class KAIKOLogger:
         print(self.rich.render(self.rich.clear_screen().expand()), end="", flush=flush)
 
     def print_code(self, content, title=None, is_changed=False):
-        width = shutil.get_terminal_size().columns
+        width = 80
         lines = content.split("\n")
         n = len(str(len(lines)-1))
         if title is not None:
             change_mark = "*" if is_changed else ""
-            self.print(f"[verb]{'─'*n}────{'─'*(max(0, width-n-4))}[/]")
+            self.print(f"[weight=dim]{'─'*n}────{'─'*(max(0, width-n-4))}[/]")
             self.print(f" [emph]{self.escape(title)}[/]{change_mark}")
-        self.print(f"[verb]{'─'*n}──┬─{'─'*(max(0, width-n-4))}[/]")
+        self.print(f"[weight=dim]{'─'*n}──┬─{'─'*(max(0, width-n-4))}[/]")
         for i, line in enumerate(lines):
-            self.print(f" [verb]{i:>{n}d}[/] [verb]│[/] [color=bright_white]{self.escape(line)}[/]")
-        self.print(f"[verb]{'─'*n}──┴─{'─'*(max(0, width-n-4))}[/]")
+            self.print(f" [weight=dim]{i:>{n}d}[/] [weight=dim]│[/] [color=bright_white]{self.escape(line)}[/]")
+        self.print(f"[weight=dim]{'─'*n}──┴─{'─'*(max(0, width-n-4))}[/]")
 
     def ask(self, prompt, default=True):
         @dn.datanode
