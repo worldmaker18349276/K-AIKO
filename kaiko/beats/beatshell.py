@@ -249,8 +249,7 @@ def shlexer_markup(buffer, tokens, typeahead, tags):
         markup_children.append(mu.Group(_wrap(buffer[prev_index:])))
 
         # markup typeahead
-        if typeahead:
-            markup_children.append(tags['typeahead']((mu.Text(typeahead),)))
+        markup_children.append(tags['typeahead']((mu.Text(typeahead),)))
 
     return mu.Group(tuple(markup_children))
 
