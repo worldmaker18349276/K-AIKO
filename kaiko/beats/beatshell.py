@@ -418,7 +418,7 @@ class InputMessage:
 class InputSuggestions:
     suggestions : List[str]
     selected : int
-    message : Optional[str]
+    message : str
 
 @dataclasses.dataclass(frozen=True)
 class InputError:
@@ -859,6 +859,7 @@ class BeatInput:
         del self.buffer[self.pos]
         self.update_buffer()
         self.cancel_typeahead()
+        self.cancel_hint()
         self.ask_hint()
 
         return True
@@ -879,6 +880,7 @@ class BeatInput:
         del self.buffer[self.pos]
         self.update_buffer()
         self.cancel_typeahead()
+        self.cancel_hint()
         self.ask_hint()
 
         return True
@@ -927,6 +929,7 @@ class BeatInput:
         self.pos = start
         self.update_buffer()
         self.cancel_typeahead()
+        self.cancel_hint()
         self.ask_hint()
 
         return True
@@ -1263,7 +1266,10 @@ class BeatInput:
                 self.buffer[selection] = suggestions[0]
                 self.pos = selection.start + len(suggestions[0])
                 self.update_buffer()
-                msg = self.command.info_command(parents, self.tokens[token_index][0])
+                target, target_type, _, _ = self.tokens[token_index]
+                if target_type is None:
+                    return False
+                msg = self.command.info_command(parents, target[0])
                 if msg is None:
                     return False
                 hint = InputMessage(msg)
@@ -1301,8 +1307,11 @@ class BeatInput:
 
             self.update_buffer()
             parents = [token for token, _, _, _ in self.tokens[:self.tab_state.token_index]]
-            target = self.tokens[self.tab_state.token_index][0]
-            msg = self.command.info_command(parents, target)
+            target, target_type, _, _ = self.tokens[self.tab_state.token_index]
+            if target_type is None:
+                msg = ""
+            else:
+                msg = self.command.info_command(parents, target) or ""
             self.set_hint(InputSuggestions(suggestions, sugg_index, msg), self.tab_state.token_index)
             return True
 
@@ -1327,15 +1336,20 @@ class BeatInput:
         """
         if self.tab_state is not None:
             # set hint for complete token
-            parents = [token for token, _, _, _ in self.tokens[:self.tab_state.token_index]]
-            target = self.tokens[self.tab_state.token_index][0]
-            msg = self.command.info_command(parents, target)
+            token_index = self.tab_state.token_index
+            self.tab_state = None
+            self.cancel_hint()
+
+            parents = [token for token, _, _, _ in self.tokens[:token_index]]
+            target, target_type, _, _ = self.tokens[token_index]
+            if target_type is None:
+                return True
+            else:
+                msg = self.command.info_command(parents, target)
             if msg is None:
                 return True
             hint = InputMessage(msg)
-            self.set_hint(hint, self.tab_state.token_index)
-
-            self.tab_state = None
+            self.set_hint(hint, token_index)
         return True
 
     @locked
