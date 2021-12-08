@@ -418,6 +418,7 @@ class InputMessage:
 class InputSuggestions:
     suggestions : List[str]
     selected : int
+    message : Optional[str]
 
 @dataclasses.dataclass(frozen=True)
 class InputError:
@@ -1247,10 +1248,27 @@ class BeatInput:
                 if start <= self.pos <= stop:
                     target = token
                     selection = mask
+            token_index = len(parents)
 
             # generate suggestions
             suggestions = [shlexer_quoting(sugg) for sugg in self.command.suggest_command(parents, target)]
             sugg_index = len(suggestions) if action == -1 else -1
+
+            if len(suggestions) == 0:
+                # no suggestion
+                return False
+
+            if len(suggestions) == 1:
+                # one suggestion -> complete directly
+                self.buffer[selection] = suggestions[0]
+                self.pos = selection.start + len(suggestions[0])
+                self.update_buffer()
+                msg = self.command.info_command(parents, self.tokens[token_index][0])
+                if msg is None:
+                    return False
+                hint = InputMessage(msg)
+                self.set_hint(hint, token_index)
+                return False
 
             # tab state
             original_pos = self.pos
@@ -1258,7 +1276,7 @@ class BeatInput:
             self.tab_state = TabState(
                 suggestions=suggestions,
                 sugg_index=sugg_index,
-                token_index=len(parents),
+                token_index=token_index,
                 original_token=self.buffer[selection],
                 original_pos=original_pos,
                 selection=selection)
@@ -1282,7 +1300,10 @@ class BeatInput:
             self.tab_state.selection = slice(selection.start, self.pos)
 
             self.update_buffer()
-            self.set_hint(InputSuggestions(suggestions, sugg_index), self.tab_state.token_index)
+            parents = [token for token, _, _, _ in self.tokens[:self.tab_state.token_index]]
+            target = self.tokens[self.tab_state.token_index][0]
+            msg = self.command.info_command(parents, target)
+            self.set_hint(InputSuggestions(suggestions, sugg_index, msg), self.tab_state.token_index)
             return True
 
         else:
@@ -1305,8 +1326,16 @@ class BeatInput:
         succ : bool
         """
         if self.tab_state is not None:
+            # set hint for complete token
+            parents = [token for token, _, _, _ in self.tokens[:self.tab_state.token_index]]
+            target = self.tokens[self.tab_state.token_index][0]
+            msg = self.command.info_command(parents, target)
+            if msg is None:
+                return True
+            hint = InputMessage(msg)
+            self.set_hint(hint, self.tab_state.token_index)
+
             self.tab_state = None
-            self.update_hint()
         return True
 
     @locked
@@ -1685,12 +1714,38 @@ class BeatPrompt:
 
         # draw hint
         if hint is None:
-            pass
+            return messages
 
-        elif isinstance(hint, InputSuggestions):
+        msg = None
+        if hint.message:
+            msg = self.rich.parse(hint.message)
+            lines = 0
+            def trim_lines(text):
+                nonlocal lines
+                if lines >= message_max_lines:
+                    return ""
+                res_string = []
+                for ch in text.string:
+                    if ch == "\n":
+                        lines += 1
+                    res_string.append(ch)
+                    if lines == message_max_lines:
+                        res_string.append("…")
+                        break
+                return mu.Text("".join(res_string))
+            msg = msg.traverse(mu.Text, trim_lines)
+
+            if isinstance(hint, InputWarn):
+                msg = self.rich.tags['error']((msg,))
+            msg = self.rich.tags['info']((msg,))
+            msg = msg.expand()
+
+        if isinstance(hint, InputSuggestions):
             sugg_start = hint.selected // sugg_lines * sugg_lines
             sugg_end = sugg_start + sugg_lines
             suggs = hint.suggestions[sugg_start:sugg_end]
+            if sugg_start > 0:
+                messages.append(mu.Text("…\n"))
             for i, sugg in enumerate(suggs):
                 sugg = mu.Text(sugg)
                 if i == hint.selected-sugg_start:
@@ -1698,40 +1753,19 @@ class BeatPrompt:
                 else:
                     sugg = mu.replace_slot(sugg_items[0], sugg)
                 messages.append(sugg)
+                if i == hint.selected-sugg_start and msg is not None:
+                    messages.append(mu.Text("\n" + "─"*80 + "\n"))
+                    messages.append(msg)
+                    messages.append(mu.Text("\n" + "─"*80))
                 if i != len(suggs)-1:
                     messages.append(mu.Text("\n"))
-            if sugg_start > 0:
-                messages.insert(0, mu.Text("…\n"))
             if sugg_end < len(hint.suggestions):
                 messages.append(mu.Text("\n…"))
-
-        elif isinstance(hint, (InputWarn, InputMessage)):
-            if hint.message:
-                msg = self.rich.parse(hint.message)
-                lines = 0
-                def trim_lines(text):
-                    nonlocal lines
-                    if lines >= message_max_lines:
-                        return ""
-                    res_string = []
-                    for ch in text.string:
-                        if ch == "\n":
-                            lines += 1
-                        res_string.append(ch)
-                        if lines == message_max_lines:
-                            res_string.append("…")
-                            break
-                    return mu.Text("".join(res_string))
-                msg = msg.traverse(mu.Text, trim_lines)
-
-                if isinstance(hint, InputWarn):
-                    msg = self.rich.tags['error']((msg,))
-                msg = self.rich.tags['info']((msg,))
-                msg = msg.expand()
-                messages.append(msg)
+            messages.append(self.rich.parse("\n"))
 
         else:
-            assert False
+            if msg is not None:
+                messages.append(msg)
 
         return messages
 
