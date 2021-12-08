@@ -181,7 +181,7 @@ class ConfigurableMeta(type):
         doc = doc[m.end(0):]
 
         while True:
-            m = re.match(r"([0-9a-zA-Z_]+) : [^\n]+\n+((?:[ ]+[^\n]*\n+)*)", doc)
+            m = re.match(r"([0-9a-zA-Z_]+) : [^\n]+\n+((?:[ ]+[^\n]*(?:\n+|$))*)", doc)
             if not m:
                 return res
             res[m.group(1)] = cleandoc(m.group(2)).strip()
