@@ -625,7 +625,7 @@ class BeatInput:
         return True
 
     @locked
-    def make_typeahead(self):
+    def show_typeahead(self):
         """Make typeahead.
         Show the possible command you want to type.  Only work if the caret is at
         the end of buffer.
@@ -794,7 +794,7 @@ class BeatInput:
 
     @locked
     @onstate("EDIT")
-    def input(self, text):
+    def insert(self, text):
         """Input.
         Insert some text into the buffer.
 
@@ -826,7 +826,7 @@ class BeatInput:
         self.pos += len(text)
         self.update_buffer()
 
-        self.make_typeahead()
+        self.show_typeahead()
         self.update_hint()
 
         return True
@@ -1110,7 +1110,7 @@ class BeatInput:
 
     @locked
     @onstate("EDIT")
-    def help(self):
+    def ask_hint(self):
         """Help for command.
         Provide some hint for the command before the caret.
 
@@ -1189,7 +1189,7 @@ class BeatInput:
         if self.buffer:
             return False
 
-        self.input("bye")
+        self.insert("bye")
         return self.confirm()
 
     @locked
@@ -1340,7 +1340,7 @@ class BeatStroke:
         return lambda args: self.input.confirm()
 
     def help_handler(self):
-        return lambda args: self.input.help()
+        return lambda args: self.input.ask_hint()
 
     def autocomplete_handler(self, keys, help_key):
         def handler(args):
@@ -1364,7 +1364,7 @@ class BeatStroke:
         return lambda args: eval(func, {}, {"input": self.input})
 
     def printable_handler(self):
-        return lambda args: self.input.input(args[3])
+        return lambda args: self.input.insert(args[3])
 
     def unknown_handler(self, settings):
         keys = list(settings.keymap.keys())
