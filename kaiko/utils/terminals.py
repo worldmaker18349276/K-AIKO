@@ -199,6 +199,14 @@ class TerminalSettings(cfg.Configurable):
         The color support of terminal.
     keycodes : dict from str to str
         The maps from keycodes to keynames.
+
+    best_screen_size : int
+        Recommended screen size.  If your screen size is smaller than this size, the system will ask you to adjust it.
+    adjust_screen_delay : float
+        The delay time to complete the screen adjustment.
+
+    editor : str
+        The editor to edit text.
     """
 
     unicode_version: str = "auto"
@@ -310,4 +318,9 @@ class TerminalSettings(cfg.Configurable):
         "\x1b[6;7~"  : "Ctrl_Alt_PageDown",
         "\x1b[6;8~"  : "Ctrl_Alt_Shift_PageDown",
     }
+
+    best_screen_size: int = 80
+    adjust_screen_delay: float = 1.0
+
+    editor: str = "nano"
 

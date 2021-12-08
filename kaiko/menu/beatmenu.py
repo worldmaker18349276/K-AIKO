@@ -15,12 +15,12 @@ from kaiko.utils import datanodes as dn
 from kaiko.utils import config as cfg
 from kaiko.utils import biparsers as bp
 from kaiko.utils import commands as cmd
+from kaiko.utils import loggers as log
 from kaiko.utils import engines
 from kaiko.beats import beatshell
 from kaiko.beats import beatmaps
 from kaiko.beats import beatsheets
 from kaiko.beats import beatanalyzer
-from .logger import KAIKOMenuSettings, KAIKOLogger
 from .profiles import ProfileManager, ConfigCommand, ProfileNameError, ProfileTypeError
 from .songs import BeatmapManager, KAIKOBGMController, BGMCommand
 from .devices import prepare_pyaudio, DevicesCommand, determine_unicode_version, fit_screen
@@ -96,7 +96,6 @@ def echo_str(escaped_str):
 
 
 class KAIKOSettings(cfg.Configurable):
-    menu = KAIKOMenuSettings
     devices = engines.DevicesSettings
     shell = beatshell.BeatShellSettings
     gameplay = beatmaps.GameplaySettings
@@ -177,7 +176,7 @@ class KAIKOMenu:
         config : ProfileManager
         user : KAIKOUser
         manager : PyAudio
-        logger : KAIKOLogger
+        logger : Logger
         """
         self._config = config
         self.user = user
@@ -209,7 +208,7 @@ class KAIKOMenu:
     @contextlib.contextmanager
     def init(clz):
         r"""Initialize KAIKOMenu within a context manager."""
-        logger = KAIKOLogger()
+        logger = log.Logger()
 
         # load user data
         user = KAIKOUser.create()
@@ -230,7 +229,7 @@ class KAIKOMenu:
 
                 config.new()
 
-        logger.set_settings(config.current.devices.terminal, config.current.menu)
+        logger.set_settings(config.current.devices.terminal, config.current.devices.logger)
 
         # load PyAudio
         logger.print("[info/] Load PyAudio...")
@@ -257,16 +256,17 @@ class KAIKOMenu:
                 if version is not None:
                     os.environ["UNICODE_VERSION"] = version
                     self.settings.devices.terminal.unicode_version = version
+                    logger.set_settings(terminal_settings=self.settings.devices.terminal)
                     logger.recompile_style()
             logger.print()
 
         # fit screen size
         size = shutil.get_terminal_size()
-        width = self.settings.menu.best_screen_size
+        width = self.settings.devices.terminal.best_screen_size
         if size.columns < width:
             logger.print("[hint/] Your screen size seems too small.")
 
-            with fit_screen(logger, self.settings.menu) as fit_task:
+            with fit_screen(logger, self.settings.devices.terminal) as fit_task:
                 yield from fit_task.join((yield))
 
         # load songs

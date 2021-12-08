@@ -7,6 +7,7 @@ from . import datanodes as dn
 from . import markups as mu
 from . import terminals as term
 from . import audios as aud
+from . import loggers as log
 
 
 class Monitor:
@@ -693,3 +694,4 @@ class DevicesSettings(cfg.Configurable):
     renderer = RendererSettings
     controller = ControllerSettings
     terminal = term.TerminalSettings
+    logger = log.LoggerSettings

@@ -1,11 +1,11 @@
 import contextlib
-from kaiko.utils import datanodes as dn
-from kaiko.utils import config as cfg
-from kaiko.utils import markups as mu
-from kaiko.utils import terminals as term
+from . import datanodes as dn
+from . import config as cfg
+from . import markups as mu
+from . import terminals as term
 
 
-class KAIKOMenuSettings(cfg.Configurable):
+class LoggerSettings(cfg.Configurable):
     r"""
     Fields
     ------
@@ -22,14 +22,6 @@ class KAIKOMenuSettings(cfg.Configurable):
         The template of emph log.
     warn : str
         The template of warn log.
-
-    best_screen_size : int
-        The best screen size.
-    adjust screen delay : float
-        The delay time to complete the screen adjustment.
-
-    editor : str
-        The editor to edit long text.
     """
     data_icon: str = "[color=bright_green][wide=🗀/][/]"
     info_icon: str = "[color=bright_blue][wide=🛠/][/]"
@@ -39,15 +31,10 @@ class KAIKOMenuSettings(cfg.Configurable):
     emph: str = "[weight=bold][slot/][/]"
     warn: str = "[color=red][slot/][/]"
 
-    best_screen_size: int = 80
-    adjust_screen_delay: float = 1.0
-
-    editor: str = "nano"
-
-class KAIKOLogger:
-    def __init__(self, terminal_settings=None, menu_settings=None):
+class Logger:
+    def __init__(self, terminal_settings=None, logger_settings=None):
         self.terminal_settings = terminal_settings
-        self.menu_settings = menu_settings
+        self.logger_settings = logger_settings
         self.level = 1
         self.recompile_style()
 
@@ -55,19 +42,19 @@ class KAIKOLogger:
         terminal_settings = self.terminal_settings if self.terminal_settings else term.TerminalSettings()
         self.rich = mu.RichTextRenderer(terminal_settings.unicode_version, terminal_settings.color_support)
 
-        menu_settings = self.menu_settings if self.menu_settings else KAIKOMenuSettings()
-        self.rich.add_single_template("data", menu_settings.data_icon)
-        self.rich.add_single_template("info", menu_settings.info_icon)
-        self.rich.add_single_template("hint", menu_settings.hint_icon)
-        self.rich.add_pair_template("verb", menu_settings.verb)
-        self.rich.add_pair_template("emph", menu_settings.emph)
-        self.rich.add_pair_template("warn", menu_settings.warn)
+        logger_settings = self.logger_settings if self.logger_settings else LoggerSettings()
+        self.rich.add_single_template("data", logger_settings.data_icon)
+        self.rich.add_single_template("info", logger_settings.info_icon)
+        self.rich.add_single_template("hint", logger_settings.hint_icon)
+        self.rich.add_pair_template("verb", logger_settings.verb)
+        self.rich.add_pair_template("emph", logger_settings.emph)
+        self.rich.add_pair_template("warn", logger_settings.warn)
 
-    def set_settings(self, terminal_settings=None, menu_settings=None):
+    def set_settings(self, terminal_settings=None, logger_settings=None):
         if terminal_settings is not None:
             self.terminal_settings = terminal_settings
-        if menu_settings is not None:
-            self.menu_settings = menu_settings
+        if logger_settings is not None:
+            self.logger_settings = logger_settings
         self.recompile_style()
 
     @contextlib.contextmanager

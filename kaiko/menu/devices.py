@@ -11,7 +11,6 @@ from kaiko.utils import commands as cmd
 from kaiko.utils import terminals as term
 from kaiko.utils import audios as aud
 from kaiko.utils import engines
-from kaiko.menu import logger
 
 
 @contextlib.contextmanager
@@ -24,7 +23,7 @@ def prepare_pyaudio(logger):
 
     Parameters
     ----------
-    logger : logger.KAIKOLogger
+    logger : loggers.Logger
 
     Yields
     ------
@@ -58,20 +57,21 @@ def prepare_pyaudio(logger):
         if not has_exited and not hit_except:
             verb_ctxt.__exit__(None, None, None)
 
-def fit_screen(logger, menu_settings):
+def fit_screen(logger, terminal_settings):
     r"""Guide user to adjust screen size.
 
     Parameters
     ----------
-    logger : logger.KAIKOLogger
+    logger : loggers.Logger
+    terminal_settings : terminals.TerminalSettings
 
     Returns
     -------
     fit_task : dn.DataNode
         The datanode to manage this process.
     """
-    width = menu_settings.best_screen_size
-    delay = menu_settings.adjust_screen_delay
+    width = terminal_settings.best_screen_size
+    delay = terminal_settings.adjust_screen_delay
 
     skip_event = threading.Event()
 
@@ -349,7 +349,7 @@ class DevicesCommand:
     def fit_screen(self):
         """Fit your terminal screen."""
 
-        return fit_screen(self.logger, self.config.current.menu)
+        return fit_screen(self.logger, self.config.current.devices.terminal)
 
     @cmd.function_command
     @dn.datanode

@@ -37,7 +37,7 @@ class ProfileManager:
 
     Attributes
     ----------
-    logger : logger.KAIKOLogger
+    logger : loggers.Logger
     config_type : type
         The Configurable type to manage.
     path : Path
@@ -392,7 +392,7 @@ class ConfigCommand:
         self.logger = logger
 
     def update_logger(self):
-        self.logger.set_settings(self.config.current.devices.terminal, self.config.current.menu)
+        self.logger.set_settings(self.config.current.devices.terminal, self.config.current.devices.logger)
 
     # configuration
 
@@ -457,7 +457,7 @@ class ConfigCommand:
                              ╱
                       The field name.
         """
-        editor = self.config.current.menu.editor
+        editor = self.config.current.devices.terminal.editor
 
         field_type = self.config.config_type.get_field_type(field)
         biparser = bp.from_type_hint(field_type, multiline=True)
