@@ -761,6 +761,9 @@ class BeatInput:
         if self.hint.tokens is None:
             return self.cancel_hint()
 
+        if self.highlighted is not None and self.highlighted >= len(self.tokens):
+            return self.cancel_hint()
+
         if len(self.hint.tokens) > len(self.tokens):
             return self.cancel_hint()
 
