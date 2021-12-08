@@ -384,8 +384,8 @@ class BeatShellSettings(cfg.Configurable):
         token_highlight : str
             The markup template for the highlighted token.
         """
-        error_message: str = "[color=red][slot/][/]"
-        info_message: str = "[weight=dim][slot/][/]"
+        error_message: str = "[weight=dim][color=red][slot/][/][/]"
+        info_message: str = f"{'─'*80}\n[weight=dim][slot/][/]\n{'─'*80}"
         message_max_lines: int = 16
 
         quotation: str = "[weight=dim]'[/]"
@@ -1737,7 +1737,10 @@ class BeatPrompt:
 
             if isinstance(hint, InputWarn):
                 msg = self.rich.tags['error']((msg,))
-            msg = self.rich.tags['info']((msg,))
+            elif isinstance(hint, (InputMessage, InputSuggestions)):
+                msg = self.rich.tags['info']((msg,))
+            else:
+                assert False
             msg = msg.expand()
 
         if isinstance(hint, InputSuggestions):
@@ -1754,9 +1757,8 @@ class BeatPrompt:
                     sugg = mu.replace_slot(sugg_items[0], sugg)
                 messages.append(sugg)
                 if i == hint.selected-sugg_start and msg is not None:
-                    messages.append(mu.Text("\n" + "─"*80 + "\n"))
+                    messages.append(mu.Text("\n"))
                     messages.append(msg)
-                    messages.append(mu.Text("\n" + "─"*80))
                 if i != len(suggs)-1:
                     messages.append(mu.Text("\n"))
             if sugg_end < len(hint.suggestions):
