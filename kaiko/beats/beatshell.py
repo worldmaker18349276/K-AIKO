@@ -4,7 +4,7 @@ import functools
 import itertools
 import re
 import threading
-from typing import Union, Optional, List, Set, Tuple, Dict
+from typing import Union, Optional, List, Set, Tuple, Dict, Callable
 import dataclasses
 from kaiko.utils import datanodes as dn
 from kaiko.utils import biparsers as bp
@@ -406,26 +406,40 @@ class BeatShellSettings(cfg.Configurable):
     debug_monitor: bool = False
 
 
+@dataclasses.dataclass(frozen=True)
 class InputWarn:
-    def __init__(self, message):
-        self.message = message
+    message : Optional[str]
 
+@dataclasses.dataclass(frozen=True)
 class InputMessage:
-    def __init__(self, message):
-        self.message = message
+    message : Optional[str]
 
+@dataclasses.dataclass(frozen=True)
 class InputSuggestions:
-    def __init__(self, suggestions, selected):
-        self.suggestions = suggestions
-        self.selected = selected
+    suggestions : List[str]
+    selected : int
 
+@dataclasses.dataclass(frozen=True)
 class InputError:
-    def __init__(self, error):
-        self.error = error
+    error : Exception
 
+@dataclasses.dataclass(frozen=True)
 class InputComplete:
-    def __init__(self, command):
-        self.command = command
+    command : Callable
+
+@dataclasses.dataclass
+class HintState:
+    hint : Union[InputWarn, InputMessage, InputSuggestions]
+    tokens : Optional[List[str]]
+
+@dataclasses.dataclass
+class TabState:
+    suggestions: List[str]
+    sugg_index: int
+    token_index: int
+    original_token: List[str]
+    original_pos: int
+    selection: slice
 
 class ShellSyntaxError(Exception):
     pass
@@ -1287,20 +1301,6 @@ class BeatInput:
     def unknown_key(self, key):
         self.set_result(InputError(ValueError(f"Unknown key: " + key)), None)
         self.finish()
-
-@dataclasses.dataclass
-class HintState:
-    hint : Union[InputWarn, InputMessage, InputSuggestions]
-    tokens : Optional[List[str]]
-
-@dataclasses.dataclass
-class TabState:
-    suggestions: List[str]
-    sugg_index: int
-    token_index: int
-    original_token: List[str]
-    original_pos: int
-    selection: slice
 
 class BeatStroke:
     r"""Keyboard controller for beatshell."""
