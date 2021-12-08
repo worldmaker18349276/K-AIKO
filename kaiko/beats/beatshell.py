@@ -350,8 +350,8 @@ class BeatShellSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        error_message : str
-            The markup template for the error message.
+        desc_message : str
+            The markup template for the desc message.
         info_message : str
             The markup template for the info message.
         message_max_lines : int
@@ -384,8 +384,8 @@ class BeatShellSettings(cfg.Configurable):
         token_highlight : str
             The markup template for the highlighted token.
         """
-        error_message: str = "[weight=dim][color=red][slot/][/][/]"
-        info_message: str = f"{'─'*80}\n[weight=dim][slot/][/]\n{'─'*80}"
+        desc_message: str = "[weight=dim][slot/][/]"
+        info_message: str = f"{'─'*80}\n[slot/]\n{'─'*80}"
         message_max_lines: int = 16
 
         quotation: str = "[weight=dim]'[/]"
@@ -407,11 +407,11 @@ class BeatShellSettings(cfg.Configurable):
 
 
 @dataclasses.dataclass(frozen=True)
-class InputWarn:
+class InputDesc:
     message : str
 
 @dataclasses.dataclass(frozen=True)
-class InputMessage:
+class InputInfo:
     message : str
 
 @dataclasses.dataclass(frozen=True)
@@ -430,7 +430,7 @@ class InputComplete:
 
 @dataclasses.dataclass
 class HintState:
-    hint : Union[InputWarn, InputMessage, InputSuggestions]
+    hint : Union[InputDesc, InputInfo, InputSuggestions]
     tokens : Optional[List[str]]
 
 @dataclasses.dataclass
@@ -715,7 +715,7 @@ class BeatInput:
 
         Parameters
         ----------
-        hint : InputWarn or InputMessage or InputSuggestions
+        hint : InputDesc or InputInfo or InputSuggestions
             The hint.
         index : int or None
             Index of the token to which the hint is directed, or `None` for nothing.
@@ -725,9 +725,9 @@ class BeatInput:
         succ : bool
         """
         self.highlighted = index
-        if isinstance(hint, InputWarn):
+        if isinstance(hint, InputDesc):
             msg_tokens = [token for token, _, _, _ in self.tokens[:index]] if index is not None else None
-        elif isinstance(hint, InputMessage):
+        elif isinstance(hint, InputInfo):
             msg_tokens = [token for token, _, _, _ in self.tokens[:index+1]] if index is not None else None
         elif isinstance(hint, InputSuggestions):
             msg_tokens = None
@@ -775,7 +775,7 @@ class BeatInput:
             if token != token_:
                 return self.cancel_hint()
 
-        if isinstance(self.hint_state.hint, InputWarn) and self.tokens[len(self.hint_state.tokens)-1][1] is not None:
+        if isinstance(self.hint_state.hint, InputDesc) and self.tokens[len(self.hint_state.tokens)-1][1] is not None:
             return self.cancel_hint()
 
         return False
@@ -1148,7 +1148,7 @@ class BeatInput:
             msg = self.command.desc_command(parents)
             if msg is None:
                 return False
-            hint = InputWarn(msg)
+            hint = InputDesc(msg)
             self.set_hint(hint, index)
             return True
 
@@ -1156,7 +1156,7 @@ class BeatInput:
             msg = self.command.info_command(parents, target)
             if msg is None:
                 return False
-            hint = InputMessage(msg)
+            hint = InputInfo(msg)
             self.set_hint(hint, index)
             return True
 
@@ -1272,7 +1272,7 @@ class BeatInput:
                 msg = self.command.info_command(parents, target)
                 if msg is None:
                     return False
-                hint = InputMessage(msg)
+                hint = InputInfo(msg)
                 self.set_hint(hint, token_index)
                 return False
 
@@ -1348,7 +1348,7 @@ class BeatInput:
                 msg = self.command.info_command(parents, target)
             if msg is None:
                 return True
-            hint = InputMessage(msg)
+            hint = InputInfo(msg)
             self.set_hint(hint, token_index)
         return True
 
@@ -1455,14 +1455,14 @@ class BeatPrompt:
         self.tempo = None
 
         self.rich = mu.RichTextRenderer(term_settings.unicode_version, term_settings.color_support)
-        self.rich.add_pair_template("error", settings.text.error_message)
+        self.rich.add_pair_template("desc", settings.text.desc_message)
         self.rich.add_pair_template("info", settings.text.info_message)
         self.rich.add_pair_template("unknown", settings.text.token_unknown)
         self.rich.add_pair_template("unfinished", settings.text.token_unfinished)
         self.rich.add_pair_template("cmd", settings.text.token_command)
         self.rich.add_pair_template("kw", settings.text.token_keyword)
         self.rich.add_pair_template("arg", settings.text.token_argument)
-        self.rich.add_pair_template("emph", settings.text.token_highlight)
+        self.rich.add_pair_template("highlight", settings.text.token_highlight)
         self.rich.add_single_template("ws", settings.text.whitespace)
         self.rich.add_single_template("qt", settings.text.quotation)
         self.rich.add_single_template("bs", settings.text.backslash)
@@ -1670,7 +1670,7 @@ class BeatPrompt:
         if highlighted is not None:
             n = highlighted*2+1
             token = markup.children[n]
-            token = self.rich.tags['emph']((token,))
+            token = self.rich.tags['highlight']((token,))
             markup = dataclasses.replace(markup, children=markup.children[:n] + (token,) + markup.children[n+1:])
 
         markup = markup.expand()
@@ -1712,7 +1712,7 @@ class BeatPrompt:
         ----------
         messages : list of Markup
             The rendered hint.
-        hint : InputWarn or InputMessage or InputSuggestions
+        hint : InputDesc or InputInfo or InputSuggestions
         """
         message_max_lines = self.settings.text.message_max_lines
 
@@ -1749,9 +1749,9 @@ class BeatPrompt:
                 return mu.Text("".join(res_string))
             msg = msg.traverse(mu.Text, trim_lines)
 
-            if isinstance(hint, InputWarn):
-                msg = self.rich.tags['error']((msg,))
-            elif isinstance(hint, (InputMessage, InputSuggestions)):
+            if isinstance(hint, InputDesc):
+                msg = self.rich.tags['desc']((msg,))
+            elif isinstance(hint, (InputInfo, InputSuggestions)):
                 msg = self.rich.tags['info']((msg,))
             else:
                 assert False
