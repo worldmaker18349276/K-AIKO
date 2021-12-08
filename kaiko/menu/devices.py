@@ -46,7 +46,6 @@ def prepare_pyaudio(logger):
             has_exited = True
 
             logger.print()
-            logger.print()
             yield manager
 
     except:
@@ -156,7 +155,7 @@ class KAIKOMenuSettings(cfg.Configurable):
     info_icon: str = "[color=bright_blue][wide=🛠/][/]"
     hint_icon: str = "[color=bright_yellow][wide=💡/][/]"
 
-    verb: str = f"{'─'*80}\n[weight=dim][slot/][/]\n{'─'*80}"
+    verb: str = f"{'─'*80}\n[weight=dim][slot/][/]{'─'*80}\n"
     emph: str = "[weight=bold][slot/][/]"
     warn: str = "[color=red][slot/][/]"
 
