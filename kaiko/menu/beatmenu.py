@@ -310,10 +310,10 @@ class KAIKOMenu:
             if isinstance(result, beatshell.InputError):
                 input.prev_session()
                 with self.logger.warn():
-                    self.logger.print(result.value, markup=False)
+                    self.logger.print(result.error, markup=False)
             else:
                 input.new_session()
-                with self.execute(result.value) as command_task:
+                with self.execute(result.command) as command_task:
                     yield from command_task.join((yield))
 
     @dn.datanode

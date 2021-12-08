@@ -424,12 +424,12 @@ class InputSuggestions:
         self.tokens = tokens
 
 class InputError:
-    def __init__(self, value):
-        self.value = value
+    def __init__(self, error):
+        self.error = error
 
 class InputComplete:
-    def __init__(self, value):
-        self.value = value
+    def __init__(self, command):
+        self.command = command
 
 class ShellSyntaxError(Exception):
     pass
@@ -668,25 +668,20 @@ class BeatInput:
         return True
 
     @locked
-    def set_result(self, res_type, value, index=None):
+    def set_result(self, res):
         """Set result.
         Set result of this session.
 
         Parameters
         ----------
-        res_type : InputError or InputComplete
-            The type of result.
-        value : any
-            The value of result.
-        index : int or None
-            The index of token to highlight.
+        res : InputError or InputComplete
+            The result.
 
         Returns
         -------
         succ : bool
         """
-        self.highlighted = index
-        self.result = res_type(value)
+        self.result = res
         self.hint = None
         return True
 
@@ -1153,8 +1148,10 @@ class BeatInput:
         succ : bool
             `False` if the command is wrong.
         """
+        self.cancel_hint()
+
         if len(self.tokens) == 0:
-            self.set_result(InputComplete, lambda:None)
+            self.set_result(InputComplete(lambda:None))
             self.finish()
             return True
 
@@ -1167,15 +1164,16 @@ class BeatInput:
             index = len(types)
 
         if isinstance(res, cmd.CommandUnfinishError):
-            self.set_result(InputError, res, None)
+            self.set_result(InputError(res))
             self.finish()
             return False
         elif isinstance(res, (cmd.CommandParseError, ShellSyntaxError)):
-            self.set_result(InputError, res, index)
+            self.set_result(InputError(res))
+            self.highlighted = index
             self.finish()
             return False
         else:
-            self.set_result(InputComplete, res)
+            self.set_result(InputComplete(res))
             self.finish()
             return True
 
@@ -1295,7 +1293,7 @@ class BeatInput:
 
     @locked
     def unknown_key(self, key):
-        self.set_result(InputError, ValueError(f"Unknown key: " + key), None)
+        self.set_result(InputError(ValueError(f"Unknown key: " + key)), None)
         self.finish()
 
 @dataclasses.dataclass
