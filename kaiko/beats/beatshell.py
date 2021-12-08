@@ -10,7 +10,6 @@ from kaiko.utils import datanodes as dn
 from kaiko.utils import biparsers as bp
 from kaiko.utils import config as cfg
 from kaiko.utils import markups as mu
-from kaiko.utils import terminals as term
 from kaiko.utils import commands as cmd
 from kaiko.utils import engines
 
@@ -1511,7 +1510,7 @@ class BeatPrompt:
         self.t0 = None
         self.tempo = None
 
-        self.rich = term.RichTextRenderer(term_settings)
+        self.rich = mu.RichTextRenderer(term_settings)
         self.rich.add_pair_template("error", settings.text.error_message)
         self.rich.add_pair_template("info", settings.text.info_message)
         self.rich.add_pair_template("unknown", settings.text.token_unknown)

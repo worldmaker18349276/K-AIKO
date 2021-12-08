@@ -12,7 +12,6 @@ from kaiko.utils import config as cfg
 from kaiko.utils import datanodes as dn
 from kaiko.utils import audios as aud
 from kaiko.utils import markups as mu
-from kaiko.utils import terminals as term
 from kaiko.utils import engines
 from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings, Sight, Widget, WidgetSettings
 
@@ -1130,7 +1129,7 @@ class Beatmap:
         prepare_time = gameplay_settings.controls.prepare_time
         debug_monitor = gameplay_settings.debug_monitor
 
-        rich = term.RichBarRenderer(devices_settings.terminal)
+        rich = mu.RichBarRenderer(devices_settings.terminal)
 
         # prepare
         with self.load_resources(samplerate, nchannels, data_dir) as task:

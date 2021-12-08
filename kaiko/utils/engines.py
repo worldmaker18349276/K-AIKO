@@ -453,7 +453,7 @@ def to_range(start, stop, width):
 class RichBar:
     def __init__(self, terminal_settings):
         self.markups = []
-        self.rich = term.RichBarRenderer(terminal_settings)
+        self.rich = mu.RichBarRenderer(terminal_settings)
 
     def add_markup(self, markup, mask=slice(None,None), shift=0):
         self.markups.append((markup, mask, shift))
@@ -506,7 +506,7 @@ class Renderer:
     @staticmethod
     @dn.datanode
     def _render_node(scheduler, term_settings):
-        rich = term.RichTextRenderer(term_settings)
+        rich = mu.RichTextRenderer(term_settings)
         clear_line = rich.render(rich.clear_line().expand())
         clear_below = rich.render(rich.clear_below().expand())
         width = 0
@@ -541,7 +541,7 @@ class Renderer:
     def _resize_node(render_node, settings, term_settings, ref_time):
         framerate = settings.display_framerate
 
-        rich = term.RichTextRenderer(term_settings)
+        rich = mu.RichTextRenderer(term_settings)
         clear_line = rich.render(rich.clear_line().expand())
         clear_screen = rich.render(rich.clear_screen().expand())
         size_node = term.terminal_size()
@@ -805,4 +805,4 @@ class DevicesSettings(cfg.Configurable):
     detector = DetectorSettings
     renderer = RendererSettings
     controller = ControllerSettings
-    terminal = term.TerminalSettings
+    terminal = mu.TerminalSettings
