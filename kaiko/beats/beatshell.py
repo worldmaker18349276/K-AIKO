@@ -1510,7 +1510,7 @@ class BeatPrompt:
         self.t0 = None
         self.tempo = None
 
-        self.rich = mu.RichTextRenderer(term_settings)
+        self.rich = mu.RichTextRenderer(term_settings.unicode_version, term_settings.color_support)
         self.rich.add_pair_template("error", settings.text.error_message)
         self.rich.add_pair_template("info", settings.text.info_message)
         self.rich.add_pair_template("unknown", settings.text.token_unknown)

@@ -11,6 +11,8 @@ import termios
 import select
 import tty
 from . import datanodes as dn
+from . import markups as mu
+from . import config as cfg
 
 
 @dn.datanode
@@ -184,4 +186,9 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
             with dn.create_task(run) as task:
                 yield from task.join((yield))
                 return task.result
+
+
+class TerminalSettings(cfg.Configurable):
+    unicode_version: str = "auto"
+    color_support: mu.ColorSupport = mu.ColorSupport.TRUECOLOR
 

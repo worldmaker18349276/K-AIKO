@@ -153,8 +153,8 @@ class KAIKOLogger:
         self.recompile_style()
 
     def recompile_style(self):
-        settings = self.config.current.devices.terminal if self.config else None
-        self.rich = mu.RichTextRenderer(settings)
+        settings = self.config.current.devices.terminal if self.config else term.TerminalSettings()
+        self.rich = mu.RichTextRenderer(settings.unicode_version, settings.color_support)
         self.rich.add_single_template("data", self.settings.data_icon)
         self.rich.add_single_template("info", self.settings.info_icon)
         self.rich.add_single_template("hint", self.settings.hint_icon)

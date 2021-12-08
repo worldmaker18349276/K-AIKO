@@ -826,10 +826,6 @@ class Wide(Single):
             return Text(self.char)
 
 
-class TerminalSettings(cfg.Configurable):
-    unicode_version: str = "auto"
-    color_support: ColorSupport = ColorSupport.TRUECOLOR
-
 class RichTextRenderer:
     default_tags = {
         Reset.name: Reset,
@@ -847,19 +843,10 @@ class RichTextRenderer:
         Wide.name: Wide,
     }
 
-    def __init__(self, settings=None):
+    def __init__(self, unicode_version="auto", color_support=ColorSupport.TRUECOLOR):
         self.tags = dict(RichTextRenderer.default_tags)
-        if settings is None:
-            settings = TerminalSettings()
-        self.settings = settings
-
-    @property
-    def unicode_version(self):
-        return self.settings.unicode_version
-
-    @property
-    def color_support(self):
-        return self.settings.color_support
+        self.unicode_version = unicode_version
+        self.color_support = color_support
 
     @property
     def props(self):
@@ -1133,19 +1120,10 @@ class RichBarRenderer:
         Mask.name: Mask,
     }
 
-    def __init__(self, settings=None):
+    def __init__(self, unicode_version="auto", color_support=ColorSupport.TRUECOLOR):
         self.tags = dict(RichBarRenderer.default_tags)
-        if settings is None:
-            settings = TerminalSettings()
-        self.settings = settings
-
-    @property
-    def unicode_version(self):
-        return self.settings.unicode_version
-
-    @property
-    def color_support(self):
-        return self.settings.color_support
+        self.unicode_version = unicode_version
+        self.color_support = color_support
 
     @property
     def props(self):

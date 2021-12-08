@@ -1129,7 +1129,7 @@ class Beatmap:
         prepare_time = gameplay_settings.controls.prepare_time
         debug_monitor = gameplay_settings.debug_monitor
 
-        rich = mu.RichBarRenderer(devices_settings.terminal)
+        rich = mu.RichBarRenderer(devices_settings.terminal.unicode_version, devices_settings.terminal.color_support)
 
         # prepare
         with self.load_resources(samplerate, nchannels, data_dir) as task:
