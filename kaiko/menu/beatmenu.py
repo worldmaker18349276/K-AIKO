@@ -286,10 +286,8 @@ class KAIKOMenu:
         confirm_key = self.settings.shell.input.confirm_key
         help_key = self.settings.shell.input.help_key
         tab_key, _, _ = self.settings.shell.input.autocomplete_keys
-        search_key, _, _ = self.settings.shell.input.search_keys
         logger.print(f"[hint/] Type command and press {logger.emph(confirm_key)} to execute.")
         logger.print(f"[hint/] Use {logger.emph(tab_key)} to autocomplete command.")
-        logger.print(f"[hint/] Use {logger.emph(search_key)} to search command history.")
         logger.print(f"[hint/] If you need help, press {logger.emph(help_key)}.")
         logger.print()
 
