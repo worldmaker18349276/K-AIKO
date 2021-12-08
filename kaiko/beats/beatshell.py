@@ -774,6 +774,9 @@ class BeatInput:
             if token != token_:
                 return self.cancel_hint()
 
+        if isinstance(self.hint_state.hint, InputWarn) and self.tokens[len(self.hint_state.tokens)-1][1] is not None:
+            return self.cancel_hint()
+
         return False
 
     @locked
@@ -795,6 +798,7 @@ class BeatInput:
         self.pos += len(self.typeahead)
         self.typeahead = ""
         self.update_buffer()
+        self.ask_hint()
 
         return True
 
@@ -833,7 +837,7 @@ class BeatInput:
         self.update_buffer()
 
         self.show_typeahead()
-        self.update_hint()
+        self.ask_hint()
 
         return True
 
@@ -854,7 +858,7 @@ class BeatInput:
         del self.buffer[self.pos]
         self.update_buffer()
         self.cancel_typeahead()
-        self.update_hint()
+        self.ask_hint()
 
         return True
 
@@ -874,7 +878,7 @@ class BeatInput:
         del self.buffer[self.pos]
         self.update_buffer()
         self.cancel_typeahead()
-        self.update_hint()
+        self.ask_hint()
 
         return True
 
@@ -894,7 +898,7 @@ class BeatInput:
         self.pos = 0
         self.update_buffer()
         self.cancel_typeahead()
-        self.update_hint()
+        self.cancel_hint()
 
         return True
 
@@ -922,7 +926,7 @@ class BeatInput:
         self.pos = start
         self.update_buffer()
         self.cancel_typeahead()
-        self.update_hint()
+        self.ask_hint()
 
         return True
 
@@ -1131,8 +1135,7 @@ class BeatInput:
             if slic.start is None or slic.start <= self.pos:
                 break
         else:
-            self.set_hint(InputMessage(None), None)
-            return True
+            return False
 
         parents = [token for token, _, _, _ in self.tokens[:index]]
 
