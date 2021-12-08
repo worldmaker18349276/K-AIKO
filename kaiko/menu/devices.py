@@ -523,7 +523,7 @@ class DevicesCommand:
             logger.print(f"\[{time:07.3f} s] {logger.emph(keyname)} ({logger.escape(repr(keycode))})")
             logger.print("\[ <time>  ] [emph]<keyname>[/] (<keycode>)", end="\r")
 
-        controller_task, controller = engines.Controller.create(self.config.current.devices.controller)
+        controller_task, controller = engines.Controller.create(self.config.current.devices.controller, self.config.current.devices.terminal)
         controller.add_handler(handler)
         controller.add_handler(lambda _: stop_event.set(), exit_key)
 

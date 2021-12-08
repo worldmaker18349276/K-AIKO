@@ -1152,7 +1152,7 @@ class Beatmap:
         mixer_task, mixer = engines.Mixer.create(devices_settings.mixer, manager, ref_time, mixer_monitor)
         detector_task, detector = engines.Detector.create(devices_settings.detector, manager, ref_time, detector_monitor)
         renderer_task, renderer = engines.Renderer.create(devices_settings.renderer, devices_settings.terminal, ref_time, renderer_monitor)
-        controller_task, controller = engines.Controller.create(devices_settings.controller, ref_time)
+        controller_task, controller = engines.Controller.create(devices_settings.controller, devices_settings.terminal, ref_time)
 
         # load widgets
         widget_params = dict(

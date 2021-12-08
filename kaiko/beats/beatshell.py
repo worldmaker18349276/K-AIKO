@@ -537,7 +537,7 @@ class BeatInput:
 
         debug_monitor = settings.debug_monitor
         renderer_monitor = engines.Monitor("prompt_monitor.csv") if debug_monitor else None
-        input_task, controller = engines.Controller.create(devices_settings.controller)
+        input_task, controller = engines.Controller.create(devices_settings.controller, devices_settings.terminal)
         display_task, renderer = engines.Renderer.create(devices_settings.renderer, devices_settings.terminal, monitor=renderer_monitor)
         stroke = BeatStroke(self, settings.input)
         prompt = BeatPrompt(stroke, self, settings, devices_settings.terminal, renderer_monitor)
