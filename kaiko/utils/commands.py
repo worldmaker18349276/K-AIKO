@@ -102,11 +102,6 @@ class TOKEN_TYPE(Enum):
     KEYWORD = "keyword"
 
 
-def it_should_be_one_of(options):
-    if not options:
-        return None
-    return "It should be one of:\n" + "\n".join("• " + s for s in options)
-
 def do_you_mean(options):
     if not options:
         return None
@@ -223,10 +218,6 @@ class OptionParser(ArgumentParser):
         self.options = options
         self.default = default
         self._desc = desc
-
-        if desc is None:
-            options = list(self.options.keys()) if isinstance(self.options, dict) else self.options
-            self._desc = it_should_be_one_of(options)
 
     def desc(self):
         return self._desc
@@ -642,8 +633,7 @@ class FunctionCommandParser(CommandParser):
 
         # parse keyword arguments
         if self.kwargs:
-            keys = ["--" + key for key in self.kwargs.keys()]
-            return it_should_be_one_of(keys)
+            return None
 
         # rest
         return None
@@ -698,7 +688,7 @@ class SubCommandParser(CommandParser):
         return [val + "\000" for val in fit(token, self.fields)]
 
     def desc(self):
-        return it_should_be_one_of(self.fields)
+        return None
 
     def info(self, token):
         return getcmddesc(self.parent, token)

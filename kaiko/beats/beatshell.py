@@ -408,11 +408,11 @@ class BeatShellSettings(cfg.Configurable):
 
 @dataclasses.dataclass(frozen=True)
 class InputWarn:
-    message : Optional[str]
+    message : str
 
 @dataclasses.dataclass(frozen=True)
 class InputMessage:
-    message : Optional[str]
+    message : str
 
 @dataclasses.dataclass(frozen=True)
 class InputSuggestions:
@@ -1128,24 +1128,33 @@ class BeatInput:
         -------
         succ : bool
         """
-        self.cancel_hint()
-
-        # find the last token before the caret
-        for index, (target, token_type, slic, _) in reversed(list(enumerate(self.tokens))):
-            if slic.start is None or slic.start <= self.pos:
+        # find the token on the caret
+        for index, (target, token_type, slic, _) in enumerate(self.tokens):
+            if slic.start <= self.pos <= slic.stop:
                 break
         else:
+            # don't cancel hint if find nothing
             return False
+
+        self.cancel_hint()
 
         parents = [token for token, _, _, _ in self.tokens[:index]]
 
         if token_type is None:
-            hint = InputWarn(self.command.desc_command(parents))
-        else:
-            hint = InputMessage(self.command.info_command(parents, target))
+            msg = self.command.desc_command(parents)
+            if msg is None:
+                return False
+            hint = InputWarn(msg)
+            self.set_hint(hint, index)
+            return True
 
-        self.set_hint(hint, index)
-        return True
+        else:
+            msg = self.command.info_command(parents, target)
+            if msg is None:
+                return False
+            hint = InputMessage(msg)
+            self.set_hint(hint, index)
+            return True
 
     @locked
     @onstate("EDIT")
@@ -1302,7 +1311,7 @@ class BeatInput:
 
     @locked
     def unknown_key(self, key):
-        self.set_result(InputError(ValueError(f"Unknown key: " + key)), None)
+        self.set_result(InputError(ValueError(f"Unknown key: " + key)))
         self.finish()
 
 class BeatStroke:
