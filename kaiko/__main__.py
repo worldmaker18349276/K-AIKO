@@ -1,4 +1,4 @@
-from .menu.beatmenu import KAIKOMenu
+from .main.menu import KAIKOMenu
 
 def main():
     KAIKOMenu.main()
