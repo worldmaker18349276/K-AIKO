@@ -84,7 +84,7 @@ def parse_markup(markup_str, tags, props={}):
     return markup
 
 def escape(text):
-    return text.replace("[", "\\[").replace("\\", r"\\")
+    return text.replace("\\", r"\\").replace("[", "\\[")
 
 class Markup:
     def _represent(self):
