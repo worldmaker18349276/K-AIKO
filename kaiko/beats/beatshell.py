@@ -389,7 +389,7 @@ class BeatShellSettings(cfg.Configurable):
         message_max_lines: int = 16
 
         quotation: str = "[weight=dim]'[/]"
-        backslash: str = r"[weight=dim]\\[/]"
+        backslash: str = "[weight=dim]\\[/]"
         whitespace: str = "[weight=dim]⌴[/]"
         typeahead: str = "[weight=dim][slot/][/]"
 

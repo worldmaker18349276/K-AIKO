@@ -208,10 +208,10 @@ class DevicesCommand:
                                          of recorded sound.       of input device.
                                                   ╲                         ╲
         usage: [cmd]devices[/] [cmd]set_mic[/] [arg]{device}[/] \
-\[[kw]--rate[/] [arg]{RATE}[/]] \
-\[[kw]--ch[/] [arg]{CH}[/]] \
-\[[kw]--len[/] [arg]{LEN}[/]] \
-\[[kw]--fmt[/] [arg]{FMT}[/]]
+[[[kw]--rate[/] [arg]{RATE}[/]]] \
+[[[kw]--ch[/] [arg]{CH}[/]]] \
+[[[kw]--len[/] [arg]{LEN}[/]]] \
+[[[kw]--fmt[/] [arg]{FMT}[/]]]
                                  ╱                             ╱                          ╱
                        the index of input           the channel of audio         the data format
                         device, -1 is the            input: 1 for mono,         of recorded sound.
@@ -257,10 +257,10 @@ class DevicesCommand:
                                               of played sound.       of output device.
                                                       ╲                         ╲
         usage: [cmd]devices[/] [cmd]set_speaker[/] [arg]{device}[/] \
-\[[kw]--rate[/] [arg]{RATE}[/]] \
-\[[kw]--ch[/] [arg]{CH}[/]] \
-\[[kw]--len[/] [arg]{LEN}[/]] \
-\[[kw]--fmt[/] [arg]{FMT}[/]]
+[[[kw]--rate[/] [arg]{RATE}[/]]] \
+[[[kw]--ch[/] [arg]{CH}[/]]] \
+[[[kw]--len[/] [arg]{LEN}[/]]] \
+[[[kw]--fmt[/] [arg]{FMT}[/]]]
                                      ╱                             ╱                          ╱
                            the index of output          the channel of audio         the data format
                             device, -1 is the           output: 1 for mono,          of played sound.
@@ -376,15 +376,15 @@ class DevicesCommand:
 
         logger.print(f"[hint/] Press {logger.emph(exit_key)} to end test.")
         logger.print()
-        logger.print("\[ <time>  ] [emph]<keyname>[/] (<keycode>)", end="\r")
+        logger.print("[[ <time>  ]] [emph]<keyname>[/] (<keycode>)", end="\r")
 
         stop_event = threading.Event()
 
         def handler(arg):
             _, time, keyname, keycode = arg
             logger.clear_line()
-            logger.print(f"\[{time:07.3f} s] {logger.emph(keyname)} ({logger.escape(repr(keycode))})")
-            logger.print("\[ <time>  ] [emph]<keyname>[/] (<keycode>)", end="\r")
+            logger.print(f"[[{time:07.3f} s]] {logger.emph(keyname)} ({logger.escape(repr(keycode))})")
+            logger.print("[[ <time>  ]] [emph]<keyname>[/] (<keycode>)", end="\r")
 
         controller_task, controller = engines.Controller.create(self.config.current.devices.controller, self.config.current.devices.terminal)
         controller.add_handler(handler)
@@ -432,7 +432,7 @@ class KnockTest:
         length = 10
         try:
             while True:
-                self.logger.print("\[ <time>  ] │[emph]<strength>[/]│ (<value>)", end="\r")
+                self.logger.print("[[ <time>  ]] │[emph]<strength>[/]│ (<value>)", end="\r")
 
                 while self.hit_queue.empty():
                     yield
@@ -441,7 +441,7 @@ class KnockTest:
                 value = int(strength * length * nticks)
                 level = "".join(ticks[min(nticks, max(0, value - i * nticks))] for i in range(length))
                 level = f"{level[:length//2]}[weight=bold]{level[length//2:]}[/]"
-                self.logger.print(f"\[{time:07.3f} s] │{level}│ ({strength:.5f})")
+                self.logger.print(f"[[{time:07.3f} s]] │{level}│ ({strength:.5f})")
 
         finally:
             self.logger.print()

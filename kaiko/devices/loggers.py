@@ -126,7 +126,7 @@ class Logger:
         @dn.datanode
         def _ask():
             hint = "[emph]y[/]/n" if default else "y/[emph]n[/]"
-            self.print(f"{self.escape(prompt)} \[{hint}]", end="", flush=True)
+            self.print(f"{self.escape(prompt)} [[{hint}]]", end="", flush=True)
 
             while True:
                 try:

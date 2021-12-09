@@ -1,5 +1,4 @@
 import re
-import ast
 import contextlib
 import enum
 import dataclasses
@@ -8,7 +7,7 @@ import wcwidth
 
 # pair: [tag=param]...[/]
 # single: [tag=param/]
-# escape: \\, \n, \x3A (python's escapes), \[, \]
+# escape: [[, ]]
 
 # basic:
 #   csi: [csi=2A/]  =>  "\x1b[2A"
@@ -23,21 +22,13 @@ class MarkupParseError(Exception):
 def parse_markup(markup_str, tags, props={}):
     stack = [(Group, [])]
 
-    for match in re.finditer(r"(?P<tag>\[[^\]]*\])|(?P<text>([^\[\\]|\\[\s\S])+)", markup_str):
+    for match in re.finditer(r"(?P<tag>\[[^\]]*\])|(?P<text>([^\[]|\[\[)+)", markup_str):
         tag = match.group('tag')
         text = match.group('text')
 
         if text is not None:
-            # process backslash escapes
-            raw = text
-            raw = re.sub(r"(?<!\\)((\\\\)*)\\\[", r"\1[", raw) # \[ => [
-            raw = re.sub(r"(?<!\\)((\\\\)*)\\\]", r"\1]", raw) # \] => ]
-            raw = re.sub(r"(?<!\\)((\\\\)*)'", r"\1\\'", raw)  # ' => \'
-            raw = re.sub(r"(?<!\\)((\\\\)*)\r", r"\1\\r", raw)  # '\r' => \r
-            try:
-                raw = ast.literal_eval("'''" + raw + "'''")
-            except SyntaxError:
-                raise MarkupParseError(f"invalid text: {repr(text)}")
+            # process escapes
+            raw = text.replace("[[", "[").replace("]]", "]")
             stack[-1][1].append(Text(raw))
             continue
 
@@ -84,7 +75,7 @@ def parse_markup(markup_str, tags, props={}):
     return markup
 
 def escape(text):
-    return text.replace("\\", r"\\").replace("[", "\\[")
+    return text.replace("[", "[[")
 
 class Markup:
     def _represent(self):
@@ -105,12 +96,7 @@ class Text(Markup):
 
     def _represent(self):
         for ch in self.string:
-            if ch == "\\":
-                yield r"\\"
-            elif ch == "[":
-                yield r"\["
-            else:
-                yield repr(ch)[1:-1]
+            yield ("[[" if ch == "[" else ch)
 
     def traverse(self, markup_type, func):
         if isinstance(self, markup_type):

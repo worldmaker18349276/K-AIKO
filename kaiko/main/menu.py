@@ -464,7 +464,7 @@ class KAIKOMenu:
     def say(self, message, escape=False):
         """Say something to... yourself.
 
-        usage: [cmd]say[/] [arg]{message}[/] \[[kw]--escape[/] [arg]{ESCAPE}[/]]
+        usage: [cmd]say[/] [arg]{message}[/] [[[kw]--escape[/] [arg]{ESCAPE}[/]]]
                       ╱                    ╲
             text, the message               ╲
              to be printed.          bool, use backslash escapes

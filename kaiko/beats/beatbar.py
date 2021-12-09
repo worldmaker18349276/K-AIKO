@@ -98,21 +98,21 @@ class BeatbarSettings(cfg.Configurable):
         icon_width : int
             The width of icon.
 
-             ⣠⣴⣤⣿⣤⣦ \[00000/00400]       □  ⛶     □                 ■   \[11.3%|00:09]
+             ⣠⣴⣤⣿⣤⣦ [[00000/00400]]       □  ⛶     □                 ■   [[11.3%|00:09]]
             ^^^^^^^^
               here
 
         header_width : int
             The width of header.
 
-             ⣠⣴⣤⣿⣤⣦ \[00000/00400]       □  ⛶     □                 ■   \[11.3%|00:09]
+             ⣠⣴⣤⣿⣤⣦ [[00000/00400]]       □  ⛶     □                 ■   [[11.3%|00:09]]
                     ^^^^^^^^^^^^^
                         here
 
         footer_width : int
             The width of footer.
 
-             ⣠⣴⣤⣿⣤⣦ \[00000/00400]       □  ⛶     □                 ■   \[11.3%|00:09]
+             ⣠⣴⣤⣿⣤⣦ [[00000/00400]]       □  ⛶     □                 ■   [[11.3%|00:09]]
                                                                        ^^^^^^^^^^^^^
                                                                             here
 

@@ -656,7 +656,7 @@ class ConfigCommand:
     def new(self, profile, clone=None):
         """Make new configuration profile.
 
-        usage: [cmd]config[/] [cmd]new[/] [arg]{profile}[/] \[[kw]--clone[/] [arg]{PROFILE}[/]]
+        usage: [cmd]config[/] [cmd]new[/] [arg]{profile}[/] [[[kw]--clone[/] [arg]{PROFILE}[/]]]
                               ╱                    ╲
                      The profile name.      The profile to be cloned.
         """
