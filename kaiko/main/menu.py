@@ -16,7 +16,6 @@ from ..utils import config as cfg
 from ..utils import biparsers as bp
 from ..utils import commands as cmd
 from ..devices import loggers as log
-from ..devices import engines
 from ..beats import beatshell
 from ..beats import beatmaps
 from ..beats import beatsheets
@@ -93,12 +92,6 @@ def echo_str(escaped_str):
             return matched
 
     return re.sub(regex, repl, escaped_str)
-
-
-class KAIKOSettings(cfg.Configurable):
-    devices = engines.DevicesSettings
-    shell = beatshell.BeatShellSettings
-    gameplay = beatmaps.GameplaySettings
 
 
 @dataclasses.dataclass
@@ -215,7 +208,7 @@ class KAIKOMenu:
         user.prepare(logger)
 
         # load config
-        config = ProfileManager.initialize(KAIKOSettings, user.config_dir, logger)
+        config = ProfileManager.initialize(user.config_dir, logger)
 
         logger.recompile_style(
             terminal_settings=config.current.devices.terminal,

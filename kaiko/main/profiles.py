@@ -7,6 +7,16 @@ from ..utils import config as cfg
 from ..utils import biparsers as bp
 from ..utils import commands as cmd
 from ..utils import datanodes as dn
+from ..devices import engines
+from ..beats import beatshell
+from ..beats import beatmaps
+
+
+class KAIKOSettings(cfg.Configurable):
+    devices = engines.DevicesSettings
+    shell = beatshell.BeatShellSettings
+    gameplay = beatmaps.GameplaySettings
+
 
 def exists(program):
     if os.name == 'nt':
@@ -32,8 +42,6 @@ class ProfileManager:
     Attributes
     ----------
     logger : loggers.Logger
-    config_type : type
-        The Configurable type to manage.
     path : Path
         The path of profiles directory.
     profiles : list of str
@@ -50,12 +58,11 @@ class ProfileManager:
     extension = ".config"
     settings_name = "settings"
 
-    def __init__(self, config_type, path, logger):
+    def __init__(self, path, logger):
         if isinstance(path, str):
             path = Path(path)
 
         self.logger = logger
-        self.config_type = config_type
         self.path = path
         self.profiles = []
         self.default_name = None
@@ -65,13 +72,11 @@ class ProfileManager:
         self._profiles_mtime = None
 
     @classmethod
-    def initialize(clz, config_type, path, logger):
+    def initialize(clz, path, logger):
         """Initializer, use me instead of sconstructor.
 
         Parameters
         ----------
-        config_type : type
-            The Configurable type to manage.
         path : str or Path
             The path of profiles directory.
         logger : loggers.Logger
@@ -80,7 +85,7 @@ class ProfileManager:
         -------
         config : ProfileManager
         """
-        config = clz(config_type, path, logger)
+        config = clz(path, logger)
         # `config.current_name` and `config.current` are currently invalid
 
         config.update()
@@ -227,7 +232,7 @@ class ProfileManager:
             return False
 
         try:
-            self.current = self.config_type.read(current_path, name=self.settings_name)
+            self.current = KAIKOSettings.read(current_path, name=self.settings_name)
         except bp.DecodeError:
             with logger.warn():
                 logger.print("Fail to decode configuration")
@@ -313,7 +318,7 @@ class ProfileManager:
 
         if clone is None:
             self.current_name = name
-            self.current = self.config_type()
+            self.current = KAIKOSettings()
             self._current_mtime = None
             return True
 
@@ -408,9 +413,8 @@ class ProfileManager:
         return True
 
 class FieldParser(cmd.ArgumentParser):
-    def __init__(self, config_type):
-        self.config_type = config_type
-        self.biparser = cfg.FieldBiparser(config_type)
+    def __init__(self):
+        self.biparser = cfg.FieldBiparser(KAIKOSettings)
 
     def parse(self, token):
         try:
@@ -430,7 +434,7 @@ class FieldParser(cmd.ArgumentParser):
 
     def info(self, token):
         fields = self.parse(token)
-        return self.config_type.get_field_doc(fields)
+        return KAIKOSettings.get_field_doc(fields)
 
 class ConfigCommand:
     def __init__(self, config, logger):
@@ -448,7 +452,7 @@ class ConfigCommand:
     @cmd.function_command
     def show(self):
         """Show configuration."""
-        biparser = cfg.ConfigurationBiparser(self.config.config_type, name=self.config.settings_name)
+        biparser = cfg.ConfigurationBiparser(KAIKOSettings, name=self.config.settings_name)
         text = biparser.encode(self.config.current)
         is_changed = self.config.is_changed()
         title = self.config.current_name + self.config.extension
@@ -510,7 +514,7 @@ class ConfigCommand:
         """
         editor = self.config.current.devices.terminal.editor
 
-        field_type = self.config.config_type.get_field_type(field)
+        field_type = KAIKOSettings.get_field_type(field)
         biparser = bp.from_type_hint(field_type, multiline=True)
 
         if self.config.current.has(field):
@@ -559,11 +563,11 @@ class ConfigCommand:
     @set.arg_parser("field")
     @edit.arg_parser("field")
     def _field_parser(self):
-        return FieldParser(self.config.config_type)
+        return FieldParser()
 
     @set.arg_parser("value")
     def _set_value_parser(self, field):
-        annotation = self.config.config_type.get_field_type(field)
+        annotation = KAIKOSettings.get_field_type(field)
         default = self.config.current.get(field)
         return cmd.LiteralParser(annotation, default)
 
