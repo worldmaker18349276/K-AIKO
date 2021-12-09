@@ -392,7 +392,10 @@ class ConfigCommand:
         self.logger = logger
 
     def update_logger(self):
-        self.logger.set_settings(self.config.current.devices.terminal, self.config.current.devices.logger)
+        self.logger.recompile_style(
+            terminal_settings=self.config.current.devices.terminal,
+            logger_settings=self.config.current.devices.logger
+        )
 
     # configuration
 

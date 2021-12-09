@@ -362,8 +362,7 @@ class DevicesCommand:
             if version is not None:
                 os.environ["UNICODE_VERSION"] = version
                 self.config.current.devices.terminal.unicode_version = version
-                self.logger.set_settings(terminal_settings=self.config.current.devices.terminal)
-                self.logger.recompile_style()
+                self.logger.recompile_style(terminal_settings=self.config.current.devices.terminal)
 
     # engines
 

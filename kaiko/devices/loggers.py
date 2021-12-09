@@ -33,12 +33,15 @@ class LoggerSettings(cfg.Configurable):
 
 class Logger:
     def __init__(self, terminal_settings=None, logger_settings=None):
-        self.terminal_settings = terminal_settings
-        self.logger_settings = logger_settings
         self.level = 1
-        self.recompile_style()
+        self.recompile_style(terminal_settings, logger_settings)
 
-    def recompile_style(self):
+    def recompile_style(self, terminal_settings=None, logger_settings=None):
+        if terminal_settings is not None:
+            self.terminal_settings = terminal_settings
+        if logger_settings is not None:
+            self.logger_settings = logger_settings
+
         terminal_settings = self.terminal_settings if self.terminal_settings else term.TerminalSettings()
         self.rich = mu.RichTextRenderer(terminal_settings.unicode_version, terminal_settings.color_support)
 
@@ -49,13 +52,6 @@ class Logger:
         self.rich.add_pair_template("verb", logger_settings.verb)
         self.rich.add_pair_template("emph", logger_settings.emph)
         self.rich.add_pair_template("warn", logger_settings.warn)
-
-    def set_settings(self, terminal_settings=None, logger_settings=None):
-        if terminal_settings is not None:
-            self.terminal_settings = terminal_settings
-        if logger_settings is not None:
-            self.logger_settings = logger_settings
-        self.recompile_style()
 
     @contextlib.contextmanager
     def verb(self):

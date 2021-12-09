@@ -229,7 +229,10 @@ class KAIKOMenu:
 
                 config.new()
 
-        logger.set_settings(config.current.devices.terminal, config.current.devices.logger)
+        logger.recompile_style(
+            terminal_settings=config.current.devices.terminal,
+            logger_settings=config.current.devices.logger
+        )
 
         # load PyAudio
         logger.print("[info/] Load PyAudio...")
@@ -256,8 +259,7 @@ class KAIKOMenu:
                 if version is not None:
                     os.environ["UNICODE_VERSION"] = version
                     self.settings.devices.terminal.unicode_version = version
-                    logger.set_settings(terminal_settings=self.settings.devices.terminal)
-                    logger.recompile_style()
+                    logger.recompile_style(terminal_settings=self.settings.devices.terminal)
             logger.print()
 
         # fit screen size
