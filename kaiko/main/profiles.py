@@ -50,6 +50,8 @@ class ProfileManager:
         The name of current configuration.
     current : Configurable
         The current configuration.
+    is_changed : bool
+        True if the current configuration is changed with respect to file.
     """
 
     default_meta = ".default-config"
@@ -83,12 +85,26 @@ class ProfileManager:
         self.default_name = None
         self.current_name = None
         self.current = None
+        self._current_mtime = None
         self._profiles_mtime = None
 
         self.update()
 
     def is_uptodate(self):
+        if not self.path.exists():
+            return False
         return self._profiles_mtime == os.stat(str(self.path)).st_mtime
+
+    def is_changed(self):
+        if self.current_name is None:
+            return False
+        current_path = self.path / (self.current_name + self.extension)
+        if not current_path.exists():
+            return True
+        return self._current_mtime != os.stat(str(current_path)).st_mtime
+
+    def set_change(self):
+        self._current_mtime = None
 
     def update(self):
         """Update the list of profiles."""
@@ -145,24 +161,6 @@ class ProfileManager:
 
         default_meta_path.write_text(self.default_name)
 
-    def is_changed(self):
-        """Check if the current configuration is changed."""
-        if self.current_name is None:
-            raise ValueError("No profile")
-
-        current_path = self.path / (self.current_name + self.extension)
-
-        if not self.path.exists():
-            raise ValueError(f"The profile directory doesn't exist: {self.path}")
-
-        if current_path.exists() and not current_path.is_file():
-            raise ValueError(f"Wrong file type for profile: {current_path}")
-
-        old = open(current_path).read() if current_path.exists() else ""
-        biparser = cfg.ConfigurationBiparser(self.config_type, name=self.settings_name)
-        new = biparser.encode(self.current)
-        return new != old
-
     def save(self):
         """Save the current configuration."""
         logger = self.logger
@@ -189,6 +187,8 @@ class ProfileManager:
             with logger.warn():
                 logger.print("Fail to encode configuration")
                 logger.print(traceback.format_exc(), end="", markup=False)
+        else:
+            self._current_mtime = os.stat(str(current_path)).st_mtime
 
         self.update()
 
@@ -202,7 +202,9 @@ class ProfileManager:
         current_path = self.path / (self.current_name + self.extension)
         logger.print(f"[data/] Load configuration from {logger.emph(current_path.as_uri())}...")
 
+        # fail to load config -> make a new config
         self.current = self.config_type()
+        self._current_mtime = None
 
         if not current_path.exists():
             return
@@ -218,6 +220,8 @@ class ProfileManager:
             with logger.warn():
                 logger.print("Fail to decode configuration")
                 logger.print(traceback.format_exc(), end="", markup=False)
+        else:
+            self._current_mtime = os.stat(str(current_path)).st_mtime
 
     def use(self, name=None):
         """change the current profile of configuration.
@@ -284,6 +288,7 @@ class ProfileManager:
         if clone is None:
             self.current_name = name
             self.current = self.config_type()
+            self._current_mtime = None
         else:
             self.current_name = clone
             self.load()
@@ -438,6 +443,7 @@ class ConfigCommand:
                    The field name.   The value.
         """
         self.config.current.set(field, value)
+        self.config.set_change()
         self.update_logger()
 
     @cmd.function_command
@@ -449,6 +455,7 @@ class ConfigCommand:
                        The field name.
         """
         self.config.current.unset(field)
+        self.config.set_change()
         self.update_logger()
 
     @cmd.function_command
@@ -488,6 +495,7 @@ class ConfigCommand:
 
         if res_str == "":
             self.config.current.unset(field)
+            self.config.set_change()
             self.update_logger()
             return
 
@@ -501,6 +509,7 @@ class ConfigCommand:
 
         else:
             self.config.current.set(field, res)
+            self.config.set_change()
             self.update_logger()
 
     @get.arg_parser("field")

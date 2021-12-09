@@ -34,6 +34,8 @@ class LoggerSettings(cfg.Configurable):
 class Logger:
     def __init__(self, terminal_settings=None, logger_settings=None):
         self.level = 1
+        self.terminal_settings = terminal_settings
+        self.logger_settings = logger_settings
         self.recompile_style(terminal_settings, logger_settings)
 
     def recompile_style(self, terminal_settings=None, logger_settings=None):

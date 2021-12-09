@@ -920,12 +920,12 @@ class RichTextRenderer:
     def render(self, markup):
         return "".join(self._render(markup))
 
-    def _render_context(self, markup, printer, reopens=()):
+    def _render_context(self, markup, print, reopens=()):
         if isinstance(markup, Text):
-            printer(markup.string)
+            print(markup.string)
 
         elif isinstance(markup, CSI):
-            printer(markup.ansi_code)
+            print(markup.ansi_code)
 
         elif isinstance(markup, Slot):
             yield
@@ -935,31 +935,31 @@ class RichTextRenderer:
                 return
             child = markup.children[0]
             try:
-                yield from self._render_context(child, printer, reopens)
+                yield from self._render_context(child, print, reopens)
             finally:
-                yield from self._render_context(Group(markup.children[1:]), printer, reopens)
+                yield from self._render_context(Group(markup.children[1:]), print, reopens)
 
         elif isinstance(markup, SGR):
             open, close = markup.ansi_delimiters
 
             if open:
-                printer(open)
+                print(open)
 
             try:
-                yield from self._render_context(Group(markup.children), printer, (open, *reopens))
+                yield from self._render_context(Group(markup.children), print, (open, *reopens))
             finally:
                 if close:
-                    printer(close)
+                    print(close)
                 for reopen in reopens[::-1]:
                     if reopen:
-                        printer(reopen)
+                        print(reopen)
 
         else:
             raise TypeError(f"unknown markup type: {type(markup)}")
 
     @contextlib.contextmanager
-    def render_context(self, markup, printer):
-        yield from self._render_context(markup, printer)
+    def render_context(self, markup, print):
+        yield from self._render_context(markup, print)
 
     def _less(self, markup, size, pos=(0,0), reopens=(), wrap=True):
         if pos is None:
