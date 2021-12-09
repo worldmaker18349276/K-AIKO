@@ -21,7 +21,7 @@ from ..beats import beatshell
 from ..beats import beatmaps
 from ..beats import beatsheets
 from ..beats import beatanalyzer
-from .profiles import ProfileManager, ConfigCommand, ProfileNameError, ProfileTypeError
+from .profiles import ProfileManager, ConfigCommand
 from .songs import BeatmapManager, KAIKOBGMController, BGMCommand
 from .devices import prepare_pyaudio, DevicesCommand, determine_unicode_version, fit_screen
 
@@ -213,21 +213,9 @@ class KAIKOMenu:
         # load user data
         user = KAIKOUser.create()
         user.prepare(logger)
-        config = ProfileManager(KAIKOSettings, user.config_dir, logger)
 
         # load config
-        if config.default_name is None:
-            config.new()
-
-        else:
-            try:
-                config.use()
-            except (ProfileNameError, ProfileTypeError, bp.DecodeError):
-                with logger.warn():
-                    logger.print("Failed to load default configuration")
-                    logger.print(traceback.format_exc(), end="", markup=False)
-
-                config.new()
+        config = ProfileManager.initialize(KAIKOSettings, user.config_dir, logger)
 
         logger.recompile_style(
             terminal_settings=config.current.devices.terminal,

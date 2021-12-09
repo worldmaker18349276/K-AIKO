@@ -26,12 +26,6 @@ def edit(text, editor):
 
         return open(file.name, mode='r').read()
 
-class ProfileTypeError(Exception):
-    pass
-
-class ProfileNameError(Exception):
-    pass
-
 class ProfileManager:
     """Profile manager for Configurable type.
 
@@ -50,8 +44,6 @@ class ProfileManager:
         The name of current configuration.
     current : Configurable
         The current configuration.
-    is_changed : bool
-        True if the current configuration is changed with respect to file.
     """
 
     default_meta = ".default-config"
@@ -59,22 +51,6 @@ class ProfileManager:
     settings_name = "settings"
 
     def __init__(self, config_type, path, logger):
-        """Constructor.
-
-        Parameters
-        ----------
-        config_type : type
-            The Configurable type to manage.
-        path : str or Path
-            The path of profiles directory.
-
-        Raises
-        ------
-        ProfileTypeError
-            If file type is wrong.
-        DecodeError
-            If decoding fails.
-        """
         if isinstance(path, str):
             path = Path(path)
 
@@ -88,7 +64,34 @@ class ProfileManager:
         self._current_mtime = None
         self._profiles_mtime = None
 
-        self.update()
+    @classmethod
+    def initialize(clz, config_type, path, logger):
+        """Initializer, use me instead of sconstructor.
+
+        Parameters
+        ----------
+        config_type : type
+            The Configurable type to manage.
+        path : str or Path
+            The path of profiles directory.
+        logger : loggers.Logger
+
+        Returns
+        -------
+        config : ProfileManager
+        """
+        config = clz(config_type, path, logger)
+        # `config.current_name` and `config.current` are currently invalid
+
+        config.update()
+
+        succ = config.use()
+        if not succ:
+            succ = config.new()
+            if not succ:
+                raise RuntimeError("Fail to load configuration")
+
+        return config
 
     def is_uptodate(self):
         if not self.path.exists():
@@ -96,8 +99,6 @@ class ProfileManager:
         return self._profiles_mtime == os.stat(str(self.path)).st_mtime
 
     def is_changed(self):
-        if self.current_name is None:
-            return False
         current_path = self.path / (self.current_name + self.extension)
         if not current_path.exists():
             return True
@@ -107,66 +108,76 @@ class ProfileManager:
         self._current_mtime = None
 
     def update(self):
-        """Update the list of profiles."""
-        self._profiles_mtime = os.stat(str(self.path)).st_mtime
-        logger = self.logger
+        """Update the list of profiles.
 
-        self.profiles = []
-        self.default_name = None
+        Returns
+        -------
+        succ : bool
+        """
+        logger = self.logger
 
         logger.print("[data/] Update profiles...")
 
         if not self.path.exists():
             with logger.warn():
                 logger.print(f"The profile directory doesn't exist: {logger.emph(self.path.as_uri())}")
-            return
+            return False
 
         if not self.path.is_dir():
             with logger.warn():
                 logger.print(f"Wrong file type for profile directory: {logger.emph(self.path.as_uri())}")
-            return
+            return False
 
-        for subpath in self.path.iterdir():
-            if subpath.suffix == self.extension:
-                self.profiles.append(subpath.stem)
+        # update profiles
+        self._profiles_mtime = os.stat(str(self.path)).st_mtime
+        self.profiles = [subpath.stem for subpath in self.path.iterdir() if subpath.suffix == self.extension]
 
+        # update default_name
         default_meta_path = self.path / self.default_meta
         if default_meta_path.exists():
             if not default_meta_path.is_file():
                 with logger.warn():
                     logger.print(f"Wrong file type for default profile: {logger.emph(default_meta_path.as_uri())}")
-                return
+                return False
             self.default_name = default_meta_path.read_text()
 
+        return True
+
     def set_default(self):
-        """Set the current configuration as default configuration."""
+        """Set the current configuration as default configuration.
+
+        Returns
+        -------
+        succ : bool
+        """
         logger = self.logger
 
-        logger.print(f"[data/] Set {logger.emph(self.default_name)} as the default configuration...")
-
-        if self.current_name is None:
-            raise ValueError("No profile")
+        logger.print(f"[data/] Set {logger.emph(self.current_name)} as the default configuration...")
 
         if not self.path.exists():
             with logger.warn():
                 logger.print(f"No such profile directory: {logger.emph(self.path.as_uri())}")
-            return
+            return False
 
-        self.default_name = self.current_name
         default_meta_path = self.path / self.default_meta
         if default_meta_path.exists() and not default_meta_path.is_file():
             with logger.warn():
                 logger.print(f"Wrong file type for default profile: {logger.emph(default_meta_path.as_uri())}")
-            return
+            return False
 
-        default_meta_path.write_text(self.default_name)
+        default_meta_path.write_text(self.current_name)
+        self.default_name = self.current_name
+
+        return True
 
     def save(self):
-        """Save the current configuration."""
-        logger = self.logger
+        """Save the current configuration.
 
-        if self.current_name is None:
-            raise ValueError("No profile")
+        Returns
+        -------
+        succ : bool
+        """
+        logger = self.logger
 
         current_path = self.path / (self.current_name + self.extension)
         logger.print(f"[data/] Save configuration to {logger.emph(current_path.as_uri())}...")
@@ -174,45 +185,46 @@ class ProfileManager:
         if not self.path.exists():
             with logger.warn():
                 logger.print(f"The profile directory doesn't exist: {logger.emph(self.path.as_uri())}")
-            return
+            return False
 
         if current_path.exists() and not current_path.is_file():
             with logger.warn():
                 logger.print(f"Wrong file type for profile: {logger.emph(current_path.as_uri())}")
-            return
+            return False
 
         try:
-            self.current.write(current_path, self.settings_name)
+            self.current.write(current_path, name=self.settings_name)
         except bp.EncodeError:
             with logger.warn():
                 logger.print("Fail to encode configuration")
                 logger.print(traceback.format_exc(), end="", markup=False)
-        else:
-            self._current_mtime = os.stat(str(current_path)).st_mtime
+            return False
 
+        self._current_mtime = os.stat(str(current_path)).st_mtime
         self.update()
+        return True
 
     def load(self):
-        """Load the current configuration."""
-        logger = self.logger
+        """Load the current configuration.
 
-        if self.current_name is None:
-            raise ValueError("No profile")
+        Returns
+        -------
+        succ : bool
+        """
+        logger = self.logger
 
         current_path = self.path / (self.current_name + self.extension)
         logger.print(f"[data/] Load configuration from {logger.emph(current_path.as_uri())}...")
 
-        # fail to load config -> make a new config
-        self.current = self.config_type()
-        self._current_mtime = None
-
         if not current_path.exists():
-            return
+            with logger.warn():
+                logger.print(f"The profile doesn't exist: {logger.emph(current_path.as_uri())}")
+            return False
 
         if not current_path.is_file():
             with logger.warn():
                 logger.print(f"Wrong file type for profile: {logger.emph(current_path.as_uri())}")
-            return
+            return False
 
         try:
             self.current = self.config_type.read(current_path, name=self.settings_name)
@@ -220,8 +232,10 @@ class ProfileManager:
             with logger.warn():
                 logger.print("Fail to decode configuration")
                 logger.print(traceback.format_exc(), end="", markup=False)
-        else:
-            self._current_mtime = os.stat(str(current_path)).st_mtime
+            return False
+
+        self._current_mtime = os.stat(str(current_path)).st_mtime
+        return True
 
     def use(self, name=None):
         """change the current profile of configuration.
@@ -230,6 +244,10 @@ class ProfileManager:
         ----------
         name : str, optional
             The name of profile, or None for default.
+
+        Returns
+        -------
+        succ : bool
         """
         logger = self.logger
 
@@ -237,17 +255,21 @@ class ProfileManager:
             if self.default_name is None:
                 with logger.warn():
                     logger.print("No default profile")
-                return
+                return False
 
             name = self.default_name
 
         if name not in self.profiles:
             with logger.warn():
                 logger.print(f"No such profile: {logger.emph(name)}")
-            return
+            return False
 
+        old_name = self.current_name
         self.current_name = name
-        self.load()
+        succ = self.load()
+        if not succ:
+            self.current_name = old_name
+        return succ
 
     def new(self, name=None, clone=None):
         """make a new profile of configuration.
@@ -258,6 +280,10 @@ class ProfileManager:
             The name of profile.
         clone : str, optional
             The name of profile to clone.
+
+        Returns
+        -------
+        succ : bool
         """
         logger = self.logger
 
@@ -266,17 +292,17 @@ class ProfileManager:
         if clone is not None and clone not in self.profiles:
             with logger.warn():
                 logger.print(f"No such profile: {logger.emph(clone)}")
-            return
+            return False
 
-        if not name.isprintable() or "/" in name:
+        if isinstance(name, str) and not name.isprintable() or "/" in name:
             with logger.warn():
                 logger.print(f"Invalid profile name: {logger.emph(name)}")
-            return
+            return False
 
         if name in self.profiles:
             with logger.warn():
                 logger.print(f"This profile name {logger.emph(name)} already exists.")
-            return
+            return False
 
         if name is None:
             name = "new profile"
@@ -289,10 +315,17 @@ class ProfileManager:
             self.current_name = name
             self.current = self.config_type()
             self._current_mtime = None
+            return True
+
         else:
+            old_name = self.current_name
             self.current_name = clone
-            self.load()
+            succ = self.load()
+            if not succ:
+                self.current_name = old_name
+                return False
             self.current_name = name
+            return True
 
     def delete(self, name):
         """Delete a profile.
@@ -301,6 +334,10 @@ class ProfileManager:
         ----------
         name : str
             The name of profile to delete.
+
+        Returns
+        -------
+        succ : bool
         """
         logger = self.logger
 
@@ -310,16 +347,17 @@ class ProfileManager:
         if name not in self.profiles:
             with logger.warn():
                 logger.print(f"No such profile: {logger.emph(name)}")
-            return
-
-        self.profiles.remove(name)
+            return False
 
         if target_path.exists():
             if not target_path.is_file():
                 with logger.warn():
                     logger.print(f"Wrong file type for profile: {logger.emph(target_path.as_uri())}")
-                return
+                return False
             target_path.unlink()
+
+        self.profiles.remove(name)
+        return True
 
     def rename(self, name):
         """Rename the current profile.
@@ -328,14 +366,15 @@ class ProfileManager:
         ----------
         name : str
             The new name of profile.
+
+        Returns
+        -------
+        succ : bool
         """
         logger = self.logger
 
-        if self.current_name is None:
-            raise ValueError("No profile")
-
         if self.current_name == name:
-            return
+            return True
 
         current_path = self.path / (self.current_name + self.extension)
         target_path = self.path / (name + self.extension)
@@ -346,25 +385,27 @@ class ProfileManager:
         if not name.isprintable() or "/" in name:
             with logger.warn():
                 logger.print(f"Invalid profile name: {logger.emph(name)}")
-            return
+            return False
 
         if name in self.profiles:
             with logger.warn():
                 logger.print(f"This profile name {logger.emph(name)} already exists.")
-            return
+            return False
 
         if self.current_name in self.profiles:
-            self.profiles.remove(self.current_name)
-            self.profiles.append(name)
-
             if current_path.exists():
                 current_path.rename(target_path)
+
+            self.profiles.remove(self.current_name)
+            self.profiles.append(name)
 
         if self.current_name == self.default_name:
             self.current_name = name
             self.set_default()
         else:
             self.current_name = name
+
+        return True
 
 class FieldParser(cmd.ArgumentParser):
     def __init__(self, config_type):
@@ -627,7 +668,7 @@ class ConfigCommand:
 
         usage: [cmd]config[/] [cmd]delete[/] [arg]{profile}[/]
                                 ╱
-                       he profile name.
+                       The profile name.
         """
         if not self.config.is_uptodate():
             self.config.update()
