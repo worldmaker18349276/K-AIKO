@@ -3,10 +3,10 @@ import traceback
 import tempfile
 import subprocess
 from pathlib import Path
-from kaiko.utils import config as cfg
-from kaiko.utils import biparsers as bp
-from kaiko.utils import commands as cmd
-from kaiko.utils import datanodes as dn
+from ..utils import config as cfg
+from ..utils import biparsers as bp
+from ..utils import commands as cmd
+from ..utils import datanodes as dn
 
 def exists(program):
     if os.name == 'nt':

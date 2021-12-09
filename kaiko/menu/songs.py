@@ -6,10 +6,10 @@ import traceback
 import dataclasses
 from typing import Optional
 from pathlib import Path
-from kaiko.utils import commands as cmd
-from kaiko.utils import datanodes as dn
-from kaiko.devices import engines
-from kaiko.beats import beatsheets
+from ..utils import commands as cmd
+from ..utils import datanodes as dn
+from ..devices import engines
+from ..beats import beatsheets
 
 @dataclasses.dataclass
 class SongMetadata:

@@ -6,12 +6,12 @@ import re
 import threading
 from typing import Union, Optional, List, Set, Tuple, Dict, Callable
 import dataclasses
-from kaiko.utils import datanodes as dn
-from kaiko.utils import biparsers as bp
-from kaiko.utils import config as cfg
-from kaiko.utils import markups as mu
-from kaiko.utils import commands as cmd
-from kaiko.devices import engines
+from ..utils import datanodes as dn
+from ..utils import biparsers as bp
+from ..utils import config as cfg
+from ..utils import markups as mu
+from ..utils import commands as cmd
+from ..devices import engines
 
 
 class SHLEXER_STATE(Enum):

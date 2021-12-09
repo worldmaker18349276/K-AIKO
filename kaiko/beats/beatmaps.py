@@ -8,11 +8,11 @@ from fractions import Fraction
 import threading
 import numpy
 import audioread
-from kaiko.utils import config as cfg
-from kaiko.utils import datanodes as dn
-from kaiko.utils import markups as mu
-from kaiko.devices import audios as aud
-from kaiko.devices import engines
+from ..utils import config as cfg
+from ..utils import datanodes as dn
+from ..utils import markups as mu
+from ..devices import audios as aud
+from ..devices import engines
 from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings, Sight, Widget, WidgetSettings
 
 

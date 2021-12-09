@@ -6,11 +6,11 @@ import traceback
 import contextlib
 import threading
 import queue
-from kaiko.utils import datanodes as dn
-from kaiko.utils import commands as cmd
-from kaiko.devices import terminals as term
-from kaiko.devices import audios as aud
-from kaiko.devices import engines
+from ..utils import datanodes as dn
+from ..utils import commands as cmd
+from ..devices import terminals as term
+from ..devices import audios as aud
+from ..devices import engines
 
 
 @contextlib.contextmanager

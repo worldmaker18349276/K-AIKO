@@ -5,7 +5,7 @@ from fractions import Fraction
 from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Union
 from ast import literal_eval
-from kaiko.utils import biparsers as bp
+from ..utils import biparsers as bp
 from . import beatmaps
 
 def Context(beat, length, **update):

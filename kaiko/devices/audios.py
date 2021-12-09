@@ -6,7 +6,7 @@ import numpy
 import scipy.signal
 import wave
 import audioread
-from kaiko.utils import datanodes as dn
+from ..utils import datanodes as dn
 
 
 def print_pyaudio_info(manager):

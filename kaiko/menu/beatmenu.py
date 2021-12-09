@@ -11,16 +11,16 @@ import shutil
 import pkgutil
 from pathlib import Path
 import appdirs
-from kaiko.utils import datanodes as dn
-from kaiko.utils import config as cfg
-from kaiko.utils import biparsers as bp
-from kaiko.utils import commands as cmd
-from kaiko.devices import loggers as log
-from kaiko.devices import engines
-from kaiko.beats import beatshell
-from kaiko.beats import beatmaps
-from kaiko.beats import beatsheets
-from kaiko.beats import beatanalyzer
+from ..utils import datanodes as dn
+from ..utils import config as cfg
+from ..utils import biparsers as bp
+from ..utils import commands as cmd
+from ..devices import loggers as log
+from ..devices import engines
+from ..beats import beatshell
+from ..beats import beatmaps
+from ..beats import beatsheets
+from ..beats import beatanalyzer
 from .profiles import ProfileManager, ConfigCommand, ProfileNameError, ProfileTypeError
 from .songs import BeatmapManager, KAIKOBGMController, BGMCommand
 from .devices import prepare_pyaudio, DevicesCommand, determine_unicode_version, fit_screen

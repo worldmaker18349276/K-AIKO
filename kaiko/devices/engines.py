@@ -2,9 +2,9 @@ import time
 import bisect
 import functools
 import numpy
-from kaiko.utils import config as cfg
-from kaiko.utils import datanodes as dn
-from kaiko.utils import markups as mu
+from ..utils import config as cfg
+from ..utils import datanodes as dn
+from ..utils import markups as mu
 from . import terminals as term
 from . import audios as aud
 from . import loggers as log
