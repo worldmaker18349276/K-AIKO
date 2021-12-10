@@ -221,10 +221,11 @@ class KAIKOMenu:
     @dn.datanode
     def repl(self):
         r"""Start REPL."""
-        input = beatshell.BeatInput(self, self.user.history_file)
+        input = beatshell.BeatInput(self, self.logger, self.user.history_file, self.settings.shell)
         while True:
             # parse command
-            with input.prompt(self.settings.devices, self.settings.shell, self.logger.rich) as prompt_task:
+            input.update_settings(self.settings.shell)
+            with input.prompt(self.settings.devices) as prompt_task:
                 yield from prompt_task.join((yield))
 
             # execute result

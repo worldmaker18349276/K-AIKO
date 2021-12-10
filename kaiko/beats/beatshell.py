@@ -435,8 +435,12 @@ class BeatInput:
     ----------
     command : cmd.RootCommandParser
         The root command parser for beatshell.
+    logger : loggers.Logger
+        The logger.
     history : Path
         The file of input history.
+    settings : BeatShellSettings
+        The settings.
     prev_command : str or None
         The previous command.
     buffers : list of list of str
@@ -468,18 +472,26 @@ class BeatInput:
     modified_event : int
         The event counter for modifying buffer.
     """
-    def __init__(self, promptable, history):
+    def __init__(self, promptable, logger, history, settings=None):
         r"""Constructor.
 
         Parameters
         ----------
         promptable : object
             The root command.
+        logger : loggers.Logger
         history : Path
             The file of input history.
+        settings : BeatShellSettings
+            The settings of beatshell.
         """
+        if settings is None:
+            settings = BeatShellSettings()
+
         self.command = cmd.RootCommandParser(promptable)
+        self.logger = logger
         self.history = history
+        self.settings = settings
         self.prev_command = None
         self.tab_state = None
         self.state = "FIN"
@@ -488,31 +500,28 @@ class BeatInput:
 
         self.new_session(False)
 
-    def prompt(self, devices_settings, settings, rich):
+    def update_settings(self, settings):
+        self.settings = settings
+
+    def prompt(self, devices_settings):
         r"""Start prompt.
 
         Parameters
         ----------
         devices_settings : DevicesSettings
             The settings of devices.
-        settings : BeatShellSettings
-            The settings of beatshell.
-        rich : markups.RichTextRenderer
 
         Returns
         -------
         prompt_task : dn.DataNode
             The datanode to execute the prompt.
         """
-        if settings is None:
-            settings = BeatShellSettings()
-
-        debug_monitor = settings.debug_monitor
+        debug_monitor = self.settings.debug_monitor
         renderer_monitor = engines.Monitor("prompt_monitor.csv") if debug_monitor else None
         input_task, controller = engines.Controller.create(devices_settings.controller, devices_settings.terminal)
         display_task, renderer = engines.Renderer.create(devices_settings.renderer, devices_settings.terminal, monitor=renderer_monitor)
-        stroke = BeatStroke(self, settings.input)
-        prompt = BeatPrompt(stroke, self, settings, rich, renderer_monitor)
+        stroke = BeatStroke(self, self.settings.input)
+        prompt = BeatPrompt(stroke, self, self.settings, self.logger.rich, renderer_monitor)
 
         stroke.register(controller)
         prompt.register(renderer)
@@ -1092,8 +1101,8 @@ class BeatInput:
     @locked
     @onstate("EDIT")
     def ask_hint(self):
-        """Help for command.
-        Provide some hint for the command before the caret.
+        """Ask some hint for command.
+        Provide some hint for the command on the caret.
 
         Returns
         -------
@@ -1125,6 +1134,59 @@ class BeatInput:
                 return False
             hint = InputInfo(msg)
             self.set_hint(hint, index)
+            return True
+
+    @locked
+    @onstate("EDIT")
+    def help(self):
+        """Help for command.
+        Print some hint for the command before the caret.
+
+        Returns
+        -------
+        succ : bool
+        """
+        # find the token before the caret
+        for index, (target, token_type, slic, _) in reversed(list(enumerate(self.tokens))):
+            if slic.start <= self.pos:
+                break
+        else:
+            return False
+
+        hinted = self.highlighted == index
+
+        self.cancel_hint()
+
+        parents = [token for token, _, _, _ in self.tokens[:index]]
+
+        if token_type is None:
+            msg = self.command.desc_command(parents)
+            if msg is None:
+                return False
+            if not hinted:
+                hint = InputDesc(msg)
+                self.set_hint(hint, index)
+                return False
+
+            desc = self.logger.rich.parse(self.settings.text.desc_message, slotted=True)
+            msg_markup = mu.replace_slot(desc, self.logger.rich.parse(msg))
+            self.set_result(InputComplete(lambda:self.logger.print(msg_markup)))
+            self.finish()
+            return True
+
+        else:
+            msg = self.command.info_command(parents, target)
+            if msg is None:
+                return False
+            if not hinted:
+                hint = InputInfo(msg)
+                self.set_hint(hint, index)
+                return False
+
+            info = self.logger.rich.parse(self.settings.text.info_message, slotted=True)
+            msg_markup = mu.replace_slot(info, self.logger.rich.parse(msg))
+            self.set_result(InputComplete(lambda:self.logger.print(msg_markup)))
+            self.finish()
             return True
 
     @locked
@@ -1360,7 +1422,7 @@ class BeatStroke:
         return lambda args: self.input.confirm()
 
     def help_handler(self):
-        return lambda args: self.input.ask_hint()
+        return lambda args: self.input.help()
 
     def autocomplete_handler(self, keys, help_key):
         def handler(args):
