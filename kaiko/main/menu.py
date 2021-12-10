@@ -224,7 +224,7 @@ class KAIKOMenu:
         input = beatshell.BeatInput(self, self.user.history_file)
         while True:
             # parse command
-            with input.prompt(self.settings.devices, self.settings.shell) as prompt_task:
+            with input.prompt(self.settings.devices, self.settings.shell, self.logger.rich) as prompt_task:
                 yield from prompt_task.join((yield))
 
             # execute result

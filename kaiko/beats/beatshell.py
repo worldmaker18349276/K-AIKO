@@ -357,51 +357,17 @@ class BeatShellSettings(cfg.Configurable):
         message_max_lines : int
             The maximum number of lines of the message.
 
-        quotation : str
-            The replacement text for quotation marks.
-        backslash : str
-            The replacement text for backslashes.
-        whitespace : str
-            The replacement text for escaped whitespaces.
-        typeahead : str
-            The markup template for the type-ahead.
-
         suggestions_lines : int
             The maximum number of lines of the suggestions.
         suggestion_items : tuple of str and str
             The markup templates for the unselected/selected suggestion.
-
-        token_unknown : str
-            The markup template for the unknown token.
-        token_unfinished : str
-            The markup template for the unfinished token.
-        token_command : str
-            The markup template for the command token.
-        token_keyword : str
-            The markup template for the keyword token.
-        token_argument : str
-            The markup template for the argument token.
-        token_highlight : str
-            The markup template for the highlighted token.
         """
         desc_message: str = "[weight=dim][slot/][/]"
         info_message: str = f"{'─'*80}\n[slot/]\n{'─'*80}"
         message_max_lines: int = 16
 
-        quotation: str = "[weight=dim]'[/]"
-        backslash: str = "[weight=dim]\\[/]"
-        whitespace: str = "[weight=dim]⌴[/]"
-        typeahead: str = "[weight=dim][slot/][/]"
-
         suggestions_lines: int = 8
         suggestion_items: Tuple[str, str] = ("• [slot/]", "• [invert][slot/][/]")
-
-        token_unknown: str = "[color=red][slot/][/]"
-        token_unfinished: str = "[slot/]"
-        token_command: str = "[color=bright_blue][slot/][/]"
-        token_keyword: str = "[color=bright_magenta][slot/][/]"
-        token_argument: str = "[color=bright_green][slot/][/]"
-        token_highlight: str = "[underline][slot/][/]"
 
     debug_monitor: bool = False
 
@@ -522,7 +488,7 @@ class BeatInput:
 
         self.new_session(False)
 
-    def prompt(self, devices_settings, settings):
+    def prompt(self, devices_settings, settings, rich):
         r"""Start prompt.
 
         Parameters
@@ -531,6 +497,7 @@ class BeatInput:
             The settings of devices.
         settings : BeatShellSettings
             The settings of beatshell.
+        rich : markups.RichTextRenderer
 
         Returns
         -------
@@ -545,7 +512,7 @@ class BeatInput:
         input_task, controller = engines.Controller.create(devices_settings.controller, devices_settings.terminal)
         display_task, renderer = engines.Renderer.create(devices_settings.renderer, devices_settings.terminal, monitor=renderer_monitor)
         stroke = BeatStroke(self, settings.input)
-        prompt = BeatPrompt(stroke, self, settings, devices_settings.terminal, renderer_monitor)
+        prompt = BeatPrompt(stroke, self, settings, rich, renderer_monitor)
 
         stroke.register(controller)
         prompt.register(renderer)
@@ -1434,7 +1401,7 @@ class BeatStroke:
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
-    def __init__(self, stroke, input, settings, term_settings, monitor):
+    def __init__(self, stroke, input, settings, rich, monitor):
         r"""Constructor.
 
         Parameters
@@ -1442,7 +1409,7 @@ class BeatPrompt:
         stroke : BeatStroke
         input : BeatInput
         settings : BeatShellSettings
-        term_settings : TerminalSettings
+        rich : markups.RichTextRenderer
         monitor : engines.Monitor or None
         """
         self.stroke = stroke
@@ -1454,19 +1421,7 @@ class BeatPrompt:
         self.t0 = None
         self.tempo = None
 
-        self.rich = mu.RichTextRenderer(term_settings.unicode_version, term_settings.color_support)
-        self.rich.add_pair_template("desc", settings.text.desc_message)
-        self.rich.add_pair_template("info", settings.text.info_message)
-        self.rich.add_pair_template("unknown", settings.text.token_unknown)
-        self.rich.add_pair_template("unfinished", settings.text.token_unfinished)
-        self.rich.add_pair_template("cmd", settings.text.token_command)
-        self.rich.add_pair_template("kw", settings.text.token_keyword)
-        self.rich.add_pair_template("arg", settings.text.token_argument)
-        self.rich.add_pair_template("highlight", settings.text.token_highlight)
-        self.rich.add_single_template("ws", settings.text.whitespace)
-        self.rich.add_single_template("qt", settings.text.quotation)
-        self.rich.add_single_template("bs", settings.text.backslash)
-        self.rich.add_pair_template("typeahead", settings.text.typeahead)
+        self.rich = rich
 
     def register(self, renderer):
         renderer.add_drawer(self.output_handler())
@@ -1724,6 +1679,9 @@ class BeatPrompt:
             self.rich.parse(sugg_items[1], slotted=True),
         )
 
+        desc = self.rich.parse(self.settings.text.desc_message, slotted=True)
+        info = self.rich.parse(self.settings.text.info_message, slotted=True)
+
         messages.clear()
 
         # draw hint
@@ -1750,9 +1708,9 @@ class BeatPrompt:
             msg = msg.traverse(mu.Text, trim_lines)
 
             if isinstance(hint, InputDesc):
-                msg = self.rich.tags['desc']((msg,))
+                msg = mu.replace_slot(desc, msg)
             elif isinstance(hint, (InputInfo, InputSuggestions)):
-                msg = self.rich.tags['info']((msg,))
+                msg = mu.replace_slot(info, msg)
             else:
                 assert False
             msg = msg.expand()

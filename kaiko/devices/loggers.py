@@ -35,8 +35,47 @@ class LoggerSettings(cfg.Configurable):
     verb: str = f"[weight=dim][slot/][/]"
     warn: str = f"[color=red][slot/][/]"
     emph: str = "[weight=bold][slot/][/]"
+
     verb_block: str = f"[weight=dim]{'╌'*80}\n[slot/]{'╌'*80}\n[/]"
     warn_block: str = f"[color=red]{'═'*80}\n[slot/]{'═'*80}\n[/]"
+
+    class shell(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        quotation : str
+            The replacement text for quotation marks.
+        backslash : str
+            The replacement text for backslashes.
+        whitespace : str
+            The replacement text for escaped whitespaces.
+        typeahead : str
+            The markup template for the type-ahead.
+
+        token_unknown : str
+            The markup template for the unknown token.
+        token_unfinished : str
+            The markup template for the unfinished token.
+        token_command : str
+            The markup template for the command token.
+        token_keyword : str
+            The markup template for the keyword token.
+        token_argument : str
+            The markup template for the argument token.
+        token_highlight : str
+            The markup template for the highlighted token.
+        """
+        quotation: str = "[weight=dim]'[/]"
+        backslash: str = "[weight=dim]\\[/]"
+        whitespace: str = "[weight=dim]⌴[/]"
+        typeahead: str = "[weight=dim][slot/][/]"
+
+        token_unknown: str = "[color=red][slot/][/]"
+        token_unfinished: str = "[slot/]"
+        token_command: str = "[color=bright_blue][slot/][/]"
+        token_keyword: str = "[color=bright_magenta][slot/][/]"
+        token_argument: str = "[color=bright_green][slot/][/]"
+        token_highlight: str = "[underline][slot/][/]"
 
 class Logger:
     def __init__(self, terminal_settings=None, logger_settings=None):
@@ -61,6 +100,17 @@ class Logger:
         self.rich.add_pair_template("verb", logger_settings.verb)
         self.rich.add_pair_template("emph", logger_settings.emph)
         self.rich.add_pair_template("warn", logger_settings.warn)
+
+        self.rich.add_pair_template("unknown", logger_settings.shell.token_unknown)
+        self.rich.add_pair_template("unfinished", logger_settings.shell.token_unfinished)
+        self.rich.add_pair_template("cmd", logger_settings.shell.token_command)
+        self.rich.add_pair_template("kw", logger_settings.shell.token_keyword)
+        self.rich.add_pair_template("arg", logger_settings.shell.token_argument)
+        self.rich.add_pair_template("highlight", logger_settings.shell.token_highlight)
+        self.rich.add_single_template("ws", logger_settings.shell.whitespace)
+        self.rich.add_single_template("qt", logger_settings.shell.quotation)
+        self.rich.add_single_template("bs", logger_settings.shell.backslash)
+        self.rich.add_pair_template("typeahead", logger_settings.shell.typeahead)
 
     @contextlib.contextmanager
     def verb(self):
