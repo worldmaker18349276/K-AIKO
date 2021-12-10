@@ -98,6 +98,12 @@ class ProfileManager:
 
         return config
 
+    def update_logger(self):
+        self.logger.recompile_style(
+            terminal_settings=self.current.devices.terminal,
+            logger_settings=self.current.devices.logger
+        )
+
     def is_uptodate(self):
         if not self.path.exists():
             return False
@@ -111,6 +117,7 @@ class ProfileManager:
 
     def set_change(self):
         self._current_mtime = None
+        self.update_logger()
 
     def update(self):
         """Update the list of profiles.
@@ -231,6 +238,7 @@ class ProfileManager:
             return False
 
         self._current_mtime = os.stat(str(current_path)).st_mtime
+        self.update_logger()
         return True
 
     def use(self, name=None):
@@ -263,7 +271,8 @@ class ProfileManager:
         succ = self.load()
         if not succ:
             self.current_name = old_name
-        return succ
+            return False
+        return True
 
     def new(self, name=None, clone=None):
         """make a new profile of configuration.
@@ -306,7 +315,7 @@ class ProfileManager:
             self.current_name = name
             self.current = KAIKOSettings()
             self._current_mtime = None
-            return True
+            self.update_logger()
 
         else:
             old_name = self.current_name
@@ -316,7 +325,8 @@ class ProfileManager:
                 self.current_name = old_name
                 return False
             self.current_name = name
-            return True
+
+        return True
 
     def delete(self, name):
         """Delete a profile.
@@ -423,12 +433,6 @@ class ConfigCommand:
         self.config = config
         self.logger = logger
 
-    def update_logger(self):
-        self.logger.recompile_style(
-            terminal_settings=self.config.current.devices.terminal,
-            logger_settings=self.config.current.devices.logger
-        )
-
     # configuration
 
     @cmd.function_command
@@ -471,7 +475,6 @@ class ConfigCommand:
         """
         self.config.current.set(field, value)
         self.config.set_change()
-        self.update_logger()
 
     @cmd.function_command
     def unset(self, field):
@@ -483,7 +486,6 @@ class ConfigCommand:
         """
         self.config.current.unset(field)
         self.config.set_change()
-        self.update_logger()
 
     @cmd.function_command
     @dn.datanode
@@ -522,7 +524,6 @@ class ConfigCommand:
         if res_str == "":
             self.config.current.unset(field)
             self.config.set_change()
-            self.update_logger()
             return
 
         try:
@@ -534,7 +535,6 @@ class ConfigCommand:
         else:
             self.config.current.set(field, res)
             self.config.set_change()
-            self.update_logger()
 
     @get.arg_parser("field")
     @has.arg_parser("field")
@@ -580,7 +580,6 @@ class ConfigCommand:
             self.config.update()
 
         self.config.load()
-        self.update_logger()
 
     @cmd.function_command
     def save(self):
@@ -616,7 +615,6 @@ class ConfigCommand:
             self.config.update()
 
         self.config.use(profile)
-        self.update_logger()
 
     @cmd.function_command
     def rename(self, profile):
@@ -643,7 +641,6 @@ class ConfigCommand:
             self.config.update()
 
         self.config.new(profile, clone)
-        self.update_logger()
 
     @cmd.function_command
     def delete(self, profile):

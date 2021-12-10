@@ -247,6 +247,7 @@ class DevicesCommand:
                 self.config.current.devices.detector.input_buffer_length = len
             if fmt is not None:
                 self.config.current.devices.detector.input_format = fmt
+            self.config.set_change()
 
     @cmd.function_command
     def set_speaker(self, device, rate=None, ch=None, len=None, fmt=None):
@@ -296,6 +297,7 @@ class DevicesCommand:
                 self.config.current.devices.mixer.output_buffer_length = len
             if fmt is not None:
                 self.config.current.devices.mixer.output_format = fmt
+            self.config.set_change()
 
     @test_mic.arg_parser("device")
     @set_mic.arg_parser("device")
@@ -361,7 +363,7 @@ class DevicesCommand:
             if version is not None:
                 os.environ["UNICODE_VERSION"] = version
                 self.config.current.devices.terminal.unicode_version = version
-                self.logger.recompile_style(terminal_settings=self.config.current.devices.terminal)
+                self.config.set_change()
 
     # engines
 
