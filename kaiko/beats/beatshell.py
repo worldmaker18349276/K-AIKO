@@ -372,31 +372,38 @@ class BeatShellSettings(cfg.Configurable):
     debug_monitor: bool = False
 
 
+class Hint:
+    pass
+
 @dataclasses.dataclass(frozen=True)
-class InputDesc:
+class DescHint(Hint):
     message : str
 
 @dataclasses.dataclass(frozen=True)
-class InputInfo:
+class InfoHint(Hint):
     message : str
 
 @dataclasses.dataclass(frozen=True)
-class InputSuggestions:
+class SuggestionsHint(Hint):
     suggestions : List[str]
     selected : int
     message : str
 
+class Result:
+    pass
+
 @dataclasses.dataclass(frozen=True)
-class InputError:
+class ErrorResult(Result):
     error : Exception
 
 @dataclasses.dataclass(frozen=True)
-class InputComplete:
+class CompleteResult(Result):
     command : Callable
 
 @dataclasses.dataclass
 class HintState:
-    hint : Union[InputDesc, InputInfo, InputSuggestions]
+    index : int
+    hint : Hint
     tokens : Optional[List[str]]
 
 @dataclasses.dataclass
@@ -465,7 +472,7 @@ class BeatInput:
         The state of autocomplete.
     hint_state : HintState or None
         The hint state of input.
-    result : InputError or InputComplete or None
+    result : Result or None
         The result of input.
     state : str
         The input state.
@@ -661,7 +668,7 @@ class BeatInput:
 
         Parameters
         ----------
-        res : InputError or InputComplete
+        res : Result
             The result.
 
         Returns
@@ -691,7 +698,7 @@ class BeatInput:
 
         Parameters
         ----------
-        hint : InputDesc or InputInfo or InputSuggestions
+        hint : Hint
             The hint.
         index : int or None
             Index of the token to which the hint is directed, or `None` for nothing.
@@ -701,15 +708,15 @@ class BeatInput:
         succ : bool
         """
         self.highlighted = index
-        if isinstance(hint, InputDesc):
+        if isinstance(hint, DescHint):
             msg_tokens = [token for token, _, _, _ in self.tokens[:index]] if index is not None else None
-        elif isinstance(hint, InputInfo):
+        elif isinstance(hint, InfoHint):
             msg_tokens = [token for token, _, _, _ in self.tokens[:index+1]] if index is not None else None
-        elif isinstance(hint, InputSuggestions):
+        elif isinstance(hint, SuggestionsHint):
             msg_tokens = None
         else:
-            raise ValueError
-        self.hint_state = HintState(hint, msg_tokens)
+            assert False
+        self.hint_state = HintState(index, hint, msg_tokens)
         return True
 
     @locked
@@ -751,7 +758,7 @@ class BeatInput:
             if token != token_:
                 return self.cancel_hint()
 
-        if isinstance(self.hint_state.hint, InputDesc) and self.tokens[len(self.hint_state.tokens)-1][1] is not None:
+        if isinstance(self.hint_state.hint, DescHint) and self.tokens[len(self.hint_state.tokens)-1][1] is not None:
             return self.cancel_hint()
 
         return False
@@ -1124,7 +1131,7 @@ class BeatInput:
             msg = self.command.desc_command(parents)
             if msg is None:
                 return False
-            hint = InputDesc(msg)
+            hint = DescHint(msg)
             self.set_hint(hint, index)
             return True
 
@@ -1132,7 +1139,7 @@ class BeatInput:
             msg = self.command.info_command(parents, target)
             if msg is None:
                 return False
-            hint = InputInfo(msg)
+            hint = InfoHint(msg)
             self.set_hint(hint, index)
             return True
 
@@ -1153,41 +1160,22 @@ class BeatInput:
         else:
             return False
 
-        hinted = self.highlighted == index
+        if self.hint_state is None or self.hint_state.index != index:
+            self.ask_hint()
+            return False
 
-        self.cancel_hint()
-
-        parents = [token for token, _, _, _ in self.tokens[:index]]
-
-        if token_type is None:
-            msg = self.command.desc_command(parents)
-            if msg is None:
-                return False
-            if not hinted:
-                hint = InputDesc(msg)
-                self.set_hint(hint, index)
-                return False
-
-            desc = self.logger.rich.parse(self.settings.text.desc_message, slotted=True)
-            msg_markup = mu.replace_slot(desc, self.logger.rich.parse(msg))
-            self.set_result(InputComplete(lambda:self.logger.print(msg_markup)))
-            self.finish()
-            return True
-
+        hint = self.hint_state.hint
+        if isinstance(hint, DescHint):
+            template = self.logger.rich.parse(self.settings.text.desc_message, slotted=True)
+        elif isinstance(hint, (InfoHint, SuggestionsHint)):
+            template = self.logger.rich.parse(self.settings.text.info_message, slotted=True)
         else:
-            msg = self.command.info_command(parents, target)
-            if msg is None:
-                return False
-            if not hinted:
-                hint = InputInfo(msg)
-                self.set_hint(hint, index)
-                return False
+            assert False
+        msg_markup = mu.replace_slot(template, self.logger.rich.parse(hint.message))
 
-            info = self.logger.rich.parse(self.settings.text.info_message, slotted=True)
-            msg_markup = mu.replace_slot(info, self.logger.rich.parse(msg))
-            self.set_result(InputComplete(lambda:self.logger.print(msg_markup)))
-            self.finish()
-            return True
+        self.set_result(CompleteResult(lambda:self.logger.print(msg_markup)))
+        self.finish()
+        return True
 
     @locked
     @onstate("EDIT")
@@ -1202,7 +1190,7 @@ class BeatInput:
         self.cancel_hint()
 
         if len(self.tokens) == 0:
-            self.set_result(InputComplete(lambda:None))
+            self.set_result(CompleteResult(lambda:None))
             self.finish()
             return True
 
@@ -1215,16 +1203,16 @@ class BeatInput:
             index = len(types)
 
         if isinstance(res, cmd.CommandUnfinishError):
-            self.set_result(InputError(res))
+            self.set_result(ErrorResult(res))
             self.finish()
             return False
         elif isinstance(res, (cmd.CommandParseError, ShellSyntaxError)):
-            self.set_result(InputError(res))
+            self.set_result(ErrorResult(res))
             self.highlighted = index
             self.finish()
             return False
         else:
-            self.set_result(InputComplete(res))
+            self.set_result(CompleteResult(res))
             self.finish()
             return True
 
@@ -1301,7 +1289,7 @@ class BeatInput:
                 msg = self.command.info_command(parents, target)
                 if msg is None:
                     return False
-                hint = InputInfo(msg)
+                hint = InfoHint(msg)
                 self.set_hint(hint, token_index)
                 return False
 
@@ -1341,7 +1329,7 @@ class BeatInput:
                 msg = ""
             else:
                 msg = self.command.info_command(parents, target) or ""
-            self.set_hint(InputSuggestions(suggestions, sugg_index, msg), self.tab_state.token_index)
+            self.set_hint(SuggestionsHint(suggestions, sugg_index, msg), self.tab_state.token_index)
             return True
 
         else:
@@ -1377,13 +1365,13 @@ class BeatInput:
                 msg = self.command.info_command(parents, target)
             if msg is None:
                 return True
-            hint = InputInfo(msg)
+            hint = InfoHint(msg)
             self.set_hint(hint, token_index)
         return True
 
     @locked
     def unknown_key(self, key):
-        self.set_result(InputError(ValueError(f"Unknown key: " + key)))
+        self.set_result(ErrorResult(ValueError(f"Unknown key: " + key)))
         self.finish()
 
 class BeatStroke:
@@ -1729,7 +1717,7 @@ class BeatPrompt:
         ----------
         messages : list of Markup
             The rendered hint.
-        hint : InputDesc or InputInfo or InputSuggestions
+        hint : Hint
         """
         message_max_lines = self.settings.text.message_max_lines
 
@@ -1769,15 +1757,15 @@ class BeatPrompt:
                 return mu.Text("".join(res_string))
             msg = msg.traverse(mu.Text, trim_lines)
 
-            if isinstance(hint, InputDesc):
+            if isinstance(hint, DescHint):
                 msg = mu.replace_slot(desc, msg)
-            elif isinstance(hint, (InputInfo, InputSuggestions)):
+            elif isinstance(hint, (InfoHint, SuggestionsHint)):
                 msg = mu.replace_slot(info, msg)
             else:
                 assert False
             msg = msg.expand()
 
-        if isinstance(hint, InputSuggestions):
+        if isinstance(hint, SuggestionsHint):
             sugg_start = hint.selected // sugg_lines * sugg_lines
             sugg_end = sugg_start + sugg_lines
             suggs = hint.suggestions[sugg_start:sugg_end]

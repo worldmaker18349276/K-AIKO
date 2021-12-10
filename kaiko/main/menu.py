@@ -230,13 +230,15 @@ class KAIKOMenu:
 
             # execute result
             result = input.result
-            if isinstance(result, beatshell.InputError):
+            if isinstance(result, beatshell.ErrorResult):
                 input.prev_session()
                 self.logger.print(f"[warn]{str(result.error)}[/]")
-            else:
+            elif isinstance(result, beatshell.CompleteResult):
                 input.new_session()
                 with self.execute(result.command) as command_task:
                     yield from command_task.join((yield))
+            else:
+                assert False
 
     @dn.datanode
     def execute(self, command):
