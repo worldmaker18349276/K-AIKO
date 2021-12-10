@@ -397,6 +397,10 @@ class ErrorResult(Result):
     error : Exception
 
 @dataclasses.dataclass(frozen=True)
+class HelpResult(Result):
+    command : Callable
+
+@dataclasses.dataclass(frozen=True)
 class CompleteResult(Result):
     command : Callable
 
@@ -1107,24 +1111,30 @@ class BeatInput:
 
     @locked
     @onstate("EDIT")
-    def ask_hint(self):
+    def ask_hint(self, index=None):
         """Ask some hint for command.
         Provide some hint for the command on the caret.
+
+        Parameters
+        ----------
+        index : int
 
         Returns
         -------
         succ : bool
         """
-        # find the token on the caret
-        for index, (target, token_type, slic, _) in enumerate(self.tokens):
-            if slic.start <= self.pos <= slic.stop:
-                break
-        else:
-            # don't cancel hint if find nothing
-            return False
+        if index is None:
+            # find the token on the caret
+            for index, (_, _, slic, _) in enumerate(self.tokens):
+                if slic.start <= self.pos <= slic.stop:
+                    break
+            else:
+                # don't cancel hint if find nothing
+                return False
 
         self.cancel_hint()
 
+        target, token_type, _, _ = self.tokens[index]
         parents = [token for token, _, _, _ in self.tokens[:index]]
 
         if token_type is None:
@@ -1154,14 +1164,14 @@ class BeatInput:
         succ : bool
         """
         # find the token before the caret
-        for index, (target, token_type, slic, _) in reversed(list(enumerate(self.tokens))):
+        for index, (_, _, slic, _) in reversed(list(enumerate(self.tokens))):
             if slic.start <= self.pos:
                 break
         else:
             return False
 
         if self.hint_state is None or self.hint_state.index != index:
-            self.ask_hint()
+            self.ask_hint(index)
             return False
 
         hint = self.hint_state.hint
@@ -1173,7 +1183,8 @@ class BeatInput:
             assert False
         msg_markup = mu.replace_slot(template, self.logger.rich.parse(hint.message))
 
-        self.set_result(CompleteResult(lambda:self.logger.print(msg_markup)))
+        self.finish_autocomplete()
+        self.set_result(HelpResult(lambda:self.logger.print(msg_markup)))
         self.finish()
         return True
 
