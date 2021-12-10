@@ -19,6 +19,12 @@ import wcwidth
 class MarkupParseError(Exception):
     pass
 
+def loc_at(text, index):
+    line = text.count("\n", 0, index)
+    last_ln = text.rfind("\n", 0, index)
+    col = index - (last_ln + 1)
+    return f"{line}:{col}"
+
 def parse_markup(markup_str, tags, props={}):
     stack = [(Group, [])]
 
@@ -34,37 +40,41 @@ def parse_markup(markup_str, tags, props={}):
 
         if tag == "[/]": # [/]
             if len(stack) <= 1:
-                raise MarkupParseError(f"too many closing tag: [/]")
+                loc = loc_at(markup_str, match.start('tag'))
+                raise MarkupParseError(f"parse failed at {loc}, too many closing tag")
             markup_type, children, *param = stack.pop()
             markup = markup_type(tuple(children), *param)
             stack[-1][1].append(markup)
             continue
 
-        match = re.match("^\[(\w+)(?:=(.*))?/\]$", tag) # [tag=param/]
-        if match:
-            name = match.group(1)
-            param_str = match.group(2)
+        match_single = re.match("^\[(\w+)(?:=(.*))?/\]$", tag) # [tag=param/]
+        if match_single:
+            name = match_single.group(1)
+            param_str = match_single.group(2)
             if name not in tags or not issubclass(tags[name], Single):
-                raise MarkupParseError(f"unknown tag: [{name}/]")
+                loc = loc_at(markup_str, match.start('tag'))
+                raise MarkupParseError(f"parse failed at {loc}, unknown tag [{name}/]")
             param = tags[name].parse(param_str)
             if name in props:
                 param += props[name]
             stack[-1][1].append(tags[name](*param))
             continue
 
-        match = re.match("^\[(\w+)(?:=(.*))?\]$", tag) # [tag=param]
-        if match:
-            name = match.group(1)
-            param_str = match.group(2)
+        match_pair = re.match("^\[(\w+)(?:=(.*))?\]$", tag) # [tag=param]
+        if match_pair:
+            name = match_pair.group(1)
+            param_str = match_pair.group(2)
             if name not in tags or not issubclass(tags[name], Pair):
-                raise MarkupParseError(f"unknown tag: [{name}]")
+                loc = loc_at(markup_str, match.start('tag'))
+                raise MarkupParseError(f"parse failed at {loc}, unknown tag [{name}]")
             param = tags[name].parse(param_str)
             if name in props:
                 param += props[name]
             stack.append((tags[name], [], *param))
             continue
 
-        raise MarkupParseError(f"invalid tag: {tag}")
+        loc = loc_at(markup_str, match.start('tag'))
+        raise MarkupParseError(f"parse failed at {loc}, invalid tag {tag}")
 
     for i in range(len(stack)-1, 0, -1):
         markup_type, children, *param = stack[i]

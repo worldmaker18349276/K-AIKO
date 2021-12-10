@@ -11,6 +11,7 @@ import shutil
 import pkgutil
 from pathlib import Path
 import appdirs
+from ..utils import markups as mu
 from ..utils import datanodes as dn
 from ..utils import config as cfg
 from ..utils import biparsers as bp
@@ -36,63 +37,6 @@ logo = """
   🎧  Use headphones for the best experience 🎤 
 
 """
-
-def echo_str(escaped_str):
-    r"""Interpret a string like bash's echo.
-    It interprets the following backslash-escaped characters into:
-        \a     alert (bell)
-        \b     backspace
-        \c     suppress further output
-        \e     escape character
-        \f     form feed
-        \n     new line
-        \r     carriage return
-        \t     horizontal tab
-        \v     vertical tab
-        \\     backslash
-        \0NNN  the character whose ASCII code is NNN (octal).  NNN can be 0 to 3 octal digits
-        \xHH   the eight-bit character whose value is HH (hexadecimal).  HH can be one or two hex digits
-
-    Parameters
-    ----------
-    escaped_str : str
-        The string to be interpreted.
-
-    Returns
-    -------
-    interpreted_str : str
-        The interpreted string.
-    """
-    regex = r"\\c.*|\\[\\abefnrtv]|\\0[0-7]{0,3}|\\x[0-9a-fA-F]{1,2}|."
-
-    escaped = {
-        r"\\": "\\",
-        r"\a": "\a",
-        r"\b": "\b",
-        r"\e": "\x1b",
-        r"\f": "\f",
-        r"\n": "\n",
-        r"\r": "\r",
-        r"\t": "\t",
-        r"\v": "\v",
-        }
-
-    def repl(match):
-        matched = match.group(0)
-
-        if matched.startswith("\\c"):
-            return ""
-        elif matched in escaped:
-            return escaped[matched]
-        elif matched.startswith("\\0"):
-            return chr(int(matched[2:] or "0", 8))
-        elif matched.startswith("\\x"):
-            return chr(int(matched[2:], 16))
-        else:
-            return matched
-
-    return re.sub(regex, repl, escaped_str)
-
 
 @dataclasses.dataclass
 class KAIKOUser:
@@ -461,37 +405,38 @@ class KAIKOMenu:
         logger.print(f"command history: {logger.emph(self.user.history_file.as_uri())}")
 
     @cmd.function_command
-    def say(self, message, escape=False):
-        """Say something to... yourself.
+    def print(self, message, markup=True):
+        """Print something.
 
-        usage: [cmd]say[/] [arg]{message}[/] [[[kw]--escape[/] [arg]{ESCAPE}[/]]]
-                      ╱                    ╲
-            text, the message               ╲
-             to be printed.          bool, use backslash escapes
-                                    or not; the default is False.
+        usage: [cmd]devices[/] [cmd]say[/] [arg]{message}[/] [[[kw]--markup[/] [arg]{MARKUP}[/]]]
+                              ╱                    ╲
+                    text, the message               ╲
+                     to be printed.          bool, use markup or not;
+                                                default is True.
         """
 
-        if escape:
-            self.logger.print(echo_str(message), markup=False)
-        else:
-            self.logger.print(message, markup=False)
+        try:
+            self.logger.print(message, markup=markup)
+        except mu.MarkupParseError as e:
+            with self.logger.warn():
+                self.logger.print(e, markup=False)
+
+    @print.arg_parser("message")
+    def _print_message_parser(self):
+        return cmd.RawParser(desc="It should be some text,"
+                                  " indicating the message to be printed.")
+
+    @print.arg_parser("markup")
+    def _print_escape_parser(self, message):
+        return cmd.LiteralParser(bool, default=False,
+                                       desc="It should be bool,"
+                                            " indicating whether to use markup;"
+                                            " the default is False.")
 
     @cmd.function_command
     def clean(self):
         """Clean screen."""
         self.logger.clear()
-
-    @say.arg_parser("message")
-    def _say_message_parser(self):
-        return cmd.RawParser(desc="It should be some text,"
-                                  " indicating the message to be printed.")
-
-    @say.arg_parser("escape")
-    def _say_escape_parser(self, message):
-        return cmd.LiteralParser(bool, default=False,
-                                       desc="It should be bool,"
-                                            " indicating whether to use backslash escapes;"
-                                            " the default is False.")
 
     @cmd.function_command
     def bye(self):
