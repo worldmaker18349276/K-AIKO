@@ -133,8 +133,7 @@ def determine_unicode_version(logger):
             version = detect_task.result
 
     if version is None:
-        with logger.warn():
-            logger.print("Fail to determine unicode version")
+        logger.print("[warn]Fail to determine unicode version[/]")
 
     else:
         logger.print(f"Your unicode version is [emph]{version}[/]")

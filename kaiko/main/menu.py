@@ -236,8 +236,7 @@ class KAIKOMenu:
             result = input.result
             if isinstance(result, beatshell.InputError):
                 input.prev_session()
-                with self.logger.warn():
-                    self.logger.print(result.error, markup=False)
+                self.logger.print(f"[warn]{str(result.error)}[/]")
             else:
                 input.new_session()
                 with self.execute(result.command) as command_task:
@@ -294,9 +293,8 @@ class KAIKOMenu:
         """
 
         if not self.beatmap_manager.is_beatmap(beatmap):
-            with self.logger.warn():
-                self.logger.print("Not a beatmap.")
-                return
+            self.logger.print("[warn]Not a beatmap.[/]")
+            return
 
         return KAIKOPlay(self.user.data_dir, self.user.songs_dir / beatmap,
                          self.settings.devices, self.settings.gameplay, self.logger)
@@ -408,18 +406,17 @@ class KAIKOMenu:
     def print(self, message, markup=True):
         """Print something.
 
-        usage: [cmd]devices[/] [cmd]say[/] [arg]{message}[/] [[[kw]--markup[/] [arg]{MARKUP}[/]]]
-                              ╱                    ╲
-                    text, the message               ╲
-                     to be printed.          bool, use markup or not;
-                                                default is True.
+        usage: [cmd]say[/] [arg]{message}[/] [[[kw]--markup[/] [arg]{MARKUP}[/]]]
+                      ╱                    ╲
+            text, the message               ╲
+             to be printed.          bool, use markup or not;
+                                        default is True.
         """
 
         try:
             self.logger.print(message, markup=markup)
         except mu.MarkupParseError as e:
-            with self.logger.warn():
-                self.logger.print(e, markup=False)
+            self.logger.print(f"[warn]{self.logger.escape(str(e))}[/]")
 
     @print.arg_parser("message")
     def _print_message_parser(self):

@@ -124,13 +124,11 @@ class ProfileManager:
         logger.print("[data/] Update profiles...")
 
         if not self.path.exists():
-            with logger.warn():
-                logger.print(f"The profile directory doesn't exist: {logger.emph(self.path.as_uri())}")
+            logger.print(f"[warn]The profile directory doesn't exist: {logger.emph(self.path.as_uri())}[/]")
             return False
 
         if not self.path.is_dir():
-            with logger.warn():
-                logger.print(f"Wrong file type for profile directory: {logger.emph(self.path.as_uri())}")
+            logger.print(f"[warn]Wrong file type for profile directory: {logger.emph(self.path.as_uri())}[/]")
             return False
 
         # update profiles
@@ -141,8 +139,7 @@ class ProfileManager:
         default_meta_path = self.path / self.default_meta
         if default_meta_path.exists():
             if not default_meta_path.is_file():
-                with logger.warn():
-                    logger.print(f"Wrong file type for default profile: {logger.emph(default_meta_path.as_uri())}")
+                logger.print(f"[warn]Wrong file type for default profile: {logger.emph(default_meta_path.as_uri())}[/]")
                 return False
             self.default_name = default_meta_path.read_text()
 
@@ -160,14 +157,12 @@ class ProfileManager:
         logger.print(f"[data/] Set {logger.emph(self.current_name)} as the default configuration...")
 
         if not self.path.exists():
-            with logger.warn():
-                logger.print(f"No such profile directory: {logger.emph(self.path.as_uri())}")
+            logger.print(f"[warn]No such profile directory: {logger.emph(self.path.as_uri())}[/]")
             return False
 
         default_meta_path = self.path / self.default_meta
         if default_meta_path.exists() and not default_meta_path.is_file():
-            with logger.warn():
-                logger.print(f"Wrong file type for default profile: {logger.emph(default_meta_path.as_uri())}")
+            logger.print(f"[warn]Wrong file type for default profile: {logger.emph(default_meta_path.as_uri())}[/]")
             return False
 
         default_meta_path.write_text(self.current_name)
@@ -188,13 +183,11 @@ class ProfileManager:
         logger.print(f"[data/] Save configuration to {logger.emph(current_path.as_uri())}...")
 
         if not self.path.exists():
-            with logger.warn():
-                logger.print(f"The profile directory doesn't exist: {logger.emph(self.path.as_uri())}")
+            logger.print(f"[warn]The profile directory doesn't exist: {logger.emph(self.path.as_uri())}[/]")
             return False
 
         if current_path.exists() and not current_path.is_file():
-            with logger.warn():
-                logger.print(f"Wrong file type for profile: {logger.emph(current_path.as_uri())}")
+            logger.print(f"[warn]Wrong file type for profile: {logger.emph(current_path.as_uri())}[/]")
             return False
 
         try:
@@ -222,13 +215,11 @@ class ProfileManager:
         logger.print(f"[data/] Load configuration from {logger.emph(current_path.as_uri())}...")
 
         if not current_path.exists():
-            with logger.warn():
-                logger.print(f"The profile doesn't exist: {logger.emph(current_path.as_uri())}")
+            logger.print(f"[warn]The profile doesn't exist: {logger.emph(current_path.as_uri())}[/]")
             return False
 
         if not current_path.is_file():
-            with logger.warn():
-                logger.print(f"Wrong file type for profile: {logger.emph(current_path.as_uri())}")
+            logger.print(f"[warn]Wrong file type for profile: {logger.emph(current_path.as_uri())}[/]")
             return False
 
         try:
@@ -258,15 +249,13 @@ class ProfileManager:
 
         if name is None:
             if self.default_name is None:
-                with logger.warn():
-                    logger.print("No default profile")
+                logger.print("[warn]No default profile[/]")
                 return False
 
             name = self.default_name
 
         if name not in self.profiles:
-            with logger.warn():
-                logger.print(f"No such profile: {logger.emph(name)}")
+            logger.print(f"[warn]No such profile: {logger.emph(name)}[/]")
             return False
 
         old_name = self.current_name
@@ -295,18 +284,15 @@ class ProfileManager:
         logger.print("Make new configuration...")
 
         if clone is not None and clone not in self.profiles:
-            with logger.warn():
-                logger.print(f"No such profile: {logger.emph(clone)}")
+            logger.print(f"[warn]No such profile: {logger.emph(clone)}[/]")
             return False
 
         if isinstance(name, str) and not name.isprintable() or "/" in name:
-            with logger.warn():
-                logger.print(f"Invalid profile name: {logger.emph(name)}")
+            logger.print(f"[warn]Invalid profile name: {logger.emph(name)}[/]")
             return False
 
         if name in self.profiles:
-            with logger.warn():
-                logger.print(f"This profile name {logger.emph(name)} already exists.")
+            logger.print(f"[warn]This profile name {logger.emph(name)} already exists.[/]")
             return False
 
         if name is None:
@@ -350,14 +336,12 @@ class ProfileManager:
         logger.print(f"[data/] Delete configuration {logger.emph(target_path.as_uri())}...")
 
         if name not in self.profiles:
-            with logger.warn():
-                logger.print(f"No such profile: {logger.emph(name)}")
+            logger.print(f"[warn]No such profile: {logger.emph(name)}[/]")
             return False
 
         if target_path.exists():
             if not target_path.is_file():
-                with logger.warn():
-                    logger.print(f"Wrong file type for profile: {logger.emph(target_path.as_uri())}")
+                logger.print(f"[warn]Wrong file type for profile: {logger.emph(target_path.as_uri())}[/]")
                 return False
             target_path.unlink()
 
@@ -388,13 +372,11 @@ class ProfileManager:
         logger.print(f"[data/] Rename configuration file {current_name} to {target_name}...")
 
         if not name.isprintable() or "/" in name:
-            with logger.warn():
-                logger.print(f"Invalid profile name: {logger.emph(name)}")
+            logger.print(f"[warn]Invalid profile name: {logger.emph(name)}[/]")
             return False
 
         if name in self.profiles:
-            with logger.warn():
-                logger.print(f"This profile name {logger.emph(name)} already exists.")
+            logger.print(f"[warn]This profile name {logger.emph(name)} already exists.[/]")
             return False
 
         if self.current_name in self.profiles:
@@ -527,9 +509,8 @@ class ConfigCommand:
 
         # open editor
         if not exists(editor):
-            with self.logger.warn():
-                self.logger.print(f"Unknown editor: {self.logger.escape(editor)}")
-                return
+            self.logger.print(f"[warn]Unknown editor: {self.logger.escape(editor)}[/]")
+            return
 
         with edit(value_str, editor) as edit_task:
             yield from edit_task.join((yield))
@@ -548,9 +529,7 @@ class ConfigCommand:
             res, _ = biparser.decode(res_str)
 
         except bp.DecodeError as e:
-            with self.logger.warn():
-                self.logger.print("Invalid syntax:")
-                self.logger.print(e, markup=False)
+            self.logger.print(f"[warn]{self.logger.escape(e)}[/]")
 
         else:
             self.config.current.set(field, res)

@@ -91,12 +91,10 @@ class BeatmapManager:
         songs_dir = self.path
 
         if not beatmap.exists():
-            with logger.warn():
-                logger.print(f"File not found: {logger.escape(str(beatmap))}")
+            logger.print(f"[warn]File not found: {logger.escape(str(beatmap))}[/]")
             return
         if not beatmap.is_file() and not beatmap.is_dir():
-            with logger.warn():
-                logger.print(f"Not a file or directory: {logger.escape(str(beatmap))}")
+            logger.print(f"[warn]Not a file or directory: {logger.escape(str(beatmap))}[/]")
             return
 
         logger.print(f"[data/] Add a new song from {logger.emph(beatmap.as_uri())}...")
@@ -132,8 +130,7 @@ class BeatmapManager:
             self.reload()
 
         else:
-            with logger.warn():
-                logger.print(f"Not a file: {logger.escape(str(beatmap))}")
+            logger.print(f"[warn]Not a file: {logger.escape(str(beatmap))}[/]")
 
     def is_beatmapset(self, path):
         return path in self._beatmaps
@@ -328,13 +325,11 @@ class BGMCommand:
         try:
             song = self.beatmap_manager.get_song(beatmap)
         except beatsheets.BeatmapParseError:
-            with logger.warn():
-                logger.print("Fail to read beatmap")
+            logger.print("[warn]Fail to read beatmap[/]")
             return
 
         if song is None:
-            with logger.warn():
-                logger.print("This beatmap has no song")
+            logger.print("[warn]This beatmap has no song[/]")
             return
 
         logger.print("will play:")

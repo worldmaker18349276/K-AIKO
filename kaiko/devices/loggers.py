@@ -22,14 +22,21 @@ class LoggerSettings(cfg.Configurable):
         The template of emph log.
     warn : str
         The template of warn log.
+
+    verb_block : str
+        The template of verb block log.
+    warn_block : str
+        The template of warn block log.
     """
     data_icon: str = "[color=bright_green][wide=🗀/][/]"
     info_icon: str = "[color=bright_blue][wide=🛠/][/]"
     hint_icon: str = "[color=bright_yellow][wide=💡/][/]"
 
-    verb: str = f"{'─'*80}\n[weight=dim][slot/][/]{'─'*80}\n"
+    verb: str = f"[weight=dim][slot/][/]"
+    warn: str = f"[color=red][slot/][/]"
     emph: str = "[weight=bold][slot/][/]"
-    warn: str = "[color=red][slot/][/]"
+    verb_block: str = f"[weight=dim]{'╌'*80}\n[slot/]{'╌'*80}\n[/]"
+    warn_block: str = f"[color=red]{'═'*80}\n[slot/]{'═'*80}\n[/]"
 
 class Logger:
     def __init__(self, terminal_settings=None, logger_settings=None):
@@ -58,19 +65,9 @@ class Logger:
     @contextlib.contextmanager
     def verb(self):
         level = self.level
-        template = self.rich.parse("[verb][slot/][/]", slotted=True)
+        verb_block = self.logger_settings.verb_block if self.logger_settings else LoggerSettings.verb_block
+        template = self.rich.parse(verb_block, slotted=True)
         self.level = 0
-        try:
-            with self.rich.render_context(template, lambda text: print(text, end="", flush=True)):
-                yield
-        finally:
-            self.level = level
-
-    @contextlib.contextmanager
-    def normal(self):
-        level = self.level
-        template = self.rich.parse("[reset][slot/][/]", slotted=True)
-        self.level = 1
         try:
             with self.rich.render_context(template, lambda text: print(text, end="", flush=True)):
                 yield
@@ -80,7 +77,8 @@ class Logger:
     @contextlib.contextmanager
     def warn(self):
         level = self.level
-        template = self.rich.parse("[warn][slot/][/]", slotted=True)
+        warn_block = self.logger_settings.warn_block if self.logger_settings else LoggerSettings.warn_block
+        template = self.rich.parse(warn_block, slotted=True)
         self.level = 2
         try:
             with self.rich.render_context(template, lambda text: print(text, end="", flush=True)):
