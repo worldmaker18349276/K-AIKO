@@ -28,7 +28,7 @@ def loc_at(text, index):
 def parse_markup(markup_str, tags, props={}):
     stack = [(Group, [])]
 
-    for match in re.finditer(r"(?P<tag>\[[^\]]*\])|(?P<text>([^\[]|\[\[)+)", markup_str):
+    for match in re.finditer(r"(?P<text>([^\[]|\[\[)+)|(?P<tag>\[[^\]]*\])", markup_str):
         tag = match.group('tag')
         text = match.group('text')
 
