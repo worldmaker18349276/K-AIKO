@@ -70,7 +70,7 @@ class BeatmapManager:
 
         logger.print("[data/] Load beatmaps...")
 
-        self._beatmaps_mtime = os.stat(str(songs_dir)).st_mtime
+        beatmaps_mtime = os.stat(str(songs_dir)).st_mtime
         self._beatmaps = {}
 
         for song in songs_dir.iterdir():
@@ -85,6 +85,7 @@ class BeatmapManager:
         if len(self._beatmaps) == 0:
             logger.print("[data/] There is no song in the folder yet!")
         logger.print(flush=True)
+        self._beatmaps_mtime = beatmaps_mtime
 
     def add(self, beatmap):
         logger = self.logger

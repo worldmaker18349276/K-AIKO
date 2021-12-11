@@ -138,9 +138,7 @@ class ProfileManager:
             logger.print(f"[warn]Wrong file type for profile directory: {logger.emph(self.path.as_uri())}[/]")
             return False
 
-        # update profiles
-        self._profiles_mtime = os.stat(str(self.path)).st_mtime
-        self.profiles = [subpath.stem for subpath in self.path.iterdir() if subpath.suffix == self.extension]
+        profiles_mtime = os.stat(str(self.path)).st_mtime
 
         # update default_name
         default_meta_path = self.path / self.default_meta
@@ -150,6 +148,9 @@ class ProfileManager:
                 return False
             self.default_name = default_meta_path.read_text()
 
+        # update profiles
+        self.profiles = [subpath.stem for subpath in self.path.iterdir() if subpath.suffix == self.extension]
+        self._profiles_mtime = profiles_mtime
         return True
 
     def set_default(self):
@@ -197,6 +198,7 @@ class ProfileManager:
             logger.print(f"[warn]Wrong file type for profile: {logger.emph(current_path.as_uri())}[/]")
             return False
 
+        current_mtime = os.stat(str(current_path)).st_mtime
         try:
             self.current.write(current_path, name=self.settings_name)
         except bp.EncodeError:
@@ -205,7 +207,7 @@ class ProfileManager:
                 logger.print(traceback.format_exc(), end="", markup=False)
             return False
 
-        self._current_mtime = os.stat(str(current_path)).st_mtime
+        self._current_mtime = current_mtime
         self.update()
         return True
 
@@ -229,6 +231,7 @@ class ProfileManager:
             logger.print(f"[warn]Wrong file type for profile: {logger.emph(current_path.as_uri())}[/]")
             return False
 
+        current_mtime = os.stat(str(current_path)).st_mtime
         try:
             self.current = KAIKOSettings.read(current_path, name=self.settings_name)
         except bp.DecodeError:
@@ -237,7 +240,7 @@ class ProfileManager:
                 logger.print(traceback.format_exc(), end="", markup=False)
             return False
 
-        self._current_mtime = os.stat(str(current_path)).st_mtime
+        self._current_mtime = current_mtime
         self.update_logger()
         return True
 
