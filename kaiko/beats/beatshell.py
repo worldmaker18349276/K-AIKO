@@ -444,7 +444,7 @@ class BeatInput:
 
     Attributes
     ----------
-    command : cmd.RootCommandParser
+    command : commands.RootCommandParser
         The root command parser for beatshell.
     logger : loggers.Logger
         The logger.
@@ -519,12 +519,12 @@ class BeatInput:
 
         Parameters
         ----------
-        devices_settings : DevicesSettings
+        devices_settings : engines.DevicesSettings
             The settings of devices.
 
         Returns
         -------
-        prompt_task : dn.DataNode
+        prompt_task : datanodes.DataNode
             The datanode to execute the prompt.
         """
         debug_monitor = self.settings.debug_monitor

@@ -356,7 +356,7 @@ class OneshotTarget(Target):
 
     Attributes
     ----------
-    sound : DataNode or None
+    sound : datanodes.DataNode or None
         The sound of the auditory cue of this target.
     approach_appearance : tuple of str and str
         The appearance of approaching target.
@@ -1273,7 +1273,7 @@ class Beatmap:
 
         Parameters
         ----------
-        rich : RichBarRenderer
+        rich : markups.RichBarRenderer
 
         Returns
         -------

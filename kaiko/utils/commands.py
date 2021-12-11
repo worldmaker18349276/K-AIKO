@@ -349,7 +349,7 @@ class TreeParser(ArgumentParser):
 
         Parameters
         ----------
-        tree : dict, Dict[str, Union[tree, Callable[[str], Any]]]
+        tree : dict from str to parser tree
             The parser tree, the leaf should be a function producing parsed result,
             and the key of node should be a non-empty string.
         default : any, optional

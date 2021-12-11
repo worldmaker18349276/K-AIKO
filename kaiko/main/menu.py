@@ -113,7 +113,7 @@ class KAIKOMenu:
         config : ProfileManager
         user : KAIKOUser
         manager : PyAudio
-        logger : Logger
+        logger : loggers.Logger
         """
         self._config = config
         self.user = user

@@ -50,7 +50,7 @@ class ProfileManager:
         The name of default configuration.
     current_name : str
         The name of current configuration.
-    current : Configurable
+    current : config.Configurable
         The current configuration.
     """
 

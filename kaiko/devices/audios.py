@@ -106,9 +106,9 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format='f4', devi
 
     Parameters
     ----------
-    manager : pyaudio.PyAudio
+    manager : PyAudio
         The PyAudio object.
-    node : DataNode
+    node : datanodes.DataNode
         The data node to process recorded sound.
     samplerate : int, optional
         The sample rate of input signal, default is `44100`.
@@ -121,7 +121,7 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format='f4', devi
 
     Yields
     ------
-    input_stream : pyaudio.Stream
+    input_stream : Stream
         The stopped input stream to record sound.
     """
     node = dn.DataNode.wrap(node)
@@ -177,9 +177,9 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
 
     Parameters
     ----------
-    manager : pyaudio.PyAudio
+    manager : PyAudio
         The PyAudio object.
-    node : DataNode
+    node : datanodes.DataNode
         The data node to process playing sound.
     samplerate : int, optional
         The sample rate of output signal, default is `44100`.
@@ -192,7 +192,7 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
 
     Yields
     ------
-    output_stream : pyaudio.Stream
+    output_stream : Stream
         The stopped output stream to play sound.
     """
     node = dn.DataNode.wrap(node)
@@ -254,7 +254,7 @@ def load(filename, stop_event=None):
     ----------
     filename : str
         The sound file to load.
-    stop_event : threading.Event
+    stop_event : Event
         The event to cancel loading file.
 
     Yields
@@ -309,7 +309,7 @@ def save(filename, samplerate=44100, channels=1, width=2, stop_event=None):
         The number of channels, default is `1`.
     width : int, optional
         The sample width in bytes.
-    stop_event : threading.Event
+    stop_event : Event
         The event to cancel saving file.
 
     Receives

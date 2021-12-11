@@ -67,7 +67,7 @@ def fit_screen(logger, terminal_settings):
 
     Returns
     -------
-    fit_task : dn.DataNode
+    fit_task : datanodes.DataNode
         The datanode to manage this process.
     """
     width = terminal_settings.best_screen_size
