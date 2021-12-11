@@ -8,6 +8,7 @@ from typing import Optional
 from pathlib import Path
 from ..utils import commands as cmd
 from ..utils import datanodes as dn
+from ..utils import markups as mu
 from ..devices import audios as aud
 from ..devices import engines
 from ..beats import beatsheets
@@ -40,7 +41,7 @@ class SongMetadata:
             key, value = (line[:index+1], line[index+1:]) if index != -1 else (line, "")
             res[key] = value
 
-        return "\n".join(f"{k} {logger.emph(v)}" for k, v in res.items())
+        return "\n".join(f"{mu.escape(k)} {logger.emph(v)}" for k, v in res.items())
 
 class BeatmapManager:
     def __init__(self, path, logger):
@@ -190,12 +191,12 @@ class BeatmapParser(cmd.TreeParser):
         hint_preview_delay = 0.5
 
         song = self.beatmap_manager.get_song(path)
-        if self.bgm_controller is not None and song is not None:
-            self.bgm_controller.preview(song, song.preview, hint_preview_delay)
+        # if self.bgm_controller is not None and song is not None:
+        #     self.bgm_controller.preview(song, song.preview, hint_preview_delay)
 
         if self.beatmap_manager.is_beatmap(path):
             beatmap = self.beatmap_manager.get_beatmap_metadata(path)
-            return beatmap.info.strip() if beatmap is not None else None
+            return mu.escape(beatmap.info.strip()) if beatmap is not None else None
 
 
 class BGMAction:
