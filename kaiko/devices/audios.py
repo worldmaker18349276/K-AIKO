@@ -243,7 +243,7 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
         yield from _stream_task(output_stream, error)
 
 
-class IOCancelledError(Exception):
+class IOCancelled(Exception):
     pass
 
 @dn.datanode
@@ -261,6 +261,11 @@ def load(filename, stop_event=None):
     ------
     data : ndarray
         The loaded signal.
+
+    Raises
+    ------
+    IOCancelled
+        when the task has been cancelled.
     """
     if stop_event is None:
         stop_event = threading.Event()
@@ -280,7 +285,7 @@ def load(filename, stop_event=None):
                 remaining -= len(data)//width
                 yield frombuffer(data)
                 if stop_event.is_set():
-                    raise IOCancelledError(f"The operation of loading file {filename} has been cancelled.")
+                    raise IOCancelled(f"The operation of loading file {filename} has been cancelled.")
 
     else:
         with audioread.audio_open(filename) as file:
@@ -293,7 +298,7 @@ def load(filename, stop_event=None):
             for data in file:
                 yield frombuffer(data)
                 if stop_event.is_set():
-                    raise IOCancelledError(f"The operation of loading file {filename} has been cancelled.")
+                    raise IOCancelled(f"The operation of loading file {filename} has been cancelled.")
 
 @dn.datanode
 def save(filename, samplerate=44100, channels=1, width=2, stop_event=None):
@@ -316,6 +321,11 @@ def save(filename, samplerate=44100, channels=1, width=2, stop_event=None):
     ------
     data : ndarray
         The signal to save.
+
+    Raises
+    ------
+    IOCancelled
+        when the task has been cancelled.
     """
     if stop_event is None:
         stop_event = threading.Event()
@@ -334,7 +344,7 @@ def save(filename, samplerate=44100, channels=1, width=2, stop_event=None):
         while True:
             file.writeframes(tobuffer((yield)))
             if stop_event.is_set():
-                raise IOCancelledError(f"The operation of saving file {filename} has been cancelled.")
+                raise IOCancelled(f"The operation of saving file {filename} has been cancelled.")
 
 def load_sound(filepath, samplerate=None, channels=None, volume=0.0, start=None, end=None, chunk_length=1024, stop_event=None):
     with audioread.audio_open(filepath) as file:

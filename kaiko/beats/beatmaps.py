@@ -1132,8 +1132,12 @@ class Beatmap:
         rich = mu.RichBarRenderer(devices_settings.terminal.unicode_version, devices_settings.terminal.color_support)
 
         # prepare
-        with self.load_resources(samplerate, nchannels, user.data_dir) as task:
-            yield from task.join((yield))
+        try:
+            with self.load_resources(samplerate, nchannels, user.data_dir) as task:
+                yield from task.join((yield))
+        except aud.IOCancelled:
+            return
+
         with self.prepare_events(rich) as task:
             yield from task.join((yield))
             total_subjects, start_time, end_time, events = task.result

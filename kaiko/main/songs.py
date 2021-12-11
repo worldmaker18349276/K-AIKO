@@ -8,6 +8,7 @@ from typing import Optional
 from pathlib import Path
 from ..utils import commands as cmd
 from ..utils import datanodes as dn
+from ..devices import audios as aud
 from ..devices import engines
 from ..beats import beatsheets
 
@@ -232,9 +233,12 @@ class KAIKOBGMController:
             with dn.sleep(delay) as timer:
                 yield from timer.join((yield))
 
-        with dn.create_task(lambda event: self.mixer.load_sound(song.path, event)) as task:
-            yield from task.join((yield))
-            node = dn.DataNode.wrap(task.result)
+        try:
+            with dn.create_task(lambda event: self.mixer.load_sound(song.path, event)) as task:
+                yield from task.join((yield))
+                node = dn.DataNode.wrap(task.result)
+        except aud.IOCancelled:
+            return
 
         self._current_bgm = song
         try:
