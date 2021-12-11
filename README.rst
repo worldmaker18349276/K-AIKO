@@ -156,7 +156,7 @@ Publish
 Compatibilities
 ---------------
 
-In theory, It is compatible to all terminals support `ANSI escape code <https://en.wikipedia.org/wiki/ANSI_escape_code>`__.
+It is compatible to linux system with VT100 terminal emulator.
 
 Tested terminals:
 
