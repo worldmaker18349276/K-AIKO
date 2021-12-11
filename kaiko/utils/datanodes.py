@@ -899,6 +899,13 @@ class Scheduler(DataNode):
         self.queue.put((key, None, (0,)))
 
 @datanode
+def sleep(delta):
+    start = time.perf_counter()
+    yield
+    while time.perf_counter() - start < delta:
+        yield
+
+@datanode
 def tick(dt, t0=0.0, shift=0.0, stop_event=None):
     if stop_event is None:
         stop_event = threading.Event()

@@ -186,10 +186,11 @@ class BeatmapParser(cmd.TreeParser):
 
     def info(self, token):
         path = Path(token)
+        hint_preview_delay = 0.5
 
         song = self.beatmap_manager.get_song(path)
         if self.bgm_controller is not None and song is not None:
-            self.bgm_controller.play(song, song.preview)
+            self.bgm_controller.play(song, song.preview, hint_preview_delay)
 
         if self.beatmap_manager.is_beatmap(path):
             beatmap = self.beatmap_manager.get_beatmap_metadata(path)
@@ -226,7 +227,11 @@ class KAIKOBGMController:
             self.mixer = None
 
     @dn.datanode
-    def _play_song(self, song, start):
+    def _play_song(self, song, start, delay):
+        if delay is not None:
+            with dn.sleep(delay) as timer:
+                yield from timer.join((yield))
+
         with dn.create_task(lambda event: self.mixer.load_sound(song.path, event)) as task:
             yield from task.join((yield))
             node = dn.DataNode.wrap(task.result)
@@ -252,29 +257,29 @@ class KAIKOBGMController:
                 continue
 
             while not self._action_queue.empty():
-                song, start = self._action_queue.get()
+                song, start, delay = self._action_queue.get()
             if song is None:
                 continue
 
             with self._load_mixer(manager) as mixer_task:
                 while song is not None:
-                    with self._play_song(song, start) as song_task:
+                    with self._play_song(song, start, delay) as song_task:
                         while True:
                             try:
                                 mixer_task.send(None)
                             except StopIteration:
-                                song, start = None, None
+                                song, start, delay = None, None, None
                                 break
 
                             try:
                                 song_task.send(None)
                             except StopIteration:
-                                song, start = self.random_song(), None
+                                song, start, delay = self.random_song(), None, None
                                 break
 
                             if not self._action_queue.empty():
                                 while not self._action_queue.empty():
-                                    song, start = self._action_queue.get()
+                                    song, start, delay = self._action_queue.get()
                                 break
 
                             yield
@@ -286,10 +291,10 @@ class KAIKOBGMController:
         return random.choice(songs) if songs else None
 
     def stop(self):
-        self._action_queue.put((None, None))
+        self._action_queue.put((None, None, None))
 
-    def play(self, song, start=None):
-        self._action_queue.put((song, start))
+    def play(self, song, start=None, delay=None):
+        self._action_queue.put((song, start, delay))
 
 class BGMCommand:
     def __init__(self, bgm_controller, beatmap_manager, logger):
