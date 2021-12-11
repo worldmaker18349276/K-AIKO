@@ -13,6 +13,17 @@ from ..devices import audios as aud
 from ..devices import engines
 from ..beats import beatsheets
 
+def make_table(info):
+    total_width = 80
+    res = {}
+    for line in info.strip().splitlines():
+        index = line.find(":")
+        key, value = (line[:index], line[index+1:]) if index != -1 else (line, "")
+        res[key] = value
+
+    width = max(len(k) for k in res.keys())
+    return "\n".join(f"{' '*(width-len(k)) + mu.escape(k)} │ [emph]{mu.escape(v)}[/]" for k, v in res.items())
+
 @dataclasses.dataclass
 class SongMetadata:
     root: str
@@ -33,15 +44,7 @@ class SongMetadata:
         return os.path.join(self.root, self.audio)
 
     def get_info(self, logger):
-        res = {}
-        res["path:"] = Path(self.path).as_uri()
-
-        for line in self.info.strip().splitlines():
-            index = line.find(":")
-            key, value = (line[:index+1], line[index+1:]) if index != -1 else (line, "")
-            res[key] = value
-
-        return "\n".join(f"{mu.escape(k)} {logger.emph(v)}" for k, v in res.items())
+        return make_table(self.info)
 
 class BeatmapManager:
     def __init__(self, path, logger):
@@ -207,7 +210,7 @@ class BeatmapParser(cmd.TreeParser):
 
         if self.beatmap_manager.is_beatmap(path):
             beatmap = self.beatmap_manager.get_beatmap_metadata(path)
-            return mu.escape(beatmap.info.strip()) if beatmap is not None else None
+            return make_table(beatmap.info) if beatmap is not None else None
 
 
 class BGMAction:
