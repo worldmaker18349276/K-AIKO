@@ -320,7 +320,7 @@ class KAIKOMenu:
     @cmd.function_command
     def loop(self, pattern, tempo:float=120.0, offset:float=1.0):
         return KAIKOLoop(pattern, tempo, offset,
-                         self.user.data_dir, self.settings.devices, self.settings.gameplay, self.logger)
+                         self.user, self.settings.devices, self.settings.gameplay, self.logger)
 
     @loop.arg_parser("pattern")
     def _loop_pattern_parser(self):
