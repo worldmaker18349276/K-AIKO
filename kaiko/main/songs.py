@@ -169,6 +169,17 @@ class BeatmapManager:
     def make_parser(self, bgm_controller=None):
         return BeatmapParser(self, bgm_controller)
 
+    def print_tree(self, logger):
+        beatmapsets = self._beatmaps.items()
+        for i, (path, beatmapset) in enumerate(beatmapsets):
+            prefix = "└── " if i == len(beatmapsets)-1 else "├── "
+            logger.print(prefix + logger.emph(str(path)))
+
+            preprefix = "    " if i == len(beatmapsets)-1 else "│   "
+            for j, beatmap in enumerate(beatmapset):
+                prefix = "└── " if j == len(beatmapset)-1 else "├── "
+                logger.print(preprefix + prefix + logger.escape(str(beatmap.relative_to(path))))
+
 class BeatmapParser(cmd.TreeParser):
     def __init__(self, beatmap_manager, bgm_controller):
         super().__init__(BeatmapParser.make_tree(beatmap_manager._beatmaps))
@@ -191,8 +202,8 @@ class BeatmapParser(cmd.TreeParser):
         hint_preview_delay = 0.5
 
         song = self.beatmap_manager.get_song(path)
-        # if self.bgm_controller is not None and song is not None:
-        #     self.bgm_controller.preview(song, song.preview, hint_preview_delay)
+        if self.bgm_controller is not None and song is not None:
+            self.bgm_controller.preview(song, song.preview, hint_preview_delay)
 
         if self.beatmap_manager.is_beatmap(path):
             beatmap = self.beatmap_manager.get_beatmap_metadata(path)

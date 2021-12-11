@@ -367,13 +367,7 @@ class KAIKOMenu:
 
     @remove.arg_parser("beatmap")
     def _remove_beatmap_parser(self):
-        options = {}
-        for song, beatmapset in self.beatmap_manager._beatmaps.items():
-            options[os.path.join(str(song), "")] = song
-            for beatmap in beatmapset:
-                options[str(beatmap)] = beatmap
-
-        return cmd.OptionParser(options)
+        return self.beatmap_manager.make_parser()
 
     @cmd.function_command
     def beatmaps(self):
@@ -381,15 +375,7 @@ class KAIKOMenu:
         if not self.beatmap_manager.is_uptodate():
             self.reload()
 
-        beatmapsets = self.beatmap_manager._beatmaps.items()
-        for i, (path, beatmapset) in enumerate(beatmapsets):
-            prefix = "└── " if i == len(beatmapsets)-1 else "├── "
-            self.logger.print(prefix + self.logger.emph(str(path)))
-
-            preprefix = "    " if i == len(beatmapsets)-1 else "│   "
-            for j, beatmap in enumerate(beatmapset):
-                prefix = "└── " if j == len(beatmapset)-1 else "├── "
-                self.logger.print(preprefix + prefix + self.logger.escape(str(beatmap.relative_to(path))))
+        self.beatmap_manager.print_tree(self.logger)
 
     @cmd.subcommand
     @property
