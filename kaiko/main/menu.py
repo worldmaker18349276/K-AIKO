@@ -380,9 +380,15 @@ class KAIKOMenu:
         if not self.beatmap_manager.is_uptodate():
             self.reload()
 
-        for beatmapset in self.beatmap_manager._beatmaps.values():
-            for beatmap in beatmapset:
-                self.logger.print("• " + self.logger.escape(str(beatmap)))
+        beatmapsets = self.beatmap_manager._beatmaps.items()
+        for i, (path, beatmapset) in enumerate(beatmapsets):
+            prefix = "└── " if i == len(beatmapsets)-1 else "├── "
+            self.logger.print(prefix + self.logger.emph(str(path)))
+
+            preprefix = "    " if i == len(beatmapsets)-1 else "│   "
+            for j, beatmap in enumerate(beatmapset):
+                prefix = "└── " if j == len(beatmapset)-1 else "├── "
+                self.logger.print(preprefix + prefix + self.logger.escape(str(beatmap.relative_to(path))))
 
     @cmd.subcommand
     @property
