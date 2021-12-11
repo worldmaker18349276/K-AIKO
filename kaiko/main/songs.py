@@ -301,7 +301,7 @@ class BGMCommand:
 
         if self.bgm_controller._current_bgm is not None:
             logger.print("now playing:")
-            logger.print(self.bgm_controller._current_bgm.get_info(logger), markup=False)
+            logger.print(self.bgm_controller._current_bgm.get_info(logger))
             return
 
         song = self.bgm_controller.random_song()
@@ -310,7 +310,7 @@ class BGMCommand:
             return
 
         logger.print("will play:")
-        logger.print(song.get_info(logger), markup=False)
+        logger.print(song.get_info(logger))
         self.bgm_controller.play(song)
 
     @cmd.function_command
@@ -322,7 +322,7 @@ class BGMCommand:
         if self.bgm_controller._current_bgm is not None:
             song = self.bgm_controller.random_song()
             self.logger.print("will play:")
-            self.logger.print(song.get_info(self.logger), markup=False)
+            self.logger.print(song.get_info(self.logger))
             self.bgm_controller.play(song)
 
     @cmd.function_command
@@ -340,7 +340,7 @@ class BGMCommand:
             return
 
         logger.print("will play:")
-        logger.print(song.get_info(logger), markup=False)
+        logger.print(song.get_info(logger))
         self.bgm_controller.play(song, start)
 
     @play.arg_parser("beatmap")
@@ -354,4 +354,4 @@ class BGMCommand:
             self.logger.print("no song")
         else:
             self.logger.print("now playing:")
-            self.logger.print(current.get_info(self.logger), markup=False)
+            self.logger.print(current.get_info(self.logger))
