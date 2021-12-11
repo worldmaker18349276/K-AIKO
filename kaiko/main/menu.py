@@ -366,11 +366,11 @@ class KAIKOMenu:
 
     @remove.arg_parser("beatmap")
     def _remove_beatmap_parser(self):
-        options = []
+        options = {}
         for song, beatmapset in self.beatmap_manager._beatmaps.items():
-            options.append(os.path.join(str(song), ""))
+            options[os.path.join(str(song), "")] = song
             for beatmap in beatmapset:
-                options.append(str(beatmap))
+                options[str(beatmap)] = beatmap
 
         return cmd.OptionParser(options)
 

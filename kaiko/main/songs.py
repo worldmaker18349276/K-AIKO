@@ -87,51 +87,52 @@ class BeatmapManager:
         logger.print(flush=True)
         self._beatmaps_mtime = beatmaps_mtime
 
-    def add(self, beatmap):
+    def add(self, path):
         logger = self.logger
         songs_dir = self.path
 
-        if not beatmap.exists():
-            logger.print(f"[warn]File not found: {logger.escape(str(beatmap))}[/]")
+        if not path.exists():
+            logger.print(f"[warn]File not found: {logger.escape(str(path))}[/]")
             return
-        if not beatmap.is_file() and not beatmap.is_dir():
-            logger.print(f"[warn]Not a file or directory: {logger.escape(str(beatmap))}[/]")
+        if not path.is_file() and not path.is_dir():
+            logger.print(f"[warn]Not a file or directory: {logger.escape(str(path))}[/]")
             return
 
-        logger.print(f"[data/] Add a new song from {logger.emph(beatmap.as_uri())}...")
+        logger.print(f"[data/] Add a new song from {logger.emph(path.as_uri())}...")
 
-        distpath = songs_dir / beatmap.name
+        distpath = songs_dir / path.name
         n = 1
         while distpath.exists():
             n += 1
-            distpath = songs_dir / f"{beatmap.stem} ({n}){beatmap.suffix}"
+            distpath = songs_dir / f"{path.stem} ({n}){path.suffix}"
         if n != 1:
             logger.print(f"[data/] Name conflict! Rename to {logger.emph(distpath.name)}")
 
-        if beatmap.is_file():
-            shutil.copy(str(beatmap), str(songs_dir))
-        elif beatmap.is_dir():
-            shutil.copytree(str(beatmap), str(distpath))
+        if path.is_file():
+            shutil.copy(str(path), str(songs_dir))
+        elif path.is_dir():
+            shutil.copytree(str(path), str(distpath))
 
         self.reload()
 
-    def remove(self, beatmap):
+    def remove(self, path):
         logger = self.logger
         songs_dir = self.path
 
-        beatmap_path = songs_dir / beatmap
-        if beatmap_path.is_file():
+        if self.is_beatmap(path):
+            beatmap_path = songs_dir / path
             logger.print(f"[data/] Remove the beatmap at {logger.emph(beatmap_path.as_uri())}...")
             beatmap_path.unlink()
             self.reload()
 
-        elif beatmap_path.is_dir():
-            logger.print(f"[data/] Remove the beatmapset at {logger.emph(beatmap_path.as_uri())}...")
-            shutil.rmtree(str(beatmap_path))
+        elif self.is_beatmapset(path):
+            beatmapset_path = songs_dir / path
+            logger.print(f"[data/] Remove the beatmapset at {logger.emph(beatmapset_path.as_uri())}...")
+            shutil.rmtree(str(beatmapset_path))
             self.reload()
 
         else:
-            logger.print(f"[warn]Not a file: {logger.escape(str(beatmap))}[/]")
+            logger.print(f"[warn]Not a beatmap or beatmapset: {logger.escape(str(path))}[/]")
 
     def is_beatmapset(self, path):
         return path in self._beatmaps
@@ -153,6 +154,8 @@ class BeatmapManager:
 
     def get_song(self, path):
         if self.is_beatmapset(path):
+            if not self._beatmaps[path]:
+                return None
             path = self._beatmaps[path][0]
         beatmap = self.get_beatmap_metadata(path)
         return beatmap and SongMetadata.from_beatmap(beatmap)
