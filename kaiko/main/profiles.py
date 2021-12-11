@@ -70,6 +70,7 @@ class ProfileManager:
         self.current = None
         self._current_mtime = None
         self._profiles_mtime = None
+        self.on_change_handlers = []
 
     @classmethod
     def initialize(clz, path, logger):
@@ -88,6 +89,9 @@ class ProfileManager:
         config = clz(path, logger)
         # `config.current_name` and `config.current` are currently invalid
 
+        config.on_change(lambda settings: logger.recompile_style(terminal_settings=settings.devices.terminal,
+                                                                 logger_settings=settings.devices.logger))
+
         config.update()
 
         succ = config.use()
@@ -98,11 +102,8 @@ class ProfileManager:
 
         return config
 
-    def update_logger(self):
-        self.logger.recompile_style(
-            terminal_settings=self.current.devices.terminal,
-            logger_settings=self.current.devices.logger
-        )
+    def on_change(self, on_change_handler):
+        self.on_change_handlers.append(on_change_handler)
 
     def is_uptodate(self):
         if not self.path.exists():
@@ -117,7 +118,8 @@ class ProfileManager:
 
     def set_change(self):
         self._current_mtime = None
-        self.update_logger()
+        for on_change_handler in self.on_change_handlers:
+            on_change_handler(self.current)
 
     def update(self):
         """Update the list of profiles.
@@ -240,8 +242,8 @@ class ProfileManager:
                 logger.print(traceback.format_exc(), end="", markup=False)
             return False
 
+        self.set_change()
         self._current_mtime = current_mtime
-        self.update_logger()
         return True
 
     def use(self, name=None):
@@ -317,8 +319,7 @@ class ProfileManager:
         if clone is None:
             self.current_name = name
             self.current = KAIKOSettings()
-            self._current_mtime = None
-            self.update_logger()
+            self.set_change()
 
         else:
             old_name = self.current_name
