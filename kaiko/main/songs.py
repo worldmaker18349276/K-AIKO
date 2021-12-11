@@ -196,17 +196,20 @@ class BeatmapParser(cmd.TreeParser):
             return beatmap.info.strip() if beatmap is not None else None
 
 class KAIKOBGMController:
-    def __init__(self, config, logger, beatmap_manager):
-        self.config = config
+    def __init__(self, mixer_settings, logger, beatmap_manager):
+        self.mixer_settings = mixer_settings
         self.logger = logger
         self._current_bgm = None
         self._action_queue = queue.Queue()
         self.beatmap_manager = beatmap_manager
 
+    def update_mixer_settings(self, mixer_settings):
+        self.mixer_settings = mixer_settings
+
     @dn.datanode
     def load_mixer(self, manager):
         try:
-            mixer_task, mixer = engines.Mixer.create(self.config.current.devices.mixer, manager)
+            mixer_task, mixer = engines.Mixer.create(self.mixer_settings, manager)
 
         except Exception:
             with self.logger.warn():

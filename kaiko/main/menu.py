@@ -132,7 +132,8 @@ class KAIKOMenu:
         self.manager = manager
         self.logger = logger
         self.beatmap_manager = BeatmapManager(user.songs_dir, logger)
-        self.bgm_controller = KAIKOBGMController(config, logger, self.beatmap_manager)
+        self.bgm_controller = KAIKOBGMController(config.current.devices.mixer, logger, self.beatmap_manager)
+        config.on_change(lambda settings: self.bgm_controller.update_mixer_settings(settings.devices.mixer))
 
     @staticmethod
     def main():
