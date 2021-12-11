@@ -207,7 +207,7 @@ class KAIKOBGMController:
         self.mixer_settings = mixer_settings
 
     @dn.datanode
-    def load_mixer(self, manager):
+    def _load_mixer(self, manager):
         try:
             mixer_task, mixer = engines.Mixer.create(self.mixer_settings, manager)
 
@@ -215,6 +215,8 @@ class KAIKOBGMController:
             with self.logger.warn():
                 self.logger.print("Failed to load mixer")
                 self.logger.print(traceback.format_exc(), end="", markup=False)
+            yield
+            return
 
         self.mixer = mixer
         try:
@@ -224,7 +226,7 @@ class KAIKOBGMController:
             self.mixer = None
 
     @dn.datanode
-    def play_song(self, song, start):
+    def _play_song(self, song, start):
         with dn.create_task(lambda event: self.mixer.load_sound(song.path, event)) as task:
             yield from task.join((yield))
             node = dn.DataNode.wrap(task.result)
@@ -254,9 +256,9 @@ class KAIKOBGMController:
             if song is None:
                 continue
 
-            with self.load_mixer(manager) as mixer_task:
+            with self._load_mixer(manager) as mixer_task:
                 while song is not None:
-                    with self.play_song(song, start) as song_task:
+                    with self._play_song(song, start) as song_task:
                         while True:
                             try:
                                 mixer_task.send(None)
