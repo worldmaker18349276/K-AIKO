@@ -514,13 +514,14 @@ class BeatInput:
     def update_settings(self, settings):
         self.settings = settings
 
-    def prompt(self, devices_settings):
+    def prompt(self, devices_settings, user):
         r"""Start prompt.
 
         Parameters
         ----------
         devices_settings : engines.DevicesSettings
             The settings of devices.
+        user : KAIKOUser
 
         Returns
         -------
@@ -528,7 +529,7 @@ class BeatInput:
             The datanode to execute the prompt.
         """
         debug_monitor = self.settings.debug_monitor
-        renderer_monitor = engines.Monitor("prompt_monitor.csv") if debug_monitor else None
+        renderer_monitor = engines.Monitor(user.cache_dir / "monitor" / "prompt.csv") if debug_monitor else None
         input_task, controller = engines.Controller.create(devices_settings.controller, devices_settings.terminal)
         display_task, renderer = engines.Renderer.create(devices_settings.renderer, devices_settings.terminal, monitor=renderer_monitor)
         stroke = BeatStroke(self, self.settings.input)

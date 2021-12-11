@@ -41,28 +41,39 @@ logo = """
 @dataclasses.dataclass
 class KAIKOUser:
     username: str
-    config_dir: Path
     data_dir: Path
-    songs_dir: Path
-    history_file: Path
+    cache_dir: Path
 
     @classmethod
     def create(clz):
         username = getpass.getuser()
         data_dir = Path(appdirs.user_data_dir("K-AIKO", username))
-        config_dir = data_dir / "config"
-        songs_dir = data_dir / "songs"
-        history_file = data_dir / ".beatshell_history"
-        return clz(username, config_dir, data_dir, songs_dir, history_file)
+        cache_dir = Path(appdirs.user_cache_dir("K-AIKO", username))
+        return clz(username, data_dir, cache_dir)
+
+    @property
+    def config_dir(self):
+        return self.data_dir / "config"
+
+    @property
+    def songs_dir(self):
+        return self.data_dir / "songs"
+
+    @property
+    def history_file(self):
+        return self.cache_dir / ".beatshell_history"
 
     def is_prepared(self):
+        if not self.data_dir.exists():
+            return False
+
+        if not self.cache_dir.exists():
+            return False
+
         if not self.history_file.exists():
             return False
 
         if not self.config_dir.exists():
-            return False
-
-        if not self.data_dir.exists():
             return False
 
         if not self.songs_dir.exists():
@@ -77,6 +88,7 @@ class KAIKOUser:
         # start up
         logger.print("[data/] Prepare your profile...")
         self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.songs_dir.mkdir(parents=True, exist_ok=True)
         self.history_file.touch()
@@ -225,7 +237,7 @@ class KAIKOMenu:
         while True:
             # parse command
             input.update_settings(self.settings.shell)
-            with input.prompt(self.settings.devices) as prompt_task:
+            with input.prompt(self.settings.devices, self.user) as prompt_task:
                 yield from prompt_task.join((yield))
 
             # execute result
@@ -301,7 +313,7 @@ class KAIKOMenu:
             self.logger.print("[warn]Not a beatmap.[/]")
             return
 
-        return KAIKOPlay(self.user.data_dir, self.user.songs_dir / beatmap,
+        return KAIKOPlay(self.user, self.user.songs_dir / beatmap,
                          self.settings.devices, self.settings.gameplay, self.logger)
 
     @cmd.function_command
@@ -406,6 +418,7 @@ class KAIKOMenu:
         logger.print(f"config directory: {logger.emph(self.user.config_dir.as_uri())}")
         logger.print(f"songs directory: {logger.emph(self.user.songs_dir.as_uri())}")
         logger.print(f"command history: {logger.emph(self.user.history_file.as_uri())}")
+        logger.print(f"cache directory: {logger.emph(self.user.cache_dir.as_uri())}")
 
     @cmd.function_command
     def print(self, message, markup=True):
@@ -463,8 +476,8 @@ class KAIKOMenu:
 
 
 class KAIKOPlay:
-    def __init__(self, data_dir, filepath, devices_settings, gameplay_settings, logger):
-        self.data_dir = data_dir
+    def __init__(self, user, filepath, devices_settings, gameplay_settings, logger):
+        self.user = user
         self.filepath = filepath
         self.devices_settings = devices_settings
         self.gameplay_settings = gameplay_settings
@@ -495,7 +508,7 @@ class KAIKOPlay:
             logger.print(f"[hint/] Use {logger.emph(energy_keys[0])} and {logger.emph(energy_keys[1])} to adjust hit strength.")
             logger.print()
 
-            with beatmap.play(manager, self.data_dir, self.devices_settings, self.gameplay_settings) as task:
+            with beatmap.play(manager, self.user, self.devices_settings, self.gameplay_settings) as task:
                 yield from task.join((yield))
                 score = task.result
 
@@ -503,11 +516,11 @@ class KAIKOPlay:
             beatanalyzer.show_analyze(beatmap.settings.difficulty.performance_tolerance, score.perfs)
 
 class KAIKOLoop:
-    def __init__(self, pattern, tempo, offset, data_dir, devices_settings, gameplay_settings, logger):
+    def __init__(self, pattern, tempo, offset, user, devices_settings, gameplay_settings, logger):
         self.pattern = pattern
         self.tempo = tempo
         self.offset = offset
-        self.data_dir = data_dir
+        self.user = user
         self.devices_settings = devices_settings
         self.gameplay_settings = gameplay_settings
         self.logger = logger
@@ -539,7 +552,7 @@ class KAIKOLoop:
             logger.print(f"[hint/] Use {logger.emph(energy_keys[0])} and {logger.emph(energy_keys[1])} to adjust hit strength.")
             logger.print()
 
-            with beatmap.play(manager, self.data_dir, self.devices_settings, self.gameplay_settings) as task:
+            with beatmap.play(manager, self.user, self.devices_settings, self.gameplay_settings) as task:
                 yield from task.join((yield))
                 score = task.result
 

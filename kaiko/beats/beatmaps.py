@@ -1119,7 +1119,7 @@ class Beatmap:
         return self.time(beat+length) - self.time(beat)
 
     @dn.datanode
-    def play(self, manager, data_dir, devices_settings, gameplay_settings=None):
+    def play(self, manager, user, devices_settings, gameplay_settings=None):
         gameplay_settings = gameplay_settings or GameplaySettings()
 
         samplerate = devices_settings.mixer.output_samplerate
@@ -1132,7 +1132,7 @@ class Beatmap:
         rich = mu.RichBarRenderer(devices_settings.terminal.unicode_version, devices_settings.terminal.color_support)
 
         # prepare
-        with self.load_resources(samplerate, nchannels, data_dir) as task:
+        with self.load_resources(samplerate, nchannels, user.data_dir) as task:
             yield from task.join((yield))
         with self.prepare_events(rich) as task:
             yield from task.join((yield))
@@ -1144,9 +1144,9 @@ class Beatmap:
         # load engines
         mixer_monitor = detector_monitor = renderer_monitor = None
         if debug_monitor:
-            mixer_monitor = engines.Monitor("mixer_monitor.csv")
-            detector_monitor = engines.Monitor("detector_monitor.csv")
-            renderer_monitor = engines.Monitor("renderer_monitor.csv")
+            mixer_monitor = engines.Monitor(user.cache_dir / "monitor" / "mixer.csv")
+            detector_monitor = engines.Monitor(user.cache_dir / "monitor" / "detector.csv")
+            renderer_monitor = engines.Monitor(user.cache_dir / "monitor" / "renderer.csv")
 
         ref_time = load_time + abs(start_time)
         mixer_task, mixer = engines.Mixer.create(devices_settings.mixer, manager, ref_time, mixer_monitor)

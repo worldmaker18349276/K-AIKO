@@ -11,8 +11,8 @@ from . import loggers as log
 
 
 class Monitor:
-    def __init__(self, filename, N=10):
-        self.filename = filename
+    def __init__(self, path, N=10):
+        self.path = path
         self.N = N
 
         # state
@@ -47,7 +47,9 @@ class Monitor:
         best_N = [numpy.inf]*N
         worst_N = [-numpy.inf]*N
 
-        with open(self.filename, 'w') as file:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+
+        with open(self.path, 'w') as file:
             with node:
                 try:
                     data = yield
