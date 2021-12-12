@@ -5,7 +5,6 @@ import time
 import contextlib
 import dataclasses
 import traceback
-import zipfile
 import getpass
 import shutil
 import pkgutil

@@ -3,6 +3,7 @@ import random
 import shutil
 import queue
 import traceback
+import zipfile
 import dataclasses
 from typing import Optional
 from pathlib import Path
