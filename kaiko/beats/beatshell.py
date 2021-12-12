@@ -504,11 +504,20 @@ class BeatInput:
         self.history = history
         self.settings = settings
         self.prev_command = None
+        self.buffers = [[]]
+        self.buffer_index = -1
+        self.buffer = self.buffers[0]
+        self.pos = 0
+        self.typeahead = ""
+        self.tokens = []
+        self.lex_state = SHLEXER_STATE.SPACED
+        self.highlighted = None
+        self.hint_state = None
+        self.result = None
         self.tab_state = None
         self.state = "FIN"
         self.lock = threading.RLock()
         self.modified_event = 0
-
         self.new_session(False)
 
     def update_settings(self, settings):
@@ -569,20 +578,20 @@ class BeatInput:
 
         self.buffer = self.buffers[self.buffer_index]
         self.pos = len(self.buffer)
-        self.typeahead = ""
-        self.highlighted = None
+        self.cancel_typeahead()
         self.update_buffer()
-
-        self.hint_state = None
-        self.result = None
+        self.cancel_hint()
+        self.clear_result()
         self.state = "EDIT"
 
     @locked
     @onstate("FIN")
     def prev_session(self):
         r"""Back to previous session of input."""
-        self.highlighted = None
-        self.result = None
+        self.cancel_typeahead()
+        self.update_buffer()
+        self.cancel_hint()
+        self.clear_result()
         self.state = "EDIT"
 
     @locked
@@ -681,7 +690,6 @@ class BeatInput:
         succ : bool
         """
         self.result = res
-        self.hint_state = None
         return True
 
     @locked
@@ -692,7 +700,6 @@ class BeatInput:
         -------
         succ : bool
         """
-        self.highlighted = None
         self.result = None
         return True
 
@@ -715,10 +722,8 @@ class BeatInput:
         self.highlighted = index
         if isinstance(hint, DescHint):
             msg_tokens = [token for token, _, _, _ in self.tokens[:index]] if index is not None else None
-        elif isinstance(hint, InfoHint):
+        elif isinstance(hint, (InfoHint, SuggestionsHint)):
             msg_tokens = [token for token, _, _, _ in self.tokens[:index+1]] if index is not None else None
-        elif isinstance(hint, SuggestionsHint):
-            msg_tokens = None
         else:
             assert False
         self.hint_state = HintState(index, hint, msg_tokens)
@@ -733,8 +738,10 @@ class BeatInput:
         -------
         succ : bool
         """
-        self.highlighted = None
-        self.hint_state = None
+        if self.highlighted is not None:
+            self.highlighted = None
+        if self.hint_state is not None:
+            self.hint_state = None
         return True
 
     @locked
@@ -847,8 +854,7 @@ class BeatInput:
         del self.buffer[self.pos]
         self.update_buffer()
         self.cancel_typeahead()
-        self.cancel_hint()
-        self.ask_hint()
+        self.ask_hint(clear=True)
 
         return True
 
@@ -868,8 +874,7 @@ class BeatInput:
         del self.buffer[self.pos]
         self.update_buffer()
         self.cancel_typeahead()
-        self.cancel_hint()
-        self.ask_hint()
+        self.ask_hint(clear=True)
 
         return True
 
@@ -917,8 +922,7 @@ class BeatInput:
         self.pos = start
         self.update_buffer()
         self.cancel_typeahead()
-        self.cancel_hint()
-        self.ask_hint()
+        self.ask_hint(clear=True)
 
         return True
 
@@ -1112,13 +1116,15 @@ class BeatInput:
 
     @locked
     @onstate("EDIT")
-    def ask_hint(self, index=None):
+    def ask_hint(self, index=None, clear=False):
         """Ask some hint for command.
         Provide some hint for the command on the caret.
 
         Parameters
         ----------
         index : int
+        clear : bool
+            Cancel the current hint if no hint was found.
 
         Returns
         -------
@@ -1130,10 +1136,10 @@ class BeatInput:
                 if slic.start <= self.pos <= slic.stop:
                     break
             else:
-                # don't cancel hint if find nothing
+                # find nothing
+                if clear:
+                    self.cancel_hint()
                 return False
-
-        self.cancel_hint()
 
         target, token_type, _, _ = self.tokens[index]
         parents = [token for token, _, _, _ in self.tokens[:index]]
@@ -1141,6 +1147,7 @@ class BeatInput:
         if token_type is None:
             msg = self.command.desc_command(parents)
             if msg is None:
+                self.cancel_hint()
                 return False
             hint = DescHint(msg)
             self.set_hint(hint, index)
@@ -1149,6 +1156,7 @@ class BeatInput:
         else:
             msg = self.command.info_command(parents, target)
             if msg is None:
+                self.cancel_hint()
                 return False
             hint = InfoHint(msg)
             self.set_hint(hint, index)
@@ -1367,15 +1375,15 @@ class BeatInput:
             # set hint for complete token
             token_index = self.tab_state.token_index
             self.tab_state = None
-            self.cancel_hint()
 
             parents = [token for token, _, _, _ in self.tokens[:token_index]]
             target, target_type, _, _ = self.tokens[token_index]
             if target_type is None:
+                self.cancel_hint()
                 return True
-            else:
-                msg = self.command.info_command(parents, target)
+            msg = self.command.info_command(parents, target)
             if msg is None:
+                self.cancel_hint()
                 return True
             hint = InfoHint(msg)
             self.set_hint(hint, token_index)
@@ -1383,6 +1391,7 @@ class BeatInput:
 
     @locked
     def unknown_key(self, key):
+        self.cancel_hint()
         self.set_result(ErrorResult(ValueError(f"Unknown key: " + key)))
         self.finish()
 
