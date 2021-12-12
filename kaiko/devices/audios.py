@@ -272,6 +272,7 @@ def load(filename, stop_event=None):
 
     if filename.endswith(".wav"):
         with wave.open(filename, 'rb') as file:
+            chunk = 1024
             nchannels = file.getnchannels()
             width = file.getsampwidth()
             scale = 2.0 ** (1 - 8*width)
@@ -281,7 +282,7 @@ def load(filename, stop_event=None):
 
             remaining = file.getnframes()
             while remaining > 0:
-                data = file.readframes(256)
+                data = file.readframes(chunk)
                 remaining -= len(data)//width
                 yield frombuffer(data)
                 if stop_event.is_set():

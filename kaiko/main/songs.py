@@ -294,16 +294,9 @@ class KAIKOBGMController:
             with dn.sleep(delay) as timer:
                 yield from timer.join((yield))
 
-        try:
-            with dn.create_task(lambda event: mixer.load_sound(song.path, event)) as task:
-                yield from task.join((yield))
-                node = dn.DataNode.wrap(task.result)
-        except aud.IOCancelled:
-            return
-
         self._current_bgm = song
         try:
-            with mixer.play(node, start=start, volume=song.volume) as song_handler:
+            with mixer.play_file(song.path, start=start, volume=song.volume) as song_handler:
                 yield
                 while not song_handler.is_finalized():
                     yield

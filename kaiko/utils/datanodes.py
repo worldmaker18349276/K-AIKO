@@ -683,13 +683,15 @@ def attach(node):
                 yield data
 
 
-def rechannel(channels):
+def rechannel(channels, original=None):
     """A data node to rechannel data.
 
     Parameters
     ----------
     channels : int or list
         The channel mapping.
+    original : int, optional
+        The original channel number.
 
     Receives
     ------
@@ -702,11 +704,28 @@ def rechannel(channels):
         The rechanneled signal.
     """
     if channels == 0:
-        return lambda data: (data if data.ndim == 1 else numpy.mean(data, axis=1))
+        if original is None:
+            return lambda data: (data if data.ndim == 1 else numpy.mean(data, axis=1))
+        elif original == 0:
+            return lambda data: data
+        else:
+            return lambda data: numpy.mean(data, axis=1)
+
     elif isinstance(channels, int):
-        return lambda data: (data if data.ndim == 1 else numpy.mean(data, axis=1))[:, None][:, [0]*channels]
+        if original is None:
+            return lambda data: (data if data.ndim == 1 else numpy.mean(data, axis=1, keepdims=True))[:, [0]*channels]
+        elif original == 0:
+            return lambda data: data[:, [0]*channels]
+        else:
+            return lambda data: numpy.mean(data, axis=1, keepdims=True)[:, [0]*channels]
+
     else:
-        return lambda data: (data[:, None] if data.ndim == 1 else data)[:, channels]
+        if original is None:
+            return lambda data: (data[:, None] if data.ndim == 1 else data)[:, channels]
+        elif original == 0:
+            return lambda data: data[:, None][:, channels]
+        else:
+            return lambda data: data[:, channels]
 
 @datanode
 def resample(ratio):

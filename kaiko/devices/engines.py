@@ -1,7 +1,9 @@
 import time
 import bisect
 import functools
+import contextlib
 import numpy
+import audioread
 from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..utils import markups as mu
@@ -246,7 +248,7 @@ class Mixer:
         if start is not None or end is not None:
             node = dn.tslice(node, samplerate or self.samplerate, start, end)
         if channels is not None and channels != self.nchannels:
-            node = dn.pipe(node, dn.rechannel(self.nchannels))
+            node = dn.pipe(node, dn.rechannel(self.nchannels, channels))
         if samplerate is not None and samplerate != self.samplerate:
             node = dn.pipe(node, dn.resample(ratio=(self.samplerate, samplerate)))
         if volume != 0:
@@ -259,15 +261,23 @@ class Mixer:
         return aud.load_sound(filepath, channels=self.nchannels, samplerate=self.samplerate, stop_event=stop_event)
 
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
-        if isinstance(node, str):
-            node = dn.DataNode.wrap(self.load_sound(node))
-            samplerate = None
-            channels = None
-
         node = self.resample(node, samplerate, channels, volume, start, end)
-
         node = dn.pipe(lambda a:a[0], dn.attach(node))
         return self.add_effect(node, time=time, zindex=zindex)
+
+    @contextlib.contextmanager
+    def play_file(self, path, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
+        with audioread.audio_open(path) as file:
+            samplerate = file.samplerate
+            channels = file.channels
+
+        node = aud.load(path)
+        # initialize before attach; it will seek to the starting frame
+        with dn.tslice(node, samplerate, start, end) as sliced_node:
+            sliced_node = self.resample(sliced_node, samplerate, channels, volume)
+            effect_node = dn.pipe(lambda a:a[0], dn.attach(sliced_node))
+            with self.add_effect(effect_node, time=time, zindex=zindex) as key:
+                yield key
 
 
 class DetectorSettings(cfg.Configurable):
