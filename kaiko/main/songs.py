@@ -23,7 +23,7 @@ def make_table(info):
         key, value = (line[:index], line[index+1:]) if index != -1 else (line, "")
         res[key] = value
 
-    width = max(len(k) for k in res.keys())
+    width = max((len(k) for k in res.keys()), default=0)
     return "\n".join(f"{' '*(width-len(k)) + mu.escape(k)} │ [emph]{mu.escape(v)}[/]" for k, v in res.items())
 
 @dataclasses.dataclass
