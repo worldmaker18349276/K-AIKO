@@ -202,11 +202,10 @@ class BeatmapParser(cmd.TreeParser):
 
     def info(self, token):
         path = Path(token)
-        hint_preview_delay = 0.5
 
         song = self.beatmap_manager.get_song(path)
         if self.bgm_controller is not None and song is not None:
-            self.bgm_controller.preview(song, song.preview, hint_preview_delay)
+            self.bgm_controller.preview(song)
 
         if self.beatmap_manager.is_beatmap(path):
             beatmap = self.beatmap_manager.get_beatmap_metadata(path)
@@ -228,8 +227,6 @@ class PlayBGM(BGMAction):
 @dataclasses.dataclass(frozen=True)
 class PreviewBeatmap(BGMAction):
     song: SongMetadata
-    start: Optional[float]
-    delay: Optional[float]
 
 class KAIKOBGMController:
     def __init__(self, mixer_settings, logger, beatmap_manager):
@@ -285,6 +282,7 @@ class KAIKOBGMController:
 
     @dn.datanode
     def load_bgm(self, manager):
+        hint_preview_delay = 0.5
         self.mixer = None
         self._current_bgm = None
 
@@ -307,8 +305,8 @@ class KAIKOBGMController:
                         delay = None
                     elif isinstance(action, PreviewBeatmap):
                         song = action.song
-                        start = action.start
-                        delay = action.delay
+                        start = action.song.preview
+                        delay = hint_preview_delay
 
                     with self._play_song(song, start, delay) as song_task:
                         while True:
@@ -345,8 +343,8 @@ class KAIKOBGMController:
     def play(self, song, start=None):
         self._action_queue.put(PlayBGM(song, start))
 
-    def preview(self, song, start=None, delay=None):
-        self._action_queue.put(PreviewBeatmap(song, start, delay))
+    def preview(self, song):
+        self._action_queue.put(PreviewBeatmap(song))
 
 class BGMCommand:
     def __init__(self, bgm_controller, beatmap_manager, logger):
