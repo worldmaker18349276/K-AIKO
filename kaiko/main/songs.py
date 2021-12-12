@@ -1,4 +1,5 @@
 import os
+import contextlib
 import random
 import shutil
 import queue
@@ -228,8 +229,12 @@ class PlayBGM(BGMAction):
     start: Optional[float]
 
 @dataclasses.dataclass(frozen=True)
-class PreviewBeatmap(BGMAction):
+class PreviewSong(BGMAction):
     song: SongMetadata
+
+@dataclasses.dataclass(frozen=True)
+class StopPreview(BGMAction):
+    pass
 
 class KAIKOBGMController:
     def __init__(self, mixer_settings, logger, beatmap_manager):
@@ -242,33 +247,55 @@ class KAIKOBGMController:
     def update_mixer_settings(self, mixer_settings):
         self.mixer_settings = mixer_settings
 
-    @dn.datanode
-    def _load_mixer(self, manager):
-        try:
-            mixer_task, mixer = engines.Mixer.create(self.mixer_settings, manager)
-
-        except Exception:
-            with self.logger.warn():
-                self.logger.print("Failed to load mixer")
-                self.logger.print(traceback.format_exc(), end="", markup=False)
-            yield
-            return
-
-        self.mixer = mixer
-        try:
-            with mixer_task:
-                yield from mixer_task.join((yield))
-        finally:
+    class MixerLoader:
+        def __init__(self, mixer_settings, manager):
+            self.mixer_settings = mixer_settings
+            self.manager = manager
+            self.required = set()
+            self.mixer_task = None
             self.mixer = None
 
+        @dn.datanode
+        def task(self):
+            while True:
+                yield
+                if not self.required:
+                    continue
+
+                with self.mixer_task:
+                    yield
+
+                    while self.required:
+                        try:
+                            self.mixer_task.send(None)
+                        except StopIteration:
+                            return
+
+                        yield
+
+                    self.mixer_task = None
+                    self.mixer = None
+
+        @contextlib.contextmanager
+        def require(self):
+            if self.mixer is None:
+                self.mixer_task, self.mixer = engines.Mixer.create(self.mixer_settings, self.manager)
+
+            key = object()
+            self.required.add(key)
+            try:
+                yield self.mixer
+            finally:
+                self.required.remove(key)
+
     @dn.datanode
-    def _play_song(self, song, start, delay):
+    def _play_song(self, mixer, song, start, delay=None):
         if delay is not None:
             with dn.sleep(delay) as timer:
                 yield from timer.join((yield))
 
         try:
-            with dn.create_task(lambda event: self.mixer.load_sound(song.path, event)) as task:
+            with dn.create_task(lambda event: mixer.load_sound(song.path, event)) as task:
                 yield from task.join((yield))
                 node = dn.DataNode.wrap(task.result)
         except aud.IOCancelled:
@@ -276,7 +303,7 @@ class KAIKOBGMController:
 
         self._current_bgm = song
         try:
-            with self.mixer.play(node, start=start, volume=song.volume) as song_handler:
+            with mixer.play(node, start=start, volume=song.volume) as song_handler:
                 yield
                 while not song_handler.is_finalized():
                     yield
@@ -284,40 +311,49 @@ class KAIKOBGMController:
             self._current_bgm = None
 
     @dn.datanode
-    def load_bgm(self, manager):
-        hint_preview_delay = 0.5
-        self.mixer = None
+    def _bgm_event_loop(self, require_mixer):
+        preview_delay = 0.5
         self._current_bgm = None
+        action = StopBGM()
+        bgm_on = False
 
+        yield
         while True:
-            yield
+            if isinstance(action, StopPreview) and bgm_on:
+                action = PlayBGM(self.random_song(), None)
 
-            if self._action_queue.empty():
-                continue
+            if isinstance(action, (StopBGM, StopPreview)):
+                bgm_on = False
+                yield
 
-            while not self._action_queue.empty():
+                while self._action_queue.empty():
+                    yield
                 action = self._action_queue.get()
-            if isinstance(action, StopBGM):
-                continue
 
-            with self._load_mixer(manager) as mixer_task:
-                while not isinstance(action, StopBGM):
-                    if isinstance(action, PlayBGM):
-                        song = action.song
-                        start = action.start
-                        delay = None
-                    elif isinstance(action, PreviewBeatmap):
-                        song = action.song
-                        start = action.song.preview
-                        delay = hint_preview_delay
-
-                    with self._play_song(song, start, delay) as song_task:
+            elif isinstance(action, PreviewSong):
+                preview_action = action
+                with require_mixer() as mixer:
+                    with self._play_song(mixer, preview_action.song, preview_action.song.preview, preview_delay) as preview_task:
                         while True:
+                            yield
+
                             try:
-                                mixer_task.send(None)
+                                preview_task.send(None)
                             except StopIteration:
-                                action = StopBGM()
+                                action = preview_action
                                 break
+
+                            if not self._action_queue.empty():
+                                action = self._action_queue.get()
+                                if action != preview_action:
+                                    break
+
+            elif isinstance(action, PlayBGM):
+                bgm_on = True
+                with require_mixer() as mixer:
+                    with self._play_song(mixer, action.song, action.start) as song_task:
+                        while True:
+                            yield
 
                             try:
                                 song_task.send(None)
@@ -326,13 +362,22 @@ class KAIKOBGMController:
                                 break
 
                             if not self._action_queue.empty():
-                                while not self._action_queue.empty():
-                                    next_action = self._action_queue.get()
-                                if action != next_action:
-                                    action = next_action
+                                action = self._action_queue.get()
+                                if isinstance(action, (PlayBGM, StopBGM, PreviewSong)):
                                     break
 
-                            yield
+            else:
+                assert False
+
+    @dn.datanode
+    def load_bgm(self, manager):
+        mixer_loader = self.MixerLoader(self.mixer_settings, manager)
+        with mixer_loader.task() as mixer_task:
+            with self._bgm_event_loop(mixer_loader.require) as event_task:
+                while True:
+                    yield
+                    mixer_task.send(None)
+                    event_task.send(None)
 
     def random_song(self):
         songs = self.beatmap_manager.get_songs()
@@ -347,7 +392,10 @@ class KAIKOBGMController:
         self._action_queue.put(PlayBGM(song, start))
 
     def preview(self, song):
-        self._action_queue.put(PreviewBeatmap(song))
+        self._action_queue.put(PreviewSong(song))
+
+    def stop_preview(self):
+        self._action_queue.put(StopPreview())
 
     def preview_handler(self, token):
         path = token and Path(token)
@@ -355,7 +403,7 @@ class KAIKOBGMController:
         if song is not None:
             self.preview(song)
         else:
-            self.stop()
+            self.stop_preview()
 
 class BGMCommand:
     def __init__(self, bgm_controller, beatmap_manager, logger):
