@@ -233,7 +233,8 @@ class KAIKOMenu:
     @dn.datanode
     def repl(self):
         r"""Start REPL."""
-        input = beatshell.BeatInput(self, self.logger, self.user.history_file, self.settings.shell)
+        preview_handler = self.bgm_controller.preview_handler
+        input = beatshell.BeatInput(self, preview_handler, self.logger, self.user.history_file, self.settings.shell)
         while True:
             # parse command
             input.update_settings(self.settings.shell)
@@ -327,7 +328,7 @@ class KAIKOMenu:
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        return self.beatmap_manager.make_parser(self.bgm_controller)
+        return self.beatmap_manager.make_parser()
 
     @cmd.function_command
     def reload(self):

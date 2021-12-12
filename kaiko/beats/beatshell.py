@@ -446,6 +446,8 @@ class BeatInput:
     ----------
     command : commands.RootCommandParser
         The root command parser for beatshell.
+    preview_handler : function
+        A function to preview beatmap.
     logger : loggers.Logger
         The logger.
     history : Path
@@ -483,13 +485,14 @@ class BeatInput:
     modified_event : int
         The event counter for modifying buffer.
     """
-    def __init__(self, promptable, logger, history, settings=None):
+    def __init__(self, promptable, preview_handler, logger, history, settings=None):
         r"""Constructor.
 
         Parameters
         ----------
         promptable : object
             The root command.
+        preview_handler : function
         logger : loggers.Logger
         history : Path
             The file of input history.
@@ -500,6 +503,7 @@ class BeatInput:
             settings = BeatShellSettings()
 
         self.command = cmd.RootCommandParser(promptable)
+        self.preview_handler = preview_handler
         self.logger = logger
         self.history = history
         self.settings = settings
@@ -727,6 +731,7 @@ class BeatInput:
         else:
             assert False
         self.hint_state = HintState(index, hint, msg_tokens)
+        self.update_preview()
         return True
 
     @locked
@@ -742,6 +747,7 @@ class BeatInput:
             self.highlighted = None
         if self.hint_state is not None:
             self.hint_state = None
+            self.update_preview()
         return True
 
     @locked
@@ -774,6 +780,23 @@ class BeatInput:
             return self.cancel_hint()
 
         return False
+
+    @locked
+    def update_preview(self):
+        if self.hint_state is None:
+            self.preview_handler(None)
+        elif not isinstance(self.hint_state.hint, (InfoHint, SuggestionsHint)):
+            self.preview_handler(None)
+        elif isinstance(self.hint_state.hint, SuggestionsHint) and not self.hint_state.hint.message:
+            self.preview_handler(None)
+        elif self.hint_state.tokens is None:
+            self.preview_handler(None)
+        elif len(self.hint_state.tokens) != 2:
+            self.preview_handler(None)
+        elif self.hint_state.tokens[0] != "play":
+            self.preview_handler(None)
+        else:
+            self.preview_handler(self.hint_state.tokens[1])
 
     @locked
     @onstate("EDIT")

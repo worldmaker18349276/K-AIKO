@@ -4,6 +4,7 @@ import shutil
 import queue
 import traceback
 import zipfile
+import re
 import dataclasses
 from typing import Optional
 from pathlib import Path
@@ -37,12 +38,18 @@ class SongMetadata:
     def from_beatmap(clz, beatmap):
         if beatmap.audio is None:
             return None
+        info = SongMetadata.filter_info(beatmap.info)
         return clz(root=beatmap.root, audio=beatmap.audio,
-                   volume=beatmap.volume, info=beatmap.info, preview=beatmap.preview)
+                   volume=beatmap.volume, info=info, preview=beatmap.preview)
 
     @property
     def path(self):
         return os.path.join(self.root, self.audio)
+
+    @staticmethod
+    def filter_info(info):
+        info_regex = "(Title|TitleUnicode|Artist|ArtistUnicode):"
+        return "\n".join(line for line in info.splitlines() if re.match(info_regex, line))
 
     def get_info(self, logger):
         return make_table(self.info)
@@ -170,8 +177,8 @@ class BeatmapManager:
         songs = [self.get_song(path) for path in self._beatmaps.keys()]
         return [song for song in songs if song is not None]
 
-    def make_parser(self, bgm_controller=None):
-        return BeatmapParser(self, bgm_controller)
+    def make_parser(self):
+        return BeatmapParser(self)
 
     def print_tree(self, logger):
         beatmapsets = self._beatmaps.items()
@@ -185,10 +192,9 @@ class BeatmapManager:
                 logger.print(preprefix + prefix + logger.escape(str(beatmap.relative_to(path))))
 
 class BeatmapParser(cmd.TreeParser):
-    def __init__(self, beatmap_manager, bgm_controller):
+    def __init__(self, beatmap_manager):
         super().__init__(BeatmapParser.make_tree(beatmap_manager._beatmaps))
         self.beatmap_manager = beatmap_manager
-        self.bgm_controller = bgm_controller
 
     @staticmethod
     def make_tree(beatmapsets):
@@ -203,10 +209,6 @@ class BeatmapParser(cmd.TreeParser):
 
     def info(self, token):
         path = Path(token)
-
-        song = self.beatmap_manager.get_song(path)
-        if self.bgm_controller is not None and song is not None:
-            self.bgm_controller.preview(song)
 
         if self.beatmap_manager.is_beatmap(path):
             beatmap = self.beatmap_manager.get_beatmap_metadata(path)
@@ -346,6 +348,14 @@ class KAIKOBGMController:
 
     def preview(self, song):
         self._action_queue.put(PreviewBeatmap(song))
+
+    def preview_handler(self, token):
+        path = token and Path(token)
+        song = path and self.beatmap_manager.get_song(path)
+        if song is not None:
+            self.preview(song)
+        else:
+            self.stop()
 
 class BGMCommand:
     def __init__(self, bgm_controller, beatmap_manager, logger):
