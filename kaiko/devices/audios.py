@@ -86,6 +86,8 @@ def validate_output_device(manager, device, samplerate, channels, format):
     manager.is_format_supported(samplerate,
         output_device=device, output_channels=channels, output_format=format)
 
+class StreamError(Exception):
+    pass
 
 def _stream_task(stream, error):
     yield
@@ -98,7 +100,7 @@ def _stream_task(stream, error):
         stream.stop_stream()
         stream.close()
         if not error.empty():
-            raise error.get()
+            raise StreamError() from error.get()
 
 @dn.datanode
 def record(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device=-1):
@@ -272,7 +274,7 @@ def load(filename, stop_event=None):
 
     if filename.endswith(".wav"):
         with wave.open(filename, 'rb') as file:
-            chunk = 1024
+            chunk = 256
             nchannels = file.getnchannels()
             width = file.getsampwidth()
             scale = 2.0 ** (1 - 8*width)

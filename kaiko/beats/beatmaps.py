@@ -1259,18 +1259,24 @@ class Beatmap:
     def _load_resources(self, output_samplerate, output_nchannels, data_dir, stop_event):
         if self.audio is not None:
             audio_path = os.path.join(self.root, self.audio)
-            self.audionode = dn.DataNode.wrap(aud.load_sound(audio_path,
-                                              samplerate=output_samplerate,
-                                              channels=output_nchannels,
-                                              volume=self.volume,
-                                              stop_event=stop_event))
+            try:
+                self.audionode = dn.DataNode.wrap(aud.load_sound(audio_path,
+                                                                 samplerate=output_samplerate,
+                                                                 channels=output_nchannels,
+                                                                 volume=self.volume,
+                                                                 stop_event=stop_event))
+            except Exception:
+                raise RuntimeError(f"Failed to load song {audio_path}")
 
         for name, path in self.settings.resources.items():
             sound_path = os.path.join(data_dir, path)
-            self.resources[name] = aud.load_sound(sound_path,
-                                                  samplerate=output_samplerate,
-                                                  channels=output_nchannels,
-                                                  stop_event=stop_event)
+            try:
+                self.resources[name] = aud.load_sound(sound_path,
+                                                      samplerate=output_samplerate,
+                                                      channels=output_nchannels,
+                                                      stop_event=stop_event)
+            except Exception:
+                raise RuntimeError(f"Failed to load resource {name} at {sound_path}")
 
     def prepare_events(self, rich):
         r"""Prepare events asynchronously.
