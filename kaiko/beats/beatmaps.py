@@ -1133,14 +1133,11 @@ class Beatmap:
 
         # prepare
         try:
-            with self.load_resources(samplerate, nchannels, user.data_dir) as task:
-                yield from task.join((yield))
+            yield from self.load_resources(samplerate, nchannels, user.data_dir).join()
         except aud.IOCancelled:
             return
 
-        with self.prepare_events(rich) as task:
-            yield from task.join((yield))
-            total_subjects, start_time, end_time, events = task.result
+        total_subjects, start_time, end_time, events = yield from self.prepare_events(rich).join()
 
         score = BeatmapScore()
         score.set_total_subjects(total_subjects)
@@ -1170,25 +1167,17 @@ class Beatmap:
 
         icon_widget = gameplay_settings.widgets.icon_widget
         icon_widget_settings = gameplay_settings.widgets.get((icon_widget.name,))
-        with icon_widget.value(rich, icon_widget_settings, **widget_params).load() as load_icon_task:
-            yield from load_icon_task.join((yield))
-            icon = load_icon_task.result
+        icon = yield from icon_widget.value(rich, icon_widget_settings, **widget_params).load().join()
 
         header_widget = gameplay_settings.widgets.header_widget
         header_widget_settings = gameplay_settings.widgets.get((header_widget.name,))
-        with header_widget.value(rich, header_widget_settings, **widget_params).load() as load_header_task:
-            yield from load_header_task.join((yield))
-            header = load_header_task.result
+        header = yield from header_widget.value(rich, header_widget_settings, **widget_params).load().join()
 
         footer_widget = gameplay_settings.widgets.footer_widget
         footer_widget_settings = gameplay_settings.widgets.get((footer_widget.name,))
-        with footer_widget.value(rich, footer_widget_settings, **widget_params).load() as load_footer_task:
-            yield from load_footer_task.join((yield))
-            footer = load_footer_task.result
+        footer = yield from footer_widget.value(rich, footer_widget_settings, **widget_params).load().join()
 
-        with Sight(rich, gameplay_settings.beatbar.sight, **widget_params).load() as load_sight_task:
-            yield from load_sight_task.join((yield))
-            sight = load_sight_task.result
+        sight = yield from Sight(rich, gameplay_settings.beatbar.sight, **widget_params).load().join()
 
         # make beatbar
         beatbar = Beatbar(mixer, detector, renderer, controller,
@@ -1231,8 +1220,7 @@ class Beatmap:
         updater = self.update_events(events, score, beatbar, start_time, end_time, tickrate, prepare_time, stop_event)
         event_task = dn.interval(consumer=updater, dt=1/tickrate)
 
-        with dn.pipe(event_task, mixer_task, detector_task, renderer_task, controller_task) as task:
-            yield from task.join((yield))
+        yield from dn.pipe(event_task, mixer_task, detector_task, renderer_task, controller_task).join()
 
         if debug_monitor:
             print()
@@ -1265,8 +1253,8 @@ class Beatmap:
                                                                  channels=output_nchannels,
                                                                  volume=self.volume,
                                                                  stop_event=stop_event))
-            except Exception:
-                raise RuntimeError(f"Failed to load song {audio_path}")
+            except Exception as e:
+                raise RuntimeError(f"Failed to load song {audio_path}") from e
 
         for name, path in self.settings.resources.items():
             sound_path = os.path.join(data_dir, path)
@@ -1275,8 +1263,8 @@ class Beatmap:
                                                       samplerate=output_samplerate,
                                                       channels=output_nchannels,
                                                       stop_event=stop_event)
-            except Exception:
-                raise RuntimeError(f"Failed to load resource {name} at {sound_path}")
+            except Exception as e:
+                raise RuntimeError(f"Failed to load resource {name} at {sound_path}") from e
 
     def prepare_events(self, rich):
         r"""Prepare events asynchronously.

@@ -185,13 +185,11 @@ class KAIKOMenu:
 
         # deterimine unicode version
         if self.settings.devices.terminal.unicode_version == "auto" and "UNICODE_VERSION" not in os.environ:
-            with determine_unicode_version(logger) as task:
-                yield from task.join((yield))
-                version = task.result
-                if version is not None:
-                    os.environ["UNICODE_VERSION"] = version
-                    self.settings.devices.terminal.unicode_version = version
-                    self._config.set_change()
+            version = determine_unicode_version(logger).join()
+            if version is not None:
+                os.environ["UNICODE_VERSION"] = version
+                self.settings.devices.terminal.unicode_version = version
+                self._config.set_change()
             logger.print()
 
         # fit screen size
@@ -200,8 +198,7 @@ class KAIKOMenu:
         if size.columns < width:
             logger.print("[hint/] Your screen size seems too small.")
 
-            with fit_screen(logger, self.settings.devices.terminal) as fit_task:
-                yield from fit_task.join((yield))
+            yield from fit_screen(logger, self.settings.devices.terminal).join()
 
         # load songs
         self.reload()
@@ -209,8 +206,7 @@ class KAIKOMenu:
         # execute given command
         if len(sys.argv) > 1:
             command = cmd.RootCommandParser(self).build(sys.argv[1:])
-            with self.execute(command) as command_task:
-                yield from command_task.join((yield))
+            yield from self.execute(command).join()
             return
 
         # load bgm
@@ -227,8 +223,7 @@ class KAIKOMenu:
 
         # prompt
         repl_task = self.repl()
-        with dn.pipe(repl_task, bgm_task) as task:
-            yield from task.join((yield))
+        yield from dn.pipe(repl_task, bgm_task).join()
 
     @dn.datanode
     def repl(self):
@@ -238,8 +233,7 @@ class KAIKOMenu:
         while True:
             # parse command
             input.update_settings(self.settings.shell)
-            with input.prompt(self.settings.devices, self.user) as prompt_task:
-                yield from prompt_task.join((yield))
+            yield from input.prompt(self.settings.devices, self.user).join()
 
             # execute result
             result = input.result
@@ -249,13 +243,11 @@ class KAIKOMenu:
 
             elif isinstance(result, beatshell.HelpResult):
                 input.prev_session()
-                with self.execute(result.command) as command_task:
-                    yield from command_task.join((yield))
+                yield from self.execute(result.command).join()
 
             elif isinstance(result, beatshell.CompleteResult):
                 input.new_session()
-                with self.execute(result.command) as command_task:
-                    yield from command_task.join((yield))
+                yield from self.execute(result.command).join()
 
             else:
                 assert False
@@ -278,14 +270,12 @@ class KAIKOMenu:
             has_bgm = bool(self.bgm_controller._current_bgm)
             if has_bgm:
                 self.bgm.off()
-            with result.execute(self.manager) as command_task:
-                yield from command_task.join((yield))
+            yield from result.execute(self.manager).join()
             if has_bgm:
                 self.bgm.on()
 
         elif isinstance(result, dn.DataNode):
-            with result:
-                yield from result.join((yield))
+            yield from result.join()
 
         elif result is not None:
             yield
@@ -460,12 +450,11 @@ class KAIKOMenu:
 
         logger.print("This command will clean up all your data.")
 
-        with logger.ask("Do you really want to do that?", False) as task:
-            yield from task.join((yield))
-            if task.result:
-                self.user.remove(logger)
-                logger.print("Good luck~")
-                raise KeyboardInterrupt
+        yes = yield from logger.ask("Do you really want to do that?", False).join()
+        if yes:
+            self.user.remove(logger)
+            logger.print("Good luck~")
+            raise KeyboardInterrupt
 
 
 class KAIKOPlay:
@@ -501,9 +490,7 @@ class KAIKOPlay:
             logger.print(f"[hint/] Use {logger.emph(energy_keys[0])} and {logger.emph(energy_keys[1])} to adjust hit strength.")
             logger.print()
 
-            with beatmap.play(manager, self.user, self.devices_settings, self.gameplay_settings) as task:
-                yield from task.join((yield))
-                score = task.result
+            score = yield from beatmap.play(manager, self.user, self.devices_settings, self.gameplay_settings).join()
 
             logger.print()
             beatanalyzer.show_analyze(beatmap.settings.difficulty.performance_tolerance, score.perfs)
@@ -545,9 +532,7 @@ class KAIKOLoop:
             logger.print(f"[hint/] Use {logger.emph(energy_keys[0])} and {logger.emph(energy_keys[1])} to adjust hit strength.")
             logger.print()
 
-            with beatmap.play(manager, self.user, self.devices_settings, self.gameplay_settings) as task:
-                yield from task.join((yield))
-                score = task.result
+            score = yield from beatmap.play(manager, self.user, self.devices_settings, self.gameplay_settings).join()
 
             logger.print()
             beatanalyzer.show_analyze(beatmap.settings.difficulty.performance_tolerance, score.perfs)

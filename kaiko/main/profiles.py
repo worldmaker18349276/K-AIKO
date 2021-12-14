@@ -31,8 +31,7 @@ def edit(text, editor):
         file.write(text)
         file.flush()
 
-        with dn.subprocess_task([editor, file.name]) as task:
-            yield from task.join((yield))
+        yield from dn.subprocess_task([editor, file.name]).join()
 
         return open(file.name, mode='r').read()
 
@@ -518,9 +517,7 @@ class ConfigCommand:
             self.logger.print(f"[warn]Unknown editor: {self.logger.escape(editor)}[/]")
             return
 
-        with edit(value_str, editor) as edit_task:
-            yield from edit_task.join((yield))
-            res_str = edit_task.result
+        res_str = yield from edit(value_str, editor).join()
 
         # parse result
         res_str = res_str.strip()

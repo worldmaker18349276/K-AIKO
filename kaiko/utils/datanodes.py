@@ -48,13 +48,6 @@ class DataNode:
         else:
             return res
 
-    def join(self, value=None):
-        try:
-            while True:
-                value = yield self.send(value)
-        except StopIteration:
-            return value
-
     def __next__(self):
         return self.send(None)
 
@@ -69,13 +62,14 @@ class DataNode:
         self.initialized = True
 
         try:
-            next(self.generator)
-
+            self.generator.send(None)
         except StopIteration as e:
             self.finalized = True
             self.result = e.value
             return self
-
+        except:
+            self.finalized = True
+            raise
         else:
             return self
 
@@ -91,6 +85,21 @@ class DataNode:
     def close(self):
         self.generator.close()
         self.finalized = True
+
+    def join(self):
+        if self.finalized:
+            raise DataNodeStateError("try to initialize finalized data node")
+        self.initialized = True
+        if self.finalized:
+            return self.result
+
+        try:
+            self.result = yield from self.generator
+        except:
+            self.finalized = True
+            raise
+        else:
+            return self.result
 
     @staticmethod
     @datanode
@@ -203,7 +212,10 @@ def skip(node, prefeed):
             for dummy in buffer:
                 node.send(dummpy)
 
-            yield from node.join((yield))
+            data = yield
+            while True:
+                res = node.send(data)
+                data = yield res
         except StopIteration:
             return
 
@@ -1030,8 +1042,7 @@ def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
                 return
 
     with producer, consumer:
-        with create_task(run) as task:
-            yield from task.join((yield))
+        yield from create_task(run).join()
 
 
 # not data nodes

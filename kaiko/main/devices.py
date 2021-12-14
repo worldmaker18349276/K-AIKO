@@ -128,9 +128,7 @@ def determine_unicode_version(logger):
     logger.print("[info/] Determine unicode version...")
 
     with logger.verb():
-        with term.ucs_detect() as detect_task:
-            yield from detect_task.join((yield))
-            version = detect_task.result
+        version = yield from term.ucs_detect().join()
 
     if version is None:
         logger.print("[warn]Fail to determine unicode version[/]")
@@ -357,13 +355,11 @@ class DevicesCommand:
     def ucs_detect(self):
         """Determines the unicode version of your terminal."""
 
-        with determine_unicode_version(self.logger) as task:
-            yield from task.join((yield))
-            version = task.result
-            if version is not None:
-                os.environ["UNICODE_VERSION"] = version
-                self.config.current.devices.terminal.unicode_version = version
-                self.config.set_change()
+        version = yield from determine_unicode_version(self.logger).join()
+        if version is not None:
+            os.environ["UNICODE_VERSION"] = version
+            self.config.current.devices.terminal.unicode_version = version
+            self.config.set_change()
 
     # engines
 
@@ -596,8 +592,7 @@ class MicTest:
                                             format=format, device=device)
 
         self.logger.print("[hint/] Press any key to end testing.")
-        with dn.pipe(mic_task, exit_task) as task:
-            yield from task.join((yield))
+        yield from dn.pipe(mic_task, exit_task).join()
 
     @dn.datanode
     def draw_volume(self, samplerate, buffer_length):

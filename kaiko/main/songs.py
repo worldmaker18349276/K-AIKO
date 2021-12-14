@@ -291,8 +291,7 @@ class KAIKOBGMController:
     @dn.datanode
     def _play_song(self, mixer, song, start, delay=None):
         if delay is not None:
-            with dn.sleep(delay) as timer:
-                yield from timer.join((yield))
+            yield from dn.sleep(delay).join()
 
         self._current_bgm = song
         try:

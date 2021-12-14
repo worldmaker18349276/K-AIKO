@@ -69,8 +69,7 @@ def ucs_detect():
         return version
 
     query_task = query_pos()
-    with dn.pipe(inkey(get_pos), query_task) as task:
-        yield from task.join((yield))
+    yield from dn.pipe(inkey(get_pos), query_task).join()
     return query_task.result
 
 @dn.datanode
@@ -133,9 +132,8 @@ def inkey(node, stream=None, raw=False):
 
     with inkey_ctxt(stream, raw):
         with node:
-            with dn.create_task(run) as task:
-                yield from task.join((yield))
-                return task.result
+            result = yield from dn.create_task(run).join()
+            return result
 
 @contextlib.contextmanager
 def show_ctxt(stream, hide_cursor=False, end="\n"):
@@ -184,9 +182,8 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
 
     with show_ctxt(stream, hide_cursor, end):
         with node:
-            with dn.create_task(run) as task:
-                yield from task.join((yield))
-                return task.result
+            result = yield from dn.create_task(run).join()
+            return result
 
 
 class TerminalSettings(cfg.Configurable):
