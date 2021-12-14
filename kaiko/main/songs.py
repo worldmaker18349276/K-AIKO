@@ -240,7 +240,7 @@ class KAIKOBGMController:
     def __init__(self, mixer_settings, logger, beatmap_manager):
         self.mixer_settings = mixer_settings
         self.logger = logger
-        self._current_bgm = None
+        self.current_action = None
         self._action_queue = queue.Queue()
         self.beatmap_manager = beatmap_manager
 
@@ -289,25 +289,33 @@ class KAIKOBGMController:
                 self.required.remove(key)
 
     @dn.datanode
-    def _play_song(self, mixer, song, start, delay=None):
+    def _play_song(self, mixer, action):
+        preview_delay = 0.5
+
+        if isinstance(action, PreviewSong):
+            song = action.song
+            start = action.song.preview
+            delay = preview_delay
+        elif isinstance(action, PlayBGM):
+            song = action.song
+            start = action.start
+            delay = None
+        else:
+            assert False
+
         if delay is not None:
             yield from dn.sleep(delay).join()
 
-        self._current_bgm = song
-        try:
-            with mixer.play_file(song.path, start=start, volume=song.volume) as song_handler:
+        with mixer.play_file(song.path, start=start, volume=song.volume) as song_handler:
+            yield
+            while not song_handler.is_finalized():
                 yield
-                while not song_handler.is_finalized():
-                    yield
-        finally:
-            self._current_bgm = None
 
     @dn.datanode
     def _bgm_event_loop(self, require_mixer):
-        preview_delay = 0.5
-        self._current_bgm = None
         action = StopBGM()
         self.is_bgm_on = False
+        self.current_action = None
 
         yield
         while True:
@@ -316,6 +324,7 @@ class KAIKOBGMController:
 
             if isinstance(action, (StopBGM, StopPreview)):
                 self.is_bgm_on = False
+                self.current_action = None
                 yield
 
                 while self._action_queue.empty():
@@ -324,8 +333,9 @@ class KAIKOBGMController:
 
             elif isinstance(action, PreviewSong):
                 preview_action = action
+                self.current_action = preview_action
                 with require_mixer() as mixer:
-                    with self._play_song(mixer, preview_action.song, preview_action.song.preview, preview_delay) as preview_task:
+                    with self._play_song(mixer, preview_action) as preview_task:
                         while True:
                             yield
 
@@ -342,8 +352,9 @@ class KAIKOBGMController:
 
             elif isinstance(action, PlayBGM):
                 self.is_bgm_on = True
+                self.current_action = action
                 with require_mixer() as mixer:
-                    with self._play_song(mixer, action.song, action.start) as song_task:
+                    with self._play_song(mixer, action) as song_task:
                         while True:
                             yield
 
@@ -373,15 +384,18 @@ class KAIKOBGMController:
 
     def random_song(self):
         songs = self.beatmap_manager.get_songs()
-        if self._current_bgm is not None:
-            songs.remove(self._current_bgm)
+        if self.current_action is not None:
+            songs.remove(self.current_action.song)
         return random.choice(songs) if songs else None
 
     def stop(self):
         self._action_queue.put(StopBGM())
 
-    def play(self, song, start=None):
-        self._action_queue.put(PlayBGM(song, start))
+    def play(self, song=None, start=None):
+        if song is None:
+            song = self.random_song()
+        if song is not None:
+            self._action_queue.put(PlayBGM(song, start))
 
     def preview(self, song):
         self._action_queue.put(PreviewSong(song))
@@ -407,9 +421,8 @@ class BGMCommand:
     def on(self):
         logger = self.logger
 
-        if self.bgm_controller._current_bgm is not None:
-            logger.print("now playing:")
-            logger.print(self.bgm_controller._current_bgm.get_info(logger))
+        if self.bgm_controller.is_bgm_on:
+            self.now_playing()
             return
 
         song = self.bgm_controller.random_song()
@@ -427,7 +440,7 @@ class BGMCommand:
 
     @cmd.function_command
     def skip(self):
-        if self.bgm_controller._current_bgm is not None:
+        if self.bgm_controller.current_action is not None:
             song = self.bgm_controller.random_song()
             self.logger.print("will play:")
             self.logger.print(song.get_info(self.logger))
@@ -457,9 +470,14 @@ class BGMCommand:
 
     @cmd.function_command
     def now_playing(self):
-        current = self.bgm_controller._current_bgm
-        if current is None:
+        current = self.bgm_controller.current_action
+        if isinstance(current, PlayBGM):
+            self.logger.print("now playing:")
+            self.logger.print(current.song.get_info(self.logger))
+        elif isinstance(current, PreviewSong):
+            self.logger.print("now previewing:")
+            self.logger.print(current.song.get_info(self.logger))
+        elif current is None:
             self.logger.print("no song")
         else:
-            self.logger.print("now playing:")
-            self.logger.print(current.get_info(self.logger))
+            assert False
