@@ -381,55 +381,20 @@ def save(filename, samplerate=44100, channels=1, width=2, stop_event=None):
 
 def load_sound(filepath, samplerate=None, channels=None, volume=0.0, start=None, end=None, chunk_length=1024, stop_event=None):
     meta = AudioMetadata.read(filepath)
-    filenode = load(filepath, stop_event)
+    node = load(filepath, stop_event)
 
     if start is not None or end is not None:
-        filenode = dn.tslice(filenode, meta.samplerate, start, end)
-
-    with filenode:
-        sounds = tuple(filenode)
-    if len(sounds) == 0:
-        sound = numpy.zeros(shape=(0, meta.channels), dtype=numpy.float32)
-    elif len(sounds) == 1:
-        sound = sounds[0]
-    else:
-        sound = numpy.concatenate(sounds, axis=0)
-
-    if volume != 0:
-        sound = sound * 10**(volume/20)
-
-    # resample
+        node = dn.tslice(node, meta.samplerate, start, end)
+    if channels is not None and meta.channels != channels:
+        node = dn.pipe(node, dn.rechannel(channels, meta.channels))
     if samplerate is not None and meta.samplerate != samplerate:
-        length = int(sound.shape[0] * samplerate/meta.samplerate)
-        sound = scipy.signal.resample(sound, length, axis=0)
+        node = dn.pipe(node, dn.resample(ratio=(samplerate, meta.samplerate)))
+    if volume != 0:
+        node = dn.pipe(node, lambda s: s * 10**(volume/20))
 
-    # rechannel
-    if sound.ndim == 1:
-        sound = sound[:,None]
-
-    if isinstance(channels, int):
-        if channels == 0:
-            sound = numpy.mean(sound, axis=1)
-
-        elif channels != sound.shape[1]:
-            sound = numpy.mean(sound, axis=1, keepdims=True)
-            sound = sound[:, [0]*channels]
-
-    elif isinstance(channels, list):
-        sound = sound[:, channels]
-
-    elif channels is None:
-        pass
-
-    else:
-        raise ValueError(f"invalid channel map: {repr(channels)}")
-
-    # chunk
     if chunk_length is not None:
-        shape = (chunk_length, *sound.shape[1:])
-        with dn.chunk([sound], shape) as node:
-            sound = list(node)
-    else:
-        sound = [sound]
-
+        curr_channels = channels if channels is not None else meta.channels
+        node = dn.chunk(node, chunk_shape=(chunk_length, curr_channels))
+    with node:
+        sound = list(node)
     return sound
