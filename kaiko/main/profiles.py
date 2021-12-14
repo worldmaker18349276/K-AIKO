@@ -199,7 +199,6 @@ class ProfileManager:
             logger.print(f"[warn]Wrong file type for profile: {logger.emph(current_path.as_uri())}[/]")
             return False
 
-        current_mtime = os.stat(str(current_path)).st_mtime
         try:
             self.current.write(current_path, name=self.settings_name)
         except bp.EncodeError:
@@ -208,7 +207,7 @@ class ProfileManager:
                 logger.print(traceback.format_exc(), end="", markup=False)
             return False
 
-        self._current_mtime = current_mtime
+        self._current_mtime = os.stat(str(current_path)).st_mtime
         self.update()
         return True
 
