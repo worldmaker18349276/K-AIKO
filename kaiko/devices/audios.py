@@ -1,6 +1,7 @@
 import queue
 import threading
 import contextlib
+import dataclasses
 import pyaudio
 import numpy
 import scipy.signal
@@ -147,11 +148,13 @@ def record(manager, node, samplerate=44100, buffer_shape=1024, format='f4', devi
 
     error = queue.Queue()
     length, channels = (buffer_shape, 1) if isinstance(buffer_shape, int) else buffer_shape
+    lock = threading.Lock()
 
     def input_callback(in_data, frame_count, time_info, status):
         try:
             data = normalize(numpy.frombuffer(in_data, dtype=format).reshape(buffer_shape))
-            node.send(data)
+            with lock:
+                node.send(data)
 
             return b"", pyaudio.paContinue
         except StopIteration:
@@ -218,10 +221,12 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
 
     error = queue.Queue()
     length, channels = (buffer_shape, 1) if isinstance(buffer_shape, int) else buffer_shape
+    lock = threading.Lock()
 
     def output_callback(in_data, frame_count, time_info, status):
         try:
-            data = node.send(None)
+            with lock:
+                data = node.send(None)
             out_data = normalize(data).astype(format).tobytes()
 
             return out_data, pyaudio.paContinue
@@ -247,6 +252,31 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
 
 class IOCancelled(Exception):
     pass
+
+@dataclasses.dataclass
+class AudioMetadata:
+    samplerate : float
+    duration : float
+    channels : int
+    sampwidth : int
+
+    @classmethod
+    def read(clz, filename):
+        if filename.endswith(".wav"):
+            with wave.open(filename, 'rb') as file:
+                samplerate = file.getframerate()
+                duration = file.getnframes() / samplerate
+                channels = file.getnchannels()
+                sampwidth = file.getsampwidth()
+
+        else:
+            with audioread.audio_open(filename) as file:
+                samplerate = file.samplerate
+                duration = file.duration
+                channels = file.channels
+                sampwidth = 2
+
+        return clz(samplerate, duration, channels, sampwidth)
 
 @dn.datanode
 def load(filename, stop_event=None):
@@ -350,23 +380,27 @@ def save(filename, samplerate=44100, channels=1, width=2, stop_event=None):
                 raise IOCancelled(f"The operation of saving file {filename} has been cancelled.")
 
 def load_sound(filepath, samplerate=None, channels=None, volume=0.0, start=None, end=None, chunk_length=1024, stop_event=None):
-    with audioread.audio_open(filepath) as file:
-        file_samplerate = file.samplerate
-
+    meta = AudioMetadata.read(filepath)
     filenode = load(filepath, stop_event)
 
     if start is not None or end is not None:
-        filenode = dn.tslice(filenode, file_samplerate, start, end)
+        filenode = dn.tslice(filenode, meta.samplerate, start, end)
 
     with filenode:
-        sound = numpy.concatenate(tuple(filenode), axis=0)
+        sounds = tuple(filenode)
+    if len(sounds) == 0:
+        sound = numpy.zeros(shape=(0, meta.channels), dtype=numpy.float32)
+    elif len(sounds) == 1:
+        sound = sounds[0]
+    else:
+        sound = numpy.concatenate(sounds, axis=0)
 
     if volume != 0:
         sound = sound * 10**(volume/20)
 
     # resample
-    if samplerate is not None and file_samplerate != samplerate:
-        length = int(sound.shape[0] * samplerate/file_samplerate)
+    if samplerate is not None and meta.samplerate != samplerate:
+        length = int(sound.shape[0] * samplerate/meta.samplerate)
         sound = scipy.signal.resample(sound, length, axis=0)
 
     # rechannel

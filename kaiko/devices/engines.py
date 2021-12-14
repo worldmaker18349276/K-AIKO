@@ -267,14 +267,11 @@ class Mixer:
 
     @contextlib.contextmanager
     def play_file(self, path, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
-        with audioread.audio_open(path) as file:
-            samplerate = file.samplerate
-            channels = file.channels
-
+        meta = aud.AudioMetadata.read(path)
         node = aud.load(path)
         # initialize before attach; it will seek to the starting frame
-        with dn.tslice(node, samplerate, start, end) as sliced_node:
-            sliced_node = self.resample(sliced_node, samplerate, channels, volume)
+        with dn.tslice(node, meta.samplerate, start, end) as sliced_node:
+            sliced_node = self.resample(sliced_node, meta.samplerate, meta.channels, volume)
             effect_node = dn.pipe(lambda a:a[0], dn.attach(sliced_node))
             with self.add_effect(effect_node, time=time, zindex=zindex) as key:
                 yield key

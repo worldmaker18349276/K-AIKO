@@ -1298,8 +1298,7 @@ class Beatmap:
 
         duration = 0.0
         if self.audio is not None:
-            with audioread.audio_open(os.path.join(self.root, self.audio)) as file:
-                duration = file.duration
+            duration = aud.AudioMetadata.read(os.path.join(self.root, self.audio)).duration
 
         event_leadin_time = self.settings.notes.event_leadin_time
         total_subjects = sum([1 for event in events if event.is_subject], 0)
