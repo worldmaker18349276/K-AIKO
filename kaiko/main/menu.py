@@ -267,11 +267,11 @@ class KAIKOMenu:
         result = command()
 
         if hasattr(result, 'execute'):
-            has_bgm = bool(self.bgm_controller._current_bgm)
-            if has_bgm:
+            is_bgm_on = self.bgm_controller.is_bgm_on
+            if is_bgm_on:
                 self.bgm.off()
             yield from result.execute(self.manager).join()
-            if has_bgm:
+            if is_bgm_on:
                 self.bgm.on()
 
         elif isinstance(result, dn.DataNode):

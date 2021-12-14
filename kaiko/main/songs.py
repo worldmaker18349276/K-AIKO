@@ -307,15 +307,15 @@ class KAIKOBGMController:
         preview_delay = 0.5
         self._current_bgm = None
         action = StopBGM()
-        bgm_on = False
+        self.is_bgm_on = False
 
         yield
         while True:
-            if isinstance(action, StopPreview) and bgm_on:
+            if isinstance(action, StopPreview) and self.is_bgm_on:
                 action = PlayBGM(self.random_song(), None)
 
             if isinstance(action, (StopBGM, StopPreview)):
-                bgm_on = False
+                self.is_bgm_on = False
                 yield
 
                 while self._action_queue.empty():
@@ -341,7 +341,7 @@ class KAIKOBGMController:
                                     break
 
             elif isinstance(action, PlayBGM):
-                bgm_on = True
+                self.is_bgm_on = True
                 with require_mixer() as mixer:
                     with self._play_song(mixer, action.song, action.start) as song_task:
                         while True:
