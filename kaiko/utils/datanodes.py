@@ -700,8 +700,8 @@ def rechannel(channels, original=None):
 
     Parameters
     ----------
-    channels : int or list
-        The channel mapping.
+    channels : int
+        The number of channels.
     original : int, optional
         The original channel number.
 
@@ -723,21 +723,13 @@ def rechannel(channels, original=None):
         else:
             return lambda data: numpy.mean(data, axis=1)
 
-    elif isinstance(channels, int):
-        if original is None:
-            return lambda data: (data if data.ndim == 1 else numpy.mean(data, axis=1, keepdims=True))[:, [0]*channels]
-        elif original == 0:
-            return lambda data: data[:, [0]*channels]
-        else:
-            return lambda data: numpy.mean(data, axis=1, keepdims=True)[:, [0]*channels]
-
     else:
         if original is None:
-            return lambda data: (data[:, None] if data.ndim == 1 else data)[:, channels]
+            return lambda data: numpy.tile(data[:, None] if data.ndim == 1 else numpy.mean(data, axis=1, keepdims=True), (1, channels))
         elif original == 0:
-            return lambda data: data[:, None][:, channels]
+            return lambda data: numpy.tile(data[:, None], (1, channels))
         else:
-            return lambda data: data[:, channels]
+            return lambda data: numpy.tile(numpy.mean(data, axis=1, keepdims=True), (1, channels))
 
 @datanode
 def resample(ratio):
