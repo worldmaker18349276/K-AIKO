@@ -13,7 +13,8 @@ from ..utils import datanodes as dn
 from ..utils import markups as mu
 from ..devices import audios as aud
 from ..devices import engines
-from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings, Sight, Widget, WidgetSettings
+from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings
+from .beatwidgets import Sight, WidgetSettings
 
 
 @dataclass
