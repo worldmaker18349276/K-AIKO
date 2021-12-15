@@ -185,7 +185,7 @@ class KAIKOMenu:
 
         # deterimine unicode version
         if self.settings.devices.terminal.unicode_version == "auto" and "UNICODE_VERSION" not in os.environ:
-            version = determine_unicode_version(logger).join()
+            version = yield from determine_unicode_version(logger).join()
             if version is not None:
                 os.environ["UNICODE_VERSION"] = version
                 self.settings.devices.terminal.unicode_version = version
