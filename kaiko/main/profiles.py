@@ -147,7 +147,7 @@ class ProfileManager:
             if not default_meta_path.is_file():
                 logger.print(f"[warn]Wrong file type for default profile: {logger.emph(default_meta_path.as_uri())}[/]")
                 return False
-            self.default_name = default_meta_path.read_text()
+            self.default_name = default_meta_path.read_text().rstrip("\n")
 
         # update profiles
         self.profiles = [subpath.stem for subpath in self.path.iterdir() if subpath.suffix == self.extension]
