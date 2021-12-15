@@ -96,6 +96,8 @@ class ProfileManager:
         succ = config.use()
         if not succ:
             succ = config.new()
+            succ = succ and config.save()
+            succ = succ and config.set_default()
             if not succ:
                 raise RuntimeError("Fail to load configuration")
 
@@ -299,7 +301,7 @@ class ProfileManager:
             logger.print(f"[warn]No such profile: {logger.emph(clone)}[/]")
             return False
 
-        if isinstance(name, str) and not name.isprintable() or "/" in name:
+        if isinstance(name, str) and (not name.isprintable() or "/" in name):
             logger.print(f"[warn]Invalid profile name: {logger.emph(name)}[/]")
             return False
 
@@ -313,6 +315,7 @@ class ProfileManager:
             while name in self.profiles:
                 n += 1
                 name = f"new profile ({str(n)})"
+            logger.print(f"Create profile with name {logger.emph(name)}.")
 
         if clone is None:
             self.current_name = name
