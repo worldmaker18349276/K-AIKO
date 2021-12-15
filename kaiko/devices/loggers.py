@@ -28,9 +28,9 @@ class LoggerSettings(cfg.Configurable):
     warn_block : str
         The template of warn block log.
     """
-    data_icon: str = "[color=bright_green][wide=🗀/][/]"
+    data_icon: str = "[color=bright_green][wide=🖿/][/]"
     info_icon: str = "[color=bright_blue][wide=🛠/][/]"
-    hint_icon: str = "[color=bright_yellow][wide=💡/][/]"
+    hint_icon: str = "[color=bright_yellow][wide=🖈/][/]"
 
     verb: str = f"[weight=dim][slot/][/]"
     warn: str = f"[color=red][slot/][/]"
