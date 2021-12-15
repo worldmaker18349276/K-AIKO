@@ -5,6 +5,7 @@ import queue
 from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..utils import markups as mu
+from . import beatwidgets
 
 
 # performance
@@ -84,6 +85,7 @@ class Performance:
     @property
     def description(self):
         return self.descriptions[self.grade]
+
 
 # beatbar
 class BeatbarSettings(cfg.Configurable):
@@ -433,4 +435,56 @@ class Sight:
 
         yield
         return sight_func
+
+
+# widgets
+class BeatbarWidget(Enum):
+    spectrum = beatwidgets.SpectrumWidget
+    volume_indicator = beatwidgets.VolumeIndicatorWidget
+    accuracy_meter = beatwidgets.AccuracyMeterWidget
+    monitor = beatwidgets.MonitorWidget
+    score = beatwidgets.ScoreWidget
+    progress = beatwidgets.ProgressWidget
+
+    def __repr__(self):
+        return f"BeatbarWidget.{self.name}"
+
+    def create(self, settings, *, state, rich, mixer, detector, renderer, controller, devices_settings):
+        widget_settings = settings.get((self.name,))
+        if self == BeatbarWidget.spectrum:
+            return self.value("", rich, mixer, devices_settings.mixer, widget_settings)
+        elif self == BeatbarWidget.volume_indicator:
+            return self.value(0.0, rich, mixer, devices_settings.mixer, widget_settings)
+        elif self == BeatbarWidget.accuracy_meter:
+            return self.value(0, float("inf"), rich, state, widget_settings)
+        elif self == BeatbarWidget.monitor:
+            return self.value(mixer, detector, renderer, widget_settings)
+        elif self == BeatbarWidget.score:
+            return self.value(state, rich, widget_settings)
+        elif self == BeatbarWidget.progress:
+            return self.value(state, rich, widget_settings)
+        else:
+            assert False
+
+class BeatbarWidgetSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    icon_widget : BeatbarWidget
+        The widget on the icon.
+    header_widget : BeatbarWidget
+        The widget on the header.
+    footer_widget : BeatbarWidget
+        The widget on the footer.
+    """
+    icon_widget: BeatbarWidget = BeatbarWidget.spectrum
+    header_widget: BeatbarWidget = BeatbarWidget.score
+    footer_widget: BeatbarWidget = BeatbarWidget.progress
+
+    spectrum = beatwidgets.SpectrumWidgetSettings
+    volume_indicator = beatwidgets.VolumeIndicatorWidgetSettings
+    score = beatwidgets.ScoreWidgetSettings
+    progress = beatwidgets.ProgressWidgetSettings
+    accuracy_meter = beatwidgets.AccuracyMeterWidgetSettings
+    monitor = beatwidgets.MonitorWidgetSettings
 

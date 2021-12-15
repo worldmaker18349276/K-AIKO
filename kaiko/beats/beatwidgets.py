@@ -84,10 +84,6 @@ class SpectrumWidget:
     mixer_settings: engines.MixerSettings
     settings: SpectrumWidgetSettings
 
-    @classmethod
-    def create(clz, settings, *, rich, mixer, devices_settings, **_):
-        return clz("", rich, mixer, devices_settings.mixer, settings)
-
     def draw_spectrum(self):
         spec_width = self.settings.spec_width
         samplerate = self.mixer_settings.output_samplerate
@@ -172,10 +168,6 @@ class VolumeIndicatorWidget:
     mixer_settings: engines.MixerSettings
     settings: VolumeIndicatorWidgetSettings
 
-    @classmethod
-    def create(clz, settings, *, rich, mixer, devices_settings, **_):
-        return clz(0.0, rich, mixer, devices_settings.mixer, settings)
-
     @dn.datanode
     def load(self):
         vol_decay_time = self.settings.vol_decay_time
@@ -232,10 +224,6 @@ class AccuracyMeterWidget:
     state: object # with property `perfs`
     settings: AccuracyMeterWidgetSettings
 
-    @classmethod
-    def create(clz, settings, *, rich, state, **_):
-        return clz(0, float("inf"), rich, state, settings)
-
     @dn.datanode
     def load(self):
         meter_width = self.settings.meter_width
@@ -289,10 +277,6 @@ class MonitorWidget:
     renderer: engines.Renderer
     settings: MonitorWidgetSettings
 
-    @classmethod
-    def create(clz, settings, *, mixer, detector, renderer, **_):
-        return clz(mixer, detector, renderer, settings)
-
     @dn.datanode
     def load(self):
         ticks = " ▏▎▍▌▋▊▉█"
@@ -334,10 +318,6 @@ class ScoreWidget:
     state: object # with properties `score`, `full_score`
     rich: mu.RichTextRenderer
     settings: ScoreWidgetSettings
-
-    @classmethod
-    def create(clz, settings, *, rich, state, **_):
-        return clz(state, rich, settings)
 
     @dn.datanode
     def load(self):
@@ -383,10 +363,6 @@ class ProgressWidget:
     rich: mu.RichTextRenderer
     settings: ProgressWidgetSettings
 
-    @classmethod
-    def create(clz, settings, *, rich, state, **_):
-        return clz(state, rich, settings)
-
     @dn.datanode
     def load(self):
         template = self.rich.parse(self.settings.template, slotted=True)
@@ -418,38 +394,4 @@ class ProgressWidget:
 
         yield
         return widget_func
-
-
-class BeatbarWidget(Enum):
-    spectrum = SpectrumWidget
-    volume_indicator = VolumeIndicatorWidget
-    accuracy_meter = AccuracyMeterWidget
-    monitor = MonitorWidget
-    score = ScoreWidget
-    progress = ProgressWidget
-
-    def __repr__(self):
-        return f"BeatbarWidget.{self.name}"
-
-class BeatbarWidgetSettings(cfg.Configurable):
-    r"""
-    Fields
-    ------
-    icon_widget : BeatbarWidget
-        The widget on the icon.
-    header_widget : BeatbarWidget
-        The widget on the header.
-    footer_widget : BeatbarWidget
-        The widget on the footer.
-    """
-    icon_widget: BeatbarWidget = BeatbarWidget.spectrum
-    header_widget: BeatbarWidget = BeatbarWidget.score
-    footer_widget: BeatbarWidget = BeatbarWidget.progress
-
-    spectrum = SpectrumWidgetSettings
-    volume_indicator = VolumeIndicatorWidgetSettings
-    score = ScoreWidgetSettings
-    progress = ProgressWidgetSettings
-    accuracy_meter = AccuracyMeterWidgetSettings
-    monitor = MonitorWidgetSettings
 
