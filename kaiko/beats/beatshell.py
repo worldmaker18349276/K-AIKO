@@ -1515,10 +1515,46 @@ class BeatPrompt:
         self.t0 = None
         self.tempo = None
 
+        # input state
+        self.modified_event = None
+        self.buffer = []
+        self.tokens = []
+        self.pos = 0
+        self.highlighted = None
+        self.typeahead = ""
+        self.clean = False
+        self.hint = None
+        self.state = "EDIT"
+
         self.rich = rich
 
     def register(self, renderer):
+        renderer.add_drawer(self.state_updater(), zindex=())
         renderer.add_drawer(self.output_handler())
+
+    @dn.datanode
+    def state_updater(self):
+        (view, msg), time, width = yield
+        while True:
+            # extract input state
+            with self.input.lock:
+                if self.input.modified_event != self.modified_event:
+                    self.modified_event = self.input.modified_event
+                    self.buffer = list(self.input.buffer)
+                    self.tokens = list(self.input.tokens)
+                self.pos = self.input.pos
+                self.highlighted = self.input.highlighted
+
+                self.typeahead = self.input.typeahead
+                self.clean = self.input.result is not None
+                self.hint = self.input.hint_state.hint if self.input.hint_state is not None else None
+                self.state = self.input.state
+
+            (view, msg), time, width = yield (view, msg)
+
+            # fin
+            if self.state == "FIN" and not self.fin_event.is_set():
+                self.fin_event.set()
 
     @dn.datanode
     def output_handler(self):
@@ -1526,43 +1562,22 @@ class BeatPrompt:
         text_node = self.text_node()
         hint_node = dn.starcache(self.markup_hint, lambda msg, hint: hint)
         render_node = self.render_node()
-        modified_event = None
-        buffer = []
-        tokens = []
         with header_node, text_node, hint_node, render_node:
             (view, msg), time, width = yield
             while True:
-                # extract input state
-                with self.input.lock:
-                    if self.input.modified_event != modified_event:
-                        modified_event = self.input.modified_event
-                        buffer = list(self.input.buffer)
-                        tokens = list(self.input.tokens)
-                    pos = self.input.pos
-                    highlighted = self.input.highlighted
-
-                    typeahead = self.input.typeahead
-                    clean = self.input.result is not None
-                    hint = self.input.hint_state.hint if self.input.hint_state is not None else None
-                    state = self.input.state
-
                 # draw header
-                header_data = header_node.send((clean, time))
+                header_data = header_node.send(time)
 
                 # draw text
-                text_data = text_node.send((buffer, tokens, typeahead, pos, highlighted, clean))
+                text_data = text_node.send()
 
                 # render view
                 view = render_node.send((view, width, header_data, text_data))
 
                 # render hint
-                msg = hint_node.send((msg, hint))
+                msg = hint_node.send((msg, self.hint))
 
                 (view, msg), time, width = yield (view, msg)
-
-                # fin
-                if state == "FIN" and not self.fin_event.is_set():
-                    self.fin_event.set()
 
     def get_monitor_func(self):
         ticks = " ▏▎▍▌▋▊▉█"
@@ -1623,8 +1638,6 @@ class BeatPrompt:
 
         Receives
         --------
-        clean : bool
-            Render header and caret in the clean style: hide caret.
         time : float
             The current time.
 
@@ -1644,7 +1657,7 @@ class BeatPrompt:
         self.t0 = self.settings.prompt.t0
         self.tempo = self.settings.prompt.tempo
 
-        clean, time = yield
+        time = yield
 
         period = (0 - self.t0)/(60/self.tempo)
         period_start = period // -1 * -1
@@ -1658,9 +1671,9 @@ class BeatPrompt:
             # render icon, marker, caret
             icon = icon_func(period)
             marker = marker_func(period)
-            caret_index = None if clean else caret_index_func(period, period < period_start)
+            caret_index = None if self.clean else caret_index_func(period, period < period_start)
 
-            clean, time = yield icon, marker, caret_index
+            time = yield icon, marker, caret_index
             period = (time - self.t0)/(60/self.tempo)
 
     def markup_syntax(self, buffer, tokens, typeahead):
@@ -1745,13 +1758,12 @@ class BeatPrompt:
         text_data = None
         with syntax_node, dec_node, geo_node:
             while True:
-                buffer, tokens, typeahead, pos, highlighted, clean = yield text_data
-                if clean:
-                    typeahead = ""
+                yield text_data
+                typeahead = self.typeahead if not self.clean else ""
 
-                markup = syntax_node.send((buffer, tokens, typeahead))
-                dec_markup = dec_node.send((markup, pos, highlighted, clean))
-                text_width, typeahead_width, caret_dis = geo_node.send((buffer, typeahead, pos))
+                markup = syntax_node.send((self.buffer, self.tokens, typeahead))
+                dec_markup = dec_node.send((markup, self.pos, self.highlighted, self.clean))
+                text_width, typeahead_width, caret_dis = geo_node.send((self.buffer, typeahead, self.pos))
                 text_data = dec_markup, text_width, typeahead_width, caret_dis
 
     def markup_hint(self, messages, hint):
