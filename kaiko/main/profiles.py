@@ -96,8 +96,6 @@ class ProfileManager:
         succ = config.use()
         if not succ:
             succ = config.new()
-            succ = succ and config.save()
-            succ = succ and config.set_default()
             if not succ:
                 raise RuntimeError("Fail to load configuration")
 
