@@ -1,4 +1,3 @@
-import time
 import math
 from enum import Enum
 from typing import List, Tuple, Dict
@@ -394,4 +393,44 @@ class Beatbar:
 
     def remove_handler(self, key):
         self.controller.remove_handler(key)
+
+class Sight:
+    def __init__(self, rich, settings):
+        self.rich = rich
+        self.settings = settings
+
+    @dn.datanode
+    def load(self):
+        perf_appearances = {key: (self.rich.parse(f"[restore]{appearance1}[/]"), self.rich.parse(f"[restore]{appearance2}[/]"))
+                            for key, (appearance1, appearance2) in self.settings.performances_appearances.items()}
+        sight_appearances = [(self.rich.parse(appearance1), self.rich.parse(appearance2))
+                             for appearance1, appearance2 in self.settings.sight_appearances]
+
+        def sight_func(time, hit_hint, perf_hint):
+            hit_strength, hit_time, hit_duration = hit_hint
+            (perf, perf_is_reversed), perf_time, _ = perf_hint
+
+            # draw perf hint
+            perf_ap = perf_appearances[perf.grade] if perf is not None else (mu.Text(""), mu.Text(""))
+            if perf_is_reversed:
+                perf_ap = perf_ap[::-1]
+
+            # draw sight
+            if hit_strength is not None:
+                strength = hit_strength - hit_strength * (time - hit_time) / hit_duration
+                strength = max(0.0, min(1.0, strength))
+                loudness = int(strength * (len(sight_appearances) - 1))
+                loudness = max(1, loudness)
+                sight_ap = sight_appearances[loudness]
+
+            else:
+                sight_ap = sight_appearances[0]
+
+            return (
+                mu.Group((perf_ap[0], sight_ap[0])),
+                mu.Group((perf_ap[1], sight_ap[1]))
+            )
+
+        yield
+        return sight_func
 

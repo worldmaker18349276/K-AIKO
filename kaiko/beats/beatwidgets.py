@@ -1,50 +1,11 @@
-import time
+import dataclasses
 from enum import Enum
 import numpy
 from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..utils import markups as mu
+from ..devices import engines
 
-# widgets
-class Sight:
-    def __init__(self, rich, settings, **_):
-        self.rich = rich
-        self.settings = settings
-
-    @dn.datanode
-    def load(self):
-        perf_appearances = {key: (self.rich.parse(f"[restore]{appearance1}[/]"), self.rich.parse(f"[restore]{appearance2}[/]"))
-                            for key, (appearance1, appearance2) in self.settings.performances_appearances.items()}
-        sight_appearances = [(self.rich.parse(appearance1), self.rich.parse(appearance2))
-                             for appearance1, appearance2 in self.settings.sight_appearances]
-
-        def sight_func(time, hit_hint, perf_hint):
-            hit_strength, hit_time, hit_duration = hit_hint
-            (perf, perf_is_reversed), perf_time, _ = perf_hint
-
-            # draw perf hint
-            perf_ap = perf_appearances[perf.grade] if perf is not None else (mu.Text(""), mu.Text(""))
-            if perf_is_reversed:
-                perf_ap = perf_ap[::-1]
-
-            # draw sight
-            if hit_strength is not None:
-                strength = hit_strength - hit_strength * (time - hit_time) / hit_duration
-                strength = max(0.0, min(1.0, strength))
-                loudness = int(strength * (len(sight_appearances) - 1))
-                loudness = max(1, loudness)
-                sight_ap = sight_appearances[loudness]
-
-            else:
-                sight_ap = sight_appearances[0]
-
-            return (
-                mu.Group((perf_ap[0], sight_ap[0])),
-                mu.Group((perf_ap[1], sight_ap[1]))
-            )
-
-        yield
-        return sight_func
 
 def uint_format(value, width, zero_padded=False):
     scales = "KMGTPEZY"
@@ -90,18 +51,46 @@ def pc_format(value, width):
     if width >= 4:
         return f"{value:>{width}.0%}" if value == 1 else f"{value:>{width}.{width-4}%}"
 
+
+# widgets
+class SpectrumWidgetSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    template : str
+        The template for the spectrum.
+    spec_width : int
+        The text width of spectrum.
+    spec_decay_time : float
+        The decay time of pillars on the spectrum.
+    spec_time_res : float
+        The time resolution of the spectrum.
+        The preferred value is `hop_length/samplerate`.
+    spec_freq_res : float
+        The frequency resolution of the spectrum.
+        The preferred value is `samplerate/win_length`.
+    """
+    template: str = "[color=bright_magenta][slot/][/]"
+    spec_width: int = 6
+    spec_decay_time: float = 0.01
+    spec_time_res: float = 0.0116099773
+    spec_freq_res: float = 21.5332031
+
+@dataclasses.dataclass
 class SpectrumWidget:
-    def __init__(self, rich, settings, *, state, mixer, devices_settings, **_):
-        self.rich = rich
-        self.settings = settings
-        self.state = state
-        self.mixer = mixer
-        self.devices_settings = devices_settings
-        self.spectrum = ""
+    spectrum: str
+    rich: mu.RichTextRenderer
+    mixer: engines.Mixer
+    mixer_settings: engines.MixerSettings
+    settings: SpectrumWidgetSettings
+
+    @classmethod
+    def create(clz, settings, *, rich, mixer, devices_settings, **_):
+        return clz("", rich, mixer, devices_settings.mixer, settings)
 
     def draw_spectrum(self):
         spec_width = self.settings.spec_width
-        samplerate = self.devices_settings.mixer.output_samplerate
+        samplerate = self.mixer_settings.output_samplerate
         hop_length = round(samplerate * self.settings.spec_time_res)
         win_length = round(samplerate / self.settings.spec_freq_res)
         spec_decay_time = self.settings.spec_decay_time
@@ -143,8 +132,8 @@ class SpectrumWidget:
     @dn.datanode
     def load(self):
         spec_width = self.settings.spec_width
-        samplerate = self.devices_settings.mixer.output_samplerate
-        nchannels = self.devices_settings.mixer.output_channels
+        samplerate = self.mixer_settings.output_samplerate
+        nchannels = self.mixer_settings.output_channels
         hop_length = round(samplerate * self.settings.spec_time_res)
 
         template = self.rich.parse(self.settings.template, slotted=True)
@@ -162,19 +151,36 @@ class SpectrumWidget:
         yield
         return widget_func
 
+
+class VolumeIndicatorWidgetSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    template : str
+        The template for the volume indicator.
+    vol_decay_time : float
+        The decay time of pillar on the volume indicator.
+    """
+    template: str = "[color=bright_magenta][slot/][/]"
+    vol_decay_time: float = 0.01
+
+@dataclasses.dataclass
 class VolumeIndicatorWidget:
-    def __init__(self, rich, settings, *, mixer, devices_settings, **_):
-        self.rich = rich
-        self.settings = settings
-        self.mixer = mixer
-        self.devices_settings = devices_settings
-        self.volume = 0.0
+    volume: float
+    rich: mu.RichTextRenderer
+    mixer: engines.Mixer
+    mixer_settings: engines.MixerSettings
+    settings: VolumeIndicatorWidgetSettings
+
+    @classmethod
+    def create(clz, settings, *, rich, mixer, devices_settings, **_):
+        return clz(0.0, rich, mixer, devices_settings.mixer, settings)
 
     @dn.datanode
     def load(self):
         vol_decay_time = self.settings.vol_decay_time
-        buffer_length = self.devices_settings.mixer.output_buffer_length
-        samplerate = self.devices_settings.mixer.output_samplerate
+        buffer_length = self.mixer_settings.output_buffer_length
+        samplerate = self.mixer_settings.output_samplerate
 
         template = self.rich.parse(self.settings.template, slotted=True)
 
@@ -202,13 +208,33 @@ class VolumeIndicatorWidget:
         yield
         return widget_func
 
+
+class AccuracyMeterWidgetSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    meter_width : int
+        The text width of the meter.
+    meter_decay_time : float
+        The decay time of hitting lines on the meter.
+    meter_radius : float
+        The maximum accuracy error that will be displayed on the meter.
+    """
+    meter_width: int = 8
+    meter_decay_time: float = 1.5
+    meter_radius: float = 0.10
+
+@dataclasses.dataclass
 class AccuracyMeterWidget:
-    def __init__(self, rich, settings, *, state, **_):
-        self.rich = rich
-        self.settings = settings
-        self.state = state
-        self.last_perf = 0
-        self.last_time = float("inf")
+    last_perf: int
+    last_time: float
+    rich: mu.RichTextRenderer
+    state: object # with property `perfs`
+    settings: AccuracyMeterWidgetSettings
+
+    @classmethod
+    def create(clz, settings, *, rich, state, **_):
+        return clz(0, float("inf"), rich, state, settings)
 
     @dn.datanode
     def load(self):
@@ -247,18 +273,25 @@ class AccuracyMeterWidget:
         yield
         return widget_func
 
+
 class MonitorTarget(Enum):
     mixer = "mixer"
     detector = "detector"
     renderer = "renderer"
 
+class MonitorWidgetSettings(cfg.Configurable):
+    target: MonitorTarget = MonitorTarget.renderer
+
+@dataclasses.dataclass
 class MonitorWidget:
-    def __init__(self, rich, settings, *, mixer, detector, renderer, **_):
-        self.rich = rich
-        self.settings = settings
-        self.mixer = mixer
-        self.detector = detector
-        self.renderer = renderer
+    mixer: engines.Mixer
+    detector: engines.Detector
+    renderer: engines.Renderer
+    settings: MonitorWidgetSettings
+
+    @classmethod
+    def create(clz, settings, *, mixer, detector, renderer, **_):
+        return clz(mixer, detector, renderer, settings)
 
     @dn.datanode
     def load(self):
@@ -286,11 +319,25 @@ class MonitorWidget:
         yield
         return widget_func
 
+
+class ScoreWidgetSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    template : str
+        The template for the score indicator.
+    """
+    template: str = "[color=bright_blue][slot/][/]"
+
+@dataclasses.dataclass
 class ScoreWidget:
-    def __init__(self, rich, settings, *, state, **_):
-        self.rich = rich
-        self.settings = settings
-        self.state = state
+    state: object # with properties `score`, `full_score`
+    rich: mu.RichTextRenderer
+    settings: ScoreWidgetSettings
+
+    @classmethod
+    def create(clz, settings, *, rich, state, **_):
+        return clz(state, rich, settings)
 
     @dn.datanode
     def load(self):
@@ -320,11 +367,25 @@ class ScoreWidget:
         yield
         return widget_func
 
+
+class ProgressWidgetSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    template : str
+        The template for the progress indicator.
+    """
+    template: str = "[color=bright_blue][slot/][/]"
+
+@dataclasses.dataclass
 class ProgressWidget:
-    def __init__(self, rich, settings, *, state, **_):
-        self.rich = rich
-        self.settings = settings
-        self.state = state
+    state: object # with properties `finished_subjects`, `total_subjects`, `time`
+    rich: mu.RichTextRenderer
+    settings: ProgressWidgetSettings
+
+    @classmethod
+    def create(clz, settings, *, rich, state, **_):
+        return clz(state, rich, settings)
 
     @dn.datanode
     def load(self):
@@ -358,7 +419,8 @@ class ProgressWidget:
         yield
         return widget_func
 
-class Widget(Enum):
+
+class BeatbarWidget(Enum):
     spectrum = SpectrumWidget
     volume_indicator = VolumeIndicatorWidget
     accuracy_meter = AccuracyMeterWidget
@@ -367,90 +429,27 @@ class Widget(Enum):
     progress = ProgressWidget
 
     def __repr__(self):
-        return f"Widget.{self.name}"
+        return f"BeatbarWidget.{self.name}"
 
-class WidgetSettings(cfg.Configurable):
+class BeatbarWidgetSettings(cfg.Configurable):
     r"""
     Fields
     ------
-    icon_widget : Widget
+    icon_widget : BeatbarWidget
         The widget on the icon.
-    header_widget : Widget
+    header_widget : BeatbarWidget
         The widget on the header.
-    footer_widget : Widget
+    footer_widget : BeatbarWidget
         The widget on the footer.
     """
-    icon_widget: Widget = Widget.spectrum
-    header_widget: Widget = Widget.score
-    footer_widget: Widget = Widget.progress
+    icon_widget: BeatbarWidget = BeatbarWidget.spectrum
+    header_widget: BeatbarWidget = BeatbarWidget.score
+    footer_widget: BeatbarWidget = BeatbarWidget.progress
 
-    class spectrum(cfg.Configurable):
-        r"""
-        Fields
-        ------
-        template : str
-            The template for the spectrum.
-        spec_width : int
-            The text width of spectrum.
-        spec_decay_time : float
-            The decay time of pillars on the spectrum.
-        spec_time_res : float
-            The time resolution of the spectrum.
-            The preferred value is `hop_length/samplerate`.
-        spec_freq_res : float
-            The frequency resolution of the spectrum.
-            The preferred value is `samplerate/win_length`.
-        """
-        template: str = "[color=bright_magenta][slot/][/]"
-        spec_width: int = 6
-        spec_decay_time: float = 0.01
-        spec_time_res: float = 0.0116099773
-        spec_freq_res: float = 21.5332031
+    spectrum = SpectrumWidgetSettings
+    volume_indicator = VolumeIndicatorWidgetSettings
+    score = ScoreWidgetSettings
+    progress = ProgressWidgetSettings
+    accuracy_meter = AccuracyMeterWidgetSettings
+    monitor = MonitorWidgetSettings
 
-    class volume_indicator(cfg.Configurable):
-        r"""
-        Fields
-        ------
-        template : str
-            The template for the volume indicator.
-        vol_decay_time : float
-            The decay time of pillar on the volume indicator.
-        """
-        template: str = "[color=bright_magenta][slot/][/]"
-        vol_decay_time: float = 0.01
-
-    class score(cfg.Configurable):
-        r"""
-        Fields
-        ------
-        template : str
-            The template for the score indicator.
-        """
-        template: str = "[color=bright_blue][slot/][/]"
-
-    class progress(cfg.Configurable):
-        r"""
-        Fields
-        ------
-        template : str
-            The template for the progress indicator.
-        """
-        template: str = "[color=bright_blue][slot/][/]"
-
-    class accuracy_meter(cfg.Configurable):
-        r"""
-        Fields
-        ------
-        meter_width : int
-            The text width of the meter.
-        meter_decay_time : float
-            The decay time of hitting lines on the meter.
-        meter_radius : float
-            The maximum accuracy error that will be displayed on the meter.
-        """
-        meter_width: int = 8
-        meter_decay_time: float = 1.5
-        meter_radius: float = 0.10
-
-    class monitor(cfg.Configurable):
-        target: MonitorTarget = MonitorTarget.renderer

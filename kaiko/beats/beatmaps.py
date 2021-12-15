@@ -13,8 +13,8 @@ from ..utils import datanodes as dn
 from ..utils import markups as mu
 from ..devices import audios as aud
 from ..devices import engines
-from .beatbar import PerformanceGrade, Performance, Beatbar, BeatbarSettings
-from .beatwidgets import Sight, WidgetSettings
+from .beatbar import PerformanceGrade, Performance, Beatbar, Sight, BeatbarSettings
+from .beatwidgets import BeatbarWidgetSettings
 
 
 @dataclass
@@ -1030,7 +1030,7 @@ class GameplaySettings(cfg.Configurable):
         knock_delay_adjust_step: float = 0.001
         knock_energy_adjust_step: float = 0.0001
 
-    widgets = WidgetSettings
+    widgets = BeatbarWidgetSettings
 
 class BeatmapScore:
     def __init__(self):
@@ -1158,6 +1158,7 @@ class Beatmap:
 
         # load widgets
         widget_params = dict(
+            rich=rich,
             state=score,
             mixer=mixer,
             detector=detector,
@@ -1168,17 +1169,17 @@ class Beatmap:
 
         icon_widget = gameplay_settings.widgets.icon_widget
         icon_widget_settings = gameplay_settings.widgets.get((icon_widget.name,))
-        icon = yield from icon_widget.value(rich, icon_widget_settings, **widget_params).load().join()
+        icon = yield from icon_widget.value.create(icon_widget_settings, **widget_params).load().join()
 
         header_widget = gameplay_settings.widgets.header_widget
         header_widget_settings = gameplay_settings.widgets.get((header_widget.name,))
-        header = yield from header_widget.value(rich, header_widget_settings, **widget_params).load().join()
+        header = yield from header_widget.value.create(header_widget_settings, **widget_params).load().join()
 
         footer_widget = gameplay_settings.widgets.footer_widget
         footer_widget_settings = gameplay_settings.widgets.get((footer_widget.name,))
-        footer = yield from footer_widget.value(rich, footer_widget_settings, **widget_params).load().join()
+        footer = yield from footer_widget.value.create(footer_widget_settings, **widget_params).load().join()
 
-        sight = yield from Sight(rich, gameplay_settings.beatbar.sight, **widget_params).load().join()
+        sight = yield from Sight(rich, gameplay_settings.beatbar.sight).load().join()
 
         # make beatbar
         beatbar = Beatbar(mixer, detector, renderer, controller,
