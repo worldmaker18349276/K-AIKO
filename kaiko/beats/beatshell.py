@@ -1636,10 +1636,7 @@ class BeatPrompt:
                 (view, msg), time, width = yield (view, msg)
 
     def period_of(self, time):
-        period = (time - self.t0)/(60.0/self.tempo)
-        key_pressed_period = (self.key_pressed_time - self.t0)/(60.0/self.tempo)
-        period_start = key_pressed_period // -1 * -1
-        return period, period < period_start
+        return (time - self.t0)/(60.0/self.tempo)
 
     def get_monitor_func(self):
         ticks = " ▏▎▍▌▋▊▉█"
@@ -1662,7 +1659,7 @@ class BeatPrompt:
 
         def icon_func(arg):
             time, ran = arg
-            period, _ = self.period_of(time)
+            period = self.period_of(time)
             ind = int(period * len(markuped_icons) // 1) % len(markuped_icons)
             return 0, markuped_icons[ind]
 
@@ -1679,7 +1676,7 @@ class BeatPrompt:
 
         def marker_func(arg):
             time, ran = arg
-            period, _ = self.period_of(time)
+            period = self.period_of(time)
             if period % 4 < min(1.0, caret_blink_ratio):
                 return 0, markuped_markers[1]
             else:
@@ -1762,9 +1759,10 @@ class BeatPrompt:
         def caret_func(time):
             if self.clean:
                 return None
-            period, key_pressed = self.period_of(time)
+            period = self.period_of(time)
+            key_pressed_period = self.period_of(self.key_pressed_time) // -1 * -1
             # don't blink while key pressing
-            if key_pressed or period % 1 < caret_blink_ratio:
+            if period < key_pressed_period or period % 1 < caret_blink_ratio:
                 if period % 4 < 1:
                     return markuped_caret[2]
                 else:
