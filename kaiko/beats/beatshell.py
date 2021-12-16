@@ -1530,6 +1530,10 @@ class BeatPrompt:
         self.rich = rich
 
         # widgets
+        t0 = self.settings.prompt.t0
+        tempo = self.settings.prompt.tempo
+        self.metronome = Metronome(t0, tempo, t0)
+
         self.icon_func = self.get_icon_func() if not self.monitor else self.get_monitor_func()
         self.marker_func = self.get_marker_func()
         self.caret_func = self.get_caret_func()
@@ -1547,7 +1551,7 @@ class BeatPrompt:
         marker_drawer = lambda arg: (0, self.marker_func(arg[0], arg[1]))
 
         renderer.add_drawer(self.state_updater(), zindex=())
-        renderer.add_drawer(self.update_period(), zindex=(0,))
+        renderer.add_drawer(self.update_metronome(), zindex=(0,))
         renderer.add_drawer(self.adjust_input_offset(), zindex=(0,))
         renderer.add_drawer(self.hint_handler(), zindex=(1,))
         renderer.add_text(self.text_handler(), input_mask, zindex=(1,))
@@ -1581,18 +1585,14 @@ class BeatPrompt:
                 self.fin_event.set()
 
     @dn.datanode
-    def update_period(self):
-        self.t0 = self.settings.prompt.t0
-        self.tempo = self.settings.prompt.tempo
-
+    def update_metronome(self):
         key_event = None
 
         (view, msg), time, width = yield
-        self.key_pressed_time = time
         while True:
             if self.stroke.key_event != key_event:
                 key_event = self.stroke.key_event
-                self.key_pressed_time = time
+                self.metronome.key_pressed_time = time
             (view, msg), time, width = yield (view, msg)
 
     def input_geometry(self, buffer, typeahead, pos):
@@ -1643,9 +1643,6 @@ class BeatPrompt:
 
                 (view, msg), time, width = yield (view, msg)
 
-    def period_of(self, time):
-        return (time - self.t0)/(60.0/self.tempo)
-
     def get_monitor_func(self):
         ticks = " ▏▎▍▌▋▊▉█"
         ticks_len = len(ticks)
@@ -1663,7 +1660,7 @@ class BeatPrompt:
         markuped_icons = [self.rich.parse(icon) for icon in icons]
 
         def icon_func(time, ran):
-            period = self.period_of(time)
+            period = self.metronome.period_of(time)
             ind = int(period * len(markuped_icons) // 1) % len(markuped_icons)
             return markuped_icons[ind]
 
@@ -1679,7 +1676,7 @@ class BeatPrompt:
         )
 
         def marker_func(time, ran):
-            period = self.period_of(time)
+            period = self.metronome.period_of(time)
             if period % 4 < min(1.0, caret_blink_ratio):
                 return markuped_markers[1]
             else:
@@ -1760,8 +1757,8 @@ class BeatPrompt:
         ]
 
         def caret_func(time):
-            period = self.period_of(time)
-            key_pressed_period = self.period_of(self.key_pressed_time) // -1 * -1
+            period = self.metronome.period_of(time)
+            key_pressed_period = self.metronome.period_of(self.metronome.key_pressed_time) // -1 * -1
             # don't blink while key pressing
             if period < key_pressed_period or period % 1 < caret_blink_ratio:
                 if period % 4 < 1:
@@ -1906,4 +1903,13 @@ class BeatPrompt:
 @dataclasses.dataclass(frozen=True)
 class CaretPlaceholder(mu.Pair):
     name = "caret"
+
+@dataclasses.dataclass
+class Metronome:
+    t0: float
+    tempo: float
+    key_pressed_time: float
+
+    def period_of(self, time):
+        return (time - self.t0)/(60.0/self.tempo)
 
