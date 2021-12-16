@@ -1529,6 +1529,11 @@ class BeatPrompt:
 
         self.rich = rich
 
+        # widgets
+        self.icon_func = self.get_icon_func() if not self.monitor else self.get_monitor_func()
+        self.marker_func = self.get_marker_func()
+        self.caret_func = self.get_caret_func()
+
     def register(self, renderer):
         icon_width = self.settings.prompt.icon_width
         marker_width = self.settings.prompt.marker_width
@@ -1538,6 +1543,9 @@ class BeatPrompt:
         marker_mask = slice(icon_width, icon_width+marker_width)
         input_mask = slice(icon_width+marker_width, None)
 
+        icon_drawer = lambda arg: (0, self.icon_func(arg[0], arg[1]))
+        marker_drawer = lambda arg: (0, self.marker_func(arg[0], arg[1]))
+
         renderer.add_drawer(self.state_updater(), zindex=())
         renderer.add_drawer(self.update_period(), zindex=(0,))
         renderer.add_drawer(self.adjust_input_offset(), zindex=(0,))
@@ -1545,8 +1553,8 @@ class BeatPrompt:
         renderer.add_text(self.text_handler(), input_mask, zindex=(1,))
         renderer.add_text(self.get_left_ellipsis_func(), input_mask, zindex=(1,10))
         renderer.add_text(self.get_right_ellipsis_func(), input_mask, zindex=(1,10))
-        renderer.add_text(self.get_icon_func(), icon_mask, zindex=(2,))
-        renderer.add_text(self.get_marker_func(), marker_mask, zindex=(3,))
+        renderer.add_text(icon_drawer, icon_mask, zindex=(2,))
+        renderer.add_text(marker_drawer, marker_mask, zindex=(3,))
 
     @dn.datanode
     def state_updater(self):
@@ -1643,25 +1651,21 @@ class BeatPrompt:
         ticks_len = len(ticks)
         icon_width = self.settings.prompt.icon_width
 
-        def monitor_func(arg):
+        def monitor_func(time, ran):
             level = int((self.monitor.eff or 0.0) * icon_width*(ticks_len-1))
-            return 0, mu.Text("".join(ticks[max(0, min(ticks_len-1, level-i*(ticks_len-1)))] for i in range(icon_width)))
+            return mu.Text("".join(ticks[max(0, min(ticks_len-1, level-i*(ticks_len-1)))] for i in range(icon_width)))
 
         return monitor_func
 
     def get_icon_func(self):
-        if self.monitor:
-            return self.get_monitor_func()
-
         icons = self.settings.prompt.icons
 
         markuped_icons = [self.rich.parse(icon) for icon in icons]
 
-        def icon_func(arg):
-            time, ran = arg
+        def icon_func(time, ran):
             period = self.period_of(time)
             ind = int(period * len(markuped_icons) // 1) % len(markuped_icons)
-            return 0, markuped_icons[ind]
+            return markuped_icons[ind]
 
         return icon_func
 
@@ -1674,13 +1678,12 @@ class BeatPrompt:
             self.rich.parse(markers[1]),
         )
 
-        def marker_func(arg):
-            time, ran = arg
+        def marker_func(time, ran):
             period = self.period_of(time)
             if period % 4 < min(1.0, caret_blink_ratio):
-                return 0, markuped_markers[1]
+                return markuped_markers[1]
             else:
-                return 0, markuped_markers[0]
+                return markuped_markers[0]
 
         return marker_func
 
@@ -1715,11 +1718,11 @@ class BeatPrompt:
                 if isinstance(subword, mu.Text):
                     subwords = (
                         mu.Text(subword.string[:pos-i]),
-                        Caret((mu.Text(subword.string[pos-i]),)),
+                        CaretPlaceholder((mu.Text(subword.string[pos-i]),)),
                         mu.Text(subword.string[pos-i+1:]),
                     )
                 else:
-                    subwords = Caret((subword,)),
+                    subwords = CaretPlaceholder((subword,)),
 
                 token = dataclasses.replace(token, children=token.children[:m] + subwords + token.children[m+1:])
                 markup = dataclasses.replace(markup, children=markup.children[:n] + (token,) + markup.children[n+1:])
@@ -1757,8 +1760,6 @@ class BeatPrompt:
         ]
 
         def caret_func(time):
-            if self.clean:
-                return None
             period = self.period_of(time)
             key_pressed_period = self.period_of(self.key_pressed_time) // -1 * -1
             # don't blink while key pressing
@@ -1774,9 +1775,9 @@ class BeatPrompt:
 
     def render_caret(self, markup, caret):
         if caret is not None:
-            return markup.traverse(Caret, lambda m: mu.replace_slot(caret, mu.Group(m.children)))
+            return markup.traverse(CaretPlaceholder, lambda m: mu.replace_slot(caret, mu.Group(m.children)))
         else:
-            return markup.traverse(Caret, lambda m: mu.Group(m.children))
+            return markup.traverse(CaretPlaceholder, lambda m: mu.Group(m.children))
 
     @dn.datanode
     def text_handler(self):
@@ -1786,7 +1787,6 @@ class BeatPrompt:
         dec_key = lambda markup, pos, highlighted, clean: (id(markup), pos, highlighted, clean)
         dec_node = dn.starcache(self.decorate_tokens, dec_key)
 
-        caret_func = self.get_caret_func()
         caret_node = dn.starcache(self.render_caret)
 
         with syntax_node, dec_node, caret_node:
@@ -1796,7 +1796,9 @@ class BeatPrompt:
 
                 markup = syntax_node.send((self.buffer, self.tokens, typeahead))
                 markup = dec_node.send((markup, self.pos, self.highlighted, self.clean))
-                markup = caret_node.send((markup, caret_func(time)))
+
+                caret = self.caret_func(time) if not self.clean else None
+                markup = caret_node.send((markup, caret))
 
                 time, ran = yield -self.input_offset, markup
 
@@ -1902,6 +1904,6 @@ class BeatPrompt:
 
 
 @dataclasses.dataclass(frozen=True)
-class Caret(mu.Pair):
+class CaretPlaceholder(mu.Pair):
     name = "caret"
 
