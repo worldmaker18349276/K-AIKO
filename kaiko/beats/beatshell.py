@@ -1543,10 +1543,10 @@ class BeatPrompt:
         renderer.add_drawer(self.adjust_input_offset(), zindex=(0,))
         renderer.add_drawer(self.hint_handler(), zindex=(1,))
         renderer.add_text(self.text_handler(), input_mask, zindex=(1,))
-        renderer.add_text(self.markup_left_overflow, input_mask, zindex=(2,))
-        renderer.add_text(self.markup_right_overflow, input_mask, zindex=(2,))
-        renderer.add_text(self.get_icon_func(), icon_mask, zindex=(3,))
-        renderer.add_text(self.get_marker_func(), marker_mask, zindex=(4,))
+        renderer.add_text(self.get_left_ellipsis_func(), input_mask, zindex=(1,10))
+        renderer.add_text(self.get_right_ellipsis_func(), input_mask, zindex=(1,10))
+        renderer.add_text(self.get_icon_func(), icon_mask, zindex=(2,))
+        renderer.add_text(self.get_marker_func(), marker_mask, zindex=(3,))
 
     @dn.datanode
     def state_updater(self):
@@ -1802,11 +1802,13 @@ class BeatPrompt:
 
                 time, ran = yield -self.input_offset, markup
 
-    def markup_left_overflow(self, arg):
-        return (0, mu.Text("…")) if self.left_overflow else None
+    def get_left_ellipsis_func(self):
+        ellipis = mu.Text("…")
+        return lambda arg: ((0, ellipis) if self.left_overflow else None)
 
-    def markup_right_overflow(self, arg):
-        return (len(arg[1])-1, mu.Text("…")) if self.right_overflow else None
+    def get_right_ellipsis_func(self):
+        ellipis = mu.Text("…")
+        return lambda arg: ((len(arg[1])-1, ellipis) if self.right_overflow else None)
 
     def markup_hint(self, messages, hint):
         r"""Render hint.
