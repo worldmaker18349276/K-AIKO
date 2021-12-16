@@ -1530,8 +1530,18 @@ class BeatPrompt:
         self.rich = rich
 
     def register(self, renderer):
+        icon_width = self.settings.prompt.icon_width
+        marker_width = self.settings.prompt.marker_width
+        input_margin = self.settings.prompt.input_margin
+
+        icon_mask = slice(None, icon_width)
+        marker_mask = slice(icon_width, icon_width+marker_width)
+        input_mask = slice(icon_width+marker_width, None)
+
         renderer.add_drawer(self.state_updater(), zindex=())
         renderer.add_drawer(self.output_handler())
+        renderer.add_text(self.get_icon_func(), icon_mask, zindex=(1,))
+        renderer.add_text(self.get_marker_func(), marker_mask, zindex=(2,))
 
     @dn.datanode
     def state_updater(self):
@@ -1597,9 +1607,9 @@ class BeatPrompt:
         ticks_len = len(ticks)
         icon_width = self.settings.prompt.icon_width
 
-        def monitor_func(time):
+        def monitor_func(arg):
             level = int((self.monitor.eff or 0.0) * icon_width*(ticks_len-1))
-            return mu.Text("".join(ticks[max(0, min(ticks_len-1, level-i*(ticks_len-1)))] for i in range(icon_width)))
+            return 0, mu.Text("".join(ticks[max(0, min(ticks_len-1, level-i*(ticks_len-1)))] for i in range(icon_width)))
 
         return monitor_func
 
@@ -1611,10 +1621,11 @@ class BeatPrompt:
 
         markuped_icons = [self.rich.parse(icon) for icon in icons]
 
-        def icon_func(time):
+        def icon_func(arg):
+            time, ran = arg
             period, _ = self.period_of(time)
             ind = int(period * len(markuped_icons) // 1) % len(markuped_icons)
-            return markuped_icons[ind]
+            return 0, markuped_icons[ind]
 
         return icon_func
 
@@ -1627,12 +1638,13 @@ class BeatPrompt:
             self.rich.parse(markers[1]),
         )
 
-        def marker_func(time):
+        def marker_func(arg):
+            time, ran = arg
             period, _ = self.period_of(time)
             if period % 4 < min(1.0, caret_blink_ratio):
-                return markuped_markers[1]
+                return 0, markuped_markers[1]
             else:
-                return markuped_markers[0]
+                return 0, markuped_markers[0]
 
         return marker_func
 
@@ -1878,8 +1890,6 @@ class BeatPrompt:
         """
         caret_node = self.render_caret()
 
-        icon_func = self.get_icon_func()
-        marker_func = self.get_marker_func()
         caret_index_func = self.get_caret_index_func()
 
         icon_width = self.settings.prompt.icon_width
@@ -1922,12 +1932,6 @@ class BeatPrompt:
                     view.add_markup(mu.Text("…"), input_ran, 0)
                 if text_width + typeahead_width - input_offset > input_width - 1:
                     view.add_markup(mu.Text("…"), input_ran, input_width-1)
-
-                # draw header
-                icon = icon_func(time)
-                view.add_markup(icon, icon_ran, 0)
-                marker = marker_func(time)
-                view.add_markup(marker, marker_ran, 0)
 
                 view, time, width, (markup, text_width, typeahead_width, caret_dis) = yield view
 
