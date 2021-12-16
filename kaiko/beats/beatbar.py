@@ -198,9 +198,9 @@ class Beatbar:
         self.content_mask = slice(icon_width+header_width, -footer_width if footer_width > 0 else None)
         self.footer_mask = slice(-footer_width, None) if footer_width > 0 else slice(0, 0)
 
-        self.current_icon = dn.TimedVariable(value=icon)
-        self.current_header = dn.TimedVariable(value=header)
-        self.current_footer = dn.TimedVariable(value=footer)
+        self.icon_func = icon
+        self.header_func = header
+        self.footer_func = footer
 
         # sight
         hit_decay_time = settings.sight.hit_decay_time
@@ -218,9 +218,9 @@ class Beatbar:
         hit_handler = Beatbar._hit_handler(self.current_hit_hint, self.target_queue, hit_decay_time, hit_sustain_time)
 
         # register handlers
-        icon_drawer = lambda arg: (0, self.current_icon.get(arg[0])(arg[0], arg[1]))
-        header_drawer = lambda arg: (0, self.current_header.get(arg[0])(arg[0], arg[1]))
-        footer_drawer = lambda arg: (0, self.current_footer.get(arg[0])(arg[0], arg[1]))
+        icon_drawer = lambda arg: (0, self.icon_func(arg[0], arg[1]))
+        header_drawer = lambda arg: (0, self.header_func(arg[0], arg[1]))
+        footer_drawer = lambda arg: (0, self.footer_func(arg[0], arg[1]))
 
         renderer.add_text(icon_drawer, xmask=self.icon_mask, zindex=(1,))
         renderer.add_text(header_drawer, xmask=self.header_mask, zindex=(2,))
@@ -228,18 +228,6 @@ class Beatbar:
         detector.add_listener(hit_handler)
 
         self.draw_content(0.0, self._sight_drawer, zindex=(2,))
-
-    def set_icon(self, icon, start=None, duration=None):
-        icon_func = icon if hasattr(icon, '__call__') else lambda time, ran: icon
-        self.current_icon.set(icon_func, start, duration)
-
-    def set_header(self, header, start=None, duration=None):
-        header_func = header if hasattr(header, '__call__') else lambda time, ran: header
-        self.current_header.set(header_func, start, duration)
-
-    def set_footer(self, footer, start=None, duration=None):
-        footer_func = footer if hasattr(footer, '__call__') else lambda time, ran: footer
-        self.current_footer.set(footer_func, start, duration)
 
     @dn.datanode
     def _content_node(self, pos_func, text_func, start, duration):
