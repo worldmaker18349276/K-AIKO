@@ -1514,6 +1514,7 @@ class BeatPrompt:
         self.fin_event = threading.Event()
         self.t0 = None
         self.tempo = None
+        self.key_pressed_time = None
 
         # input state
         self.modified_event = None
@@ -1534,7 +1535,13 @@ class BeatPrompt:
 
     @dn.datanode
     def state_updater(self):
+        self.t0 = self.settings.prompt.t0
+        self.tempo = self.settings.prompt.tempo
+
         (view, msg), time, width = yield
+        self.key_pressed_time = time
+        key_event = None
+
         while True:
             # extract input state
             with self.input.lock:
@@ -1550,6 +1557,10 @@ class BeatPrompt:
                 self.hint = self.input.hint_state.hint if self.input.hint_state is not None else None
                 self.state = self.input.state
 
+            if self.stroke.key_event != key_event:
+                key_event = self.stroke.key_event
+                self.key_pressed_time = time
+
             (view, msg), time, width = yield (view, msg)
 
             # fin
@@ -1558,44 +1569,50 @@ class BeatPrompt:
 
     @dn.datanode
     def output_handler(self):
-        header_node = self.header_node()
         text_node = self.text_node()
         hint_node = dn.starcache(self.markup_hint, lambda msg, hint: hint)
         render_node = self.render_node()
-        with header_node, text_node, hint_node, render_node:
+        with text_node, hint_node, render_node:
             (view, msg), time, width = yield
             while True:
-                # draw header
-                header_data = header_node.send(time)
-
                 # draw text
                 text_data = text_node.send()
 
                 # render view
-                view = render_node.send((view, width, header_data, text_data))
+                view = render_node.send((view, time, width, text_data))
 
                 # render hint
                 msg = hint_node.send((msg, self.hint))
 
                 (view, msg), time, width = yield (view, msg)
 
+    def period_of(self, time):
+        period = (time - self.t0)/(60.0/self.tempo)
+        key_pressed_period = (self.key_pressed_time - self.t0)/(60.0/self.tempo)
+        period_start = key_pressed_period // -1 * -1
+        return period, period < period_start
+
     def get_monitor_func(self):
         ticks = " ▏▎▍▌▋▊▉█"
         ticks_len = len(ticks)
         icon_width = self.settings.prompt.icon_width
 
-        def monitor_func(period):
+        def monitor_func(time):
             level = int((self.monitor.eff or 0.0) * icon_width*(ticks_len-1))
             return mu.Text("".join(ticks[max(0, min(ticks_len-1, level-i*(ticks_len-1)))] for i in range(icon_width)))
 
         return monitor_func
 
     def get_icon_func(self):
+        if self.monitor:
+            return self.get_monitor_func()
+
         icons = self.settings.prompt.icons
 
         markuped_icons = [self.rich.parse(icon) for icon in icons]
 
-        def icon_func(period):
+        def icon_func(time):
+            period, _ = self.period_of(time)
             ind = int(period * len(markuped_icons) // 1) % len(markuped_icons)
             return markuped_icons[ind]
 
@@ -1610,7 +1627,8 @@ class BeatPrompt:
             self.rich.parse(markers[1]),
         )
 
-        def marker_func(period):
+        def marker_func(time):
+            period, _ = self.period_of(time)
             if period % 4 < min(1.0, caret_blink_ratio):
                 return markuped_markers[1]
             else:
@@ -1621,8 +1639,12 @@ class BeatPrompt:
     def get_caret_index_func(self):
         caret_blink_ratio = self.settings.prompt.caret_blink_ratio
 
-        def caret_index_func(period, force=False):
-            if force or period % 1 < caret_blink_ratio:
+        def caret_index_func(time):
+            if self.clean:
+                return None
+            period, key_pressed = self.period_of(time)
+            # don't blink while key pressing
+            if key_pressed or period % 1 < caret_blink_ratio:
                 if period % 4 < 1:
                     return 2
                 else:
@@ -1631,50 +1653,6 @@ class BeatPrompt:
                 return 0
 
         return caret_index_func
-
-    @dn.datanode
-    def header_node(self):
-        r"""The datanode to render header and caret.
-
-        Receives
-        --------
-        time : float
-            The current time.
-
-        Yields
-        ------
-        icon: str
-            The rendered icon.
-        marker : str
-            The rendered marker.
-        caret_index : int or None
-            The index of caret style, or None for no caret.
-        """
-        icon_func = self.get_monitor_func() if self.monitor else self.get_icon_func()
-        marker_func = self.get_marker_func()
-        caret_index_func = self.get_caret_index_func()
-
-        self.t0 = self.settings.prompt.t0
-        self.tempo = self.settings.prompt.tempo
-
-        time = yield
-
-        period = (0 - self.t0)/(60/self.tempo)
-        period_start = period // -1 * -1
-        key_event = None
-        while True:
-            # don't blink while key pressing
-            if self.stroke.key_event != key_event:
-                key_event = self.stroke.key_event
-                period_start = period // -1 * -1
-
-            # render icon, marker, caret
-            icon = icon_func(period)
-            marker = marker_func(period)
-            caret_index = None if self.clean else caret_index_func(period, period < period_start)
-
-            time = yield icon, marker, caret_index
-            period = (time - self.t0)/(60/self.tempo)
 
     def markup_syntax(self, buffer, tokens, typeahead):
         r"""Markup syntax of input text.
@@ -1887,10 +1865,9 @@ class BeatPrompt:
         --------
         view : list of str
             The buffer of the view.
+        time : float
         width : int
             The width of the view.
-        header_data : tuple
-            The values yielded by `header_node`.
         text_data : tuple
             The values yielded by `text_node`.
 
@@ -1900,6 +1877,10 @@ class BeatPrompt:
             The buffer of the rendered view.
         """
         caret_node = self.render_caret()
+
+        icon_func = self.get_icon_func()
+        marker_func = self.get_marker_func()
+        caret_index_func = self.get_caret_index_func()
 
         icon_width = self.settings.prompt.icon_width
         marker_width = self.settings.prompt.marker_width
@@ -1911,7 +1892,7 @@ class BeatPrompt:
         input_offset = 0
 
         with caret_node:
-            view, width, (icon, marker, caret_index), (markup, text_width, typeahead_width, caret_dis) = yield
+            view, time, width, (markup, text_width, typeahead_width, caret_dis) = yield
 
             while True:
                 xran = range(width)
@@ -1932,6 +1913,7 @@ class BeatPrompt:
                     input_offset = max(caret_dis - input_margin, 0)
 
                 # draw caret
+                caret_index = caret_index_func(time)
                 markup = caret_node.send((markup, caret_index))
 
                 # draw input
@@ -1942,10 +1924,12 @@ class BeatPrompt:
                     view.add_markup(mu.Text("…"), input_ran, input_width-1)
 
                 # draw header
+                icon = icon_func(time)
                 view.add_markup(icon, icon_ran, 0)
+                marker = marker_func(time)
                 view.add_markup(marker, marker_ran, 0)
 
-                view, width, (icon, marker, caret_index), (markup, text_width, typeahead_width, caret_dis) = yield view
+                view, time, width, (markup, text_width, typeahead_width, caret_dis) = yield view
 
 
 @dataclasses.dataclass(frozen=True)
