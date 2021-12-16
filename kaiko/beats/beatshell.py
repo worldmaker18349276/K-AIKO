@@ -1540,7 +1540,7 @@ class BeatPrompt:
 
         renderer.add_drawer(self.state_updater(), zindex=())
         renderer.add_drawer(self.hint_handler())
-        renderer.add_drawer(self.output_handler())
+        renderer.add_drawer(self.text_handler())
         renderer.add_text(self.get_icon_func(), icon_mask, zindex=(1,))
         renderer.add_text(self.get_marker_func(), marker_mask, zindex=(2,))
 
@@ -1577,30 +1577,6 @@ class BeatPrompt:
             # fin
             if self.state == "FIN" and not self.fin_event.is_set():
                 self.fin_event.set()
-
-    @dn.datanode
-    def hint_handler(self):
-        hint_node = dn.starcache(self.markup_hint, lambda msg, hint: hint)
-        with hint_node:
-            (view, msg), time, width = yield
-            while True:
-                msg = hint_node.send((msg, self.hint))
-                (view, msg), time, width = yield (view, msg)
-
-    @dn.datanode
-    def output_handler(self):
-        text_node = self.text_node()
-        render_node = self.render_node()
-        with text_node, render_node:
-            (view, msg), time, width = yield
-            while True:
-                # draw text
-                text_data = text_node.send()
-
-                # render view
-                view = render_node.send((view, time, width, text_data))
-
-                (view, msg), time, width = yield (view, msg)
 
     def period_of(self, time):
         period = (time - self.t0)/(60.0/self.tempo)
@@ -1762,6 +1738,120 @@ class BeatPrompt:
                 text_width, typeahead_width, caret_dis = geo_node.send((self.buffer, typeahead, self.pos))
                 text_data = dec_markup, text_width, typeahead_width, caret_dis
 
+    @dn.datanode
+    def render_caret(self):
+        caret = self.settings.prompt.caret
+
+        markuped_caret = [
+            self.rich.parse(caret[0], slotted=True),
+            self.rich.parse(caret[1], slotted=True),
+            self.rich.parse(caret[2], slotted=True),
+        ]
+
+        markup_id = None
+        cached_res = None
+        res = None
+        while True:
+            markup, caret_index = yield res
+
+            if markup_id != id(markup):
+                markup_id = id(markup)
+                cached_res = [None, None, None, None]
+
+            if caret_index is not None:
+                if cached_res[caret_index] is None:
+                    cached_res[caret_index] = markup.traverse(Caret, lambda m: mu.replace_slot(markuped_caret[caret_index], mu.Group(m.children)))
+                res = cached_res[caret_index]
+
+            else:
+                if cached_res[-1] is None:
+                    cached_res[-1] = markup.traverse(Caret, lambda m: mu.Group(m.children))
+                res = cached_res[-1]
+
+    @dn.datanode
+    def adjust_input_offset(self):
+        input_margin = self.settings.prompt.input_margin
+
+        self.input_offset = 0
+        self.left_overflow = False
+        self.right_overflow = False
+
+        while True:
+            input_width, text_width, typeahead_width, caret_dis = yield
+
+            # adjust input offset
+            if text_width - self.input_offset < input_width - 1 - input_margin:
+                # from: ......[....I...    ]
+                #   to: ...[.......I... ]
+                self.input_offset = max(0, text_width-input_width+1+input_margin)
+            if caret_dis - self.input_offset >= input_width - input_margin:
+                # from: ...[............]..I....
+                #   to: ........[..........I.]..
+                self.input_offset = caret_dis - input_width + input_margin + 1
+            elif caret_dis - self.input_offset - input_margin < 0:
+                # from: .....I...[............]...
+                #   to: ...[.I..........].........
+                self.input_offset = max(caret_dis - input_margin, 0)
+
+            self.left_overflow = self.input_offset > 0
+            self.right_overflow = text_width + typeahead_width - self.input_offset > input_width - 1
+
+    @dn.datanode
+    def text_handler(self):
+        r"""The datanode to render input text.
+
+        Receives
+        --------
+        view : list of str
+            The buffer of the view.
+        time : float
+        width : int
+            The width of the view.
+        text_data : tuple
+            The values yielded by `text_node`.
+
+        Yields
+        ------
+        view : list of str
+            The buffer of the rendered view.
+        """
+        caret_node = self.render_caret()
+
+        caret_index_func = self.get_caret_index_func()
+
+        icon_width = self.settings.prompt.icon_width
+        marker_width = self.settings.prompt.marker_width
+        input_margin = self.settings.prompt.input_margin
+        icon_ran = slice(None, icon_width)
+        marker_ran = slice(icon_width, icon_width+marker_width)
+        input_ran = slice(icon_width+marker_width, None)
+
+        text_node = self.text_node()
+        adjust_input_offset = self.adjust_input_offset()
+
+        with text_node, caret_node, adjust_input_offset:
+            (view, msg), time, width = yield
+
+            while True:
+                markup, text_width, typeahead_width, caret_dis = text_node.send()
+
+                xran = range(width)
+                input_width = len(xran[input_ran])
+                adjust_input_offset.send((input_width, text_width, typeahead_width, caret_dis))
+
+                # draw caret
+                caret_index = caret_index_func(time)
+                markup = caret_node.send((markup, caret_index))
+
+                # draw input
+                view.add_markup(markup, input_ran, -self.input_offset)
+                if self.left_overflow:
+                    view.add_markup(mu.Text("…"), input_ran, 0)
+                if self.right_overflow:
+                    view.add_markup(mu.Text("…"), input_ran, input_width-1)
+
+                (view, msg), time, width = yield (view, msg)
+
     def markup_hint(self, messages, hint):
         r"""Render hint.
 
@@ -1846,100 +1936,13 @@ class BeatPrompt:
         return messages
 
     @dn.datanode
-    def render_caret(self):
-        caret = self.settings.prompt.caret
-
-        markuped_caret = [
-            self.rich.parse(caret[0], slotted=True),
-            self.rich.parse(caret[1], slotted=True),
-            self.rich.parse(caret[2], slotted=True),
-        ]
-
-        markup_id = None
-        cached_res = None
-        res = None
-        while True:
-            markup, caret_index = yield res
-
-            if markup_id != id(markup):
-                markup_id = id(markup)
-                cached_res = [None, None, None, None]
-
-            if caret_index is not None:
-                if cached_res[caret_index] is None:
-                    cached_res[caret_index] = markup.traverse(Caret, lambda m: mu.replace_slot(markuped_caret[caret_index], mu.Group(m.children)))
-                res = cached_res[caret_index]
-
-            else:
-                if cached_res[-1] is None:
-                    cached_res[-1] = markup.traverse(Caret, lambda m: mu.Group(m.children))
-                res = cached_res[-1]
-
-    @dn.datanode
-    def render_node(self):
-        r"""The datanode to render whole view.
-
-        Receives
-        --------
-        view : list of str
-            The buffer of the view.
-        time : float
-        width : int
-            The width of the view.
-        text_data : tuple
-            The values yielded by `text_node`.
-
-        Yields
-        ------
-        view : list of str
-            The buffer of the rendered view.
-        """
-        caret_node = self.render_caret()
-
-        caret_index_func = self.get_caret_index_func()
-
-        icon_width = self.settings.prompt.icon_width
-        marker_width = self.settings.prompt.marker_width
-        input_margin = self.settings.prompt.input_margin
-        icon_ran = slice(None, icon_width)
-        marker_ran = slice(icon_width, icon_width+marker_width)
-        input_ran = slice(icon_width+marker_width, None)
-
-        input_offset = 0
-
-        with caret_node:
-            view, time, width, (markup, text_width, typeahead_width, caret_dis) = yield
-
+    def hint_handler(self):
+        hint_node = dn.starcache(self.markup_hint, lambda msg, hint: hint)
+        with hint_node:
+            (view, msg), time, width = yield
             while True:
-                xran = range(width)
-                input_width = len(xran[input_ran])
-
-                # adjust input offset
-                if text_width - input_offset < input_width - 1 - input_margin:
-                    # from: ......[....I...    ]
-                    #   to: ...[.......I... ]
-                    input_offset = max(0, text_width-input_width+1+input_margin)
-                if caret_dis - input_offset >= input_width - input_margin:
-                    # from: ...[............]..I....
-                    #   to: ........[..........I.]..
-                    input_offset = caret_dis - input_width + input_margin + 1
-                elif caret_dis - input_offset - input_margin < 0:
-                    # from: .....I...[............]...
-                    #   to: ...[.I..........].........
-                    input_offset = max(caret_dis - input_margin, 0)
-
-                # draw caret
-                caret_index = caret_index_func(time)
-                markup = caret_node.send((markup, caret_index))
-
-                # draw input
-                view.add_markup(markup, input_ran, -input_offset)
-                if input_offset > 0:
-                    view.add_markup(mu.Text("…"), input_ran, 0)
-                if text_width + typeahead_width - input_offset > input_width - 1:
-                    view.add_markup(mu.Text("…"), input_ran, input_width-1)
-
-                view, time, width, (markup, text_width, typeahead_width, caret_dis) = yield view
+                msg = hint_node.send((msg, self.hint))
+                (view, msg), time, width = yield (view, msg)
 
 
 @dataclasses.dataclass(frozen=True)
