@@ -1539,6 +1539,7 @@ class BeatPrompt:
         input_mask = slice(icon_width+marker_width, None)
 
         renderer.add_drawer(self.state_updater(), zindex=())
+        renderer.add_drawer(self.hint_handler())
         renderer.add_drawer(self.output_handler())
         renderer.add_text(self.get_icon_func(), icon_mask, zindex=(1,))
         renderer.add_text(self.get_marker_func(), marker_mask, zindex=(2,))
@@ -1578,11 +1579,19 @@ class BeatPrompt:
                 self.fin_event.set()
 
     @dn.datanode
+    def hint_handler(self):
+        hint_node = dn.starcache(self.markup_hint, lambda msg, hint: hint)
+        with hint_node:
+            (view, msg), time, width = yield
+            while True:
+                msg = hint_node.send((msg, self.hint))
+                (view, msg), time, width = yield (view, msg)
+
+    @dn.datanode
     def output_handler(self):
         text_node = self.text_node()
-        hint_node = dn.starcache(self.markup_hint, lambda msg, hint: hint)
         render_node = self.render_node()
-        with text_node, hint_node, render_node:
+        with text_node, render_node:
             (view, msg), time, width = yield
             while True:
                 # draw text
@@ -1590,9 +1599,6 @@ class BeatPrompt:
 
                 # render view
                 view = render_node.send((view, time, width, text_data))
-
-                # render hint
-                msg = hint_node.send((msg, self.hint))
 
                 (view, msg), time, width = yield (view, msg)
 
