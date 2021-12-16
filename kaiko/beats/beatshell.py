@@ -1539,6 +1539,7 @@ class BeatPrompt:
         input_mask = slice(icon_width+marker_width, None)
 
         renderer.add_drawer(self.state_updater(), zindex=())
+        renderer.add_drawer(self.update_period(), zindex=(0,))
         renderer.add_drawer(self.adjust_input_offset(), zindex=(0,))
         renderer.add_drawer(self.hint_handler(), zindex=(1,))
         renderer.add_text(self.text_handler(), input_mask, zindex=(1,))
@@ -1549,13 +1550,7 @@ class BeatPrompt:
 
     @dn.datanode
     def state_updater(self):
-        self.t0 = self.settings.prompt.t0
-        self.tempo = self.settings.prompt.tempo
-
         (view, msg), time, width = yield
-        self.key_pressed_time = time
-        key_event = None
-
         while True:
             # extract input state
             with self.input.lock:
@@ -1571,15 +1566,74 @@ class BeatPrompt:
                 self.hint = self.input.hint_state.hint if self.input.hint_state is not None else None
                 self.state = self.input.state
 
-            if self.stroke.key_event != key_event:
-                key_event = self.stroke.key_event
-                self.key_pressed_time = time
-
             (view, msg), time, width = yield (view, msg)
 
             # fin
             if self.state == "FIN" and not self.fin_event.is_set():
                 self.fin_event.set()
+
+    @dn.datanode
+    def update_period(self):
+        self.t0 = self.settings.prompt.t0
+        self.tempo = self.settings.prompt.tempo
+
+        key_event = None
+
+        (view, msg), time, width = yield
+        self.key_pressed_time = time
+        while True:
+            if self.stroke.key_event != key_event:
+                key_event = self.stroke.key_event
+                self.key_pressed_time = time
+            (view, msg), time, width = yield (view, msg)
+
+    def input_geometry(self, buffer, typeahead, pos):
+        text_width = self.rich.widthof(buffer)
+        typeahead_width = self.rich.widthof(typeahead)
+        caret_dis = self.rich.widthof(buffer[:pos])
+        return text_width, typeahead_width, caret_dis
+
+    @dn.datanode
+    def adjust_input_offset(self):
+        icon_width = self.settings.prompt.icon_width
+        marker_width = self.settings.prompt.marker_width
+        input_margin = self.settings.prompt.input_margin
+
+        input_mask = slice(icon_width+marker_width, None)
+
+        self.input_offset = 0
+        self.left_overflow = False
+        self.right_overflow = False
+
+        geo_key = lambda buffer, typeahead, pos: (id(buffer), typeahead, pos)
+        geo_node = dn.starcache(self.input_geometry, geo_key)
+
+        with geo_node:
+            (view, msg), time, width = yield
+            while True:
+                typeahead = self.typeahead if not self.clean else ""
+                text_width, typeahead_width, caret_dis = geo_node.send((self.buffer, typeahead, self.pos))
+                input_width = len(range(width)[input_mask])
+
+                # adjust input offset
+                if text_width - self.input_offset < input_width - 1 - input_margin:
+                    # from: ......[....I...    ]
+                    #   to: ...[.......I... ]
+                    self.input_offset = max(0, text_width-input_width+1+input_margin)
+                if caret_dis - self.input_offset >= input_width - input_margin:
+                    # from: ...[............]..I....
+                    #   to: ........[..........I.]..
+                    self.input_offset = caret_dis - input_width + input_margin + 1
+                elif caret_dis - self.input_offset - input_margin < 0:
+                    # from: .....I...[............]...
+                    #   to: ...[.I..........].........
+                    self.input_offset = max(caret_dis - input_margin, 0)
+
+                # determine overflow
+                self.left_overflow = self.input_offset > 0
+                self.right_overflow = text_width + typeahead_width - self.input_offset > input_width - 1
+
+                (view, msg), time, width = yield (view, msg)
 
     def period_of(self, time):
         period = (time - self.t0)/(60.0/self.tempo)
@@ -1695,12 +1749,6 @@ class BeatPrompt:
         markup = markup.expand()
         return markup
 
-    def input_geometry(self, buffer, typeahead, pos):
-        text_width = self.rich.widthof(buffer)
-        typeahead_width = self.rich.widthof(typeahead)
-        caret_dis = self.rich.widthof(buffer[:pos])
-        return text_width, typeahead_width, caret_dis
-
     def get_caret_func(self):
         caret_blink_ratio = self.settings.prompt.caret_blink_ratio
         caret = self.settings.prompt.caret
@@ -1731,48 +1779,6 @@ class BeatPrompt:
             return markup.traverse(Caret, lambda m: mu.replace_slot(caret, mu.Group(m.children)))
         else:
             return markup.traverse(Caret, lambda m: mu.Group(m.children))
-
-    @dn.datanode
-    def adjust_input_offset(self):
-        icon_width = self.settings.prompt.icon_width
-        marker_width = self.settings.prompt.marker_width
-        input_margin = self.settings.prompt.input_margin
-
-        input_mask = slice(icon_width+marker_width, None)
-
-        self.input_offset = 0
-        self.left_overflow = False
-        self.right_overflow = False
-
-        geo_key = lambda buffer, typeahead, pos: (id(buffer), typeahead, pos)
-        geo_node = dn.starcache(self.input_geometry, geo_key)
-
-        with geo_node:
-            (view, msg), time, width = yield
-            while True:
-                typeahead = self.typeahead if not self.clean else ""
-                text_width, typeahead_width, caret_dis = geo_node.send((self.buffer, typeahead, self.pos))
-                input_width = len(range(width)[input_mask])
-
-                # adjust input offset
-                if text_width - self.input_offset < input_width - 1 - input_margin:
-                    # from: ......[....I...    ]
-                    #   to: ...[.......I... ]
-                    self.input_offset = max(0, text_width-input_width+1+input_margin)
-                if caret_dis - self.input_offset >= input_width - input_margin:
-                    # from: ...[............]..I....
-                    #   to: ........[..........I.]..
-                    self.input_offset = caret_dis - input_width + input_margin + 1
-                elif caret_dis - self.input_offset - input_margin < 0:
-                    # from: .....I...[............]...
-                    #   to: ...[.I..........].........
-                    self.input_offset = max(caret_dis - input_margin, 0)
-
-                # determine overflow
-                self.left_overflow = self.input_offset > 0
-                self.right_overflow = text_width + typeahead_width - self.input_offset > input_width - 1
-
-                (view, msg), time, width = yield (view, msg)
 
     @dn.datanode
     def text_handler(self):
