@@ -12,6 +12,7 @@ from ..utils import config as cfg
 from ..utils import markups as mu
 from ..utils import commands as cmd
 from ..devices import engines
+from . import beatwidgets
 
 
 class SHLEXER_STATE(Enum):
@@ -527,6 +528,7 @@ class BeatInput:
     def update_settings(self, settings):
         self.settings = settings
 
+    @dn.datanode
     def prompt(self, devices_settings, user):
         r"""Start prompt.
 
@@ -546,7 +548,21 @@ class BeatInput:
         input_task, controller = engines.Controller.create(devices_settings.controller, devices_settings.terminal)
         display_task, renderer = engines.Renderer.create(devices_settings.renderer, devices_settings.terminal, monitor=renderer_monitor)
         stroke = BeatStroke(self, self.settings.input)
-        prompt = BeatPrompt(stroke, self, self.settings, self.logger.rich, renderer_monitor)
+
+        t0 = self.settings.prompt.t0
+        tempo = self.settings.prompt.tempo
+        metronome = Metronome(t0, tempo, t0)
+
+        if debug_monitor:
+            monitor_settings = beatwidgets.MonitorWidgetSettings()
+            monitor_settings.target = beatwidgets.MonitorTarget.renderer
+            icon = yield from beatwidgets.MonitorWidget(None, None, renderer, monitor_settings).load().join()
+        else:
+            icon = yield from PatternIconWidget(self.settings, self.logger.rich, metronome).load().join()
+        marker = yield from MarkerWidget(self.settings, self.logger.rich, metronome).load().join()
+        caret = yield from CaretWidget(self.settings, self.logger.rich, metronome).load().join()
+
+        prompt = BeatPrompt(stroke, self, self.settings, self.logger.rich, metronome, icon, marker, caret, renderer_monitor)
 
         stroke.register(controller)
         prompt.register(renderer)
@@ -558,7 +574,7 @@ class BeatInput:
             while not event.is_set():
                 yield
 
-        return dn.pipe(stop_when(prompt.fin_event), display_task, input_task)
+        yield from dn.pipe(stop_when(prompt.fin_event), display_task, input_task).join()
 
     @locked
     @onstate("FIN")
@@ -1495,7 +1511,7 @@ class BeatStroke:
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
-    def __init__(self, stroke, input, settings, rich, monitor):
+    def __init__(self, stroke, input, settings, rich, metronome, icon, marker, caret, monitor):
         r"""Constructor.
 
         Parameters
@@ -1504,6 +1520,10 @@ class BeatPrompt:
         input : BeatInput
         settings : BeatShellSettings
         rich : markups.RichTextRenderer
+        metronome : Metronome
+        icon : function
+        marker : function
+        caret : function
         monitor : engines.Monitor or None
         """
         self.stroke = stroke
@@ -1530,13 +1550,10 @@ class BeatPrompt:
         self.rich = rich
 
         # widgets
-        t0 = self.settings.prompt.t0
-        tempo = self.settings.prompt.tempo
-        self.metronome = Metronome(t0, tempo, t0)
-
-        self.icon_func = self.get_icon_func() if not self.monitor else self.get_monitor_func()
-        self.marker_func = self.get_marker_func()
-        self.caret_func = self.get_caret_func()
+        self.metronome = metronome
+        self.icon_func = icon
+        self.marker_func = marker
+        self.caret_func = caret
 
     def register(self, renderer):
         icon_width = self.settings.prompt.icon_width
@@ -1643,47 +1660,6 @@ class BeatPrompt:
 
                 (view, msg), time, width = yield (view, msg)
 
-    def get_monitor_func(self):
-        ticks = " ▏▎▍▌▋▊▉█"
-        ticks_len = len(ticks)
-        icon_width = self.settings.prompt.icon_width
-
-        def monitor_func(time, ran):
-            level = int((self.monitor.eff or 0.0) * icon_width*(ticks_len-1))
-            return mu.Text("".join(ticks[max(0, min(ticks_len-1, level-i*(ticks_len-1)))] for i in range(icon_width)))
-
-        return monitor_func
-
-    def get_icon_func(self):
-        icons = self.settings.prompt.icons
-
-        markuped_icons = [self.rich.parse(icon) for icon in icons]
-
-        def icon_func(time, ran):
-            period = self.metronome.period_of(time)
-            ind = int(period * len(markuped_icons) // 1) % len(markuped_icons)
-            return markuped_icons[ind]
-
-        return icon_func
-
-    def get_marker_func(self):
-        markers = self.settings.prompt.markers
-        caret_blink_ratio = self.settings.prompt.caret_blink_ratio
-
-        markuped_markers = (
-            self.rich.parse(markers[0]),
-            self.rich.parse(markers[1]),
-        )
-
-        def marker_func(time, ran):
-            period = self.metronome.period_of(time)
-            if period % 4 < min(1.0, caret_blink_ratio):
-                return markuped_markers[1]
-            else:
-                return markuped_markers[0]
-
-        return marker_func
-
     def markup_syntax(self, buffer, tokens, typeahead):
         r"""Markup syntax of input text.
 
@@ -1745,30 +1721,6 @@ class BeatPrompt:
 
         markup = markup.expand()
         return markup
-
-    def get_caret_func(self):
-        caret_blink_ratio = self.settings.prompt.caret_blink_ratio
-        caret = self.settings.prompt.caret
-
-        markuped_caret = [
-            self.rich.parse(caret[0], slotted=True),
-            self.rich.parse(caret[1], slotted=True),
-            self.rich.parse(caret[2], slotted=True),
-        ]
-
-        def caret_func(time):
-            period = self.metronome.period_of(time)
-            key_pressed_period = self.metronome.period_of(self.metronome.key_pressed_time) // -1 * -1
-            # don't blink while key pressing
-            if period < key_pressed_period or period % 1 < caret_blink_ratio:
-                if period % 4 < 1:
-                    return markuped_caret[2]
-                else:
-                    return markuped_caret[1]
-            else:
-                return markuped_caret[0]
-
-        return caret_func
 
     def render_caret(self, markup, caret):
         if caret is not None:
@@ -1912,4 +1864,83 @@ class Metronome:
 
     def period_of(self, time):
         return (time - self.t0)/(60.0/self.tempo)
+
+
+@dataclasses.dataclass
+class CaretWidget:
+    settings: BeatShellSettings
+    rich: mu.RichTextRenderer
+    metronome: Metronome
+
+    @dn.datanode
+    def load(self):
+        caret_blink_ratio = self.settings.prompt.caret_blink_ratio
+        caret = self.settings.prompt.caret
+
+        markuped_caret = [
+            self.rich.parse(caret[0], slotted=True),
+            self.rich.parse(caret[1], slotted=True),
+            self.rich.parse(caret[2], slotted=True),
+        ]
+
+        def caret_func(time):
+            period = self.metronome.period_of(time)
+            key_pressed_period = self.metronome.period_of(self.metronome.key_pressed_time) // -1 * -1
+            # don't blink while key pressing
+            if period < key_pressed_period or period % 1 < caret_blink_ratio:
+                if period % 4 < 1:
+                    return markuped_caret[2]
+                else:
+                    return markuped_caret[1]
+            else:
+                return markuped_caret[0]
+
+        yield
+        return caret_func
+
+@dataclasses.dataclass
+class PatternIconWidget:
+    settings: BeatShellSettings
+    rich: mu.RichTextRenderer
+    metronome: Metronome
+
+    @dn.datanode
+    def load(self):
+        icons = self.settings.prompt.icons
+
+        markuped_icons = [self.rich.parse(icon) for icon in icons]
+
+        def icon_func(time, ran):
+            period = self.metronome.period_of(time)
+            ind = int(period * len(markuped_icons) // 1) % len(markuped_icons)
+            return markuped_icons[ind]
+
+        yield
+        return icon_func
+
+@dataclasses.dataclass
+class MarkerWidget:
+    settings: BeatShellSettings
+    rich: mu.RichTextRenderer
+    metronome: Metronome
+
+    @dn.datanode
+    def load(self):
+        markers = self.settings.prompt.markers
+        caret_blink_ratio = self.settings.prompt.caret_blink_ratio
+
+        markuped_markers = (
+            self.rich.parse(markers[0]),
+            self.rich.parse(markers[1]),
+        )
+
+        def marker_func(time, ran):
+            period = self.metronome.period_of(time)
+            if period % 4 < min(1.0, caret_blink_ratio):
+                return markuped_markers[1]
+            else:
+                return markuped_markers[0]
+
+        yield
+        return marker_func
 
