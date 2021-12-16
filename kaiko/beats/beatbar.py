@@ -178,6 +178,7 @@ class BeatbarSettings(cfg.Configurable):
 class Beatbar:
     def __init__(self, mixer, detector, renderer, controller, icon, header, footer, sight, bar_shift, bar_flip, settings=None):
         settings = settings or BeatbarSettings()
+        self.settings = settings
 
         self.mixer = mixer
         self.detector = detector
@@ -203,10 +204,7 @@ class Beatbar:
         self.footer_func = footer
 
         # sight
-        hit_decay_time = settings.sight.hit_decay_time
         hit_sustain_time = settings.sight.hit_sustain_time
-        perf_appearances = settings.sight.performances_appearances
-        sight_appearances = settings.sight.sight_appearances
         perf_sustain_time = settings.sight.performance_sustain_time
 
         self.current_hit_hint = dn.TimedVariable(value=None, duration=hit_sustain_time)
@@ -215,19 +213,27 @@ class Beatbar:
 
         # hit handler
         self.target_queue = queue.Queue()
-        hit_handler = Beatbar._hit_handler(self.current_hit_hint, self.target_queue, hit_decay_time, hit_sustain_time)
 
+    @dn.datanode
+    def load(self):
         # register handlers
         icon_drawer = lambda arg: (0, self.icon_func(arg[0], arg[1]))
         header_drawer = lambda arg: (0, self.header_func(arg[0], arg[1]))
         footer_drawer = lambda arg: (0, self.footer_func(arg[0], arg[1]))
 
-        renderer.add_text(icon_drawer, xmask=self.icon_mask, zindex=(1,))
-        renderer.add_text(header_drawer, xmask=self.header_mask, zindex=(2,))
-        renderer.add_text(footer_drawer, xmask=self.footer_mask, zindex=(3,))
-        detector.add_listener(hit_handler)
+        hit_decay_time = self.settings.sight.hit_decay_time
+        hit_sustain_time = self.settings.sight.hit_sustain_time
+        hit_handler = Beatbar._hit_handler(self.current_hit_hint, self.target_queue, hit_decay_time, hit_sustain_time)
+
+        self.renderer.add_text(icon_drawer, xmask=self.icon_mask, zindex=(1,))
+        self.renderer.add_text(header_drawer, xmask=self.header_mask, zindex=(2,))
+        self.renderer.add_text(footer_drawer, xmask=self.footer_mask, zindex=(3,))
+        self.detector.add_listener(hit_handler)
 
         self.draw_content(0.0, self._sight_drawer, zindex=(2,))
+
+        yield
+        return
 
     @dn.datanode
     def _content_node(self, pos_func, text_func, start, duration):

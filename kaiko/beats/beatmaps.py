@@ -1182,6 +1182,8 @@ class Beatmap:
                           icon, header, footer, sight,
                           self.bar_shift, self.bar_flip, gameplay_settings.beatbar)
 
+        yield from beatbar.load().join()
+
         # handler
         stop_event = threading.Event()
         beatbar.add_handler(lambda _: stop_event.set(), gameplay_settings.controls.stop_key)
