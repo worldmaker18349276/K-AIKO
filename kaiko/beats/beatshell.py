@@ -1539,10 +1539,12 @@ class BeatPrompt:
         input_mask = slice(icon_width+marker_width, None)
 
         renderer.add_drawer(self.state_updater(), zindex=())
-        renderer.add_drawer(self.hint_handler())
-        renderer.add_drawer(self.text_handler())
-        renderer.add_text(self.get_icon_func(), icon_mask, zindex=(1,))
-        renderer.add_text(self.get_marker_func(), marker_mask, zindex=(2,))
+        renderer.add_drawer(self.hint_handler(), zindex=(0,))
+        renderer.add_text(self.text_handler(), input_mask, zindex=(0,))
+        renderer.add_text(self.markup_left_overflow, input_mask, zindex=(1,))
+        renderer.add_text(self.markup_right_overflow, input_mask, zindex=(1,))
+        renderer.add_text(self.get_icon_func(), icon_mask, zindex=(2,))
+        renderer.add_text(self.get_marker_func(), marker_mask, zindex=(3,))
 
     @dn.datanode
     def state_updater(self):
@@ -1798,27 +1800,6 @@ class BeatPrompt:
 
     @dn.datanode
     def text_handler(self):
-        r"""The datanode to render input text.
-
-        Receives
-        --------
-        view : list of str
-            The buffer of the view.
-        time : float
-        width : int
-            The width of the view.
-        text_data : tuple
-            The values yielded by `text_node`.
-
-        Yields
-        ------
-        view : list of str
-            The buffer of the rendered view.
-        """
-        caret_node = self.render_caret()
-
-        caret_index_func = self.get_caret_index_func()
-
         icon_width = self.settings.prompt.icon_width
         marker_width = self.settings.prompt.marker_width
         input_margin = self.settings.prompt.input_margin
@@ -1826,31 +1807,31 @@ class BeatPrompt:
         marker_ran = slice(icon_width, icon_width+marker_width)
         input_ran = slice(icon_width+marker_width, None)
 
+        caret_node = self.render_caret()
+        caret_index_func = self.get_caret_index_func()
         text_node = self.text_node()
         adjust_input_offset = self.adjust_input_offset()
 
         with text_node, caret_node, adjust_input_offset:
-            (view, msg), time, width = yield
+            time, ran = yield
 
             while True:
                 markup, text_width, typeahead_width, caret_dis = text_node.send()
 
-                xran = range(width)
-                input_width = len(xran[input_ran])
+                input_width = len(ran)
                 adjust_input_offset.send((input_width, text_width, typeahead_width, caret_dis))
 
                 # draw caret
                 caret_index = caret_index_func(time)
                 markup = caret_node.send((markup, caret_index))
 
-                # draw input
-                view.add_markup(markup, input_ran, -self.input_offset)
-                if self.left_overflow:
-                    view.add_markup(mu.Text("…"), input_ran, 0)
-                if self.right_overflow:
-                    view.add_markup(mu.Text("…"), input_ran, input_width-1)
+                time, ran = yield -self.input_offset, markup
 
-                (view, msg), time, width = yield (view, msg)
+    def markup_left_overflow(self, arg):
+        return (0, mu.Text("…")) if self.left_overflow else None
+
+    def markup_right_overflow(self, arg):
+        return (len(arg[1])-1, mu.Text("…")) if self.right_overflow else None
 
     def markup_hint(self, messages, hint):
         r"""Render hint.
