@@ -1,6 +1,6 @@
 import dataclasses
 from enum import Enum
-from typing import Union
+from typing import Union, List, Tuple
 import numpy
 from ..utils import config as cfg
 from ..utils import datanodes as dn
@@ -385,4 +385,90 @@ class ProgressWidget:
 
         yield
         return widget_func
+
+
+@dataclasses.dataclass
+class Metronome:
+    t0: float
+    tempo: float
+    key_pressed_time: float
+
+    def period_of(self, time):
+        return (time - self.t0)/(60.0/self.tempo)
+
+class PatternsWidgetSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    patterns : list of str
+        The patterns to loop.
+    """
+    patterns: List[str] = [
+        "[color=cyan]⠶⠦⣚⠀⠶[/]",
+        "[color=cyan]⢎⣀⡛⠀⠶[/]",
+        "[color=cyan]⢖⣄⠻⠀⠶[/]",
+        "[color=cyan]⠖⠐⡩⠂⠶[/]",
+        "[color=cyan]⠶⠀⡭⠲⠶[/]",
+        "[color=cyan]⠶⠀⣬⠉⡱[/]",
+        "[color=cyan]⠶⠀⣦⠙⠵[/]",
+        "[color=cyan]⠶⠠⣊⠄⠴[/]",
+    ]
+
+@dataclasses.dataclass
+class PatternsWidget:
+    metronome: Metronome
+    rich: mu.RichTextRenderer
+    settings: PatternsWidgetSettings
+
+    @dn.datanode
+    def load(self):
+        patterns = self.settings.patterns
+
+        markuped_patterns = [self.rich.parse(pattern) for pattern in patterns]
+
+        def patterns_func(time, ran):
+            period = self.metronome.period_of(time)
+            ind = int(period * len(markuped_patterns) // 1) % len(markuped_patterns)
+            return markuped_patterns[ind]
+
+        yield
+        return patterns_func
+
+class MarkerWidgetSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    markers : tuple of str and str
+        The appearance of normal and blinking-style markers.
+    blink_ratio : float
+        The ratio to blink.
+    """
+    markers: Tuple[str, str] = ("❯ ", "[weight=bold]❯ [/]")
+    blink_ratio: float = 0.3
+
+@dataclasses.dataclass
+class MarkerWidget:
+    metronome: Metronome
+    rich: mu.RichTextRenderer
+    settings: MarkerWidgetSettings
+
+    @dn.datanode
+    def load(self):
+        markers = self.settings.markers
+        blink_ratio = self.settings.blink_ratio
+
+        markuped_markers = (
+            self.rich.parse(markers[0]),
+            self.rich.parse(markers[1]),
+        )
+
+        def marker_func(time, ran):
+            period = self.metronome.period_of(time)
+            if period % 4 < min(1.0, blink_ratio):
+                return markuped_markers[1]
+            else:
+                return markuped_markers[0]
+
+        yield
+        return marker_func
 
