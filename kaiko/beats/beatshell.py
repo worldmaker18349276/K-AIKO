@@ -556,7 +556,7 @@ class BeatInput:
         if debug_monitor:
             monitor_settings = beatwidgets.MonitorWidgetSettings()
             monitor_settings.target = beatwidgets.MonitorTarget.renderer
-            icon = yield from beatwidgets.MonitorWidget(None, None, renderer, monitor_settings).load().join()
+            icon = yield from beatwidgets.MonitorWidget(renderer, monitor_settings).load().join()
         else:
             icon = yield from PatternIconWidget(self.settings, self.logger.rich, metronome).load().join()
         marker = yield from MarkerWidget(self.settings, self.logger.rich, metronome).load().join()

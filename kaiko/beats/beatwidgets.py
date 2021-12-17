@@ -1,5 +1,6 @@
 import dataclasses
 from enum import Enum
+from typing import Union
 import numpy
 from ..utils import config as cfg
 from ..utils import datanodes as dn
@@ -272,24 +273,14 @@ class MonitorWidgetSettings(cfg.Configurable):
 
 @dataclasses.dataclass
 class MonitorWidget:
-    mixer: engines.Mixer
-    detector: engines.Detector
-    renderer: engines.Renderer
+    target: Union[engines.Mixer, engines.Detector, engines.Renderer, None]
     settings: MonitorWidgetSettings
 
     @dn.datanode
     def load(self):
         ticks = " ▏▎▍▌▋▊▉█"
         ticks_len = len(ticks)
-        monitor_target = self.settings.target
-        if monitor_target is MonitorTarget.mixer:
-            monitor = self.mixer.monitor
-        elif monitor_target is MonitorTarget.detector:
-            monitor = self.detector.monitor
-        elif monitor_target is MonitorTarget.renderer:
-            monitor = self.renderer.monitor
-        else:
-            monitor = None
+        monitor = self.target.monitor if self.target is not None else None
 
         def widget_func(time, ran):
             if monitor is None:

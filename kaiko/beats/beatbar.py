@@ -452,7 +452,14 @@ class BeatbarWidget(Enum):
         elif self == BeatbarWidget.accuracy_meter:
             return self.value(0, float("inf"), rich, state, widget_settings)
         elif self == BeatbarWidget.monitor:
-            return self.value(mixer, detector, renderer, widget_settings)
+            if widget_settings.target == beatwidgets.MonitorTarget.mixer:
+                return self.value(mixer, widget_settings)
+            elif widget_settings.target == beatwidgets.MonitorTarget.detector:
+                return self.value(detector, widget_settings)
+            elif widget_settings.target == beatwidgets.MonitorTarget.renderer:
+                return self.value(renderer, widget_settings)
+            else:
+                assert False
         elif self == BeatbarWidget.score:
             return self.value(state, rich, widget_settings)
         elif self == BeatbarWidget.progress:
