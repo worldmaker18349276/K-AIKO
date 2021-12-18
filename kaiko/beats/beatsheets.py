@@ -1,6 +1,6 @@
 import os
 import math
-from collections import OrderedDict, namedtuple
+import re
 from fractions import Fraction
 from dataclasses import dataclass, field
 from typing import List, Tuple, Dict, Union
@@ -409,6 +409,9 @@ class PatternsBiparser(bp.Biparser):
             elif isinstance(pattern, Note):
                 pattern_str = note_biparser.encode(pattern)
 
+            else:
+                assert False
+
             patterns_str.append(pattern_str)
 
         return " ".join(patterns_str)
@@ -680,11 +683,11 @@ class OSU:
 
         if type & 1: # circle
             if hitSound == 0 or hitSound & 1: # don
-                event = beatmaps.Soft(beat=beat, length=0, speed=speed, volume=volume)
+                event = beatmaps.Soft(beat=beat, length=Fraction(0), speed=speed, volume=volume)
                 beatmap.event_sequences[0].append(event)
 
             elif hitSound & 10: # kat
-                event = beatmaps.Loud(beat=beat, length=0, speed=speed, volume=volume)
+                event = beatmaps.Loud(beat=beat, length=Fraction(0), speed=speed, volume=volume)
                 beatmap.event_sequences[0].append(event)
 
         elif type & 2: # slider

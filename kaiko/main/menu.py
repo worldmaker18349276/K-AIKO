@@ -1,7 +1,5 @@
 import sys
 import os
-import re
-import time
 import contextlib
 import dataclasses
 import traceback
@@ -12,8 +10,6 @@ from pathlib import Path
 import appdirs
 from ..utils import markups as mu
 from ..utils import datanodes as dn
-from ..utils import config as cfg
-from ..utils import biparsers as bp
 from ..utils import commands as cmd
 from ..devices import loggers as log
 from ..beats import beatshell
@@ -44,11 +40,11 @@ class KAIKOUser:
     cache_dir: Path
 
     @classmethod
-    def create(clz):
+    def create(cls):
         username = getpass.getuser()
         data_dir = Path(appdirs.user_data_dir("K-AIKO", username))
         cache_dir = Path(appdirs.user_cache_dir("K-AIKO", username))
-        return clz(username, data_dir, cache_dir)
+        return cls(username, data_dir, cache_dir)
 
     @property
     def config_dir(self):
@@ -101,6 +97,8 @@ class KAIKOUser:
         for rspath in resources:
             logger.print(f"[data/] Load resource {logger.escape(rspath)}...")
             data = pkgutil.get_data("kaiko", rspath)
+            if data is None:
+                raise RuntimeError(f"Failed to load resource {rspath}")
             open(self.data_dir / rspath, 'wb').write(data)
 
         logger.print(f"[data/] Your data will be stored in {logger.emph(self.data_dir.as_uri())}")
@@ -155,7 +153,7 @@ class KAIKOMenu:
 
     @classmethod
     @contextlib.contextmanager
-    def init(clz):
+    def init(cls):
         r"""Initialize KAIKOMenu within a context manager."""
         logger = log.Logger()
 
@@ -171,7 +169,7 @@ class KAIKOMenu:
         logger.print()
 
         with prepare_pyaudio(logger) as manager:
-            yield clz(config, user, manager, logger)
+            yield cls(config, user, manager, logger)
 
     @dn.datanode
     def run(self):

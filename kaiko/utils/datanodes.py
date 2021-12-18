@@ -1,5 +1,3 @@
-import sys
-import os
 import time
 import functools
 import itertools
@@ -9,12 +7,13 @@ import queue
 import threading
 import subprocess
 import signal
+from typing import Callable
 import numpy
 import scipy
 import scipy.signal
 
 
-def datanode(gen_func):
+def datanode(gen_func) -> Callable[..., 'DataNode']:
     @functools.wraps(gen_func)
     def node_func(*args, **kwargs):
         return DataNode(gen_func(*args, **kwargs))
@@ -116,7 +115,7 @@ class DataNode:
             data = yield function(data)
 
     @staticmethod
-    def wrap(node_like):
+    def wrap(node_like) -> 'DataNode':
         if isinstance(node_like, DataNode):
             return node_like
 
@@ -344,10 +343,13 @@ def chain(*nodes):
 
         data = yield
         for node in nodes:
-            try:
-                data = yield from node.join(data)
-            except StopIteration:
-                return
+            with node:
+                while True:
+                    try:
+                        data = node.send(data)
+                    except StopIteration:
+                        break
+                    data = yield data
 
 @datanode
 def branch(*nodes):
@@ -587,14 +589,14 @@ def chunk(node, chunk_shape=1024):
     """
     node = DataNode.wrap(node)
 
+    chunk = numpy.zeros(chunk_shape, dtype=numpy.float32)
+    index = 0
+    jndex = 0
+
     with node:
         try:
             yield
-            chunk = numpy.zeros(chunk_shape, dtype=numpy.float32)
-            index = 0
-
             data = node.send()
-            jndex = 0
 
             while True:
                 length = min(chunk.shape[0]-index, data.shape[0]-jndex)
@@ -632,14 +634,13 @@ def unchunk(node, chunk_shape=1024):
         The unchunked signal with any length.
     """
     node = DataNode.wrap(node)
+    chunk = numpy.zeros(chunk_shape, dtype=numpy.float32)
+    index = 0
+    jndex = 0
 
     with node:
         try:
-            chunk = numpy.zeros(chunk_shape, dtype=numpy.float32)
-            index = 0
-
             data = yield
-            jndex = 0
 
             while True:
                 length = min(chunk.shape[0]-index, data.shape[0]-jndex)
@@ -668,13 +669,14 @@ def unchunk(node, chunk_shape=1024):
 
 @datanode
 def attach(node):
-    with node:
-        try:
-            data = yield
-            index = 0
+    index = 0
+    jndex = 0
 
+    with node:
+        data = yield
+
+        try:
             signal = node.send()
-            jndex = 0
 
             while True:
                 length = min(data.shape[0]-index, signal.shape[0]-jndex)

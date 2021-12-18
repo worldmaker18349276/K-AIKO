@@ -72,7 +72,7 @@ class ProfileManager:
         self.on_change_handlers = []
 
     @classmethod
-    def initialize(clz, path, logger):
+    def initialize(cls, path, logger):
         """Initializer, use me instead of sconstructor.
 
         Parameters
@@ -85,7 +85,7 @@ class ProfileManager:
         -------
         config : ProfileManager
         """
-        config = clz(path, logger)
+        config = cls(path, logger)
         # `config.current_name` and `config.current` are currently invalid
 
         config.on_change(lambda settings: logger.recompile_style(terminal_settings=settings.devices.terminal,

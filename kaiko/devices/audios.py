@@ -4,7 +4,6 @@ import contextlib
 import dataclasses
 import pyaudio
 import numpy
-import scipy.signal
 import wave
 import audioread
 from ..utils import datanodes as dn
@@ -261,7 +260,7 @@ class AudioMetadata:
     sampwidth : int
 
     @classmethod
-    def read(clz, filename):
+    def read(cls, filename):
         if filename.endswith(".wav"):
             with wave.open(filename, 'rb') as file:
                 samplerate = file.getframerate()
@@ -276,7 +275,7 @@ class AudioMetadata:
                 channels = file.channels
                 sampwidth = 2
 
-        return clz(samplerate, duration, channels, sampwidth)
+        return cls(samplerate, duration, channels, sampwidth)
 
 @dn.datanode
 def load(filename, stop_event=None):

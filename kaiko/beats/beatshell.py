@@ -1,13 +1,10 @@
-import os
 from enum import Enum
 import functools
-import itertools
 import re
 import threading
 from typing import Optional, List, Tuple, Dict, Callable
 import dataclasses
 from ..utils import datanodes as dn
-from ..utils import biparsers as bp
 from ..utils import config as cfg
 from ..utils import markups as mu
 from ..utils import commands as cmd
@@ -982,7 +979,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        for match in re.finditer("\w+|\W+", "".join(self.buffer)):
+        for match in re.finditer(r"\w+|\W+", "".join(self.buffer)):
             if match.end() >= self.pos:
                 return self.delete_range(match.start(), self.pos)
         else:
@@ -998,7 +995,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        for match in re.finditer("\w+|\W+", "".join(self.buffer)):
+        for match in re.finditer(r"\w+|\W+", "".join(self.buffer)):
             if match.end() > self.pos:
                 return self.delete_range(self.pos, match.end())
         else:
@@ -1097,7 +1094,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        for match in re.finditer("\w+|\W+", "".join(self.buffer)):
+        for match in re.finditer(r"\w+|\W+", "".join(self.buffer)):
             if match.end() >= self.pos:
                 return self.move_to(match.start())
         else:
@@ -1112,7 +1109,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        for match in re.finditer("\w+|\W+", "".join(self.buffer)):
+        for match in re.finditer(r"\w+|\W+", "".join(self.buffer)):
             if match.end() > self.pos:
                 return self.move_to(match.end())
         else:
@@ -1370,35 +1367,20 @@ class BeatInput:
                 original_pos=original_pos,
                 selection=selection)
 
-        if action == +1:
-            self.tab_state.sugg_index += 1
-        elif action == -1:
-            self.tab_state.sugg_index -= 1
-        elif action == 0:
-            self.tab_state.sugg_index = None
-        else:
-            raise ValueError
-
         sugg_index = self.tab_state.sugg_index
         selection = self.tab_state.selection
         suggestions = self.tab_state.suggestions
-        if sugg_index in range(len(suggestions)):
-            # autocomplete selected token
-            self.buffer[selection] = suggestions[sugg_index]
-            self.pos = selection.start + len(suggestions[sugg_index])
-            self.tab_state.selection = slice(selection.start, self.pos)
 
-            self.update_buffer()
-            parents = [token for token, _, _, _ in self.tokens[:self.tab_state.token_index]]
-            target, target_type, _, _ = self.tokens[self.tab_state.token_index]
-            if target_type is None:
-                msg = ""
-            else:
-                msg = self.command.info_command(parents, target) or ""
-            self.set_hint(SuggestionsHint(suggestions, sugg_index, msg), self.tab_state.token_index)
-            return True
-
+        if action == +1:
+            sugg_index += 1
+        elif action == -1:
+            sugg_index -= 1
+        elif action == 0:
+            sugg_index = None
         else:
+            raise ValueError
+
+        if sugg_index not in range(len(suggestions)):
             # restore state
             self.buffer[selection] = self.tab_state.original_token
             self.pos = self.tab_state.original_pos
@@ -1407,6 +1389,24 @@ class BeatInput:
             self.update_buffer()
             self.update_hint()
             return False
+
+        assert sugg_index is not None
+
+        # autocomplete selected token
+        self.tab_state.sugg_index = sugg_index
+        self.buffer[selection] = suggestions[sugg_index]
+        self.pos = selection.start + len(suggestions[sugg_index])
+        self.tab_state.selection = slice(selection.start, self.pos)
+
+        self.update_buffer()
+        parents = [token for token, _, _, _ in self.tokens[:self.tab_state.token_index]]
+        target, target_type, _, _ = self.tokens[self.tab_state.token_index]
+        if target_type is None:
+            msg = ""
+        else:
+            msg = self.command.info_command(parents, target) or ""
+        self.set_hint(SuggestionsHint(suggestions, sugg_index, msg), self.tab_state.token_index)
+        return True
 
     @locked
     @onstate("EDIT")

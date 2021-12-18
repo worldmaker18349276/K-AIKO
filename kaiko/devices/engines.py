@@ -1,10 +1,8 @@
 import time
 import bisect
 import functools
-import contextlib
 import dataclasses
 import numpy
-import audioread
 from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..utils import markups as mu
@@ -105,8 +103,13 @@ class Monitor:
         if self.total_avg is None:
             return f"count={self.count}"
 
+        assert self.total_dev is not None
+        assert self.total_eff is not None
+
         if self.best is None or self.best == float('inf'):
             return f"count={self.count}, avg={self.total_avg*1000:5.3f}±{self.total_dev*1000:5.3f}ms ({self.total_eff: >6.1%})"
+
+        assert self.worst is not None
 
         return (f"count={self.count}, avg={self.total_avg*1000:5.3f}±{self.total_dev*1000:5.3f}ms"
                 f" ({self.best*1000:5.3f}ms ~ {self.worst*1000:5.3f}ms) ({self.total_eff: >6.1%})")
@@ -187,14 +190,14 @@ class Mixer:
                 index += 1
 
     @classmethod
-    def create(clz, settings, manager, ref_time=0.0, monitor=None):
+    def create(cls, settings, manager, ref_time=0.0, monitor=None):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
 
         scheduler = dn.Scheduler()
-        task = clz.get_task(scheduler, settings, manager, ref_time, monitor)
-        return task, clz(scheduler, samplerate, buffer_length, nchannels, monitor)
+        task = cls.get_task(scheduler, settings, manager, ref_time, monitor)
+        return task, cls(scheduler, samplerate, buffer_length, nchannels, monitor)
 
     def add_effect(self, node, time=None, zindex=(0,)):
         if time is not None:
@@ -408,10 +411,10 @@ class Detector:
                 index += 1
 
     @classmethod
-    def create(clz, settings, manager, ref_time=0.0, monitor=None):
+    def create(cls, settings, manager, ref_time=0.0, monitor=None):
         scheduler = dn.Scheduler()
-        task = clz.get_task(scheduler, settings, manager, ref_time, monitor)
-        return task, clz(scheduler, monitor)
+        task = cls.get_task(scheduler, settings, manager, ref_time, monitor)
+        return task, cls(scheduler, monitor)
 
     def add_listener(self, node):
         return self.listeners_scheduler.add_node(node, (0,))
@@ -592,10 +595,10 @@ class Renderer:
                     resized = False
 
     @classmethod
-    def create(clz, settings, term_settings, ref_time=0.0, monitor=None):
+    def create(cls, settings, term_settings, ref_time=0.0, monitor=None):
         scheduler = dn.Scheduler()
-        task = clz.get_task(scheduler, settings, term_settings, ref_time, monitor)
-        return task, clz(scheduler, monitor)
+        task = cls.get_task(scheduler, settings, term_settings, ref_time, monitor)
+        return task, cls(scheduler, monitor)
 
     def add_drawer(self, node, zindex=(0,)):
         return self.drawers_scheduler.add_node(node, zindex=zindex)
@@ -671,10 +674,10 @@ class Controller:
                     return
 
     @classmethod
-    def create(clz, settings, term_settings, ref_time=0.0):
+    def create(cls, settings, term_settings, ref_time=0.0):
         scheduler = dn.Scheduler()
-        task = clz.get_task(scheduler, settings, term_settings, ref_time)
-        return task, clz(scheduler)
+        task = cls.get_task(scheduler, settings, term_settings, ref_time)
+        return task, cls(scheduler)
 
     def add_handler(self, node, keyname=None):
         if keyname is None:

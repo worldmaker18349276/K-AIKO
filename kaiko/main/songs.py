@@ -3,7 +3,6 @@ import contextlib
 import random
 import shutil
 import queue
-import traceback
 import zipfile
 import re
 import dataclasses
@@ -36,11 +35,11 @@ class SongMetadata:
     preview: float
 
     @classmethod
-    def from_beatmap(clz, beatmap):
+    def from_beatmap(cls, beatmap):
         if beatmap.audio is None:
             return None
         info = SongMetadata.filter_info(beatmap.info)
-        return clz(root=beatmap.root, audio=beatmap.audio,
+        return cls(root=beatmap.root, audio=beatmap.audio,
                    volume=beatmap.volume, info=info, preview=beatmap.preview)
 
     @property
@@ -262,6 +261,8 @@ class KAIKOBGMController:
                 if not self.required:
                     continue
 
+                assert isinstance(self.mixer_task, dn.DataNode)
+
                 with self.mixer_task:
                     yield
 
@@ -320,7 +321,9 @@ class KAIKOBGMController:
         yield
         while True:
             if isinstance(action, StopPreview) and self.is_bgm_on:
-                action = PlayBGM(self.random_song(), None)
+                song = self.random_song()
+                if song is not None:
+                    action = PlayBGM(song, None)
 
             if isinstance(action, (StopBGM, StopPreview)):
                 self.is_bgm_on = False
@@ -361,7 +364,8 @@ class KAIKOBGMController:
                             try:
                                 song_task.send(None)
                             except StopIteration:
-                                action = PlayBGM(self.random_song(), None)
+                                song = self.random_song()
+                                action = PlayBGM(song, None) if song is not None else StopBGM()
                                 break
 
                             if not self._action_queue.empty():

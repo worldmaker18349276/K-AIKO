@@ -49,11 +49,11 @@ class FieldBiparser(bp.Biparser):
 
         for i, field_name in enumerate(value):
             if not hasattr(current_type, '__configurable_fields__'):
-                raise EncodeError(value, "[" + ".".join(value[:i]) + "].fields")
+                raise bp.EncodeError(value, "[" + ".".join(value[:i]) + "].fields", [])
             current_type = current_type.__configurable_fields__[field_name]
 
         if hasattr(current_type, '__configurable_fields__'):
-            raise EncodeError(value, "[" + ".".join(value) + "]")
+            raise bp.EncodeError(value, "[" + ".".join(value) + "]", [])
 
         return ".".join(value)
 
@@ -280,6 +280,7 @@ class Configurable(metaclass=ConfigurableMeta):
             raise ValueError("empty field")
 
         parent, curr = None, self
+        field = fields[0]
 
         for i, field in enumerate(fields):
             if not isinstance(curr, Configurable):
@@ -310,6 +311,7 @@ class Configurable(metaclass=ConfigurableMeta):
             raise ValueError("empty field")
 
         parent, curr = None, self
+        field = fields[0]
 
         for i, field in enumerate(fields):
             if not isinstance(curr, Configurable):
@@ -346,6 +348,7 @@ class Configurable(metaclass=ConfigurableMeta):
             raise ValueError("empty field")
 
         parent, curr = None, self
+        field = fields[0]
 
         for i, field in enumerate(fields):
             if not isinstance(curr, Configurable):
@@ -381,6 +384,7 @@ class Configurable(metaclass=ConfigurableMeta):
             raise ValueError("empty field")
 
         parent, curr = None, self
+        field = fields[0]
 
         for i, field in enumerate(fields):
             if not isinstance(curr, Configurable):
@@ -395,7 +399,7 @@ class Configurable(metaclass=ConfigurableMeta):
             return field in parent.__dict__
 
     @classmethod
-    def read(clz, path, name="settings"):
+    def read(cls, path, name="settings"):
         """Read configuration from a file.
 
         Parameters
@@ -426,7 +430,7 @@ class Configurable(metaclass=ConfigurableMeta):
         # exec(text, globals(), locals)
         # return locals[self.name]
 
-        biparser = ConfigurationBiparser(clz, name)
+        biparser = ConfigurationBiparser(cls, name)
         text = open(path, 'r').read()
         res = biparser.decode(text)[0]
         return res
@@ -443,7 +447,7 @@ class Configurable(metaclass=ConfigurableMeta):
 
         Raises
         ------
-        EncodeError
+        biparsers.EncodeError
             If encoding fails.
         """
         if isinstance(path, str):

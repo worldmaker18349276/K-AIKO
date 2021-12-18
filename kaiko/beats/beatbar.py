@@ -1,7 +1,7 @@
 import math
 from enum import Enum
 import dataclasses
-from typing import List, Tuple, Dict, Optional
+from typing import Any, List, Tuple, Dict, Optional
 import queue
 import threading
 from ..utils import config as cfg
@@ -44,7 +44,7 @@ class Performance:
     @staticmethod
     def judge(tol, time, hit_time=None, is_correct_key=True):
         if hit_time is None:
-            return Performance(PerformanceGrade((None, None)), time, None)
+            return Performance(PerformanceGrade.MISS, time, None)
 
         is_wrong = not is_correct_key
         err = hit_time - time
@@ -52,7 +52,9 @@ class Performance:
         if err < 0:
             shift = -shift
 
-        return Performance(PerformanceGrade((shift, is_wrong)), time, err)
+        for grade in PerformanceGrade:
+            if grade.shift == shift and grade.is_wrong == is_wrong:
+                return Performance(grade, time, err)
 
     @property
     def shift(self):
@@ -340,7 +342,7 @@ class Beatbar:
                     target.__enter__()
 
                 # end listen if expired
-                if duration is not None and start + duration <= time:
+                if target is not None and duration is not None and start + duration <= time:
                     target.__exit__()
                     target, start, duration = None, None, None
 
@@ -435,7 +437,7 @@ class Sight:
 
 @dataclasses.dataclass
 class TimedValue:
-    value: any
+    value: Any
     start: Optional[float]
     duration: float
 

@@ -204,7 +204,7 @@ def match(regex, expected, text, index, optional=False, partial=True):
 
     Returns
     -------
-    value : str
+    value : re.Match, optional
         The match object.
     end : int
         The index of the end of the matched substring.
@@ -243,7 +243,7 @@ class LiteralBiparser(Biparser):
 
     def decode(self, text, index=0, partial=False):
         res, index = match(self.regex, self.expected, text, index, partial=partial)
-        return ast.literal_eval(res.group()), index
+        return ast.literal_eval(res.group()) if res else res, index
 
 class NoneBiparser(LiteralBiparser):
     regex = "None"
@@ -308,7 +308,7 @@ class BytesBiparser(LiteralBiparser):
 
     def encode(self, value):
         # make sure it uses double quotation
-        return 'b"' + repr(value + b'"')[2:-2].replace(b'"', rb'\"').replace(rb"\'", b"'") + '"'
+        return 'b"' + repr(value + b'"')[2:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
 
 class SStrBiparser(LiteralBiparser):
     regex = (r"'("

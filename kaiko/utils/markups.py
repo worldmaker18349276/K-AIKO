@@ -47,7 +47,7 @@ def parse_markup(markup_str, tags, props={}):
             stack[-1][1].append(markup)
             continue
 
-        match_single = re.match("^\[(\w+)(?:=(.*))?/\]$", tag) # [tag=param/]
+        match_single = re.match(r"^\[(\w+)(?:=(.*))?/\]$", tag) # [tag=param/]
         if match_single:
             name = match_single.group(1)
             param_str = match_single.group(2)

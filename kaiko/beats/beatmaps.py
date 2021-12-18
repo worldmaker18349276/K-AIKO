@@ -1,13 +1,10 @@
 import os
-import contextlib
-from enum import Enum
 from dataclasses import dataclass, replace
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
 from fractions import Fraction
 import threading
 import numpy
-import audioread
 from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..utils import markups as mu

@@ -81,6 +81,7 @@ def terminal_size():
     signal.signal(signal.SIGWINCH, SIGWINCH_handler)
 
     yield
+    size = shutil.get_terminal_size()
     while True:
         if resize_event.is_set():
             resize_event.clear()
