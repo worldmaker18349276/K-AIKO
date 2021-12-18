@@ -146,7 +146,7 @@ class Text(Event):
     speed: Optional[float] = None
 
     def prepare(self, beatmap, rich, context):
-        self.time = beatmap.time(self.beat)
+        self.time = beatmap.metronome.time(self.beat)
         if self.speed is None:
             self.speed = context.get('speed', 1.0)
 
@@ -183,8 +183,8 @@ class Title(Event):
     pos: float = 0.5
 
     def prepare(self, beatmap, rich, context):
-        self.time = beatmap.time(self.beat)
-        self.end = beatmap.time(self.beat + self.length)
+        self.time = beatmap.metronome.time(self.beat)
+        self.end = beatmap.metronome.time(self.beat + self.length)
 
         self.lifespan = (self.time, self.end)
         self.zindex = (10, -self.time)
@@ -212,7 +212,7 @@ class Flip(Event):
     flip: Optional[bool] = None
 
     def prepare(self, beatmap, rich, context):
-        self.time = beatmap.time(self.beat)
+        self.time = beatmap.metronome.time(self.beat)
         self.lifespan = (self.time, self.time)
 
     def register(self, state, field):
@@ -252,8 +252,8 @@ class Shift(Event):
     span: Union[int, Fraction, float] = 0
 
     def prepare(self, beatmap, rich, context):
-        self.time = beatmap.time(self.beat)
-        self.end = beatmap.time(self.beat+self.span)
+        self.time = beatmap.metronome.time(self.beat)
+        self.end = beatmap.metronome.time(self.beat+self.span)
         self.lifespan = (self.time, self.end)
 
     def register(self, state, field):
@@ -373,7 +373,7 @@ class OneshotTarget(Target):
     def prepare(self, beatmap, rich, context):
         self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
 
-        self.time = beatmap.time(self.beat)
+        self.time = beatmap.metronome.time(self.beat)
         self.perf = None
 
         travel_time = 1.0 / abs(0.5 * self.speed)
@@ -676,14 +676,14 @@ class Roll(Target):
         if self.nofeedback is None:
             self.nofeedback = context.get('nofeedback', False)
 
-        self.time = beatmap.time(self.beat)
-        self.end = beatmap.time(self.beat+self.length)
+        self.time = beatmap.metronome.time(self.beat)
+        self.end = beatmap.metronome.time(self.beat+self.length)
         self.roll = 0
         self.number = max(int(self.length * self.density // -1 * -1), 1)
         self.is_finished = False
         self.score = 0
 
-        self.times = [beatmap.time(self.beat+i/self.density) for i in range(self.number)]
+        self.times = [beatmap.metronome.time(self.beat+i/self.density) for i in range(self.number)]
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.end + travel_time)
         self.range = (self.time - self.tolerance, self.end + self.tolerance)
@@ -772,14 +772,14 @@ class Spin(Target):
         if self.nofeedback is None:
             self.nofeedback = context.get('nofeedback', False)
 
-        self.time = beatmap.time(self.beat)
-        self.end = beatmap.time(self.beat+self.length)
+        self.time = beatmap.metronome.time(self.beat)
+        self.end = beatmap.metronome.time(self.beat+self.length)
         self.charge = 0.0
         self.capacity = float(self.length * self.density)
         self.is_finished = False
         self.score = 0
 
-        self.times = [beatmap.time(self.beat+i/self.density) for i in range(int(self.capacity))]
+        self.times = [beatmap.metronome.time(self.beat+i/self.density) for i in range(int(self.capacity))]
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.end + travel_time)
         self.range = (self.time - self.tolerance, self.end + self.tolerance)
@@ -1065,10 +1065,9 @@ class Beatmap:
         self.root = root
         self.audio = audio
         self.volume = volume
-        self.offset = offset
+        self.metronome = engines.Metronome(offset, tempo)
         self.info = info
         self.preview = preview
-        self.tempo = tempo
         self.bar_shift = bar_shift
         self.bar_flip = bar_flip
         self.event_sequences = event_sequences or []
@@ -1078,45 +1077,21 @@ class Beatmap:
         self.audionode = None
         self.resources = {}
 
-    def time(self, beat):
-        r"""Convert beat to time (in seconds).
+    @property
+    def offset(self):
+        return self.metronome.offset
 
-        Parameters
-        ----------
-        beat : int or Fraction or float
+    @offset.setter
+    def offset(self, value):
+        self.metronome.offset = value
 
-        Returns
-        -------
-        time : float
-        """
-        return self.offset + beat*60/self.tempo
+    @property
+    def tempo(self):
+        return self.metronome.tempo
 
-    def beat(self, time):
-        r"""Convert time (in seconds) to beat.
-
-        Parameters
-        ----------
-        time : float
-
-        Returns
-        -------
-        beat : float
-        """
-        return (time - self.offset)*self.tempo/60
-
-    def dtime(self, beat, length):
-        r"""Convert length to time difference (in seconds).
-
-        Parameters
-        ----------
-        beat : int or Fraction or float
-        length : int or Fraction or float
-
-        Returns
-        -------
-        dtime : float
-        """
-        return self.time(beat+length) - self.time(beat)
+    @tempo.setter
+    def tempo(self, value):
+        self.metronome.tempo = value
 
     @dn.datanode
     def play(self, manager, user, devices_settings, gameplay_settings=None):
