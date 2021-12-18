@@ -387,15 +387,6 @@ class ProgressWidget:
         return widget_func
 
 
-@dataclasses.dataclass
-class Metronome:
-    t0: float
-    tempo: float
-    key_pressed_time: float
-
-    def period_of(self, time):
-        return (time - self.t0)/(60.0/self.tempo)
-
 class PatternsWidgetSettings(cfg.Configurable):
     r"""
     Fields
@@ -416,7 +407,7 @@ class PatternsWidgetSettings(cfg.Configurable):
 
 @dataclasses.dataclass
 class PatternsWidget:
-    metronome: Metronome
+    metronome: engines.Metronome
     rich: mu.RichTextRenderer
     settings: PatternsWidgetSettings
 
@@ -427,8 +418,8 @@ class PatternsWidget:
         markuped_patterns = [self.rich.parse(pattern) for pattern in patterns]
 
         def patterns_func(time, ran):
-            period = self.metronome.period_of(time)
-            ind = int(period * len(markuped_patterns) // 1) % len(markuped_patterns)
+            beat = self.metronome.beat(time)
+            ind = int(beat * len(markuped_patterns) // 1) % len(markuped_patterns)
             return markuped_patterns[ind]
 
         yield
@@ -448,7 +439,7 @@ class MarkerWidgetSettings(cfg.Configurable):
 
 @dataclasses.dataclass
 class MarkerWidget:
-    metronome: Metronome
+    metronome: engines.Metronome
     rich: mu.RichTextRenderer
     settings: MarkerWidgetSettings
 
@@ -463,8 +454,8 @@ class MarkerWidget:
         )
 
         def marker_func(time, ran):
-            period = self.metronome.period_of(time)
-            if period % 4 < min(1.0, blink_ratio):
+            beat = self.metronome.beat(time)
+            if beat % 4 < min(1.0, blink_ratio):
                 return markuped_markers[1]
             else:
                 return markuped_markers[0]

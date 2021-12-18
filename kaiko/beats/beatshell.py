@@ -551,7 +551,7 @@ class BeatInput:
 
         t0 = self.settings.prompt.t0
         tempo = self.settings.prompt.tempo
-        metronome = beatwidgets.Metronome(t0, tempo, t0)
+        metronome = engines.Metronome(t0, tempo)
 
         if debug_monitor:
             monitor_settings = beatwidgets.MonitorWidgetSettings()
@@ -1527,7 +1527,7 @@ class BeatPrompt:
         input : BeatInput
         settings : BeatShellSettings
         rich : markups.RichTextRenderer
-        metronome : beatwidgets.Metronome
+        metronome : engines.Metronome
         icon : function
         marker : function
         caret : function
@@ -1539,9 +1539,7 @@ class BeatPrompt:
         self.settings = settings
         self.monitor = monitor
         self.fin_event = threading.Event()
-        self.t0 = None
-        self.tempo = None
-        self.key_pressed_time = None
+        self.key_pressed_time = 0.0
 
         # input state
         self.modified_event = None
@@ -1616,7 +1614,7 @@ class BeatPrompt:
         while True:
             if self.stroke.key_event != key_event:
                 key_event = self.stroke.key_event
-                self.metronome.key_pressed_time = time
+                self.key_pressed_time = time
             (view, msg), time, width = yield (view, msg)
 
     def input_geometry(self, buffer, typeahead, pos):
@@ -1753,7 +1751,7 @@ class BeatPrompt:
                 markup = syntax_node.send((self.buffer, self.tokens, typeahead))
                 markup = dec_node.send((markup, self.pos, self.highlighted, self.clean))
 
-                caret = self.caret_func(time) if not self.clean else None
+                caret = self.caret_func(time, self.key_pressed_time) if not self.clean else None
                 markup = caret_node.send((markup, caret))
 
                 time, ran = yield -self.input_offset, markup
@@ -1865,7 +1863,7 @@ class CaretPlaceholder(mu.Pair):
 
 @dataclasses.dataclass
 class Caret:
-    metronome: beatwidgets.Metronome
+    metronome: engines.Metronome
     rich: mu.RichTextRenderer
     settings: BeatShellSettings.prompt
 
@@ -1880,12 +1878,12 @@ class Caret:
             self.rich.parse(caret[2], slotted=True),
         ]
 
-        def caret_func(time):
-            period = self.metronome.period_of(time)
-            key_pressed_period = self.metronome.period_of(self.metronome.key_pressed_time) // -1 * -1
+        def caret_func(time, key_pressed_time):
+            beat = self.metronome.beat(time)
+            key_pressed_beat = self.metronome.beat(key_pressed_time) // -1 * -1
             # don't blink while key pressing
-            if period < key_pressed_period or period % 1 < caret_blink_ratio:
-                if period % 4 < 1:
+            if beat < key_pressed_beat or beat % 1 < caret_blink_ratio:
+                if beat % 4 < 1:
                     return markuped_caret[2]
                 else:
                     return markuped_caret[1]

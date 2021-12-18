@@ -178,8 +178,7 @@ class BeatbarSettings(cfg.Configurable):
         hit_sustain_time: float = 0.1
 
 class Beatbar:
-    def __init__(self, mixer, detector, renderer, controller, icon, header, footer, sight, bar_shift, bar_flip, settings=None):
-        settings = settings or BeatbarSettings()
+    def __init__(self, mixer, detector, renderer, controller, icon, header, footer, sight, bar_shift, bar_flip, settings):
         self.settings = settings
 
         self.mixer = mixer
