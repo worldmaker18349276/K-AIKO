@@ -210,7 +210,7 @@ def skip(node, prefeed):
     with node:
         try:
             for dummy in buffer:
-                node.send(dummpy)
+                node.send(dummy)
 
             data = yield
             while True:
@@ -807,45 +807,6 @@ def tslice(node, samplerate, start=None, end=None):
 
 
 # others
-class TimedVariable:
-    def __init__(self, value=None, duration=numpy.inf):
-        self._queue = queue.Queue()
-        self._lock = threading.Lock()
-        self._scheduled = []
-        self._default_value = value
-        self._default_duration = duration
-        self._item = (value, None, numpy.inf)
-
-    def get(self, time, ret_sched=False):
-        with self._lock:
-            value, start, duration = self._item
-            if start is None:
-                start = time
-
-            while not self._queue.empty():
-                item = self._queue.get()
-                if item[1] is None:
-                    item = (item[0], time, item[2])
-                self._scheduled.append(item)
-            self._scheduled.sort(key=lambda item: item[1])
-
-            while self._scheduled and self._scheduled[0][1] <= time:
-                value, start, duration = self._scheduled.pop(0)
-
-            if start + duration <= time:
-                value, start, duration = self._default_value, None, numpy.inf
-
-            self._item = (value, start, duration)
-            return value if not ret_sched else self._item
-
-    def set(self, value, start=None, duration=None):
-        if duration is None:
-            duration = self._default_duration
-        self._queue.put((value, start, duration))
-
-    def reset(self, start=None):
-        self._queue.put((self._default_value, start, numpy.inf))
-
 class Scheduler(DataNode):
     """A data node schedule given data nodes dynamically.
 

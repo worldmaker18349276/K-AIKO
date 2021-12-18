@@ -1,7 +1,9 @@
 import math
 from enum import Enum
-from typing import List, Tuple, Dict
+import dataclasses
+from typing import List, Tuple, Dict, Optional
 import queue
+import threading
 from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..utils import markups as mu
@@ -207,9 +209,9 @@ class Beatbar:
         hit_sustain_time = settings.sight.hit_sustain_time
         perf_sustain_time = settings.sight.performance_sustain_time
 
-        self.current_hit_hint = dn.TimedVariable(value=None, duration=hit_sustain_time)
-        self.current_perf_hint = dn.TimedVariable(value=(None, None), duration=perf_sustain_time)
-        self.current_sight = dn.TimedVariable(value=sight)
+        self.current_hit_hint = TimedVariable(value=None, duration=hit_sustain_time)
+        self.current_perf_hint = TimedVariable(value=(None, None), duration=perf_sustain_time)
+        self.current_sight = TimedVariable(value=sight)
 
         # hit handler
         self.target_queue = queue.Queue()
@@ -357,11 +359,11 @@ class Beatbar:
 
     def _sight_drawer(self, time):
         # update hit hint, perf hint
-        hit_hint = self.current_hit_hint.get(time, ret_sched=True)
-        perf_hint = self.current_perf_hint.get(time, ret_sched=True)
+        hit_hint = self.current_hit_hint.get(time)
+        perf_hint = self.current_perf_hint.get(time)
 
         # draw sight
-        sight_func = self.current_sight.get(time)
+        sight_func = self.current_sight.get(time).value
         sight_text = sight_func(time, hit_hint, perf_hint)
 
         return sight_text
@@ -403,8 +405,11 @@ class Sight:
                              for appearance1, appearance2 in self.settings.sight_appearances]
 
         def sight_func(time, hit_hint, perf_hint):
-            hit_strength, hit_time, hit_duration = hit_hint
-            (perf, perf_is_reversed), perf_time, _ = perf_hint
+            hit_strength = hit_hint.value
+            hit_time = hit_hint.start
+            hit_duration = hit_hint.duration
+            perf, perf_is_reversed = perf_hint.value
+            perf_time = perf_hint.start
 
             # draw perf hint
             perf_ap = perf_appearances[perf.grade] if perf is not None else (mu.Text(""), mu.Text(""))
@@ -429,6 +434,51 @@ class Sight:
 
         yield
         return sight_func
+
+@dataclasses.dataclass
+class TimedValue:
+    value: any
+    start: Optional[float]
+    duration: float
+
+class TimedVariable:
+    def __init__(self, value=None, duration=float('inf')):
+        self._queue = queue.Queue()
+        self._lock = threading.Lock()
+        self._scheduled_values = []
+        self._default_value = value
+        self._default_duration = duration
+        self._current_value = TimedValue(value, None, float('inf'))
+
+    def get(self, time):
+        with self._lock:
+            value = self._current_value
+            if value.start is None:
+                value.start = time
+
+            while not self._queue.empty():
+                item = self._queue.get()
+                if item.start is None:
+                    item.start = time
+                self._scheduled_values.append(item)
+            self._scheduled_values.sort(key=lambda item: item.start)
+
+            while self._scheduled_values and self._scheduled_values[0].start <= time:
+                value = self._scheduled_values.pop(0)
+
+            if value.start + value.duration <= time:
+                value = TimedValue(self._default_value, None, float('inf'))
+
+            self._current_value = value
+            return self._current_value
+
+    def set(self, value, start=None, duration=None):
+        if duration is None:
+            duration = self._default_duration
+        self._queue.put(TimedValue(value, start, duration))
+
+    def reset(self, start=None):
+        self._queue.put(TimedValue(self._default_value, start, float('inf')))
 
 
 # widgets
