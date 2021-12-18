@@ -7,6 +7,7 @@ import ast
 import enum
 import dataclasses
 import typing
+from typing import Dict, List, Set, Tuple, Any, Union
 
 
 class DecodeError(Exception):
@@ -625,6 +626,29 @@ class EnumBiparser(Biparser):
         return self.enum_class.__name__ + "." + value.name
 
 
+def get_args(type_hint: Any) -> Tuple[Any, ...]:
+    if hasattr(typing, 'get_args'):
+        return typing.get_args(type_hint)
+    else:
+        return type_hint.__args__
+
+def get_origin(type_hint: Any) -> Union[Any, None]:
+    if hasattr(typing, 'get_origin'):
+        return typing.get_origin(type_hint)
+    else:
+        origin = type_hint.__origin__
+        if origin == List:
+            origin = list
+        elif origin == Tuple:
+            origin = tuple
+        elif origin == Set:
+            origin = set
+        elif origin == Dict:
+            origin = dict
+        else:
+            raise ValueError
+        return origin
+
 def from_type_hint(type_hint, multiline=False):
     """Make Biparser from type hint.
 
@@ -671,28 +695,32 @@ def from_type_hint(type_hint, multiline=False):
                   for field in type_hint.__dataclass_fields__.values()}
         return DataclassBiparser(type_hint, fields, multiline)
 
-    elif getattr(type_hint, '__origin__', None) == typing.List:
-        elem = from_type_hint(type_hint.__args__[0], multiline)
+    elif get_origin(type_hint) is list:
+        elem_hint, = get_args(type_hint)
+        elem = from_type_hint(elem_hint, multiline)
         return ListBiparser(elem, multiline)
 
-    elif getattr(type_hint, '__origin__', None) == typing.Set:
-        elem = from_type_hint(type_hint.__args__[0], multiline)
+    elif get_origin(type_hint) is set:
+        elem_hint, = get_args(type_hint)
+        elem = from_type_hint(elem_hint, multiline)
         return SetBiparser(elem, multiline)
 
-    elif getattr(type_hint, '__origin__', None) == typing.Tuple:
-        if len(type_hint.__args__) == 1 and type_hint.__args__[0] == ():
+    elif get_origin(type_hint) is tuple:
+        args = get_args(type_hint)
+        if len(args) == 1 and args[0] == ():
             elems = []
         else:
-            elems = [from_type_hint(arg, multiline) for arg in type_hint.__args__]
+            elems = [from_type_hint(arg, multiline) for arg in args]
         return TupleBiparser(elems, multiline)
 
-    elif getattr(type_hint, '__origin__', None) == typing.Dict:
-        key = from_type_hint(type_hint.__args__[0], False)
-        value = from_type_hint(type_hint.__args__[1], multiline)
+    elif get_origin(type_hint) is dict:
+        key_hint, value_hint = get_args(type_hint)
+        key = from_type_hint(key_hint, False)
+        value = from_type_hint(value_hint, multiline)
         return DictBiparser(key, value, multiline)
 
-    elif getattr(type_hint, '__origin__', None) == typing.Union:
-        options = [from_type_hint(arg, multiline) for arg in type_hint.__args__]
+    elif get_origin(type_hint) is Union:
+        options = [from_type_hint(arg, multiline) for arg in get_args(type_hint)]
         return UnionBiparser(options)
 
     else:
