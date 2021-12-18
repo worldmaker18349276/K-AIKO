@@ -203,17 +203,7 @@ class Beatbar:
         self.icon_func = icon
         self.header_func = header
         self.footer_func = footer
-
-        # sight
-        hit_sustain_time = settings.sight.hit_sustain_time
-        perf_sustain_time = settings.sight.performance_sustain_time
-
-        self.current_hit_hint = TimedVariable(value=None, duration=hit_sustain_time)
-        self.current_perf_hint = TimedVariable(value=(None, None), duration=perf_sustain_time)
-        self.current_sight = TimedVariable(value=sight)
-
-        # hit handler
-        self.target_queue = queue.Queue()
+        self.sight_func = sight
 
     @dn.datanode
     def load(self):
@@ -222,8 +212,17 @@ class Beatbar:
         header_drawer = lambda arg: (0, self.header_func(arg[0], arg[1]))
         footer_drawer = lambda arg: (0, self.footer_func(arg[0], arg[1]))
 
+        # sight
         hit_decay_time = self.settings.sight.hit_decay_time
         hit_sustain_time = self.settings.sight.hit_sustain_time
+        perf_sustain_time = self.settings.sight.performance_sustain_time
+
+        self.current_hit_hint = TimedVariable(value=None, duration=hit_sustain_time)
+        self.current_perf_hint = TimedVariable(value=(None, None), duration=perf_sustain_time)
+        self.current_sight = TimedVariable(value=self.sight_func)
+
+        # hit handler
+        self.target_queue = queue.Queue()
         hit_handler = Beatbar._hit_handler(self.current_hit_hint, self.target_queue, hit_decay_time, hit_sustain_time)
 
         self.renderer.add_text(icon_drawer, xmask=self.icon_mask, zindex=(1,))
