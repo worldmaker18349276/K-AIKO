@@ -678,8 +678,8 @@ class OSU:
         beat = beatmap.beat(time/1000)
         speed, volume, sliderVelocity, density = next(vs for t, b, m, *vs in context['timings'][::-1] if t <= time)
 
-        # type: [_:_:_:_:Spinner:_:Slider:Circle]
-        # hitSound: [Kat:Large:Kat:Don]
+        # type : [_:_:_:_:Spinner:_:Slider:Circle]
+        # hitSound : [Kat:Large:Kat:Don]
 
         if type & 1: # circle
             if hitSound == 0 or hitSound & 1: # don
