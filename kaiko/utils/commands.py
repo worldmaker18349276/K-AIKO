@@ -1,13 +1,11 @@
 import os
-import dataclasses
 from enum import Enum
 from collections import OrderedDict
 from inspect import cleandoc
 import functools
-import re
 import inspect
 from pathlib import Path
-from . import biparsers as bp
+from . import parsec as pc
 
 
 def suitability(part, full):
@@ -431,7 +429,7 @@ class LiteralParser(ArgumentParser):
             The description of this argument.
         """
         self.type_hint = type_hint
-        self.biparser = bp.from_type_hint(type_hint)
+        self.parser = pc.from_type_hint(type_hint) << pc.Parsec.eof()
         self.default = default
         self._desc = desc or f"It should be {type_hint}"
 
@@ -440,25 +438,12 @@ class LiteralParser(ArgumentParser):
 
     def parse(self, token):
         try:
-            return self.biparser.decode(token)[0]
-        except bp.DecodeError:
-            desc = self.desc()
-            raise CommandParseError("Invalid value" + ("\n" + desc if desc is not None else ""))
+            return self.parser.parse(token)
+        except pc.ParseError as e:
+            raise CommandParseError(f"Invalid value\nexpected: {e.expected} at {e.index}")
 
     def suggest(self, token):
-        try:
-            self.biparser.decode(token)
-        except bp.DecodeError as e:
-            sugg = [token[:e.index] + ex for ex in e.expected]
-            if token == "" and self.default is not inspect.Parameter.empty:
-                default = self.biparser.encode(self.default) + "\000"
-                if default in sugg:
-                    sugg.remove(default)
-                sugg.insert(0, default)
-        else:
-            sugg = []
-
-        return sugg
+        return []
 
 
 class CommandParser:

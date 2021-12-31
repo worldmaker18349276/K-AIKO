@@ -8,57 +8,75 @@ import typing
 from collections import OrderedDict
 from inspect import cleandoc
 from pathlib import Path
-from . import biparsers as bp
+from . import parsec as pc
+from . import formattec as fc
 
 
-class FieldBiparser(bp.Biparser):
-    """Biparser for fields of configuration.
+@pc.parsec
+def make_field_parser(config_type):
+    """Parser for fields of configuration.
 
     It parse a series of field names of the configuration::
 
         subfieldname1.subfieldname2.fieldname3
 
     """
-    def __init__(self, config_type):
-        self.config_type = config_type
+    current_fields = []
+    current_type = config_type
 
-    def decode(self, text, index=0, partial=False):
-        current_fields = []
-        current_type = self.config_type
+    while hasattr(current_type, '__configurable_fields__'):
+        fields = {}
+        for field_name, field_type in current_type.__configurable_fields__.items():
+            field_key = field_name
+            if hasattr(field_type, '__configurable_fields__'):
+                field_key = field_key + "."
+            fields[field_key] = (field_name, field_type)
 
-        while hasattr(current_type, '__configurable_fields__'):
-            fields = {}
-            for field_name, field_type in current_type.__configurable_fields__.items():
-                field_key = field_name
-                if hasattr(field_type, '__configurable_fields__'):
-                    field_key = field_key + "."
-                fields[field_key] = (field_name, field_type)
+        option = yield pc.Parsec.tokens(list(fields.keys()))
+        current_field, current_type = fields[option]
+        current_fields.append(current_field)
 
-            option, index = bp.startswith(list(fields.keys()), text, index, partial=True)
+    return tuple(current_fields)
 
-            current_field, current_type = fields[option]
-            current_fields.append(current_field)
+@pc.parsec
+def make_field_suggester(config_type):
+    current_type = config_type
+    options = []
 
-        if not partial:
-            bp.eof(text, index)
+    while hasattr(current_type, '__configurable_fields__'):
+        fields = {}
+        for field_name, field_type in current_type.__configurable_fields__.items():
+            field_key = field_name
+            if hasattr(field_type, '__configurable_fields__'):
+                field_key = field_key + "."
+            fields[field_key] = field_type
 
-        return tuple(current_fields), index
+        options = list(fields.keys())
+        maybe_option = yield pc.Parsec.tokens(options).optional()
+        if not maybe_option:
+            return options
+        current_type = fields[maybe_option[0]]
 
-    def encode(self, value):
-        current_type = self.config_type
+    return options
 
-        for i, field_name in enumerate(value):
+def make_field_formatter(config_type):
+    def formatter(value, **contexts):
+        current_type = config_type
+
+        for field_name in value:
             if not hasattr(current_type, '__configurable_fields__'):
-                raise bp.EncodeError(value, "[" + ".".join(value[:i]) + "].fields", [])
+                raise fc.FormatError(value, "configurable field")
             current_type = current_type.__configurable_fields__[field_name]
 
         if hasattr(current_type, '__configurable_fields__'):
-            raise bp.EncodeError(value, "[" + ".".join(value) + "]", [])
+            raise fc.FormatError(value, "not subfield")
 
         return ".".join(value)
+    return fc.Formattec(formatter)
 
-class ConfigurationBiparser(bp.Biparser):
-    """Biparser for Configurable.
+@pc.parsec
+def make_configuration_parser(config_type, config_name):
+    """Parser for Configurable.
 
     It parses a configuration like a python script::
 
@@ -68,64 +86,63 @@ class ConfigurationBiparser(bp.Biparser):
         settings.subfieldname.fieldname3 = 3.14
 
     """
-    vindent = r"(#[^\n]*|[ ]*)(\n|$)"
-    equal = r"[ ]*=[ ]*"
-    nl = r"[ ]*(\n|$)"
 
-    def __init__(self, config_type, name):
-        self.config_type = config_type
-        self.name = name
-        self.field_biparser = FieldBiparser(config_type)
+    vindent = pc.Parsec.regex(r"(#[^\n]*|[ ]*)(\n|$)").many()
+    equal = pc.Parsec.regex(r"[ ]*=[ ]*")
+    nl = pc.Parsec.regex(r"[ ]*(\n|$)")
+    field = make_field_parser(config_type)
+    end = pc.Parsec.eof().optional()
 
-    def decode(self, text, index=0, partial=False):
-        field_hints = self.config_type.__field_hints__
+    field_hints = config_type.__field_hints__
 
-        while index < len(text):
-            m, index = bp.match(self.vindent, ["\n"], text, index, optional=True, partial=True)
-            if not m: break
+    # parse header
+    yield vindent
+    yield pc.Parsec.tokens([config_name])
+    yield equal
+    yield pc.Parsec.tokens([config_type.__name__ + "()"])
+    yield nl
 
-        _, index = bp.startswith([self.name], text, index, partial=True)
-        _, index = bp.match(self.equal, [" = "], text, index, partial=True)
-        _, index = bp.startswith([self.config_type.__name__ + "()"], text, index, partial=True)
-        _, index = bp.match(self.nl, ["\n"], text, index, partial=True)
+    config = config_type()
+    
+    while True:
+        if (yield end):
+            return config
 
-        config = self.config_type()
+        yield vindent
 
-        while index < len(text):
-            m, index = bp.match(self.vindent, ["\n"], text, index, optional=True, partial=True)
-            if m: continue
+        # parse field name
+        yield pc.Parsec.tokens([config_name + "."])
+        field_key = yield field
 
-            _, index = bp.startswith([self.name + "."], text, index, partial=True)
-            field, index = self.field_biparser.decode(text, index, partial=True)
+        # parse field value
+        yield equal
+        field_value = yield pc.from_type_hint(field_hints[field_key][0])
+        config.set(field_key, field_value)
 
-            _, index = bp.match(self.equal, [" = "], text, index, partial=True)
+        yield nl
 
-            value_biparser = bp.from_type_hint(field_hints[field][0], multiline=True)
-            value, index = value_biparser.decode(text, index, partial=True)
-            config.set(field, value)
+def make_configuration_formatter(config_type, config_name):
+    field_formatter = make_field_formatter(config_type)
+    def formatter(value, **contexts):
+        yield f"{config_name} = {config_type.__name__}()\n"
 
-            _, index = bp.match(self.nl, ["\n"], text, index, partial=True)
-
-        return config, index
-
-    def encode(self, value):
-        res = ""
-
-        res += f"{self.name} = {self.config_type.__name__}()\n"
-
-        for field_key, (field_type, field_doc) in self.config_type.__field_hints__.items():
+        for field_key, (field_type, field_doc) in config_type.__field_hints__.items():
             if not value.has(field_key):
                 continue
             field_value = value.get(field_key)
-            field_name = self.field_biparser.encode(field_key)
-            value_biparser = bp.from_type_hint(field_type, multiline=True)
-            field_value_str = value_biparser.encode(field_value)
-            res += f"{self.name}.{field_name} = {field_value_str}\n"
+            value_formatter = fc.from_type_hint(field_type, multiline=True)
 
-        return res
+            yield config_name + "."
+            yield from field_formatter.func(field_key)
+            yield " = "
+            yield from value_formatter.func(field_value)
+            yield "\n"
+    return fc.Formattec(formatter)
 
 class ConfigurableMeta(type):
     def __init__(self, name, supers, attrs):
+        super().__init__(name, supers, attrs)
+
         if not hasattr(self, '__configurable_excludes__'):
             self.__configurable_excludes__ = []
         annotations = typing.get_type_hints(self)
@@ -138,8 +155,8 @@ class ConfigurableMeta(type):
                 elif isinstance(getattr(self, name), ConfigurableMeta):
                     fields[name] = getattr(self, name)
 
-        fields_doc = self._parse_fields_doc(self.__doc__)
-        field_hints = self._make_field_hints(fields, fields_doc)
+        fields_doc = ConfigurableMeta._parse_fields_doc(self.__doc__)
+        field_hints = ConfigurableMeta._make_field_hints(fields, fields_doc)
 
         self.__configurable_fields__ = fields
         self.__configurable_fields_doc__ = fields_doc
@@ -423,16 +440,16 @@ class Configurable(metaclass=ConfigurableMeta):
         if isinstance(path, str):
             path = Path(path)
         if not path.exists():
-            raise ValueError("No such file: " + str(path))
+            raise ValueError(f"No such file: {path!s}")
 
         # text = open(path, 'r').read()
         # locals = {}
         # exec(text, globals(), locals)
         # return locals[self.name]
 
-        biparser = ConfigurationBiparser(cls, name)
+        parser = make_configuration_parser(cls, name)
         text = open(path, 'r').read()
-        res = biparser.decode(text)[0]
+        res = parser.parse(text)
         return res
 
     def write(self, path, name="settings"):
@@ -453,7 +470,7 @@ class Configurable(metaclass=ConfigurableMeta):
         if isinstance(path, str):
             path = Path(path)
 
-        biparser = ConfigurationBiparser(type(self), name)
-        text = biparser.encode(self)
+        formatter = make_configuration_formatter(type(self), name)
+        text = formatter.format(self)
         open(path, 'w').write(text)
 

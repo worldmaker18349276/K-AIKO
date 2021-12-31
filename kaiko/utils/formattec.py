@@ -1,3 +1,4 @@
+import re
 import string
 import enum
 import dataclasses
@@ -165,6 +166,20 @@ def _sstr_repr(value):
     return repr(value + '"')[:-2] + "'"
 sstr_formatter = _make_literal_formatter(str, _sstr_repr)
 
+def _mstr_repr(value):
+    if not value.startswith("\n") or not value.endswith("\n"):
+        raise FormatError(value, "string started and ended with newline")
+    return '"""' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'").replace(r"\n", "\n") + '"""'
+mstr_formatter = _make_literal_formatter(str, _mstr_repr)
+
+def _rmstr_repr(value):
+    if not value.startswith("\n") or not value.endswith("\n"):
+        raise FormatError(value, "string started and ended with newline")
+    m = re.search(r'\x00|\r|"""|\\$', value)
+    if m:
+        raise FormatError(value, "string without '\\x00', '\\r', '\"\"\"' and single '\\'")
+    return 'r"""' + value + '"""'
+rmstr_formatter = _make_literal_formatter(str, _rmstr_repr)
 
 # composite
 

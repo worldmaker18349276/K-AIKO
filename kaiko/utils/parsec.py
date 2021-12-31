@@ -556,6 +556,27 @@ class Parsec:
                 raise error
         return Parsec(attempt_parser)
 
+    def validate(self, pred, expected="validate by some condition"):
+        """Validate the result value, or raise failure at the original position.
+
+        Parameters
+        ----------
+        pred : function
+            The function to determine whether to validate result value.
+        expected : str, optional
+            The description of expected string.
+
+        Returns
+        -------
+        Parsec
+        """
+        def validate_parser(text, index):
+            res, next_index = self.func(text, index)
+            if not pred(res):
+                raise ParseError(text, index, expected)
+            return res, next_index
+        return Parsec(validate_parser)
+
     def optional(self):
         """Make a parser as optional.
 
@@ -1298,6 +1319,23 @@ sstr_parser = _make_literal_parser(
     r"|\\U[0-9a-fA-F]{8}"
     r"|\\(?![xuUN])."
     r")*'", "str"
+)
+mstr_parser = _make_literal_parser(
+    # always start/end with newline
+    r'"""(?=\n)('
+    r'(?!""")[^\\\x00]'
+    r'|\\[0-7]{1,3}'
+    r'|\\x[0-9a-fA-F]{2}'
+    r'|\\u[0-9a-fA-F]{4}'
+    r'|\\U[0-9a-fA-F]{8}'
+    r'|\\(?![xuUN\x00]).'
+    r')*(?<=\n)"""', "str"
+)
+rmstr_parser = _make_literal_parser(
+    r'r"""(?=\n)('
+    r'(?!""")[^\\\x00]'
+    r'|\\[^\x00]'
+    r')*(?<=\n)"""', "str"
 )
 
 

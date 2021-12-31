@@ -4,7 +4,8 @@ import tempfile
 import subprocess
 from pathlib import Path
 from ..utils import config as cfg
-from ..utils import biparsers as bp
+from ..utils import parsec as pc
+from ..utils import formattec as fc
 from ..utils import commands as cmd
 from ..utils import datanodes as dn
 from ..devices import engines
@@ -201,9 +202,9 @@ class ProfileManager:
 
         try:
             self.current.write(current_path, name=self.settings_name)
-        except bp.EncodeError:
+        except fc.FormatError:
             with logger.warn():
-                logger.print("Fail to encode configuration")
+                logger.print("Fail to format configuration")
                 logger.print(traceback.format_exc(), end="", markup=False)
             return False
 
@@ -234,9 +235,9 @@ class ProfileManager:
         current_mtime = os.stat(str(current_path)).st_mtime
         try:
             self.current = KAIKOSettings.read(current_path, name=self.settings_name)
-        except bp.DecodeError:
+        except pc.ParseError:
             with logger.warn():
-                logger.print("Fail to decode configuration")
+                logger.print("Fail to parse configuration")
                 logger.print(traceback.format_exc(), end="", markup=False)
             return False
 
@@ -409,20 +410,19 @@ class ProfileManager:
 
 class FieldParser(cmd.ArgumentParser):
     def __init__(self):
-        self.biparser = cfg.FieldBiparser(KAIKOSettings)
+        self.parser = cfg.make_field_parser(KAIKOSettings) << pc.Parsec.eof()
+        self.suggester = cfg.make_field_suggester(KAIKOSettings)
 
     def parse(self, token):
         try:
-            return self.biparser.decode(token)[0]
-        except bp.DecodeError:
+            return self.parser.parse(token)
+        except pc.ParseError:
             raise cmd.CommandParseError("No such field")
 
     def suggest(self, token):
         try:
-            self.biparser.decode(token)
-        except bp.DecodeError as e:
-            sugg = cmd.fit(token, [token[:e.index] + ex for ex in e.expected])
-        else:
+            sugg = self.suggester.parse(token)
+        except pc.ParseError:
             sugg = []
 
         return sugg
@@ -441,8 +441,8 @@ class ConfigCommand:
     @cmd.function_command
     def show(self):
         """Show configuration."""
-        biparser = cfg.ConfigurationBiparser(KAIKOSettings, name=self.config.settings_name)
-        text = biparser.encode(self.config.current)
+        formatter = cfg.make_configuration_formatter(KAIKOSettings, name=self.config.settings_name)
+        text = formatter.format(self.config.current)
         is_changed = self.config.is_changed()
         title = self.config.current_name + self.config.extension
         self.logger.print_code(text, title=title, is_changed=is_changed)
@@ -502,11 +502,12 @@ class ConfigCommand:
         editor = self.config.current.devices.terminal.editor
 
         field_type = KAIKOSettings.get_field_type(field)
-        biparser = bp.from_type_hint(field_type, multiline=True)
+        parser = pc.from_type_hint(field_type) << pc.Parsec.regex(r"\s*") << pc.Parsec.eof()
+        formatter = fc.from_type_hint(field_type, multiline=True)
 
         if self.config.current.has(field):
             value = self.config.current.get(field)
-            value_str = biparser.encode(value)
+            value_str = formatter.format(value)
         else:
             value_str = ""
 
@@ -528,10 +529,10 @@ class ConfigCommand:
             return
 
         try:
-            res, _ = biparser.decode(res_str)
+            res, _ = parser.parse(res_str)
 
-        except bp.DecodeError as e:
-            self.logger.print(f"[warn]{self.logger.escape(e)}[/]")
+        except pc.ParseError as e:
+            self.logger.print(f"[warn]{self.logger.escape(str(e))}[/]")
 
         else:
             self.config.current.set(field, res)

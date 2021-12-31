@@ -1,12 +1,15 @@
 import os
 import math
-import re
 from fractions import Fraction
-from dataclasses import dataclass, field
+import dataclasses
+from dataclasses import dataclass
 from typing import List, Tuple, Dict, Union
-from ast import literal_eval
-from ..utils import biparsers as bp
+import ast
+from ..utils import parsec as pc
+from ..utils import formattec as fc
 from . import beatmaps
+
+version = "0.2.0"
 
 def Context(beat, length, **update):
     return beatmaps.UpdateContext(update)
@@ -112,17 +115,17 @@ class BeatSheet(beatmaps.Beatmap):
     @property
     def chart(self):
         tracks = [self.to_track(seq) for seq in self.event_sequences]
-        return chart_biparser.encode(tracks)
+        return chart_formatter.format(tracks)
 
     @chart.setter
     def chart(self, value):
-        tracks, _ = chart_biparser.decode(value)
+        tracks = chart_parser.parse(value)
         self.event_sequences = [list(self.to_events(track)) for track in tracks]
 
     @staticmethod
     def parse_patterns(patterns_str):
         try:
-            patterns, _ = patterns_biparser.decode(patterns_str)
+            patterns = patterns_parser().parse(patterns_str)
             track = Track(beat=0, length=1, meter=4, patterns=patterns)
 
             events = []
@@ -152,7 +155,7 @@ class BeatSheet(beatmaps.Beatmap):
                     beatmap = BeatSheet()
                     exec(sheet, dict(), dict(beatmap=beatmap))
                 else:
-                    beatmap, _ = beatsheet_biparser.decode(sheet, metadata_only=metadata_only)
+                    beatmap = beatsheet_parser(metadata_only=metadata_only).parse(sheet)
             except Exception as e:
                 raise BeatmapParseError(f"failed to read beatmap {filename}") from e
 
@@ -184,7 +187,7 @@ class Track:
     length: Union[int, Fraction] = 1
     meter: Union[int, Fraction] = 4
     hide: bool = False
-    patterns: List[Pattern] = field(default_factory=list)
+    patterns: List[Pattern] = dataclasses.field(default_factory=list)
 
     def set_arguments(self, beat=0, length=1, meter=4, hide=False):
         self.beat = beat
@@ -212,363 +215,321 @@ class Division(Pattern):
     # [x x o]/3
 
     divisor: int = 2
-    patterns: List[Pattern] = field(default_factory=list)
+    patterns: List[Pattern] = dataclasses.field(default_factory=list)
 
 @dataclass
 class Instant(Pattern):
     # {x x o}
-    patterns: List[Pattern] = field(default_factory=list)
+    patterns: List[Pattern] = dataclasses.field(default_factory=list)
 
+def IIFE(func):
+    return func()
 
-class MStrBiparser(bp.LiteralBiparser):
-    # always start/end with newline => easy to parse
-    # no named escape sequence '\N{...}'
+@IIFE
+def value_parser():
+    none  = pc.Parsec.regex(r"None").map(ast.literal_eval)
+    bool  = pc.Parsec.regex(r"True|False").map(ast.literal_eval)
+    int   = pc.Parsec.regex(r"[-+]?(0|[1-9][0-9]*)").map(ast.literal_eval)
+    frac  = pc.Parsec.regex(r"[-+]?(0|[1-9][0-9]*)\/[1-9][0-9]*").map(Fraction)
+    float = pc.Parsec.regex(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+[eE][-+]?[0-9]+)").map(ast.literal_eval)
+    str   = pc.Parsec.regex(
+        r'"([^\r\n\\"]|\\[\\"btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*"').map(ast.literal_eval)
 
-    regex = (r'"""(?=\n)('
-             r'(?!""")[^\\\x00]'
-             r'|\\[0-7]{1,3}'
-             r'|\\x[0-9a-fA-F]{2}'
-             r'|\\u[0-9a-fA-F]{4}'
-             r'|\\U[0-9a-fA-F]{8}'
-             r'|\\(?![xuUN\x00]).'
-             r')*(?<=\n)"""')
-    expected = ['"""\n"""']
-    type = str
+    desc = "None or bool or str or float or frac or int"
+    return pc.Parsec.choice(none, bool, str, float, frac, int).desc(desc)
 
-    def encode(self, value):
-        if not value.startswith("\n") or not value.endswith("\n"):
-            raise bp.EncodeError(value, "", [], info="it should start and end with newline")
-        return '"""' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'").replace(r"\n", "\n") + '"""'
+@fc.Formattec
+def value_formatter(value, **contexts):
+    if value is None:
+        yield "None"
+    elif isinstance(value, (bool, int, float)):
+        yield repr(value)
+    elif isinstance(value, Fraction):
+        yield str(value)
+    elif isinstance(value, str):
+        yield '"' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
+    else:
+        raise fc.FormatError(value, "None or bool or str or float or frac or int")
 
-class RMStrBiparser(bp.LiteralBiparser):
-    regex = (r'r"""(?=\n)('
-             r'(?!""")[^\\\x00]'
-             r'|\\[^\x00]'
-             r')*(?<=\n)"""')
-    expected = ['r"""\n"""']
-    type = str
+@IIFE
+@pc.parsec
+def arguments_parser():
+    key = pc.Parsec.regex(r"([a-zA-Z_][a-zA-Z0-9_]*)=").desc("'key='").map(lambda k: k[:-1])
+    opening = pc.Parsec.tokens(["("]).optional()
+    closing = pc.Parsec.tokens([")"]).optional()
+    comma = pc.Parsec.tokens([", "])
 
-    def encode(self, value):
-        if not value.startswith("\n") or not value.endswith("\n"):
-            raise bp.EncodeError(value, "", [], info="it should start and end with newline")
+    psargs = []
+    kwargs = {}
+    keyworded = False
 
-        m = re.search(r'\x00|\r|"""|\\$', value)
-        if m:
-            raise bp.EncodeError(value, f"[{m.start()}]", [],
-                info="unable to repr '\\x00', '\\r', '\"\"\"' and single '\\' as raw string")
+    if not (yield opening):
+        return psargs, kwargs
+    if (yield closing):
+        return psargs, kwargs
 
-        return 'r"""' + value + '"""'
+    while True:
+        try:
+            keyword = yield key
+        except pc.ParseFailure:
+            if keyworded:
+                raise
+            keyword = None
+        value = yield value_parser
 
-
-class ValueBiparser(bp.Biparser):
-    none  = r"None"
-    bool  = r"True|False"
-    int   = r"[-+]?(0|[1-9][0-9]*)"
-    frac  = r"[-+]?(0|[1-9][0-9]*)\/[1-9][0-9]*"
-    float = r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+[eE][-+]?[0-9]+)"
-    str   = r'"([^\r\n\\"]|\\[\\"btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*"'
-
-    def encode(self, value):
-        if value is None:
-            return "None"
-        elif isinstance(value, (bool, int, float)):
-            return repr(value)
-        elif isinstance(value, Fraction):
-            return str(value)
-        elif isinstance(value, str):
-            return '"' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
+        if keyword is not None:
+            keyworded = True
+            kwargs[keyword] = value
         else:
-            raise bp.EncodeError(value, "", (None, bool, int, float, Fraction, str))
+            psargs.append(value)
 
-    def decode(self, text, index=0, partial=False):
-        for regex in [self.none, self.bool, self.str, self.float, self.frac, self.int]:
-            res, index = bp.match(regex, ["None"], text, index, optional=True, partial=partial)
-            if res:
-                if regex == self.frac:
-                    return Fraction(res.group()), index
-                else:
-                    return literal_eval(res.group()), index
+        if (yield closing):
+            return psargs, kwargs
+        yield comma
 
-        raise bp.DecodeError(text, index, ["None"])
-value_biparser = ValueBiparser()
+@fc.Formattec
+def arguments_formatter(value, **contexts):
+    psargs, kwargs = value
 
-class ArgumentsBiparser(bp.Biparser):
-    key = r"([a-zA-Z_][a-zA-Z0-9_]*)="
+    if len(psargs) + len(kwargs) == 0:
+        yield ""
 
-    def encode(self, value):
-        psargs, kwargs = value
+    yield "("
 
-        psargs_str = [value_biparser.encode(value) for value in psargs]
-        kwargs_str = [key+"="+value_biparser.encode(value) for key, value in kwargs.items()]
+    is_first = True
+    for value in psargs:
+        if not is_first:
+            yield ", "
+        is_first = False
+        yield from value_formatter.func(value)
 
-        if len(psargs_str) + len(kwargs_str) == 0:
-            return ""
+    for key, value in kwargs.items():
+        if not is_first:
+            yield ", "
+        is_first = False
+        yield key
+        yield "="
+        yield from value_formatter.func(value)
 
-        return "(" + ", ".join([*psargs_str, *kwargs_str]) + ")"
+    yield ")"
 
-    def decode(self, text, index=0, partial=False):
-        psargs = []
-        kwargs = {}
-        keyworded = False
+@IIFE
+def note_parser():
+    symbol = pc.Parsec.regex(r"[^ \b\t\n\r\f\v()[\]{}\'\"\\#]+")
+    text = pc.Parsec.regex(
+        r'"([^\r\n\\"\x00]|\\[\\"btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*"').map(ast.literal_eval)
+    return (
+        (symbol + arguments_parser).starmap(Note)
+        | (text + arguments_parser).starmap(lambda text, arg: Note('Text', ([text, *arg[0]], arg[1])))
+    )
 
-        m, index = bp.startswith(["("], text, index, optional=True, partial=True)
-        if not m: return (psargs, kwargs), index
-        m, index = bp.startswith([")"], text, index, optional=True, partial=partial)
-        if m: return (psargs, kwargs), index
+@fc.Formattec
+def note_formatter(value, **contexts):
+    yield value.symbol
+    yield from arguments_formatter.func(value.arguments)
 
-        while True:
-            key, index = bp.match(self.key, ["k="], text, index, optional=not keyworded, partial=True)
-            value, index = value_biparser.decode(text, index, partial=True)
-            if key:
-                keyworded = True
-                kwargs[key.group(1)] = value
-            else:
-                psargs.append(value)
-
-            m, index = bp.startswith([")"], text, index, optional=True, partial=partial)
-            if m: return (psargs, kwargs), index
-
-            _, index = bp.startswith([", "], text, index, partial=True)
-arguments_biparser = ArgumentsBiparser()
-
-class NoteBiparser(bp.Biparser):
-    symbol = (r"[^ \b\t\n\r\f\v()[\]{}\'\"\\#]+"
-              r'|"([^\r\n\\"\x00]|\\[\\"btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*"')
-
-    def encode(self, value):
-        return value.symbol + arguments_biparser.encode(value.arguments)
-
-    def decode(self, text, index=0, partial=False):
-        m, index = bp.match(self.symbol, [], text, index, partial=True)
-        symbol = m.group(0)
-        arguments, index = arguments_biparser.decode(text, index, partial=partial)
-
-        if symbol.startswith('"'):
-            arguments = ([literal_eval(symbol), *arguments[0]], arguments[1])
-            symbol = 'Text'
-
-        return Note(symbol, arguments), index
-note_biparser = NoteBiparser()
-
-def parse_msp(text, index, indent=0, optional=False):
+@pc.parsec
+def msp_parser(indent=0):
     # return None  ->  no match
     # return ""    ->  end of block
     # return " "   ->  whitespace between token
     # return "\n"  ->  newline between token (including comments)
 
-    sp = r"[ \t]+"
-    eol = r"(?=\n|$)"
-    nl = r"\n+([ ]{" + str(indent) + r",})"
-    cmt = r"#[^\n]*"
+    sp = pc.Parsec.regex(r"[ \t]+").optional()
+    eol = pc.Parsec.regex(r"(?=\n|$)").optional()
+    nl = pc.Parsec.regex(r"\n+(?=[ ]{%s,})" % (indent,)).optional()
+    ind = pc.Parsec.regex(r"[ ]{%s}(?![ ])" % (indent,)).optional()
+    cmt = pc.Parsec.regex(r"#[^\n]*").optional()
 
     # whitespace
-    m_sp, index = bp.match(sp, [], text, index, optional=True, partial=True)
-    if m_sp:
-        m_cmt, _ = bp.match(cmt, [], text, index, optional=True, partial=True)
-        if m_cmt:
-            raise bp.DecodeError(text, index, [], info="comment should occupy a whole line")
+    spaced = yield sp
 
     # end of line
-    m_eol, index = bp.match(eol, [], text, index, optional=True, partial=True)
-    if not m_eol:
-        if m_sp:
-            return " ", index
-        elif optional:
-            return None, index
-        else:
-            raise bp.DecodeError(text, index, [])
+    if not (yield eol):
+        if (yield cmt.ahead()):
+            raise pc.ParseFailure("comment occupied a whole line")
+        if spaced:
+            return " "
+        return None
 
     # newline
-    m_cmt = None
-    m_nl, index = bp.match(nl, [], text, index, optional=True, partial=True)
-    while m_nl:
-        if m_nl.group(1) != " "*indent:
-            raise bp.DecodeError(text, index, [], info="wrong indentation level")
+    while (yield nl):
+        if not (yield ind):
+            raise pc.ParseFailure(f"indentation with level {indent}")
+        if (yield eol):
+            continue
+        if (yield cmt):
+            continue
+        return "\n"
 
-        m_eol, index = bp.match(eol, [], text, index, optional=True, partial=True)
-        m_cmt, index = bp.match(cmt, [], text, index, optional=True, partial=True)
-        if not m_eol and not m_cmt:
-            return "\n", index
+    return ""
 
-        m_nl, index = bp.match(nl, [], text, index, optional=True, partial=True)
+@pc.parsec
+def patterns_parser(indent=0, until=""):
+    opening = pc.Parsec.tokens(["{", "["]).optional()
+    closing = pc.Parsec.tokens([until]).optional() if until else pc.Parsec.nothing("")
+    div = pc.Parsec.regex(r"/(\d+)").map(lambda m: int(m[1:])) | pc.Parsec.nothing(2)
+    msp = msp_parser(indent=indent)
+    if until:
+        msp = msp.validate(lambda sp: sp != "", repr(until))
 
-    else:
-        return "", index
+    sp = " "
+    patterns = []
 
-class PatternsBiparser(bp.Biparser):
-    def encode(self, value):
-        patterns_str = []
-        for pattern in value:
-            if isinstance(pattern, Instant):
-                pattern_str = "{" + self.encode(value.patterns) + "}"
+    while True:
+        # end of block
+        if sp == "":
+            return patterns
 
-            elif isinstance(pattern, Division):
-                div = "" if value.divisor == 2 else f"/{value.divisor}"
-                pattern_str = "[" + self.encode(value.patterns) + "]" + div
+        # closing bracket
+        if (yield closing):
+            return patterns
 
-            elif isinstance(pattern, Note):
-                pattern_str = note_biparser.encode(pattern)
+        # no space
+        if sp is None:
+            raise pc.ParseFailure("space")
 
-            else:
-                assert False
+        # pattern
+        opened = yield opening
+        if opened == ("{",):
+            yield msp_parser(indent=indent)
+            subpatterns = yield patterns_parser(indent=indent, until="}")
+            pattern = Instant(subpatterns)
 
-            patterns_str.append(pattern_str)
+        elif opened == ("[",):
+            yield msp_parser(indent=indent)
+            subpatterns = yield patterns_parser(indent=indent, until="]")
+            divisor = yield div
+            pattern = Division(divisor, subpatterns)
 
-        return " ".join(patterns_str)
+        else:
+            pattern = yield note_parser
 
-    def decode(self, text, index=0, partial=False, closed_by=None, indent=0):
-        sp = " "
-        patterns = []
+        patterns.append(pattern)
 
-        while True:
-            # end of block
-            if sp == "":
-                if closed_by:
-                    raise bp.DecodeError(text, index, [])
-                else:
-                    return patterns, index
+        # spacing
+        sp = yield msp
 
-            # closing bracket
-            if closed_by:
-                closed, index = bp.match(closed_by, [], text, index, optional=True, partial=partial)
-                if closed:
-                    return patterns, index
+@fc.Formattec
+def patterns_formatter(value, **contexts):
+    is_first = True
+    for pattern in value:
+        if not is_first:
+            yield " "
+        is_first = False
 
-            # no space
-            if sp is None:
-                raise bp.DecodeError(text, index, [])
+        if isinstance(pattern, Instant):
+            yield "{"
+            yield from patterns_formatter.func(value.patterns)
+            yield "}"
 
-            # pattern
-            opened, index = bp.startswith(["{", "["], text, index, optional=True, partial=True)
-            if opened == "{":
-                _, index = parse_msp(text, index, indent=indent, optional=True)
-                subpatterns, index = self.decode(text, index, partial=True, closed_by=r"\}", indent=indent)
-                pattern = Instant(subpatterns)
+        elif isinstance(pattern, Division):
+            yield "["
+            yield from patterns_formatter.func(value.patterns)
+            yield "]"
+            yield "" if value.divisor == 2 else f"/{value.divisor}"
 
-            elif opened == "[":
-                _, index = parse_msp(text, index, indent=indent, optional=True)
-                subpatterns, index = self.decode(text, index, partial=True, closed_by=r"\]", indent=indent)
-                m, index = bp.match(r"/(\d+)", [""], text, index, optional=True, partial=True)
-                divisor = int(m.group(1)) if m else 2
-                pattern = Division(divisor, subpatterns)
+        elif isinstance(pattern, Note):
+            yield from note_formatter.func(pattern)
 
-            else:
-                pattern, index = note_biparser.decode(text, index, partial=True)
+        else:
+            assert False
 
-            patterns.append(pattern)
+@IIFE
+@pc.parsec
+def chart_parser():
+    tracks = []
 
-            # spacing
-            sp, index = parse_msp(text, index, indent=indent, optional=True)
-patterns_biparser = PatternsBiparser()
+    while True:
+        sp = yield msp_parser(indent=0).validate(lambda sp: sp is not None, "whitespace or newline")
 
-class ChartBiparser(bp.Biparser):
-    def encode(self, value):
-        res = ""
-        for track in value:
-            kwargs = track.get_arguments()
-            res += "\nTRACK" + arguments_biparser.encode(([], kwargs)) + ":\n"
-            res += "    " + patterns_biparser.encode(track.patterns) + "\n"
+        if sp == "":
+            return tracks
 
-    def decode(self, text, index=0, partial=False):
-        tracks = []
+        elif sp == "\n":
+            yield pc.Parsec.tokens(["TRACK"])
+            arguments = yield arguments_parser
 
-        while True:
-            sp, index = parse_msp(text, index, indent=0)
+            track = Track()
+            try:
+                track.set_arguments(*arguments[0], **arguments[1])
+            except Exception as e:
+                raise pc.ParseFailure("valid arguments") from e
 
-            if sp == "":
-                return tracks, index
+            yield pc.Parsec.regex(r":(?=\n)")
+            yield msp_parser(indent=4).validate(lambda sp: sp == "\n", "newline")
 
-            elif sp == "\n":
-                _, index = bp.startswith(["TRACK"], text, index, partial=True)
-                arguments, index = arguments_biparser.decode(text, index, partial=True)
-                _, index = bp.match(r":(?=\n)", [":"], text, index, partial=True)
+            patterns = yield patterns_parser(indent=4)
+            track.patterns = patterns
+            tracks.append(track)
 
-                track = Track()
-                try:
-                    track.set_arguments(*arguments[0], **arguments[1])
-                except Exception:
-                    raise bp.DecodeError(text, index, [])
+        else:
+            assert False
 
-                sp, index = parse_msp(text, index, indent=4, optional=True)
-                if sp != "\n":
-                    raise bp.DecodeError(text, index, ["\n    "])
+@fc.Formattec
+def chart_formatter(value, *, indent=0, **contexts):
+    for track in value:
+        kwargs = track.get_arguments()
+        yield "\n" + " "*indent + "TRACK"
+        yield from arguments_formatter.func(([], kwargs))
+        yield ":\n"
+        yield " "*indent + "    "
+        yield from patterns_formatter.func(track.patterns, indent=indent+4)
+        yield "\n"
 
-                patterns, index = patterns_biparser.decode(text, index, partial=True, indent=4)
-                track.patterns = patterns
 
-                tracks.append(track)
+@pc.parsec
+def beatsheet_parser(metadata_only=False):
+    header = yield pc.Parsec.regex(r"#K-AIKO-std-(\d+\.\d+\.\d+)(?=\n|$)").desc("header")
+    vernum = header[len("#K-AIKO-std-"):].split(".")
+    vernum0 = version.split(".")
+    if vernum[0] != vernum0[0] or vernum[1:] > vernum0[1:]:
+        raise BeatmapParseError("incompatible version")
 
-            else:
-                raise ValueError("impossible condition")
-chart_biparser = ChartBiparser()
+    beatsheet = BeatSheet()
+    fields = BeatSheet.__annotations__
+    valid_fields = list(fields.keys())
+    valid_fields.append("chart")
 
-class BeatSheetBiparser(bp.Biparser):
-    version = "0.2.0"
+    while True:
+        sp = yield msp_parser(indent=0).validate(lambda sp: sp in ("\n", ""), "newline")
+        if sp == "":
+            return beatsheet
 
-    def encode(self, value):
-        fields = BeatSheet.__annotations__
+        yield pc.Parsec.tokens(["beatmap."])
+        name = yield pc.Parsec.tokens(valid_fields)
+        yield pc.Parsec.tokens([" = "])
+        valid_fields.remove(name)
 
-        sheet = ""
-        sheet += "#K-AIKO-std-" + self.version + "\n"
+        if name == "info":
+            field_parser = pc.mstr_parser
+        elif name == "chart":
+            field_parser = pc.rmstr_parser
+        else:
+            field_parser = pc.from_type_hint(fields[name])
 
-        for name, type_hint in fields.items():
-            if name == "info":
-                field_biparser = MStrBiparser()
-            else:
-                field_biparser = bp.from_type_hint(fields[name])
+        value = yield field_parser
 
-            sheet += "beatmap." + name + " = " + field_biparser.encode(getattr(value, name)) + "\n"
+        if not metadata_only or name != "chart":
+            setattr(beatsheet, name, value)
 
-        field_biparser = RMStrBiparser()
-        sheet += "beatmap.chart = " + field_biparser.encode(getattr(value, 'chart')) + "\n"
+@fc.Formattec
+def beatsheet_formatter(value, **contexts):
+    fields = BeatSheet.__annotations__
 
-    def decode(self, text, index=0, partial=False, metadata_only=False):
-        m, index = bp.match(r"#K-AIKO-std-(\d+\.\d+\.\d+)(?=\n|$)",
-                            ["#K-AIKO-std-" + self.version],
-                            text, index, partial=True)
-        version = m.group(1)
+    yield f"#K-AIKO-std-{version}\n"
 
-        vernum = version.split(".")
-        vernum0 = self.version.split(".")
-        if vernum[0] != vernum0[0] or vernum[1:] > vernum0[1:]:
-            raise BeatmapParseError("incompatible version")
+    for name, type_hint in fields.items():
+        field_formatter = fc.mstr_formatter if name == "info" else fc.from_type_hint(type_hint)
+        yield f"beatmap.{name} = "
+        yield from field_formatter.func(getattr(value, name))
+        yield "\n"
 
-        beatsheet = BeatSheet()
-        fields = BeatSheet.__annotations__
-        is_set = []
-        after_chart = False
-
-        while True:
-            prev_index = index
-            sp, index = parse_msp(text, index, indent=0)
-            if sp == "":
-                return beatsheet, index
-            if sp == " ":
-                raise bp.DecodeError(text, prev_index, ["\n"])
-
-            m, index = bp.match(r"beatmap\.([_a-zA-Z][_a-zA-Z0-9]*) = ", [], text, index, partial=True)
-            name = m.group(1)
-            if name not in fields and name != "chart":
-                raise bp.DecodeError(text, index, [], info=f"unknown field {name}")
-            if name in is_set:
-                raise bp.DecodeError(text, index, [], info=f"field {name} has been set")
-            if name != "chart" and after_chart:
-                raise bp.DecodeError(text, index, [], info=f"field {name} should be set before chart")
-            is_set.append(name)
-
-            if name == "info":
-                field_biparser = MStrBiparser()
-            elif name == "chart":
-                field_biparser = RMStrBiparser()
-                after_chart = True
-            else:
-                field_biparser = bp.from_type_hint(fields[name])
-
-            value, index = field_biparser.decode(text, index, partial=True)
-
-            if not metadata_only or name != "chart":
-                setattr(beatsheet, name, value)
-beatsheet_biparser = BeatSheetBiparser()
+    name = 'chart'
+    field_formatter = fc.rmstr_formatter
+    yield f"beatmap.{name} = "
+    yield from field_formatter.func(getattr(value, name))
+    yield "\n"
 
 
 class OSU:
