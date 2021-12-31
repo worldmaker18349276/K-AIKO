@@ -1,5 +1,4 @@
 import string
-import itertools
 import enum
 import dataclasses
 import typing
@@ -7,218 +6,202 @@ from typing import Dict, List, Set, Tuple, Union
 
 
 class FormatError(Exception):
-    def __init__(self, field, expected):
-        self.field = field
+    def __init__(self, value, expected):
+        self.value = value
         self.expected = expected
 
     def __str__(self):
-        if self.field == "":
-            return f"expected: {self.expected}"
-        else:
-            return f"expected: {self.expected} at {self.field}"
+        return f"Invalid value {self.value}, expected: {self.expected}"
 
 
 class Formattec:
-    _string_formatter = string.Formatter()
-
     def __init__(self, func):
         self.func = func
 
     def format(self, value, **contexts):
-        return self.func(value, "", **contexts)
+        return "".join(self.func(value, **contexts))
 
     def context(self, override):
         def context_formatter(value, field, **contexts):
-            return self.func(value, field, **override(**contexts))
+            yield from self.func(value, field, **override(**contexts))
         return Formattec(context_formatter)
 
-    def validate(self, pred, expected="satisfy some condition"):
-        def validate_formatter(value, field, **contexts):
-            if not pred(value):
-                raise FormatError(field, expected)
-            return self.func(value, field, **contexts)
+    def validate(self, validater, expected=None):
+        if expected is None:
+            expected = f"satisfy {validater!r}"
+        def validate_formatter(value, **contexts):
+            if not validater(value):
+                raise FormatError(value, expected)
+            yield from self.func(value, **contexts)
         return Formattec(validate_formatter)
 
     @staticmethod
     def string(string=""):
-        def string_formatter(value, field, **contexts):
-            return string
+        def string_formatter(value, **contexts):
+            yield string
         return Formattec(string_formatter)
 
-    def attempt(self):
-        def attempt_formatter(value, field, **contexts):
-            try:
-                self.func(value, "", **contexts)
-            except FormatError as e:
-                if e.field == "":
-                    raise e
-                else:
-                    raise FormatError(field, f"({e.expected} at {e.field})") from e
-        return Formattec(attempt_formatter)
+    def map(self, func):
+        def func_formatter(value, **contexts):
+            yield from self.func(func(value), **contexts)
+        return Formattec(func_formatter)
+
+    @staticmethod
+    def bind(func):
+        def bind_formatter(value, **contexts):
+            yield from func(value).func(value, **contexts)
+        return Formattec(bind_formatter)
 
     def concat(self, *others):
-        def concat_formatter(value, field, **contexts):
-            return "".join(formatter.func(value, field, **contexts) for formatter in [self, *others])
+        def concat_formatter(value, **contexts):
+            for other in [self, *others]:
+                yield other.func(value, **contexts)
         return Formattec(concat_formatter)
-
-    def in_field(self, subfield, getter=None):
-        if getter is None:
-            getter = lambda value: Formattec._string_formatter.get_field(subfield, [value], {})
-        def infield_formatter(value, field, **contexts):
-            subvalue = getter(value)
-            return self.func(subvalue, field + subfield, **contexts)
-        return Formattec(infield_formatter)
 
     @staticmethod
     def template(format_str, **formatters):
-        def template_formatter(value, field, **contexts):
-            res = ""
-            for prefix, name, spec, conv in Formattec._string_formatter.parse(format_str):
+        # Formattec.template("key={.key!value}", value=value_formatter)
+        _string_formatter = string.Formatter()
+
+        def template_formatter(value, **contexts):
+            for prefix, name, spec, conv in _string_formatter.parse(format_str):
                 if prefix is not None:
-                    res += prefix
+                    yield prefix
                 if name is None:
                     continue
                 if name[:1] not in ("", ".", "["):
-                    field_value, _ = Formattec._string_formatter.get_field(name, [], contexts)
+                    field_value, _ = _string_formatter.get_field(name, [], contexts)
                     if conv is not None:
-                        field_value = Formattec._string_formatter.convert_field(field_value, conv)
+                        field_value = _string_formatter.convert_field(field_value, conv)
                     spec = spec.format(**contexts) if spec is not None else ""
-                    res += Formattec._string_formatter.format_field(field_value, spec)
+                    yield _string_formatter.format_field(field_value, spec)
                     continue
 
                 if conv is None or spec is not None:
                     raise ValueError
-                res += formatters[conv].in_field(name).func(value, field, **contexts)
-
-            return res
+                field_value, _ = _string_formatter.get_field(name, [value], {})
+                yield from formatters[conv].func(field_value, **contexts)
         return Formattec(template_formatter)
 
-    def union(self, *others):
-        formatters = [self, *others]
-        def union_formatter(value, field, **contexts):
-            expected = []
-            for formatter in formatters:
-                try:
-                    return formatter.func(value, field, **contexts)
-                except FormatError as e:
-                    if e.field != field:
-                        raise e
-                    else:
-                        expected.append(e.expected)
-            else:
-                raise FormatError(field, " or ".join(expected))
-        return Formattec(union_formatter)
-
-    def join(self, elems, multiline=False):
-        if len(elems) == 0:
-            return Formattec.string("")
-        if multiline:
-            sep = Formattec.template("{!sep}\n{indent}", sep=self)
-        else:
-            sep = Formattec.template("{!sep} ", sep=self)
-        return elems[0].concat(*[sep + elem for elem in elems[1:]])
-
-    def many(self, subfields=lambda i: (f"[{i}]", None)):
-        def many_formatter(value, field, **contexts):
-            res = ""
-            for i in itertools.count():
-                subfield, getter = subfields(i)
-                try:
-                    res += self.in_field(subfield, getter).func(value, field, **contexts)
-                except FormatError as e:
-                    if e.field != field:
-                        raise e
-                    else:
-                        return res
+    def many(self):
+        def many_formatter(value, **contexts):
+            for subvalue in value:
+                yield from self.func(subvalue, **contexts)
         return Formattec(many_formatter)
 
-    def sep_by(self, sep, subfields=lambda i: (f"[{i}]", None), multiline=False):
+    def join(self, elems, multiline=False):
+        sep = self
         if multiline:
             sep = Formattec.template("{!sep}\n{indent}", sep=sep)
-        else:
-            sep = Formattec.template("{!sep} ", sep=sep)
-        return self.in_field(*subfields(0)) + (sep + self).many(subfields=lambda i: subfields(i+1))
+
+        def join_formatter(value, **contexts):
+            if len(value) != len(elems):
+                raise FormatError(value, f"iterable with length {len(elems)}")
+            is_first = True
+            for subvalue, formatter in zip(value, elems):
+                if not is_first:
+                    yield from sep.func(value, **contexts)
+                yield from formatter.func(subvalue, **contexts)
+                is_first = False
+        return Formattec(join_formatter)
+
+    def sep_by(self, sep, multiline=False):
+        if multiline:
+            sep = Formattec.template("{!sep}\n{indent}", sep=sep)
+
+        def sep_formatter(value, **contexts):
+            is_first = True
+            for subvalue in value:
+                if not is_first:
+                    yield from sep.func(value, **contexts)
+                yield from self.func(subvalue, **contexts)
+                is_first = False
+        return Formattec(sep_formatter)
 
     def between(self, opening, closing, indent="    ", multiline=False):
         if multiline:
             _indent = indent
-            elem = self.context(lambda indent="", **kw: dict(indent=indent + _indent, **kw))
-            return Formattec.template("{!opening}\n{indent}" + _indent + "{!elem}\n{indent}{!closing}",
-                                      opening=opening, elem=elem, closing=closing)
+            opening = Formattec.template("{!opening}\n{indent}" + _indent, opening=opening)
+            closing = Formattec.template("\n{indent}{!closing}", closing=closing)
+            entry = self.context(lambda indent="", **kw: dict(indent=indent+_indent, **kw))
+            return opening + entry + closing
         else:
             return opening + self + closing
-
-    def __or__(self, other):
-        return self.union(other)
 
     def __add__(self, other):
         return self.concat(other)
 
 
-def _make_literal_formmatter(cls, func=repr):
-    return Formattec(lambda value, field, **contexts: func(value)).validate(lambda value: type(value) is cls, cls.__name__)
+def _make_literal_formatter(cls, func=repr):
+    def literal_formatter(value, **contexts):
+        yield func(value)
+    return Formattec(literal_formatter).validate(lambda value: type(value) is cls, cls.__name__)
 
-none_formatter = _make_literal_formmatter(type(None))
-bool_formatter = _make_literal_formmatter(bool)
-int_formatter = _make_literal_formmatter(int)
-float_formatter = _make_literal_formmatter(float)
+none_formatter = _make_literal_formatter(type(None))
+bool_formatter = _make_literal_formatter(bool)
+int_formatter = _make_literal_formatter(int)
+float_formatter = _make_literal_formatter(float)
 
-def _complex_formatter(value):
+def _complex_repr(value):
     repr_value = repr(value)
     # remove parentheses
     if repr_value.startswith("(") and repr_value.endswith(")"):
         repr_value = repr_value[1:-1]
     return repr_value
-complex_formatter = _make_literal_formmatter(complex, _complex_formatter)
+complex_formatter = _make_literal_formatter(complex, _complex_repr)
 
-def _bytes_formatter(value):
+def _bytes_repr(value):
     # make sure it uses double quotation
     return 'b"' + repr(value + b'"')[2:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
-bytes_formatter = _make_literal_formmatter(bytes, _bytes_formatter)
+bytes_formatter = _make_literal_formatter(bytes, _bytes_repr)
 
-def _str_formatter(value):
+def _str_repr(value):
     # make sure it uses double quotation
     return '"' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
-str_formatter = _make_literal_formmatter(str, _str_formatter)
+str_formatter = _make_literal_formatter(str, _str_repr)
 
-def _sstr_formatter(value):
+def _sstr_repr(value):
     # make sure it uses single quotation
     return repr(value + '"')[:-2] + "'"
-sstr_formatter = _make_literal_formmatter(str, _sstr_formatter)
+sstr_formatter = _make_literal_formatter(str, _sstr_repr)
 
 
 # composite
 
 def list_formatter(elem, multiline=False):
-    empty = Formattec.string("[]").validate(lambda value: value == [], "empty list")
+    empty = Formattec.string("[]")
     nonempty = (
-        elem.sep_by(Formattec.string(","), multiline=multiline)
+        elem.sep_by(Formattec.string(", "), multiline=multiline)
             .between(Formattec.string("["), Formattec.string("]"), multiline=multiline)
+    )
+    return (
+        Formattec.bind(lambda value: nonempty if value else empty)
             .validate(lambda value: type(value) is list, "list")
     )
-    return empty | nonempty
 
 def set_formatter(elem, multiline=False):
-    empty = Formattec.string("set()").validate(lambda value: value == set(), "empty set")
+    empty = Formattec.string("set()")
     nonempty = (
-        elem.sep_by(Formattec.string(","), multiline=multiline)
+        elem.sep_by(Formattec.string(", "), multiline=multiline)
             .between(Formattec.string("{"), Formattec.string("}"), multiline=multiline)
-            .in_field(".to_list()", lambda a: list(a))
+    )
+    return (
+        Formattec.bind(lambda value: nonempty if value else empty)
             .validate(lambda value: type(value) is set, "set")
     )
-    return empty | nonempty
-
 
 def dict_formatter(key, value, multiline=False):
-    empty = Formattec.string("{}").validate(lambda value: value == {}, "empty dict")
+    empty = Formattec.string("{}")
     nonempty = (
         Formattec.template("{[0]!key}:{[1]!value}", key=key, value=value)
-            .sep_by(Formattec.string(","), multiline=multiline)
+            .sep_by(Formattec.string(", "), multiline=multiline)
             .between(Formattec.string("{"), Formattec.string("}"), multiline=multiline)
-            .in_field(".items()", lambda value: value.items())
+            .map(lambda value: value.items())
+    )
+    return (
+        Formattec.bind(lambda value: nonempty if value else empty)
             .validate(lambda value: type(value) is dict, "dict")
     )
-    return empty | nonempty
 
 
 def tuple_formatter(elems, multiline=False):
@@ -226,12 +209,12 @@ def tuple_formatter(elems, multiline=False):
         return Formattec.string("()").validate(lambda value: value == (), "empty tuple")
     elif len(elems) == 1:
         return (
-            Formattec.template("({[0]!elem},)", elem=elems[0])
+            Formattec.template("({!elem},)", elem=elems[0])
                 .validate(lambda value: type(value) is tuple and len(value) == 1, "singleton tuple")
         )
     else:
         return (
-            Formattec.join(Formattec.string(","), elems, multiline=multiline)
+            Formattec.string(", ").join(elems, multiline=multiline)
                 .between(Formattec.string("("), Formattec.string(")"), multiline=multiline)
                 .validate(lambda value: type(value) is tuple, "tuple")
         )
@@ -241,20 +224,28 @@ def dataclass_formatter(cls, fields, multiline=False):
     if not fields:
         return Formattec.string(f"{cls.__name__}()").validate(lambda value: type(value) is cls, cls.__name__)
     else:
-        items = [Formattec.template("%s={.%s!field}" % (key, key), field=field) for key, field in fields.items()]
+        items = [Formattec.template(key+"={!field}", field=field) for key, field in fields.items()]
         return (
-            Formattec.join(Formattec.string(","), items, multiline=multiline)
+            Formattec.string(", ").join(items, multiline=multiline)
                 .between(Formattec.string(f"{cls.__name__}("), Formattec.string(")"), multiline=multiline)
+                .map(lambda value: [getattr(value, key) for key in fields.keys()])
                 .validate(lambda value: type(value) is cls, cls.__name__)
         )
 
 
 def union_formatter(options):
-    return Formattec.union(*[option.attempt() for option in options])
+    def union_formatter(value, **contexts):
+        for type_hint, option_formatter in options.items():
+            if has_type(value, type_hint):
+                yield from option_formatter.func(value, **contexts)
+                return
+        else:
+            raise FormatError(value, " or ".join(str(type_hint) for type_hint in options.keys()))
+    return Formattec(union_formatter)
 
 
 def enum_formatter(cls):
-    return _make_literal_formmatter(cls, lambda value: f"{cls.__name__}.{value.name}")
+    return _make_literal_formatter(cls, lambda value: f"{cls.__name__}.{value.name}")
 
 
 def get_args(type_hint):
@@ -280,6 +271,50 @@ def get_origin(type_hint):
         else:
             raise ValueError
         return origin
+
+
+def has_type(value, type_hint):
+    if type_hint is None:
+        type_hint = type(None)
+
+    if type_hint in [type(None), bool, int, float, complex, str, bytes]:
+        return type(value) is type_hint
+
+    elif isinstance(type_hint, type) and issubclass(type_hint, enum.Enum):
+        return type(value) is type_hint
+
+    elif isinstance(type_hint, type) and dataclasses.is_dataclass(type_hint):
+        return type(value) is type_hint and all(has_type(getattr(value, field.name), field.type)
+                                                for field in dataclasses.fields(type_hint))
+
+    elif get_origin(type_hint) is list:
+        elem_hint, = get_args(type_hint)
+        return type(value) is list and all(has_type(value, elem_hint) for elem in value)
+
+    elif get_origin(type_hint) is set:
+        elem_hint, = get_args(type_hint)
+        return type(value) is set and all(has_type(value, elem_hint) for elem in value)
+
+    elif get_origin(type_hint) is tuple:
+        args = get_args(type_hint)
+        if len(args) == 1 and args[0] == ():
+            args = []
+        return (
+            type(value) is tuple
+            and len(value) == len(args)
+            and all(has_type(elem, elem_hint) for elem, elem_hint in zip(value, args))
+        )
+
+    elif get_origin(type_hint) is dict:
+        key_hint, value_hint = get_args(type_hint)
+        return type(value) is dict and all(has_type(key, key_hint) and has_type(value, value_hint)
+                                           for key, value in value.items())
+
+    elif get_origin(type_hint) is Union:
+        return any(has_type(value, option) for option in get_args(type_hint))
+
+    else:
+        raise ValueError(f"Invalid type hint: {type_hint!r}")
 
 
 def from_type_hint(type_hint, multiline=False):
@@ -353,7 +388,7 @@ def from_type_hint(type_hint, multiline=False):
         return dict_formatter(key, value, multiline)
 
     elif get_origin(type_hint) is Union:
-        options = [from_type_hint(arg, multiline) for arg in get_args(type_hint)]
+        options = {arg: from_type_hint(arg, multiline) for arg in get_args(type_hint)}
         return union_formatter(options)
 
     else:
