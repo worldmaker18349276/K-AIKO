@@ -6,6 +6,7 @@ This is a fork of https://github.com/sighingnow/parsec.py.
 
 import re
 import ast
+import contextlib
 import functools
 import enum
 import dataclasses
@@ -16,37 +17,21 @@ from typing import Dict, List, Set, Tuple, Union
 class ParseError(Exception):
     """A class of parse error to explain where and why."""
 
-    def __init__(self, index, loc, expected):
+    def __init__(self, text, index, expected):
         """Create `ParseError` object.
 
         Parameters
         ----------
-        index : int
-            The position failed to parse.
-        loc : tuple of int and int
-            The line and column of index in the text.
-        expected : str
-            The description of expected string.
-        """
-        self.index = index
-        self.loc = loc
-        self.expected = expected
-
-    @classmethod
-    def create(cls, text, index, expected):
-        """Create `ParseError` object by text and index.
-
-        Parameters
-        ----------
         text : str
-            The input text.
+            The input string to parse.
         index : int
             The position failed to parse.
         expected : str
             The description of expected string.
         """
-        loc = cls.locate(text, index)
-        return cls(index, loc, expected)
+        self.text = text
+        self.index = index
+        self.expected = expected
 
     @staticmethod
     def locate(text, index):
@@ -84,13 +69,21 @@ class ParseError(Exception):
         str
             The description of this error.
         """
-        return f"expected: {self.expected} at {self.loc[0]}:{self.loc[1]}"
+        if self.index >= len(self.text):
+            return f"<out of bounds index {self.index}>"
+        line, col = ParseError.locate(self.text, self.index)
+        return f"expected: {self.expected} at {line}:{col}"
 
+
+class ParseFailure(Exception):
+    def __init__(self, expected):
+        self.expected = expected
 
 def parsec(func):
     """Make a parser function in generator form.
 
     Yield parser to parse text, and the result will be send back.
+    Catch exception `ParseFailure` to deal with the failure.
     Use `return` to return parsing result.
 
     Parameters
@@ -108,13 +101,41 @@ def parsec(func):
     def parser_func(*args, **kwargs):
         def parser(text, index):
             it = func(*args, **kwargs)
-            value = None
-            while True:
+            with contextlib.closing(it):
+                # initializing
                 try:
-                    parser = it.send(value)
-                except StopIteration as e:
-                    return (index, e.value)
-                value, index = parser(text, index)
+                    sub_parser = it.send(None)
+                except StopIteration as stop:
+                    return stop.value, index
+                except ParseFailure as failure:
+                    raise ParseError(text, index, failure.expected) from failure
+
+                while True:
+                    try:
+                        value, index = sub_parser(text, index)
+
+                    except ParseError as error:
+                        if error.index != index:
+                            raise error
+
+                        # binding failure to the next parser
+                        failure = ParseFailure(error.expected)
+                        failure.__cause__ = error
+                        try:
+                            sub_parser = it.throw(ParseFailure, failure)
+                        except StopIteration as stop:
+                            return stop.value, index
+                        except ParseFailure as failure:
+                            raise ParseError(text, index, failure.expected) from failure
+
+                    else:
+                        # binding result to the next parser
+                        try:
+                            sub_parser = it.send(value)
+                        except StopIteration as stop:
+                            return stop.value, index
+                        except ParseFailure as failure:
+                            raise ParseError(text, index, failure.expected) from failure
 
         return Parsec(parser)
     return parser_func
@@ -170,44 +191,67 @@ class Parsec:
         """
         value, index = self.func(text, 0)
         if ret_rest:
-            return (value, text[index:])
+            return value, text[index:]
         else:
             return value
 
     # basic
 
-    def bind(self, func):
+    def bind(self, successor=None, catcher=None):
         """Bind a parser function with the result of this parser.
 
-        If parser is successful, passes the result to `func`, and continues
-        with the parser returned from `func`.
-        In generator form, it looks like::
+        If the parsing is successful, passes the result to `successor`, and
+        continues with the parser returned from `successor`.  If it fails,
+        passes the expected message to `catcher`, and continues with the parser
+        returned from `catcher`.
+        In the generator form, it looks like::
 
-            res1 = yield self
-            other = func(res1)
+            try:
+                res1 = yield self
+            except ParseFailure as failure:
+                other = catcher(failure)
+            else:
+                other = successor(res1)
             res2 = yield other
             return res2
 
         Parameters
         ----------
-        func : function
+        successor : function, optional
             The function eats previous result and produce the next parser.
+        catcher : function, optional
+            The function deal with previous failure and produce the next parser.
 
         Returns
         -------
         Parsec
         """
         def bind_parser(text, index):
-            value, index = self.func(text, index)
-            other = func(value)
-            return other.func(text, index)
+            try:
+                value, index = self.func(text, index)
+
+            except ParseError as error:
+                if catcher is None:
+                    raise error
+                other = catcher(error.expected)
+                return other.func(text, index)
+
+            else:
+                if successor is None:
+                    return value, index
+                other = successor(value)
+                return other.func(text, index)
         return Parsec(bind_parser)
 
     def map(self, func):
         """Modify the result value by a function.
 
         If parser is success, transforms the produced value of parser with `func`.
-        In generator form, it looks like::
+        In the combinator form, it looks like::
+
+            self.bind(lambda res: Parsec.nothing(func(res)))
+
+        In the generator form, it looks like::
 
             res = yield self
             return func(res)
@@ -223,14 +267,18 @@ class Parsec:
         """
         def map_parser(text, index):
             value, index = self.func(text, index)
-            return (func(value), index)
+            return func(value), index
         return Parsec(map_parser)
 
     def starmap(self, func):
         """Transform parser results, which should be wrapped up in a tuple, by a function.
 
         It is the same as `map` except spreading.
-        In generator form, it looks like::
+        In the combinator form, it looks like::
+
+            self.map(lambda res: func(*res))
+
+        In the generator form, it looks like::
 
             res = yield self
             return func(*res)
@@ -244,15 +292,19 @@ class Parsec:
         -------
         Parsec
         """
-        def map_parser(text, index):
+        def starmap_parser(text, index):
             value, index = self.func(text, index)
-            return (func(*value), index)
-        return Parsec(map_parser)
+            return func(*value), index
+        return Parsec(starmap_parser)
 
     def then(self, other):
         """Sequentially compose two parser, discarding any value produced by the first.
 
-        In generator form, it looks like::
+        In the combinator form, it looks like::
+
+            self.bind(lambda _: other)
+
+        In the generator form, it looks like::
 
             res1 = yield self
             res2 = yield other
@@ -267,12 +319,20 @@ class Parsec:
         -------
         Parsec
         """
-        return self.bind(lambda _: other)
+        def then_parser(text, index):
+            _, index = self.func(text, index)
+            value, index = other.func(text, index)
+            return value, index
+        return Parsec(then_parser)
 
     def skip(self, other):
         """Sequentially compose two parser, discarding any value produced by the second.
 
-        In generator form, it look like::
+        In the combinator form, it looks like::
+
+            self.bind(lambda res: other.result(res))
+
+        In the generator form, it look like::
 
             res1 = yield self
             res2 = yield other
@@ -290,22 +350,24 @@ class Parsec:
         def skip_parser(text, index):
             value, index = self.func(text, index)
             _, index = other.func(text, index)
-            return (value, index)
+            return value, index
         return Parsec(skip_parser)
 
     def choice(self, *others):
         """Parse others if this parser failed without consuming any input.
 
         If you need backtracking, apply `attempt` first.
-        Depend on the input text, it looks like::
+        In the combinator form, it looks like::
 
-            res1 = yield self
-            return res1
+            self.bind(catcher=lambda _: other)
 
-        if parsing `self` successfully.  Or::
+        In the generator form, it look like::
 
-            res2 = yield other
-            return res2
+            try:
+                res = yield self
+            except ParseFailure:
+                res = yield other
+            return res
 
         Parameters
         ----------
@@ -321,23 +383,27 @@ class Parsec:
             for parser in [self, *others]:
                 try:
                     return parser.func(text, index)
-                except ParseError as e:
-                    if e.index != index:
-                        raise e
-                    expected.append(e.expected)
+                except ParseError as error:
+                    if error.index != index:
+                        raise error
+                    expected.append(error.expected)
 
-            raise ParseError.create(text, index, " or ".join(expected))
+            raise ParseError(text, index, " or ".join(expected))
 
         return Parsec(choice_parser)
 
     def concat(self, *others):
-        """Concatenate multiple parsers into one.  Return a list of results they produced.
+        """Concatenate multiple parsers into one.  Return a tuple of results they produced.
 
-        In generator form, it looks like::
+        In the combinator form, it looks like::
+
+            self.bind(lambda res1: other.map(lambda res2: (res1, res2)))
+
+        In the generator form, it looks like::
 
             res1 = yield self
             res2 = yield other
-            return [res1, res2]
+            return (res1, res2)
 
         Parameters
         ----------
@@ -354,7 +420,6 @@ class Parsec:
                 value, index = parser.func(text, index)
                 results.append(value)
             return tuple(results), index
-
         return Parsec(concat_parser)
 
     def __or__(self, other):
@@ -398,7 +463,11 @@ class Parsec:
     def result(self, res):
         """Change the result value when successful.
 
-        In generator form, it looks like::
+        In the combinator form, it looks like::
+
+            self.bind(lambda _: Parsec.nothing(res))
+
+        In the generator form, it looks like::
 
             res_ = yield self
             return res
@@ -412,10 +481,26 @@ class Parsec:
         -------
         Parsec
         """
-        return self >> Parsec.nothing().map(lambda _: res)
+        def result_parser(text, index):
+            _, index = self.func(text, index)
+            return res, index
+        return Parsec(result_parser)
 
     def desc(self, expected):
         """Describe expected string of this parser, which will be reported on failure.
+
+        In the combinator form, it looks like::
+
+            self.bind(catcher=lambda _: Parsec.fail(expected))
+
+        In the generator form, it looks like::
+
+            try:
+                res = yield self
+            except ParseFailure:
+                raise ParseFailure(expected)
+            else:
+                return res
 
         Parameters
         ----------
@@ -426,7 +511,15 @@ class Parsec:
         -------
         Parsec
         """
-        return self | Parsec.fail(expected)
+        def desc_parser(text, index):
+            try:
+                value, index = self.func(text, index)
+            except ParseError as error:
+                error.expected = expected
+                raise error
+            else:
+                return value, index
+        return Parsec(desc_parser)
 
     def ahead(self):
         """Parse string by looking ahead.
@@ -438,10 +531,10 @@ class Parsec:
         -------
         Parsec
         """
-        def lookahead_parser(text, index):
+        def ahead_parser(text, index):
             value, _ = self.func(text, index)
-            return (value, index)
-        return Parsec(lookahead_parser)
+            return value, index
+        return Parsec(ahead_parser)
 
     def attempt(self):
         """Backtrack to the original position.
@@ -456,10 +549,11 @@ class Parsec:
         def attempt_parser(text, index):
             try:
                 return self.func(text, index)
-            except ParseError as e:
-                if e.index != index:
-                    raise ParseError.create(text, index, f"({text[index:e.index]!r} followed by {e.expected})")
-                raise e
+            except ParseError as error:
+                if error.index != index:
+                    expected = f"({text[index:error.index]!r} followed by {error.expected})"
+                    raise ParseError(text, index, expected) from error
+                raise error
         return Parsec(attempt_parser)
 
     def optional(self):
@@ -467,27 +561,46 @@ class Parsec:
 
         It will wrap up the result value in a tuple,
         and return empty tuple on failure.
+        In the combinator form, it looks like::
+
+            self.bind(
+                lambda res: Parsec.nothing((res,)),
+                lambda _: Parsec.nothing(()),
+            )
+
+        In the generator form, it looks like::
+
+            try:
+                res = yield self
+            except ParseFailure:
+                return ()
+            else:
+                return (res,)
 
         Returns
         -------
         Parsec
         """
-        def option_parser(text, index):
+        def optional_parser(text, index):
             try:
                 value, index = self.func(text, index)
-            except ParseError as e:
-                if e.index != index:
-                    raise e
-                return ((), index)
+            except ParseError as error:
+                if error.index != index:
+                    raise error
+                return (), index
             else:
-                return ((value,), index)
-        return Parsec(option_parser)
+                return (value,), index
+        return Parsec(optional_parser)
 
     # atomic
 
     @staticmethod
     def fail(expected):
         """Create a parser that always fails.
+
+        In the generator form, it looks like::
+
+            raise ParseFailure(expected)
 
         Parameters
         ----------
@@ -499,22 +612,33 @@ class Parsec:
         Parsec
         """
         def fail_parser(text, index):
-            raise ParseError.create(text, index, expected)
+            raise ParseError(text, index, expected)
         return Parsec(fail_parser)
 
     @staticmethod
-    def nothing():
+    def nothing(res=None):
         """Create a parser that parse nothing.
+
+        In the generator form, it looks like::
+
+            return res
+
+        Parameters
+        ----------
+        res : any, optional
+            The parsing result, by default None.
 
         Returns
         -------
         Parsec
         """
-        return Parsec(lambda _, index: (None, index))
+        def nothing_parser(text, index):
+            return res, index
+        return Parsec(nothing_parser)
 
     @staticmethod
     def any():
-        """Parse an arbitrary character.
+        """Parse an arbitrary character.  It failed at the EOF.
 
         Returns
         -------
@@ -522,9 +646,9 @@ class Parsec:
         """
         def any_parser(text, index):
             if index < len(text):
-                return (text[index], index + 1)
+                return text[index], index + 1
             else:
-                raise ParseError.create(text, index, "a random char")
+                raise ParseError(text, index, "a random char")
         return Parsec(any_parser)
 
     @staticmethod
@@ -542,9 +666,9 @@ class Parsec:
         """
         def one_of_parser(text, index):
             if index < len(text) and text[index] in chars:
-                return (text[index], index + 1)
+                return text[index], index + 1
             else:
-                raise ParseError.create(text, index, f"one of {repr(chars)}")
+                raise ParseError(text, index, f"one of {repr(chars)}")
         return Parsec(one_of_parser)
 
     @staticmethod
@@ -562,13 +686,13 @@ class Parsec:
         """
         def none_of_parser(text, index):
             if index < len(text) and text[index] not in chars:
-                return (text[index], index + 1)
+                return text[index], index + 1
             else:
-                raise ParseError.create(text, index, f"none of {repr(chars)}")
+                raise ParseError(text, index, f"none of {repr(chars)}")
         return Parsec(none_of_parser)
 
     @staticmethod
-    def satisfy(validater, desc="some condition"):
+    def satisfy(validater, desc=None):
         """Parse a character validated by specified function.
 
         Parameters
@@ -576,17 +700,19 @@ class Parsec:
         validater : function
             The function to validate input.
         desc : str, optional
-            The description of validater, by default `"some condition"`.
+            The description of validater.
 
         Returns
         -------
         Parsec
         """
+        if desc is None:
+            desc = repr(validater)
         def satisfy_parser(text, index):
             if index < len(text) and validater(text[index]):
-                return (text[index], index + 1)
+                return text[index], index + 1
             else:
-                raise ParseError.create(text, index, f"a character that satisfy {desc}")
+                raise ParseError(text, index, f"a character that satisfy {desc}")
         return Parsec(satisfy_parser)
 
     @staticmethod
@@ -599,9 +725,9 @@ class Parsec:
         """
         def eof_parser(text, index):
             if index >= len(text):
-                return ("", index)
+                return "", index
             else:
-                raise ParseError.create(text, index, "EOF")
+                raise ParseError(text, index, "EOF")
         return Parsec(eof_parser)
 
     @staticmethod
@@ -625,14 +751,14 @@ class Parsec:
         def regex_parser(text, index):
             match = exp.match(text, index)
             if match:
-                return (match.group(0), match.end())
+                return match.group(0), match.end()
             else:
-                raise ParseError.create(text, index, f"/{exp.pattern}/")
+                raise ParseError(text, index, f"/{exp.pattern}/")
         return Parsec(regex_parser)
 
     @staticmethod
     def tokens(tokens):
-        """Try to match a list of strings.
+        """Try to match a list of strings.  Return the matching string.
         
         This method sorts the strings to prevent conflicts.  For example,
         it will try to match "letter" before "let", otherwise "letter"
@@ -640,8 +766,8 @@ class Parsec:
 
         Parameters
         ----------
-        strings : list of str
-            The list of strings to match.
+        tokens : sequence of str
+            The strings to match.
 
         Returns
         -------
@@ -654,37 +780,62 @@ class Parsec:
             for token in tokens:
                 next_index = index + len(token)
                 if text[index:next_index] == token:
-                    return (token, next_index)
+                    return token, next_index
             else:
-                raise ParseError.create(text, index, desc)
+                raise ParseError(text, index, desc)
         return Parsec(tokens_parser)
 
     # combinators
 
-    @parsec
     def join(self, parsers):
         """Join parsers just like `str.join`.  Return a tuple of result values of `self`.
 
+        In the combinator form, it looks like::
+
+            parsers[0].concat(*[self >> parser for parser in parsers[1:]]).map(tuple)
+
+        In the generator form, it looks like::
+
+            results = []
+            for parser in parsers:
+                if results:
+                    yield self
+                res = yield parser
+                results.append(res)
+            return tuple(results)
+
         Parameters
         ----------
-        parsers : iterable of Parsec
+        parsers : sequence of Parsec
             The parsers to join.
 
         Returns
         -------
         Parsec
         """
-        results = []
-        for parser in parsers:
-            if results:
-                yield self
-            res = yield parser
-            results.append(res)
-        return tuple(results)
+        def join_parser(text, index):
+            results = []
+            for parser in parsers:
+                if results:
+                    _, index = self.func(text, index)
+                value, index = parser.func(text, index)
+                results.append(value)
+            return tuple(results), index
+        return Parsec(join_parser)
 
-    @parsec
     def between(self, opening, closing):
         """Enclose a parser by `opening` and `closing`.  Return the result value of `self`.
+
+        In the combinator form, it looks like::
+
+            opening >> self << closing
+
+        In the generator form, it looks like::
+
+            yield opening
+            res = yield self
+            yield closing
+            return res
 
         Parameters
         ----------
@@ -697,14 +848,34 @@ class Parsec:
         -------
         Parsec
         """
-        yield opening
-        res = yield self
-        yield closing
-        return res
+        def between_parser(text, index):
+            _, index = opening.func(text, index)
+            value, index = self.func(text, index)
+            _, index = closing.func(text, index)
+            return value, index
+        return Parsec(between_parser)
 
-    @parsec
     def times(self, n, m=None):
         """Repeat a parser n to m times.  Return a list of result values of `self`.
+
+        In the combinator form, it looks like::
+
+            Parsec.concat(*[self]*n).concat(*[self.optional()]*(m-n)).map(lambda res: [e for elem in res for e in elem])
+
+        In the generator form, it looks like::
+
+            results = []
+            for i in range(n):
+                try:
+                    res = yield self
+                except ParseFailure:
+                    if i < m:
+                        raise
+                    else:
+                        break
+                else:
+                    results.append(res)
+            return results
 
         Parameters
         ----------
@@ -719,20 +890,19 @@ class Parsec:
         """
         if m is None:
             m = n
-        optional_self = self.optional()
 
-        results = []
-
-        for _ in range(n):
-            results.append((yield self))
-
-        for _ in range(m-n):
-            res = yield optional_self
-            if not res:
-                break
-            results.append(res[0])
-
-        return results
+        def times_parser(text, index):
+            results = []
+            for i in range(n):
+                try:
+                    value, index = self.func(text, index)
+                except ParseError as error:
+                    if error.index != index or i < m:
+                        raise error
+                    break
+                results.append(value)
+            return results, index
+        return Parsec(times_parser)
 
     @staticmethod
     def check_forward():
@@ -756,31 +926,71 @@ class Parsec:
                 loc = "{}:{}".format(*ParseError.locate(text, index))
                 raise ValueError(f"Infinite pattern happen at {loc}")
             prev = index
-            return (None, index)
+            return None, index
 
         return Parsec(check)
 
-    @parsec
     def many(self):
         """Repeat a parser as much as possible.  Return a list of result values of `self`.
+
+        In the combinator form, it looks like::
+
+            self.bind(
+                lambda head: self.many().map(lambda tail: [head, *tail]),
+                lambda _: Parsec.nothing([])
+            )
+
+        In the generator form, it looks like::
+
+            results = []
+            while True:
+                try:
+                    res = yield self
+                except ParseFailure:
+                    return results
+                else:
+                    results.append(res)
 
         Returns
         -------
         Parsec
         """
-        check = Parsec.check_forward()
-        optional_self = self.optional()
-        results = []
-        while True:
-            maybe_res = yield optional_self
-            if not maybe_res:
-                return results
-            yield check
-            results.append(maybe_res[0])
+        def many_parser(text, index):
+            check = Parsec.check_forward()
+            results = []
+            while True:
+                try:
+                    res, index = self.func(text, index)
+                except ParseError as error:
+                    if error.index != index:
+                        raise error
+                    return results, index
+                else:
+                    check.func(text, index)
+                    results.append(res)
+        return Parsec(many_parser)
 
-    @parsec
     def many_till(self, end):
         """Repeat a parser untill `end` succeed.  Return a list of result values of `self`.
+
+        In the combinator form, it looks like::
+
+            end.bind(
+                lambda _: (self + self.many_till(end)).starmap(lambda head, tail: [head, *tail]),
+                lambda _: Parsec.nothing([])
+            )
+
+        In the generator form, it looks like::
+
+            results = []
+            while True:
+                try:
+                    yield end
+                except ParseFailure:
+                    res = yield self
+                    results.append(res)
+                else:
+                    return results
 
         Parameters
         ----------
@@ -791,20 +1001,52 @@ class Parsec:
         -------
         Parsec
         """
-        check = Parsec.check_forward()
-        optional_end = end.optional()
-        results = []
-        while True:
-            maybe_res = yield optional_end
-            if maybe_res:
-                return results
-            results.append((yield self))
-            yield check
+        def many_till_parser(text, index):
+            check = Parsec.check_forward()
+            results = []
+            while True:
+                try:
+                    _, index = end.func(text, index)
+                except ParseError as error:
+                    if error.index != index:
+                        raise error
+                else:
+                    return results, index
 
-    @parsec
+                res, index = self.func(text, index)
+                check.func(text, index)
+                results.append(res)
+        return Parsec(many_till_parser)
+
     def sep_by(self, sep):
         """Repeat a parser and separated by `sep`.  Return a list of result values of `self`.
 
+        In the combinator form, it looks like::
+
+            self.bind(
+                lambda head: (sep >> self).many().map(lambda tail: [head, *tail]),
+                lambda _: Parsec.nothing([])
+            )
+
+        In the generator form, it looks like::
+
+            results = []
+
+            try:
+                res = yield self
+            except ParseFailure:
+                return results
+            else:
+                results.append(res)
+
+            while True:
+                try:
+                    yield sep
+                except ParseFailure:
+                    return results
+                res = yield self
+                results.append(res)
+
         Parameters
         ----------
         sep : Parsec
@@ -814,16 +1056,52 @@ class Parsec:
         -------
         Parsec
         """
-        res1 = yield self.optional()
-        if not res1:
-            return []
-        res2 = yield (sep >> self).many()
-        return [*res1, *res2]
+        def sep_by_parser(text, index):
+            check = Parsec.check_forward()
+            results = []
 
-    @parsec
+            try:
+                res, index = self.func(text, index)
+            except ParseError as error:
+                if error.index != index:
+                    raise error
+                return results, index
+            else:
+                check.func(text, index)
+                results.append(res)
+
+            while True:
+                try:
+                    _, index = sep.func(text, index)
+                except ParseError as error:
+                    if error.index != index:
+                        raise error
+                    return results, index
+
+                res, index = self.func(text, index)
+                check.func(text, index)
+                results.append(res)
+
+        return Parsec(sep_by_parser)
+
     def sep_by1(self, sep):
         """Repeat a parser at least once, separated by `sep`.  Return a list of result values of `self`.
 
+        In the combinator form, it looks like::
+
+            (self + (sep >> self).many()).starmap(lambda head, tail: [head, *tail])
+
+        In the generator form, it looks like::
+
+            results = []
+            while True:
+                res = yield self
+                results.append(res)
+                try:
+                    yield sep
+                except ParseFailure:
+                    return results
+
         Parameters
         ----------
         sep : Parsec
@@ -833,14 +1111,53 @@ class Parsec:
         -------
         Parsec
         """
-        res1 = yield self
-        res2 = yield (sep >> self).many()
-        return [res1, *res2]
+        def sep_by1_parser(text, index):
+            check = Parsec.check_forward()
+            results = []
 
-    @parsec
+            while True:
+                res, index = self.func(text, index)
+                check.func(text, index)
+                results.append(res)
+
+                try:
+                    _, index = sep.func(text, index)
+                except ParseError as error:
+                    if error.index != index:
+                        raise error
+                    return results
+
+        return Parsec(sep_by1_parser)
+
     def sep_end_by(self, sep):
         """Repeat a parser and separated/optionally end by `sep`.  Return a list of result values of `self`.
 
+        In the combinator form, it looks like::
+
+            self.bind(
+                lambda head: sep.bind(
+                                lambda _: self.sep_end_by(sep),
+                                lambda _: Parsec.nothing([]),
+                            ).map(lambda tail: [head, *tail]),
+                lambda _: Parsec.nothing([])
+            )
+
+        In the generator form, it looks like::
+
+            results = []
+            while True:
+                try:
+                    res = yield self
+                except ParseFailure:
+                    return results
+
+                results.append(res)
+
+                try:
+                    yield sep
+                except ParseFailure:
+                    return results
+
         Parameters
         ----------
         sep : Parsec
@@ -850,22 +1167,60 @@ class Parsec:
         -------
         Parsec
         """
-        check = Parsec.check_forward()
-        results = []
-        while True:
-            maybe_res = yield self.optional()
-            if not maybe_res:
-                return results
-            yield check
-            results.append(maybe_res[0])
-            maybe_res = yield sep.optional()
-            if not maybe_res:
-                return results
+        def sep_end_by_parser(text, index):
+            check = Parsec.check_forward()
+            results = []
+            while True:
+                try:
+                    res, index = self.func(text, index)
+                except ParseError as error:
+                    if error.index != index:
+                        raise error
+                    return results
 
-    @parsec
+                check.func(text, index)
+                results.append(res)
+
+                try:
+                    _, index = sep.func(text, index)
+                except ParseError as error:
+                    if error.index != index:
+                        raise error
+                    return results
+        return Parsec(sep_end_by_parser)
+
     def sep_end_by1(self, sep):
         """Repeat a parser at least once and separated/optionally end by `sep`.  Return a list of result values of `self`.
 
+        In the combinator form, it looks like::
+
+            (
+                self
+                + sep.bind(
+                    lambda _: self.sep_end_by(sep),
+                    lambda _: Parsec.nothing([])
+                )
+            ).starmap(lambda head, tail: [head, *tail])
+
+        In the generator form, it looks like::
+
+            results = []
+            res = yield self
+            results.append(res)
+
+            while True:
+                try:
+                    yield sep
+                except ParseFailure:
+                    return results
+
+                try:
+                    res = yield self
+                except ParseFailure:
+                    return results
+
+                results.append(res)
+
         Parameters
         ----------
         sep : Parsec
@@ -875,18 +1230,33 @@ class Parsec:
         -------
         Parsec
         """
-        check = Parsec.check_forward()
-        res = yield self
-        results = [res]
-        while True:
-            maybe_res = yield sep.optional()
-            if not maybe_res:
-                return results
-            maybe_res = yield self.optional()
-            if not maybe_res:
-                return results
-            yield check
-            results.append(maybe_res[0])
+        def sep_end_by1_parser(text, index):
+            check = Parsec.check_forward()
+            results = []
+
+            res, index = self.func(text, index)
+            check.func(text, index)
+            results.append(res)
+
+            while True:
+                try:
+                    _, index = sep.func(text, index)
+                except ParseError as error:
+                    if error.index != index:
+                        raise error
+                    return results
+
+                try:
+                    res, index = self.func(text, index)
+                except ParseError as error:
+                    if error.index != index:
+                        raise error
+                    return results
+
+                check.func(text, index)
+                results.append(res)
+
+        return Parsec(sep_end_by1_parser)
 
 
 def _make_literal_parser(regex, desc):
@@ -948,7 +1318,7 @@ def set_parser(elem):
     opening = Parsec.regex(r"\{\s*").desc("opening brace")
     comma = Parsec.regex(r"\s*,\s*").desc("comma")
     closing = Parsec.regex(r"\s*\}").desc("closing brace")
-    empty = Parsec.tokens(["set()"]).map(lambda _: set()).desc("empty set")
+    empty = Parsec.tokens(["set()"]).result([]).desc("empty set")
     nonempty = (
         elem.sep_end_by1(comma)
             .between(opening, closing)
@@ -962,7 +1332,7 @@ def dict_parser(key, value):
     closing = Parsec.regex(r"\s*\}").desc("closing brace")
     item = colon.join((key, value))
     return (
-        item.sep_end_by(comma) # type: ignore
+        item.sep_end_by(comma)
             .between(opening, closing)
             .map(dict)
             .desc("dict")
@@ -975,23 +1345,23 @@ def tuple_parser(elems):
     if len(elems) == 0:
         return (opening + closing).result(()).desc("tuple")
     elif len(elems) == 1:
-        elem_parser = elems[0] << comma
-        return elem_parser.between(opening, closing).map(lambda e: (e,)).desc("tuple")
+        return (elems[0] << comma).between(opening, closing).map(lambda e: (e,)).desc("tuple")
     else:
-        entries = comma.join(elems) << comma.optional() # type: ignore
+        entries = comma.join(elems) << comma.optional()
         return entries.between(opening, closing).map(tuple).desc("tuple")
 
 def dataclass_parser(cls, fields):
-    opening = Parsec.regex(cls.__name__ + r"\(\s*").desc("opening parenthesis")
+    name = Parsec.tokens([cls.__name__]).desc("dataclass name")
+    opening = Parsec.regex(r"\(\s*").desc("opening parenthesis")
     equal = Parsec.regex(r"\s*=\s*").desc("equal")
     comma = Parsec.regex(r"\s*,\s*").desc("comma")
     closing = Parsec.regex(r"\s*\)").desc("closing parenthesis")
     if fields:
         items = [equal.join((Parsec.tokens([key]), field)) for key, field in fields.items()]
-        entries = comma.join(items) << comma.optional() # type: ignore
+        entries = comma.join(items) << comma.optional()
     else:
-        entries = Parsec.nothing().result(())
-    return entries.between(opening, closing).map(lambda a: cls(**dict(a))).desc(repr(cls)) # type: ignore
+        entries = Parsec.nothing(())
+    return entries.between(name >> opening, closing).map(lambda a: cls(**dict(a))).desc(cls.__name__)
 
 def union_parser(options):
     if len(options) == 0:
@@ -1006,7 +1376,7 @@ def enum_parser(cls):
         Parsec.tokens([f"{cls.__name__}."])
             .then(Parsec.tokens([option.name for option in cls]))
             .map(lambda option: getattr(cls, option))
-            .desc(type(cls))
+            .desc(cls.__name__)
     )
 
 
