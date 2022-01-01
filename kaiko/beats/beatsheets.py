@@ -330,7 +330,6 @@ def note_formatter(value, **contexts):
 
 @pc.parsec
 def msp_parser(indent=0):
-    # return None  ->  no match
     # return ""    ->  end of block
     # return " "   ->  whitespace between token
     # return "\n"  ->  newline between token (including comments)
@@ -350,7 +349,7 @@ def msp_parser(indent=0):
             raise pc.ParseFailure("comment occupied a whole line")
         if spaced:
             return " "
-        return None
+        raise pc.ParseFailure("whitespace or newline or end of block")
 
     # newline
     while (yield nl):
@@ -365,50 +364,34 @@ def msp_parser(indent=0):
     return ""
 
 @pc.parsec
-def patterns_parser(indent=0, until=""):
-    opening = pc.tokens(["{", "["]).optional()
-    closing = pc.tokens([until]).optional() if until else pc.nothing("")
-    div = pc.regex(r"/(\d+)").map(lambda m: int(m[1:])) | pc.nothing(2)
-    msp = msp_parser(indent=indent)
-    if until:
-        msp = msp.validate(lambda sp: sp != "", repr(until))
+def enclose_by(elem, sep, opening, closing):
+    yield opening
+    yield sep.optional()
 
-    sp = " "
-    patterns = []
+    closing_optional = closing.optional()
+    results = []
 
     while True:
-        # end of block
-        if sp == "":
-            return patterns
+        if (yield closing_optional):
+            break
+        results.append((yield elem))
+        if (yield closing_optional):
+            break
+        yield sep
 
-        # closing bracket
-        if (yield closing):
-            return patterns
+    return results
 
-        # no space
-        if sp is None:
-            raise pc.ParseFailure("space")
+def patterns_parser(indent=0):
+    end = msp_parser(indent=indent).validate(lambda sp: sp == "", "end of block")
+    msp = msp_parser(indent=indent).validate(lambda sp: sp in (" ", "\n"), "whitespace or newline")
+    div = pc.regex(r"/(\d+)").map(lambda m: int(m[1:])) | pc.nothing(2)
 
-        # pattern
-        opened = yield opening
-        if opened == ("{",):
-            yield msp_parser(indent=indent)
-            subpatterns = yield patterns_parser(indent=indent, until="}")
-            pattern = Instant(subpatterns)
-
-        elif opened == ("[",):
-            yield msp_parser(indent=indent)
-            subpatterns = yield patterns_parser(indent=indent, until="]")
-            divisor = yield div
-            pattern = Division(divisor, subpatterns)
-
-        else:
-            pattern = yield note_parser
-
-        patterns.append(pattern)
-
-        # spacing
-        sp = yield msp
+    instant = enclose_by(pc.proxy(lambda: pattern), msp, pc.tokens(["{"]), pc.tokens(["}"])).map(Instant)
+    division = (
+        enclose_by(pc.proxy(lambda: pattern), msp, pc.tokens(["["]), pc.tokens(["]"])) + div
+    ).starmap(lambda a, b: Division(b, a))
+    pattern = instant | division | note_parser
+    return enclose_by(pattern, msp, pc.nothing(), end)
 
 @fc.Formattec
 def patterns_formatter(value, **contexts):
@@ -441,30 +424,25 @@ def chart_parser():
     tracks = []
 
     while True:
-        sp = yield msp_parser(indent=0).validate(lambda sp: sp is not None, "whitespace or newline")
-
+        sp = yield msp_parser(indent=0).validate(lambda sp: sp in ("\n", ""), "newline or end of block")
         if sp == "":
             return tracks
 
-        elif sp == "\n":
-            yield pc.tokens(["TRACK"])
-            arguments = yield arguments_parser
+        yield pc.tokens(["TRACK"])
+        arguments = yield arguments_parser
 
-            track = Track()
-            try:
-                track.set_arguments(*arguments[0], **arguments[1])
-            except Exception as e:
-                raise pc.ParseFailure("valid arguments") from e
+        track = Track()
+        try:
+            track.set_arguments(*arguments[0], **arguments[1])
+        except Exception as e:
+            raise pc.ParseFailure("valid arguments") from e
 
-            yield pc.regex(r":(?=\n)")
-            yield msp_parser(indent=4).validate(lambda sp: sp == "\n", "newline")
+        yield pc.regex(r":(?=\n)")
+        yield msp_parser(indent=4).validate(lambda sp: sp == "\n", "newline")
 
-            patterns = yield patterns_parser(indent=4)
-            track.patterns = patterns
-            tracks.append(track)
-
-        else:
-            assert False
+        patterns = yield patterns_parser(indent=4)
+        track.patterns = patterns
+        tracks.append(track)
 
 @fc.Formattec
 def chart_formatter(value, *, indent=0, **contexts):
@@ -492,7 +470,7 @@ def beatsheet_parser(metadata_only=False):
     valid_fields.append("chart")
 
     while True:
-        sp = yield msp_parser(indent=0).validate(lambda sp: sp in ("\n", ""), "newline")
+        sp = yield msp_parser(indent=0).validate(lambda sp: sp in ("\n", ""), "newline or end of block")
         if sp == "":
             return beatsheet
 

@@ -440,7 +440,7 @@ class LiteralParser(ArgumentParser):
         try:
             return self.parser.parse(token)
         except pc.ParseError as e:
-            raise CommandParseError(f"Invalid value\nexpected: {e.expected} at {e.index}")
+            raise CommandParseError(f"Invalid value\nexpecting {e.expected} at {e.index}")
 
     def suggest(self, token):
         return []

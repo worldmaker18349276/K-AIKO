@@ -12,7 +12,7 @@ class FormatError(Exception):
         self.expected = expected
 
     def __str__(self):
-        return f"Invalid value {self.value}, expected: {self.expected}"
+        return f"Invalid value {self.value}, expecting {self.expected}"
 
 
 class Formattec:
