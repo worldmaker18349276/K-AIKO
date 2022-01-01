@@ -32,7 +32,7 @@ def make_field_parser(config_type):
                 field_key = field_key + "."
             fields[field_key] = (field_name, field_type)
 
-        option = yield pc.Parsec.tokens(list(fields.keys()))
+        option = yield pc.tokens(list(fields.keys()))
         current_field, current_type = fields[option]
         current_fields.append(current_field)
 
@@ -60,19 +60,19 @@ def make_configuration_parser(config_type, config_name):
 
     """
 
-    vindent = pc.Parsec.regex(r"(#[^\n]*|[ ]*)(\n|$)").many()
-    equal = pc.Parsec.regex(r"[ ]*=[ ]*")
-    nl = pc.Parsec.regex(r"[ ]*(\n|$)")
+    vindent = pc.regex(r"(#[^\n]*|[ ]*)(\n|$)").many()
+    equal = pc.regex(r"[ ]*=[ ]*")
+    nl = pc.regex(r"[ ]*(\n|$)")
     field = make_field_parser(config_type)
-    end = pc.Parsec.eof().optional()
+    end = pc.eof().optional()
 
     field_hints = config_type.__field_hints__
 
     # parse header
     yield vindent
-    yield pc.Parsec.tokens([config_name])
+    yield pc.tokens([config_name])
     yield equal
-    yield pc.Parsec.tokens([config_type.__name__ + "()"])
+    yield pc.tokens([config_type.__name__ + "()"])
     yield nl
 
     config = config_type()
@@ -84,7 +84,7 @@ def make_configuration_parser(config_type, config_name):
         yield vindent
 
         # parse field name
-        yield pc.Parsec.tokens([config_name + "."])
+        yield pc.tokens([config_name + "."])
         field_key = yield field
 
         # parse field value

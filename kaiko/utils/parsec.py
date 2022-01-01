@@ -169,7 +169,7 @@ class Parsec:
     def parse(self, text, ret_rest=False):
         """Parse the longest possible prefix of a given string.
 
-        If you want to parse strictly, use `(self << Parsec.eof()).parse(text)`.
+        If you want to parse strictly, use `(self << eof()).parse(text)`.
 
         Parameters
         ----------
@@ -249,7 +249,7 @@ class Parsec:
         If parser is success, transforms the produced value of parser with `func`.
         In the combinator form, it looks like::
 
-            self.bind(lambda res: Parsec.nothing(func(res)))
+            self.bind(lambda res: nothing(func(res)))
 
         In the generator form, it looks like::
 
@@ -465,7 +465,7 @@ class Parsec:
 
         In the combinator form, it looks like::
 
-            self.bind(lambda _: Parsec.nothing(res))
+            self.bind(lambda _: nothing(res))
 
         In the generator form, it looks like::
 
@@ -491,7 +491,7 @@ class Parsec:
 
         In the combinator form, it looks like::
 
-            self.bind(catcher=lambda _: Parsec.fail(expected))
+            self.bind(catcher=lambda _: fail(expected))
 
         In the generator form, it looks like::
 
@@ -585,8 +585,8 @@ class Parsec:
         In the combinator form, it looks like::
 
             self.bind(
-                lambda res: Parsec.nothing((res,)),
-                lambda _: Parsec.nothing(()),
+                lambda res: nothing((res,)),
+                lambda _: nothing(()),
             )
 
         In the generator form, it looks like::
@@ -656,155 +656,6 @@ class Parsec:
         def nothing_parser(text, index):
             return res, index
         return Parsec(nothing_parser)
-
-    @staticmethod
-    def any():
-        """Parse an arbitrary character.  It failed at the EOF.
-
-        Returns
-        -------
-        Parsec
-        """
-        def any_parser(text, index):
-            if index < len(text):
-                return text[index], index + 1
-            else:
-                raise ParseError(text, index, "a random char")
-        return Parsec(any_parser)
-
-    @staticmethod
-    def oneOf(chars):
-        """Parse a character from specified string.
-
-        Parameters
-        ----------
-        chars : str
-            The valid characters.
-
-        Returns
-        -------
-        Parsec
-        """
-        def one_of_parser(text, index):
-            if index < len(text) and text[index] in chars:
-                return text[index], index + 1
-            else:
-                raise ParseError(text, index, f"one of {repr(chars)}")
-        return Parsec(one_of_parser)
-
-    @staticmethod
-    def noneOf(chars):
-        """Parse a character not from specified string.
-
-        Parameters
-        ----------
-        chars : str
-            The invalid characters.
-
-        Returns
-        -------
-        Parsec
-        """
-        def none_of_parser(text, index):
-            if index < len(text) and text[index] not in chars:
-                return text[index], index + 1
-            else:
-                raise ParseError(text, index, f"none of {repr(chars)}")
-        return Parsec(none_of_parser)
-
-    @staticmethod
-    def satisfy(validater, desc=None):
-        """Parse a character validated by specified function.
-
-        Parameters
-        ----------
-        validater : function
-            The function to validate input.
-        desc : str, optional
-            The description of validater.
-
-        Returns
-        -------
-        Parsec
-        """
-        if desc is None:
-            desc = repr(validater)
-        def satisfy_parser(text, index):
-            if index < len(text) and validater(text[index]):
-                return text[index], index + 1
-            else:
-                raise ParseError(text, index, f"a character that satisfy {desc}")
-        return Parsec(satisfy_parser)
-
-    @staticmethod
-    def eof():
-        """Parse EOF.  The result value is `""`.
-
-        Returns
-        -------
-        Parsec
-        """
-        def eof_parser(text, index):
-            if index >= len(text):
-                return "", index
-            else:
-                raise ParseError(text, index, "EOF")
-        return Parsec(eof_parser)
-
-    @staticmethod
-    def regex(exp, flags=0):
-        """Parse according to a regular expression.
-
-        Parameters
-        ----------
-        exp : str or regular expression object
-            The regular expression to parse.
-        flags : int, optional
-            The flag of regular expression, by default 0.
-
-        Returns
-        -------
-        Parsec
-        """
-        if isinstance(exp, str):
-            exp = re.compile(exp, flags)
-
-        def regex_parser(text, index):
-            match = exp.match(text, index)
-            if match:
-                return match.group(0), match.end()
-            else:
-                raise ParseError(text, index, f"/{exp.pattern}/")
-        return Parsec(regex_parser)
-
-    @staticmethod
-    def tokens(tokens):
-        """Try to match a list of strings.  Return the matching string.
-        
-        This method sorts the strings to prevent conflicts.  For example,
-        it will try to match "letter" before "let", otherwise "letter"
-        will be parsed as "let" with rest "ter".
-
-        Parameters
-        ----------
-        tokens : sequence of str
-            The strings to match.
-
-        Returns
-        -------
-        Parsec
-        """
-        desc = " or ".join(repr(token) for token in tokens)
-        tokens = sorted(tokens, reverse=True)
-
-        def tokens_parser(text, index):
-            for token in tokens:
-                next_index = index + len(token)
-                if text[index:next_index] == token:
-                    return token, next_index
-            else:
-                raise ParseError(text, index, desc)
-        return Parsec(tokens_parser)
 
     # combinators
 
@@ -881,7 +732,7 @@ class Parsec:
 
         In the combinator form, it looks like::
 
-            Parsec.concat(*[self]*n).concat(*[self.optional()]*(m-n)).map(lambda res: [e for elem in res for e in elem])
+            concat(*[self]*n).concat(*[self.optional()]*(m-n)).map(lambda res: [e for elem in res for e in elem])
 
         In the generator form, it looks like::
 
@@ -925,32 +776,6 @@ class Parsec:
             return results, index
         return Parsec(times_parser)
 
-    @staticmethod
-    def check_forward():
-        """Create a parser to check for infinite pattern on every call.
-
-        When this parser is called twice at the same position, it will raise
-        a `ValueError`.
-        This parser should be inserted into an infinite loop without state,
-        so if the position of each loop does not change, it can be confirmed
-        that an infinite loop is encountered.
-
-        Returns
-        -------
-        Parsec
-        """
-        prev = None
-
-        def check(text, index):
-            nonlocal prev
-            if prev == index:
-                loc = "{}:{}".format(*ParseError.locate(text, index))
-                raise ValueError(f"Infinite pattern happen at {loc}")
-            prev = index
-            return None, index
-
-        return Parsec(check)
-
     def many(self):
         """Repeat a parser as much as possible.  Return a list of result values of `self`.
 
@@ -958,7 +783,7 @@ class Parsec:
 
             self.bind(
                 lambda head: self.many().map(lambda tail: [head, *tail]),
-                lambda _: Parsec.nothing([])
+                lambda _: nothing([])
             )
 
         In the generator form, it looks like::
@@ -977,7 +802,7 @@ class Parsec:
         Parsec
         """
         def many_parser(text, index):
-            check = Parsec.check_forward()
+            check = check_forward()
             results = []
             while True:
                 try:
@@ -998,7 +823,7 @@ class Parsec:
 
             end.bind(
                 lambda _: (self + self.many_till(end)).starmap(lambda head, tail: [head, *tail]),
-                lambda _: Parsec.nothing([])
+                lambda _: nothing([])
             )
 
         In the generator form, it looks like::
@@ -1023,7 +848,7 @@ class Parsec:
         Parsec
         """
         def many_till_parser(text, index):
-            check = Parsec.check_forward()
+            check = check_forward()
             results = []
             while True:
                 try:
@@ -1046,7 +871,7 @@ class Parsec:
 
             self.bind(
                 lambda head: (sep >> self).many().map(lambda tail: [head, *tail]),
-                lambda _: Parsec.nothing([])
+                lambda _: nothing([])
             )
 
         In the generator form, it looks like::
@@ -1078,7 +903,7 @@ class Parsec:
         Parsec
         """
         def sep_by_parser(text, index):
-            check = Parsec.check_forward()
+            check = check_forward()
             results = []
 
             try:
@@ -1133,7 +958,7 @@ class Parsec:
         Parsec
         """
         def sep_by1_parser(text, index):
-            check = Parsec.check_forward()
+            check = check_forward()
             results = []
 
             while True:
@@ -1158,9 +983,9 @@ class Parsec:
             self.bind(
                 lambda head: sep.bind(
                                 lambda _: self.sep_end_by(sep),
-                                lambda _: Parsec.nothing([]),
+                                lambda _: nothing([]),
                             ).map(lambda tail: [head, *tail]),
-                lambda _: Parsec.nothing([])
+                lambda _: nothing([])
             )
 
         In the generator form, it looks like::
@@ -1189,7 +1014,7 @@ class Parsec:
         Parsec
         """
         def sep_end_by_parser(text, index):
-            check = Parsec.check_forward()
+            check = check_forward()
             results = []
             while True:
                 try:
@@ -1219,7 +1044,7 @@ class Parsec:
                 self
                 + sep.bind(
                     lambda _: self.sep_end_by(sep),
-                    lambda _: Parsec.nothing([])
+                    lambda _: nothing([])
                 )
             ).starmap(lambda head, tail: [head, *tail])
 
@@ -1252,7 +1077,7 @@ class Parsec:
         Parsec
         """
         def sep_end_by1_parser(text, index):
-            check = Parsec.check_forward()
+            check = check_forward()
             results = []
 
             res, index = self.func(text, index)
@@ -1280,8 +1105,192 @@ class Parsec:
         return Parsec(sep_end_by1_parser)
 
 
-def _make_literal_parser(regex, desc):
-    return Parsec.regex(regex).map(ast.literal_eval).desc(desc)
+def choice(*parsers):
+    if not parsers:
+        raise ValueError("no choice")
+    return parsers[0].choice(*parsers[1:])
+
+def concat(*parsers):
+    if not parsers:
+        raise ValueError("nothing to concatenate")
+    return parsers[0].concat(*parsers[1:])
+
+def fail(expected):
+    return Parsec.fail(expected)
+
+def nothing(res=None):
+    return Parsec.nothing(res)
+
+def any():
+    """Parse an arbitrary character.  It failed at the EOF.
+
+    Returns
+    -------
+    Parsec
+    """
+    def any_parser(text, index):
+        if index < len(text):
+            return text[index], index + 1
+        else:
+            raise ParseError(text, index, "a random char")
+    return Parsec(any_parser)
+
+def oneOf(chars):
+    """Parse a character from specified string.
+
+    Parameters
+    ----------
+    chars : str
+        The valid characters.
+
+    Returns
+    -------
+    Parsec
+    """
+    def one_of_parser(text, index):
+        if index < len(text) and text[index] in chars:
+            return text[index], index + 1
+        else:
+            raise ParseError(text, index, f"one of {repr(chars)}")
+    return Parsec(one_of_parser)
+
+def noneOf(chars):
+    """Parse a character not from specified string.
+
+    Parameters
+    ----------
+    chars : str
+        The invalid characters.
+
+    Returns
+    -------
+    Parsec
+    """
+    def none_of_parser(text, index):
+        if index < len(text) and text[index] not in chars:
+            return text[index], index + 1
+        else:
+            raise ParseError(text, index, f"none of {repr(chars)}")
+    return Parsec(none_of_parser)
+
+def satisfy(validater, desc=None):
+    """Parse a character validated by specified function.
+
+    Parameters
+    ----------
+    validater : function
+        The function to validate input.
+    desc : str, optional
+        The description of validater.
+
+    Returns
+    -------
+    Parsec
+    """
+    if desc is None:
+        desc = repr(validater)
+    def satisfy_parser(text, index):
+        if index < len(text) and validater(text[index]):
+            return text[index], index + 1
+        else:
+            raise ParseError(text, index, f"a character that satisfy {desc}")
+    return Parsec(satisfy_parser)
+
+def eof():
+    """Parse EOF.  The result value is `""`.
+
+    Returns
+    -------
+    Parsec
+    """
+    def eof_parser(text, index):
+        if index >= len(text):
+            return "", index
+        else:
+            raise ParseError(text, index, "EOF")
+    return Parsec(eof_parser)
+
+def regex(exp, flags=0):
+    """Parse according to a regular expression.
+
+    Parameters
+    ----------
+    exp : str or regular expression object
+        The regular expression to parse.
+    flags : int, optional
+        The flag of regular expression, by default 0.
+
+    Returns
+    -------
+    Parsec
+    """
+    if isinstance(exp, str):
+        exp = re.compile(exp, flags)
+
+    def regex_parser(text, index):
+        match = exp.match(text, index)
+        if match:
+            return match.group(0), match.end()
+        else:
+            raise ParseError(text, index, f"/{exp.pattern}/")
+    return Parsec(regex_parser)
+
+def tokens(tokens):
+    """Try to match a list of strings.  Return the matching string.
+    
+    This method sorts the strings to prevent conflicts.  For example,
+    it will try to match "letter" before "let", otherwise "letter"
+    will be parsed as "let" with rest "ter".
+
+    Parameters
+    ----------
+    tokens : sequence of str
+        The strings to match.
+
+    Returns
+    -------
+    Parsec
+    """
+    desc = " or ".join(repr(token) for token in tokens)
+    tokens = sorted(tokens, reverse=True)
+
+    def tokens_parser(text, index):
+        for token in tokens:
+            next_index = index + len(token)
+            if text[index:next_index] == token:
+                return token, next_index
+        else:
+            raise ParseError(text, index, desc)
+    return Parsec(tokens_parser)
+
+def check_forward():
+    """Create a parser to check for infinite pattern on every call.
+
+    When this parser is called twice at the same position, it will raise
+    a `ValueError`.
+    This parser should be inserted into an infinite loop without state,
+    so if the position of each loop does not change, it can be confirmed
+    that an infinite loop is encountered.
+
+    Returns
+    -------
+    Parsec
+    """
+    prev = None
+
+    def check(text, index):
+        nonlocal prev
+        if prev == index:
+            loc = "{}:{}".format(*ParseError.locate(text, index))
+            raise ValueError(f"Infinite pattern happen at {loc}")
+        prev = index
+        return None, index
+
+    return Parsec(check)
+
+
+def _make_literal_parser(expr, desc):
+    return regex(expr).map(ast.literal_eval).desc(desc)
 
 none_parser = _make_literal_parser(r"None", "None")
 bool_parser = _make_literal_parser(r"False|True", "bool")
@@ -1342,9 +1351,9 @@ rmstr_parser = _make_literal_parser(
 # composite
 
 def list_parser(elem):
-    opening = Parsec.regex(r"\[\s*").desc("opening bracket")
-    comma = Parsec.regex(r"\s*,\s*").desc("comma")
-    closing = Parsec.regex(r"\s*\]").desc("closing bracket")
+    opening = regex(r"\[\s*").desc("opening bracket")
+    comma = regex(r"\s*,\s*").desc("comma")
+    closing = regex(r"\s*\]").desc("closing bracket")
     return (
         elem.sep_end_by(comma)
             .between(opening, closing)
@@ -1353,10 +1362,10 @@ def list_parser(elem):
     )
 
 def set_parser(elem):
-    opening = Parsec.regex(r"\{\s*").desc("opening brace")
-    comma = Parsec.regex(r"\s*,\s*").desc("comma")
-    closing = Parsec.regex(r"\s*\}").desc("closing brace")
-    empty = Parsec.tokens(["set()"]).result([]).desc("empty set")
+    opening = regex(r"\{\s*").desc("opening brace")
+    comma = regex(r"\s*,\s*").desc("comma")
+    closing = regex(r"\s*\}").desc("closing brace")
+    empty = tokens(["set()"]).result([]).desc("empty set")
     nonempty = (
         elem.sep_end_by1(comma)
             .between(opening, closing)
@@ -1364,10 +1373,10 @@ def set_parser(elem):
     return (empty | nonempty).map(set).desc("set")
 
 def dict_parser(key, value):
-    opening = Parsec.regex(r"\{\s*").desc("opening brace")
-    colon = Parsec.regex(r"\s*:\s*").desc("colon")
-    comma = Parsec.regex(r"\s*,\s*").desc("comma")
-    closing = Parsec.regex(r"\s*\}").desc("closing brace")
+    opening = regex(r"\{\s*").desc("opening brace")
+    colon = regex(r"\s*:\s*").desc("colon")
+    comma = regex(r"\s*,\s*").desc("comma")
+    closing = regex(r"\s*\}").desc("closing brace")
     item = colon.join((key, value))
     return (
         item.sep_end_by(comma)
@@ -1377,9 +1386,9 @@ def dict_parser(key, value):
     )
 
 def tuple_parser(elems):
-    opening = Parsec.regex(r"\(\s*").desc("opening parenthesis")
-    comma = Parsec.regex(r"\s*,\s*").desc("comma")
-    closing = Parsec.regex(r"\s*\)").desc("closing parenthesis")
+    opening = regex(r"\(\s*").desc("opening parenthesis")
+    comma = regex(r"\s*,\s*").desc("comma")
+    closing = regex(r"\s*\)").desc("closing parenthesis")
     if len(elems) == 0:
         return (opening + closing).result(()).desc("tuple")
     elif len(elems) == 1:
@@ -1389,16 +1398,16 @@ def tuple_parser(elems):
         return entries.between(opening, closing).map(tuple).desc("tuple")
 
 def dataclass_parser(cls, fields):
-    name = Parsec.tokens([cls.__name__]).desc("dataclass name")
-    opening = Parsec.regex(r"\(\s*").desc("opening parenthesis")
-    equal = Parsec.regex(r"\s*=\s*").desc("equal")
-    comma = Parsec.regex(r"\s*,\s*").desc("comma")
-    closing = Parsec.regex(r"\s*\)").desc("closing parenthesis")
+    name = tokens([cls.__name__]).desc("dataclass name")
+    opening = regex(r"\(\s*").desc("opening parenthesis")
+    equal = regex(r"\s*=\s*").desc("equal")
+    comma = regex(r"\s*,\s*").desc("comma")
+    closing = regex(r"\s*\)").desc("closing parenthesis")
     if fields:
-        items = [equal.join((Parsec.tokens([key]), field)) for key, field in fields.items()]
+        items = [equal.join((tokens([key]), field)) for key, field in fields.items()]
         entries = comma.join(items) << comma.optional()
     else:
-        entries = Parsec.nothing(())
+        entries = nothing(())
     return entries.between(name >> opening, closing).map(lambda a: cls(**dict(a))).desc(cls.__name__)
 
 def union_parser(options):
@@ -1407,12 +1416,12 @@ def union_parser(options):
     elif len(options) == 1:
         return options[0]
     else:
-        return Parsec.choice(*[option.attempt() for option in options])
+        return choice(*[option.attempt() for option in options])
 
 def enum_parser(cls):
     return (
-        Parsec.tokens([f"{cls.__name__}."])
-            .then(Parsec.tokens([option.name for option in cls]))
+        tokens([f"{cls.__name__}."])
+            .then(tokens([option.name for option in cls]))
             .map(lambda option: getattr(cls, option))
             .desc(cls.__name__)
     )

@@ -488,7 +488,7 @@ class ConfigCommand:
         editor = self.config.current.devices.terminal.editor
 
         field_type = KAIKOSettings.get_field_type(field)
-        parser = pc.from_type_hint(field_type) << pc.Parsec.regex(r"\s*") << pc.Parsec.eof()
+        parser = pc.from_type_hint(field_type) << pc.regex(r"\s*") << pc.eof()
         formatter = fc.from_type_hint(field_type, multiline=True)
 
         if self.config.current.has(field):

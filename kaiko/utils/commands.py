@@ -429,7 +429,7 @@ class LiteralParser(ArgumentParser):
             The description of this argument.
         """
         self.type_hint = type_hint
-        self.parser = pc.from_type_hint(type_hint) << pc.Parsec.eof()
+        self.parser = pc.from_type_hint(type_hint) << pc.eof()
         self.default = default
         self._desc = desc or f"It should be {type_hint}"
 

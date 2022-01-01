@@ -227,16 +227,16 @@ def IIFE(func):
 
 @IIFE
 def value_parser():
-    none  = pc.Parsec.regex(r"None").map(ast.literal_eval)
-    bool  = pc.Parsec.regex(r"True|False").map(ast.literal_eval)
-    int   = pc.Parsec.regex(r"[-+]?(0|[1-9][0-9]*)").map(ast.literal_eval)
-    frac  = pc.Parsec.regex(r"[-+]?(0|[1-9][0-9]*)\/[1-9][0-9]*").map(Fraction)
-    float = pc.Parsec.regex(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+[eE][-+]?[0-9]+)").map(ast.literal_eval)
-    str   = pc.Parsec.regex(
+    none  = pc.regex(r"None").map(ast.literal_eval)
+    bool  = pc.regex(r"True|False").map(ast.literal_eval)
+    int   = pc.regex(r"[-+]?(0|[1-9][0-9]*)").map(ast.literal_eval)
+    frac  = pc.regex(r"[-+]?(0|[1-9][0-9]*)\/[1-9][0-9]*").map(Fraction)
+    float = pc.regex(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+[eE][-+]?[0-9]+)").map(ast.literal_eval)
+    str   = pc.regex(
         r'"([^\r\n\\"]|\\[\\"btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*"').map(ast.literal_eval)
 
     desc = "None or bool or str or float or frac or int"
-    return pc.Parsec.choice(none, bool, str, float, frac, int).desc(desc)
+    return pc.choice(none, bool, str, float, frac, int).desc(desc)
 
 @fc.Formattec
 def value_formatter(value, **contexts):
@@ -254,10 +254,10 @@ def value_formatter(value, **contexts):
 @IIFE
 @pc.parsec
 def arguments_parser():
-    key = pc.Parsec.regex(r"([a-zA-Z_][a-zA-Z0-9_]*)=").desc("'key='").map(lambda k: k[:-1])
-    opening = pc.Parsec.tokens(["("]).optional()
-    closing = pc.Parsec.tokens([")"]).optional()
-    comma = pc.Parsec.tokens([", "])
+    key = pc.regex(r"([a-zA-Z_][a-zA-Z0-9_]*)=").desc("'key='").map(lambda k: k[:-1])
+    opening = pc.tokens(["("]).optional()
+    closing = pc.tokens([")"]).optional()
+    comma = pc.tokens([", "])
 
     psargs = []
     kwargs = {}
@@ -315,8 +315,8 @@ def arguments_formatter(value, **contexts):
 
 @IIFE
 def note_parser():
-    symbol = pc.Parsec.regex(r"[^ \b\t\n\r\f\v()[\]{}\'\"\\#]+")
-    text = pc.Parsec.regex(
+    symbol = pc.regex(r"[^ \b\t\n\r\f\v()[\]{}\'\"\\#]+")
+    text = pc.regex(
         r'"([^\r\n\\"\x00]|\\[\\"btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*"').map(ast.literal_eval)
     return (
         (symbol + arguments_parser).starmap(Note)
@@ -335,11 +335,11 @@ def msp_parser(indent=0):
     # return " "   ->  whitespace between token
     # return "\n"  ->  newline between token (including comments)
 
-    sp = pc.Parsec.regex(r"[ \t]+").optional()
-    eol = pc.Parsec.regex(r"(?=\n|$)").optional()
-    nl = pc.Parsec.regex(r"\n+(?=[ ]{%s,})" % (indent,)).optional()
-    ind = pc.Parsec.regex(r"[ ]{%s}(?![ ])" % (indent,)).optional()
-    cmt = pc.Parsec.regex(r"#[^\n]*").optional()
+    sp = pc.regex(r"[ \t]+").optional()
+    eol = pc.regex(r"(?=\n|$)").optional()
+    nl = pc.regex(r"\n+(?=[ ]{%s,})" % (indent,)).optional()
+    ind = pc.regex(r"[ ]{%s}(?![ ])" % (indent,)).optional()
+    cmt = pc.regex(r"#[^\n]*").optional()
 
     # whitespace
     spaced = yield sp
@@ -366,9 +366,9 @@ def msp_parser(indent=0):
 
 @pc.parsec
 def patterns_parser(indent=0, until=""):
-    opening = pc.Parsec.tokens(["{", "["]).optional()
-    closing = pc.Parsec.tokens([until]).optional() if until else pc.Parsec.nothing("")
-    div = pc.Parsec.regex(r"/(\d+)").map(lambda m: int(m[1:])) | pc.Parsec.nothing(2)
+    opening = pc.tokens(["{", "["]).optional()
+    closing = pc.tokens([until]).optional() if until else pc.nothing("")
+    div = pc.regex(r"/(\d+)").map(lambda m: int(m[1:])) | pc.nothing(2)
     msp = msp_parser(indent=indent)
     if until:
         msp = msp.validate(lambda sp: sp != "", repr(until))
@@ -447,7 +447,7 @@ def chart_parser():
             return tracks
 
         elif sp == "\n":
-            yield pc.Parsec.tokens(["TRACK"])
+            yield pc.tokens(["TRACK"])
             arguments = yield arguments_parser
 
             track = Track()
@@ -456,7 +456,7 @@ def chart_parser():
             except Exception as e:
                 raise pc.ParseFailure("valid arguments") from e
 
-            yield pc.Parsec.regex(r":(?=\n)")
+            yield pc.regex(r":(?=\n)")
             yield msp_parser(indent=4).validate(lambda sp: sp == "\n", "newline")
 
             patterns = yield patterns_parser(indent=4)
@@ -480,7 +480,7 @@ def chart_formatter(value, *, indent=0, **contexts):
 
 @pc.parsec
 def beatsheet_parser(metadata_only=False):
-    header = yield pc.Parsec.regex(r"#K-AIKO-std-(\d+\.\d+\.\d+)(?=\n|$)").desc("header")
+    header = yield pc.regex(r"#K-AIKO-std-(\d+\.\d+\.\d+)(?=\n|$)").desc("header")
     vernum = header[len("#K-AIKO-std-"):].split(".")
     vernum0 = version.split(".")
     if vernum[0] != vernum0[0] or vernum[1:] > vernum0[1:]:
@@ -496,9 +496,9 @@ def beatsheet_parser(metadata_only=False):
         if sp == "":
             return beatsheet
 
-        yield pc.Parsec.tokens(["beatmap."])
-        name = yield pc.Parsec.tokens(valid_fields)
-        yield pc.Parsec.tokens([" = "])
+        yield pc.tokens(["beatmap."])
+        name = yield pc.tokens(valid_fields)
+        yield pc.tokens([" = "])
         valid_fields.remove(name)
 
         if name == "info":
