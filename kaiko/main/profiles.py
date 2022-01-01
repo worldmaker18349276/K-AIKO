@@ -408,24 +408,10 @@ class ProfileManager:
 
         return True
 
-class FieldParser(cmd.ArgumentParser):
+class FieldParser(cmd.TreeParser):
     def __init__(self):
-        self.parser = cfg.make_field_parser(KAIKOSettings) << pc.Parsec.eof()
-        self.suggester = cfg.make_field_suggester(KAIKOSettings)
-
-    def parse(self, token):
-        try:
-            return self.parser.parse(token)
-        except pc.ParseError:
-            raise cmd.CommandParseError("No such field")
-
-    def suggest(self, token):
-        try:
-            sugg = self.suggester.parse(token)
-        except pc.ParseError:
-            sugg = []
-
-        return sugg
+        tree = cfg.get_field_tree(KAIKOSettings)
+        super().__init__(tree)
 
     def info(self, token):
         fields = self.parse(token)
@@ -441,7 +427,7 @@ class ConfigCommand:
     @cmd.function_command
     def show(self):
         """Show configuration."""
-        formatter = cfg.make_configuration_formatter(KAIKOSettings, name=self.config.settings_name)
+        formatter = cfg.make_configuration_formatter(KAIKOSettings, config_name=self.config.settings_name)
         text = formatter.format(self.config.current)
         is_changed = self.config.is_changed()
         title = self.config.current_name + self.config.extension

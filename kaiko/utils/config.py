@@ -38,41 +38,14 @@ def make_field_parser(config_type):
 
     return tuple(current_fields)
 
-@pc.parsec
-def make_field_suggester(config_type):
-    current_type = config_type
-    options = []
-
-    while hasattr(current_type, '__configurable_fields__'):
-        fields = {}
-        for field_name, field_type in current_type.__configurable_fields__.items():
-            field_key = field_name
-            if hasattr(field_type, '__configurable_fields__'):
-                field_key = field_key + "."
-            fields[field_key] = field_type
-
-        options = list(fields.keys())
-        maybe_option = yield pc.Parsec.tokens(options).optional()
-        if not maybe_option:
-            return options
-        current_type = fields[maybe_option[0]]
-
-    return options
-
-def make_field_formatter(config_type):
-    def formatter(value, **contexts):
-        current_type = config_type
-
-        for field_name in value:
-            if not hasattr(current_type, '__configurable_fields__'):
-                raise fc.FormatError(value, "configurable field")
-            current_type = current_type.__configurable_fields__[field_name]
-
-        if hasattr(current_type, '__configurable_fields__'):
-            raise fc.FormatError(value, "not subfield")
-
-        return ".".join(value)
-    return fc.Formattec(formatter)
+def get_field_tree(config_type):
+    fields = {}
+    for field_name, field_type in config_type.__configurable_fields__.items():
+        if hasattr(field_type, '__configurable_fields__'):
+            fields[field_name + "."] = get_field_tree(field_type)
+        else:
+            fields[field_name] = lambda token: tuple(token.split("."))
+    return fields
 
 @pc.parsec
 def make_configuration_parser(config_type, config_name):
@@ -122,7 +95,6 @@ def make_configuration_parser(config_type, config_name):
         yield nl
 
 def make_configuration_formatter(config_type, config_name):
-    field_formatter = make_field_formatter(config_type)
     def formatter(value, **contexts):
         yield f"{config_name} = {config_type.__name__}()\n"
 
@@ -133,7 +105,7 @@ def make_configuration_formatter(config_type, config_name):
             value_formatter = fc.from_type_hint(field_type, multiline=True)
 
             yield config_name + "."
-            yield from field_formatter.func(field_key)
+            yield from ".".join(field_key)
             yield " = "
             yield from value_formatter.func(field_value)
             yield "\n"

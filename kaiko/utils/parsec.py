@@ -112,7 +112,7 @@ def parsec(func):
 
                 while True:
                     try:
-                        value, index = sub_parser(text, index)
+                        value, index = sub_parser.func(text, index)
 
                     except ParseError as error:
                         if error.index != index:
