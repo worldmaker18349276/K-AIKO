@@ -957,7 +957,7 @@ class Parsec:
                 except ParseError as error:
                     if error.index != index:
                         raise error
-                    return results
+                    return results, index
 
         return Parsec(sep_by1_parser)
 
@@ -1004,14 +1004,14 @@ class Parsec:
                 except ParseError as error:
                     if error.index != index:
                         raise error
-                    return results
+                    return results, index
 
                 try:
                     _, index = sep.func(text, index)
                 except ParseError as error:
                     if error.index != index:
                         raise error
-                    return results
+                    return results, index
         return Parsec(sep_end_by_parser)
 
     def sep_end_by1(self, sep):
@@ -1061,7 +1061,7 @@ class Parsec:
                 except ParseError as error:
                     if error.index != index or is_first:
                         raise error
-                    return results
+                    return results, index
 
                 is_first = False
 
@@ -1070,7 +1070,7 @@ class Parsec:
                 except ParseError as error:
                     if error.index != index:
                         raise error
-                    return results
+                    return results, index
 
         return Parsec(sep_end_by1_parser)
 
