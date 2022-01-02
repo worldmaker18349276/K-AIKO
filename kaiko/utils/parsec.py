@@ -1555,3 +1555,56 @@ def from_type_hint(type_hint):
 
     else:
         raise ValueError(f"No parser for type hint: {type_hint!r}")
+
+def format_value(value):
+    if value is None:
+        return "None"
+
+    elif type(value) in (bool, int, float):
+        return repr(value)
+
+    elif type(value) is complex:
+        repr_value = repr(value)
+        # remove parentheses
+        if repr_value.startswith("(") and repr_value.endswith(")"):
+            repr_value = repr_value[1:-1]
+        return repr_value
+
+    elif type(value) is bytes:
+        # make sure it uses double quotation
+        return 'b"' + repr(value + b'"')[2:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
+
+    elif type(value) is str:
+        # make sure it uses double quotation
+        return '"' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
+
+    elif type(value) is list:
+        return "[%s]" % ", ".join(format_value(subvalue) for subvalue in value)
+
+    elif type(value) is tuple:
+        if len(value) == 1:
+            return "(%s,)" % format_value(value[0])
+        return "(%s)" % ", ".join(format_value(subvalue) for subvalue in value)
+
+    elif type(value) is set:
+        if not value:
+            return "set()"
+        return "{%s}" % ", ".join(format_value(subvalue) for subvalue in value)
+
+    elif type(value) is dict:
+        return "{%s}" % ", ".join(
+            format_value(key) + ":" + format_value(subvalue)
+            for key, subvalue in value.items()
+        )
+
+    elif isinstance(value, enum.Enum):
+        return f"{type(value).__name__}.{value.name}"
+
+    elif dataclasses.is_dataclass(value):
+        return f"{type(value).__name__}(%s)" % ", ".join(
+            field.name + "=" + format_value(getattr(value, field.name))
+            for field in dataclasses.fields(value)
+        )
+
+    else:
+        raise TypeError(f"Cannot format value of type {type(value)}")

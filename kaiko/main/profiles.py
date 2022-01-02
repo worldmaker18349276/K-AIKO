@@ -5,7 +5,6 @@ import subprocess
 from pathlib import Path
 from ..utils import config as cfg
 from ..utils import parsec as pc
-from ..utils import formattec as fc
 from ..utils import commands as cmd
 from ..utils import datanodes as dn
 from ..devices import engines
@@ -202,7 +201,7 @@ class ProfileManager:
 
         try:
             self.current.write(current_path, name=self.settings_name)
-        except fc.FormatError:
+        except Exception:
             with logger.warn():
                 logger.print("Fail to format configuration")
                 logger.print(traceback.format_exc(), end="", markup=False)
@@ -427,8 +426,7 @@ class ConfigCommand:
     @cmd.function_command
     def show(self):
         """Show configuration."""
-        formatter = cfg.make_configuration_formatter(KAIKOSettings, config_name=self.config.settings_name)
-        text = formatter.format(self.config.current)
+        text = self.config.current.format(name=self.config.settings_name)
         is_changed = self.config.is_changed()
         title = self.config.current_name + self.config.extension
         self.logger.print_code(text, title=title, is_changed=is_changed)
@@ -489,11 +487,10 @@ class ConfigCommand:
 
         field_type = KAIKOSettings.get_field_type(field)
         parser = pc.from_type_hint(field_type) << pc.regex(r"\s*") << pc.eof()
-        formatter = fc.from_type_hint(field_type, multiline=True)
 
         if self.config.current.has(field):
             value = self.config.current.get(field)
-            value_str = formatter.format(value)
+            value_str = pc.format_value(value)
         else:
             value_str = ""
 

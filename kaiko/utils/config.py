@@ -9,7 +9,6 @@ from collections import OrderedDict
 from inspect import cleandoc
 from pathlib import Path
 from . import parsec as pc
-from . import formattec as fc
 
 
 @pc.parsec
@@ -93,23 +92,6 @@ def make_configuration_parser(config_type, config_name):
         config.set(field_key, field_value)
 
         yield nl
-
-def make_configuration_formatter(config_type, config_name):
-    def formatter(value, **contexts):
-        yield f"{config_name} = {config_type.__name__}()\n"
-
-        for field_key, (field_type, field_doc) in config_type.__field_hints__.items():
-            if not value.has(field_key):
-                continue
-            field_value = value.get(field_key)
-            value_formatter = fc.from_type_hint(field_type, multiline=True)
-
-            yield config_name + "."
-            yield from ".".join(field_key)
-            yield " = "
-            yield from value_formatter.func(field_value)
-            yield "\n"
-    return fc.formattec(formatter)
 
 class ConfigurableMeta(type):
     def __init__(self, name, supers, attrs):
@@ -388,6 +370,25 @@ class Configurable(metaclass=ConfigurableMeta):
             return field in parent.__dict__
 
     @classmethod
+    def parse(cls, text, name="settings"):
+        parser = make_configuration_parser(cls, name)
+        return parser.parse(text)
+
+    def format(self, name="settings"):
+        cls = type(self)
+        res = []
+        res.append(f"{name} = {cls.__name__}()\n")
+
+        for key in cls.__field_hints__.keys():
+            if not self.has(key):
+                continue
+            value = self.get(key)
+            field = ".".join(key)
+            res.append(f"{name}.{field} = {pc.format_value(value)}\n")
+
+        return "".join(res)
+
+    @classmethod
     def read(cls, path, name="settings"):
         """Read configuration from a file.
 
@@ -419,9 +420,8 @@ class Configurable(metaclass=ConfigurableMeta):
         # exec(text, globals(), locals)
         # return locals[self.name]
 
-        parser = make_configuration_parser(cls, name)
         text = open(path, 'r').read()
-        res = parser.parse(text)
+        res = cls.parse(text, name=name)
         return res
 
     def write(self, path, name="settings"):
@@ -442,7 +442,6 @@ class Configurable(metaclass=ConfigurableMeta):
         if isinstance(path, str):
             path = Path(path)
 
-        formatter = make_configuration_formatter(type(self), name)
-        text = formatter.format(self)
+        text = self.format(name)
         open(path, 'w').write(text)
 

@@ -2,11 +2,10 @@ import os
 import math
 from fractions import Fraction
 import dataclasses
-from dataclasses import dataclass
+import re
 from typing import List, Tuple, Dict, Union
 import ast
 from ..utils import parsec as pc
-from ..utils import formattec as fc
 from . import beatmaps
 
 version = "0.2.0"
@@ -115,7 +114,7 @@ class BeatSheet(beatmaps.Beatmap):
     @property
     def chart(self):
         tracks = [self.to_track(seq) for seq in self.event_sequences]
-        return chart_formatter.format(tracks)
+        return format_chart(tracks)
 
     @chart.setter
     def chart(self, value):
@@ -178,7 +177,7 @@ Arguments = Tuple[List[Value], Dict[str, Value]]
 class Pattern:
     pass
 
-@dataclass
+@dataclasses.dataclass
 class Track:
     # TRACK(beat=0, length=1/2):
     #     ...
@@ -198,7 +197,7 @@ class Track:
     def get_arguments(self):
         return dict(beat=self.beat, length=self.length, meter=self.meter, hide=self.hide)
 
-@dataclass
+@dataclasses.dataclass
 class Note(Pattern):
     #    event note: XXX(arg=...)
     #     text note: "ABC"(arg=...)
@@ -209,7 +208,7 @@ class Note(Pattern):
     symbol: str
     arguments: Arguments
 
-@dataclass
+@dataclasses.dataclass
 class Division(Pattern):
     # [x o]
     # [x x o]/3
@@ -217,7 +216,7 @@ class Division(Pattern):
     divisor: int = 2
     patterns: List[Pattern] = dataclasses.field(default_factory=list)
 
-@dataclass
+@dataclasses.dataclass
 class Instant(Pattern):
     # {x x o}
     patterns: List[Pattern] = dataclasses.field(default_factory=list)
@@ -237,19 +236,6 @@ def value_parser():
 
     desc = "None or bool or str or float or frac or int"
     return pc.choice(none, bool, str, float, frac, int).desc(desc)
-
-@fc.formattec
-def value_formatter(value, **contexts):
-    if value is None:
-        yield "None"
-    elif isinstance(value, (bool, int, float)):
-        yield repr(value)
-    elif isinstance(value, Fraction):
-        yield str(value)
-    elif isinstance(value, str):
-        yield '"' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
-    else:
-        raise fc.FormatError(value, "None or bool or str or float or frac or int")
 
 @IIFE
 @pc.parsec
@@ -287,32 +273,6 @@ def arguments_parser():
             return psargs, kwargs
         yield comma
 
-@fc.formattec
-def arguments_formatter(value, **contexts):
-    psargs, kwargs = value
-
-    if len(psargs) + len(kwargs) == 0:
-        yield ""
-
-    yield "("
-
-    is_first = True
-    for value in psargs:
-        if not is_first:
-            yield ", "
-        is_first = False
-        yield value_formatter.format(value, **contexts)
-
-    for key, value in kwargs.items():
-        if not is_first:
-            yield ", "
-        is_first = False
-        yield key
-        yield "="
-        yield value_formatter.format(value, **contexts)
-
-    yield ")"
-
 @IIFE
 def note_parser():
     symbol = pc.regex(r"[^ \b\t\n\r\f\v()[\]{}\'\"\\#]+")
@@ -322,11 +282,6 @@ def note_parser():
         (symbol + arguments_parser).starmap(Note)
         | (text + arguments_parser).starmap(lambda text, arg: Note('Text', ([text, *arg[0]], arg[1])))
     )
-
-@fc.formattec
-def note_formatter(value, **contexts):
-    yield value.symbol
-    yield arguments_formatter.format(value.arguments, **contexts)
 
 @pc.parsec
 def make_msp_parser(indent=0):
@@ -393,31 +348,6 @@ def make_patterns_parser(indent=0):
     pattern = instant | division | note_parser
     return enclose_by(pattern, msp, pc.nothing(), end)
 
-@fc.formattec
-def patterns_formatter(value, **contexts):
-    is_first = True
-    for pattern in value:
-        if not is_first:
-            yield " "
-        is_first = False
-
-        if isinstance(pattern, Instant):
-            yield "{"
-            yield patterns_formatter.format(value.patterns, **contexts)
-            yield "}"
-
-        elif isinstance(pattern, Division):
-            yield "["
-            yield patterns_formatter.format(value.patterns, **contexts)
-            yield "]"
-            yield "" if value.divisor == 2 else f"/{value.divisor}"
-
-        elif isinstance(pattern, Note):
-            yield note_formatter.format(pattern, **contexts)
-
-        else:
-            assert False
-
 @IIFE
 @pc.parsec
 def chart_parser():
@@ -443,17 +373,6 @@ def chart_parser():
         patterns = yield make_patterns_parser(indent=4)
         track.patterns = patterns
         tracks.append(track)
-
-@fc.formattec
-def chart_formatter(value, *, indent=0, **contexts):
-    for track in value:
-        kwargs = track.get_arguments()
-        yield "\n" + " "*indent + "TRACK"
-        yield arguments_formatter.format(([], kwargs), indent=indent, **contexts)
-        yield ":\n"
-        yield " "*indent + "    "
-        yield patterns_formatter.format(track.patterns, indent=indent+4, **contexts)
-        yield "\n"
 
 
 @pc.parsec
@@ -491,23 +410,78 @@ def make_beatsheet_parser(metadata_only=False):
         if not metadata_only or name != "chart":
             setattr(beatsheet, name, value)
 
-@fc.formattec
-def beatsheet_formatter(value, **contexts):
-    fields = BeatSheet.__annotations__
 
-    yield f"#K-AIKO-std-{version}\n"
+def format_value(value):
+    if value is None:
+        return "None"
+    elif isinstance(value, (bool, int, float)):
+        return repr(value)
+    elif isinstance(value, Fraction):
+        return str(value)
+    elif isinstance(value, str):
+        return '"' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
+    else:
+        raise TypeError
 
-    for name, type_hint in fields.items():
-        field_formatter = fc.mstr_formatter if name == "info" else fc.from_type_hint(type_hint)
-        yield f"beatmap.{name} = "
-        yield field_formatter.format(getattr(value, name), **contexts)
-        yield "\n"
+def format_arguments(psargs, kwargs):
+    if len(psargs) + len(kwargs) == 0:
+        return ""
+    items = [format_value(value) for value in psargs]
+    items += [key + "=" + format_value(value) for key, value in kwargs.items()]
+    return "(%s)" % ", ".join(items)
+
+def format_patterns(patterns):
+    items = []
+    for pattern in patterns:
+        if isinstance(pattern, Instant):
+            items.append("{%s}" % format_patterns(pattern.patterns))
+
+        elif isinstance(pattern, Division):
+            temp = "[%s]" if pattern.divisor == 2 else f"[%s]/{pattern.divisor}"
+            items.append(temp % format_patterns(pattern.patterns))
+
+        elif isinstance(pattern, Note):
+            items.append(pattern.symbol + format_arguments(*pattern.arguments))
+
+        else:
+            assert False
+        
+    return " ".join(items)
+
+def format_chart(chart):
+    return "".join(
+        f"\nTRACK{format_arguments([], track.get_arguments())}:\n"
+        f"    {format_patterns(track.patterns)}\n"
+        for track in chart
+    )
+
+def format_mstr(value):
+    if not value.startswith("\n") or not value.endswith("\n"):
+        raise ValueError("string should start and end with newline")
+    return '"""' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'").replace(r"\n", "\n") + '"""'
+
+def format_rmstr(value):
+    if not value.startswith("\n") or not value.endswith("\n"):
+        raise ValueError("string should start and end with newline")
+    m = re.search(r'\x00|\r|"""|\\$', value)
+    if m:
+        raise ValueError("string cannot contain '\\x00', '\\r', '\"\"\"' and single '\\'")
+    return 'r"""' + value + '"""'
+
+def format_beatsheet(beatsheet):
+    res = []
+
+    res.append(f"#K-AIKO-std-{version}\n")
+
+    for name in BeatSheet.__annotations__.keys():
+        format_field = format_mstr if name == "info" else pc.format_value
+        res.append(f"beatmap.{name} = {format_field(getattr(beatsheet, name))}\n")
 
     name = 'chart'
-    field_formatter = fc.rmstr_formatter
-    yield f"beatmap.{name} = "
-    yield field_formatter.format(getattr(value, name), **contexts)
-    yield "\n"
+    format_field = format_rmstr
+    res.append(f"beatmap.{name} = {format_field(getattr(beatsheet, name))}\n")
+
+    return "".join(res)
 
 
 class OSU:
