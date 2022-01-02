@@ -109,7 +109,7 @@ def make_configuration_formatter(config_type, config_name):
             yield " = "
             yield from value_formatter.func(field_value)
             yield "\n"
-    return fc.Formattec(formatter)
+    return fc.formattec(formatter)
 
 class ConfigurableMeta(type):
     def __init__(self, name, supers, attrs):

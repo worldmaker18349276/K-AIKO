@@ -238,7 +238,7 @@ def value_parser():
     desc = "None or bool or str or float or frac or int"
     return pc.choice(none, bool, str, float, frac, int).desc(desc)
 
-@fc.Formattec
+@fc.formattec
 def value_formatter(value, **contexts):
     if value is None:
         yield "None"
@@ -287,7 +287,7 @@ def arguments_parser():
             return psargs, kwargs
         yield comma
 
-@fc.Formattec
+@fc.formattec
 def arguments_formatter(value, **contexts):
     psargs, kwargs = value
 
@@ -301,7 +301,7 @@ def arguments_formatter(value, **contexts):
         if not is_first:
             yield ", "
         is_first = False
-        yield from value_formatter.func(value)
+        yield value_formatter.format(value, **contexts)
 
     for key, value in kwargs.items():
         if not is_first:
@@ -309,7 +309,7 @@ def arguments_formatter(value, **contexts):
         is_first = False
         yield key
         yield "="
-        yield from value_formatter.func(value)
+        yield value_formatter.format(value, **contexts)
 
     yield ")"
 
@@ -323,10 +323,10 @@ def note_parser():
         | (text + arguments_parser).starmap(lambda text, arg: Note('Text', ([text, *arg[0]], arg[1])))
     )
 
-@fc.Formattec
+@fc.formattec
 def note_formatter(value, **contexts):
     yield value.symbol
-    yield from arguments_formatter.func(value.arguments)
+    yield arguments_formatter.format(value.arguments, **contexts)
 
 @pc.parsec
 def msp_parser(indent=0):
@@ -393,7 +393,7 @@ def patterns_parser(indent=0):
     pattern = instant | division | note_parser
     return enclose_by(pattern, msp, pc.nothing(), end)
 
-@fc.Formattec
+@fc.formattec
 def patterns_formatter(value, **contexts):
     is_first = True
     for pattern in value:
@@ -403,17 +403,17 @@ def patterns_formatter(value, **contexts):
 
         if isinstance(pattern, Instant):
             yield "{"
-            yield from patterns_formatter.func(value.patterns)
+            yield patterns_formatter.format(value.patterns, **contexts)
             yield "}"
 
         elif isinstance(pattern, Division):
             yield "["
-            yield from patterns_formatter.func(value.patterns)
+            yield patterns_formatter.format(value.patterns, **contexts)
             yield "]"
             yield "" if value.divisor == 2 else f"/{value.divisor}"
 
         elif isinstance(pattern, Note):
-            yield from note_formatter.func(pattern)
+            yield note_formatter.format(pattern, **contexts)
 
         else:
             assert False
@@ -444,15 +444,15 @@ def chart_parser():
         track.patterns = patterns
         tracks.append(track)
 
-@fc.Formattec
+@fc.formattec
 def chart_formatter(value, *, indent=0, **contexts):
     for track in value:
         kwargs = track.get_arguments()
         yield "\n" + " "*indent + "TRACK"
-        yield from arguments_formatter.func(([], kwargs))
+        yield arguments_formatter.format(([], kwargs), indent=indent, **contexts)
         yield ":\n"
         yield " "*indent + "    "
-        yield from patterns_formatter.func(track.patterns, indent=indent+4)
+        yield patterns_formatter.format(track.patterns, indent=indent+4, **contexts)
         yield "\n"
 
 
@@ -491,7 +491,7 @@ def beatsheet_parser(metadata_only=False):
         if not metadata_only or name != "chart":
             setattr(beatsheet, name, value)
 
-@fc.Formattec
+@fc.formattec
 def beatsheet_formatter(value, **contexts):
     fields = BeatSheet.__annotations__
 
@@ -500,13 +500,13 @@ def beatsheet_formatter(value, **contexts):
     for name, type_hint in fields.items():
         field_formatter = fc.mstr_formatter if name == "info" else fc.from_type_hint(type_hint)
         yield f"beatmap.{name} = "
-        yield from field_formatter.func(getattr(value, name))
+        yield field_formatter.format(getattr(value, name), **contexts)
         yield "\n"
 
     name = 'chart'
     field_formatter = fc.rmstr_formatter
     yield f"beatmap.{name} = "
-    yield from field_formatter.func(getattr(value, name))
+    yield field_formatter.format(getattr(value, name), **contexts)
     yield "\n"
 
 

@@ -15,16 +15,19 @@ class FormatError(Exception):
         return f"Invalid value {self.value}, expecting {self.expected}"
 
 
+def formattec(func):
+    return Formattec(lambda value, **contexts: "".join(func(value, **contexts)))
+
 class Formattec:
     def __init__(self, func):
         self.func = func
 
     def format(self, value, **contexts):
-        return "".join(self.func(value, **contexts))
+        return self.func(value, **contexts)
 
     def context(self, override):
         def context_formatter(value, field, **contexts):
-            yield from self.func(value, field, **override(**contexts))
+            return self.func(value, field, **override(**contexts))
         return Formattec(context_formatter)
 
     def validate(self, validater, expected=None):
@@ -33,31 +36,31 @@ class Formattec:
         def validate_formatter(value, **contexts):
             if not validater(value):
                 raise FormatError(value, expected)
-            yield from self.func(value, **contexts)
+            return self.func(value, **contexts)
         return Formattec(validate_formatter)
 
     @staticmethod
     def string(string=""):
         def string_formatter(value, **contexts):
-            yield string
+            return string
         return Formattec(string_formatter)
 
     def map(self, func):
         def func_formatter(value, **contexts):
-            yield from self.func(func(value), **contexts)
+            return self.func(func(value), **contexts)
         return Formattec(func_formatter)
 
     @staticmethod
     def bind(func):
         def bind_formatter(value, **contexts):
-            yield from func(value).func(value, **contexts)
+            return func(value).func(value, **contexts)
         return Formattec(bind_formatter)
 
     def concat(self, *others):
         def concat_formatter(value, **contexts):
             for other in [self, *others]:
                 yield other.func(value, **contexts)
-        return Formattec(concat_formatter)
+        return formattec(concat_formatter)
 
     @staticmethod
     def template(format_str, **formatters):
@@ -81,14 +84,14 @@ class Formattec:
                 if conv is None or spec is not None:
                     raise ValueError
                 field_value, _ = _string_formatter.get_field(name, [value], {})
-                yield from formatters[conv].func(field_value, **contexts)
-        return Formattec(template_formatter)
+                yield formatters[conv].func(field_value, **contexts)
+        return formattec(template_formatter)
 
     def many(self):
         def many_formatter(value, **contexts):
             for subvalue in value:
-                yield from self.func(subvalue, **contexts)
-        return Formattec(many_formatter)
+                yield self.func(subvalue, **contexts)
+        return formattec(many_formatter)
 
     def join(self, elems, multiline=False):
         sep = self
@@ -101,10 +104,10 @@ class Formattec:
             is_first = True
             for subvalue, formatter in zip(value, elems):
                 if not is_first:
-                    yield from sep.func(value, **contexts)
-                yield from formatter.func(subvalue, **contexts)
+                    yield sep.func(value, **contexts)
                 is_first = False
-        return Formattec(join_formatter)
+                yield formatter.func(subvalue, **contexts)
+        return formattec(join_formatter)
 
     def sep_by(self, sep, multiline=False):
         if multiline:
@@ -114,10 +117,10 @@ class Formattec:
             is_first = True
             for subvalue in value:
                 if not is_first:
-                    yield from sep.func(value, **contexts)
-                yield from self.func(subvalue, **contexts)
+                    yield sep.func(value, **contexts)
+                yield self.func(subvalue, **contexts)
                 is_first = False
-        return Formattec(sep_formatter)
+        return formattec(sep_formatter)
 
     def between(self, opening, closing, indent="    ", multiline=False):
         if multiline:
@@ -135,7 +138,7 @@ class Formattec:
 
 def _make_literal_formatter(cls, func=repr):
     def literal_formatter(value, **contexts):
-        yield func(value)
+        return func(value)
     return Formattec(literal_formatter).validate(lambda value: type(value) is cls, cls.__name__)
 
 none_formatter = _make_literal_formatter(type(None))
@@ -252,11 +255,11 @@ def union_formatter(options):
     def union_formatter(value, **contexts):
         for type_hint, option_formatter in options.items():
             if has_type(value, type_hint):
-                yield from option_formatter.func(value, **contexts)
+                yield option_formatter.func(value, **contexts)
                 return
         else:
             raise FormatError(value, " or ".join(str(type_hint) for type_hint in options.keys()))
-    return Formattec(union_formatter)
+    return formattec(union_formatter)
 
 
 def enum_formatter(cls):
