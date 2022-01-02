@@ -175,7 +175,7 @@ class DevicesCommand:
 
     @cmd.function_command
     def test_mic(self, device):
-        """Test audio input.
+        """[rich]Test audio input.
 
         usage: [cmd]devices[/] [cmd]test_mic[/] [arg]{device}[/]
                                   ╱
@@ -187,7 +187,7 @@ class DevicesCommand:
 
     @cmd.function_command
     def test_speaker(self, device):
-        """Test audio output.
+        """[rich]Test audio output.
 
         usage: [cmd]devices[/] [cmd]test_speaker[/] [arg]{device}[/]
                                       ╱
@@ -199,7 +199,7 @@ class DevicesCommand:
 
     @cmd.function_command
     def set_mic(self, device, rate=None, ch=None, len=None, fmt=None):
-        """Configure audio input.
+        """[rich]Configure audio input.
 
                                           the sample rate        the buffer length
                                          of recorded sound.       of input device.
@@ -249,7 +249,7 @@ class DevicesCommand:
 
     @cmd.function_command
     def set_speaker(self, device, rate=None, ch=None, len=None, fmt=None):
-        """Configure audio output.
+        """[rich]Configure audio output.
 
                                               the sample rate        the buffer length
                                               of played sound.       of output device.

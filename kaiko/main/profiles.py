@@ -434,7 +434,7 @@ class ConfigCommand:
 
     @cmd.function_command
     def has(self, field):
-        """Check whether this field is set in the configuration.
+        """[rich]Check whether this field is set in the configuration.
 
         usage: [cmd]config[/] [cmd]has[/] [arg]{field}[/]
                             ╱
@@ -444,7 +444,7 @@ class ConfigCommand:
 
     @cmd.function_command
     def get(self, field):
-        """Get the value of this field in the configuration.
+        """[rich]Get the value of this field in the configuration.
 
         usage: [cmd]config[/] [cmd]get[/] [arg]{field}[/]
                             ╱
@@ -454,7 +454,7 @@ class ConfigCommand:
 
     @cmd.function_command
     def set(self, field, value):
-        """Set this field in the configuration.
+        """[rich]Set this field in the configuration.
 
         usage: [cmd]config[/] [cmd]set[/] [arg]{field}[/] [arg]{value}[/]
                             ╱         ╲
@@ -465,7 +465,7 @@ class ConfigCommand:
 
     @cmd.function_command
     def unset(self, field):
-        """Unset this field in the configuration.
+        """[rich]Unset this field in the configuration.
 
         usage: [cmd]config[/] [cmd]unset[/] [arg]{field}[/]
                               ╱
@@ -477,7 +477,7 @@ class ConfigCommand:
     @cmd.function_command
     @dn.datanode
     def edit(self, field):
-        """Edit the value of this field in the configuration.
+        """[rich]Edit the value of this field in the configuration.
 
         usage: [cmd]config[/] [cmd]edit[/] [arg]{field}[/]
                              ╱
@@ -539,7 +539,7 @@ class ConfigCommand:
 
     @cmd.function_command
     def profiles(self):
-        """Show all profiles.
+        """[rich]Show all profiles.
 
         usage: [cmd]config[/] [cmd]profiles[/]
         """
@@ -578,7 +578,7 @@ class ConfigCommand:
 
     @cmd.function_command
     def set_default(self):
-        """Set the current configuration profile as default.
+        """[rich]Set the current configuration profile as default.
 
         usage: [cmd]config[/] [cmd]set_default[/]
         """
@@ -589,7 +589,7 @@ class ConfigCommand:
 
     @cmd.function_command
     def use(self, profile):
-        """Change the current configuration profile.
+        """[rich]Change the current configuration profile.
 
         usage: [cmd]config[/] [cmd]use[/] [arg]{profile}[/]
                               ╱
@@ -603,7 +603,7 @@ class ConfigCommand:
 
     @cmd.function_command
     def rename(self, profile):
-        """Rename current configuration profile.
+        """[rich]Rename current configuration profile.
 
         usage: [cmd]config[/] [cmd]rename[/] [arg]{profile}[/]
                                 ╱
@@ -616,7 +616,7 @@ class ConfigCommand:
 
     @cmd.function_command
     def new(self, profile, clone=None):
-        """Make new configuration profile.
+        """[rich]Make new configuration profile.
 
         usage: [cmd]config[/] [cmd]new[/] [arg]{profile}[/] [[[kw]--clone[/] [arg]{PROFILE}[/]]]
                               ╱                    ╲
@@ -629,7 +629,7 @@ class ConfigCommand:
 
     @cmd.function_command
     def delete(self, profile):
-        """Delete a configuration profile.
+        """[rich]Delete a configuration profile.
 
         usage: [cmd]config[/] [cmd]delete[/] [arg]{profile}[/]
                                 ╱

@@ -288,7 +288,7 @@ class KAIKOMenu:
 
     @cmd.function_command
     def play(self, beatmap):
-        """Let's beat with the song!
+        """[rich]Let's beat with the song!
 
         usage: [cmd]play[/] [arg]{beatmap}[/]
                          ╲
@@ -325,7 +325,7 @@ class KAIKOMenu:
 
     @cmd.function_command
     def add(self, beatmap):
-        """Add beatmap/beatmapset to your songs folder.
+        """[rich]Add beatmap/beatmapset to your songs folder.
 
         usage: [cmd]add[/] [arg]{beatmap}[/]
                         ╲
@@ -343,7 +343,7 @@ class KAIKOMenu:
 
     @cmd.function_command
     def remove(self, beatmap):
-        """Remove beatmap/beatmapset in your songs folder.
+        """[rich]Remove beatmap/beatmapset in your songs folder.
 
         usage: [cmd]remove[/] [arg]{beatmap}[/]
                            ╲
@@ -403,7 +403,7 @@ class KAIKOMenu:
 
     @cmd.function_command
     def print(self, message, markup=True):
-        """Print something.
+        """[rich]Print something.
 
         usage: [cmd]say[/] [arg]{message}[/] [[[kw]--markup[/] [arg]{MARKUP}[/]]]
                       ╱                    ╲

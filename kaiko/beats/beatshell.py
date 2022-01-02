@@ -1794,7 +1794,7 @@ class BeatPrompt:
 
         msg = None
         if hint.message:
-            msg = self.rich.parse(hint.message)
+            msg = self.rich.parse(hint.message, root_tag=True)
             lines = 0
             def trim_lines(text):
                 nonlocal lines

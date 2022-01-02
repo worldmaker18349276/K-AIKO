@@ -137,7 +137,7 @@ class Group(Markup):
 
 class Tag(Markup):
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         raise NotImplementedError
 
 @dataclasses.dataclass(frozen=True)
@@ -200,7 +200,7 @@ class SingleTemplate(Single):
     # _template
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is not None:
             raise MarkupParseError("no parameter is needed for template tag")
         return ()
@@ -217,9 +217,9 @@ class Slot(Single):
     name = "slot"
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is not None:
-            raise MarkupParseError(f"no parameter is needed for tag [{clz.name}/]")
+            raise MarkupParseError(f"no parameter is needed for tag [{cls.name}/]")
         return ()
 
     @property
@@ -232,7 +232,7 @@ class PairTemplate(Pair):
     # _template
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is not None:
             raise MarkupParseError("no parameter is needed for template tag")
         return ()
@@ -256,15 +256,15 @@ def replace_slot(template, markup):
 
 def make_single_template(name, template, tags, props={}):
     temp = parse_markup(template, tags=tags, props=props)
-    clz = type(name.capitalize(), (SingleTemplate,), dict(name=name, _template=temp))
-    clz = dataclasses.dataclass(frozen=True)(clz)
-    return clz
+    cls = type(name.capitalize(), (SingleTemplate,), dict(name=name, _template=temp))
+    cls = dataclasses.dataclass(frozen=True)(cls)
+    return cls
 
 def make_pair_template(name, template, tags, props={}):
     temp = parse_markup(template, tags=dict(tags, slot=Slot), props=props)
-    clz = type(name.capitalize(), (PairTemplate,), dict(name=name, _template=temp))
-    clz = dataclasses.dataclass(frozen=True)(clz)
-    return clz
+    cls = type(name.capitalize(), (PairTemplate,), dict(name=name, _template=temp))
+    cls = dataclasses.dataclass(frozen=True)(cls)
+    return cls
 
 
 # ctrl code
@@ -274,9 +274,9 @@ class CSI(Single):
     code: str
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is None:
-            raise MarkupParseError(f"missing parameter for tag [{clz.name}/]")
+            raise MarkupParseError(f"missing parameter for tag [{cls.name}/]")
         return param,
 
     @property
@@ -297,13 +297,13 @@ class Move(Single):
     y: int
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is None:
-            raise MarkupParseError(f"missing parameter for tag [{clz.name}/]")
+            raise MarkupParseError(f"missing parameter for tag [{cls.name}/]")
         try:
             x, y = tuple(int(n) for n in param.split(","))
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{clz.name}/]: {param}")
+            raise MarkupParseError(f"invalid parameter for tag [{cls.name}/]: {param}")
         return x, y
 
     @property
@@ -341,13 +341,13 @@ class Pos(Single):
     y: int
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is None:
-            raise MarkupParseError(f"missing parameter for tag [{clz.name}/]")
+            raise MarkupParseError(f"missing parameter for tag [{cls.name}/]")
         try:
             x, y = tuple(int(n) for n in param.split(","))
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{clz.name}/]: {param}")
+            raise MarkupParseError(f"invalid parameter for tag [{cls.name}/]: {param}")
         return x, y
 
     @property
@@ -366,13 +366,13 @@ class Scroll(Single):
     x: int
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is None:
-            raise MarkupParseError(f"missing parameter for tag [{clz.name}/]")
+            raise MarkupParseError(f"missing parameter for tag [{cls.name}/]")
         try:
             x = int(param)
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{clz.name}/]: {param}")
+            raise MarkupParseError(f"invalid parameter for tag [{cls.name}/]: {param}")
         return x,
 
     @property
@@ -409,11 +409,11 @@ class Clear(Single):
     region: ClearRegion
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is None:
-            raise MarkupParseError(f"missing parameter for tag [{clz.name}/]")
+            raise MarkupParseError(f"missing parameter for tag [{cls.name}/]")
         if all(param != region.name for region in ClearRegion):
-            raise MarkupParseError(f"invalid parameter for tag [{clz.name}/]: {param}")
+            raise MarkupParseError(f"invalid parameter for tag [{cls.name}/]: {param}")
         region = ClearRegion[param]
 
         return region,
@@ -436,14 +436,14 @@ class SGR(Pair):
     attr: tuple
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is None:
-            return clz((), ())
+            return cls((), ())
 
         try:
             attr = tuple(int(n or "0") for n in param.split(";"))
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
+            raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
         return attr
 
     @property
@@ -471,11 +471,11 @@ class SimpleAttr(Pair):
         return self.option
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is None:
-            param = next(iter(clz._options.keys()))
-        if param not in clz._options:
-            raise MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
+            param = next(iter(cls._options.keys()))
+        if param not in cls._options:
+            raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
         return param,
 
     def expand(self):
@@ -617,14 +617,14 @@ class Color(Pair):
     color_support: ColorSupport
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is None:
             param = "default"
 
         try:
             rgb = Palette(param) if param in color_names else int(param, 16)
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
+            raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
         return rgb,
 
     @property
@@ -682,14 +682,14 @@ class BgColor(Pair):
     color_support: ColorSupport
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is None:
             param = "default"
 
         try:
             rgb = Palette(param) if param in color_names else int(param, 16)
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
+            raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
         return rgb,
 
     @property
@@ -728,9 +728,9 @@ class ControlCharacter(Single):
     # character
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is not None:
-            raise MarkupParseError(f"no parameter is needed for tag [{clz.name}/]")
+            raise MarkupParseError(f"no parameter is needed for tag [{cls.name}/]")
         return ()
 
     @property
@@ -783,9 +783,9 @@ class Space(Single):
     character = " "
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is not None:
-            raise MarkupParseError(f"no parameter is needed for tag [{clz.name}/]")
+            raise MarkupParseError(f"no parameter is needed for tag [{cls.name}/]")
         return ()
 
     @property
@@ -802,11 +802,11 @@ class Wide(Single):
     unicode_version: str
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is None:
-            raise MarkupParseError(f"missing parameter for tag [{clz.name}/]")
+            raise MarkupParseError(f"missing parameter for tag [{cls.name}/]")
         if len(param) != 1 or not param.isprintable():
-            raise MarkupParseError(f"invalid parameter for tag [{clz.name}/]: {param}")
+            raise MarkupParseError(f"invalid parameter for tag [{cls.name}/]: {param}")
         return param,
 
     @property
@@ -821,8 +821,26 @@ class Wide(Single):
             return Text(self.char)
 
 
+@dataclasses.dataclass(frozen=True)
+class Rich(Pair):
+    name = "rich"
+
+    @classmethod
+    def parse(cls, param):
+        if param is not None:
+            raise MarkupParseError(f"no parameter is needed for tag [{cls.name}/]")
+        return ()
+
+    @property
+    def param(self):
+        return None
+
+    def expand(self):
+        return Group(self.children).expand()
+
 class RichTextRenderer:
     default_tags = {
+        Rich.name: Rich,
         Reset.name: Reset,
         Weight.name: Weight,
         Italic.name: Italic,
@@ -851,7 +869,10 @@ class RichTextRenderer:
             BgColor.name: (self.color_support,),
         }
 
-    def parse(self, markup_str, expand=True, slotted=False):
+    def parse(self, markup_str, expand=True, slotted=False, root_tag=False):
+        if root_tag and not markup_str.startswith(f"[{Rich.name}]"):
+            return Text(markup_str)
+
         tags = self.tags if not slotted else dict(self.tags, slot=Slot)
         markup = parse_markup(markup_str, tags, self.props)
         if expand:
@@ -1028,13 +1049,13 @@ class X(Single):
     x: int
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is None:
-            raise MarkupParseError(f"missing parameter for tag [{clz.name}]")
+            raise MarkupParseError(f"missing parameter for tag [{cls.name}]")
         try:
             x = int(param)
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
+            raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
         return x,
 
     @property
@@ -1047,13 +1068,13 @@ class DX(Single):
     dx: int
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is None:
-            raise MarkupParseError(f"missing parameter for tag [{clz.name}]")
+            raise MarkupParseError(f"missing parameter for tag [{cls.name}]")
         try:
             dx = int(param)
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
+            raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
         return dx,
 
     @property
@@ -1065,9 +1086,9 @@ class Restore(Pair):
     name = "restore"
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         if param is not None:
-            raise MarkupParseError(f"no parameter is needed for tag [{clz.name}]")
+            raise MarkupParseError(f"no parameter is needed for tag [{cls.name}]")
         return ()
 
     @property
@@ -1080,11 +1101,11 @@ class Mask(Pair):
     mask: slice
 
     @classmethod
-    def parse(clz, param):
+    def parse(cls, param):
         try:
             start, stop = [int(p) if p else None for p in (param or ":").split(":")]
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{clz.name}]: {param}")
+            raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
         return slice(start, stop),
 
     @property
