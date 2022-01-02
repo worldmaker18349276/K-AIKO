@@ -186,7 +186,7 @@ rmstr_formatter = _make_literal_formatter(str, _rmstr_repr)
 
 # composite
 
-def list_formatter(elem, multiline=False):
+def make_list_formatter(elem, multiline=False):
     empty = Formattec.string("[]")
     nonempty = (
         elem.sep_by(Formattec.string(", "), multiline=multiline)
@@ -197,7 +197,7 @@ def list_formatter(elem, multiline=False):
             .validate(lambda value: type(value) is list, "list")
     )
 
-def set_formatter(elem, multiline=False):
+def make_set_formatter(elem, multiline=False):
     empty = Formattec.string("set()")
     nonempty = (
         elem.sep_by(Formattec.string(", "), multiline=multiline)
@@ -208,7 +208,7 @@ def set_formatter(elem, multiline=False):
             .validate(lambda value: type(value) is set, "set")
     )
 
-def dict_formatter(key, value, multiline=False):
+def make_dict_formatter(key, value, multiline=False):
     empty = Formattec.string("{}")
     nonempty = (
         Formattec.template("{[0]!key}:{[1]!value}", key=key, value=value)
@@ -222,7 +222,7 @@ def dict_formatter(key, value, multiline=False):
     )
 
 
-def tuple_formatter(elems, multiline=False):
+def make_tuple_formatter(elems, multiline=False):
     if len(elems) == 0:
         return Formattec.string("()").validate(lambda value: value == (), "empty tuple")
     elif len(elems) == 1:
@@ -238,7 +238,7 @@ def tuple_formatter(elems, multiline=False):
         )
 
 
-def dataclass_formatter(cls, fields, multiline=False):
+def make_dataclass_formatter(cls, fields, multiline=False):
     if not fields:
         return Formattec.string(f"{cls.__name__}()").validate(lambda value: type(value) is cls, cls.__name__)
     else:
@@ -251,7 +251,7 @@ def dataclass_formatter(cls, fields, multiline=False):
         )
 
 
-def union_formatter(options):
+def make_union_formatter(options):
     def union_formatter(value, **contexts):
         for type_hint, option_formatter in options.items():
             if has_type(value, type_hint):
@@ -262,7 +262,7 @@ def union_formatter(options):
     return formattec(union_formatter)
 
 
-def enum_formatter(cls):
+def make_enum_formatter(cls):
     return _make_literal_formatter(cls, lambda value: f"{cls.__name__}.{value.name}")
 
 
@@ -374,22 +374,22 @@ def from_type_hint(type_hint, multiline=False):
         return bytes_formatter
 
     elif isinstance(type_hint, type) and issubclass(type_hint, enum.Enum):
-        return enum_formatter(type_hint)
+        return make_enum_formatter(type_hint)
 
     elif isinstance(type_hint, type) and dataclasses.is_dataclass(type_hint):
         fields = {field.name: from_type_hint(field.type, multiline)
                   for field in dataclasses.fields(type_hint)}
-        return dataclass_formatter(type_hint, fields, multiline)
+        return make_dataclass_formatter(type_hint, fields, multiline)
 
     elif get_origin(type_hint) is list:
         elem_hint, = get_args(type_hint)
         elem = from_type_hint(elem_hint, multiline)
-        return list_formatter(elem, multiline)
+        return make_list_formatter(elem, multiline)
 
     elif get_origin(type_hint) is set:
         elem_hint, = get_args(type_hint)
         elem = from_type_hint(elem_hint, multiline)
-        return set_formatter(elem, multiline)
+        return make_set_formatter(elem, multiline)
 
     elif get_origin(type_hint) is tuple:
         args = get_args(type_hint)
@@ -397,17 +397,17 @@ def from_type_hint(type_hint, multiline=False):
             elems = []
         else:
             elems = [from_type_hint(arg, multiline) for arg in args]
-        return tuple_formatter(elems, multiline)
+        return make_tuple_formatter(elems, multiline)
 
     elif get_origin(type_hint) is dict:
         key_hint, value_hint = get_args(type_hint)
         key = from_type_hint(key_hint, False)
         value = from_type_hint(value_hint, multiline)
-        return dict_formatter(key, value, multiline)
+        return make_dict_formatter(key, value, multiline)
 
     elif get_origin(type_hint) is Union:
         options = {arg: from_type_hint(arg, multiline) for arg in get_args(type_hint)}
-        return union_formatter(options)
+        return make_union_formatter(options)
 
     else:
         raise ValueError(f"No formatter for type hint: {type_hint!r}")

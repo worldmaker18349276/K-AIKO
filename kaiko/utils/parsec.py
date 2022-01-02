@@ -1379,7 +1379,7 @@ rmstr_parser = _make_literal_parser(
 
 # composite
 
-def list_parser(elem):
+def make_list_parser(elem):
     opening = regex(r"\[\s*").desc("opening bracket")
     comma = regex(r"\s*,\s*").desc("comma")
     closing = regex(r"\s*\]").desc("closing bracket")
@@ -1390,7 +1390,7 @@ def list_parser(elem):
             .desc("list")
     )
 
-def set_parser(elem):
+def make_set_parser(elem):
     opening = regex(r"\{\s*").desc("opening brace")
     comma = regex(r"\s*,\s*").desc("comma")
     closing = regex(r"\s*\}").desc("closing brace")
@@ -1401,7 +1401,7 @@ def set_parser(elem):
     )
     return (empty | nonempty).map(set).desc("set")
 
-def dict_parser(key, value):
+def make_dict_parser(key, value):
     opening = regex(r"\{\s*").desc("opening brace")
     colon = regex(r"\s*:\s*").desc("colon")
     comma = regex(r"\s*,\s*").desc("comma")
@@ -1414,7 +1414,7 @@ def dict_parser(key, value):
             .desc("dict")
     )
 
-def tuple_parser(elems):
+def make_tuple_parser(elems):
     opening = regex(r"\(\s*").desc("opening parenthesis")
     comma = regex(r"\s*,\s*").desc("comma")
     closing = regex(r"\s*\)").desc("closing parenthesis")
@@ -1426,7 +1426,7 @@ def tuple_parser(elems):
         entries = comma.join(elems) << comma.optional()
         return entries.between(opening, closing).map(tuple).desc("tuple")
 
-def dataclass_parser(cls, fields):
+def make_dataclass_parser(cls, fields):
     name = tokens([cls.__name__]).desc("dataclass name")
     opening = regex(r"\(\s*").desc("opening parenthesis")
     equal = regex(r"\s*=\s*").desc("equal")
@@ -1439,7 +1439,7 @@ def dataclass_parser(cls, fields):
         entries = nothing(())
     return entries.between(name >> opening, closing).map(lambda a: cls(**dict(a))).desc(cls.__name__)
 
-def union_parser(options):
+def make_union_parser(options):
     if len(options) == 0:
         raise ValueError("empty union")
     elif len(options) == 1:
@@ -1447,7 +1447,7 @@ def union_parser(options):
     else:
         return choice(*[option.attempt() for option in options])
 
-def enum_parser(cls):
+def make_enum_parser(cls):
     return (
         tokens([f"{cls.__name__}."])
             .then(tokens([option.name for option in cls]))
@@ -1518,22 +1518,22 @@ def from_type_hint(type_hint):
         return bytes_parser
 
     elif isinstance(type_hint, type) and issubclass(type_hint, enum.Enum):
-        return enum_parser(type_hint)
+        return make_enum_parser(type_hint)
 
     elif isinstance(type_hint, type) and dataclasses.is_dataclass(type_hint):
         fields = {field.name: from_type_hint(field.type)
                   for field in dataclasses.fields(type_hint)}
-        return dataclass_parser(type_hint, fields)
+        return make_dataclass_parser(type_hint, fields)
 
     elif get_origin(type_hint) is list:
         elem_hint, = get_args(type_hint)
         elem = from_type_hint(elem_hint)
-        return list_parser(elem)
+        return make_list_parser(elem)
 
     elif get_origin(type_hint) is set:
         elem_hint, = get_args(type_hint)
         elem = from_type_hint(elem_hint)
-        return set_parser(elem)
+        return make_set_parser(elem)
 
     elif get_origin(type_hint) is tuple:
         args = get_args(type_hint)
@@ -1541,17 +1541,17 @@ def from_type_hint(type_hint):
             elems = []
         else:
             elems = [from_type_hint(arg) for arg in args]
-        return tuple_parser(elems)
+        return make_tuple_parser(elems)
 
     elif get_origin(type_hint) is dict:
         key_hint, value_hint = get_args(type_hint)
         key = from_type_hint(key_hint)
         value = from_type_hint(value_hint)
-        return dict_parser(key, value)
+        return make_dict_parser(key, value)
 
     elif get_origin(type_hint) is Union:
         options = [from_type_hint(arg) for arg in get_args(type_hint)]
-        return union_parser(options)
+        return make_union_parser(options)
 
     else:
         raise ValueError(f"No parser for type hint: {type_hint!r}")
