@@ -686,6 +686,78 @@ class Configurable(metaclass=ConfigurableMeta):
         else:
             return field in parent.__dict__
 
+    def get_default(self, fields):
+        """Get default value of a field of the configuration.
+
+        Parameters
+        ----------
+        fields : list of str
+            The series of field names.
+
+        Returns
+        -------
+        value : any
+            The value of the field.
+
+        Raises
+        ------
+        ValueError
+            If there is no such field.
+        """
+        if len(fields) == 0:
+            raise ValueError("empty field")
+
+        parent, curr = None, self
+        field = fields[0]
+
+        for i, field in enumerate(fields):
+            if not isinstance(curr, Configurable):
+                raise ValueError("not configurable field: " + repr(fields[:i]))
+
+            if field not in curr.__configurable_fields__:
+                raise ValueError("no such field: " + repr(fields[:i+1]))
+
+            parent, curr = curr, curr.__dict__.get(field, None)
+
+        else:
+            return getattr(type(parent), field)
+
+    def has_default(self, fields):
+        """Check if a field of the configuration has a default value.
+
+        Parameters
+        ----------
+        fields : list of str
+            The series of field names.
+
+        Returns
+        -------
+        res : bool
+            True if this field has a default value.
+
+        Raises
+        ------
+        ValueError
+            If there is no such field.
+        """
+        if len(fields) == 0:
+            raise ValueError("empty field")
+
+        parent, curr = None, self
+        field = fields[0]
+
+        for i, field in enumerate(fields):
+            if not isinstance(curr, Configurable):
+                raise ValueError("not configurable field: " + repr(fields[:i]))
+
+            if field not in curr.__configurable_fields__:
+                raise ValueError("no such field: " + repr(fields[:i+1]))
+
+            parent, curr = curr, curr.__dict__.get(field, None)
+
+        else:
+            return hasattr(type(parent), field)
+
     @classmethod
     def parse(cls, text, name="settings"):
         parser = make_configuration_parser(cls, name)

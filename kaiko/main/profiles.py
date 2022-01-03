@@ -450,7 +450,33 @@ class ConfigCommand:
                             ╱
                      The field name.
         """
+        if not self.config.current.has(field) and not self.config.current.has_default(field):
+            self.logger.print(f"[warn]No value for field {'.'.join(field)}[/]")
+            return
         return self.config.current.get(field)
+
+    @cmd.function_command
+    def has_default(self, field):
+        """[rich]Check whether this field has a default value in the configuration.
+
+        usage: [cmd]config[/] [cmd]has_default[/] [arg]{field}[/]
+                                    ╱
+                             The field name.
+        """
+        return self.config.current.has_default(field)
+
+    @cmd.function_command
+    def get_default(self, field):
+        """[rich]Get the default value of this field in the configuration.
+
+        usage: [cmd]config[/] [cmd]get_default[/] [arg]{field}[/]
+                                    ╱
+                             The field name.
+        """
+        if not self.config.current.has_default(field):
+            self.logger.print(f"[warn]No default value for field {'.'.join(field)}[/]")
+            return
+        return self.config.current.get_default(field)
 
     @cmd.function_command
     def set(self, field, value):
@@ -522,6 +548,8 @@ class ConfigCommand:
 
     @get.arg_parser("field")
     @has.arg_parser("field")
+    @get_default.arg_parser("field")
+    @has_default.arg_parser("field")
     @unset.arg_parser("field")
     @set.arg_parser("field")
     @edit.arg_parser("field")
