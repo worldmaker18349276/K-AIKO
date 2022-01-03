@@ -234,7 +234,7 @@ class ProfileManager:
         current_mtime = os.stat(str(current_path)).st_mtime
         try:
             self.current = KAIKOSettings.read(current_path, name=self.settings_name)
-        except pc.ParseError:
+        except Exception:
             with logger.warn():
                 logger.print("Fail to parse configuration")
                 logger.print(traceback.format_exc(), end="", markup=False)
@@ -512,9 +512,8 @@ class ConfigCommand:
             return
 
         try:
-            res, _ = parser.parse(res_str)
-
-        except pc.ParseError as e:
+            res = parser.parse(res_str)
+        except Exception as e:
             self.logger.print(f"[warn]{self.logger.escape(str(e))}[/]")
 
         else:
