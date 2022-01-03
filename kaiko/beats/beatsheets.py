@@ -6,6 +6,7 @@ import re
 from typing import List, Tuple, Dict, Union
 import ast
 from ..utils import parsec as pc
+from ..utils import config as cfg
 from . import beatmaps
 
 version = "0.2.0"
@@ -403,7 +404,7 @@ def make_beatsheet_parser(metadata_only=False):
         elif name == "chart":
             field_parser = pc.rmstr_parser
         else:
-            field_parser = pc.from_type_hint(fields[name])
+            field_parser = cfg.make_parser_from_type_hint(fields[name])
 
         value = yield field_parser
 
@@ -474,7 +475,7 @@ def format_beatsheet(beatsheet):
     res.append(f"#K-AIKO-std-{version}\n")
 
     for name in BeatSheet.__annotations__.keys():
-        format_field = format_mstr if name == "info" else pc.format_value
+        format_field = format_mstr if name == "info" else cfg.format_value
         res.append(f"beatmap.{name} = {format_field(getattr(beatsheet, name))}\n")
 
     name = 'chart'

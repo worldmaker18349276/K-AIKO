@@ -6,6 +6,7 @@ import functools
 import inspect
 from pathlib import Path
 from . import parsec as pc
+from . import config as cfg
 
 
 def suitability(part, full):
@@ -429,7 +430,7 @@ class LiteralParser(ArgumentParser):
             The description of this argument.
         """
         self.type_hint = type_hint
-        self.parser = pc.from_type_hint(type_hint) << pc.eof()
+        self.parser = cfg.make_parser_from_type_hint(type_hint) << pc.eof()
         self.default = default
         self._desc = desc or f"It should be {type_hint}"
 

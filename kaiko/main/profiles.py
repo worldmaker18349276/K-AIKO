@@ -486,11 +486,11 @@ class ConfigCommand:
         editor = self.config.current.devices.terminal.editor
 
         field_type = KAIKOSettings.get_field_type(field)
-        parser = pc.from_type_hint(field_type) << pc.regex(r"\s*") << pc.eof()
+        parser = cfg.make_parser_from_type_hint(field_type) << pc.regex(r"\s*") << pc.eof()
 
         if self.config.current.has(field):
             value = self.config.current.get(field)
-            value_str = pc.format_value(value)
+            value_str = cfg.format_value(value)
         else:
             value_str = ""
 
