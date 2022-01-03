@@ -332,11 +332,11 @@ def make_field_parser(config_type):
     current_fields = []
     current_type = config_type
 
-    while hasattr(current_type, '__configurable_fields__'):
+    while isinstance(current_type, ConfigurableMeta):
         fields = {}
         for field_name, field_type in current_type.__configurable_fields__.items():
             field_key = field_name
-            if hasattr(field_type, '__configurable_fields__'):
+            if isinstance(field_type, ConfigurableMeta):
                 field_key = field_key + "."
             fields[field_key] = (field_name, field_type)
 
@@ -349,7 +349,7 @@ def make_field_parser(config_type):
 def get_field_tree(config_type):
     fields = {}
     for field_name, field_type in config_type.__configurable_fields__.items():
-        if hasattr(field_type, '__configurable_fields__'):
+        if isinstance(field_type, ConfigurableMeta):
             fields[field_name + "."] = get_field_tree(field_type)
         else:
             fields[field_name] = lambda token: tuple(token.split("."))
@@ -402,6 +402,13 @@ def make_configuration_parser(config_type, config_name):
 
         yield nl
 
+class SubConfigurable:
+    def __init__(self, cls):
+        self.cls = cls
+
+def subconfig(cls):
+    return SubConfigurable(cls)
+
 class ConfigurableMeta(type):
     def __init__(self, name, supers, attrs):
         super().__init__(name, supers, attrs)
@@ -410,13 +417,13 @@ class ConfigurableMeta(type):
             self.__configurable_excludes__ = []
         annotations = typing.get_type_hints(self)
 
-        fields = OrderedDict()
+        fields = OrderedDict(annotations)
         for name in dir(self):
-            if name not in self.__configurable_excludes__:
-                if name in annotations:
-                    fields[name] = annotations[name]
-                elif isinstance(getattr(self, name), ConfigurableMeta):
-                    fields[name] = getattr(self, name)
+            if isinstance(getattr(self, name), SubConfigurable):
+                fields[name] = getattr(self, name).cls
+        for name in self.__configurable_excludes__:
+            if name in fields:
+                del fields[name]
 
         fields_doc = ConfigurableMeta._parse_fields_doc(self.__doc__)
         field_hints = ConfigurableMeta._make_field_hints(fields, fields_doc)
@@ -427,7 +434,7 @@ class ConfigurableMeta(type):
 
     def __configurable_init__(self, instance):
         for field_name, field_type in self.__configurable_fields__.items():
-            if hasattr(field_type, '__configurable_fields__'):
+            if isinstance(field_type, ConfigurableMeta):
                 instance.__dict__[field_name] = field_type()
 
     def __call__(self, *args, **kwargs):
@@ -517,6 +524,7 @@ class Configurable(metaclass=ConfigurableMeta):
             field1: int = 123
             field2: str = 'abc'
 
+            @subconfig
             class subsettings(Configurable):
                 field3: bool = True
                 field4: float = 3.14

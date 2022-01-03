@@ -253,6 +253,7 @@ def shlexer_markup(buffer, tokens, typeahead, tags):
 
 
 class BeatShellSettings(cfg.Configurable):
+    @cfg.subconfig
     class input(cfg.Configurable):
         r"""
         Fields
@@ -297,6 +298,7 @@ class BeatShellSettings(cfg.Configurable):
             "'\\x04'"       : "input.delete() or input.exit_if_empty()",
         }
 
+    @cfg.subconfig
     class prompt(cfg.Configurable):
         r"""
         Fields
@@ -344,6 +346,7 @@ class BeatShellSettings(cfg.Configurable):
         caret: Tuple[str, str, str] = ("[slot/]", "[weight=dim][invert][slot/][/][/]", "[weight=bold][invert][slot/][/][/]")
         caret_blink_ratio: float = 0.3
 
+    @cfg.subconfig
     class text(cfg.Configurable):
         r"""
         Fields

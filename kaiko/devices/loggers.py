@@ -39,6 +39,7 @@ class LoggerSettings(cfg.Configurable):
     verb_block: str = f"[weight=dim]{'╌'*80}\n[slot/]{'╌'*80}\n[/]"
     warn_block: str = f"[color=red]{'═'*80}\n[slot/]{'═'*80}\n[/]"
 
+    @cfg.subconfig
     class shell(cfg.Configurable):
         r"""
         Fields

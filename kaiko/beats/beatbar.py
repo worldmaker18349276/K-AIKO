@@ -93,6 +93,7 @@ class Performance:
 
 # beatbar
 class BeatbarSettings(cfg.Configurable):
+    @cfg.subconfig
     class layout(cfg.Configurable):
         r"""
         Fields
@@ -123,6 +124,7 @@ class BeatbarSettings(cfg.Configurable):
         header_width: int = 13
         footer_width: int = 13
 
+    @cfg.subconfig
     class sight(cfg.Configurable):
         r"""
         Fields

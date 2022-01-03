@@ -13,9 +13,9 @@ from ..beats import beatmaps
 
 
 class KAIKOSettings(cfg.Configurable):
-    devices = engines.DevicesSettings
-    shell = beatshell.BeatShellSettings
-    gameplay = beatmaps.GameplaySettings
+    devices = cfg.subconfig(engines.DevicesSettings)
+    shell = cfg.subconfig(beatshell.BeatShellSettings)
+    gameplay = cfg.subconfig(beatmaps.GameplaySettings)
 
 
 def exists(program):

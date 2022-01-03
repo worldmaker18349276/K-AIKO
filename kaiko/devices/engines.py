@@ -308,6 +308,7 @@ class DetectorSettings(cfg.Configurable):
     input_channels: int = 1
     input_format: str = 'f4'
 
+    @cfg.subconfig
     class detect(cfg.Configurable):
         time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
         freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
@@ -748,9 +749,9 @@ class Metronome:
 
 
 class DevicesSettings(cfg.Configurable):
-    mixer = MixerSettings
-    detector = DetectorSettings
-    renderer = RendererSettings
-    controller = ControllerSettings
-    terminal = term.TerminalSettings
-    logger = log.LoggerSettings
+    mixer = cfg.subconfig(MixerSettings)
+    detector = cfg.subconfig(DetectorSettings)
+    renderer = cfg.subconfig(RendererSettings)
+    controller = cfg.subconfig(ControllerSettings)
+    terminal = cfg.subconfig(term.TerminalSettings)
+    logger = cfg.subconfig(log.LoggerSettings)

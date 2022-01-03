@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass, replace
+from re import sub
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
 from fractions import Fraction
@@ -835,6 +836,7 @@ class BeatmapSettings(cfg.Configurable):
         The resource name and file path.
     """
 
+    @cfg.subconfig
     class difficulty(cfg.Configurable):
         r"""
         Fields
@@ -864,6 +866,7 @@ class BeatmapSettings(cfg.Configurable):
         bad_tolerance     = property(lambda self: self.performance_tolerance*5)
         failed_tolerance  = property(lambda self: self.performance_tolerance*7)
 
+    @cfg.subconfig
     class scores(cfg.Configurable):
         r"""
         Fields
@@ -900,6 +903,7 @@ class BeatmapSettings(cfg.Configurable):
         roll_rock_score: int = 2
         spin_score: int = 16
 
+    @cfg.subconfig
     class notes(cfg.Configurable):
         r"""
         Fields
@@ -974,8 +978,9 @@ class BeatmapSettings(cfg.Configurable):
 class GameplaySettings(cfg.Configurable):
     debug_monitor: bool = False
 
-    beatbar = BeatbarSettings
+    beatbar = cfg.subconfig(BeatbarSettings)
 
+    @cfg.subconfig
     class controls(cfg.Configurable):
         r"""
         Fields
@@ -1026,7 +1031,7 @@ class GameplaySettings(cfg.Configurable):
         knock_delay_adjust_step: float = 0.001
         knock_energy_adjust_step: float = 0.0001
 
-    widgets = BeatbarWidgetSettings
+    widgets = cfg.subconfig(BeatbarWidgetSettings)
 
 class BeatmapScore:
     def __init__(self):
