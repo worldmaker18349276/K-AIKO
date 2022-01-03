@@ -1275,7 +1275,7 @@ def tokens(tokens):
     -------
     Parsec
     """
-    desc = " or ".join(repr(token) for token in tokens)
+    desc = " or ".join(repr(token) for token in tokens) or "nothing"
     tokens = sorted(tokens, reverse=True)
 
     def tokens_parser(text, index):
