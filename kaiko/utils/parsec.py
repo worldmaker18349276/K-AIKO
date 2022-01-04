@@ -687,7 +687,7 @@ class Parsec:
             is_first = True
 
             for parser in parsers:
-                if is_first:
+                if not is_first:
                     _, index = self.func(text, index)
                 is_first = False
 
