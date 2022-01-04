@@ -510,6 +510,7 @@ class Parsec:
             try:
                 value, index = self.func(text, index)
             except ParseError as error:
+                if error.index == index:
                 error.expected = expected
                 raise error
             else:
