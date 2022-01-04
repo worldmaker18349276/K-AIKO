@@ -90,64 +90,62 @@ rmstr_parser = _make_literal_parser(
 # composite
 
 def make_list_parser(elem):
-    opening = pc.regex(r"\[\s*").desc("opening bracket")
-    comma = pc.regex(r"\s*,\s*").desc("comma")
-    closing = pc.regex(r"\s*\]").desc("closing bracket")
+    opening = pc.regex(r"\[\s*").desc("'['")
+    comma = pc.regex(r"\s*,\s*").desc("','")
+    closing = pc.regex(r"\s*\]").desc("']'")
     return (
         elem.sep_end_by(comma)
             .between(opening, closing)
             .map(list)
-            .desc("list")
     )
 
 def make_set_parser(elem):
-    opening = pc.regex(r"\{\s*").desc("opening brace")
-    comma = pc.regex(r"\s*,\s*").desc("comma")
-    closing = pc.regex(r"\s*\}").desc("closing brace")
-    empty = pc.tokens(["set()"]).result([]).desc("empty set")
+    opening = pc.regex(r"\{\s*").desc("'{'")
+    comma = pc.regex(r"\s*,\s*").desc("','")
+    closing = pc.regex(r"\s*\}").desc("'}'")
+    empty = pc.tokens(["set()"]).result([]).desc("'set()'")
     nonempty = (
         elem.sep_end_by1(comma)
             .between(opening, closing)
     )
-    return (empty | nonempty).map(set).desc("set")
+    return (empty | nonempty).map(set)
 
 def make_dict_parser(key, value):
-    opening = pc.regex(r"\{\s*").desc("opening brace")
-    colon = pc.regex(r"\s*:\s*").desc("colon")
-    comma = pc.regex(r"\s*,\s*").desc("comma")
-    closing = pc.regex(r"\s*\}").desc("closing brace")
+    opening = pc.regex(r"\{\s*").desc("'{'")
+    colon = pc.regex(r"\s*:\s*").desc("':'")
+    comma = pc.regex(r"\s*,\s*").desc("','")
+    closing = pc.regex(r"\s*\}").desc("'}'")
     item = colon.join((key, value))
     return (
         item.sep_end_by(comma)
             .between(opening, closing)
             .map(dict)
-            .desc("dict")
     )
 
 def make_tuple_parser(elems):
-    opening = pc.regex(r"\(\s*").desc("opening parenthesis")
-    comma = pc.regex(r"\s*,\s*").desc("comma")
-    closing = pc.regex(r"\s*\)").desc("closing parenthesis")
+    opening = pc.regex(r"\(\s*").desc("'('")
+    comma = pc.regex(r"\s*,\s*").desc("','")
+    closing = pc.regex(r"\s*\)").desc("')'")
     if len(elems) == 0:
-        return (opening + closing).result(()).desc("tuple")
+        return (opening + closing).result(())
     elif len(elems) == 1:
-        return (elems[0] << comma).between(opening, closing).map(lambda e: (e,)).desc("tuple")
+        return (elems[0] << comma).between(opening, closing).map(lambda e: (e,))
     else:
         entries = comma.join(elems) << comma.optional()
-        return entries.between(opening, closing).map(tuple).desc("tuple")
+        return entries.between(opening, closing).map(tuple)
 
 def make_dataclass_parser(cls, fields):
-    name = pc.tokens([cls.__name__]).desc("dataclass name")
-    opening = pc.regex(r"\(\s*").desc("opening parenthesis")
-    equal = pc.regex(r"\s*=\s*").desc("equal")
-    comma = pc.regex(r"\s*,\s*").desc("comma")
-    closing = pc.regex(r"\s*\)").desc("closing parenthesis")
+    name = pc.tokens([cls.__name__])
+    opening = pc.regex(r"\(\s*").desc("'('")
+    equal = pc.regex(r"\s*=\s*").desc("'='")
+    comma = pc.regex(r"\s*,\s*").desc("','")
+    closing = pc.regex(r"\s*\)").desc(")")
     if fields:
         items = [equal.join((pc.tokens([key]), field)) for key, field in fields.items()]
         entries = comma.join(items) << comma.optional()
     else:
         entries = pc.nothing(())
-    return entries.between(name >> opening, closing).map(lambda a: cls(**dict(a))).desc(cls.__name__)
+    return entries.between(name >> opening, closing).map(lambda a: cls(**dict(a)))
 
 def make_union_parser(options):
     if len(options) == 0:
@@ -162,7 +160,6 @@ def make_enum_parser(cls):
         pc.tokens([f"{cls.__name__}."])
             .then(pc.tokens([option.name for option in cls]))
             .map(lambda option: getattr(cls, option))
-            .desc(cls.__name__)
     )
 
 
