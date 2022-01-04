@@ -11,6 +11,7 @@ from ..utils import datanodes as dn
 from ..utils import markups as mu
 from ..devices import audios as aud
 from ..devices import engines
+from . import beatwidgets
 from .beatbar import PerformanceGrade, Performance, Beatbar, Sight, BeatbarSettings, BeatbarWidgetSettings
 
 
@@ -1133,7 +1134,7 @@ class Beatmap:
         controller_task, controller = engines.Controller.create(devices_settings.controller, devices_settings.terminal, ref_time)
 
         # load widgets
-        widget_params = dict(
+        widget_builder = beatwidgets.BeatbarWidgetBuilder(
             state=score,
             rich=rich,
             mixer=mixer,
@@ -1142,16 +1143,9 @@ class Beatmap:
             controller=controller,
             devices_settings=devices_settings
         )
-
-        icon_widget = gameplay_settings.widgets.icon_widget
-        icon = yield from icon_widget.create(gameplay_settings.widgets, **widget_params).load().join()
-
-        header_widget = gameplay_settings.widgets.header_widget
-        header = yield from header_widget.create(gameplay_settings.widgets, **widget_params).load().join()
-
-        footer_widget = gameplay_settings.widgets.footer_widget
-        footer = yield from footer_widget.create(gameplay_settings.widgets, **widget_params).load().join()
-
+        icon = yield from widget_builder.create(gameplay_settings.widgets.icon_widget).load().join()
+        header = yield from widget_builder.create(gameplay_settings.widgets.header_widget).load().join()
+        footer = yield from widget_builder.create(gameplay_settings.widgets.footer_widget).load().join()
         sight = yield from Sight(rich, gameplay_settings.beatbar.sight).load().join()
 
         # make beatbar

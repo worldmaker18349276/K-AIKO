@@ -1,7 +1,7 @@
 import math
 from enum import Enum
 import dataclasses
-from typing import Any, List, Tuple, Dict, Optional
+from typing import Any, List, Tuple, Dict, Optional, Union
 import queue
 import threading
 from ..utils import config as cfg
@@ -484,60 +484,67 @@ class TimedVariable:
 
 
 # widgets
-class BeatbarWidget(Enum):
-    spectrum = beatwidgets.SpectrumWidget
-    volume_indicator = beatwidgets.VolumeIndicatorWidget
-    accuracy_meter = beatwidgets.AccuracyMeterWidget
-    monitor = beatwidgets.MonitorWidget
-    score = beatwidgets.ScoreWidget
-    progress = beatwidgets.ProgressWidget
-
-    def __repr__(self):
-        return f"BeatbarWidget.{self.name}"
-
-    def create(self, settings, *, state, rich, mixer, detector, renderer, controller, devices_settings):
-        widget_settings = settings.get((self.name,))
-        if self == BeatbarWidget.spectrum:
-            return self.value("", rich, mixer, devices_settings.mixer, widget_settings)
-        elif self == BeatbarWidget.volume_indicator:
-            return self.value(0.0, rich, mixer, devices_settings.mixer, widget_settings)
-        elif self == BeatbarWidget.accuracy_meter:
-            return self.value(0, float("inf"), rich, state, widget_settings)
-        elif self == BeatbarWidget.monitor:
-            if widget_settings.target == beatwidgets.MonitorTarget.mixer:
-                return self.value(mixer, widget_settings)
-            elif widget_settings.target == beatwidgets.MonitorTarget.detector:
-                return self.value(detector, widget_settings)
-            elif widget_settings.target == beatwidgets.MonitorTarget.renderer:
-                return self.value(renderer, widget_settings)
-            else:
-                assert False
-        elif self == BeatbarWidget.score:
-            return self.value(state, rich, widget_settings)
-        elif self == BeatbarWidget.progress:
-            return self.value(state, rich, widget_settings)
-        else:
-            assert False
-
-class BeatbarWidgetSettings(cfg.Configurable):
-    r"""
-    Fields
-    ------
-    icon_widget : BeatbarWidget
-        The widget on the icon.
-    header_widget : BeatbarWidget
-        The widget on the header.
-    footer_widget : BeatbarWidget
-        The widget on the footer.
-    """
-    icon_widget: BeatbarWidget = BeatbarWidget.spectrum
-    header_widget: BeatbarWidget = BeatbarWidget.score
-    footer_widget: BeatbarWidget = BeatbarWidget.progress
-
+class BeatbarWidgetBuilder:
     spectrum = beatwidgets.SpectrumWidgetSettings
     volume_indicator = beatwidgets.VolumeIndicatorWidgetSettings
     score = beatwidgets.ScoreWidgetSettings
     progress = beatwidgets.ProgressWidgetSettings
     accuracy_meter = beatwidgets.AccuracyMeterWidgetSettings
     monitor = beatwidgets.MonitorWidgetSettings
+
+    def __init__(self, *, state, rich, mixer, detector, renderer, controller, devices_settings):
+        self.state = state
+        self.rich = rich
+        self.mixer = mixer
+        self.detector = detector
+        self.renderer = renderer
+        self.controller = controller
+        self.devices_settings = devices_settings
+
+    def create(self, widget_settings):
+        if isinstance(widget_settings, BeatbarWidgetBuilder.spectrum):
+            return beatwidgets.SpectrumWidget("", self.rich, self.mixer, self.devices_settings.mixer, widget_settings)
+        elif isinstance(widget_settings, BeatbarWidgetBuilder.volume_indicator):
+            return beatwidgets.VolumeIndicatorWidget(0.0, self.rich, self.mixer, self.devices_settings.mixer, widget_settings)
+        elif isinstance(widget_settings, BeatbarWidgetBuilder.accuracy_meter):
+            return beatwidgets.AccuracyMeterWidget(0, float("inf"), self.rich, self.state, widget_settings)
+        elif isinstance(widget_settings, BeatbarWidgetBuilder.monitor):
+            if widget_settings.target == beatwidgets.MonitorTarget.mixer:
+                return beatwidgets.MonitorWidget(self.mixer, widget_settings)
+            elif widget_settings.target == beatwidgets.MonitorTarget.detector:
+                return beatwidgets.MonitorWidget(self.detector, widget_settings)
+            elif widget_settings.target == beatwidgets.MonitorTarget.renderer:
+                return beatwidgets.MonitorWidget(self.renderer, widget_settings)
+            else:
+                assert False
+        elif isinstance(widget_settings, BeatbarWidgetBuilder.score):
+            return beatwidgets.ScoreWidget(self.state, self.rich, widget_settings)
+        elif isinstance(widget_settings, BeatbarWidgetBuilder.progress):
+            return beatwidgets.ProgressWidget(self.state, self.rich, widget_settings)
+        else:
+            assert False
+
+BeatbarWidgetSettings = Union[
+    beatwidgets.SpectrumWidgetSettings,
+    beatwidgets.VolumeIndicatorWidgetSettings,
+    beatwidgets.ScoreWidgetSettings,
+    beatwidgets.ProgressWidgetSettings,
+    beatwidgets.AccuracyMeterWidgetSettings,
+    beatwidgets.MonitorWidgetSettings,
+]
+
+class BeatbarWidgetSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    icon_widget : BeatbarWidgetSettings
+        The widget on the icon.
+    header_widget : BeatbarWidgetSettings
+        The widget on the header.
+    footer_widget : BeatbarWidgetSettings
+        The widget on the footer.
+    """
+    icon_widget: BeatbarWidgetSettings = BeatbarWidgetBuilder.spectrum()
+    header_widget: BeatbarWidgetSettings = BeatbarWidgetBuilder.score()
+    footer_widget: BeatbarWidgetSettings = BeatbarWidgetBuilder.progress()
 

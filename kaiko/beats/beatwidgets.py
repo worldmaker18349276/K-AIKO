@@ -54,7 +54,8 @@ def pc_format(value, width):
 
 
 # widgets
-class SpectrumWidgetSettings(cfg.Configurable):
+@dataclasses.dataclass
+class SpectrumWidgetSettings:
     r"""
     Fields
     ------
@@ -149,7 +150,8 @@ class SpectrumWidget:
         return widget_func
 
 
-class VolumeIndicatorWidgetSettings(cfg.Configurable):
+@dataclasses.dataclass
+class VolumeIndicatorWidgetSettings:
     r"""
     Fields
     ------
@@ -202,7 +204,8 @@ class VolumeIndicatorWidget:
         return widget_func
 
 
-class AccuracyMeterWidgetSettings(cfg.Configurable):
+@dataclasses.dataclass
+class AccuracyMeterWidgetSettings:
     r"""
     Fields
     ------
@@ -268,7 +271,8 @@ class MonitorTarget(Enum):
     detector = "detector"
     renderer = "renderer"
 
-class MonitorWidgetSettings(cfg.Configurable):
+@dataclasses.dataclass
+class MonitorWidgetSettings:
     target: MonitorTarget = MonitorTarget.renderer
 
 @dataclasses.dataclass
@@ -295,7 +299,8 @@ class MonitorWidget:
         return widget_func
 
 
-class ScoreWidgetSettings(cfg.Configurable):
+@dataclasses.dataclass
+class ScoreWidgetSettings:
     r"""
     Fields
     ------
@@ -339,7 +344,8 @@ class ScoreWidget:
         return widget_func
 
 
-class ProgressWidgetSettings(cfg.Configurable):
+@dataclasses.dataclass
+class ProgressWidgetSettings:
     r"""
     Fields
     ------
@@ -387,14 +393,15 @@ class ProgressWidget:
         return widget_func
 
 
-class PatternsWidgetSettings(cfg.Configurable):
+@dataclasses.dataclass
+class PatternsWidgetSettings:
     r"""
     Fields
     ------
     patterns : list of str
         The patterns to loop.
     """
-    patterns: List[str] = [
+    patterns: List[str] = dataclasses.field(default_factory=lambda: [
         "[color=cyan]⠶⠦⣚⠀⠶[/]",
         "[color=cyan]⢎⣀⡛⠀⠶[/]",
         "[color=cyan]⢖⣄⠻⠀⠶[/]",
@@ -403,7 +410,7 @@ class PatternsWidgetSettings(cfg.Configurable):
         "[color=cyan]⠶⠀⣬⠉⡱[/]",
         "[color=cyan]⠶⠀⣦⠙⠵[/]",
         "[color=cyan]⠶⠠⣊⠄⠴[/]",
-    ]
+    ])
 
 @dataclasses.dataclass
 class PatternsWidget:
@@ -425,7 +432,8 @@ class PatternsWidget:
         yield
         return patterns_func
 
-class MarkerWidgetSettings(cfg.Configurable):
+@dataclasses.dataclass
+class MarkerWidgetSettings:
     r"""
     Fields
     ------
