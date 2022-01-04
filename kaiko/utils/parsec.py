@@ -67,7 +67,11 @@ class ParseError(Exception):
         if self.index >= len(self.text):
             return f"<out of bounds index {self.index}>"
         line, col = ParseError.locate(self.text, self.index)
-        return f"expecting {self.expected} at {line}:{col}"
+        return (
+            f"expecting {self.expected} at {line}:{col}\n"
+            + "got (◊ indicate failure position):\n"
+            + self.text[:self.index] + "◊" + self.text[self.index:]
+        )
 
 
 class ParseFailure(Exception):
@@ -511,7 +515,7 @@ class Parsec:
                 value, index = self.func(text, index)
             except ParseError as error:
                 if error.index == index:
-                error.expected = expected
+                    error.expected = expected
                 raise error
             else:
                 return value, index
