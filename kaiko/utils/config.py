@@ -3,6 +3,7 @@ A configuration system using biparser.
 The format of configuration file is a sub-language of python.
 """
 
+import itertools
 import keyword
 import re
 import ast
@@ -322,6 +323,33 @@ def has_type(value, type_hint):
         raise ValueError(f"Unknown type hint: {type_hint!r}")
 
 
+def get_used_custom_types(value):
+    if value is None:
+        return set()
+
+    elif type(value) in (bool, int, float, complex, str, bytes):
+        return set()
+
+    elif type(value) in (list, tuple, set):
+        return {typ for subvalue in value for typ in get_used_custom_types(subvalue)}
+
+    elif type(value) is dict:
+        return {typ for entry in value.items() for subvalue in entry for typ in get_used_custom_types(subvalue)}
+
+    elif isinstance(value, enum.Enum):
+        return {type(value)}
+
+    elif dataclasses.is_dataclass(value):
+        return {type(value)} | {
+            typ
+            for field in dataclasses.fields(value)
+            for typ in get_used_custom_types(getattr(value, field.name))
+        }
+
+    else:
+        raise TypeError(f"Cannot configure type {type(value)}")
+
+
 def format_value(value):
     if value is None:
         return "None"
@@ -419,6 +447,8 @@ def make_configuration_parser(config_type, config_name):
 
     It parses a configuration like a python script::
 
+        from some.where import SomeSettings
+
         settings = SomeSettings()
         settings.fieldname1 = 1
         settings.fieldname2 = 'asd'
@@ -427,22 +457,42 @@ def make_configuration_parser(config_type, config_name):
     """
 
     vindent = pc.regex(r"(#[^\n]*|[ ]*)(\n|$)").many()
-    equal = pc.regex(r"[ ]*=[ ]*")
-    nl = pc.regex(r"[ ]*(\n|$)")
+    equal = pc.regex(r"[ ]*=[ ]*").desc("'='")
+    nl = pc.regex(r"[ ]*(\n|$)").desc(r"'\n'")
     field = make_field_parser(config_type)
     end = pc.eof().optional()
+    identifier = (
+        pc.regex(r"[a-zA-Z_][a-zA-Z0-9_]*")
+            .reject(lambda name: None if not keyword.iskeyword(name) else "not keyword")
+            .desc("identifier")
+    )
 
     field_hints = config_type.__field_hints__
 
     # parse header
-    yield vindent
-    yield parse_identifiers(config_name)
-    yield equal
-    yield parse_identifiers(config_type.__name__)
-    yield pc.tokens(["()"])
-    yield nl
+    imports = (
+        pc.regex(r"from[ ]+").desc("'from '")
+        >> identifier.sep_by(pc.tokens(["."])).map(".".join)
+        << pc.regex(r"[ ]+import[ ]+").desc("' import '")
+    ) + identifier.sep_by(pc.regex(r"[ ]*,[ ]*").desc("','"))
+    init = (
+        parse_identifiers(config_name)
+        >> equal
+        >> parse_identifiers(config_type.__name__)
+        >> pc.tokens(["()"])
+    )
+    header = (imports << nl << vindent).many_till(init << nl << vindent)
 
+    yield vindent
+    imported = yield header
+    imported_modules = {name: module for module, names in imported for name in names}
+
+    # start building config
     config = config_type()
+    if (config_type.__name__, config_type.__module__) not in imported_modules.items():
+        raise pc.ParseFailure(
+            f"import statement for module {config_type.__module__}.{config_type.__name__} at the beginning of the file"
+        )
     
     while True:
         if (yield end):
@@ -458,6 +508,11 @@ def make_configuration_parser(config_type, config_name):
         # parse field value
         yield equal
         field_value = yield make_parser_from_type_hint(field_hints[field_key][0])
+        for typ in get_used_custom_types(field_value):
+            if (typ.__name__, typ.__module__) not in imported_modules.items():
+                raise pc.ParseFailure(
+                    f"import statement for module {typ.__module__}.{typ.__name__} at the beginning of the file"
+                )
         config.set(field_key, field_value)
 
         yield nl
@@ -827,6 +882,7 @@ class Configurable(metaclass=ConfigurableMeta):
         cls = type(self)
         res = []
         res.append(f"{name} = {cls.__name__}()\n")
+        custom_types = set()
 
         for key, (type_hint, _) in cls.__field_hints__.items():
             if not self.has(key):
@@ -834,10 +890,28 @@ class Configurable(metaclass=ConfigurableMeta):
             value = self.get(key)
             if not has_type(value, type_hint):
                 raise TypeError(f"Invalid type {value!r}, expecting {type_hint}")
+            custom_types |= get_used_custom_types(value)
             field = ".".join(key)
             res.append(f"{name}.{field} = {format_value(value)}\n")
 
-        return "".join(res)
+        imports = []
+
+        cls = type(self)
+        for submodule in cls.__module__.split("."):
+            validate_identifier(submodule)
+        validate_identifier(cls.__name__)
+        imports.append(f"from {cls.__module__} import {cls.__name__}\n")
+        
+        custom_types_list = sorted(list(custom_types), key=lambda typ: typ.__module__)
+        for module, types in itertools.groupby(custom_types_list, key=lambda typ: typ.__module__):
+            names = [typ.__name__ for typ in types]
+            for submodule in module.split("."):
+                validate_identifier(submodule)
+            for name in names:
+                validate_identifier(name)
+            imports.append(f"from {module} import " + ", ".join(names) + "\n")
+
+        return "".join(imports) + "\n" + "".join(res)
 
     @classmethod
     def read(cls, path, name="settings"):
