@@ -4,6 +4,7 @@ import tempfile
 import subprocess
 from pathlib import Path
 from ..utils import config as cfg
+from ..utils import serializers as sz
 from ..utils import parsec as pc
 from ..utils import commands as cmd
 from ..utils import datanodes as dn
@@ -542,11 +543,11 @@ class ConfigCommand:
         editor = self.config.current.devices.terminal.editor
 
         field_type = self.config.config_type.get_field_type(field)
-        parser = cfg.make_parser_from_type_hint(field_type) << pc.regex(r"\s*") << pc.eof()
+        parser = sz.make_parser_from_type_hint(field_type) << pc.regex(r"\s*") << pc.eof()
 
         if self.config.has(field):
             value = self.config.get(field)
-            value_str = cfg.format_value(value)
+            value_str = sz.format_value(value)
         else:
             value_str = ""
 
