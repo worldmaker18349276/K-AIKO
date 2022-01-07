@@ -17,6 +17,12 @@ from . import parsec as pc
 
 # literals
 
+def parse_identifiers(*tokens):
+    for token in tokens:
+        if not isinstance(token, str) or not token.isidentifier():
+            raise ValueError(f"Invalid identifier {token!r}")
+    return pc.tokens(tokens)
+
 def _make_literal_parser(expr, desc):
     return pc.regex(expr).map(ast.literal_eval).desc(desc)
 
@@ -135,13 +141,13 @@ def make_tuple_parser(elems):
         return entries.between(opening, closing).map(tuple)
 
 def make_dataclass_parser(cls, fields):
-    name = pc.tokens([cls.__name__])
+    name = parse_identifiers(cls.__name__)
     opening = pc.regex(r"\(\s*").desc("'('")
     equal = pc.regex(r"\s*=\s*").desc("'='")
     comma = pc.regex(r"\s*,\s*").desc("','")
     closing = pc.regex(r"\s*\)").desc(")")
     if fields:
-        items = [equal.join((pc.tokens([key]), field)) for key, field in fields.items()]
+        items = [equal.join((parse_identifiers(key), field)) for key, field in fields.items()]
         entries = comma.join(items) << comma.optional()
     else:
         entries = pc.nothing(())
@@ -157,8 +163,9 @@ def make_union_parser(options):
 
 def make_enum_parser(cls):
     return (
-        pc.tokens([f"{cls.__name__}."])
-            .then(pc.tokens([option.name for option in cls]))
+        parse_identifiers(cls.__name__)
+            .then(pc.tokens(["."]))
+            .then(parse_identifiers(*[option.name for option in cls]))
             .map(lambda option: getattr(cls, option))
     )
 
@@ -330,15 +337,10 @@ def make_field_parser(config_type):
     current_type = config_type
 
     while isinstance(current_type, ConfigurableMeta):
-        fields = {}
-        for field_name, field_type in current_type.__configurable_fields__.items():
-            field_key = field_name
-            if isinstance(field_type, ConfigurableMeta):
-                field_key = field_key + "."
-            fields[field_key] = (field_name, field_type)
-
-        option = yield pc.tokens(list(fields.keys()))
-        current_field, current_type = fields[option]
+        current_field = yield parse_identifiers(*current_type.__configurable_fields__.keys())
+        current_type = current_type.__configurable_fields__[current_field]
+        if isinstance(current_type, ConfigurableMeta):
+            yield pc.tokens(["."])
         current_fields.append(current_field)
 
     return tuple(current_fields)
@@ -375,9 +377,10 @@ def make_configuration_parser(config_type, config_name):
 
     # parse header
     yield vindent
-    yield pc.tokens([config_name])
+    yield parse_identifiers(config_name)
     yield equal
-    yield pc.tokens([config_type.__name__ + "()"])
+    yield parse_identifiers(config_type.__name__)
+    yield pc.tokens(["()"])
     yield nl
 
     config = config_type()
@@ -389,7 +392,8 @@ def make_configuration_parser(config_type, config_name):
         yield vindent
 
         # parse field name
-        yield pc.tokens([config_name + "."])
+        yield parse_identifiers(config_name)
+        yield pc.tokens(["."])
         field_key = yield field
 
         # parse field value
