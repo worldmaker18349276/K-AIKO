@@ -54,7 +54,7 @@ class ProfileManager:
     """
 
     default_meta = ".default-config"
-    extension = ".config"
+    extension = ".py"
     settings_name = "settings"
 
     def __init__(self, path, logger):
