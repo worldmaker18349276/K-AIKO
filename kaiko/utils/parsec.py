@@ -556,26 +556,26 @@ class Parsec:
                 raise error
         return Parsec(attempt_parser)
 
-    def validate(self, pred, expected="validate by some condition"):
-        """Validate the result value, or raise failure at the original position.
+    def reject(self, func):
+        """Reject the result value at the original position.
 
         Parameters
         ----------
-        pred : function
-            The function to determine whether to validate result value.
-        expected : str, optional
-            The description of expected string.
+        func : function
+            The function to determine whether to reject result value by
+            returning string as expected message, or None for valid value.
 
         Returns
         -------
         Parsec
         """
-        def validate_parser(text, index):
+        def reject_parser(text, index):
             res, next_index = self.func(text, index)
-            if not pred(res):
+            expected = func(res)
+            if expected is not None:
                 raise ParseError(text, index, expected)
             return res, next_index
-        return Parsec(validate_parser)
+        return Parsec(reject_parser)
 
     def optional(self):
         """Make a parser as optional.

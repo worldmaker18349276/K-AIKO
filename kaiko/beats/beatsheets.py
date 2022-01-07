@@ -338,8 +338,8 @@ def enclose_by(elem, sep, opening, closing):
     return results
 
 def make_patterns_parser(indent=0):
-    end = make_msp_parser(indent=indent).validate(lambda sp: sp == "", "end of block")
-    msp = make_msp_parser(indent=indent).validate(lambda sp: sp in (" ", "\n"), "whitespace or newline")
+    end = make_msp_parser(indent=indent).reject(lambda sp: None if sp == "" else "end of block")
+    msp = make_msp_parser(indent=indent).reject(lambda sp: None if sp in (" ", "\n") else "whitespace or newline")
     div = pc.regex(r"/(\d+)").map(lambda m: int(m[1:])) | pc.nothing(2)
 
     instant = enclose_by(pc.proxy(lambda: pattern), msp, pc.tokens(["{"]), pc.tokens(["}"])).map(Instant)
@@ -355,7 +355,7 @@ def chart_parser():
     tracks = []
 
     while True:
-        sp = yield make_msp_parser(indent=0).validate(lambda sp: sp in ("\n", ""), "newline or end of block")
+        sp = yield make_msp_parser(indent=0).reject(lambda sp: None if sp in ("\n", "") else "newline or end of block")
         if sp == "":
             return tracks
 
@@ -369,7 +369,7 @@ def chart_parser():
             raise pc.ParseFailure("valid arguments") from e
 
         yield pc.regex(r":(?=\n)")
-        yield make_msp_parser(indent=4).validate(lambda sp: sp == "\n", "newline")
+        yield make_msp_parser(indent=4).reject(lambda sp: None if sp == "\n" else "newline")
 
         patterns = yield make_patterns_parser(indent=4)
         track.patterns = patterns
@@ -390,7 +390,7 @@ def make_beatsheet_parser(metadata_only=False):
     valid_fields.append("chart")
 
     while True:
-        sp = yield make_msp_parser(indent=0).validate(lambda sp: sp in ("\n", ""), "newline or end of block")
+        sp = yield make_msp_parser(indent=0).reject(lambda sp: None if sp in ("\n", "") else "newline or end of block")
         if sp == "":
             return beatsheet
 
