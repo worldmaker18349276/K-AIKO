@@ -3,6 +3,7 @@ A configuration system using biparser.
 The format of configuration file is a sub-language of python.
 """
 
+import keyword
 import re
 import ast
 import enum
@@ -17,10 +18,13 @@ from . import parsec as pc
 
 # literals
 
+def validate_identifier(name):
+    if not isinstance(name, str) or not str.isidentifier(name) or keyword.iskeyword(name):
+        raise ValueError(f"Invalid identifier {name!r}")
+
 def parse_identifiers(*tokens):
     for token in tokens:
-        if not isinstance(token, str) or not token.isidentifier():
-            raise ValueError(f"Invalid identifier {token!r}")
+        validate_identifier(token)
     return pc.tokens(tokens)
 
 def _make_literal_parser(expr, desc):
@@ -360,12 +364,19 @@ def format_value(value):
         )
 
     elif isinstance(value, enum.Enum):
-        return f"{type(value).__name__}.{value.name}"
+        cls = type(value)
+        validate_identifier(cls.__name__)
+        validate_identifier(value.name)
+        return f"{cls.__name__}.{value.name}"
 
     elif dataclasses.is_dataclass(value):
-        return f"{type(value).__name__}(%s)" % ", ".join(
-            field.name + "=" + format_value(getattr(value, field.name))
-            for field in dataclasses.fields(value)
+        cls = type(value)
+        fields = dataclasses.fields(cls)
+        validate_identifier(cls.__name__)
+        for field in fields:
+            validate_identifier(field.name)
+        return f"{cls.__name__}(%s)" % ", ".join(
+            field.name + "=" + format_value(getattr(value, field.name)) for field in fields
         )
 
     else:
