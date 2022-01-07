@@ -270,6 +270,54 @@ def make_parser_from_type_hint(type_hint):
     else:
         raise ValueError(f"No parser for type hint: {type_hint!r}")
 
+
+def has_type(value, type_hint):
+    if type_hint is None:
+        type_hint = type(None)
+
+    if type_hint in (type(None), bool, int, float, complex, str, bytes):
+        return type(value) is type_hint
+
+    elif isinstance(type_hint, type) and issubclass(type_hint, enum.Enum):
+        return type(value) is type_hint
+
+    elif isinstance(type_hint, type) and dataclasses.is_dataclass(type_hint):
+        return type(value) is type_hint and all(has_type(getattr(value, field.name), field.type)
+                                                for field in dataclasses.fields(type_hint))
+
+    elif get_origin(type_hint) is list:
+        elem_hint, = get_args(type_hint)
+        return type(value) is list and all(has_type(subvalue, elem_hint) for subvalue in value)
+
+    elif get_origin(type_hint) is set:
+        elem_hint, = get_args(type_hint)
+        return type(value) is set and all(has_type(subvalue, elem_hint) for subvalue in value)
+
+    elif get_origin(type_hint) is tuple:
+        elems = get_args(type_hint)
+        if len(elems) == 1 and elems[0] == ():
+            elems = []
+        return (
+            type(value) is tuple
+            and len(value) == len(elems)
+            and all(has_type(subvalue, elem_hint) for subvalue, elem_hint in zip(value, elems))
+        )
+
+    elif get_origin(type_hint) is dict:
+        key_hint, value_hint = get_args(type_hint)
+        return (
+            type(value) is dict
+            and all(has_type(key, key_hint) and has_type(subvalue, value_hint) for key, subvalue in value.items())
+        )
+
+    elif get_origin(type_hint) is Union:
+        options = get_args(type_hint)
+        return any(has_type(value, option) for option in options)
+
+    else:
+        raise ValueError(f"Unknown type hint: {type_hint!r}")
+
+
 def format_value(value):
     if value is None:
         return "None"
@@ -769,10 +817,12 @@ class Configurable(metaclass=ConfigurableMeta):
         res = []
         res.append(f"{name} = {cls.__name__}()\n")
 
-        for key in cls.__field_hints__.keys():
+        for key, (type_hint, _) in cls.__field_hints__.items():
             if not self.has(key):
                 continue
             value = self.get(key)
+            if not has_type(value, type_hint):
+                raise TypeError(f"Invalid type {value!r}, expecting {type_hint}")
             field = ".".join(key)
             res.append(f"{name}.{field} = {format_value(value)}\n")
 
