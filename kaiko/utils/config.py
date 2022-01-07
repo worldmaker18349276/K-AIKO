@@ -325,10 +325,10 @@ def has_type(value, type_hint):
 
 def get_used_custom_types(value):
     if value is None:
-        return set()
+        return {*()}
 
     elif type(value) in (bool, int, float, complex, str, bytes):
-        return set()
+        return {*()}
 
     elif type(value) in (list, tuple, set):
         return {typ for subvalue in value for typ in get_used_custom_types(subvalue)}
@@ -513,7 +513,7 @@ def make_configuration_parser(config_type, config_name):
                 raise pc.ParseFailure(
                     f"import statement for module {typ.__module__}.{typ.__name__} at the beginning of the file"
                 )
-        config.set(field_key, field_value)
+        set(config, field_key, field_value)
 
         yield nl
 
@@ -664,309 +664,324 @@ class Configurable(metaclass=ConfigurableMeta):
     So in the above example, the field access at the beginning is the
     fallback value of the static field in the class.
     """
-    def set(self, fields, value):
-        """Set a field of the configuration to the given value.
 
-        Parameters
-        ----------
-        fields : list of str
-            The series of field names.
-        value : any
-            The value to set.
+def set(config, fields, value):
+    """Set a field of the configuration to the given value.
 
-        Raises
-        ------
-        ValueError
-            If there is no such field.
-        """
-        if len(fields) == 0:
-            raise ValueError("empty field")
+    Parameters
+    ----------
+    config : Configurable
+        The configuration to manipulate.
+    fields : list of str
+        The series of field names.
+    value : any
+        The value to set.
 
-        parent, curr = None, self
-        field = fields[0]
+    Raises
+    ------
+    ValueError
+        If there is no such field.
+    """
+    if len(fields) == 0:
+        raise ValueError("empty field")
 
-        for i, field in enumerate(fields):
-            if not isinstance(curr, Configurable):
-                raise ValueError("not configurable field: " + repr(fields[:i]))
+    parent, curr = None, config
+    field = fields[0]
 
-            if field not in curr.__configurable_fields__:
-                raise ValueError("no such field: " + repr(fields[:i+1]))
+    for i, field in enumerate(fields):
+        if not isinstance(curr, Configurable):
+            raise ValueError("not configurable field: " + repr(fields[:i]))
 
-            parent, curr = curr, curr.__dict__.get(field, None)
+        if field not in curr.__configurable_fields__:
+            raise ValueError("no such field: " + repr(fields[:i+1]))
 
-        else:
-            setattr(parent, field, value)
+        parent, curr = curr, curr.__dict__.get(field, None)
 
-    def unset(self, fields):
-        """Unset a field of the configuration.
+    else:
+        setattr(parent, field, value)
 
-        Parameters
-        ----------
-        fields : list of str
-            The series of field names.
+def unset(config, fields):
+    """Unset a field of the configuration.
 
-        Raises
-        ------
-        ValueError
-            If there is no such field.
-        """
-        if len(fields) == 0:
-            raise ValueError("empty field")
+    Parameters
+    ----------
+    config : Configurable
+        The configuration to manipulate.
+    fields : list of str
+        The series of field names.
 
-        parent, curr = None, self
-        field = fields[0]
+    Raises
+    ------
+    ValueError
+        If there is no such field.
+    """
+    if len(fields) == 0:
+        raise ValueError("empty field")
 
-        for i, field in enumerate(fields):
-            if not isinstance(curr, Configurable):
-                raise ValueError("not configurable field: " + repr(fields[:i]))
+    parent, curr = None, config
+    field = fields[0]
 
-            if field not in curr.__configurable_fields__:
-                raise ValueError("no such field: " + repr(fields[:i+1]))
+    for i, field in enumerate(fields):
+        if not isinstance(curr, Configurable):
+            raise ValueError("not configurable field: " + repr(fields[:i]))
 
-            parent, curr = curr, curr.__dict__.get(field, None)
+        if field not in curr.__configurable_fields__:
+            raise ValueError("no such field: " + repr(fields[:i+1]))
 
-        else:
-            if field in parent.__dict__:
-                delattr(parent, field)
+        parent, curr = curr, curr.__dict__.get(field, None)
 
-    def get(self, fields):
-        """Get a field of the configuration.
+    else:
+        if field in parent.__dict__:
+            delattr(parent, field)
 
-        Parameters
-        ----------
-        fields : list of str
-            The series of field names.
+def get(config, fields):
+    """Get a field of the configuration.
 
-        Returns
-        -------
-        value : any
-            The value of the field.
+    Parameters
+    ----------
+    config : Configurable
+        The configuration to manipulate.
+    fields : list of str
+        The series of field names.
 
-        Raises
-        ------
-        ValueError
-            If there is no such field.
-        """
-        if len(fields) == 0:
-            raise ValueError("empty field")
+    Returns
+    -------
+    value : any
+        The value of the field.
 
-        parent, curr = None, self
-        field = fields[0]
+    Raises
+    ------
+    ValueError
+        If there is no such field.
+    """
+    if len(fields) == 0:
+        raise ValueError("empty field")
 
-        for i, field in enumerate(fields):
-            if not isinstance(curr, Configurable):
-                raise ValueError("not configurable field: " + repr(fields[:i]))
+    parent, curr = None, config
+    field = fields[0]
 
-            if field not in curr.__configurable_fields__:
-                raise ValueError("no such field: " + repr(fields[:i+1]))
+    for i, field in enumerate(fields):
+        if not isinstance(curr, Configurable):
+            raise ValueError("not configurable field: " + repr(fields[:i]))
 
-            parent, curr = curr, curr.__dict__.get(field, None)
+        if field not in curr.__configurable_fields__:
+            raise ValueError("no such field: " + repr(fields[:i+1]))
 
-        else:
-            return getattr(parent, field)
+        parent, curr = curr, curr.__dict__.get(field, None)
 
-    def has(self, fields):
-        """Check if a field of the configuration has a value.
+    else:
+        return getattr(parent, field)
 
-        Parameters
-        ----------
-        fields : list of str
-            The series of field names.
+def has(config, fields):
+    """Check if a field of the configuration has a value.
 
-        Returns
-        -------
-        res : bool
-            True if this field has a value.
+    Parameters
+    ----------
+    config : Configurable
+        The configuration to manipulate.
+    fields : list of str
+        The series of field names.
 
-        Raises
-        ------
-        ValueError
-            If there is no such field.
-        """
-        if len(fields) == 0:
-            raise ValueError("empty field")
+    Returns
+    -------
+    res : bool
+        True if this field has a value.
 
-        parent, curr = None, self
-        field = fields[0]
+    Raises
+    ------
+    ValueError
+        If there is no such field.
+    """
+    if len(fields) == 0:
+        raise ValueError("empty field")
 
-        for i, field in enumerate(fields):
-            if not isinstance(curr, Configurable):
-                return False
+    parent, curr = None, config
+    field = fields[0]
 
-            if field not in curr.__configurable_fields__:
-                return False
+    for i, field in enumerate(fields):
+        if not isinstance(curr, Configurable):
+            return False
 
-            parent, curr = curr, curr.__dict__.get(field, None)
+        if field not in curr.__configurable_fields__:
+            return False
 
-        else:
-            return field in parent.__dict__
+        parent, curr = curr, curr.__dict__.get(field, None)
 
-    def get_default(self, fields):
-        """Get default value of a field of the configuration.
+    else:
+        return field in parent.__dict__
 
-        Parameters
-        ----------
-        fields : list of str
-            The series of field names.
+def get_default(config, fields):
+    """Get default value of a field of the configuration.
 
-        Returns
-        -------
-        value : any
-            The value of the field.
+    Parameters
+    ----------
+    config : Configurable
+        The configuration to manipulate.
+    fields : list of str
+        The series of field names.
 
-        Raises
-        ------
-        ValueError
-            If there is no such field.
-        """
-        if len(fields) == 0:
-            raise ValueError("empty field")
+    Returns
+    -------
+    value : any
+        The value of the field.
 
-        parent, curr = None, self
-        field = fields[0]
+    Raises
+    ------
+    ValueError
+        If there is no such field.
+    """
+    if len(fields) == 0:
+        raise ValueError("empty field")
 
-        for i, field in enumerate(fields):
-            if not isinstance(curr, Configurable):
-                raise ValueError("not configurable field: " + repr(fields[:i]))
+    parent, curr = None, config
+    field = fields[0]
 
-            if field not in curr.__configurable_fields__:
-                raise ValueError("no such field: " + repr(fields[:i+1]))
+    for i, field in enumerate(fields):
+        if not isinstance(curr, Configurable):
+            raise ValueError("not configurable field: " + repr(fields[:i]))
 
-            parent, curr = curr, curr.__dict__.get(field, None)
+        if field not in curr.__configurable_fields__:
+            raise ValueError("no such field: " + repr(fields[:i+1]))
 
-        else:
-            return getattr(type(parent), field)
+        parent, curr = curr, curr.__dict__.get(field, None)
 
-    def has_default(self, fields):
-        """Check if a field of the configuration has a default value.
+    else:
+        return getattr(type(parent), field)
 
-        Parameters
-        ----------
-        fields : list of str
-            The series of field names.
+def has_default(config, fields):
+    """Check if a field of the configuration has a default value.
 
-        Returns
-        -------
-        res : bool
-            True if this field has a default value.
+    Parameters
+    ----------
+    config : Configurable
+        The configuration to manipulate.
+    fields : list of str
+        The series of field names.
 
-        Raises
-        ------
-        ValueError
-            If there is no such field.
-        """
-        if len(fields) == 0:
-            raise ValueError("empty field")
+    Returns
+    -------
+    res : bool
+        True if this field has a default value.
 
-        parent, curr = None, self
-        field = fields[0]
+    Raises
+    ------
+    ValueError
+        If there is no such field.
+    """
+    if len(fields) == 0:
+        raise ValueError("empty field")
 
-        for i, field in enumerate(fields):
-            if not isinstance(curr, Configurable):
-                raise ValueError("not configurable field: " + repr(fields[:i]))
+    parent, curr = None, config
+    field = fields[0]
 
-            if field not in curr.__configurable_fields__:
-                raise ValueError("no such field: " + repr(fields[:i+1]))
+    for i, field in enumerate(fields):
+        if not isinstance(curr, Configurable):
+            raise ValueError("not configurable field: " + repr(fields[:i]))
 
-            parent, curr = curr, curr.__dict__.get(field, None)
+        if field not in curr.__configurable_fields__:
+            raise ValueError("no such field: " + repr(fields[:i+1]))
 
-        else:
-            return hasattr(type(parent), field)
+        parent, curr = curr, curr.__dict__.get(field, None)
 
-    @classmethod
-    def parse(cls, text, name="settings"):
-        parser = make_configuration_parser(cls, name)
-        return parser.parse(text)
+    else:
+        return hasattr(type(parent), field)
 
-    def format(self, name="settings"):
-        cls = type(self)
-        res = []
-        res.append(f"{name} = {cls.__name__}()\n")
-        custom_types = set()
+def parse(cls, text, name="settings"):
+    parser = make_configuration_parser(cls, name)
+    return parser.parse(text)
 
-        for key, (type_hint, _) in cls.__field_hints__.items():
-            if not self.has(key):
-                continue
-            value = self.get(key)
-            if not has_type(value, type_hint):
-                raise TypeError(f"Invalid type {value!r}, expecting {type_hint}")
-            custom_types |= get_used_custom_types(value)
-            field = ".".join(key)
-            res.append(f"{name}.{field} = {format_value(value)}\n")
+def format(cls, config, name="settings"):
+    res = []
+    res.append(f"{name} = {cls.__name__}()\n")
+    custom_types = {*()}
 
-        imports = []
+    for key, (type_hint, _) in cls.__field_hints__.items():
+        if not has(config, key):
+            continue
+        value = get(config, key)
+        if not has_type(value, type_hint):
+            raise TypeError(f"Invalid type {value!r}, expecting {type_hint}")
+        custom_types |= get_used_custom_types(value)
+        field = ".".join(key)
+        res.append(f"{name}.{field} = {format_value(value)}\n")
 
-        cls = type(self)
-        for submodule in cls.__module__.split("."):
+    imports = []
+
+    for submodule in cls.__module__.split("."):
+        validate_identifier(submodule)
+    validate_identifier(cls.__name__)
+    imports.append(f"from {cls.__module__} import {cls.__name__}\n")
+    
+    custom_types_list = sorted(list(custom_types), key=lambda typ: typ.__module__)
+    for module, types in itertools.groupby(custom_types_list, key=lambda typ: typ.__module__):
+        names = [typ.__name__ for typ in types]
+        for submodule in module.split("."):
             validate_identifier(submodule)
-        validate_identifier(cls.__name__)
-        imports.append(f"from {cls.__module__} import {cls.__name__}\n")
-        
-        custom_types_list = sorted(list(custom_types), key=lambda typ: typ.__module__)
-        for module, types in itertools.groupby(custom_types_list, key=lambda typ: typ.__module__):
-            names = [typ.__name__ for typ in types]
-            for submodule in module.split("."):
-                validate_identifier(submodule)
-            for name in names:
-                validate_identifier(name)
-            imports.append(f"from {module} import " + ", ".join(names) + "\n")
+        for name in names:
+            validate_identifier(name)
+        imports.append(f"from {module} import " + ", ".join(names) + "\n")
 
-        return "".join(imports) + "\n" + "".join(res)
+    return "".join(imports) + "\n" + "".join(res)
 
-    @classmethod
-    def read(cls, path, name="settings"):
-        """Read configuration from a file.
+def read(cls, path, name="settings"):
+    """Read configuration from a file.
 
-        Parameters
-        ----------
-        path : str or Path
-            The path of file.
-        name : str, optional
-            The name of the resulting configuration.
+    Parameters
+    ----------
+    cls : ConfigurableMeta
+        The type of configuration.
+    path : str or Path
+        The path of file.
+    name : str, optional
+        The name of the resulting configuration.
 
-        Returns
-        -------
-        config
+    Returns
+    -------
+    config
 
-        Raises
-        ------
-        ValueError
-            If there is no such file.
-        DecodeError
-            If decoding fails.
-        """
-        if isinstance(path, str):
-            path = Path(path)
-        if not path.exists():
-            raise ValueError(f"No such file: {path!s}")
+    Raises
+    ------
+    ValueError
+        If there is no such file.
+    DecodeError
+        If decoding fails.
+    """
+    if isinstance(path, str):
+        path = Path(path)
+    if not path.exists():
+        raise ValueError(f"No such file: {path!s}")
 
-        # text = open(path, 'r').read()
-        # locals = {}
-        # exec(text, globals(), locals)
-        # return locals[self.name]
+    # text = open(path, 'r').read()
+    # locals = {}
+    # exec(text, globals(), locals)
+    # return locals[self.name]
 
-        text = open(path, 'r').read()
-        res = cls.parse(text, name=name)
-        return res
+    text = open(path, 'r').read()
+    res = parse(cls, text, name=name)
+    return res
 
-    def write(self, path, name="settings"):
-        """Write this configuration to a file.
+def write(cls, config, path, name="settings"):
+    """Write this configuration to a file.
 
-        Parameters
-        ----------
-        path : str or Path
-            The path of file.
-        name : str, optional
-            The name of the resulting configuration.
+    Parameters
+    ----------
+    cls : ConfigurableMeta
+        The type of configuration.
+    config : Configurable
+        The configuration to manipulate.
+    path : str or Path
+        The path of file.
+    name : str, optional
+        The name of the resulting configuration.
 
-        Raises
-        ------
-        biparsers.EncodeError
-            If encoding fails.
-        """
-        if isinstance(path, str):
-            path = Path(path)
+    Raises
+    ------
+    biparsers.EncodeError
+        If encoding fails.
+    """
+    if isinstance(path, str):
+        path = Path(path)
 
-        text = self.format(name)
-        open(path, 'w').write(text)
+    text = format(cls, config, name)
+    open(path, 'w').write(text)
 

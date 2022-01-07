@@ -56,6 +56,7 @@ class ProfileManager:
     default_meta = ".default-config"
     extension = ".py"
     settings_name = "settings"
+    config_type = KAIKOSettings
 
     def __init__(self, path, logger):
         if isinstance(path, str):
@@ -103,6 +104,34 @@ class ProfileManager:
 
     def on_change(self, on_change_handler):
         self.on_change_handlers.append(on_change_handler)
+
+    # config manipulation
+
+    def set(self, fields, value):
+        return cfg.set(self.current, fields, value)
+
+    def unset(self, fields):
+        return cfg.unset(self.current, fields)
+
+    def get(self, fields):
+        return cfg.get(self.current, fields)
+
+    def has(self, fields):
+        return cfg.has(self.current, fields)
+
+    def get_default(self, fields):
+        return cfg.get_default(self.current, fields)
+
+    def has_default(self, fields):
+        return cfg.has_default(self.current, fields)
+
+    def get_title(self):
+        return self.current_name + self.extension
+
+    def format(self):
+        return cfg.format(self.config_type, self.current, name=self.settings_name)
+
+    # profiles management
 
     def is_uptodate(self):
         if not self.path.exists():
@@ -200,7 +229,7 @@ class ProfileManager:
             return False
 
         try:
-            self.current.write(current_path, name=self.settings_name)
+            cfg.write(self.config_type, self.current, current_path, name=self.settings_name)
         except Exception:
             with logger.warn():
                 logger.print("Fail to format configuration")
@@ -233,7 +262,7 @@ class ProfileManager:
 
         current_mtime = os.stat(str(current_path)).st_mtime
         try:
-            self.current = KAIKOSettings.read(current_path, name=self.settings_name)
+            self.current = cfg.read(self.config_type, current_path, name=self.settings_name)
         except Exception:
             with logger.warn():
                 logger.print("Fail to parse configuration")
@@ -317,7 +346,7 @@ class ProfileManager:
 
         if clone is None:
             self.current_name = name
-            self.current = KAIKOSettings()
+            self.current = self.config_type()
             self.set_change()
 
         else:
@@ -408,13 +437,14 @@ class ProfileManager:
         return True
 
 class FieldParser(cmd.TreeParser):
-    def __init__(self):
-        tree = cfg.get_field_tree(KAIKOSettings)
+    def __init__(self, config_type):
+        self.config_type = config_type
+        tree = cfg.get_field_tree(self.config_type)
         super().__init__(tree)
 
     def info(self, token):
         fields = self.parse(token)
-        return KAIKOSettings.get_field_doc(fields)
+        return self.config_type.get_field_doc(fields)
 
 class ConfigCommand:
     def __init__(self, config, logger):
@@ -426,9 +456,9 @@ class ConfigCommand:
     @cmd.function_command
     def show(self):
         """Show configuration."""
-        text = self.config.current.format(name=self.config.settings_name)
+        text = self.config.format()
         is_changed = self.config.is_changed()
-        title = self.config.current_name + self.config.extension
+        title = self.config.get_title()
         self.logger.print_code(text, title=title, is_changed=is_changed)
         self.logger.print()
 
@@ -440,7 +470,7 @@ class ConfigCommand:
                             ╱
                      The field name.
         """
-        return self.config.current.has(field)
+        return self.config.has(field)
 
     @cmd.function_command
     def get(self, field):
@@ -450,10 +480,10 @@ class ConfigCommand:
                             ╱
                      The field name.
         """
-        if not self.config.current.has(field) and not self.config.current.has_default(field):
+        if not self.config.has(field) and not self.config.has_default(field):
             self.logger.print(f"[warn]No value for field {'.'.join(field)}[/]")
             return
-        return self.config.current.get(field)
+        return self.config.get(field)
 
     @cmd.function_command
     def has_default(self, field):
@@ -463,7 +493,7 @@ class ConfigCommand:
                                     ╱
                              The field name.
         """
-        return self.config.current.has_default(field)
+        return self.config.has_default(field)
 
     @cmd.function_command
     def get_default(self, field):
@@ -473,10 +503,10 @@ class ConfigCommand:
                                     ╱
                              The field name.
         """
-        if not self.config.current.has_default(field):
+        if not self.config.has_default(field):
             self.logger.print(f"[warn]No default value for field {'.'.join(field)}[/]")
             return
-        return self.config.current.get_default(field)
+        return self.config.get_default(field)
 
     @cmd.function_command
     def set(self, field, value):
@@ -486,7 +516,7 @@ class ConfigCommand:
                             ╱         ╲
                    The field name.   The value.
         """
-        self.config.current.set(field, value)
+        self.config.set(field, value)
         self.config.set_change()
 
     @cmd.function_command
@@ -497,7 +527,7 @@ class ConfigCommand:
                               ╱
                        The field name.
         """
-        self.config.current.unset(field)
+        self.config.unset(field)
         self.config.set_change()
 
     @cmd.function_command
@@ -511,11 +541,11 @@ class ConfigCommand:
         """
         editor = self.config.current.devices.terminal.editor
 
-        field_type = KAIKOSettings.get_field_type(field)
+        field_type = self.config.config_type.get_field_type(field)
         parser = cfg.make_parser_from_type_hint(field_type) << pc.regex(r"\s*") << pc.eof()
 
-        if self.config.current.has(field):
-            value = self.config.current.get(field)
+        if self.config.has(field):
+            value = self.config.get(field)
             value_str = cfg.format_value(value)
         else:
             value_str = ""
@@ -533,7 +563,7 @@ class ConfigCommand:
         res_str = res_str.strip()
 
         if res_str == "":
-            self.config.current.unset(field)
+            self.config.unset(field)
             self.config.set_change()
             return
 
@@ -543,7 +573,7 @@ class ConfigCommand:
             self.logger.print(f"[warn]{self.logger.escape(str(e))}[/]")
 
         else:
-            self.config.current.set(field, res)
+            self.config.set(field, res)
             self.config.set_change()
 
     @get.arg_parser("field")
@@ -554,12 +584,12 @@ class ConfigCommand:
     @set.arg_parser("field")
     @edit.arg_parser("field")
     def _field_parser(self):
-        return FieldParser()
+        return FieldParser(self.config.config_type)
 
     @set.arg_parser("value")
     def _set_value_parser(self, field):
-        annotation = KAIKOSettings.get_field_type(field)
-        default = self.config.current.get(field)
+        annotation = self.config.config_type.get_field_type(field)
+        default = self.config.get(field)
         return cmd.LiteralParser(annotation, default)
 
     # profiles
