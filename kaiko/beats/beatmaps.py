@@ -11,8 +11,7 @@ from ..utils import datanodes as dn
 from ..utils import markups as mu
 from ..devices import audios as aud
 from ..devices import engines
-from . import beatwidgets
-from .beatbar import PerformanceGrade, Performance, Beatbar, Sight, BeatbarSettings, BeatbarWidgetSettings
+from .beatbar import PerformanceGrade, Performance, Beatbar, Sight, BeatbarSettings, BeatbarWidgetSettings, BeatbarWidgetBuilder
 
 
 @dataclass
@@ -1134,7 +1133,7 @@ class Beatmap:
         controller_task, controller = engines.Controller.create(devices_settings.controller, devices_settings.terminal, ref_time)
 
         # load widgets
-        widget_builder = beatwidgets.BeatbarWidgetBuilder(
+        widget_builder = BeatbarWidgetBuilder(
             state=score,
             rich=rich,
             mixer=mixer,

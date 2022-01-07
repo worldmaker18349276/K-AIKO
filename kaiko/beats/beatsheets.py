@@ -400,9 +400,9 @@ def make_beatsheet_parser(metadata_only=False):
         valid_fields.remove(name)
 
         if name == "info":
-            field_parser = pc.mstr_parser
+            field_parser = cfg.mstr_parser
         elif name == "chart":
-            field_parser = pc.rmstr_parser
+            field_parser = cfg.rmstr_parser
         else:
             field_parser = cfg.make_parser_from_type_hint(fields[name])
 
