@@ -6,7 +6,7 @@ import functools
 import inspect
 from pathlib import Path
 from . import parsec as pc
-from . import config as cfg
+from . import serializers as sz
 
 
 def suitability(part, full):
@@ -430,7 +430,7 @@ class LiteralParser(ArgumentParser):
             The description of this argument.
         """
         self.type_hint = type_hint
-        self.parser = cfg.make_parser_from_type_hint(type_hint) << pc.eof()
+        self.parser = sz.make_parser_from_type_hint(type_hint) << pc.eof()
         self.default = default
         self._desc = desc or f"It should be {type_hint}"
 
