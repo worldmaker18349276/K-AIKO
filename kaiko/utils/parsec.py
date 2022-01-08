@@ -230,9 +230,9 @@ class Parsec:
                 value, index = self.func(text, index)
 
             except ParseError as error:
-                if catcher is None:
+                if error.index != index or catcher is None:
                     raise error
-                other = catcher(error.expected)
+                other = catcher(ParseFailure(error.expected))
                 return other.func(text, index)
 
             else:
