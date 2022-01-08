@@ -251,6 +251,9 @@ def make_parser_from_type_hint(type_hint):
 
     elif get_origin(type_hint) is Union:
         options = [make_parser_from_type_hint(arg) for arg in get_args(type_hint)]
+        origins = {get_origin(typ) if not isinstance(typ, type) else typ for typ in get_args(type_hint)}
+        if len(origins) != len(options):
+            raise TypeError("Unable to construct union parsers with the same base type")
         return make_union_parser(options)
 
     else:
