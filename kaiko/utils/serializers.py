@@ -101,15 +101,7 @@ def make_list_parser(elem):
     )
 
 def make_set_parser(elem):
-    opening = pc.regex(r"\{\s*").desc("'{'")
-    comma = pc.regex(r"\s*,\s*").desc("','")
-    closing = pc.regex(r"\s*\}").desc("'}'")
-    empty = pc.tokens(["set()"]).result([]).desc("'set()'")
-    nonempty = (
-        elem.sep_end_by1(comma)
-            .between(opening, closing)
-    )
-    return (empty | nonempty).map(set)
+    return make_list_parser(elem).between(pc.regex(r"set\(\s*"), pc.regex(r"\s*\)")).map(set)
 
 def make_dict_parser(key, value):
     opening = pc.regex(r"\{\s*").desc("'{'")
@@ -154,7 +146,7 @@ def make_union_parser(options):
     elif len(options) == 1:
         return options[0]
     else:
-        return pc.choice(*[option.attempt() for option in options])
+        return pc.choice(*options)
 
 def make_enum_parser(cls):
     return (
@@ -367,9 +359,7 @@ def format_value(value):
         return "(%s)" % ", ".join(format_value(subvalue) for subvalue in value)
 
     elif type(value) is set:
-        if not value:
-            return "set()"
-        return "{%s}" % ", ".join(format_value(subvalue) for subvalue in value)
+        return "set([%s])" % ", ".join(format_value(subvalue) for subvalue in value)
 
     elif type(value) is dict:
         return "{%s}" % ", ".join(
