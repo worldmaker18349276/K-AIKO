@@ -64,7 +64,7 @@ class ParseError(Exception):
         str
             The description of this error.
         """
-        if self.index >= len(self.text):
+        if self.index > len(self.text):
             return f"<out of bounds index {self.index}>"
         line, col = ParseError.locate(self.text, self.index)
         return (
