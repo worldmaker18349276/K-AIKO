@@ -227,7 +227,7 @@ class Parsec:
 
         If the parsing is successful, passes the result to `successor`, and
         continues with the parser returned from `successor`.  If it fails,
-        passes the expected message to `catcher`, and continues with the parser
+        passes the failure to `catcher`, and continues with the parser
         returned from `catcher`.
         In the generator form, it looks like::
 
@@ -589,7 +589,7 @@ class Parsec:
                     raise error
                 failure = error.__cause__
                 assert isinstance(failure, ParseFailure)
-                with _fail_at(text, error.index):
+                with _fail_at(error.text, index):
                     raise ParseExtendFailure(text[index:error.index], failure) from failure
         return Parsec(attempt_parser)
 
