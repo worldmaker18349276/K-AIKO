@@ -35,13 +35,6 @@ class ParseExtendFailure(ParseFailure):
     def expected(self):
         return f"{self.prefix!r} followed by {self.failure.expected}"
 
-@contextlib.contextmanager
-def _fail_at(text, index):
-    try:
-        yield
-    except ParseFailure as failure:
-        raise ParseError(text, index) from failure
-
 class ParseError(Exception):
     """A class of parse error to explain where."""
 
@@ -57,6 +50,14 @@ class ParseError(Exception):
         """
         self.text = text
         self.index = index
+
+    @staticmethod
+    @contextlib.contextmanager
+    def at(text, index):
+        try:
+            yield
+        except Exception as e:
+            raise ParseError(text, index) from e
 
     @staticmethod
     def locate(text, index):
@@ -85,6 +86,20 @@ class ParseError(Exception):
         last_ln = text.rfind("\n", 0, index)
         col = index - (last_ln + 1)
         return (line, col)
+
+    def is_failed_at(self, index):
+        """Whether it was caused by a failure at the given index.
+
+        Parameters
+        ----------
+        index : int
+            The index where parsing failed.
+
+        Returns
+        -------
+        bool
+        """
+        return isinstance(self.__cause__, ParseFailure) and self.index == index
 
     def __str__(self):
         """Represent ParseError as readable text.
@@ -127,39 +142,36 @@ def parsec(func):
             it = func(*args, **kwargs)
             with contextlib.closing(it):
                 # initializing
-                try:
-                    sub_parser = it.send(None)
-                except StopIteration as stop:
-                    return stop.value, index
-                except ParseFailure as failure:
-                    raise ParseError(text, index) from failure
+                with ParseError.at(text, index):
+                    try:
+                        sub_parser = it.send(None)
+                    except StopIteration as stop:
+                        return stop.value, index
 
                 while True:
                     try:
                         value, index = sub_parser.func(text, index)
 
                     except ParseError as error:
-                        if error.index != index:
+                        if not error.is_failed_at(index):
                             raise error
 
                         # binding failure to the next parser
                         failure = error.__cause__
                         assert isinstance(failure, ParseFailure)
-                        try:
-                            sub_parser = it.throw(ParseFailure, failure)
-                        except StopIteration as stop:
-                            return stop.value, index
-                        except ParseFailure as failure:
-                            raise ParseError(text, index) from failure
+                        with ParseError.at(text, index):
+                            try:
+                                sub_parser = it.throw(ParseFailure, failure)
+                            except StopIteration as stop:
+                                return stop.value, index
 
                     else:
                         # binding result to the next parser
-                        try:
-                            sub_parser = it.send(value)
-                        except StopIteration as stop:
-                            return stop.value, index
-                        except ParseFailure as failure:
-                            raise ParseError(text, index) from failure
+                        with ParseError.at(text, index):
+                            try:
+                                sub_parser = it.send(value)
+                            except StopIteration as stop:
+                                return stop.value, index
 
         return Parsec(parser)
     return parser_func
@@ -256,18 +268,19 @@ class Parsec:
                 value, index = self.func(text, index)
 
             except ParseError as error:
-                if error.index != index or catcher is None:
+                if catcher is None or not error.is_failed_at(index):
                     raise error
                 failure = error.__cause__
                 assert isinstance(failure, ParseFailure)
                 other = catcher(failure)
+                return other.func(text, index)
 
             else:
                 if successor is None:
                     return value, index
                 other = successor(value)
+                return other.func(text, index)
 
-            return other.func(text, index)
         return Parsec(bind_parser)
 
     def map(self, func):
@@ -411,13 +424,13 @@ class Parsec:
                 try:
                     return parser.func(text, index)
                 except ParseError as error:
-                    if error.index != index:
+                    if not error.is_failed_at(index):
                         raise error
                     failure = error.__cause__
                     assert isinstance(failure, ParseFailure)
                     failures.append(failure)
 
-            with _fail_at(text, index):
+            with ParseError.at(text, index):
                 raise ParseChoiceFailure(failures) from failures[-1]
 
         return Parsec(choice_parser)
@@ -545,11 +558,11 @@ class Parsec:
             try:
                 value, index = self.func(text, index)
             except ParseError as error:
-                if error.index != index:
+                if not error.is_failed_at(index):
                     raise error
                 failure = error.__cause__
                 assert isinstance(failure, ParseFailure)
-                with _fail_at(error.text, error.index):
+                with ParseError.at(error.text, error.index):
                     raise ParseFailure(expected) from failure
             else:
                 return value, index
@@ -585,11 +598,11 @@ class Parsec:
             try:
                 return self.func(text, index)
             except ParseError as error:
-                if error.index == index:
+                if not isinstance(error.__cause__, ParseFailure) or error.index == index:
                     raise error
                 failure = error.__cause__
                 assert isinstance(failure, ParseFailure)
-                with _fail_at(error.text, index):
+                with ParseError.at(error.text, index):
                     raise ParseExtendFailure(text[index:error.index], failure) from failure
         return Parsec(attempt_parser)
 
@@ -610,7 +623,7 @@ class Parsec:
             res, next_index = self.func(text, index)
             expected = func(res)
             if expected is not None:
-                with _fail_at(text, index):
+                with ParseError.at(text, index):
                     raise ParseFailure(expected)
             return res, next_index
         return Parsec(reject_parser)
@@ -644,7 +657,7 @@ class Parsec:
             try:
                 value, index = self.func(text, index)
             except ParseError as error:
-                if error.index != index:
+                if not error.is_failed_at(index):
                     raise error
                 return (), index
             else:
@@ -671,7 +684,7 @@ class Parsec:
         Parsec
         """
         def fail_parser(text, index):
-            with _fail_at(text, index):
+            with ParseError.at(text, index):
                 raise ParseFailure(expected)
         return Parsec(fail_parser)
 
@@ -812,7 +825,7 @@ class Parsec:
                 try:
                     value, index = self.func(text, index)
                 except ParseError as error:
-                    if error.index != index or i < m:
+                    if not error.is_failed_at(index) or i < m:
                         raise error
                     break
                 results.append(value)
@@ -849,7 +862,7 @@ class Parsec:
                 try:
                     res, index = self.func(text, index)
                 except ParseError as error:
-                    if error.index != index:
+                    if not error.is_failed_at(index):
                         raise error
                     return results, index
                 else:
@@ -890,7 +903,7 @@ class Parsec:
                 try:
                     _, index = end.func(text, index)
                 except ParseError as error:
-                    if error.index != index:
+                    if not error.is_failed_at(index):
                         raise error
                 else:
                     return results, index
@@ -943,7 +956,7 @@ class Parsec:
                     check.func(text, index)
                     results.append(res)
                 except ParseError as error:
-                    if error.index != index or not is_first:
+                    if not error.is_failed_at(index) or not is_first:
                         raise error
                     return results, index
 
@@ -952,7 +965,7 @@ class Parsec:
                 try:
                     _, index = sep.func(text, index)
                 except ParseError as error:
-                    if error.index != index:
+                    if not error.is_failed_at(index):
                         raise error
                     return results, index
 
@@ -994,7 +1007,7 @@ class Parsec:
                 try:
                     _, index = sep.func(text, index)
                 except ParseError as error:
-                    if error.index != index:
+                    if not error.is_failed_at(index):
                         raise error
                     return results, index
 
@@ -1041,14 +1054,14 @@ class Parsec:
                     check.func(text, index)
                     results.append(res)
                 except ParseError as error:
-                    if error.index != index:
+                    if not error.is_failed_at(index):
                         raise error
                     return results, index
 
                 try:
                     _, index = sep.func(text, index)
                 except ParseError as error:
-                    if error.index != index:
+                    if not error.is_failed_at(index):
                         raise error
                     return results, index
         return Parsec(sep_end_by_parser)
@@ -1098,7 +1111,7 @@ class Parsec:
                     check.func(text, index)
                     results.append(res)
                 except ParseError as error:
-                    if error.index != index or is_first:
+                    if not error.is_failed_at(index) or is_first:
                         raise error
                     return results, index
 
@@ -1107,7 +1120,7 @@ class Parsec:
                 try:
                     _, index = sep.func(text, index)
                 except ParseError as error:
-                    if error.index != index:
+                    if not error.is_failed_at(index):
                         raise error
                     return results, index
 
@@ -1154,7 +1167,7 @@ class Parsec:
                 try:
                     _, index = end.func(text, index)
                 except ParseError as error:
-                    if error.index != index:
+                    if not error.is_failed_at(index):
                         raise error
                 else:
                     return results, index
@@ -1200,7 +1213,7 @@ def any():
         if index < len(text):
             return text[index], index + 1
         else:
-            with _fail_at(text, index):
+            with ParseError.at(text, index):
                 raise ParseFailure("a random char")
     return Parsec(any_parser)
 
@@ -1220,7 +1233,7 @@ def oneOf(chars):
         if index < len(text) and text[index] in chars:
             return text[index], index + 1
         else:
-            with _fail_at(text, index):
+            with ParseError.at(text, index):
                 raise ParseFailure(f"one of {repr(chars)}")
     return Parsec(one_of_parser)
 
@@ -1240,7 +1253,7 @@ def noneOf(chars):
         if index < len(text) and text[index] not in chars:
             return text[index], index + 1
         else:
-            with _fail_at(text, index):
+            with ParseError.at(text, index):
                 raise ParseFailure(f"none of {repr(chars)}")
     return Parsec(none_of_parser)
 
@@ -1264,7 +1277,7 @@ def satisfy(validater, desc=None):
         if index < len(text) and validater(text[index]):
             return text[index], index + 1
         else:
-            with _fail_at(text, index):
+            with ParseError.at(text, index):
                 raise ParseFailure(f"a character that satisfy {desc}")
     return Parsec(satisfy_parser)
 
@@ -1279,7 +1292,7 @@ def eof():
         if index >= len(text):
             return "", index
         else:
-            with _fail_at(text, index):
+            with ParseError.at(text, index):
                 raise ParseFailure("EOF")
     return Parsec(eof_parser)
 
@@ -1305,7 +1318,7 @@ def regex(exp, flags=0):
         if match:
             return match.group(0), match.end()
         else:
-            with _fail_at(text, index):
+            with ParseError.at(text, index):
                 raise ParseFailure(f"/{exp.pattern}/")
     return Parsec(regex_parser)
 
@@ -1334,7 +1347,7 @@ def tokens(tokens):
             if text[index:next_index] == token:
                 return token, next_index
         else:
-            with _fail_at(text, index):
+            with ParseError.at(text, index):
                 raise ParseFailure(desc)
     return Parsec(tokens_parser)
 
@@ -1356,8 +1369,8 @@ def check_forward():
     def check(text, index):
         nonlocal prev
         if prev == index:
-            loc = "ln {}, col {}".format(*ParseError.locate(text, index))
-            raise ValueError(f"Infinite pattern happen at {loc}")
+            with ParseError.at(text, index):
+                raise RuntimeError("Infinite pattern")
         prev = index
         return None, index
 
