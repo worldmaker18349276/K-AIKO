@@ -179,7 +179,7 @@ class KAIKOMenu:
         yield
 
         if not sys.stdout.isatty():
-            raise ValueError("please connect to interactive terminal device.")
+            raise RuntimeError("please connect to interactive terminal device.")
 
         # deterimine unicode version
         if self.settings.devices.terminal.unicode_version == "auto" and "UNICODE_VERSION" not in os.environ:

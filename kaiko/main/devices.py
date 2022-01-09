@@ -461,7 +461,7 @@ class PyAudioDeviceParser(cmd.ArgumentParser):
 
     def parse(self, token):
         if token not in self.options:
-            raise cmd.CommandParseError("Invalid device index")
+            raise cmd.CommandParseError(f"Invalid device index: {token}")
         return int(token)
 
     def suggest(self, token):

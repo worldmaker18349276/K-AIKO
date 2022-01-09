@@ -167,7 +167,7 @@ def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
             raw = "'" + compreply[:-1].replace("'", r"'\''") + (r"'\'" if compreply[-1] == "'" else compreply[-1] + "'")
 
     else:
-        raise ValueError
+        assert False
 
     return raw if partial else raw + " "
 
@@ -1381,7 +1381,7 @@ class BeatInput:
         elif action == 0:
             sugg_index = None
         else:
-            raise ValueError
+            raise ValueError(f"invalid action: {action}")
 
         if sugg_index not in range(len(suggestions)):
             # restore state

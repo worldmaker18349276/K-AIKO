@@ -81,7 +81,7 @@ class ParseError(Exception):
             If the index is out of bounds.
         """
         if index > len(text):
-            raise ValueError("Invalid index.")
+            raise IndexError("string index out of range")
         line = text.count("\n", 0, index)
         last_ln = text.rfind("\n", 0, index)
         col = index - (last_ln + 1)

@@ -13,7 +13,7 @@ import scipy
 import scipy.signal
 
 
-def datanode(gen_func) -> Callable[..., 'DataNode']:
+def datanode(gen_func):
     @functools.wraps(gen_func)
     def node_func(*args, **kwargs):
         return DataNode(gen_func(*args, **kwargs))
@@ -115,7 +115,7 @@ class DataNode:
             data = yield function(data)
 
     @staticmethod
-    def wrap(node_like) -> 'DataNode':
+    def wrap(node_like):
         if isinstance(node_like, DataNode):
             return node_like
 
@@ -126,7 +126,7 @@ class DataNode:
             return DataNode.from_func(node_like)
 
         else:
-            raise ValueError
+            raise TypeError
 
     def exhaust(self, dt=0.0, interruptible=False):
         stop_event = threading.Event()
@@ -974,8 +974,7 @@ def create_task(func):
 
     thread = threading.Thread(target=run)
     yield from _thread_task(thread, stop_event, error)
-    if res.empty():
-        raise ValueError("empty result")
+    assert not res.empty()
     return res.get()
 
 @datanode

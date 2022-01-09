@@ -17,6 +17,9 @@ def Context(beat, length, **update):
 class BeatmapParseError(Exception):
     pass
 
+class PatternError(Exception):
+    pass
+
 class BeatSheet(beatmaps.Beatmap):
     _notations = {
         'x': beatmaps.Soft,
@@ -64,7 +67,7 @@ class BeatSheet(beatmaps.Beatmap):
 
                 elif pattern.symbol == "~":
                     if pattern.arguments[0] or pattern.arguments[1]:
-                        raise BeatmapParseError("lengthen note don't accept any argument")
+                        raise PatternError("lengthen note don't accept any argument")
 
                     if last_event is not None:
                         last_event.length += length
@@ -72,14 +75,14 @@ class BeatSheet(beatmaps.Beatmap):
 
                 elif pattern.symbol == "|":
                     if pattern.arguments[0] or pattern.arguments[1]:
-                        raise BeatmapParseError("measure note don't accept any argument")
+                        raise PatternError("measure note don't accept any argument")
 
                     if (beat - track.beat) % track.meter != 0:
-                        raise BeatmapParseError("wrong measure")
+                        raise PatternError("wrong measure")
 
                 elif pattern.symbol == "_":
                     if pattern.arguments[0] or pattern.arguments[1]:
-                        raise BeatmapParseError("rest note don't accept any argument")
+                        raise PatternError("rest note don't accept any argument")
 
                     if last_event is not None:
                         yield last_event
@@ -88,7 +91,7 @@ class BeatSheet(beatmaps.Beatmap):
 
                 else:
                     if pattern.symbol not in notations:
-                        raise BeatmapParseError("unknown symbol: " + pattern.symbol)
+                        raise PatternError("unknown symbol: " + pattern.symbol)
 
                     if last_event is not None:
                         yield last_event
@@ -401,7 +404,7 @@ def make_beatsheet_parser(metadata_only=False):
     vernum = header[len("#K-AIKO-std-"):].split(".")
     vernum0 = version.split(".")
     if vernum[0] != vernum0[0] or vernum[1:] > vernum0[1:]:
-        raise BeatmapParseError("incompatible version")
+        raise ValueError("incompatible version")
 
     beatsheet = BeatSheet()
     fields = BeatSheet.__annotations__
@@ -441,7 +444,7 @@ def format_value(value):
     elif isinstance(value, str):
         return '"' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
     else:
-        raise TypeError
+        assert False
 
 def format_arguments(psargs, kwargs):
     if len(psargs) + len(kwargs) == 0:
