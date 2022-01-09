@@ -448,7 +448,15 @@ class LiteralParser(ArgumentParser):
                 raise CommandParseError(f"Invalid value") from e
 
     def suggest(self, token):
-        return []
+        try:
+            self.parser.parse(token)
+        except pc.ParseError as e:
+            if isinstance(e.__cause__, pc.ParseFailure):
+                return [e.text[:e.index] + sugg for sugg in sz.get_suggestions(e.__cause__)]
+            else:
+                return []
+        else:
+            return [token + "\000"]
 
 
 class CommandParser:

@@ -13,26 +13,21 @@ def validate_identifier(name):
     if not isinstance(name, str) or not str.isidentifier(name) or keyword.iskeyword(name):
         raise ValueError(f"Invalid identifier {name!r}")
 
-def parse_identifiers(*tokens):
-    for token in tokens:
-        validate_identifier(token)
-    return pc.tokens(tokens)
-
-def _make_literal_parser(expr, desc):
-    return pc.regex(expr).map(ast.literal_eval).desc(desc)
+def _make_literal_parser(expr, default):
+    return pc.regex(expr).map(ast.literal_eval).desc(repr(default))
 
 none_parser = _make_literal_parser(r"None", "None")
-bool_parser = _make_literal_parser(r"False|True", "bool")
-int_parser = _make_literal_parser(r"[-+]?(0|[1-9][0-9]*)(?![0-9\.\+eEjJ])", "int")
+bool_parser = _make_literal_parser(r"False|True", "False")
+int_parser = _make_literal_parser(r"[-+]?(0|[1-9][0-9]*)(?![0-9\.\+eEjJ])", "0")
 float_parser = _make_literal_parser(
     r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+[eE][-+]?[0-9]+)(?![0-9\+jJ])",
-    "float",
+    "0.0",
 )
 complex_parser = _make_literal_parser(
     r"[-+]?({0}[-+])?{0}[jJ]".format(
         r"(0|[1-9][0-9]*|[0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)"
     ),
-    "complex",
+    "0j",
 )
 bytes_parser = _make_literal_parser(
     r'b"('
@@ -43,7 +38,7 @@ bytes_parser = _make_literal_parser(
     r'|\\U[0-9a-fA-F]{8}'
     r'|\\(?![xuUN])[\x01-\x7f]'
     r')*"',
-    "bytes",
+    'b""',
 )
 str_parser = _make_literal_parser(
     r'"('
@@ -54,7 +49,7 @@ str_parser = _make_literal_parser(
     r'|\\U[0-9a-fA-F]{8}'
     r'|\\(?![xuUN\x00]).'
     r')*"',
-    "str",
+    '""',
 )
 sstr_parser = _make_literal_parser(
     r"'("
@@ -65,7 +60,7 @@ sstr_parser = _make_literal_parser(
     r"|\\U[0-9a-fA-F]{8}"
     r"|\\(?![xuUN])."
     r")*'",
-    "str",
+    "''",
 )
 mstr_parser = _make_literal_parser(
     # always start/end with newline
@@ -77,68 +72,115 @@ mstr_parser = _make_literal_parser(
     r'|\\U[0-9a-fA-F]{8}'
     r'|\\(?![xuUN\x00]).'
     r')*(?<=\n)"""',
-    "str",
+    '"""\n"""',
 )
 rmstr_parser = _make_literal_parser(
     r'r"""(?=\n)('
     r'(?!""")[^\\\x00]'
     r'|\\[^\x00]'
     r')*(?<=\n)"""',
-    "str",
+    'r"""\n"""',
 )
 
 
 # composite
 
+@pc.parsec
 def make_list_parser(elem):
-    opening = pc.regex(r"\[\s*").desc("'['")
-    comma = pc.regex(r"\s*,\s*").desc("','")
-    closing = pc.regex(r"\s*\]").desc("']'")
-    return (
-        elem.sep_end_by(comma)
-            .between(opening, closing)
-            .map(list)
-    )
+    opening = pc.regex(r"\[\s*").desc(repr("["))
+    comma = pc.regex(r"\s*,\s*").desc(repr(","))
+    closing = pc.regex(r"\s*\]").desc(repr("]"))
+    yield opening
+    results = []
+    try:
+        while True:
+            results.append((yield elem))
+            yield comma
+    except pc.ParseFailure:
+        pass
+    yield closing
+    return results
 
+@pc.parsec
 def make_set_parser(elem):
-    return make_list_parser(elem).between(pc.regex(r"set\(\s*"), pc.regex(r"\s*\)")).map(set)
+    opening = pc.regex(r"set\(\s*").desc(repr("set("))
+    closing = pc.regex(r"\s*\)").desc(repr(")"))
+    content = make_list_parser(elem)
+    yield opening
+    res = yield content
+    yield closing
+    return set(res)
 
+@pc.parsec
 def make_dict_parser(key, value):
-    opening = pc.regex(r"\{\s*").desc("'{'")
-    colon = pc.regex(r"\s*:\s*").desc("':'")
-    comma = pc.regex(r"\s*,\s*").desc("','")
-    closing = pc.regex(r"\s*\}").desc("'}'")
+    opening = pc.regex(r"\{\s*").desc(repr("{"))
+    colon = pc.regex(r"\s*:\s*").desc(repr(":"))
+    comma = pc.regex(r"\s*,\s*").desc(repr(","))
+    closing = pc.regex(r"\s*\}").desc(repr("}"))
     item = colon.join((key, value))
-    return (
-        item.sep_end_by(comma)
-            .between(opening, closing)
-            .map(dict)
-    )
 
+    yield opening
+    results = {}
+    try:
+        while True:
+            k, v = yield item
+            results[k] = v
+            yield comma
+    except pc.ParseFailure:
+        pass
+    yield closing
+    return results
+
+@pc.parsec
 def make_tuple_parser(elems):
-    opening = pc.regex(r"\(\s*").desc("'('")
-    comma = pc.regex(r"\s*,\s*").desc("','")
-    closing = pc.regex(r"\s*\)").desc("')'")
-    if len(elems) == 0:
-        return (opening + closing).result(())
-    elif len(elems) == 1:
-        return (elems[0] << comma).between(opening, closing).map(lambda e: (e,))
-    else:
-        entries = comma.join(elems) << comma.optional()
-        return entries.between(opening, closing).map(tuple)
+    opening = pc.regex(r"\(\s*").desc(repr("("))
+    comma = pc.regex(r"\s*,\s*").desc(repr(","))
+    closing = pc.regex(r"\s*\)").desc(repr(")"))
 
-def make_dataclass_parser(cls, fields):
-    name = parse_identifiers(cls.__name__)
-    opening = pc.regex(r"\(\s*").desc("'('")
-    equal = pc.regex(r"\s*=\s*").desc("'='")
-    comma = pc.regex(r"\s*,\s*").desc("','")
-    closing = pc.regex(r"\s*\)").desc(")")
-    if fields:
-        items = [equal.join((parse_identifiers(key), field)) for key, field in fields.items()]
-        entries = comma.join(items) << comma.optional()
+    if len(elems) == 0:
+        yield opening
+        yield closing
+        return ()
+
+    elif len(elems) == 1:
+        yield opening
+        res = yield elems[0]
+        yield comma
+        yield closing
+        return (res,)
+
     else:
-        entries = pc.nothing(())
-    return entries.between(name >> opening, closing).map(lambda a: cls(**dict(a)))
+        yield opening
+        results = []
+        is_first = True
+        for elem in elems:
+            if not is_first:
+                yield comma
+            is_first = False
+            results.append((yield elem))
+        yield comma.optional()
+        yield closing
+        return tuple(results)
+
+@pc.parsec
+def make_dataclass_parser(cls, fields):
+    opening = pc.regex(fr"{cls.__name__}\s*\(\s*").desc(repr(f"{cls.__name__}("))
+    comma = pc.regex(r"\s*,\s*").desc(repr(","))
+    closing = pc.regex(r"\s*\)").desc(repr(")"))
+
+    yield opening
+    results = {}
+    is_first = True
+    for key, field in fields.items():
+        if not is_first:
+            yield comma
+        is_first = False
+        yield pc.regex(fr"{key}\s*=\s*").desc(repr(f"{key}="))
+        value = yield field
+        results[key] = value
+    yield comma.optional()
+    yield closing
+    return cls(**results)
 
 def make_union_parser(options):
     if len(options) == 0:
@@ -148,11 +190,11 @@ def make_union_parser(options):
     else:
         return pc.choice(*options)
 
+@pc.parsec
 def make_enum_parser(cls):
     return (
-        parse_identifiers(cls.__name__)
-            .then(pc.tokens(["."]))
-            .then(parse_identifiers(*[option.name for option in cls]))
+        pc.string(f"{cls.__name__}.")
+            .then(pc.tokens([option.name for option in cls]))
             .map(lambda option: getattr(cls, option))
     )
 
@@ -161,14 +203,16 @@ def get_args(type_hint):
     if hasattr(typing, 'get_args'):
         return typing.get_args(type_hint)
     else:
-        return type_hint.__args__
+        return getattr(type_hint, '__args__', ())
 
 def get_origin(type_hint):
     if hasattr(typing, 'get_origin'):
         return typing.get_origin(type_hint)
     else:
-        origin = type_hint.__origin__
-        if origin == List:
+        origin = getattr(type_hint, '__origin__', None)
+        if origin is None:
+            origin = None
+        elif origin == List:
             origin = list
         elif origin == Tuple:
             origin = tuple
@@ -176,9 +220,98 @@ def get_origin(type_hint):
             origin = set
         elif origin == Dict:
             origin = dict
+        elif origin == Union:
+            origin = Union
         else:
             raise ValueError
         return origin
+
+def get_base(type_hint):
+    if type_hint is None:
+        type_hint = type(None)
+
+    if type_hint is type(None):
+        return type(None)
+
+    elif type_hint is bool:
+        return bool
+
+    elif type_hint is int:
+        return int
+
+    elif type_hint is float:
+        return float
+
+    elif type_hint is complex:
+        return complex
+
+    elif type_hint is str:
+        return str
+
+    elif type_hint is bytes:
+        return bytes
+
+    elif isinstance(type_hint, type) and issubclass(type_hint, enum.Enum):
+        return type_hint
+
+    elif isinstance(type_hint, type) and dataclasses.is_dataclass(type_hint):
+        return type_hint
+
+    elif get_origin(type_hint) is list:
+        return list
+
+    elif get_origin(type_hint) is set:
+        return set
+
+    elif get_origin(type_hint) is tuple:
+        return tuple
+
+    elif get_origin(type_hint) is dict:
+        return dict
+
+    elif get_origin(type_hint) is Union:
+        return Union
+
+    else:
+        raise ValueError
+
+def get_sub(type_hint):
+    if type_hint is None:
+        type_hint = type(None)
+
+    if type_hint in (type(None), bool, int, float, complex, str, bytes):
+        return ()
+
+    elif isinstance(type_hint, type) and issubclass(type_hint, enum.Enum):
+        return ()
+
+    elif isinstance(type_hint, type) and dataclasses.is_dataclass(type_hint):
+        return tuple(field.type for field in dataclasses.fields(type_hint))
+
+    elif get_origin(type_hint) in (list, set, dict):
+        return get_args(type_hint)
+
+    elif get_origin(type_hint) is tuple:
+        args = get_args(type_hint)
+        if len(args) == 1 and args[0] == ():
+            return ()
+        else:
+            return args
+
+    elif get_origin(type_hint) is Union:
+        return get_args(type_hint)
+
+    else:
+        raise ValueError
+
+def get_types(type_hint):
+    bases = set()
+    base = get_base(type_hint)
+    if base is not Union:
+        bases.add(base)
+    for sub in get_sub(type_hint):
+        bases |= get_types(sub)
+    return bases
 
 def make_parser_from_type_hint(type_hint):
     """Make Parser from type hint.
@@ -218,9 +351,15 @@ def make_parser_from_type_hint(type_hint):
         return bytes_parser
 
     elif isinstance(type_hint, type) and issubclass(type_hint, enum.Enum):
+        validate_identifier(type_hint.__name__)
+        for option in type_hint:
+            validate_identifier(option.name)
         return make_enum_parser(type_hint)
 
     elif isinstance(type_hint, type) and dataclasses.is_dataclass(type_hint):
+        validate_identifier(type_hint.__name__)
+        for field in dataclasses.fields(type_hint):
+            validate_identifier(field.name)
         fields = {field.name: make_parser_from_type_hint(field.type)
                   for field in dataclasses.fields(type_hint)}
         return make_dataclass_parser(type_hint, fields)
@@ -251,13 +390,23 @@ def make_parser_from_type_hint(type_hint):
 
     elif get_origin(type_hint) is Union:
         options = [make_parser_from_type_hint(arg) for arg in get_args(type_hint)]
-        origins = {get_origin(typ) if not isinstance(typ, type) else typ for typ in get_args(type_hint)}
-        if len(origins) != len(options):
+        bases = {get_base(typ) for typ in get_args(type_hint)}
+        assert Union not in bases
+        if len(bases) != len(options):
             raise TypeError("Unable to construct union parsers with the same base type")
         return make_union_parser(options)
 
     else:
         raise ValueError(f"No parser for type hint: {type_hint!r}")
+
+def get_suggestions(failure):
+    suggestions = []
+    if isinstance(failure, pc.ParseChoiceFailure):
+        for subfailure in failure.failures:
+            suggestions.extend(get_suggestions(subfailure))
+    else:
+        suggestions.append(ast.literal_eval(failure.expected))
+    return suggestions
 
 def has_type(value, type_hint):
     if type_hint is None:
@@ -306,10 +455,7 @@ def has_type(value, type_hint):
         raise ValueError(f"Unknown type hint: {type_hint!r}")
 
 def get_used_custom_types(value):
-    if value is None:
-        return {*()}
-
-    elif type(value) in (bool, int, float, complex, str, bytes):
+    if type(value) in (type(None), bool, int, float, complex, str, bytes):
         return {*()}
 
     elif type(value) in (list, tuple, set):
