@@ -452,7 +452,8 @@ class LiteralParser(ArgumentParser):
             self.parser.parse(token)
         except pc.ParseError as e:
             if isinstance(e.__cause__, pc.ParseFailure):
-                return [e.text[:e.index] + sugg for sugg in sz.get_suggestions(e.__cause__)]
+                sugg = [e.text[:e.index] + sugg for sugg in sz.get_suggestions(e.__cause__)]
+                return [*fit(token, sugg), token]
             else:
                 return []
         else:

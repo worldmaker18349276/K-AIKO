@@ -1390,7 +1390,7 @@ class BeatInput:
 
             self.tab_state = None
             self.update_buffer()
-            self.update_hint()
+            self.cancel_hint()
             return False
 
         assert sugg_index is not None

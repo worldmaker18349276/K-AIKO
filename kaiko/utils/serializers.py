@@ -13,20 +13,34 @@ def validate_identifier(name):
     if not isinstance(name, str) or not str.isidentifier(name) or keyword.iskeyword(name):
         raise ValueError(f"Invalid identifier {name!r}")
 
-def _make_literal_parser(expr, default):
-    return pc.regex(expr).map(ast.literal_eval).desc(repr(default))
+class ParseSuggestion(pc.ParseFailure):
+    def __init__(self, expected, suggestions):
+        self.expected = expected
+        self.suggestions = suggestions
 
-none_parser = _make_literal_parser(r"None", "None")
-bool_parser = _make_literal_parser(r"False|True", "False")
-int_parser = _make_literal_parser(r"[-+]?(0|[1-9][0-9]*)(?![0-9\.\+eEjJ])", "0")
+@pc.parsec
+def suggest(parser, suggestions):
+    try:
+        return (yield parser)
+    except pc.ParseFailure as failure:
+        raise ParseSuggestion(failure.expected, suggestions) from failure
+
+def _make_literal_parser(expr, desc, default):
+    return suggest(pc.regex(expr).map(ast.literal_eval).desc(desc), [default])
+
+none_parser = _make_literal_parser(r"None", "None", "None")
+bool_parser = _make_literal_parser(r"False|True", "bool", "False")
+int_parser = _make_literal_parser(r"[-+]?(0|[1-9][0-9]*)(?![0-9\.\+eEjJ])", "int", "0")
 float_parser = _make_literal_parser(
     r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+[eE][-+]?[0-9]+)(?![0-9\+jJ])",
+    "float",
     "0.0",
 )
 complex_parser = _make_literal_parser(
     r"[-+]?({0}[-+])?{0}[jJ]".format(
         r"(0|[1-9][0-9]*|[0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)"
     ),
+    "complex",
     "0j",
 )
 bytes_parser = _make_literal_parser(
@@ -38,6 +52,7 @@ bytes_parser = _make_literal_parser(
     r'|\\U[0-9a-fA-F]{8}'
     r'|\\(?![xuUN])[\x01-\x7f]'
     r')*"',
+    "bytes",
     'b""',
 )
 str_parser = _make_literal_parser(
@@ -49,37 +64,8 @@ str_parser = _make_literal_parser(
     r'|\\U[0-9a-fA-F]{8}'
     r'|\\(?![xuUN\x00]).'
     r')*"',
+    "str",
     '""',
-)
-sstr_parser = _make_literal_parser(
-    r"'("
-    r"[^\r\n\\']"
-    r"|\\[0-7]{1,3}"
-    r"|\\x[0-9a-fA-F]{2}"
-    r"|\\u[0-9a-fA-F]{4}"
-    r"|\\U[0-9a-fA-F]{8}"
-    r"|\\(?![xuUN])."
-    r")*'",
-    "''",
-)
-mstr_parser = _make_literal_parser(
-    # always start/end with newline
-    r'"""(?=\n)('
-    r'(?!""")[^\\\x00]'
-    r'|\\[0-7]{1,3}'
-    r'|\\x[0-9a-fA-F]{2}'
-    r'|\\u[0-9a-fA-F]{4}'
-    r'|\\U[0-9a-fA-F]{8}'
-    r'|\\(?![xuUN\x00]).'
-    r')*(?<=\n)"""',
-    '"""\n"""',
-)
-rmstr_parser = _make_literal_parser(
-    r'r"""(?=\n)('
-    r'(?!""")[^\\\x00]'
-    r'|\\[^\x00]'
-    r')*(?<=\n)"""',
-    'r"""\n"""',
 )
 
 
@@ -87,9 +73,9 @@ rmstr_parser = _make_literal_parser(
 
 @pc.parsec
 def make_list_parser(elem):
-    opening = pc.regex(r"\[\s*").desc(repr("["))
-    comma = pc.regex(r"\s*,\s*").desc(repr(","))
-    closing = pc.regex(r"\s*\]").desc(repr("]"))
+    opening = suggest(pc.regex(r"\[\s*").desc("left bracket"), ["["])
+    comma = suggest(pc.regex(r"\s*,\s*").desc("comma"), [","])
+    closing = suggest(pc.regex(r"\s*\]").desc("right bracket"), ["]"])
     yield opening
     results = []
     try:
@@ -103,8 +89,8 @@ def make_list_parser(elem):
 
 @pc.parsec
 def make_set_parser(elem):
-    opening = pc.regex(r"set\(\s*").desc(repr("set("))
-    closing = pc.regex(r"\s*\)").desc(repr(")"))
+    opening = suggest(pc.regex(r"set\(\s*").desc("'set('"), ["set("])
+    closing = suggest(pc.regex(r"\s*\)").desc("right parenthesis"), [")"])
     content = make_list_parser(elem)
     yield opening
     res = yield content
@@ -113,10 +99,10 @@ def make_set_parser(elem):
 
 @pc.parsec
 def make_dict_parser(key, value):
-    opening = pc.regex(r"\{\s*").desc(repr("{"))
-    colon = pc.regex(r"\s*:\s*").desc(repr(":"))
-    comma = pc.regex(r"\s*,\s*").desc(repr(","))
-    closing = pc.regex(r"\s*\}").desc(repr("}"))
+    opening = suggest(pc.regex(r"\{\s*").desc("left brace"), ["{"])
+    colon = suggest(pc.regex(r"\s*:\s*").desc("colon"), [":"])
+    comma = suggest(pc.regex(r"\s*,\s*").desc("comma"), [","])
+    closing = suggest(pc.regex(r"\s*\}").desc("right brace"), ["}"])
     item = colon.join((key, value))
 
     yield opening
@@ -133,9 +119,9 @@ def make_dict_parser(key, value):
 
 @pc.parsec
 def make_tuple_parser(elems):
-    opening = pc.regex(r"\(\s*").desc(repr("("))
-    comma = pc.regex(r"\s*,\s*").desc(repr(","))
-    closing = pc.regex(r"\s*\)").desc(repr(")"))
+    opening = suggest(pc.regex(r"\(\s*").desc("left parenthesis"), ["("])
+    comma = suggest(pc.regex(r"\s*,\s*").desc("comma"), [","])
+    closing = suggest(pc.regex(r"\s*\)").desc("right parenthesis"), [")"])
 
     if len(elems) == 0:
         yield opening
@@ -164,9 +150,12 @@ def make_tuple_parser(elems):
 
 @pc.parsec
 def make_dataclass_parser(cls, fields):
-    opening = pc.regex(fr"{cls.__name__}\s*\(\s*").desc(repr(f"{cls.__name__}("))
-    comma = pc.regex(r"\s*,\s*").desc(repr(","))
-    closing = pc.regex(r"\s*\)").desc(repr(")"))
+    opening = suggest(
+        pc.regex(fr"{cls.__name__}\s*\(\s*").desc(f"'{cls.__name__}('"),
+        [f"{cls.__name__}("],
+    )
+    comma = suggest(pc.regex(r"\s*,\s*").desc("comma"), [","])
+    closing = suggest(pc.regex(r"\s*\)").desc("right parenthesis"), [")"])
 
     yield opening
     results = {}
@@ -175,7 +164,7 @@ def make_dataclass_parser(cls, fields):
         if not is_first:
             yield comma
         is_first = False
-        yield pc.regex(fr"{key}\s*=\s*").desc(repr(f"{key}="))
+        yield suggest(pc.regex(fr"{key}\s*=\s*").desc(f"{key}="), [f"{key}="])
         value = yield field
         results[key] = value
     yield comma.optional()
@@ -192,8 +181,8 @@ def make_union_parser(options):
 
 @pc.parsec
 def make_enum_parser(cls):
-    yield pc.string(f"{cls.__name__}.")
-    option = yield pc.tokens([option.name for option in cls])
+    yield suggest(pc.string(f"{cls.__name__}."), [f"{cls.__name__}."])
+    option = yield pc.choice(*[suggest(pc.string(option.name), [option.name]) for option in cls])
     return getattr(cls, option)
 
 
@@ -402,8 +391,8 @@ def get_suggestions(failure):
     if isinstance(failure, pc.ParseChoiceFailure):
         for subfailure in failure.failures:
             suggestions.extend(get_suggestions(subfailure))
-    else:
-        suggestions.append(ast.literal_eval(failure.expected))
+    elif isinstance(failure, ParseSuggestion):
+        suggestions.extend(failure.suggestions)
     return suggestions
 
 def has_type(value, type_hint):

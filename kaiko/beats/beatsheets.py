@@ -376,6 +376,25 @@ def chart_parser():
         tracks.append(track)
 
 
+mstr_parser = pc.regex(
+    # always start/end with newline
+    r'"""(?=\n)('
+    r'(?!""")[^\\\x00]'
+    r'|\\[0-7]{1,3}'
+    r'|\\x[0-9a-fA-F]{2}'
+    r'|\\u[0-9a-fA-F]{4}'
+    r'|\\U[0-9a-fA-F]{8}'
+    r'|\\(?![xuUN\x00]).'
+    r')*(?<=\n)"""',
+).map(ast.literal_eval).desc("triple quoted string")
+
+rmstr_parser = pc.regex(
+    r'r"""(?=\n)('
+    r'(?!""")[^\\\x00]'
+    r'|\\[^\x00]'
+    r')*(?<=\n)"""',
+).map(ast.literal_eval).desc("raw triple quoted string")
+
 @pc.parsec
 def make_beatsheet_parser(metadata_only=False):
     header = yield pc.regex(r"#K-AIKO-std-(\d+\.\d+\.\d+)(?=\n|$)").desc("header")
@@ -400,9 +419,9 @@ def make_beatsheet_parser(metadata_only=False):
         valid_fields.remove(name)
 
         if name == "info":
-            field_parser = sz.mstr_parser
+            field_parser = mstr_parser
         elif name == "chart":
-            field_parser = sz.rmstr_parser
+            field_parser = rmstr_parser
         else:
             field_parser = sz.make_parser_from_type_hint(fields[name])
 
