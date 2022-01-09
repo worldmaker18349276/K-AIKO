@@ -1,3 +1,4 @@
+import contextlib
 import keyword
 import ast
 import enum
@@ -24,6 +25,13 @@ def suggest(parser, suggestions):
         return (yield parser)
     except pc.ParseFailure as failure:
         raise ParseSuggestion(failure.expected, suggestions) from failure
+
+@contextlib.contextmanager
+def failure_choice(failure):
+    try:
+        yield
+    except pc.ParseFailure as failure2:
+        raise pc.ParseChoiceFailure([failure, failure2]) from failure2
 
 def _make_literal_parser(expr, desc, default):
     return suggest(pc.regex(expr).map(ast.literal_eval).desc(desc), [default])
@@ -82,10 +90,10 @@ def make_list_parser(elem):
         while True:
             results.append((yield elem))
             yield comma
-    except pc.ParseFailure:
-        pass
-    yield closing
-    return results
+    except pc.ParseFailure as failure:
+        with failure_choice(failure):
+            yield closing
+        return results
 
 @pc.parsec
 def make_set_parser(elem):
@@ -112,10 +120,10 @@ def make_dict_parser(key, value):
             k, v = yield item
             results[k] = v
             yield comma
-    except pc.ParseFailure:
-        pass
-    yield closing
-    return results
+    except pc.ParseFailure as failure:
+        with failure_choice(failure):
+            yield closing
+        return results
 
 @pc.parsec
 def make_tuple_parser(elems):
