@@ -1322,6 +1322,27 @@ def regex(exp, flags=0):
                 raise ParseFailure(f"/{exp.pattern}/")
     return Parsec(regex_parser)
 
+def string(string):
+    """Try to match a string.  Return the matching string.
+    
+    Parameters
+    ----------
+    string : str
+        The string to match.
+
+    Returns
+    -------
+    Parsec
+    """
+    def string_parser(text, index):
+        next_index = index + len(string)
+        if text[index:next_index] == string:
+            return string, next_index
+        else:
+            with ParseError.at(text, index):
+                raise ParseFailure(repr(string))
+    return Parsec(string_parser)
+
 def tokens(tokens):
     """Try to match a list of strings.  Return the matching string.
     
@@ -1338,18 +1359,10 @@ def tokens(tokens):
     -------
     Parsec
     """
-    desc = " or ".join(repr(token) for token in tokens) or "nothing"
+    if not tokens:
+        return fail("nothing")
     tokens = sorted(tokens, reverse=True)
-
-    def tokens_parser(text, index):
-        for token in tokens:
-            next_index = index + len(token)
-            if text[index:next_index] == token:
-                return token, next_index
-        else:
-            with ParseError.at(text, index):
-                raise ParseFailure(desc)
-    return Parsec(tokens_parser)
+    return choice(*[string(token) for token in tokens])
 
 def check_forward():
     """Create a parser to check for infinite pattern on every call.

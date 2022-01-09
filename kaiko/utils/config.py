@@ -27,10 +27,13 @@ def make_field_parser(config_type):
     current_type = config_type
 
     while isinstance(current_type, ConfigurableMeta):
-        current_field = yield sz.parse_identifiers(*current_type.__configurable_fields__.keys())
+        field_names = list(current_type.__configurable_fields__.keys())
+        for field_name in field_names:
+            sz.validate_identifier(field_name)
+        current_field = yield pc.tokens(field_names)
         current_type = current_type.__configurable_fields__[current_field]
         if isinstance(current_type, ConfigurableMeta):
-            yield pc.tokens(["."])
+            yield pc.string(".")
         current_fields.append(current_field)
 
     return tuple(current_fields)
@@ -75,14 +78,15 @@ def make_configuration_parser(config_type, config_name):
     # parse header
     imports = (
         pc.regex(r"from[ ]+").desc("'from '")
-        >> identifier.sep_by(pc.tokens(["."])).map(".".join)
+        >> identifier.sep_by(pc.string(".")).map(".".join)
         << pc.regex(r"[ ]+import[ ]+").desc("' import '")
     ) + identifier.sep_by(pc.regex(r"[ ]*,[ ]*").desc("','"))
+    sz.validate_identifier(config_name)
+    sz.validate_identifier(config_type.__name__)
     init = (
-        sz.parse_identifiers(config_name)
+        pc.string(config_name)
         >> equal
-        >> sz.parse_identifiers(config_type.__name__)
-        >> pc.tokens(["()"])
+        >> pc.string(config_type.__name__ + "()")
     )
     header = (imports << nl << vindent).many_till(init << nl << vindent)
 
@@ -104,8 +108,8 @@ def make_configuration_parser(config_type, config_name):
         yield vindent
 
         # parse field name
-        yield sz.parse_identifiers(config_name)
-        yield pc.tokens(["."])
+        sz.validate_identifier(config_name)
+        yield pc.string(config_name + ".")
         field_key = yield field
 
         # parse field value

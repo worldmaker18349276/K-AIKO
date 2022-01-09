@@ -242,9 +242,9 @@ def value_parser():
 @pc.parsec
 def arguments_parser():
     key = pc.regex(r"([a-zA-Z_][a-zA-Z0-9_]*)=").desc("'key='").map(lambda k: k[:-1])
-    opening = pc.tokens(["("]).optional()
-    closing = pc.tokens([")"]).optional()
-    comma = pc.tokens([", "])
+    opening = pc.string("(").optional()
+    closing = pc.string(")").optional()
+    comma = pc.string(", ")
 
     psargs = []
     kwargs = {}
@@ -342,9 +342,9 @@ def make_patterns_parser(indent=0):
     msp = make_msp_parser(indent=indent).reject(lambda sp: None if sp in (" ", "\n") else "whitespace or newline")
     div = pc.regex(r"/(\d+)").map(lambda m: int(m[1:])) | pc.nothing(2)
 
-    instant = enclose_by(pc.proxy(lambda: pattern), msp, pc.tokens(["{"]), pc.tokens(["}"])).map(Instant)
+    instant = enclose_by(pc.proxy(lambda: pattern), msp, pc.string("{"), pc.string("}")).map(Instant)
     division = (
-        enclose_by(pc.proxy(lambda: pattern), msp, pc.tokens(["["]), pc.tokens(["]"])) + div
+        enclose_by(pc.proxy(lambda: pattern), msp, pc.string("["), pc.string("]")) + div
     ).starmap(lambda a, b: Division(b, a))
     pattern = instant | division | note_parser
     return enclose_by(pattern, msp, pc.nothing(), end)
@@ -359,7 +359,7 @@ def chart_parser():
         if sp == "":
             return tracks
 
-        yield pc.tokens(["TRACK"])
+        yield pc.string("TRACK")
         arguments = yield arguments_parser
 
         track = Track()
@@ -394,9 +394,9 @@ def make_beatsheet_parser(metadata_only=False):
         if sp == "":
             return beatsheet
 
-        yield pc.tokens(["beatmap."])
+        yield pc.string("beatmap.")
         name = yield pc.tokens(valid_fields)
-        yield pc.tokens([" = "])
+        yield pc.string(" = ")
         valid_fields.remove(name)
 
         if name == "info":
