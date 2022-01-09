@@ -1236,8 +1236,9 @@ class BeatInput:
             template = self.logger.rich.parse(self.settings.text.info_message, slotted=True)
         else:
             assert False
-        msg_markup = mu.replace_slot(template, self.logger.rich.parse(hint.message))
+        msg_markup = mu.replace_slot(template, self.logger.rich.parse(hint.message, root_tag=True))
 
+        self.cancel_hint()
         self.finish_autocomplete()
         self.set_result(HelpResult(lambda:self.logger.print(msg_markup)))
         self.finish()

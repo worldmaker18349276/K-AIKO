@@ -11,7 +11,6 @@ from pathlib import Path
 from ..utils import commands as cmd
 from ..utils import datanodes as dn
 from ..utils import markups as mu
-from ..devices import audios as aud
 from ..devices import engines
 from ..beats import beatsheets
 
@@ -24,7 +23,7 @@ def make_table(info):
         res[key] = value
 
     width = max((len(k) for k in res.keys()), default=0)
-    return "\n".join(f"{' '*(width-len(k)) + mu.escape(k)} │ [emph]{mu.escape(v)}[/]" for k, v in res.items())
+    return "[rich]" + "\n".join(f"{' '*(width-len(k)) + mu.escape(k)} │ [emph]{mu.escape(v)}[/]" for k, v in res.items())
 
 @dataclasses.dataclass
 class SongMetadata:
