@@ -192,11 +192,9 @@ def make_union_parser(options):
 
 @pc.parsec
 def make_enum_parser(cls):
-    return (
-        pc.string(f"{cls.__name__}.")
-            .then(pc.tokens([option.name for option in cls]))
-            .map(lambda option: getattr(cls, option))
-    )
+    yield pc.string(f"{cls.__name__}.")
+    option = yield pc.tokens([option.name for option in cls])
+    return getattr(cls, option)
 
 
 def get_args(type_hint):
