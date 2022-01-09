@@ -33,48 +33,64 @@ def failure_choice(failure):
     except pc.ParseFailure as failure2:
         raise pc.ParseChoiceFailure([failure, failure2]) from failure2
 
-def _make_literal_parser(expr, desc, default):
-    return suggest(pc.regex(expr).map(ast.literal_eval).desc(desc), [default])
+def _make_literal_parser(expr, desc, suggestions):
+    return suggest(pc.regex(expr).map(ast.literal_eval).desc(desc), suggestions)
 
-none_parser = _make_literal_parser(r"None", "None", "None")
-bool_parser = _make_literal_parser(r"False|True", "bool", "False")
-int_parser = _make_literal_parser(r"[-+]?(0|[1-9][0-9]*)(?![0-9\.\+eEjJ])", "int", "0")
-float_parser = _make_literal_parser(
-    r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+[eE][-+]?[0-9]+)(?![0-9\+jJ])",
-    "float",
-    "0.0",
-)
-complex_parser = _make_literal_parser(
-    r"[-+]?({0}[-+])?{0}[jJ]".format(
-        r"(0|[1-9][0-9]*|[0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)"
-    ),
-    "complex",
-    "0j",
-)
-bytes_parser = _make_literal_parser(
-    r'b"('
-    r'(?![\r\n\\"])[\x01-\x7f]'
-    r'|\\[0-7]{1,3}'
-    r'|\\x[0-9a-fA-F]{2}'
-    r'|\\u[0-9a-fA-F]{4}'
-    r'|\\U[0-9a-fA-F]{8}'
-    r'|\\(?![xuUN])[\x01-\x7f]'
-    r')*"',
-    "bytes",
-    'b""',
-)
-str_parser = _make_literal_parser(
-    r'"('
-    r'[^\r\n\\"\x00]'
-    r'|\\[0-7]{1,3}'
-    r'|\\x[0-9a-fA-F]{2}'
-    r'|\\u[0-9a-fA-F]{4}'
-    r'|\\U[0-9a-fA-F]{8}'
-    r'|\\(?![xuUN\x00]).'
-    r')*"',
-    "str",
-    '""',
-)
+def make_none_parser(suggestions=[None]):
+    return _make_literal_parser(r"None", "None", [format_value(sugg) for sugg in set(suggestions)])
+
+def make_bool_parser(suggestions=[False]):
+    return _make_literal_parser(r"False|True", "bool", [format_value(sugg) for sugg in set(suggestions)])
+
+def make_int_parser(suggestions=[0]):
+    return _make_literal_parser(
+        r"[-+]?(0|[1-9][0-9]*)(?![0-9\.\+eEjJ])", "int",
+        [format_value(sugg) for sugg in set(suggestions)],
+    )
+
+def make_float_parser(suggestions=[0.0]):
+    return _make_literal_parser(
+        r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+[eE][-+]?[0-9]+)(?![0-9\+jJ])",
+        "float",
+        [format_value(sugg) for sugg in set(suggestions)],
+    )
+
+def make_complex_parser(suggestions=[0j]):
+    return _make_literal_parser(
+        r"[-+]?({0}[-+])?{0}[jJ]".format(
+            r"(0|[1-9][0-9]*|[0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)"
+        ),
+        "complex",
+        [format_value(sugg) for sugg in set(suggestions)],
+    )
+
+def make_bytes_parser(suggestions=[b""]):
+    return _make_literal_parser(
+        r'b"('
+        r'(?![\r\n\\"])[\x01-\x7f]'
+        r'|\\[0-7]{1,3}'
+        r'|\\x[0-9a-fA-F]{2}'
+        r'|\\u[0-9a-fA-F]{4}'
+        r'|\\U[0-9a-fA-F]{8}'
+        r'|\\(?![xuUN])[\x01-\x7f]'
+        r')*"',
+        "bytes",
+        [format_value(sugg) for sugg in set(suggestions)],
+    )
+
+def make_str_parser(suggestions=[""]):
+    return _make_literal_parser(
+        r'"('
+        r'[^\r\n\\"\x00]'
+        r'|\\[0-7]{1,3}'
+        r'|\\x[0-9a-fA-F]{2}'
+        r'|\\u[0-9a-fA-F]{4}'
+        r'|\\U[0-9a-fA-F]{8}'
+        r'|\\(?![xuUN\x00]).'
+        r')*"',
+        "str",
+        [format_value(sugg) for sugg in set(suggestions)],
+    )
 
 
 # composite
@@ -308,13 +324,15 @@ def get_types(type_hint):
         bases |= get_types(sub)
     return bases
 
-def make_parser_from_type_hint(type_hint):
+def make_parser_from_type_hint(type_hint, suggestions=[]):
     """Make Parser from type hint.
 
     Parameters
     ----------
     type_hint : type or type hint
         The type to parse.
+    suggestions : list, optional
+        The suggestions value, which should be instances of `type_hint`.
 
     Returns
     -------
@@ -325,25 +343,25 @@ def make_parser_from_type_hint(type_hint):
         type_hint = type(None)
 
     if type_hint is type(None):
-        return none_parser
+        return make_none_parser(suggestions) if suggestions else make_none_parser()
 
     elif type_hint is bool:
-        return bool_parser
+        return make_bool_parser(suggestions) if suggestions else make_bool_parser()
 
     elif type_hint is int:
-        return int_parser
+        return make_int_parser(suggestions) if suggestions else make_int_parser()
 
     elif type_hint is float:
-        return float_parser
+        return make_float_parser(suggestions) if suggestions else make_float_parser()
 
     elif type_hint is complex:
-        return complex_parser
+        return make_complex_parser(suggestions) if suggestions else make_complex_parser()
 
     elif type_hint is str:
-        return str_parser
+        return make_str_parser(suggestions) if suggestions else make_str_parser()
 
     elif type_hint is bytes:
-        return bytes_parser
+        return make_bytes_parser(suggestions) if suggestions else make_bytes_parser()
 
     elif isinstance(type_hint, type) and issubclass(type_hint, enum.Enum):
         validate_identifier(type_hint.__name__)
@@ -353,20 +371,25 @@ def make_parser_from_type_hint(type_hint):
 
     elif isinstance(type_hint, type) and dataclasses.is_dataclass(type_hint):
         validate_identifier(type_hint.__name__)
+        fields = {}
         for field in dataclasses.fields(type_hint):
             validate_identifier(field.name)
-        fields = {field.name: make_parser_from_type_hint(field.type)
-                  for field in dataclasses.fields(type_hint)}
+            subsuggestions = [getattr(sugg, field.name) for sugg in suggestions]
+            if field.default is not dataclasses.MISSING:
+                subsuggestions.append(field.default)
+            elif field.default_factory is not dataclasses.MISSING:
+                subsuggestions.append(field.default_factory())
+            fields[field.name] = make_parser_from_type_hint(field.type, subsuggestions)
         return make_dataclass_parser(type_hint, fields)
 
     elif get_origin(type_hint) is list:
         elem_hint, = get_args(type_hint)
-        elem = make_parser_from_type_hint(elem_hint)
+        elem = make_parser_from_type_hint(elem_hint, [elem for sugg in suggestions for elem in sugg])
         return make_list_parser(elem)
 
     elif get_origin(type_hint) is set:
         elem_hint, = get_args(type_hint)
-        elem = make_parser_from_type_hint(elem_hint)
+        elem = make_parser_from_type_hint(elem_hint, [elem for sugg in suggestions for elem in sugg])
         return make_set_parser(elem)
 
     elif get_origin(type_hint) is tuple:
@@ -374,21 +397,28 @@ def make_parser_from_type_hint(type_hint):
         if len(args) == 1 and args[0] == ():
             elems = []
         else:
-            elems = [make_parser_from_type_hint(arg) for arg in args]
+            elems = [
+                make_parser_from_type_hint(arg, [sugg[i] for sugg in suggestions])
+                for i, arg in enumerate(args)
+            ]
         return make_tuple_parser(elems)
 
     elif get_origin(type_hint) is dict:
         key_hint, value_hint = get_args(type_hint)
-        key = make_parser_from_type_hint(key_hint)
-        value = make_parser_from_type_hint(value_hint)
+        key = make_parser_from_type_hint(key_hint, [key for sugg in suggestions for key in sugg.keys()])
+        value = make_parser_from_type_hint(value_hint, [value for sugg in suggestions for value in sugg.values()])
         return make_dict_parser(key, value)
 
     elif get_origin(type_hint) is Union:
-        options = [make_parser_from_type_hint(arg) for arg in get_args(type_hint)]
-        bases = {get_base(typ) for typ in get_args(type_hint)}
+        type_hints = get_args(type_hint)
+        bases = set(get_base(type_hint) for type_hint in type_hints)
         assert Union not in bases
-        if len(bases) != len(options):
-            raise TypeError("Unable to construct union parsers with the same base type")
+        if len(bases) != len(type_hints):
+            raise TypeError("Unable to construct parsers for unions of the same base type")
+        options = [
+            make_parser_from_type_hint(type_hint, [sugg for sugg in suggestions if isinstance(sugg, get_base(type_hint))])
+            for type_hint in type_hints
+        ]
         return make_union_parser(options)
 
     else:
