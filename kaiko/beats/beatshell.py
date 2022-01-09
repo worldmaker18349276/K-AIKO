@@ -1230,6 +1230,8 @@ class BeatInput:
             return False
 
         hint = self.hint_state.hint
+        if not hint.message:
+            return False
         if isinstance(hint, DescHint):
             template = self.logger.rich.parse(self.settings.text.desc_message, slotted=True)
         elif isinstance(hint, (InfoHint, SuggestionsHint)):
