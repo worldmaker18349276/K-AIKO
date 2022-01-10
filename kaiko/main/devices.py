@@ -228,12 +228,14 @@ class DevicesCommand:
             pa_format = self.config.current.devices.detector.input_format
 
         try:
+            logger.print("Validate input device...")
             aud.validate_input_device(self.manager, device, pa_samplerate, pa_channels, pa_format)
+            logger.print("Success!")
 
-        except ValueError as e:
-            info = e.args[0]
+        except:
+            logger.print("[warn]Invalid configuration for mic.[/]")
             with logger.warn():
-                logger.print(info, markup=False)
+                logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
             self.config.current.devices.detector.input_device = device
@@ -278,12 +280,14 @@ class DevicesCommand:
             pa_format = self.config.current.devices.mixer.output_format
 
         try:
+            logger.print("Validate output device...")
             aud.validate_output_device(self.manager, device, pa_samplerate, pa_channels, pa_format)
+            logger.print("Success!")
 
-        except ValueError as e:
-            info = e.args[0]
+        except:
+            logger.print("[warn]Invalid configuration for speaker.[/]")
             with logger.warn():
-                logger.print(info, markup=False)
+                logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
             self.config.current.devices.mixer.output_device = device
@@ -504,9 +508,12 @@ class SpeakerTest:
         format = engines.MixerSettings.output_format
 
         try:
+            self.logger.print("Validate output device...")
             aud.validate_output_device(manager, device, samplerate, nchannels, format)
+            self.logger.print("Success!")
 
-        except ValueError:
+        except:
+            self.logger.print("[warn]Invalid configuration for speaker.[/]")
             with self.logger.warn():
                 self.logger.print(traceback.format_exc(), end="", markup=False)
             return dn.DataNode.wrap([])
@@ -566,9 +573,12 @@ class MicTest:
         format = engines.DetectorSettings.input_format
 
         try:
+            self.logger.print("Validate input device...")
             aud.validate_input_device(manager, device, samplerate, channels, format)
+            self.logger.print("Success!")
 
-        except ValueError:
+        except:
+            self.logger.print("[warn]Invalid configuration for mic.[/]")
             with self.logger.warn():
                 self.logger.print(traceback.format_exc(), end="", markup=False)
             return dn.DataNode.wrap([])

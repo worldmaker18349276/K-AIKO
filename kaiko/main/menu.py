@@ -471,8 +471,8 @@ class KAIKOPlay:
             beatmap = beatsheets.BeatSheet.read(str(self.filepath))
 
         except beatsheets.BeatmapParseError:
+            logger.print(f"[warn]Failed to read beatmap {logger.escape(str(self.filepath))}[/]")
             with logger.warn():
-                logger.print(f"Failed to read beatmap {logger.escape(str(self.filepath))}")
                 logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
@@ -511,8 +511,8 @@ class KAIKOLoop:
             events, width = beatsheets.BeatSheet.parse_patterns(self.pattern)
 
         except beatsheets.BeatmapParseError:
+            logger.print("[warn]Failed to parse pattern.[/]")
             with logger.warn():
-                logger.print(f"Failed to parse pattern.")
                 logger.print(traceback.format_exc(), end="", markup=False)
 
         else:

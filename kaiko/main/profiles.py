@@ -75,7 +75,7 @@ class ProfileManager:
 
     @classmethod
     def initialize(cls, path, logger):
-        """Initializer, use me instead of sconstructor.
+        """Initialize profile manager by given profiles directory.
 
         Parameters
         ----------
@@ -232,8 +232,8 @@ class ProfileManager:
         try:
             cfg.write(self.config_type, self.current, current_path, name=self.settings_name)
         except Exception:
+            logger.print("[warn]Fail to format configuration[/]")
             with logger.warn():
-                logger.print("Fail to format configuration")
                 logger.print(traceback.format_exc(), end="", markup=False)
             return False
 
@@ -265,8 +265,8 @@ class ProfileManager:
         try:
             self.current = cfg.read(self.config_type, current_path, name=self.settings_name)
         except Exception:
+            logger.print("[warn]Fail to parse configuration[/]")
             with logger.warn():
-                logger.print("Fail to parse configuration")
                 logger.print(traceback.format_exc(), end="", markup=False)
             return False
 
@@ -565,8 +565,8 @@ class ConfigCommand:
                 self.logger.print(f"[warn]{self.logger.escape(str(error.__cause__))}[/]")
 
         except:
+            self.logger.print(f"[warn]An unexpected error occurred[/]")
             with self.logger.warn():
-                self.logger.print(f"[warn]An unexpected error occurred[/]")
                 self.logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
