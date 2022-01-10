@@ -62,7 +62,7 @@ def make_configuration_parser(config_type, config_name):
 
     """
 
-    vindent = pc.regex(r"(#[^\n]*|[ ]*)(\n|$)").many()
+    vindent = pc.regex(r"((#[^\n]*|[ ]*)(\n|$))*")
     equal = pc.regex(r"[ ]*=[ ]*").desc("'='")
     nl = pc.regex(r"[ ]*(\n|$)").desc(r"'\n'")
     field = make_field_parser(config_type)
