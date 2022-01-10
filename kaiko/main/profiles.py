@@ -27,8 +27,8 @@ def exists(program):
     return rc == 0
 
 @dn.datanode
-def edit(text, editor):
-    with tempfile.NamedTemporaryFile(mode='w+', suffix=".tmp") as file:
+def edit(text, editor, suffix=""):
+    with tempfile.NamedTemporaryFile(mode='w+', suffix=".tmp"+suffix) as file:
         file.write(text)
         file.flush()
 
@@ -533,23 +533,14 @@ class ConfigCommand:
 
     @cmd.function_command
     @dn.datanode
-    def edit(self, field):
-        """[rich]Edit the value of this field in the configuration.
+    def edit(self):
+        """[rich]Edit the configuration by external editor.
 
-        usage: [cmd]config[/] [cmd]edit[/] [arg]{field}[/]
-                             ╱
-                      The field name.
+        usage: [cmd]config[/] [cmd]edit[/]
         """
         editor = self.config.current.devices.terminal.editor
 
-        field_type = self.config.config_type.get_field_type(field)
-        parser = sz.make_parser_from_type_hint(field_type) << pc.regex(r"\s*") << pc.eof()
-
-        if self.config.has(field):
-            value = self.config.get(field)
-            value_str = sz.format_value(value)
-        else:
-            value_str = ""
+        text = cfg.format(self.config.config_type, self.config.current, self.config.settings_name)
 
         yield
 
@@ -558,23 +549,28 @@ class ConfigCommand:
             self.logger.print(f"[warn]Unknown editor: {self.logger.escape(editor)}[/]")
             return
 
-        res_str = yield from edit(value_str, editor).join()
+        text = yield from edit(text, editor, ".py").join()
 
         # parse result
-        res_str = res_str.strip()
-
-        if res_str == "":
-            self.config.unset(field)
-            self.config.set_change()
-            return
-
         try:
-            res = parser.parse(res_str)
-        except Exception as e:
-            self.logger.print(f"[warn]{self.logger.escape(str(e))}[/]")
+            res = cfg.parse(self.config.config_type, text, self.config.settings_name)
+
+        except pc.ParseError as error:
+            line, col = pc.ParseError.locate(error.text, error.index)
+            code = error.text[:error.index] + "◊" + error.text[error.index:]
+
+            self.logger.print(f"[warn]parse fail at ln {line}, col {col} (marked with ◊)[/]")
+            self.logger.print_code(code)
+            if error.__cause__ is not None:
+                self.logger.print(f"[warn]{self.logger.escape(str(error.__cause__))}[/]")
+
+        except:
+            with self.logger.warn():
+                self.logger.print(f"[warn]An unexpected error occurred[/]")
+                self.logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
-            self.config.set(field, res)
+            self.config.current = res
             self.config.set_change()
 
     @get.arg_parser("field")
@@ -583,7 +579,6 @@ class ConfigCommand:
     @has_default.arg_parser("field")
     @unset.arg_parser("field")
     @set.arg_parser("field")
-    @edit.arg_parser("field")
     def _field_parser(self):
         return FieldParser(self.config.config_type)
 
