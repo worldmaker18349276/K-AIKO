@@ -14,17 +14,6 @@ from ..utils import markups as mu
 from ..devices import engines
 from ..beats import beatsheets
 
-def make_table(info):
-    total_width = 80
-    res = {}
-    for line in info.strip().splitlines():
-        index = line.find(":")
-        key, value = (line[:index], line[index+1:]) if index != -1 else (line, "")
-        res[key] = value
-
-    width = max((len(k) for k in res.keys()), default=0)
-    return "[rich]" + "\n".join(f"{' '*(width-len(k)) + mu.escape(k)} │ [emph]{mu.escape(v)}[/]" for k, v in res.items())
-
 @dataclasses.dataclass
 class SongMetadata:
     root: str
@@ -51,7 +40,8 @@ class SongMetadata:
         return "\n".join(line for line in info.splitlines() if re.match(info_regex, line))
 
     def get_info(self, logger):
-        return make_table(self.info)
+        data = dict(tuple(line.split(":", maxsplit=1)) for line in self.info.strip().splitlines())
+        return logger.format_dict(data)
 
 class BeatmapManager:
     def __init__(self, path, logger):
@@ -177,7 +167,7 @@ class BeatmapManager:
         return [song for song in songs if song is not None]
 
     def make_parser(self):
-        return BeatmapParser(self)
+        return BeatmapParser(self, self.logger)
 
     def print_tree(self, logger):
         beatmapsets = self._beatmaps.items()
@@ -191,9 +181,10 @@ class BeatmapManager:
                 logger.print(preprefix + prefix + logger.escape(str(beatmap.relative_to(path))))
 
 class BeatmapParser(cmd.TreeParser):
-    def __init__(self, beatmap_manager):
+    def __init__(self, beatmap_manager, logger):
         super().__init__(BeatmapParser.make_tree(beatmap_manager._beatmaps))
         self.beatmap_manager = beatmap_manager
+        self.logger = logger
 
     @staticmethod
     def make_tree(beatmapsets):
@@ -211,7 +202,10 @@ class BeatmapParser(cmd.TreeParser):
 
         if self.beatmap_manager.is_beatmap(path):
             beatmap = self.beatmap_manager.get_beatmap_metadata(path)
-            return make_table(beatmap.info) if beatmap is not None else None
+            if beatmap is None or not beatmap.info.strip():
+                return None
+            data = dict(tuple(line.split(":", maxsplit=1)) for line in beatmap.info.strip().splitlines())
+            return "[rich]" + self.logger.format_dict(data, show_border=False)
 
 
 class BGMAction:

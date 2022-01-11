@@ -171,6 +171,22 @@ class Logger:
             self.print(f" [weight=dim]{i:>{n}d}[/] [weight=dim]│[/] [color=bright_white]{self.escape(line)}[/]")
         self.print(f"[weight=dim]{'─'*n}──┴─{'─'*(max(0, width-n-4))}[/]")
 
+    def format_dict(self, data, show_border=True):
+        total_width = 80
+        if any(self.rich.widthof(k) < 0 for k in data.keys()):
+            raise ValueError("contain unprintable key")
+        width = max((self.rich.widthof(k) for k in data.keys()), default=0)
+        res = []
+        for k, v in data.items():
+            key = ' '*(width - self.rich.widthof(k)) + mu.escape(k)
+            value = mu.escape(v)
+            res.append(f"{key} [weight=dim]│[/] [emph]{value}[/]")
+        if show_border:
+            border = f"[weight=dim]{'─'*total_width}[/]"
+            res.insert(0, border)
+            res.append(border)
+        return "\n".join(res)
+
     def ask(self, prompt, default=True):
         @dn.datanode
         def _ask():
