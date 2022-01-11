@@ -460,8 +460,7 @@ class ConfigCommand:
         text = self.config.format()
         is_changed = self.config.is_changed()
         title = self.config.get_title()
-        self.logger.print_code(text, title=title, is_changed=is_changed)
-        self.logger.print()
+        self.logger.print(self.logger.format_code(text, title=title, is_changed=is_changed))
 
     @cmd.function_command
     def has(self, field):
@@ -560,7 +559,7 @@ class ConfigCommand:
             code = error.text[:error.index] + "◊" + error.text[error.index:]
 
             self.logger.print(f"[warn]parse fail at ln {line}, col {col} (marked with ◊)[/]")
-            self.logger.print_code(code)
+            self.logger.print(self.logger.format_code(code))
             if error.__cause__ is not None:
                 self.logger.print(f"[warn]{self.logger.escape(str(error.__cause__))}[/]")
 
