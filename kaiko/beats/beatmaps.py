@@ -1106,7 +1106,7 @@ class Beatmap:
         prepare_time = gameplay_settings.controls.prepare_time
         debug_monitor = gameplay_settings.debug_monitor
 
-        rich = mu.RichBarRenderer(devices_settings.terminal.unicode_version, devices_settings.terminal.color_support)
+        rich = mu.RichParser(devices_settings.terminal.unicode_version, devices_settings.terminal.color_support)
 
         # prepare
         try:
@@ -1241,7 +1241,7 @@ class Beatmap:
 
         Parameters
         ----------
-        rich : markups.RichBarRenderer
+        rich : markups.RichParser
 
         Returns
         -------

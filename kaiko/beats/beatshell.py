@@ -1532,7 +1532,7 @@ class BeatPrompt:
         stroke : BeatStroke
         input : BeatInput
         settings : BeatShellSettings
-        rich : markups.RichTextRenderer
+        rich : markups.RichParser
         metronome : engines.Metronome
         icon : function
         marker : function
@@ -1870,7 +1870,7 @@ class CaretPlaceholder(mu.Pair):
 @dataclasses.dataclass
 class Caret:
     metronome: engines.Metronome
-    rich: mu.RichTextRenderer
+    rich: mu.RichParser
     settings: BeatShellSettings.prompt
 
     @dn.datanode

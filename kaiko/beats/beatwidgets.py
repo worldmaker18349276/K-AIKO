@@ -81,7 +81,7 @@ class SpectrumWidgetSettings:
 @dataclasses.dataclass
 class SpectrumWidget:
     spectrum: str
-    rich: mu.RichTextRenderer
+    rich: mu.RichParser
     mixer: engines.Mixer
     mixer_settings: engines.MixerSettings
     settings: SpectrumWidgetSettings
@@ -166,7 +166,7 @@ class VolumeIndicatorWidgetSettings:
 @dataclasses.dataclass
 class VolumeIndicatorWidget:
     volume: float
-    rich: mu.RichTextRenderer
+    rich: mu.RichParser
     mixer: engines.Mixer
     mixer_settings: engines.MixerSettings
     settings: VolumeIndicatorWidgetSettings
@@ -224,7 +224,7 @@ class AccuracyMeterWidgetSettings:
 class AccuracyMeterWidget:
     last_perf: int
     last_time: float
-    rich: mu.RichTextRenderer
+    rich: mu.RichParser
     state: object # with property `perfs`
     settings: AccuracyMeterWidgetSettings
 
@@ -312,7 +312,7 @@ class ScoreWidgetSettings:
 @dataclasses.dataclass
 class ScoreWidget:
     state: object # with properties `score`, `full_score`
-    rich: mu.RichTextRenderer
+    rich: mu.RichParser
     settings: ScoreWidgetSettings
 
     @dn.datanode
@@ -357,7 +357,7 @@ class ProgressWidgetSettings:
 @dataclasses.dataclass
 class ProgressWidget:
     state: object # with properties `finished_subjects`, `total_subjects`, `time`
-    rich: mu.RichTextRenderer
+    rich: mu.RichParser
     settings: ProgressWidgetSettings
 
     @dn.datanode
@@ -415,7 +415,7 @@ class PatternsWidgetSettings:
 @dataclasses.dataclass
 class PatternsWidget:
     metronome: engines.Metronome
-    rich: mu.RichTextRenderer
+    rich: mu.RichParser
     settings: PatternsWidgetSettings
 
     @dn.datanode
@@ -448,7 +448,7 @@ class MarkerWidgetSettings:
 @dataclasses.dataclass
 class MarkerWidget:
     metronome: engines.Metronome
-    rich: mu.RichTextRenderer
+    rich: mu.RichParser
     settings: MarkerWidgetSettings
 
     @dn.datanode

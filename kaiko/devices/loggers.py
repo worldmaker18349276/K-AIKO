@@ -94,7 +94,8 @@ class Logger:
             self.logger_settings = logger_settings
 
         terminal_settings = self.terminal_settings if self.terminal_settings else term.TerminalSettings()
-        self.rich = mu.RichTextRenderer(terminal_settings.unicode_version, terminal_settings.color_support)
+        self.rich = mu.RichParser(terminal_settings.unicode_version, terminal_settings.color_support)
+        self.renderer = mu.RichTextRenderer(terminal_settings.unicode_version)
 
         logger_settings = self.logger_settings if self.logger_settings else LoggerSettings()
         self.rich.add_single_template("data", logger_settings.data_icon)
@@ -122,7 +123,7 @@ class Logger:
         template = self.rich.parse(verb_block, slotted=True)
         self.level = 0
         try:
-            with self.rich.render_context(template, lambda text: print(text, end="", flush=True)):
+            with self.renderer.render_context(template, lambda text: print(text, end="", flush=True)):
                 yield
         finally:
             self.level = level
@@ -134,7 +135,7 @@ class Logger:
         template = self.rich.parse(warn_block, slotted=True)
         self.level = 2
         try:
-            with self.rich.render_context(template, lambda text: print(text, end="", flush=True)):
+            with self.renderer.render_context(template, lambda text: print(text, end="", flush=True)):
                 yield
         finally:
             self.level = level
@@ -152,13 +153,13 @@ class Logger:
 
         if isinstance(msg, str):
             msg = self.rich.parse(msg)
-        print(self.rich.render(msg), end=end, flush=flush)
+        print(self.renderer.render(msg), end=end, flush=flush)
 
     def clear_line(self, flush=False):
-        print(self.rich.render(self.rich.clear_line().expand()), end="", flush=flush)
+        print(self.renderer.render(self.renderer.clear_line().expand()), end="", flush=flush)
 
     def clear(self, flush=False):
-        print(self.rich.render(self.rich.clear_screen().expand()), end="", flush=flush)
+        print(self.renderer.render(self.renderer.clear_screen().expand()), end="", flush=flush)
 
     def format_code(self, content, title=None, is_changed=False):
         total_width = 80

@@ -467,7 +467,7 @@ def to_range(start, stop, width):
 class RichBar:
     def __init__(self, terminal_settings):
         self.markups = []
-        self.rich = mu.RichBarRenderer(terminal_settings.unicode_version, terminal_settings.color_support)
+        self.rich_renderer = mu.RichBarRenderer(terminal_settings.unicode_version)
 
     def add_markup(self, markup, mask=slice(None,None), shift=0):
         self.markups.append((markup, mask, shift))
@@ -484,7 +484,7 @@ class RichBar:
             else:
                 x = shift + mask.start + width
 
-            self.rich._render(buffer, markup, x=x, width=width, xmask=xran[mask], attrs=())
+            self.rich_renderer._render(buffer, markup, x=x, width=width, xmask=xran[mask], attrs=())
 
         return "".join(buffer).rstrip()
 
@@ -520,9 +520,9 @@ class Renderer:
     @staticmethod
     @dn.datanode
     def _render_node(scheduler, term_settings):
-        rich = mu.RichTextRenderer(term_settings.unicode_version, term_settings.color_support)
-        clear_line = rich.render(rich.clear_line().expand())
-        clear_below = rich.render(rich.clear_below().expand())
+        rich_renderer = mu.RichTextRenderer(term_settings.unicode_version)
+        clear_line = rich_renderer.render(rich_renderer.clear_line().expand())
+        clear_below = rich_renderer.render(rich_renderer.clear_below().expand())
         width = 0
         msgs = []
         curr_msgs = list(msgs)
@@ -543,7 +543,7 @@ class Renderer:
                 elif not msgs:
                     res_text = f"{clear_below}{view_str}\r"
                 else:
-                    msg_text = rich.render_less(mu.Group((mu.Text("\n"), *msgs)), size)
+                    msg_text = rich_renderer.render_less(mu.Group((mu.Text("\n"), *msgs)), size)
                     res_text = f"{clear_below}{view_str}\r{msg_text}"
 
                 shown, resized, time, size = yield res_text
@@ -555,9 +555,9 @@ class Renderer:
     def _resize_node(render_node, settings, term_settings, ref_time):
         framerate = settings.display_framerate
 
-        rich = mu.RichTextRenderer(term_settings.unicode_version, term_settings.color_support)
-        clear_line = rich.render(rich.clear_line().expand())
-        clear_screen = rich.render(rich.clear_screen().expand())
+        rich_renderer = mu.RichTextRenderer(term_settings.unicode_version)
+        clear_line = rich_renderer.render(rich_renderer.clear_line().expand())
+        clear_screen = rich_renderer.render(rich_renderer.clear_screen().expand())
         size_node = term.terminal_size()
 
         index = -1

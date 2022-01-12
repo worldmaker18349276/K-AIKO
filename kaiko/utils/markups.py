@@ -737,9 +737,6 @@ class ControlCharacter(Single):
     def param(self):
         return None
 
-    def expand(self):
-        return Text(self.character)
-
 @dataclasses.dataclass(frozen=True)
 class BEL(ControlCharacter):
     name = "bel"
@@ -821,227 +818,6 @@ class Wide(Single):
             return Text(self.char)
 
 
-@dataclasses.dataclass(frozen=True)
-class Rich(Pair):
-    name = "rich"
-
-    @classmethod
-    def parse(cls, param):
-        if param is not None:
-            raise MarkupParseError(f"no parameter is needed for tag [{cls.name}/]")
-        return ()
-
-    @property
-    def param(self):
-        return None
-
-    def expand(self):
-        return Group(self.children).expand()
-
-class RichTextRenderer:
-    default_tags = {
-        Rich.name: Rich,
-        Reset.name: Reset,
-        Weight.name: Weight,
-        Italic.name: Italic,
-        Underline.name: Underline,
-        Strike.name: Strike,
-        Blink.name: Blink,
-        Invert.name: Invert,
-        Color.name: Color,
-        BgColor.name: BgColor,
-        Tab.name: Tab,
-        Newline.name: Newline,
-        Space.name: Space,
-        Wide.name: Wide,
-    }
-
-    def __init__(self, unicode_version="auto", color_support=ColorSupport.TRUECOLOR):
-        self.tags = dict(RichTextRenderer.default_tags)
-        self.unicode_version = unicode_version
-        self.color_support = color_support
-
-    @property
-    def props(self):
-        return {
-            Wide.name: (self.unicode_version,),
-            Color.name: (self.color_support,),
-            BgColor.name: (self.color_support,),
-        }
-
-    def parse(self, markup_str, expand=True, slotted=False, root_tag=False):
-        if root_tag and not markup_str.startswith(f"[{Rich.name}]"):
-            return Text(markup_str)
-
-        tags = self.tags if not slotted else dict(self.tags, slot=Slot)
-        markup = parse_markup(markup_str, tags, self.props)
-        if expand:
-            markup = markup.expand()
-        return markup
-
-    def add_single_template(self, name, template):
-        tag = make_single_template(name, template, self.tags, self.props)
-        self.tags[tag.name] = tag
-        return tag
-
-    def add_pair_template(self, name, template):
-        tag = make_pair_template(name, template, self.tags, self.props)
-        self.tags[tag.name] = tag
-        return tag
-
-    def widthof(self, text):
-        width = 0
-        for ch in text:
-            w = wcwidth.wcwidth(ch, self.unicode_version)
-            if w == -1:
-                return -1
-            width += w
-        return width
-
-    def clear_line(self):
-        return Group((Clear(ClearRegion.line), CR()))
-
-    def clear_below(self):
-        return Group((Clear(ClearRegion.to_end), CR()))
-
-    def clear_screen(self):
-        return Group((Clear(ClearRegion.screen), Pos(0,0)))
-
-    def _render(self, markup, reopens=()):
-        if isinstance(markup, Text):
-            yield from markup.string
-
-        elif isinstance(markup, Group):
-            for child in markup.children:
-                yield from self._render(child, reopens)
-
-        elif isinstance(markup, CSI):
-            yield markup.ansi_code
-
-        elif isinstance(markup, SGR):
-            open, close = markup.ansi_delimiters
-
-            if open:
-                yield open
-            for child in markup.children:
-                yield from self._render(child, (open, *reopens))
-            if close:
-                yield close
-            for reopen in reopens[::-1]:
-                if reopen:
-                    yield reopen
-
-        else:
-            raise TypeError(f"unknown markup type: {type(markup)}")
-
-    def render(self, markup):
-        return "".join(self._render(markup))
-
-    def _render_context(self, markup, print, reopens=()):
-        if isinstance(markup, Text):
-            print(markup.string)
-
-        elif isinstance(markup, CSI):
-            print(markup.ansi_code)
-
-        elif isinstance(markup, Slot):
-            yield
-
-        elif isinstance(markup, Group):
-            if not markup.children:
-                return
-            child = markup.children[0]
-            try:
-                yield from self._render_context(child, print, reopens)
-            finally:
-                yield from self._render_context(Group(markup.children[1:]), print, reopens)
-
-        elif isinstance(markup, SGR):
-            open, close = markup.ansi_delimiters
-
-            if open:
-                print(open)
-
-            try:
-                yield from self._render_context(Group(markup.children), print, (open, *reopens))
-            finally:
-                if close:
-                    print(close)
-                for reopen in reopens[::-1]:
-                    if reopen:
-                        print(reopen)
-
-        else:
-            raise TypeError(f"unknown markup type: {type(markup)}")
-
-    @contextlib.contextmanager
-    def render_context(self, markup, print):
-        yield from self._render_context(markup, print)
-
-    def _less(self, markup, size, pos=(0,0), reopens=(), wrap=True):
-        if pos is None:
-            return None
-
-        elif isinstance(markup, Text):
-            x, y = pos
-            for ch in markup.string:
-                if ch == "\n":
-                    y += 1
-                    x = 0
-
-                else:
-                    w = wcwidth.wcwidth(ch, self.unicode_version)
-                    if w == -1:
-                        raise ValueError(f"unprintable character: {repr(ch)}")
-                    x += w
-                    if wrap and x > size.columns:
-                        y += 1
-                        x = w
-
-                if y == size.lines:
-                    return None
-                if x <= size.columns:
-                    yield ch
-            return x, y
-
-        elif isinstance(markup, Group):
-            for child in markup.children:
-                pos = yield from self._less(child, size, pos, reopens, wrap=wrap)
-            return pos
-
-        elif isinstance(markup, SGR):
-            open, close = markup.ansi_delimiters
-
-            if open:
-                yield open
-            for child in markup.children:
-                pos = yield from self._less(child, size, pos, (open, *reopens), wrap=wrap)
-            if close:
-                yield close
-            for reopen in reopens[::-1]:
-                if reopen:
-                    yield reopen
-            return pos
-
-        else:
-            raise TypeError(f"unknown markup type: {type(markup)}")
-
-    def render_less(self, markup, size, pos=(0,0), wrap=True, restore=True):
-        def _restore_pos(markup, size, pos, wrap):
-            x0, y0 = pos
-            pos = yield from self._less(markup, size, pos, wrap=wrap)
-            x, y = pos or (None, size.lines-1)
-            if y > y0:
-                yield f"\x1b[{y-y0}A"
-            yield "\r"
-            if x0 > 0:
-                yield f"\x1b[{x0}C"
-
-        if restore:
-            markup = _restore_pos(markup, size, pos, wrap)
-        return "".join(markup)
-
-
 # bar position
 @dataclasses.dataclass(frozen=True)
 class X(Single):
@@ -1112,13 +888,27 @@ class Mask(Pair):
     def param(self):
         return f"{self.mask.start if self.mask.start is not None else ''}:{self.mask.stop if self.mask.stop is not None else ''}"
 
-def clamp(ran, mask):
-    start = min(max(mask.start, ran.start), mask.stop)
-    stop = max(min(mask.stop, ran.stop), mask.start)
-    return range(start, stop)
 
-class RichBarRenderer:
+@dataclasses.dataclass(frozen=True)
+class Rich(Pair):
+    name = "rich"
+
+    @classmethod
+    def parse(cls, param):
+        if param is not None:
+            raise MarkupParseError(f"no parameter is needed for tag [{cls.name}/]")
+        return ()
+
+    @property
+    def param(self):
+        return None
+
+    def expand(self):
+        return Group(self.children).expand()
+
+class RichParser:
     default_tags = {
+        Rich.name: Rich,
         Reset.name: Reset,
         Weight.name: Weight,
         Italic.name: Italic,
@@ -1128,6 +918,8 @@ class RichBarRenderer:
         Invert.name: Invert,
         Color.name: Color,
         BgColor.name: BgColor,
+        Tab.name: Tab,
+        Newline.name: Newline,
         Space.name: Space,
         Wide.name: Wide,
         X.name: X,
@@ -1137,7 +929,7 @@ class RichBarRenderer:
     }
 
     def __init__(self, unicode_version="auto", color_support=ColorSupport.TRUECOLOR):
-        self.tags = dict(RichBarRenderer.default_tags)
+        self.tags = dict(self.default_tags)
         self.unicode_version = unicode_version
         self.color_support = color_support
 
@@ -1149,7 +941,10 @@ class RichBarRenderer:
             BgColor.name: (self.color_support,),
         }
 
-    def parse(self, markup_str, expand=True, slotted=False):
+    def parse(self, markup_str, expand=True, slotted=False, root_tag=False):
+        if root_tag and not markup_str.startswith(f"[{Rich.name}]"):
+            return Text(markup_str)
+
         tags = self.tags if not slotted else dict(self.tags, slot=Slot)
         markup = parse_markup(markup_str, tags, self.props)
         if expand:
@@ -1174,6 +969,181 @@ class RichBarRenderer:
                 return -1
             width += w
         return width
+
+
+class RichTextRenderer:
+    def __init__(self, unicode_version="auto"):
+        self.unicode_version = unicode_version
+
+    def clear_line(self):
+        return Group((Clear(ClearRegion.line), CR()))
+
+    def clear_below(self):
+        return Group((Clear(ClearRegion.to_end), CR()))
+
+    def clear_screen(self):
+        return Group((Clear(ClearRegion.screen), Pos(0,0)))
+
+    def _render(self, markup, reopens=()):
+        if isinstance(markup, Text):
+            yield markup.string
+
+        elif isinstance(markup, ControlCharacter):
+            yield markup.character
+
+        elif isinstance(markup, Group):
+            for child in markup.children:
+                yield from self._render(child, reopens)
+
+        elif isinstance(markup, CSI):
+            yield markup.ansi_code
+
+        elif isinstance(markup, SGR):
+            open, close = markup.ansi_delimiters
+
+            if open:
+                yield open
+            for child in markup.children:
+                yield from self._render(child, (open, *reopens))
+            if close:
+                yield close
+            for reopen in reopens[::-1]:
+                if reopen:
+                    yield reopen
+
+        else:
+            raise TypeError(f"unknown markup type: {type(markup)}")
+
+    def render(self, markup):
+        return "".join(self._render(markup))
+
+    def _render_context(self, markup, print, reopens=()):
+        if isinstance(markup, Text):
+            print(markup.string)
+
+        elif isinstance(markup, ControlCharacter):
+            yield markup.character
+
+        elif isinstance(markup, CSI):
+            print(markup.ansi_code)
+
+        elif isinstance(markup, Slot):
+            yield
+
+        elif isinstance(markup, Group):
+            if not markup.children:
+                return
+            child = markup.children[0]
+            try:
+                yield from self._render_context(child, print, reopens)
+            finally:
+                yield from self._render_context(Group(markup.children[1:]), print, reopens)
+
+        elif isinstance(markup, SGR):
+            open, close = markup.ansi_delimiters
+
+            if open:
+                print(open)
+
+            try:
+                yield from self._render_context(Group(markup.children), print, (open, *reopens))
+            finally:
+                if close:
+                    print(close)
+                for reopen in reopens[::-1]:
+                    if reopen:
+                        print(reopen)
+
+        else:
+            raise TypeError(f"unknown markup type: {type(markup)}")
+
+    @contextlib.contextmanager
+    def render_context(self, markup, print):
+        yield from self._render_context(markup, print)
+
+    def _less(self, markup, size, pos=(0,0), reopens=(), wrap=True):
+        if pos is None:
+            return None
+
+        elif isinstance(markup, Text):
+            x, y = pos
+            for ch in markup.string:
+                if ch == "\n":
+                    y += 1
+                    x = 0
+
+                else:
+                    w = wcwidth.wcwidth(ch, self.unicode_version)
+                    if w == -1:
+                        raise ValueError(f"unprintable character: {repr(ch)}")
+                    x += w
+                    if wrap and x > size.columns:
+                        y += 1
+                        x = w
+
+                if y == size.lines:
+                    return None
+                if x <= size.columns:
+                    yield ch
+            return x, y
+
+        elif isinstance(markup, Newline):
+            x, y = pos
+            y += 1
+            x = 0
+
+            if y == size.lines:
+                return None
+            if x <= size.columns:
+                yield markup.character
+            return x, y
+
+        elif isinstance(markup, Group):
+            for child in markup.children:
+                pos = yield from self._less(child, size, pos, reopens, wrap=wrap)
+            return pos
+
+        elif isinstance(markup, SGR):
+            open, close = markup.ansi_delimiters
+
+            if open:
+                yield open
+            for child in markup.children:
+                pos = yield from self._less(child, size, pos, (open, *reopens), wrap=wrap)
+            if close:
+                yield close
+            for reopen in reopens[::-1]:
+                if reopen:
+                    yield reopen
+            return pos
+
+        else:
+            raise TypeError(f"unknown markup type: {type(markup)}")
+
+    def render_less(self, markup, size, pos=(0,0), wrap=True, restore=True):
+        def _restore_pos(markup, size, pos, wrap):
+            x0, y0 = pos
+            pos = yield from self._less(markup, size, pos, wrap=wrap)
+            x, y = pos or (None, size.lines-1)
+            if y > y0:
+                yield f"\x1b[{y-y0}A"
+            yield "\r"
+            if x0 > 0:
+                yield f"\x1b[{x0}C"
+
+        if restore:
+            markup = _restore_pos(markup, size, pos, wrap)
+        return "".join(markup)
+
+
+def clamp(ran, mask):
+    start = min(max(mask.start, ran.start), mask.stop)
+    stop = max(min(mask.stop, ran.stop), mask.start)
+    return range(start, stop)
+
+class RichBarRenderer:
+    def __init__(self, unicode_version="auto"):
+        self.unicode_version = unicode_version
 
     def _render_text(self, buffer, string, x, width, xmask, attrs):
         start = xmask.start
