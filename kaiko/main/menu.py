@@ -15,7 +15,6 @@ from ..devices import loggers as log
 from ..beats import beatshell
 from ..beats import beatmaps
 from ..beats import beatsheets
-from ..beats import beatanalyzer
 from .profiles import ProfileManager, ConfigCommand
 from .songs import BeatmapManager, KAIKOBGMController, BGMCommand
 from .devices import prepare_pyaudio, DevicesCommand, determine_unicode_version, fit_screen
@@ -491,7 +490,7 @@ class KAIKOPlay:
             score = yield from beatmap.play(manager, self.user, self.devices_settings, self.gameplay_settings).join()
 
             logger.print()
-            beatanalyzer.show_analyze(beatmap.settings.difficulty.performance_tolerance, score.perfs)
+            logger.print_scores(beatmap.settings.difficulty.performance_tolerance, score.perfs)
 
 class KAIKOLoop:
     def __init__(self, pattern, tempo, offset, user, devices_settings, gameplay_settings, logger):
@@ -533,5 +532,5 @@ class KAIKOLoop:
             score = yield from beatmap.play(manager, self.user, self.devices_settings, self.gameplay_settings).join()
 
             logger.print()
-            beatanalyzer.show_analyze(beatmap.settings.difficulty.performance_tolerance, score.perfs)
+            logger.print_scores(beatmap.settings.difficulty.performance_tolerance, score.perfs)
 
