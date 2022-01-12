@@ -422,7 +422,13 @@ class KnockTest:
 
         detector_task, detector = engines.Detector.create(self.settings, manager, self.ref_time)
         detector.add_listener(self.hit_listener())
-        exit_task = term.inkey([])
+
+        @dn.datanode
+        def exit_any():
+            keycode = None
+            while keycode is None:
+                _, keycode = yield
+        exit_task = term.inkey(exit_any())
 
         return dn.pipe(detector_task, self.show_hit(), exit_task)
 
@@ -596,7 +602,12 @@ class MicTest:
 
         vol = dn.branch(self.draw_volume(samplerate, buffer_length))
 
-        exit_task = term.inkey([])
+        @dn.datanode
+        def exit_any():
+            keycode = None
+            while keycode is None:
+                _, keycode = yield
+        exit_task = term.inkey(exit_any())
         mic_task = aud.record(manager, vol, samplerate=samplerate,
                                             buffer_shape=(buffer_length, channels),
                                             format=format, device=device)

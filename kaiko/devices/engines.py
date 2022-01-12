@@ -642,7 +642,13 @@ class Renderer:
 
 
 class ControllerSettings(cfg.Configurable):
-    pass
+    r"""
+    Fields
+    ------
+    update_interval : float
+        The update interval of controllers.
+    """
+    update_interval: float = 0.1
 
 class Controller:
     def __init__(self, handlers_scheduler):
@@ -650,7 +656,7 @@ class Controller:
 
     @staticmethod
     def get_task(scheduler, settings, term_settings, ref_time):
-        return term.inkey(Controller._control_node(scheduler, settings, term_settings, ref_time))
+        return term.inkey(Controller._control_node(scheduler, settings, term_settings, ref_time), dt=settings.update_interval)
 
     @staticmethod
     @dn.datanode
@@ -661,7 +667,9 @@ class Controller:
             while True:
                 time, keycode = yield
 
-                if keycode in keycodes:
+                if keycode is None:
+                    keyname = None
+                elif keycode in keycodes:
                     keyname = keycodes[keycode]
                 elif keycode.isprintable():
                     keyname = "PRINTABLE"
@@ -681,10 +689,7 @@ class Controller:
         return task, cls(scheduler)
 
     def add_handler(self, node, keyname=None):
-        if keyname is None:
-            return self.handlers_scheduler.add_node(dn.DataNode.wrap(node), (0,))
-        else:
-            return self.handlers_scheduler.add_node(self._filter_node(node, keyname), (0,))
+        return self.handlers_scheduler.add_node(self._filter_node(node, keyname), (0,))
 
     def remove_handler(self, key):
         self.handlers_scheduler.remove_node(key)
@@ -695,7 +700,9 @@ class Controller:
         with node:
             while True:
                 _, t, keyname, keycode = yield
-                if name == keyname:
+                if keycode is None:
+                    continue
+                if name is None or name == keyname:
                     try:
                         node.send((None, t, keyname, keycode))
                     except StopIteration:

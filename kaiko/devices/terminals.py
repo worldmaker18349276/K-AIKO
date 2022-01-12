@@ -22,6 +22,8 @@ def ucs_detect():
     channel = queue.Queue()
 
     def get_pos(arg):
+        if arg[1] is None:
+            return
         m = pattern.match(arg[1])
         if not m:
             return
@@ -107,9 +109,8 @@ def inkey_ctxt(stream, raw=False):
         os.set_blocking(fd, old_blocking)
 
 @dn.datanode
-def inkey(node, stream=None, raw=False):
+def inkey(node, stream=None, raw=False, dt=0.1):
     node = dn.DataNode.wrap(node)
-    dt = 0.01
 
     if stream is None:
         stream = sys.stdin
@@ -121,10 +122,8 @@ def inkey(node, stream=None, raw=False):
             ready, _, _ = select.select([fd], [], [], dt)
             if stop_event.is_set():
                 break
-            if fd not in ready:
-                continue
 
-            data = stream.read()
+            data = stream.read() if fd in ready else None
 
             try:
                 node.send((time.perf_counter()-ref_time, data))

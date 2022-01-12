@@ -327,8 +327,10 @@ class Logger:
             self.print(f"{self.escape(prompt)} [[{hint}]]", end="", flush=True)
 
             while True:
+                keycode = None
                 try:
-                    _, keycode = yield
+                    while keycode is None:
+                        _, keycode = yield
                 finally:
                     self.print(flush=True)
 
