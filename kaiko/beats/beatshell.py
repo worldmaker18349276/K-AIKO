@@ -265,6 +265,9 @@ class BeatShellSettings(cfg.Configurable):
         autocomplete_keys : tuple of str and str and str
             The keys for finding the next, previous and canceling suggestions.
 
+        preview_song : bool
+            Whether to preview the song when selected.
+
         keymap : dict from str to str
             The keymap of beatshell.  The key of dict is the keystroke, and the
             value of dict is the action to activate.  The format of action is just
@@ -279,6 +282,8 @@ class BeatShellSettings(cfg.Configurable):
         confirm_key: str = "Enter"
         help_key: str = "Alt_Enter"
         autocomplete_keys: Tuple[str, str, str] = ("Tab", "Shift_Tab", "Esc")
+
+        preview_song: bool = True
 
         keymap: Dict[str, str] = {
             "Backspace"     : "input.backspace()",
@@ -806,6 +811,8 @@ class BeatInput:
 
     @locked
     def update_preview(self):
+        if not self.settings.input.preview_song:
+            return
         if self.hint_state is None:
             self.preview_handler(None)
         elif not isinstance(self.hint_state.hint, (InfoHint, SuggestionsHint)):
