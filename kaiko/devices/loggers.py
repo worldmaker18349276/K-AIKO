@@ -1,4 +1,6 @@
 import contextlib
+import dataclasses
+import enum
 import shutil
 import numpy
 from ..utils import datanodes as dn
@@ -116,6 +118,19 @@ class Logger:
         self.rich.add_single_template("bs", logger_settings.shell.backslash)
         self.rich.add_pair_template("typeahead", logger_settings.shell.typeahead)
 
+        self.rich.add_pair_template("py_NoneType", "[color=bright_cyan][slot/][/]")
+        self.rich.add_pair_template("py_ellipsis", "[color=bright_cyan][slot/][/]")
+        self.rich.add_pair_template("py_bool", "[color=bright_cyan][slot/][/]")
+        self.rich.add_pair_template("py_int", "[color=bright_cyan][slot/][/]")
+        self.rich.add_pair_template("py_float", "[color=bright_cyan][slot/][/]")
+        self.rich.add_pair_template("py_complex", "[color=bright_cyan][slot/][/]")
+        self.rich.add_pair_template("py_bytes", "[color=bright_cyan][slot/][/]")
+        self.rich.add_pair_template("py_str", "[color=bright_cyan][slot/][/]")
+        self.rich.add_pair_template("py_punctuation", "[color=white][slot/][/]")
+        self.rich.add_pair_template("py_argument", "[color=bright_white][slot/][/]")
+        self.rich.add_pair_template("py_class", "[color=bright_blue][slot/][/]")
+        self.rich.add_pair_template("py_attribute", "[color=bright_blue][slot/][/]")
+
     @contextlib.contextmanager
     def verb(self):
         level = self.level
@@ -191,6 +206,97 @@ class Logger:
             res.insert(0, border)
             res.append(border)
         return "\n".join(res)
+
+    def format_value(self, value, multiline=True, indent=0):
+        if type(value) in (type(None), type(...), bool, int, float, complex, bytes, str):
+            return f"[py_{type(value).__name__}]{mu.escape(repr(value))}[/]"
+
+        elif isinstance(value, enum.Enum):
+            cls = type(value)
+            cls_name = f"[py_class]{mu.escape(cls.__name__)}[/]"
+            value_name = f"[py_attribute]{mu.escape(value.name)}[/]"
+            return cls_name + "[py_punctuation].[/]" + value_name
+
+        elif type(value) in (list, tuple, set, dict):
+            if type(value) is list:
+                opening, closing = "[py_punctuation][[[/]", "[py_punctuation]]][/]"
+            elif type(value) is tuple:
+                opening, closing = "[py_punctuation]([/]", "[py_punctuation])[/]"
+            elif type(value) is set:
+                opening, closing = "[py_punctuation]{[/]", "[py_punctuation]}[/]"
+            elif type(value) is dict:
+                opening, closing = "[py_punctuation]{[/]", "[py_punctuation]}[/]"
+            else:
+                assert False
+
+            if not value:
+                if type(value) is set:
+                    return "[py_class]set[/][py_punctuation]([/][py_punctuation])[/]"
+                else:
+                    return opening + closing
+
+            if type(value) is tuple and len(value) == 1:
+                content = self.format_value(value[0], multiline=multiline, indent=indent)
+                return opening + content + "[py_punctuation],[/]" + closing
+
+            if not multiline:
+                template = "%s%s%s"
+                delimiter = "[py_punctuation],[/] "
+            else:
+                template = f"%s\n{' '*(indent+4)}%s\n{' '*indent}%s"
+                delimiter = f"[py_punctuation],[/]\n{' '*(indent+4)}"
+                indent = indent + 4
+
+            if type(value) is dict:
+                keys = [self.format_value(key, multiline=False) for key in value.keys()]
+                subvalues = [
+                    self.format_value(subvalue, multiline=multiline, indent=indent)
+                    for subvalue in value.values()
+                ]
+
+                if multiline and all(type(key) is str for key in value.keys()):
+                    widths = [self.rich.widthof(repr(key)) for key in value.keys()]
+                    total_width = max(widths)
+                    keys = [key + " "*(total_width - width) for width, key in zip(widths, keys)]
+                
+                content = delimiter.join(
+                    key + "[py_punctuation]:[/]" + subvalue for key, subvalue in zip(keys, subvalues)
+                )
+
+            else:
+                content = delimiter.join(
+                    self.format_value(subvalue, multiline=multiline, indent=indent)
+                    for subvalue in value
+                )
+
+            return template % (opening, content, closing)
+
+        elif dataclasses.is_dataclass(value):
+            cls = type(value)
+            fields = dataclasses.fields(cls)
+            cls_name = f"[py_class]{mu.escape(cls.__name__)}[/]"
+            opening, closing = "[py_punctuation]([/]", "[py_punctuation])[/]"
+
+            if not fields:
+                return cls_name + opening + closing
+
+            if not multiline:
+                template = cls_name + opening + "%s" + closing
+                delimiter = "[py_punctuation],[/] "
+            else:
+                template = cls_name + opening + f"\n{' '*(indent+4)}%s\n{' '*indent}" + closing
+                delimiter = f"[py_punctuation],[/]\n{' '*(indent+4)}"
+                indent = indent + 4
+
+            content = delimiter.join(
+                f"[py_argument]{mu.escape(field.name)}[/][py_punctuation]=[/]"
+                + self.format_value(getattr(value, field.name), multiline=multiline, indent=indent)
+                for field in fields
+            )
+            return template % content
+
+        else:
+            return mu.escape(repr(value))
 
     def print_scores(self, tol, perfs):
         grad_minwidth = 15

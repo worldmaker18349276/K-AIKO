@@ -276,7 +276,7 @@ class KAIKOMenu:
 
         elif result is not None:
             yield
-            self.logger.print(repr(result), markup=False)
+            self.logger.print(self.logger.format_value(result))
 
     @property
     def settings(self):
