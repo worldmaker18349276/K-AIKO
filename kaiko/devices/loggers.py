@@ -44,6 +44,21 @@ class LoggerSettings(cfg.Configurable):
     warn_block: str = f"[color=red]{'═'*80}\n[slot/]{'═'*80}\n[/]"
 
     @cfg.subconfig
+    class syntax(cfg.Configurable):
+        py_NoneType: str    = "[color=bright_cyan][slot/][/]"
+        py_ellipsis: str    = "[color=bright_cyan][slot/][/]"
+        py_bool: str        = "[color=bright_cyan][slot/][/]"
+        py_int: str         = "[color=bright_cyan][slot/][/]"
+        py_float: str       = "[color=bright_cyan][slot/][/]"
+        py_complex: str     = "[color=bright_cyan][slot/][/]"
+        py_bytes: str       = "[color=bright_cyan][slot/][/]"
+        py_str: str         = "[color=bright_cyan][slot/][/]"
+        py_punctuation: str = "[color=white][slot/][/]"
+        py_argument: str    = "[color=bright_white][slot/][/]"
+        py_class: str       = "[color=bright_blue][slot/][/]"
+        py_attribute: str   = "[color=bright_blue][slot/][/]"
+
+    @cfg.subconfig
     class shell(cfg.Configurable):
         r"""
         Fields
@@ -118,18 +133,18 @@ class Logger:
         self.rich.add_single_template("bs", logger_settings.shell.backslash)
         self.rich.add_pair_template("typeahead", logger_settings.shell.typeahead)
 
-        self.rich.add_pair_template("py_NoneType", "[color=bright_cyan][slot/][/]")
-        self.rich.add_pair_template("py_ellipsis", "[color=bright_cyan][slot/][/]")
-        self.rich.add_pair_template("py_bool", "[color=bright_cyan][slot/][/]")
-        self.rich.add_pair_template("py_int", "[color=bright_cyan][slot/][/]")
-        self.rich.add_pair_template("py_float", "[color=bright_cyan][slot/][/]")
-        self.rich.add_pair_template("py_complex", "[color=bright_cyan][slot/][/]")
-        self.rich.add_pair_template("py_bytes", "[color=bright_cyan][slot/][/]")
-        self.rich.add_pair_template("py_str", "[color=bright_cyan][slot/][/]")
-        self.rich.add_pair_template("py_punctuation", "[color=white][slot/][/]")
-        self.rich.add_pair_template("py_argument", "[color=bright_white][slot/][/]")
-        self.rich.add_pair_template("py_class", "[color=bright_blue][slot/][/]")
-        self.rich.add_pair_template("py_attribute", "[color=bright_blue][slot/][/]")
+        self.rich.add_pair_template("py_NoneType", logger_settings.syntax.py_NoneType)
+        self.rich.add_pair_template("py_ellipsis", logger_settings.syntax.py_ellipsis)
+        self.rich.add_pair_template("py_bool", logger_settings.syntax.py_bool)
+        self.rich.add_pair_template("py_int", logger_settings.syntax.py_int)
+        self.rich.add_pair_template("py_float", logger_settings.syntax.py_float)
+        self.rich.add_pair_template("py_complex", logger_settings.syntax.py_complex)
+        self.rich.add_pair_template("py_bytes", logger_settings.syntax.py_bytes)
+        self.rich.add_pair_template("py_str", logger_settings.syntax.py_str)
+        self.rich.add_pair_template("py_punctuation", logger_settings.syntax.py_punctuation)
+        self.rich.add_pair_template("py_argument", logger_settings.syntax.py_argument)
+        self.rich.add_pair_template("py_class", logger_settings.syntax.py_class)
+        self.rich.add_pair_template("py_attribute", logger_settings.syntax.py_attribute)
 
     @contextlib.contextmanager
     def verb(self):
