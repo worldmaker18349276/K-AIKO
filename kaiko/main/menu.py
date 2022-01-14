@@ -446,8 +446,13 @@ class KAIKOMenu:
         self.logger.clear()
 
     @cmd.function_command
+    @dn.datanode
     def bye(self):
         """Close K-AIKO."""
+        if self._config.is_changed():
+            yes = yield from self.logger.ask("Exit without saving current configuration?").join()
+            if not yes:
+                return
         self.logger.print("Bye~")
         raise KeyboardInterrupt
 
