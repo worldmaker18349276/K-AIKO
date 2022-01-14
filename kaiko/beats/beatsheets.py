@@ -2,6 +2,7 @@ import os
 import math
 from fractions import Fraction
 import dataclasses
+from pathlib import Path
 import re
 from typing import List, Tuple, Dict, Union
 import ast
@@ -155,14 +156,15 @@ class BeatSheet(beatmaps.Beatmap):
 
             try:
                 if hack:
-                    beatmap = BeatSheet()
-                    exec(sheet, dict(), dict(beatmap=beatmap))
+                    local = {}
+                    exec(sheet, {'__file__': filename}, local)
+                    beatmap = local['beatmap']
                 else:
                     beatmap = make_beatsheet_parser(metadata_only=metadata_only).parse(sheet)
+                    beatmap.root = Path(filename).resolve().parent
             except Exception as e:
                 raise BeatmapParseError(f"failed to read beatmap {filename}") from e
 
-            beatmap.root = os.path.dirname(filename)
             return beatmap
 
         elif filename.endswith(".osu"):
@@ -409,10 +411,14 @@ def make_beatsheet_parser(metadata_only=False):
     if vernum[0] != vernum0[0] or vernum[1:] > vernum0[1:]:
         raise ValueError("incompatible version")
 
-    yield make_msp_parser(indent=0).reject(lambda sp: None if sp is "\n" else "newline")
-    yield pc.string(f"from {cls.__module__} import {cls.__name__}")
-    yield make_msp_parser(indent=0).reject(lambda sp: None if sp is "\n" else "newline")
-    yield pc.string(f"{beatmap_name} = {cls.__name__}()")
+    prepare = [
+        pc.string("from pathlib import Path"),
+        pc.string(f"from {cls.__module__} import {cls.__name__}"),
+        pc.string(f"{beatmap_name} = {cls.__name__}(root=Path(__file__).resolve().parent)"),
+    ]
+    for prepare_parser in prepare:
+        yield make_msp_parser(indent=0).reject(lambda sp: None if sp is "\n" else "newline")
+        yield prepare_parser
 
     beatsheet = BeatSheet()
     fields = BeatSheet.__annotations__
@@ -505,9 +511,10 @@ def format_beatsheet(beatsheet):
     cls = BeatSheet
 
     res.append(f"#K-AIKO-std-{version}\n")
+    res.append("from pathlib import Path\n")
     res.append(f"from {cls.__module__} import {cls.__name__}\n")
     res.append("\n")
-    res.append(f"{beatmap_name} = {cls.__name__}()\n")
+    res.append(f"{beatmap_name} = {cls.__name__}(root=Path(__file__).resolve().parent)\n")
 
     for name in BeatSheet.__annotations__.keys():
         format_field = format_mstr if name == "info" else sz.format_value
@@ -522,7 +529,7 @@ def format_beatsheet(beatsheet):
 
 class OSU:
     def read(self, filename, metadata_only=False):
-        path = os.path.dirname(filename)
+        path = Path(filename).resolve().parent
         index = 0
 
         with open(filename, encoding='utf-8-sig') as file:
