@@ -9,7 +9,7 @@ from ..utils import parsec as pc
 from ..utils import serializers as sz
 from . import beatmaps
 
-version = "0.2.0"
+version = "0.3.0"
 
 def Context(beat, length, **update):
     return beatmaps.UpdateContext(update)
@@ -400,11 +400,19 @@ rmstr_parser = pc.regex(
 
 @pc.parsec
 def make_beatsheet_parser(metadata_only=False):
+    beatmap_name = "beatmap"
+    cls = BeatSheet
+
     header = yield pc.regex(r"#K-AIKO-std-(\d+\.\d+\.\d+)(?=\n|$)").desc("header")
     vernum = header[len("#K-AIKO-std-"):].split(".")
     vernum0 = version.split(".")
     if vernum[0] != vernum0[0] or vernum[1:] > vernum0[1:]:
         raise ValueError("incompatible version")
+
+    yield make_msp_parser(indent=0).reject(lambda sp: None if sp is "\n" else "newline")
+    yield pc.string(f"from {cls.__module__} import {cls.__name__}")
+    yield make_msp_parser(indent=0).reject(lambda sp: None if sp is "\n" else "newline")
+    yield pc.string(f"{beatmap_name} = {cls.__name__}()")
 
     beatsheet = BeatSheet()
     fields = BeatSheet.__annotations__
@@ -416,7 +424,7 @@ def make_beatsheet_parser(metadata_only=False):
         if sp == "":
             return beatsheet
 
-        yield pc.string("beatmap.")
+        yield pc.string(f"{beatmap_name}.")
         name = yield pc.tokens(valid_fields)
         yield pc.string(" = ")
         valid_fields.remove(name)
@@ -493,16 +501,21 @@ def format_rmstr(value):
 
 def format_beatsheet(beatsheet):
     res = []
+    beatmap_name = "beatmap"
+    cls = BeatSheet
 
     res.append(f"#K-AIKO-std-{version}\n")
+    res.append(f"from {cls.__module__} import {cls.__name__}\n")
+    res.append("\n")
+    res.append(f"{beatmap_name} = {cls.__name__}()\n")
 
     for name in BeatSheet.__annotations__.keys():
         format_field = format_mstr if name == "info" else sz.format_value
-        res.append(f"beatmap.{name} = {format_field(getattr(beatsheet, name))}\n")
+        res.append(f"{beatmap_name}.{name} = {format_field(getattr(beatsheet, name))}\n")
 
     name = 'chart'
     format_field = format_rmstr
-    res.append(f"beatmap.{name} = {format_field(getattr(beatsheet, name))}\n")
+    res.append(f"{beatmap_name}.{name} = {format_field(getattr(beatsheet, name))}\n")
 
     return "".join(res)
 
