@@ -73,35 +73,10 @@ class ProfileManager:
         self._profiles_mtime = None
         self.on_change_handlers = []
 
-    @classmethod
-    def initialize(cls, path, logger):
-        """Initialize profile manager by given profiles directory.
-
-        Parameters
-        ----------
-        path : str or Path
-            The path of profiles directory.
-        logger : loggers.Logger
-
-        Returns
-        -------
-        config : ProfileManager
-        """
-        config = cls(path, logger)
-        # `config.current_name` and `config.current` are currently invalid
-
-        config.on_change(lambda settings: logger.recompile_style(terminal_settings=settings.devices.terminal,
-                                                                 logger_settings=settings.devices.logger))
-
-        config.update()
-
-        succ = config.use()
-        if not succ:
-            succ = config.new()
-            if not succ:
-                raise RuntimeError("Fail to load configuration")
-
-        return config
+        self.on_change(lambda settings: logger.recompile_style(
+            terminal_settings=settings.devices.terminal,
+            logger_settings=settings.devices.logger
+        ))
 
     def on_change(self, on_change_handler):
         self.on_change_handlers.append(on_change_handler)

@@ -113,6 +113,8 @@ class KAIKOUser:
 
 
 class KAIKOMenu:
+    update_interval = 0.01
+
     def __init__(self, config, user, manager, logger):
         r"""Constructor.
 
@@ -131,15 +133,14 @@ class KAIKOMenu:
         self.bgm_controller = KAIKOBGMController(config.current.devices.mixer, logger, self.beatmap_manager)
         config.on_change(lambda settings: self.bgm_controller.update_mixer_settings(settings.devices.mixer))
 
-    @staticmethod
-    def main():
+    @classmethod
+    def main(cls):
         # print logo
         print(logo, flush=True)
 
         try:
-            dt = 0.01
             with KAIKOMenu.init() as menu:
-                menu.run().exhaust(dt=dt, interruptible=True)
+                menu.run().exhaust(dt=cls.update_interval, interruptible=True)
 
         except KeyboardInterrupt:
             pass
@@ -161,7 +162,18 @@ class KAIKOMenu:
         user.prepare(logger)
 
         # load config
-        config = ProfileManager.initialize(user.config_dir, logger)
+        config = ProfileManager(user.config_dir, logger)
+        config.update()
+
+        succ = config.use()
+        if not succ:
+            yes = logger.ask("Make a new configuration?").exhaust(dt=cls.update_interval, interruptible=True)
+            if not yes:
+                raise RuntimeError("Fail to load configuration")
+
+            succ = config.new()
+            if not succ:
+                raise RuntimeError("Fail to load configuration")
 
         # load PyAudio
         logger.print("[info/] Load PyAudio...")
