@@ -253,6 +253,13 @@ class Configurable(metaclass=ConfigurableMeta):
     fallback value of the static field in the class.
     """
 
+    @classmethod
+    def read(cls, path, name="settings"):
+        return read(cls, path, name)
+
+    def write(self, path, name="settings"):
+        return write(type(self), self, path, name)
+
 def set(config, field, value):
     """Set a field of the configuration to the given value.
 
