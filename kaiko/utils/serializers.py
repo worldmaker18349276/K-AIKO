@@ -2,6 +2,7 @@ import contextlib
 import keyword
 import ast
 import enum
+import pathlib
 import dataclasses
 import typing
 from typing import Dict, List, Set, Tuple, Union
@@ -90,6 +91,13 @@ def make_str_parser(suggestions=[""]):
         r')*"',
         "str",
         [format_value(sugg) for sugg in set(suggestions)],
+    )
+
+def make_path_parser(suggestions=[pathlib.Path(".")]):
+    return (
+        pc.string("Path(")
+        >> make_str_parser([str(sugg) for sugg in suggestions]).map(pathlib.Path)
+        << pc.string(")")
     )
 
 
@@ -262,6 +270,9 @@ def get_base(type_hint):
     elif type_hint is bytes:
         return bytes
 
+    elif isinstance(type_hint, type) and issubclass(type_hint, pathlib.Path):
+        return pathlib.Path
+
     elif isinstance(type_hint, type) and issubclass(type_hint, enum.Enum):
         return type_hint
 
@@ -291,6 +302,9 @@ def get_sub(type_hint):
         type_hint = type(None)
 
     if type_hint in (type(None), bool, int, float, complex, str, bytes):
+        return ()
+
+    elif isinstance(type_hint, type) and issubclass(type_hint, pathlib.Path):
         return ()
 
     elif isinstance(type_hint, type) and issubclass(type_hint, enum.Enum):
@@ -362,6 +376,9 @@ def make_parser_from_type_hint(type_hint, suggestions=[]):
 
     elif type_hint is bytes:
         return make_bytes_parser(suggestions) if suggestions else make_bytes_parser()
+
+    elif isinstance(type_hint, type) and issubclass(type_hint, pathlib.Path):
+        return make_path_parser(suggestions) if suggestions else make_path_parser()
 
     elif isinstance(type_hint, type) and issubclass(type_hint, enum.Enum):
         validate_identifier(type_hint.__name__)
@@ -440,6 +457,9 @@ def has_type(value, type_hint):
     if type_hint in (type(None), bool, int, float, complex, str, bytes):
         return type(value) is type_hint
 
+    elif isinstance(type_hint, type) and issubclass(type_hint, pathlib.Path):
+        return type(value) is type_hint
+
     elif isinstance(type_hint, type) and issubclass(type_hint, enum.Enum):
         return type(value) is type_hint
 
@@ -488,6 +508,9 @@ def get_used_custom_types(value):
 
     elif type(value) is dict:
         return {typ for entry in value.items() for subvalue in entry for typ in get_used_custom_types(subvalue)}
+
+    elif isinstance(value, pathlib.Path):
+        return {pathlib.Path}
 
     elif isinstance(value, enum.Enum):
         return {type(value)}
@@ -540,6 +563,9 @@ def format_value(value):
             format_value(key) + ":" + format_value(subvalue)
             for key, subvalue in value.items()
         )
+
+    elif isinstance(value, pathlib.Path):
+        return "Path(%s)" % format_value(str(value))
 
     elif isinstance(value, enum.Enum):
         cls = type(value)
