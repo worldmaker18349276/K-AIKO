@@ -34,18 +34,18 @@ class BeatSheet(beatmaps.Beatmap):
         'Shift': beatmaps.Shift,
     }
 
-    # audio
-    audio: str
-    volume: float
-    # info
-    info: str
-    preview: float
-    # timings
-    offset: float
-    tempo: float
-    # playfield
-    bar_shift: float
-    bar_flip: bool
+    _fields = {
+        "info": str,
+        "audio.path": Path,
+        "audio.volume": float,
+        "audio.preview": float,
+        "audio.info": str,
+        "metronome.offset": float,
+        "metronome.tempo": float,
+        "beatbar_state.bar_shift": float,
+        "beatbar_state.bar_flip": bool,
+        "chart": str,
+    }
 
     @staticmethod
     def to_events(track):
@@ -160,8 +160,8 @@ class BeatSheet(beatmaps.Beatmap):
                     exec(sheet, {'__file__': filename}, local)
                     beatmap = local['beatmap']
                 else:
-                    beatmap = make_beatsheet_parser(metadata_only=metadata_only).parse(sheet)
-                    beatmap.root = Path(filename).resolve().parent
+                    root = Path(filename).resolve().parent
+                    beatmap = make_beatsheet_parser(root, metadata_only=metadata_only).parse(sheet)
             except Exception as e:
                 raise BeatmapParseError(f"failed to read beatmap {filename}") from e
 
@@ -401,7 +401,7 @@ rmstr_parser = pc.regex(
 ).map(ast.literal_eval).desc("raw triple quoted string")
 
 @pc.parsec
-def make_beatsheet_parser(metadata_only=False):
+def make_beatsheet_parser(root, metadata_only=False):
     beatmap_name = "beatmap"
     cls = BeatSheet
 
@@ -420,10 +420,21 @@ def make_beatsheet_parser(metadata_only=False):
         yield make_msp_parser(indent=0).reject(lambda sp: None if sp is "\n" else "newline")
         yield prepare_parser
 
-    beatsheet = BeatSheet()
-    fields = BeatSheet.__annotations__
-    valid_fields = list(fields.keys())
-    valid_fields.append("chart")
+    beatsheet = BeatSheet(root=root)
+
+    valid_fields = {}
+    for field, typ in beatsheet._fields.items():
+        if field == "chart":
+            valid_fields[field] = rmstr_parser
+        elif typ is str:
+            valid_fields[field] = mstr_parser
+        elif typ is Path:
+            valid_fields[field] = (
+                pc.string(f"{beatmap_name}.root / ")
+                >> sz.make_parser_from_type_hint(str)
+            ).map(lambda path: root / path)
+        else:
+            valid_fields[field] = sz.make_parser_from_type_hint(typ)
 
     while True:
         sp = yield make_msp_parser(indent=0).reject(lambda sp: None if sp in ("\n", "") else "newline or end of block")
@@ -431,21 +442,17 @@ def make_beatsheet_parser(metadata_only=False):
             return beatsheet
 
         yield pc.string(f"{beatmap_name}.")
-        name = yield pc.tokens(valid_fields)
-        yield pc.string(" = ")
-        valid_fields.remove(name)
+        name = yield pc.tokens([field + " = " for field in valid_fields.keys()])
+        name = name[:-3]
 
-        if name == "info":
-            field_parser = mstr_parser
-        elif name == "chart":
-            field_parser = rmstr_parser
-        else:
-            field_parser = sz.make_parser_from_type_hint(fields[name])
-
-        value = yield field_parser
+        value = yield valid_fields[name]
+        del valid_fields[name]
 
         if not metadata_only or name != "chart":
-            setattr(beatsheet, name, value)
+            subfield = beatsheet
+            for field in name.split(".")[:-1]:
+                subfield = getattr(subfield, field)
+            setattr(subfield, name.split(".")[-1], value)
 
 
 def format_value(value):
@@ -539,6 +546,7 @@ class OSU:
             #     raise BeatmapParseError(f"invalid file format: {repr(format)}")
 
             beatmap = beatmaps.Beatmap()
+            beatmap.root = path
             beatmap.event_sequences = [[]]
             context = {}
 
@@ -574,15 +582,14 @@ class OSU:
                 line = file.readline()
                 index += 1
 
-        beatmap.root = path
         return beatmap
 
     def parse_general(self, beatmap, context, line):
         option, value = line.split(": ", maxsplit=1)
         if option == 'AudioFilename':
-            beatmap.audio = value.rstrip("\n")
+            beatmap.audio.path = beatmap.root / value.rstrip("\n")
         elif option == 'PreviewTime':
-            beatmap.preview = int(value)/1000
+            beatmap.audio.preview = int(value)/1000
 
     def parse_editor(self, beatmap, context, line): pass
 
@@ -608,8 +615,8 @@ class OSU:
             context['timings'] = []
         if 'beatLength0' not in context:
             context['beatLength0'] = beatLength
-            beatmap.offset = time/1000
-            beatmap.tempo = 60 / (beatLength/1000)
+            beatmap.metronome.offset = time/1000
+            beatmap.metronome.tempo = 60 / (beatLength/1000)
 
         if uninherited == "0":
             multiplier = multiplier / (-0.01 * beatLength)
@@ -631,7 +638,7 @@ class OSU:
         type = int(type)
         hitSound = int(hitSound)
 
-        beat = beatmap.beat(time/1000)
+        beat = beatmap.metronome.beat(time/1000)
         speed, volume, sliderVelocity, density = next(vs for t, b, m, *vs in context['timings'][::-1] if t <= time)
 
         # type : [_:_:_:_:Spinner:_:Slider:Circle]
