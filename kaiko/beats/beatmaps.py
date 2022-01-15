@@ -1,5 +1,6 @@
 import os
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
 from fractions import Fraction
@@ -1071,7 +1072,7 @@ class BeatbarState:
 class Beatmap:
     def __init__(
         self, *,
-        root=".",
+        root=None,
         info=None,
         audio=None,
         metronome=None,
@@ -1079,7 +1080,7 @@ class Beatmap:
         event_sequences=None,
         settings=None,
     ):
-        self.root = root
+        self.root = root if root is not None else Path(".").resolve()
         self.info = info if info is not None else ""
         self.audio = audio if audio is not None else BeatmapAudio()
         self.metronome = metronome if metronome is not None else engines.Metronome(offset=0.0, tempo=120.0)
@@ -1213,16 +1214,15 @@ class Beatmap:
                                                                       stop_event))
 
     def _load_resources(self, output_samplerate, output_nchannels, data_dir, stop_event):
-        if self.audio is not None:
-            audio_path = os.path.join(self.root, self.audio)
+        if self.audio.path is not None:
             try:
-                self.audionode = dn.DataNode.wrap(aud.load_sound(audio_path,
+                self.audionode = dn.DataNode.wrap(aud.load_sound(self.audio.path,
                                                                  samplerate=output_samplerate,
                                                                  channels=output_nchannels,
-                                                                 volume=self.volume,
+                                                                 volume=self.audio.volume,
                                                                  stop_event=stop_event))
             except Exception as e:
-                raise RuntimeError(f"Failed to load song {audio_path}") from e
+                raise RuntimeError(f"Failed to load song {self.audio.path}") from e
 
         for name, path in self.settings.resources.items():
             sound_path = os.path.join(data_dir, path)
@@ -1265,8 +1265,8 @@ class Beatmap:
         events = sorted(events, key=lambda e: e.lifespan[0])
 
         duration = 0.0
-        if self.audio is not None:
-            duration = aud.AudioMetadata.read(os.path.join(self.root, self.audio)).duration
+        if self.audio.path is not None:
+            duration = aud.AudioMetadata.read(self.audio.path).duration
 
         event_leadin_time = self.settings.notes.event_leadin_time
         total_subjects = sum([1 for event in events if event.is_subject], 0)
