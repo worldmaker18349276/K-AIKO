@@ -415,12 +415,21 @@ class ProfileManager:
 class FieldParser(cmd.TreeParser):
     def __init__(self, config_type):
         self.config_type = config_type
-        tree = cfg.get_field_tree(self.config_type)
-        super().__init__(tree)
+
+        def make_tree(fields):
+            tree = {}
+            for name, value in fields.items():
+                if isinstance(value, dict):
+                    tree[name + "."] = make_tree(value)
+                else:
+                    tree[name] = lambda token: tuple(token.split("."))
+            return tree
+
+        super().__init__(make_tree(self.config_type.__configurable_fields__))
 
     def info(self, token):
-        fields = self.parse(token)
-        return self.config_type.get_field_doc(fields)
+        field = self.parse(token)
+        return self.config_type.get_field_doc(field)
 
 class ConfigCommand:
     def __init__(self, config, logger):

@@ -320,21 +320,21 @@ class TreeParser(ArgumentParser):
     For example, a tree::
 
         {
-        'abc': {
-            'x': lambda _: 'abcx',
-            'y': {
-                'z': lambda _: 'abcyz',
-                'w': lambda _: 'abcyw',
+            'abc': {
+                'x': lambda _: 'abcx',
+                'y': {
+                    'z': lambda _: 'abcyz',
+                    'w': lambda _: 'abcyw',
                 },
             },
-        'def': {
-            '': lambda _: 'def',
-            'g': lambda _: 'defg',
+            'def': {
+                '': lambda _: 'def',
+                'g': lambda _: 'defg',
             },
-        'ab': {
-            'c': lambda _: '<never match>',
-            'cx': lambda _: '<never match>',
-            'd': lambda _: 'abd',
+            'ab': {
+                'c': lambda _: '<never match>',
+                'cx': lambda _: '<never match>',
+                'd': lambda _: 'abd',
             },
         }
 

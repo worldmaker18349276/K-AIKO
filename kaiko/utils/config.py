@@ -23,29 +23,24 @@ def make_field_parser(config_type):
         subfieldname1.subfieldname2.fieldname3
 
     """
-    current_fields = []
-    current_type = config_type
+    identifier = (
+        pc.regex(r"[a-zA-Z_][a-zA-Z0-9_]*")
+            .reject(lambda name: None if not keyword.iskeyword(name) else "not keyword")
+            .desc("identifier")
+    )
 
-    while isinstance(current_type, ConfigurableMeta):
-        field_names = list(current_type.__configurable_fields__.keys())
-        for field_name in field_names:
-            sz.validate_identifier(field_name)
-        current_field = yield pc.tokens(field_names)
-        current_type = current_type.__configurable_fields__[current_field]
-        if isinstance(current_type, ConfigurableMeta):
+    field = []
+    current = config_type.__configurable_fields__
+    is_first = True
+    while isinstance(current, dict):
+        if not is_first:
             yield pc.string(".")
-        current_fields.append(current_field)
+        is_first = False
+        name = yield identifier.reject(lambda name: None if name in current else " or ".join(map(repr, current.keys())))
+        current = current[name]
+        field.append(name)
 
-    return tuple(current_fields)
-
-def get_field_tree(config_type):
-    fields = {}
-    for field_name, field_type in config_type.__configurable_fields__.items():
-        if isinstance(field_type, ConfigurableMeta):
-            fields[field_name + "."] = get_field_tree(field_type)
-        else:
-            fields[field_name] = lambda token: tuple(token.split("."))
-    return fields
+    return tuple(field)
 
 @pc.parsec
 def make_configuration_parser(config_type, config_name):
@@ -73,8 +68,6 @@ def make_configuration_parser(config_type, config_name):
             .desc("identifier")
     )
 
-    field_hints = config_type.__field_hints__
-
     # parse header
     imports = (
         pc.regex(r"from[ ]+").desc("'from '")
@@ -90,16 +83,19 @@ def make_configuration_parser(config_type, config_name):
     )
     header = (imports << nl << vindent).many_till(init << nl << vindent)
 
+    def require(typ):
+        if (typ.__name__, typ.__module__) not in imported_modules.items():
+            raise pc.ParseFailure(
+                f"import statement for module {typ.__module__}.{typ.__name__} at the beginning of the file"
+            )
+
     yield vindent
     imported = yield header
     imported_modules = {name: module for module, names in imported for name in names}
 
     # start building config
     config = config_type()
-    if (config_type.__name__, config_type.__module__) not in imported_modules.items():
-        raise pc.ParseFailure(
-            f"import statement for module {config_type.__module__}.{config_type.__name__} at the beginning of the file"
-        )
+    require(config_type)
     
     while True:
         if (yield end):
@@ -111,15 +107,13 @@ def make_configuration_parser(config_type, config_name):
         sz.validate_identifier(config_name)
         yield pc.string(config_name + ".")
         field_key = yield field
+        yield equal
 
         # parse field value
-        yield equal
-        field_value = yield sz.make_parser_from_type_hint(field_hints[field_key][0])
+        field_type, _ = config_type.get_field_hint(field_key)
+        field_value = yield sz.make_parser_from_type_hint(field_type)
         for typ in sz.get_used_custom_types(field_value):
-            if (typ.__name__, typ.__module__) not in imported_modules.items():
-                raise pc.ParseFailure(
-                    f"import statement for module {typ.__module__}.{typ.__name__} at the beginning of the file"
-                )
+            require(typ)
         set(config, field_key, field_value)
 
         yield nl
@@ -137,27 +131,31 @@ class ConfigurableMeta(type):
 
         if not hasattr(self, '__configurable_excludes__'):
             self.__configurable_excludes__ = []
-        annotations = typing.get_type_hints(self)
 
-        fields = OrderedDict(annotations)
-        for name in dir(self):
-            if isinstance(getattr(self, name), SubConfigurable):
-                fields[name] = getattr(self, name).cls
-        for name in self.__configurable_excludes__:
-            if name in fields:
-                del fields[name]
-
+        fields = {
+            name: typ
+            for name, typ in typing.get_type_hints(self).items()
+            if name not in self.__configurable_excludes__
+        }
+        
+        subfields = {
+            name: getattr(self, name).cls
+            for name in dir(self)
+            if isinstance(getattr(self, name), SubConfigurable)
+        }
+        
         fields_doc = ConfigurableMeta._parse_fields_doc(self.__doc__)
-        field_hints = ConfigurableMeta._make_field_hints(fields, fields_doc)
 
-        self.__configurable_fields__ = fields
-        self.__configurable_fields_doc__ = fields_doc
-        self.__field_hints__ = field_hints
+        self.__configurable_fields__ = {}
+        for name, typ in fields.items():
+            self.__configurable_fields__[name] = (typ, fields_doc.get(name, None))
+        for name, typ in subfields.items():
+            self.__configurable_fields__[name] = typ.__configurable_fields__
 
     def __configurable_init__(self, instance):
-        for field_name, field_type in self.__configurable_fields__.items():
-            if isinstance(field_type, ConfigurableMeta):
-                instance.__dict__[field_name] = field_type()
+        for field_name in dir(self):
+            if isinstance(getattr(self, field_name), SubConfigurable):
+                instance.__dict__[field_name] = getattr(self, field_name).cls()
 
     def __call__(self, *args, **kwargs):
         instance = self.__new__(self, *args, **kwargs)
@@ -196,46 +194,37 @@ class ConfigurableMeta(type):
             res[m.group(1)] = cleandoc(m.group(2)).strip()
             doc = doc[m.end(0):]
 
-    @staticmethod
-    def _make_field_hints(fields, fields_doc):
-        """Make hints for configurable fields of this configuration.
+    def iter_all_fields(self):
+        def it(current):
+            for name, value in current.items():
+                if isinstance(value, dict):
+                    for field in it(value):
+                        yield (name, *field)
+                else:
+                    yield (name,)
 
-        Parameters
-        ----------
-        fields : dict
-            Dictionary of configurable fields.
-        fields_doc : dict
-            Docstring of configurable fields.
+        yield from it(self.__configurable_fields__)
 
-        Returns
-        -------
-        field_hints : dict
-            A dictionary which maps a series of field names to its field type.
-            If it has item `(('a', 'b', 'c'), (float, "floating point number"))`,
-            then this configuration should have the field `config.a.b.c` with
-            type `float`.
-        """
-        field_hints = {}
-        for field_name, field_type in fields.items():
-            if not isinstance(field_type, ConfigurableMeta):
-                field_doc = fields_doc.get(field_name, None)
-                field_hints[(field_name,)] = (field_type, field_doc)
-            else:
-                for subfield_names, subfield_hint in field_type.__field_hints__.items():
-                    field_hints[(field_name, *subfield_names)] = subfield_hint
-        return field_hints
+    def get_field_hint(self, field):
+        current = self.__configurable_fields__
+
+        if len(field) == 0:
+            raise ValueError("Empty field")
+
+        for name in field:
+            if not isinstance(current, dict) or name not in current:
+                raise ValueError(f"No such field: {name}")
+            current = current[name]
+
+        if isinstance(current, dict):
+            raise ValueError(f"No such field: {'.'.join(field)}")
+        return current
 
     def get_field_type(self, field):
-        if field not in self.__field_hints__:
-            raise ValueError("No such field: " + ".".join(field))
-        annotation, _ = self.__field_hints__[field]
-        return annotation
+        return self.get_field_hint(field)[0]
 
     def get_field_doc(self, field):
-        if field not in self.__field_hints__:
-            raise ValueError("No such field: " + ".".join(field))
-        _, doc = self.__field_hints__[field]
-        return doc
+        return self.get_field_hint(field)[1]
 
 class Configurable(metaclass=ConfigurableMeta):
     """The super class for configuration.
@@ -272,14 +261,14 @@ class Configurable(metaclass=ConfigurableMeta):
     fallback value of the static field in the class.
     """
 
-def set(config, fields, value):
+def set(config, field, value):
     """Set a field of the configuration to the given value.
 
     Parameters
     ----------
     config : Configurable
         The configuration to manipulate.
-    fields : list of str
+    field : list of str
         The series of field names.
     value : any
         The value to set.
@@ -289,32 +278,20 @@ def set(config, fields, value):
     ValueError
         If there is no such field.
     """
-    if len(fields) == 0:
-        raise ValueError("empty field")
-
-    parent, curr = None, config
-    field = fields[0]
-
-    for i, field in enumerate(fields):
-        if not isinstance(curr, Configurable):
-            raise ValueError("not configurable field: " + repr(fields[:i]))
-
-        if field not in curr.__configurable_fields__:
-            raise ValueError("no such field: " + repr(fields[:i+1]))
-
-        parent, curr = curr, curr.__dict__.get(field, None)
-
+    type(config).get_field_hint(field)
+    for name in field[:-1]:
+        config = config.__dict__.get(name)
     else:
-        setattr(parent, field, value)
+        setattr(config, field[-1], value)
 
-def unset(config, fields):
+def unset(config, field):
     """Unset a field of the configuration.
 
     Parameters
     ----------
     config : Configurable
         The configuration to manipulate.
-    fields : list of str
+    field : list of str
         The series of field names.
 
     Raises
@@ -322,33 +299,20 @@ def unset(config, fields):
     ValueError
         If there is no such field.
     """
-    if len(fields) == 0:
-        raise ValueError("empty field")
-
-    parent, curr = None, config
-    field = fields[0]
-
-    for i, field in enumerate(fields):
-        if not isinstance(curr, Configurable):
-            raise ValueError("not configurable field: " + repr(fields[:i]))
-
-        if field not in curr.__configurable_fields__:
-            raise ValueError("no such field: " + repr(fields[:i+1]))
-
-        parent, curr = curr, curr.__dict__.get(field, None)
-
+    type(config).get_field_hint(field)
+    for name in field[:-1]:
+        config = config.__dict__.get(name)
     else:
-        if field in parent.__dict__:
-            delattr(parent, field)
+        delattr(config, field[-1])
 
-def get(config, fields):
+def get(config, field):
     """Get a field of the configuration.
 
     Parameters
     ----------
     config : Configurable
         The configuration to manipulate.
-    fields : list of str
+    field : list of str
         The series of field names.
 
     Returns
@@ -361,32 +325,20 @@ def get(config, fields):
     ValueError
         If there is no such field.
     """
-    if len(fields) == 0:
-        raise ValueError("empty field")
-
-    parent, curr = None, config
-    field = fields[0]
-
-    for i, field in enumerate(fields):
-        if not isinstance(curr, Configurable):
-            raise ValueError("not configurable field: " + repr(fields[:i]))
-
-        if field not in curr.__configurable_fields__:
-            raise ValueError("no such field: " + repr(fields[:i+1]))
-
-        parent, curr = curr, curr.__dict__.get(field, None)
-
+    type(config).get_field_hint(field)
+    for name in field[:-1]:
+        config = config.__dict__.get(name)
     else:
-        return getattr(parent, field)
+        return getattr(config, field[-1])
 
-def has(config, fields):
+def has(config, field):
     """Check if a field of the configuration has a value.
 
     Parameters
     ----------
     config : Configurable
         The configuration to manipulate.
-    fields : list of str
+    field : list of str
         The series of field names.
 
     Returns
@@ -399,32 +351,20 @@ def has(config, fields):
     ValueError
         If there is no such field.
     """
-    if len(fields) == 0:
-        raise ValueError("empty field")
-
-    parent, curr = None, config
-    field = fields[0]
-
-    for i, field in enumerate(fields):
-        if not isinstance(curr, Configurable):
-            return False
-
-        if field not in curr.__configurable_fields__:
-            return False
-
-        parent, curr = curr, curr.__dict__.get(field, None)
-
+    type(config).get_field_hint(field)
+    for name in field[:-1]:
+        config = config.__dict__.get(name)
     else:
-        return field in parent.__dict__
+        return field[-1] in config.__dict__
 
-def get_default(config, fields):
+def get_default(config, field):
     """Get default value of a field of the configuration.
 
     Parameters
     ----------
     config : Configurable
         The configuration to manipulate.
-    fields : list of str
+    field : list of str
         The series of field names.
 
     Returns
@@ -437,32 +377,20 @@ def get_default(config, fields):
     ValueError
         If there is no such field.
     """
-    if len(fields) == 0:
-        raise ValueError("empty field")
-
-    parent, curr = None, config
-    field = fields[0]
-
-    for i, field in enumerate(fields):
-        if not isinstance(curr, Configurable):
-            raise ValueError("not configurable field: " + repr(fields[:i]))
-
-        if field not in curr.__configurable_fields__:
-            raise ValueError("no such field: " + repr(fields[:i+1]))
-
-        parent, curr = curr, curr.__dict__.get(field, None)
-
+    type(config).get_field_hint(field)
+    for name in field[:-1]:
+        config = config.__dict__.get(name)
     else:
-        return getattr(type(parent), field)
+        return getattr(type(config), field[-1])
 
-def has_default(config, fields):
+def has_default(config, field):
     """Check if a field of the configuration has a default value.
 
     Parameters
     ----------
     config : Configurable
         The configuration to manipulate.
-    fields : list of str
+    field : list of str
         The series of field names.
 
     Returns
@@ -475,23 +403,11 @@ def has_default(config, fields):
     ValueError
         If there is no such field.
     """
-    if len(fields) == 0:
-        raise ValueError("empty field")
-
-    parent, curr = None, config
-    field = fields[0]
-
-    for i, field in enumerate(fields):
-        if not isinstance(curr, Configurable):
-            raise ValueError("not configurable field: " + repr(fields[:i]))
-
-        if field not in curr.__configurable_fields__:
-            raise ValueError("no such field: " + repr(fields[:i+1]))
-
-        parent, curr = curr, curr.__dict__.get(field, None)
-
+    type(config).get_field_hint(field)
+    for name in field[:-1]:
+        config = config.__dict__.get(name)
     else:
-        return hasattr(type(parent), field)
+        return hasattr(type(config), field[-1])
 
 def parse(cls, text, name="settings"):
     parser = make_configuration_parser(cls, name)
@@ -502,15 +418,15 @@ def format(cls, config, name="settings"):
     res.append(f"{name} = {cls.__name__}()\n")
     custom_types = {*()}
 
-    for key, (type_hint, _) in cls.__field_hints__.items():
-        if not has(config, key):
+    for field in cls.iter_all_fields():
+        if not has(config, field):
             continue
-        value = get(config, key)
-        if not sz.has_type(value, type_hint):
-            raise TypeError(f"Invalid type {value!r}, expecting {type_hint}")
+        value = get(config, field)
+        typ, _ = cls.get_field_hint(field)
+        if not sz.has_type(value, typ):
+            raise TypeError(f"Invalid value {value!r}, expecting {typ}")
         custom_types |= sz.get_used_custom_types(value)
-        field = ".".join(key)
-        res.append(f"{name}.{field} = {sz.format_value(value)}\n")
+        res.append(f"{name}.{'.'.join(field)} = {sz.format_value(value)}\n")
 
     imports = []
 
