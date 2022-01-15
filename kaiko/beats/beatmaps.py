@@ -1,6 +1,5 @@
 import os
 from dataclasses import dataclass, replace
-from re import sub
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
 from fractions import Fraction
@@ -1057,43 +1056,39 @@ class BeatmapScore:
     def add_perf(self, perf, is_reversed=False):
         self.perfs.append(perf)
 
-class Beatmap:
-    def __init__(self, root=".", audio=None, volume=0.0,
-                 offset=0.0, tempo=120.0,
-                 info="", preview=0.0,
-                 bar_shift=0.1, bar_flip=False,
-                 event_sequences=None,
-                 settings=None):
-        self.root = root
-        self.audio = audio
-        self.volume = volume
-        self.metronome = engines.Metronome(offset, tempo)
-        self.info = info
-        self.preview = preview
-        self.bar_shift = bar_shift
-        self.bar_flip = bar_flip
-        self.event_sequences = event_sequences or []
+@dataclass
+class BeatmapAudio:
+    path: Optional[str] = None
+    volume: float = 0.0
+    preview: float = 0.0
+    info: str = ""
 
-        self.settings = settings or BeatmapSettings()
+@dataclass
+class BeatbarState:
+    bar_shift: float = 0.1
+    bar_flip: bool = False
+
+class Beatmap:
+    def __init__(
+        self, *,
+        root=".",
+        info=None,
+        audio=None,
+        metronome=None,
+        beatbar_state=None,
+        event_sequences=None,
+        settings=None,
+    ):
+        self.root = root
+        self.info = info if info is not None else ""
+        self.audio = audio if audio is not None else BeatmapAudio()
+        self.metronome = metronome if metronome is not None else engines.Metronome(offset=0.0, tempo=120.0)
+        self.beatbar_state = beatbar_state if beatbar_state is not None else BeatbarState()
+        self.event_sequences = event_sequences if event_sequences is not None else []
+        self.settings = settings if settings is not None else BeatmapSettings()
 
         self.audionode = None
         self.resources = {}
-
-    @property
-    def offset(self):
-        return self.metronome.offset
-
-    @offset.setter
-    def offset(self, value):
-        self.metronome.offset = value
-
-    @property
-    def tempo(self):
-        return self.metronome.tempo
-
-    @tempo.setter
-    def tempo(self, value):
-        self.metronome.tempo = value
 
     @dn.datanode
     def play(self, manager, user, devices_settings, gameplay_settings=None):
@@ -1148,9 +1143,12 @@ class Beatmap:
         sight = yield from Sight(rich, gameplay_settings.beatbar.sight).load().join()
 
         # make beatbar
-        beatbar = Beatbar(mixer, detector, renderer, controller,
-                          icon, header, footer, sight,
-                          self.bar_shift, self.bar_flip, gameplay_settings.beatbar)
+        beatbar = Beatbar(
+            mixer, detector, renderer, controller,
+            icon, header, footer, sight,
+            self.beatbar_state.bar_shift, self.beatbar_state.bar_flip,
+            gameplay_settings.beatbar
+        )
 
         yield from beatbar.load().join()
 
@@ -1305,8 +1303,16 @@ class Beatmap:
             index += 1
 
 class Loop(Beatmap):
-    def __init__(self, tempo=120.0, offset=1.0, width=Fraction(0), events=None, settings=None):
-        super().__init__(tempo=tempo, offset=offset, event_sequences=[events], settings=settings)
+    def __init__(
+            self, *,
+            metronome=None,
+            width=Fraction(0),
+            events=None,
+            settings=None
+        ):
+        if metronome is None:
+            metronome = engines.Metronome(offset=1.0, tempo=120.0)
+        super().__init__(metronome=metronome, event_sequences=[events], settings=settings)
         self.width = width
 
     def repeat_events(self, rich):
