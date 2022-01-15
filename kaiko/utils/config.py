@@ -129,28 +129,20 @@ class ConfigurableMeta(type):
     def __init__(self, name, supers, attrs):
         super().__init__(name, supers, attrs)
 
-        if not hasattr(self, '__configurable_excludes__'):
-            self.__configurable_excludes__ = []
-
-        fields = {
-            name: typ
-            for name, typ in typing.get_type_hints(self).items()
-            if name not in self.__configurable_excludes__
-        }
-        
-        subfields = {
-            name: getattr(self, name).cls
-            for name in dir(self)
-            if isinstance(getattr(self, name), SubConfigurable)
-        }
-        
+        excludes = attrs.get('__configurable_excludes__', [])
         fields_doc = ConfigurableMeta._parse_fields_doc(self.__doc__)
 
-        self.__configurable_fields__ = {}
-        for name, typ in fields.items():
-            self.__configurable_fields__[name] = (typ, fields_doc.get(name, None))
-        for name, typ in subfields.items():
-            self.__configurable_fields__[name] = typ.__configurable_fields__
+        self.__configurable_fields__ = attrs.get('__configurable_fields__', {})
+
+        for name, typ in typing.get_type_hints(self).items():
+            if name not in excludes:
+                if name not in self.__configurable_fields__:
+                    self.__configurable_fields__[name] = (typ, fields_doc.get(name, None))
+
+        for name in dir(self):
+            if isinstance(getattr(self, name), SubConfigurable):
+                if name not in self.__configurable_fields__:
+                    self.__configurable_fields__[name] = getattr(self, name).cls.__configurable_fields__
 
     def __configurable_init__(self, instance):
         for field_name in dir(self):
