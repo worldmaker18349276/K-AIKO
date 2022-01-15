@@ -4,7 +4,6 @@ import random
 import shutil
 import queue
 import zipfile
-import re
 import dataclasses
 from typing import Optional
 from pathlib import Path
@@ -12,36 +11,12 @@ from ..utils import commands as cmd
 from ..utils import datanodes as dn
 from ..utils import markups as mu
 from ..devices import engines
+from ..beats import beatmaps
 from ..beats import beatsheets
 
-@dataclasses.dataclass
-class SongMetadata:
-    root: str
-    audio: str
-    volume: float
-    info: str
-    preview: float
-
-    @classmethod
-    def from_beatmap(cls, beatmap):
-        if beatmap.audio is None:
-            return None
-        info = SongMetadata.filter_info(beatmap.info)
-        return cls(root=beatmap.root, audio=beatmap.audio,
-                   volume=beatmap.volume, info=info, preview=beatmap.preview)
-
-    @property
-    def path(self):
-        return os.path.join(self.root, self.audio)
-
-    @staticmethod
-    def filter_info(info):
-        info_regex = "(Title|TitleUnicode|Artist|ArtistUnicode):"
-        return "\n".join(line for line in info.splitlines() if re.match(info_regex, line))
-
-    def get_info(self, logger):
-        data = dict(tuple(line.split(":", maxsplit=1)) for line in self.info.strip().splitlines())
-        return logger.format_dict(data)
+def format_info(info, logger):
+    data = dict(tuple(line.split(":", maxsplit=1)) for line in info.strip().splitlines())
+    return logger.format_dict(data)
 
 class BeatmapManager:
     def __init__(self, path, logger):
@@ -160,7 +135,7 @@ class BeatmapManager:
                 return None
             path = self._beatmaps[path][0]
         beatmap = self.get_beatmap_metadata(path)
-        return beatmap and SongMetadata.from_beatmap(beatmap)
+        return beatmap and beatmap.audio
 
     def get_songs(self):
         songs = [self.get_song(path) for path in self._beatmaps.keys()]
@@ -217,12 +192,12 @@ class StopBGM(BGMAction):
 
 @dataclasses.dataclass(frozen=True)
 class PlayBGM(BGMAction):
-    song: SongMetadata
+    song: beatmaps.BeatmapAudio
     start: Optional[float]
 
 @dataclasses.dataclass(frozen=True)
 class PreviewSong(BGMAction):
-    song: SongMetadata
+    song: beatmaps.BeatmapAudio
 
 @dataclasses.dataclass(frozen=True)
 class StopPreview(BGMAction):
@@ -428,7 +403,7 @@ class BGMCommand:
             return
 
         logger.print("will play:")
-        logger.print(song.get_info(logger))
+        logger.print(format_info(song.info, logger))
         self.bgm_controller.play(song)
 
     @cmd.function_command
@@ -440,7 +415,7 @@ class BGMCommand:
         if self.bgm_controller.current_action is not None:
             song = self.bgm_controller.random_song()
             self.logger.print("will play:")
-            self.logger.print(song.get_info(self.logger))
+            self.logger.print(format_info(song.info, self.logger))
             self.bgm_controller.play(song)
 
     @cmd.function_command
@@ -458,7 +433,7 @@ class BGMCommand:
             return
 
         logger.print("will play:")
-        logger.print(song.get_info(logger))
+        logger.print(format_info(song.info, logger))
         self.bgm_controller.play(song, start)
 
     @play.arg_parser("beatmap")
@@ -470,10 +445,10 @@ class BGMCommand:
         current = self.bgm_controller.current_action
         if isinstance(current, PlayBGM):
             self.logger.print("now playing:")
-            self.logger.print(current.song.get_info(self.logger))
+            self.logger.print(format_info(current.song.info, self.logger))
         elif isinstance(current, PreviewSong):
             self.logger.print("now previewing:")
-            self.logger.print(current.song.get_info(self.logger))
+            self.logger.print(format_info(current.song.info, self.logger))
         elif current is None:
             self.logger.print("no song")
         else:

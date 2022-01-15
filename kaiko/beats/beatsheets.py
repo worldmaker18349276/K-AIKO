@@ -595,6 +595,8 @@ class OSU:
 
     def parse_metadata(self, beatmap, context, line):
         beatmap.info += line
+        if re.match("(Title|TitleUnicode|Artist|ArtistUnicode|Source):", line):
+            beatmap.audio.info += line
 
     def parse_difficulty(self, beatmap, context, line):
         option, value = line.split(":", maxsplit=1)
