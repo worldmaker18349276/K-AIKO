@@ -47,6 +47,11 @@ class BeatSheet(beatmaps.Beatmap):
         "chart": str,
     }
 
+    def __init__(self, filepath):
+        super().__init__()
+        self.path = Path(filepath)
+        self.root = Path(filepath).resolve().parent
+
     @staticmethod
     def to_events(track):
         if track.hide:
@@ -160,8 +165,7 @@ class BeatSheet(beatmaps.Beatmap):
                     exec(sheet, {'__file__': filename}, local)
                     beatmap = local['beatmap']
                 else:
-                    root = Path(filename).resolve().parent
-                    beatmap = make_beatsheet_parser(root, metadata_only=metadata_only).parse(sheet)
+                    beatmap = make_beatsheet_parser(filename, metadata_only=metadata_only).parse(sheet)
             except Exception as e:
                 raise BeatmapParseError(f"failed to read beatmap {filename}") from e
 
@@ -401,7 +405,7 @@ rmstr_parser = pc.regex(
 ).map(ast.literal_eval).desc("raw triple quoted string")
 
 @pc.parsec
-def make_beatsheet_parser(root, metadata_only=False):
+def make_beatsheet_parser(filepath, metadata_only=False):
     beatmap_name = "beatmap"
     cls = BeatSheet
 
@@ -412,15 +416,14 @@ def make_beatsheet_parser(root, metadata_only=False):
         raise ValueError("incompatible version")
 
     prepare = [
-        pc.string("from pathlib import Path"),
         pc.string(f"from {cls.__module__} import {cls.__name__}"),
-        pc.string(f"{beatmap_name} = {cls.__name__}(root=Path(__file__).resolve().parent)"),
+        pc.string(f"{beatmap_name} = {cls.__name__}(__file__)"),
     ]
     for prepare_parser in prepare:
         yield make_msp_parser(indent=0).reject(lambda sp: None if sp is "\n" else "newline")
         yield prepare_parser
 
-    beatsheet = BeatSheet(root=root)
+    beatsheet = BeatSheet(filepath)
 
     valid_fields = {}
     for field, typ in beatsheet._fields.items():
@@ -432,7 +435,7 @@ def make_beatsheet_parser(root, metadata_only=False):
             valid_fields[field] = (
                 pc.string(f"{beatmap_name}.root / ")
                 >> sz.make_parser_from_type_hint(str)
-            ).map(lambda path: root / path)
+            ).map(lambda path: beatsheet.root / path)
         else:
             valid_fields[field] = sz.make_parser_from_type_hint(typ)
 
@@ -518,10 +521,9 @@ def format_beatsheet(beatsheet):
     cls = BeatSheet
 
     res.append(f"#K-AIKO-std-{version}\n")
-    res.append("from pathlib import Path\n")
     res.append(f"from {cls.__module__} import {cls.__name__}\n")
     res.append("\n")
-    res.append(f"{beatmap_name} = {cls.__name__}(root=Path(__file__).resolve().parent)\n")
+    res.append(f"{beatmap_name} = {cls.__name__}(__file__)\n")
 
     for name in BeatSheet.__annotations__.keys():
         format_field = format_mstr if name == "info" else sz.format_value
@@ -536,7 +538,8 @@ def format_beatsheet(beatsheet):
 
 class OSU:
     def read(self, filename, metadata_only=False):
-        path = Path(filename).resolve().parent
+        path = Path(filename)
+        root = Path(filename).resolve().parent
         index = 0
 
         with open(filename, encoding='utf-8-sig') as file:
@@ -546,7 +549,8 @@ class OSU:
             #     raise BeatmapParseError(f"invalid file format: {repr(format)}")
 
             beatmap = beatmaps.Beatmap()
-            beatmap.root = path
+            beatmap.path = path
+            beatmap.root = root
             beatmap.event_sequences = [[]]
             context = {}
 

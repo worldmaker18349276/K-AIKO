@@ -1072,7 +1072,6 @@ class BeatbarState:
 class Beatmap:
     def __init__(
         self, *,
-        root=None,
         info=None,
         audio=None,
         metronome=None,
@@ -1080,7 +1079,6 @@ class Beatmap:
         event_sequences=None,
         settings=None,
     ):
-        self.root = root if root is not None else Path(".").resolve()
         self.info = info if info is not None else ""
         self.audio = audio if audio is not None else BeatmapAudio()
         self.metronome = metronome if metronome is not None else engines.Metronome(offset=0.0, tempo=120.0)
