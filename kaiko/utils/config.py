@@ -7,7 +7,6 @@ import itertools
 import keyword
 import re
 import typing
-from collections import OrderedDict
 from inspect import cleandoc
 from pathlib import Path
 from . import parsec as pc
@@ -84,6 +83,8 @@ def make_configuration_parser(config_type, config_name):
     header = (imports << nl << vindent).many_till(init << nl << vindent)
 
     def require(typ):
+        if typ.__module__ == "builtins":
+            return
         if (typ.__name__, typ.__module__) not in imported_modules.items():
             raise pc.ParseFailure(
                 f"import statement for module {typ.__module__}.{typ.__name__} at the beginning of the file"
@@ -111,8 +112,9 @@ def make_configuration_parser(config_type, config_name):
 
         # parse field value
         field_type, _ = config_type.get_field_hint(field_key)
-        field_value = yield sz.make_parser_from_type_hint(field_type)
-        for typ in sz.get_used_custom_types(field_value):
+        serializer = sz.make_serializer_from_type_hint(field_type)
+        field_value = yield serializer.parser
+        for typ in serializer.validator(field_value):
             require(typ)
         set(config, field_key, field_value)
 
@@ -415,17 +417,19 @@ def parse(cls, text, name="settings"):
 def format(cls, config, name="settings"):
     res = []
     res.append(f"{name} = {cls.__name__}()\n")
-    custom_types = {*()}
+    used_types = {*()}
 
     for field in cls.iter_all_fields():
         if not has(config, field):
             continue
         value = get(config, field)
         typ, _ = cls.get_field_hint(field)
-        if not sz.has_type(value, typ):
-            raise TypeError(f"Invalid value {value!r}, expecting {typ}")
-        custom_types |= sz.get_used_custom_types(value)
-        res.append(f"{name}.{'.'.join(field)} = {sz.format_value(value)}\n")
+        serializer = sz.make_serializer_from_type_hint(typ)
+        value_types = serializer.validator(value)
+        if not value_types:
+            raise TypeError(f"Invalid value {value!r}")
+        used_types |= value_types
+        res.append(f"{name}.{'.'.join(field)} = {serializer.formatter(value)}\n")
 
     imports = []
 
@@ -434,9 +438,11 @@ def format(cls, config, name="settings"):
     sz.validate_identifier(cls.__name__)
     imports.append(f"from {cls.__module__} import {cls.__name__}\n")
     
-    custom_types_list = sorted(list(custom_types), key=lambda typ: typ.__module__)
+    custom_types_list = sorted(list(used_types), key=lambda typ: typ.__module__)
     for module, types in itertools.groupby(custom_types_list, key=lambda typ: typ.__module__):
         names = [typ.__name__ for typ in types]
+        if module == "builtins":
+            continue
         for submodule in module.split("."):
             sz.validate_identifier(submodule)
         for name in names:

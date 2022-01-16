@@ -18,6 +18,13 @@ class ParseFailure(Exception):
     def __str__(self):
         return f"expecting {self.expected}"
 
+    @contextlib.contextmanager
+    def retry(self):
+        try:
+            yield
+        except ParseFailure as failure:
+            raise ParseChoiceFailure([self, failure]) from failure
+
 class ParseChoiceFailure(ParseFailure):
     def __init__(self, failures):
         self.failures = failures
@@ -25,6 +32,13 @@ class ParseChoiceFailure(ParseFailure):
     @property
     def expected(self):
         return " or ".join(failure.expected for failure in self.failures)
+
+    @contextlib.contextmanager
+    def retry(self):
+        try:
+            yield
+        except ParseFailure as failure:
+            raise ParseChoiceFailure([*self.failures, failure]) from failure
 
 class ParseExtendFailure(ParseFailure):
     def __init__(self, prefix, failure):

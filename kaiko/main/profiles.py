@@ -4,7 +4,6 @@ import tempfile
 import subprocess
 from pathlib import Path
 from ..utils import config as cfg
-from ..utils import serializers as sz
 from ..utils import parsec as pc
 from ..utils import commands as cmd
 from ..utils import datanodes as dn

@@ -431,10 +431,10 @@ def make_beatsheet_parser(filepath, metadata_only=False):
         elif typ is Path:
             valid_fields[field] = (
                 pc.string("Path(__file__).parent / ")
-                >> sz.make_parser_from_type_hint(str)
+                >> sz.make_str_serializer().parser
             ).map(lambda path: root / path)
         else:
-            valid_fields[field] = sz.make_parser_from_type_hint(typ)
+            valid_fields[field] = sz.make_serializer_from_type_hint(typ).parser
 
     while True:
         sp = yield make_msp_parser(indent=0).reject(lambda sp: None if sp in ("\n", "") else "newline or end of block")
@@ -522,8 +522,8 @@ def format_beatsheet(beatsheet):
     res.append("\n")
     res.append(f"{beatmap_name} = {cls.__name__}(__file__)\n")
 
-    for name in BeatSheet.__annotations__.keys():
-        format_field = format_mstr if name == "info" else sz.format_value
+    for name, typ in BeatSheet._fields.items():
+        format_field = format_mstr if name == "info" else sz.make_serializer_from_type_hint(typ).formatter
         res.append(f"{beatmap_name}.{name} = {format_field(getattr(beatsheet, name))}\n")
 
     name = 'chart'

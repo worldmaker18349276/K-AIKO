@@ -1,19 +1,14 @@
-import contextlib
 import keyword
 import ast
 import enum
 import pathlib
 import dataclasses
 import typing
-from typing import Dict, List, Set, Tuple, Union
+from typing import Any, Callable, Dict, List, Set, Tuple, Union
 from . import parsec as pc
 
 
 # literals
-
-def validate_identifier(name):
-    if not isinstance(name, str) or not str.isidentifier(name) or keyword.iskeyword(name):
-        raise ValueError(f"Invalid identifier {name!r}")
 
 class ParseSuggestion(pc.ParseFailure):
     def __init__(self, expected, suggestions):
@@ -27,46 +22,62 @@ def suggest(parser, suggestions):
     except pc.ParseFailure as failure:
         raise ParseSuggestion(failure.expected, suggestions) from failure
 
-@contextlib.contextmanager
-def failure_choice(failure):
-    try:
-        yield
-    except pc.ParseFailure as failure2:
-        raise pc.ParseChoiceFailure([failure, failure2]) from failure2
+def get_suggestions(failure):
+    suggestions = []
+    if isinstance(failure, pc.ParseChoiceFailure):
+        for subfailure in failure.failures:
+            suggestions.extend(get_suggestions(subfailure))
+    elif isinstance(failure, ParseSuggestion):
+        suggestions.extend(failure.suggestions)
+    return suggestions
 
-def _make_literal_parser(expr, desc, suggestions):
-    return suggest(pc.regex(expr).map(ast.literal_eval).desc(desc), suggestions)
 
-def make_none_parser(suggestions=[None]):
-    return _make_literal_parser(r"None", "None", [format_value(sugg) for sugg in set(suggestions)])
+@dataclasses.dataclass
+class Serializer:
+    parser: pc.Parsec
+    formatter: Callable[[Any], str]
+    validator: Callable[[Any], Set[type]]
 
-def make_bool_parser(suggestions=[False]):
-    return _make_literal_parser(r"False|True", "bool", [format_value(sugg) for sugg in set(suggestions)])
+    def suggest(self, suggestions):
+        # assert all(bool(self.validator(sugg)) for sugg in suggestions)
+        suggestions_str = [self.formatter(sugg) for sugg in set(suggestions)]
+        suggested_parser = suggest(self.parser, suggestions_str)
+        return Serializer(suggested_parser, self.formatter, self.validator)
 
-def make_int_parser(suggestions=[0]):
-    return _make_literal_parser(
-        r"[-+]?(0|[1-9][0-9]*)(?![0-9\.\+eEjJ])", "int",
-        [format_value(sugg) for sugg in set(suggestions)],
-    )
+    @staticmethod
+    def make_literal(typ, expr, formatter):
+        validator = lambda value: {typ} if type(value) is typ else set()
+        parser = pc.regex(expr).map(ast.literal_eval).desc(typ.__name__)
+        return Serializer(parser, formatter, validator)
 
-def make_float_parser(suggestions=[0.0]):
-    return _make_literal_parser(
-        r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+[eE][-+]?[0-9]+)(?![0-9\+jJ])",
-        "float",
-        [format_value(sugg) for sugg in set(suggestions)],
-    )
+def make_none_serializer(suggestions=[]):
+    return Serializer.make_literal(type(None), r"None", repr).suggest(suggestions or [None])
 
-def make_complex_parser(suggestions=[0j]):
-    return _make_literal_parser(
-        r"[-+]?({0}[-+])?{0}[jJ]".format(
-            r"(0|[1-9][0-9]*|[0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)"
-        ),
-        "complex",
-        [format_value(sugg) for sugg in set(suggestions)],
-    )
+def make_bool_serializer(suggestions=[]):
+    return Serializer.make_literal(bool, r"False|True", repr).suggest(suggestions or [False])
 
-def make_bytes_parser(suggestions=[b""]):
-    return _make_literal_parser(
+def make_int_serializer(suggestions=[]):
+    expr = r"[-+]?(0|[1-9][0-9]*)(?![0-9\.\+eEjJ])"
+    return Serializer.make_literal(int, expr, repr).suggest(suggestions or [0])
+
+def make_float_serializer(suggestions=[]):
+    expr = r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+[eE][-+]?[0-9]+)(?![0-9\+jJ])"
+    return Serializer.make_literal(float, expr, repr).suggest(suggestions or [0.0])
+
+def make_complex_serializer(suggestions=[]):
+    expr = r"[-+]?({0}[-+])?{0}[jJ]".format(r"(0|[1-9][0-9]*|[0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+e[-+]?[0-9]+)")
+
+    def format_complex(value):
+        repr_value = repr(value)
+        # remove parentheses
+        if repr_value.startswith("(") and repr_value.endswith(")"):
+            repr_value = repr_value[1:-1]
+        return repr_value
+
+    return Serializer.make_literal(complex, expr, format_complex).suggest(suggestions or [0j])
+
+def make_bytes_serializer(suggestions=[]):
+    expr = (
         r'b"('
         r'(?![\r\n\\"])[\x01-\x7f]'
         r'|\\[0-7]{1,3}'
@@ -74,13 +85,17 @@ def make_bytes_parser(suggestions=[b""]):
         r'|\\u[0-9a-fA-F]{4}'
         r'|\\U[0-9a-fA-F]{8}'
         r'|\\(?![xuUN])[\x01-\x7f]'
-        r')*"',
-        "bytes",
-        [format_value(sugg) for sugg in set(suggestions)],
+        r')*"'
     )
 
-def make_str_parser(suggestions=[""]):
-    return _make_literal_parser(
+    def format_bytes(value):
+        # make sure it uses double quotation
+        return 'b"' + repr(value + b'"')[2:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
+
+    return Serializer.make_literal(bytes, expr, format_bytes).suggest(suggestions or [b""])
+
+def make_str_serializer(suggestions=[]):
+    expr = (
         r'"('
         r'[^\r\n\\"\x00]'
         r'|\\[0-7]{1,3}'
@@ -88,134 +103,308 @@ def make_str_parser(suggestions=[""]):
         r'|\\u[0-9a-fA-F]{4}'
         r'|\\U[0-9a-fA-F]{8}'
         r'|\\(?![xuUN\x00]).'
-        r')*"',
-        "str",
-        [format_value(sugg) for sugg in set(suggestions)],
+        r')*"'
     )
 
-def make_path_parser(suggestions=[pathlib.Path(".")]):
-    return (
-        pc.string("Path(")
-        >> make_str_parser([str(sugg) for sugg in suggestions]).map(pathlib.Path)
-        << pc.string(")")
-    )
+    def format_str(value):
+        # make sure it uses double quotation
+        return '"' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
+
+    return Serializer.make_literal(str, expr, format_str).suggest(suggestions or [""])
 
 
 # composite
 
-@pc.parsec
-def make_list_parser(elem):
-    opening = suggest(pc.regex(r"\[\s*").desc("left bracket"), ["["])
-    comma = suggest(pc.regex(r"\s*,\s*").desc("comma"), [","])
-    closing = suggest(pc.regex(r"\s*\]").desc("right bracket"), ["]"])
-    yield opening
-    results = []
-    try:
-        while True:
-            results.append((yield elem))
-            yield comma
-    except pc.ParseFailure as failure:
-        with failure_choice(failure):
-            yield closing
-        return results
+def IIFE(func):
+    return func()
 
-@pc.parsec
-def make_set_parser(elem):
-    opening = suggest(pc.regex(r"set\(\s*").desc("'set('"), ["set("])
-    closing = suggest(pc.regex(r"\s*\)").desc("right parenthesis"), [")"])
-    content = make_list_parser(elem)
-    yield opening
-    res = yield content
-    yield closing
-    return set(res)
+def make_list_serializer(elem):
+    elem_parser = elem.parser
+    elem_formatter = elem.formatter
+    elem_validator = elem.validator
 
-@pc.parsec
-def make_dict_parser(key, value):
-    opening = suggest(pc.regex(r"\{\s*").desc("left brace"), ["{"])
-    colon = suggest(pc.regex(r"\s*:\s*").desc("colon"), [":"])
-    comma = suggest(pc.regex(r"\s*,\s*").desc("comma"), [","])
-    closing = suggest(pc.regex(r"\s*\}").desc("right brace"), ["}"])
-    item = colon.join((key, value))
-
-    yield opening
-    results = {}
-    try:
-        while True:
-            k, v = yield item
-            results[k] = v
-            yield comma
-    except pc.ParseFailure as failure:
-        with failure_choice(failure):
-            yield closing
-        return results
-
-@pc.parsec
-def make_tuple_parser(elems):
-    opening = suggest(pc.regex(r"\(\s*").desc("left parenthesis"), ["("])
-    comma = suggest(pc.regex(r"\s*,\s*").desc("comma"), [","])
-    closing = suggest(pc.regex(r"\s*\)").desc("right parenthesis"), [")"])
-
-    if len(elems) == 0:
-        yield opening
-        yield closing
-        return ()
-
-    elif len(elems) == 1:
-        yield opening
-        res = yield elems[0]
-        yield comma
-        yield closing
-        return (res,)
-
-    else:
+    @IIFE
+    @pc.parsec
+    def parser():
+        opening = suggest(pc.regex(r"\[\s*").desc("left bracket"), ["["])
+        comma = suggest(pc.regex(r"\s*,\s*").desc("comma"), [","])
+        closing = suggest(pc.regex(r"\s*\]").desc("right bracket"), ["]"])
         yield opening
         results = []
-        is_first = True
-        for elem in elems:
-            if not is_first:
+        try:
+            while True:
+                results.append((yield elem_parser))
                 yield comma
-            is_first = False
-            results.append((yield elem))
-        yield comma.optional()
-        yield closing
-        return tuple(results)
+        except pc.ParseFailure as failure:
+            with failure.retry():
+                yield closing
+            return results
 
-@pc.parsec
-def make_dataclass_parser(cls, fields):
-    opening = suggest(
-        pc.regex(fr"{cls.__name__}\s*\(\s*").desc(f"'{cls.__name__}('"),
-        [f"{cls.__name__}("],
-    )
-    comma = suggest(pc.regex(r"\s*,\s*").desc("comma"), [","])
-    closing = suggest(pc.regex(r"\s*\)").desc("right parenthesis"), [")"])
+    def validator(value):
+        if type(value) is not list:
+            return set()
+        types = {list}
+        for elem in value:
+            elem_types = elem_validator(elem)
+            if not elem_types:
+                return set()
+            types |= elem_types
+        return types
 
-    yield opening
-    results = {}
-    is_first = True
-    for key, field in fields.items():
-        if not is_first:
+    formatter = lambda value: "[%s]" % ", ".join(elem_formatter(elem) for elem in value)
+
+    return Serializer(parser, formatter, validator)
+
+def make_set_serializer(elem):
+    elem_parser = elem.parser
+    elem_formatter = elem.formatter
+    elem_validator = elem.validator
+
+    @IIFE
+    @pc.parsec
+    def parser():
+        opening = suggest(pc.regex(r"set\(\[\s*").desc("'set(['"), ["set(["])
+        closing = suggest(pc.regex(r"\s*\]\)").desc("'])'"), ["])"])
+        comma = suggest(pc.regex(r"\s*,\s*").desc("comma"), [","])
+        yield opening
+        results = set()
+        try:
+            while True:
+                results.add((yield elem_parser))
+                yield comma
+        except pc.ParseFailure as failure:
+            with failure.retry():
+                yield closing
+            return results
+
+    def validator(value):
+        if type(value) is not set:
+            return set()
+        types = {set}
+        for elem in value:
+            elem_types = elem_validator(elem)
+            if not elem_types:
+                return set()
+            types |= elem_types
+        return types
+
+    formatter = lambda value: "set([%s])" % ", ".join(elem_formatter(elem) for elem in value)
+
+    return Serializer(parser, formatter, validator)
+
+def make_dict_serializer(key, value):
+    key_parser = key.parser
+    key_formatter = key.formatter
+    key_validator = key.validator
+    value_parser = value.parser
+    value_formatter = value.formatter
+    value_validator = value.validator
+
+    @IIFE
+    @pc.parsec
+    def parser():
+        opening = suggest(pc.regex(r"\{\s*").desc("left brace"), ["{"])
+        colon = suggest(pc.regex(r"\s*:\s*").desc("colon"), [":"])
+        comma = suggest(pc.regex(r"\s*,\s*").desc("comma"), [","])
+        closing = suggest(pc.regex(r"\s*\}").desc("right brace"), ["}"])
+        item = colon.join((key_parser, value_parser))
+
+        yield opening
+        results = {}
+        try:
+            while True:
+                k, v = yield item
+                results[k] = v
+                yield comma
+        except pc.ParseFailure as failure:
+            with failure.retry():
+                yield closing
+            return results
+
+    def validator(value):
+        if type(value) is not dict:
+            return set()
+        types = {dict}
+        for k, v in value.items():
+            k_types = key_validator(k)
+            if not k_types:
+                return set()
+            types |= k_types
+            v_types = value_validator(v)
+            if not v_types:
+                return set()
+            types |= v_types
+        return types
+
+    def formatter(value):
+        return "{%s}" % ", ".join(key_formatter(k) + ":" + value_formatter(v) for k, v in value.items())
+
+    return Serializer(parser, formatter, validator)
+
+def make_tuple_serializer(elems):
+    elem_parsers = [elem.parser for elem in elems]
+    elem_formatters = [elem.formatter for elem in elems]
+    elem_validators = [elem.validator for elem in elems]
+
+    @IIFE
+    @pc.parsec
+    def parser():
+        opening = suggest(pc.regex(r"\(\s*").desc("left parenthesis"), ["("])
+        comma = suggest(pc.regex(r"\s*,\s*").desc("comma"), [","])
+        closing = suggest(pc.regex(r"\s*\)").desc("right parenthesis"), [")"])
+
+        if len(elem_parsers) == 0:
+            yield opening
+            yield closing
+            return ()
+
+        elif len(elem_parsers) == 1:
+            yield opening
+            res = yield elem_parsers[0]
             yield comma
-        is_first = False
-        yield suggest(pc.regex(fr"{key}\s*=\s*").desc(f"{key}="), [f"{key}="])
-        value = yield field
-        results[key] = value
-    yield comma.optional()
-    yield closing
-    return cls(**results)
+            yield closing
+            return (res,)
 
-def make_union_parser(options):
+        else:
+            yield opening
+            results = []
+            is_first = True
+            for elem_parser in elem_parsers:
+                if not is_first:
+                    yield comma
+                is_first = False
+                results.append((yield elem_parser))
+            yield comma.optional()
+            yield closing
+            return tuple(results)
+
+    def validator(value):
+        if type(value) is not tuple or len(value) != len(elem_validators):
+            return set()
+        types = {tuple}
+        for elem, elem_validator in zip(value, elem_validators):
+            elem_types = elem_validator(elem)
+            if not elem_types:
+                return set()
+            types |= elem_types
+        return types
+
+    def formatter(value):
+        if len(elem_formatters) == 1:
+            return "(%s,)" % elem_formatters[0].formatter(value)
+        else:
+            return "(%s)" % ", ".join(elem_formatter(elem) for elem, elem_formatter in zip(value, elem_formatters))
+
+    return Serializer(parser, formatter, validator)
+
+
+def make_union_serializer(options):
     if len(options) == 0:
         raise ValueError("empty union")
     elif len(options) == 1:
-        return options[0]
-    else:
-        return pc.choice(*options)
+        return list(options.values())[0]
 
-@pc.parsec
-def make_enum_parser(cls):
-    yield suggest(pc.string(f"{cls.__name__}."), [f"{cls.__name__}."])
-    option = yield pc.choice(*[suggest(pc.string(option.name), [option.name]) for option in cls])
-    return getattr(cls, option)
+    option_validators = [option.validator for option in options.values()]
+    option_parsers = [option.parser for option in options.values()]
+    option_formatters = [(base, option.formatter) for base, option in options.items()]
+
+    def validator(value):
+        for option_validator in option_validators:
+            res = option_validator(value)
+            if res:
+                return res
+        return set()
+
+    def formatter(value):
+        for base, option_formatter in option_formatters:
+            if isinstance(value, base):
+                return option_formatter(value)
+        raise TypeError
+
+    parser = pc.choice(*option_parsers)
+    return Serializer(parser, formatter, validator)
+
+
+# custom
+
+def make_enum_serializer(cls):
+    @IIFE
+    @pc.parsec
+    def parser():
+        yield suggest(pc.string(f"{cls.__name__}."), [f"{cls.__name__}."])
+        option = yield pc.choice(*[suggest(pc.string(option.name), [option.name]) for option in cls])
+        return getattr(cls, option)
+
+    validator = lambda value: {cls} if type(value) is cls else set()
+    formatter = lambda value: f"{cls.__name__}.{value.name}"
+    return Serializer(parser, formatter, validator)
+
+def make_path_serializer(suggestions=[pathlib.Path(".")]):
+    str_serializer = make_str_serializer([str(sugg) for sugg in suggestions])
+    str_parser = str_serializer.parser
+    str_formatter = str_serializer.formatter
+
+    @IIFE
+    @pc.parsec
+    def parser():
+        opening = suggest(pc.regex(r"Path\(\s*").desc("'Path('"), ["Path("])
+        closing = suggest(pc.regex(r"\s*\)").desc("')'"), [")"])
+        yield opening
+        path = yield str_parser
+        yield closing
+        return pathlib.Path(path)
+
+    validator = lambda value: {pathlib.Path} if isinstance(value, pathlib.Path) else set()
+    formatter = lambda value: "Path(%s)" % str_formatter(str(value))
+    return Serializer(parser, formatter, validator)
+
+def make_dataclass_serializer(cls, fields):
+    field_parsers = {key: serializer.parser for key, serializer in fields.items()}
+    field_validators = {key: serializer.validator for key, serializer in fields.items()}
+    field_formatters = {key: serializer.formatter for key, serializer in fields.items()}
+
+    @IIFE
+    @pc.parsec
+    def parser():
+        opening = suggest(
+            pc.regex(fr"{cls.__name__}\s*\(\s*").desc(f"'{cls.__name__}('"),
+            [f"{cls.__name__}("],
+        )
+        comma = suggest(pc.regex(r"\s*,\s*").desc("comma"), [","])
+        closing = suggest(pc.regex(r"\s*\)").desc("right parenthesis"), [")"])
+
+        yield opening
+        results = {}
+        is_first = True
+        for key, field_parser in field_parsers.items():
+            if not is_first:
+                yield comma
+            is_first = False
+            yield suggest(pc.regex(fr"{key}\s*=\s*").desc(f"{key}="), [f"{key}="])
+            value = yield field_parser
+            results[key] = value
+        yield comma.optional()
+        yield closing
+        return cls(**results)
+
+    def validator(value):
+        if type(value) is not cls:
+            return set()
+        types = {cls}
+        for key, field_validator in field_validators.items():
+            field_types = field_validator(getattr(value, key))
+            if not field_types:
+                return set()
+            types |= field_types
+        return types
+
+    def formatter(value):
+        return f"{cls.__name__}(%s)" % ", ".join(
+            key + "=" + field_formatter(getattr(value, key))
+            for key, field_formatter in field_formatters.items()
+        )
+
+    return Serializer(parser, formatter, validator)
 
 
 def get_args(type_hint):
@@ -329,62 +518,57 @@ def get_sub(type_hint):
     else:
         raise ValueError
 
-def get_types(type_hint):
-    bases = set()
-    base = get_base(type_hint)
-    if base is not Union:
-        bases.add(base)
-    for sub in get_sub(type_hint):
-        bases |= get_types(sub)
-    return bases
+def validate_identifier(name):
+    if not isinstance(name, str) or not str.isidentifier(name) or keyword.iskeyword(name):
+        raise ValueError(f"Invalid identifier {name!r}")
 
-def make_parser_from_type_hint(type_hint, suggestions=[]):
-    """Make Parser from type hint.
+def make_serializer_from_type_hint(type_hint, suggestions=[]):
+    """Make Serializer from type hint.
 
     Parameters
     ----------
-    type_hint : type or type hint
+    type_hint : type or generic
         The type to parse.
     suggestions : list, optional
-        The suggestions value, which should be instances of `type_hint`.
+        The suggested values, which should be instances of `type_hint`.
 
     Returns
     -------
-    Parsec
-        The parser of the given type.
+    Serializer
+        The serializer of the given type.
     """
     if type_hint is None:
         type_hint = type(None)
 
     if type_hint is type(None):
-        return make_none_parser(suggestions) if suggestions else make_none_parser()
+        return make_none_serializer(suggestions)
 
     elif type_hint is bool:
-        return make_bool_parser(suggestions) if suggestions else make_bool_parser()
+        return make_bool_serializer(suggestions)
 
     elif type_hint is int:
-        return make_int_parser(suggestions) if suggestions else make_int_parser()
+        return make_int_serializer(suggestions)
 
     elif type_hint is float:
-        return make_float_parser(suggestions) if suggestions else make_float_parser()
+        return make_float_serializer(suggestions)
 
     elif type_hint is complex:
-        return make_complex_parser(suggestions) if suggestions else make_complex_parser()
+        return make_complex_serializer(suggestions)
 
     elif type_hint is str:
-        return make_str_parser(suggestions) if suggestions else make_str_parser()
+        return make_str_serializer(suggestions)
 
     elif type_hint is bytes:
-        return make_bytes_parser(suggestions) if suggestions else make_bytes_parser()
-
-    elif isinstance(type_hint, type) and issubclass(type_hint, pathlib.Path):
-        return make_path_parser(suggestions) if suggestions else make_path_parser()
+        return make_bytes_serializer(suggestions)
 
     elif isinstance(type_hint, type) and issubclass(type_hint, enum.Enum):
         validate_identifier(type_hint.__name__)
         for option in type_hint:
             validate_identifier(option.name)
-        return make_enum_parser(type_hint)
+        return make_enum_serializer(type_hint)
+
+    elif isinstance(type_hint, type) and issubclass(type_hint, pathlib.Path):
+        return make_path_serializer(suggestions)
 
     elif isinstance(type_hint, type) and dataclasses.is_dataclass(type_hint):
         validate_identifier(type_hint.__name__)
@@ -396,18 +580,18 @@ def make_parser_from_type_hint(type_hint, suggestions=[]):
                 subsuggestions.append(field.default)
             elif field.default_factory is not dataclasses.MISSING:
                 subsuggestions.append(field.default_factory())
-            fields[field.name] = make_parser_from_type_hint(field.type, subsuggestions)
-        return make_dataclass_parser(type_hint, fields)
+            fields[field.name] = make_serializer_from_type_hint(field.type, subsuggestions)
+        return make_dataclass_serializer(type_hint, fields)
 
     elif get_origin(type_hint) is list:
         elem_hint, = get_args(type_hint)
-        elem = make_parser_from_type_hint(elem_hint, [elem for sugg in suggestions for elem in sugg])
-        return make_list_parser(elem)
+        elem = make_serializer_from_type_hint(elem_hint, [elem for sugg in suggestions for elem in sugg])
+        return make_list_serializer(elem)
 
     elif get_origin(type_hint) is set:
         elem_hint, = get_args(type_hint)
-        elem = make_parser_from_type_hint(elem_hint, [elem for sugg in suggestions for elem in sugg])
-        return make_set_parser(elem)
+        elem = make_serializer_from_type_hint(elem_hint, [elem for sugg in suggestions for elem in sugg])
+        return make_set_serializer(elem)
 
     elif get_origin(type_hint) is tuple:
         args = get_args(type_hint)
@@ -415,173 +599,29 @@ def make_parser_from_type_hint(type_hint, suggestions=[]):
             elems = []
         else:
             elems = [
-                make_parser_from_type_hint(arg, [sugg[i] for sugg in suggestions])
+                make_serializer_from_type_hint(arg, [sugg[i] for sugg in suggestions])
                 for i, arg in enumerate(args)
             ]
-        return make_tuple_parser(elems)
+        return make_tuple_serializer(elems)
 
     elif get_origin(type_hint) is dict:
         key_hint, value_hint = get_args(type_hint)
-        key = make_parser_from_type_hint(key_hint, [key for sugg in suggestions for key in sugg.keys()])
-        value = make_parser_from_type_hint(value_hint, [value for sugg in suggestions for value in sugg.values()])
-        return make_dict_parser(key, value)
+        key = make_serializer_from_type_hint(key_hint, [k for sugg in suggestions for k in sugg.keys()])
+        value = make_serializer_from_type_hint(value_hint, [v for sugg in suggestions for v in sugg.values()])
+        return make_dict_serializer(key, value)
 
     elif get_origin(type_hint) is Union:
         type_hints = get_args(type_hint)
-        bases = set(get_base(type_hint) for type_hint in type_hints)
+        bases = {get_base(type_hint): type_hint for type_hint in type_hints}
         assert Union not in bases
         if len(bases) != len(type_hints):
             raise TypeError("Unable to construct parsers for unions of the same base type")
-        options = [
-            make_parser_from_type_hint(type_hint, [sugg for sugg in suggestions if isinstance(sugg, get_base(type_hint))])
-            for type_hint in type_hints
-        ]
-        return make_union_parser(options)
-
-    else:
-        raise ValueError(f"No parser for type hint: {type_hint!r}")
-
-def get_suggestions(failure):
-    suggestions = []
-    if isinstance(failure, pc.ParseChoiceFailure):
-        for subfailure in failure.failures:
-            suggestions.extend(get_suggestions(subfailure))
-    elif isinstance(failure, ParseSuggestion):
-        suggestions.extend(failure.suggestions)
-    return suggestions
-
-def has_type(value, type_hint):
-    if type_hint is None:
-        type_hint = type(None)
-
-    if type_hint in (type(None), bool, int, float, complex, str, bytes):
-        return type(value) is type_hint
-
-    elif isinstance(type_hint, type) and issubclass(type_hint, pathlib.Path):
-        return type(value) is type_hint
-
-    elif isinstance(type_hint, type) and issubclass(type_hint, enum.Enum):
-        return type(value) is type_hint
-
-    elif isinstance(type_hint, type) and dataclasses.is_dataclass(type_hint):
-        return type(value) is type_hint and all(has_type(getattr(value, field.name), field.type)
-                                                for field in dataclasses.fields(type_hint))
-
-    elif get_origin(type_hint) is list:
-        elem_hint, = get_args(type_hint)
-        return type(value) is list and all(has_type(subvalue, elem_hint) for subvalue in value)
-
-    elif get_origin(type_hint) is set:
-        elem_hint, = get_args(type_hint)
-        return type(value) is set and all(has_type(subvalue, elem_hint) for subvalue in value)
-
-    elif get_origin(type_hint) is tuple:
-        elems = get_args(type_hint)
-        if len(elems) == 1 and elems[0] == ():
-            elems = []
-        return (
-            type(value) is tuple
-            and len(value) == len(elems)
-            and all(has_type(subvalue, elem_hint) for subvalue, elem_hint in zip(value, elems))
-        )
-
-    elif get_origin(type_hint) is dict:
-        key_hint, value_hint = get_args(type_hint)
-        return (
-            type(value) is dict
-            and all(has_type(key, key_hint) and has_type(subvalue, value_hint) for key, subvalue in value.items())
-        )
-
-    elif get_origin(type_hint) is Union:
-        options = get_args(type_hint)
-        return any(has_type(value, option) for option in options)
-
-    else:
-        raise ValueError(f"Unknown type hint: {type_hint!r}")
-
-def get_used_custom_types(value):
-    if type(value) in (type(None), bool, int, float, complex, str, bytes):
-        return {*()}
-
-    elif type(value) in (list, tuple, set):
-        return {typ for subvalue in value for typ in get_used_custom_types(subvalue)}
-
-    elif type(value) is dict:
-        return {typ for entry in value.items() for subvalue in entry for typ in get_used_custom_types(subvalue)}
-
-    elif isinstance(value, pathlib.Path):
-        return {pathlib.Path}
-
-    elif isinstance(value, enum.Enum):
-        return {type(value)}
-
-    elif dataclasses.is_dataclass(value):
-        return {type(value)} | {
-            typ
-            for field in dataclasses.fields(value)
-            for typ in get_used_custom_types(getattr(value, field.name))
+        options = {
+            base: make_serializer_from_type_hint(type_hint, [sugg for sugg in suggestions if isinstance(sugg, base)])
+            for base, type_hint in bases.items()
         }
+        return make_union_serializer(options)
 
     else:
-        raise TypeError(f"Cannot configure type {type(value)}")
+        raise ValueError(f"No serializer for type {type_hint!r}")
 
-def format_value(value):
-    if value is None:
-        return "None"
-
-    elif type(value) in (bool, int, float):
-        return repr(value)
-
-    elif type(value) is complex:
-        repr_value = repr(value)
-        # remove parentheses
-        if repr_value.startswith("(") and repr_value.endswith(")"):
-            repr_value = repr_value[1:-1]
-        return repr_value
-
-    elif type(value) is bytes:
-        # make sure it uses double quotation
-        return 'b"' + repr(value + b'"')[2:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
-
-    elif type(value) is str:
-        # make sure it uses double quotation
-        return '"' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
-
-    elif type(value) is list:
-        return "[%s]" % ", ".join(format_value(subvalue) for subvalue in value)
-
-    elif type(value) is tuple:
-        if len(value) == 1:
-            return "(%s,)" % format_value(value[0])
-        return "(%s)" % ", ".join(format_value(subvalue) for subvalue in value)
-
-    elif type(value) is set:
-        return "set([%s])" % ", ".join(format_value(subvalue) for subvalue in value)
-
-    elif type(value) is dict:
-        return "{%s}" % ", ".join(
-            format_value(key) + ":" + format_value(subvalue)
-            for key, subvalue in value.items()
-        )
-
-    elif isinstance(value, pathlib.Path):
-        return "Path(%s)" % format_value(str(value))
-
-    elif isinstance(value, enum.Enum):
-        cls = type(value)
-        validate_identifier(cls.__name__)
-        validate_identifier(value.name)
-        return f"{cls.__name__}.{value.name}"
-
-    elif dataclasses.is_dataclass(value):
-        cls = type(value)
-        fields = dataclasses.fields(cls)
-        validate_identifier(cls.__name__)
-        for field in fields:
-            validate_identifier(field.name)
-        return f"{cls.__name__}(%s)" % ", ".join(
-            field.name + "=" + format_value(getattr(value, field.name)) for field in fields
-        )
-
-    else:
-        raise TypeError(f"Cannot format value of type {type(value)}")

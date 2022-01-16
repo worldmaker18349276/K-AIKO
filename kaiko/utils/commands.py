@@ -432,7 +432,7 @@ class LiteralParser(ArgumentParser):
         self.type_hint = type_hint
         self.default = default
         suggestions = [default] if default is not inspect.Parameter.empty else []
-        self.parser = sz.make_parser_from_type_hint(type_hint, suggestions) << pc.eof()
+        self.parser = sz.make_serializer_from_type_hint(type_hint, suggestions).parser << pc.eof()
         self._desc = desc or f"It should be {type_hint}"
 
     def desc(self):
