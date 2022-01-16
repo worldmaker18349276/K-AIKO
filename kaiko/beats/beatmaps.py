@@ -1059,7 +1059,7 @@ class BeatmapScore:
 
 @dataclass
 class BeatmapAudio:
-    path: Optional[str] = None
+    path: Optional[Path] = None
     volume: float = 0.0
     preview: float = 0.0
     info: str = ""
