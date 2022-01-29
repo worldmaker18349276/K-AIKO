@@ -111,8 +111,7 @@ def make_configuration_parser(config_type, config_name):
         yield equal
 
         # parse field value
-        field_type, _ = config_type.get_field_hint(field_key)
-        serializer = sz.make_serializer_from_type_hint(field_type)
+        serializer = config_type.get_field_serializer(field_key)
         field_value = yield serializer.parser
         for typ in serializer.validator(field_value):
             require(typ)
@@ -131,20 +130,25 @@ class ConfigurableMeta(type):
     def __init__(self, name, supers, attrs):
         super().__init__(name, supers, attrs)
 
-        excludes = attrs.get('__configurable_excludes__', [])
+        self.__configurable_fields__ = self.make_configurable_fields()
+
+    def make_configurable_fields(self):
+        excludes = getattr(self, '__configurable_excludes__', [])
         fields_doc = ConfigurableMeta._parse_fields_doc(self.__doc__)
 
-        self.__configurable_fields__ = attrs.get('__configurable_fields__', {})
+        configurable_fields = {}
 
         for name, typ in typing.get_type_hints(self).items():
             if name not in excludes:
-                if name not in self.__configurable_fields__:
-                    self.__configurable_fields__[name] = (typ, fields_doc.get(name, None))
+                if name not in configurable_fields:
+                    configurable_fields[name] = (typ, fields_doc.get(name, None))
 
         for name in dir(self):
             if isinstance(getattr(self, name), SubConfigurable):
-                if name not in self.__configurable_fields__:
-                    self.__configurable_fields__[name] = getattr(self, name).cls.__configurable_fields__
+                if name not in configurable_fields:
+                    configurable_fields[name] = getattr(self, name).cls.__configurable_fields__
+
+        return configurable_fields
 
     def __configurable_init__(self, instance):
         for field_name in dir(self):
@@ -219,6 +223,10 @@ class ConfigurableMeta(type):
 
     def get_field_doc(self, field):
         return self.get_field_hint(field)[1]
+
+    def get_field_serializer(self, field):
+        field_type_hint, _ = self.get_field_hint(field)
+        return sz.make_serializer_from_type_hint(field_type_hint)
 
 class Configurable(metaclass=ConfigurableMeta):
     """The super class for configuration.
@@ -423,8 +431,7 @@ def format(cls, config, name="settings"):
         if not has(config, field):
             continue
         value = get(config, field)
-        typ, _ = cls.get_field_hint(field)
-        serializer = sz.make_serializer_from_type_hint(typ)
+        serializer = cls.get_field_serializer(field)
         value_types = serializer.validator(value)
         if not value_types:
             raise TypeError(f"Invalid value {value!r}")

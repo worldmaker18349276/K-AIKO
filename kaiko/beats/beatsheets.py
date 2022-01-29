@@ -399,6 +399,34 @@ rmstr_parser = pc.regex(
     r')*(?<=\n)"""',
 ).map(ast.literal_eval).desc("raw triple quoted string")
 
+def make_mstr_serializer(suggestions=[]):
+    parser = pc.regex(
+        # always start/end with newline
+        r'"""(?=\n)('
+        r'(?!""")[^\\\x00]'
+        r'|\\[0-7]{1,3}'
+        r'|\\x[0-9a-fA-F]{2}'
+        r'|\\u[0-9a-fA-F]{4}'
+        r'|\\U[0-9a-fA-F]{8}'
+        r'|\\(?![xuUN\x00]).'
+        r')*(?<=\n)"""',
+    ).map(ast.literal_eval).desc("triple quoted string")
+
+    def validator(value):
+        if isinstance(value, str) and value.startswith("\n") and value.endswith("\n"):
+            return {str}
+        else:
+            return set()
+
+    def format_mstr(value):
+        return '"""%s"""' % "\n".join(
+            repr(line + '"')[1:-2].replace('"""', r'\"""').replace(r"\'", "'")
+            for line in value.split("\n")
+        )
+
+    return sz.Serializer(parser, format_mstr, validator).suggest(suggestions or ["\n"])
+
+
 @pc.parsec
 def make_beatsheet_parser(filepath, metadata_only=False):
     beatmap_name = "beatmap"
