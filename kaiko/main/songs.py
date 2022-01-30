@@ -19,18 +19,18 @@ def format_info(info, logger):
     return logger.format_dict(data)
 
 class BeatmapManager:
-    def __init__(self, path, logger):
-        self.path = path
+    def __init__(self, songs_dir, logger):
+        self.songs_dir = songs_dir
         self.logger = logger
         self._beatmaps = {}
         self._beatmaps_mtime = None
 
     def is_uptodate(self):
-        return self._beatmaps_mtime == os.stat(str(self.path)).st_mtime
+        return self._beatmaps_mtime == os.stat(str(self.songs_dir)).st_mtime
 
     def reload(self):
         logger = self.logger
-        songs_dir = self.path
+        songs_dir = self.songs_dir
 
         logger.print(f"[data/] Load songs from {logger.emph(songs_dir.as_uri())}...")
 
@@ -66,7 +66,7 @@ class BeatmapManager:
 
     def add(self, path):
         logger = self.logger
-        songs_dir = self.path
+        songs_dir = self.songs_dir
 
         if not path.exists():
             logger.print(f"[warn]File not found: {logger.escape(str(path))}[/]")
@@ -94,7 +94,7 @@ class BeatmapManager:
 
     def remove(self, path):
         logger = self.logger
-        songs_dir = self.path
+        songs_dir = self.songs_dir
 
         if self.is_beatmap(path):
             beatmap_path = songs_dir / path
@@ -121,7 +121,7 @@ class BeatmapManager:
         if not self.is_beatmap(path):
             raise ValueError(f"Not a beatmap: {str(path)}")
 
-        filepath = self.path / path
+        filepath = self.songs_dir / path
         try:
             beatmap = beatsheets.BeatSheet.read(str(filepath), metadata_only=True)
         except beatsheets.BeatmapParseError:
