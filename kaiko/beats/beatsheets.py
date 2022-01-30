@@ -21,7 +21,7 @@ class BeatSheet(beatmaps.Beatmap):
         '<': beatmaps.Incr,
         '%': beatmaps.Roll,
         '@': beatmaps.Spin,
-        'Context': beatpatterns.Context,
+        'Context': beatmaps.UpdateContext,
         'Text': beatmaps.Text,
         'Flip': beatmaps.Flip,
         'Shift': beatmaps.Shift,

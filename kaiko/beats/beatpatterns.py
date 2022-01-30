@@ -5,9 +5,6 @@ import ast
 from ..utils import parsec as pc
 from . import beatmaps
 
-def Context(beat, length, **update):
-    return beatmaps.UpdateContext(update)
-
 
 Value = Union[None, bool, int, Fraction, float, str]
 Arguments = Tuple[List[Value], Dict[str, Value]]

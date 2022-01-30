@@ -1,5 +1,5 @@
 import os
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
@@ -24,7 +24,9 @@ class UpdateContext:
         The updated fields in the context.
     """
 
-    update: Dict[str, Union[None, bool, int, Fraction, float, str]]
+    beat: Fraction = Fraction(0, 1)
+    length: Fraction = Fraction(1, 1)
+    update: Dict[str, Union[None, bool, int, Fraction, float, str]] = field(default_factory=dict)
 
     def prepare(self, beatmap, rich, context):
         context.update(**self.update)
