@@ -1092,7 +1092,7 @@ class BeatmapAudio:
     info: str = ""
 
 @dataclasses.dataclass
-class BeatbarState:
+class PlayfieldState:
     bar_shift: float = 0.1
     bar_flip: bool = False
 
@@ -1102,14 +1102,14 @@ class Beatmap:
         info=None,
         audio=None,
         metronome=None,
-        beatbar_state=None,
+        playfield_state=None,
         event_sequences=None,
         settings=None,
     ):
         self.info = info if info is not None else ""
         self.audio = audio if audio is not None else BeatmapAudio()
         self.metronome = metronome if metronome is not None else engines.Metronome(offset=0.0, tempo=120.0)
-        self.beatbar_state = beatbar_state if beatbar_state is not None else BeatbarState()
+        self.playfield_state = playfield_state if playfield_state is not None else PlayfieldState()
         self.event_sequences = event_sequences if event_sequences is not None else []
         self.settings = settings if settings is not None else BeatmapSettings()
 
@@ -1172,7 +1172,7 @@ class Beatmap:
         playfield = beatbar.Beatbar(
             mixer, detector, renderer, controller,
             icon, header, footer, sight,
-            self.beatbar_state.bar_shift, self.beatbar_state.bar_flip,
+            self.playfield_state.bar_shift, self.playfield_state.bar_flip,
             gameplay_settings.playfield,
         )
 

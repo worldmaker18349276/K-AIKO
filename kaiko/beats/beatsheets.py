@@ -35,8 +35,8 @@ class BeatSheet(beatmaps.Beatmap):
         "audio.info": str,
         "metronome.offset": float,
         "metronome.tempo": float,
-        "beatbar_state.bar_shift": float,
-        "beatbar_state.bar_flip": bool,
+        "playfield_state.bar_shift": float,
+        "playfield_state.bar_flip": bool,
         "chart": str,
     }
 
