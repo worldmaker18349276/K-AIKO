@@ -1,102 +1,42 @@
 import os
 import math
 from fractions import Fraction
-from pathlib import Path
 import re
 import ast
 from ..utils import parsec as pc
 from ..utils import serializers as sz
 from . import beatmaps
-from . import beatpatterns
 
 version = "0.3.0"
 
 class BeatmapParseError(Exception):
     pass
 
-class BeatSheet(beatmaps.Beatmap):
-    _notations = {
-        'x': beatmaps.Soft,
-        'o': beatmaps.Loud,
-        '<': beatmaps.Incr,
-        '%': beatmaps.Roll,
-        '@': beatmaps.Spin,
-        'Context': beatmaps.UpdateContext,
-        'Text': beatmaps.Text,
-        'Flip': beatmaps.Flip,
-        'Shift': beatmaps.Shift,
-    }
+def read(filename, hack=False, metadata_only=False):
+    filename = os.path.abspath(filename)
+    if filename.endswith((".kaiko", ".ka")):
+        sheet = open(filename).read()
 
-    _fields = {
-        "info": str,
-        "audio.path": str,
-        "audio.volume": float,
-        "audio.preview": float,
-        "metronome.offset": float,
-        "metronome.tempo": float,
-        "playfield_state.bar_shift": float,
-        "playfield_state.bar_flip": bool,
-        "chart": str,
-    }
-
-    @property
-    def chart(self):
-        tracks = [beatpatterns.Track.from_events(seq) for seq in self.event_sequences]
-        return beatpatterns.format_chart(tracks)
-
-    @chart.setter
-    def chart(self, value):
-        tracks = beatpatterns.chart_parser.parse(value)
-        self.event_sequences = [list(track.to_events(BeatSheet._notations)) for track in tracks]
-
-    @staticmethod
-    def parse_patterns(patterns_str):
         try:
-            patterns = beatpatterns.make_patterns_parser().parse(patterns_str)
-            track = beatpatterns.Track(beat=0, length=1, meter=4, patterns=patterns)
-
-            events = []
-            it = track.to_events(BeatSheet._notations)
-            while True:
-                try:
-                    event = next(it)
-                except StopIteration as e:
-                    width = e.value
-                    break
-                else:
-                    events.append(event)
-
-            return events, width
-
+            if hack:
+                local = {}
+                exec(sheet, {'__file__': filename}, local)
+                beatmap = local['beatmap']
+            else:
+                beatmap = make_beatmap_parser(filename, metadata_only=metadata_only).parse(sheet)
         except Exception as e:
-            raise BeatmapParseError(f"failed to parse patterns") from e
+            raise BeatmapParseError(f"failed to read beatmap {filename}") from e
 
-    @staticmethod
-    def read(filename, hack=False, metadata_only=False):
-        filename = os.path.abspath(filename)
-        if filename.endswith((".kaiko", ".ka")):
-            sheet = open(filename).read()
+        return beatmap
 
-            try:
-                if hack:
-                    local = {}
-                    exec(sheet, {'__file__': filename}, local)
-                    beatmap = local['beatmap']
-                else:
-                    beatmap = make_beatsheet_parser(filename, metadata_only=metadata_only).parse(sheet)
-            except Exception as e:
-                raise BeatmapParseError(f"failed to read beatmap {filename}") from e
+    elif filename.endswith(".osu"):
+        try:
+            return OSU_FORMAT.read(filename, metadata_only=metadata_only)
+        except Exception as e:
+            raise BeatmapParseError(f"failed to read beatmap {filename}") from e
 
-            return beatmap
-
-        elif filename.endswith(".osu"):
-            try:
-                return OSU_FORMAT.read(filename, metadata_only=metadata_only)
-            except Exception as e:
-                raise BeatmapParseError(f"failed to read beatmap {filename}") from e
-
-        else:
-            raise BeatmapParseError(f"unknown file extension: {filename}")
+    else:
+        raise BeatmapParseError(f"unknown file extension: {filename}")
 
 
 mstr_parser = pc.regex(
@@ -145,54 +85,114 @@ def make_mstr_serializer(suggestions=[]):
 
     return sz.Serializer(parser, format_mstr, validator).suggest(suggestions or ["\n"])
 
+@pc.parsec
+def make_msp_parser(indent=0):
+    # return ""    ->  end of block
+    # return " "   ->  whitespace between token
+    # return "\n"  ->  newline between token (including comments)
+
+    sp = pc.regex(r"[ \t]+").optional()
+    eol = pc.regex(r"(?=\n|$)").optional()
+    nl = pc.regex(r"\n+(?=[ ]{%s,})" % (indent,)).optional()
+    ind = pc.regex(r"[ ]{%s}(?![ ])" % (indent,)).optional()
+    cmt = pc.regex(r"#[^\n]*").optional()
+
+    # whitespace
+    spaced = yield sp
+
+    # end of line
+    if not (yield eol):
+        if (yield cmt.ahead()):
+            raise pc.ParseFailure("comment occupied a whole line")
+        if spaced:
+            return " "
+        raise pc.ParseFailure("whitespace or newline or end of block")
+
+    # newline
+    while (yield nl):
+        if not (yield ind):
+            raise pc.ParseFailure(f"indentation with level {indent}")
+        if (yield eol):
+            continue
+        if (yield cmt):
+            continue
+        return "\n"
+
+    return ""
+
+_beatmap_fields = {
+    "info": str,
+    "audio.path": str,
+    "audio.volume": float,
+    "audio.preview": float,
+    "metronome.offset": float,
+    "metronome.tempo": float,
+    "playfield_state.bar_shift": float,
+    "playfield_state.bar_flip": bool,
+}
 
 @pc.parsec
-def make_beatsheet_parser(filepath, metadata_only=False):
+def make_beatmap_parser(filepath, metadata_only=False):
     beatmap_name = "beatmap"
-    cls = BeatSheet
+    Beatmap = beatmaps.Beatmap
+    BeatTrack = beatmaps.BeatTrack
 
+    # parse header
     header = yield pc.regex(r"#K-AIKO-std-(\d+\.\d+\.\d+)(?=\n|$)").desc("header")
     vernum = header[len("#K-AIKO-std-"):].split(".")
     vernum0 = version.split(".")
     if vernum[0] != vernum0[0] or vernum[1:] > vernum0[1:]:
         raise ValueError("incompatible version")
 
+    # parse imports, initialization
     prepare = [
-        pc.string(f"from {cls.__module__} import {cls.__name__}"),
-        pc.string(f"{beatmap_name} = {cls.__name__}(__file__)"),
+        pc.string("from kaiko.beats.beatmaps import Beatmap, BeatTrack"),
+        pc.string(f"{beatmap_name} = Beatmap(__file__)"),
     ]
     for prepare_parser in prepare:
-        yield beatpatterns.make_msp_parser(indent=0).reject(lambda sp: None if sp is "\n" else "newline")
+        yield make_msp_parser(indent=0).reject(lambda sp: None if sp is "\n" else "newline")
         yield prepare_parser
 
-    beatsheet = BeatSheet(filepath)
+    beatmap = Beatmap(filepath)
 
-    valid_fields = {}
-    for field, typ in beatsheet._fields.items():
-        if field == "chart":
-            valid_fields[field] = rmstr_parser
-        elif field == "info":
-            valid_fields[field] = mstr_parser
-        else:
-            valid_fields[field] = sz.make_serializer_from_type_hint(typ).parser
+    # parse fields
+    valid_fields = dict(_beatmap_fields)
+    valid_fields["tracks"] = dict
 
     while True:
-        sp = yield beatpatterns.make_msp_parser(indent=0).reject(lambda sp: None if sp in ("\n", "") else "newline or end of block")
+        sp = yield make_msp_parser(indent=0).reject(lambda sp: None if sp in ("\n", "") else "newline or end of block")
         if sp == "":
-            return beatsheet
+            return beatmap
 
         yield pc.string(f"{beatmap_name}.")
-        name = yield pc.tokens([field + " = " for field in valid_fields.keys()])
-        name = name[:-3]
+        name = yield pc.tokens(list(valid_fields.keys()))
+        
+        if name != "tracks":
+            yield pc.string(" = ")
+            field_type = valid_fields[name]
+            value = yield mstr_parser if name == "info" else sz.make_serializer_from_type_hint(field_type).parser
+            del valid_fields[name]
 
-        value = yield valid_fields[name]
-        del valid_fields[name]
-
-        if not metadata_only or name != "chart":
-            subfield = beatsheet
+            subfield = beatmap
             for field in name.split(".")[:-1]:
                 subfield = getattr(subfield, field)
             setattr(subfield, name.split(".")[-1], value)
+
+        else:
+            # parse track:
+
+            # beatmap.tracks["main"] = BeatTrack.parse(r"""
+            # ...
+            # """)
+
+            track_name = yield pc.string("[") >> sz.make_str_serializer().parser << pc.string("]")
+            if track_name in beatmap.tracks:
+                raise ValueError("duplicated name")
+            yield pc.string(" = ")
+            track_str = yield pc.string("BeatTrack.parse(") >> rmstr_parser << pc.string(")")
+
+            track = BeatTrack.parse(track_str) if not metadata_only else BeatTrack([])
+            beatmap.tracks[track_name] = track
 
 
 def format_mstr(value):
@@ -208,23 +208,23 @@ def format_rmstr(value):
         raise ValueError("string cannot contain '\\x00', '\\r', '\"\"\"' and single '\\'")
     return 'r"""' + value + '"""'
 
-def format_beatsheet(beatsheet):
+def format_beatmap(beatmap):
     res = []
     beatmap_name = "beatmap"
-    cls = BeatSheet
 
     res.append(f"#K-AIKO-std-{version}\n")
-    res.append(f"from {cls.__module__} import {cls.__name__}\n")
+    res.append("from kaiko.beats.beatmaps import Beatmap, BeatTrack\n")
     res.append("\n")
-    res.append(f"{beatmap_name} = {cls.__name__}(__file__)\n")
+    res.append(f"{beatmap_name} = Beatmap(__file__)\n")
 
-    for name, typ in BeatSheet._fields.items():
+    for name, typ in _beatmap_fields.items():
         format_field = format_mstr if name == "info" else sz.make_serializer_from_type_hint(typ).formatter
-        res.append(f"{beatmap_name}.{name} = {format_field(getattr(beatsheet, name))}\n")
+        res.append(f"{beatmap_name}.{name} = {format_field(getattr(beatmap, name))}\n")
 
-    name = 'chart'
-    format_field = format_rmstr
-    res.append(f"{beatmap_name}.{name} = {format_field(getattr(beatsheet, name))}\n")
+    format_str = sz.make_serializer_from_type_hint(str).formatter
+    for track_name, track in beatmap.tracks.items():
+        track_str = "\n" + track.to_str() + "\n"
+        res.append(f"{beatmap_name}.tracks[{format_str(track_name)}] = BeatTrack.parse({format_rmstr(track_str)})\n")
 
     return "".join(res)
 

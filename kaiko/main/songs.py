@@ -123,7 +123,7 @@ class BeatmapManager:
 
         filepath = self.songs_dir / path
         try:
-            beatmap = beatsheets.BeatSheet.read(str(filepath), metadata_only=True)
+            beatmap = beatsheets.read(str(filepath), metadata_only=True)
         except beatsheets.BeatmapParseError:
             return None
         else:

@@ -12,6 +12,7 @@ from ..utils import markups as mu
 from ..devices import audios as aud
 from ..devices import engines
 from . import beatbar
+from . import beatpatterns
 
 
 @dataclasses.dataclass
@@ -24,12 +25,13 @@ class UpdateContext:
         The updated fields in the context.
     """
 
-    beat: Fraction = Fraction(0, 1)
-    length: Fraction = Fraction(1, 1)
     update: Dict[str, Union[None, bool, int, Fraction, float, str]] = dataclasses.field(default_factory=dict)
 
     def prepare(self, beatmap, rich, context):
         context.update(**self.update)
+
+def Context(beat, length, **contexts):
+    return UpdateContext(contexts)
 
 @dataclasses.dataclass
 class Event:
@@ -1095,6 +1097,36 @@ class PlayfieldState:
     bar_shift: float = 0.1
     bar_flip: bool = False
 
+class BeatTrack:
+    _notations = {
+        'x': Soft,
+        'o': Loud,
+        '<': Incr,
+        '%': Roll,
+        '@': Spin,
+        'Context': Context,
+        'Text': Text,
+        'Flip': Flip,
+        'Shift': Shift,
+    }
+
+    def __init__(self, events):
+        self.events = events
+
+    def __iter__(self):
+        yield from self.events
+
+    @classmethod
+    def parse(cls, patterns_str, ret_width=False, notations=None):
+        notations = notations if notations is not None else cls._notations
+        patterns = beatpatterns.patterns_parser.parse(patterns_str)
+        events, width = beatpatterns.to_events(patterns, notations=notations)
+        track = cls(events)
+        if ret_width:
+            return track, width
+        else:
+            return track
+
 class Beatmap:
     def __init__(
         self,
@@ -1103,7 +1135,7 @@ class Beatmap:
         audio=None,
         metronome=None,
         playfield_state=None,
-        event_sequences=None,
+        tracks=None,
         settings=None,
     ):
         self.path = path
@@ -1111,7 +1143,7 @@ class Beatmap:
         self.audio = audio if audio is not None else BeatmapAudio()
         self.metronome = metronome if metronome is not None else engines.Metronome(offset=0.0, tempo=120.0)
         self.playfield_state = playfield_state if playfield_state is not None else PlayfieldState()
-        self.event_sequences = event_sequences if event_sequences is not None else []
+        self.tracks = tracks if tracks is not None else {}
         self.settings = settings if settings is not None else BeatmapSettings()
 
         self.audionode = None
@@ -1279,9 +1311,9 @@ class Beatmap:
 
     def _prepare_events(self, rich, stop_event):
         events = []
-        for sequence in self.event_sequences:
+        for track in self.tracks.values():
             context = {}
-            for event in sequence:
+            for event in track:
                 if stop_event.is_set():
                     raise RuntimeError("The operation has been cancelled.")
                 event = dataclasses.replace(event)
@@ -1333,18 +1365,18 @@ class Beatmap:
 class Loop(Beatmap):
     def __init__(
             self, *,
-            metronome=None,
+            offset=1.0,
+            tempo=120.0,
             width=Fraction(0),
-            events=None,
+            track=None,
             settings=None
         ):
-        if metronome is None:
-            metronome = engines.Metronome(offset=1.0, tempo=120.0)
-        super().__init__(metronome=metronome, event_sequences=[events], settings=settings)
+        metronome = engines.Metronome(offset=offset, tempo=tempo)
+        super().__init__(metronome=metronome, tracks={"main":track}, settings=settings)
         self.width = width
 
     def repeat_events(self, rich):
-        sequence = self.event_sequences[0]
+        track = self.tracks["main"]
         width = self.width
         context = {}
 
@@ -1352,7 +1384,7 @@ class Loop(Beatmap):
         while True:
             events = []
 
-            for event in sequence:
+            for event in track:
                 event = dataclasses.replace(event, beat=event.beat+n*width)
                 event.prepare(self, rich, context)
                 if isinstance(event, Event):

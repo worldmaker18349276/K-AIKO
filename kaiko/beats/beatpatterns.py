@@ -3,7 +3,6 @@ import dataclasses
 from typing import List, Tuple, Dict, Union
 import ast
 from ..utils import parsec as pc
-from . import beatmaps
 
 
 Value = Union[None, bool, int, Fraction, float, str]
@@ -99,41 +98,6 @@ def note_parser():
     )
 
 @pc.parsec
-def make_msp_parser(indent=0):
-    # return ""    ->  end of block
-    # return " "   ->  whitespace between token
-    # return "\n"  ->  newline between token (including comments)
-
-    sp = pc.regex(r"[ \t]+").optional()
-    eol = pc.regex(r"(?=\n|$)").optional()
-    nl = pc.regex(r"\n+(?=[ ]{%s,})" % (indent,)).optional()
-    ind = pc.regex(r"[ ]{%s}(?![ ])" % (indent,)).optional()
-    cmt = pc.regex(r"#[^\n]*").optional()
-
-    # whitespace
-    spaced = yield sp
-
-    # end of line
-    if not (yield eol):
-        if (yield cmt.ahead()):
-            raise pc.ParseFailure("comment occupied a whole line")
-        if spaced:
-            return " "
-        raise pc.ParseFailure("whitespace or newline or end of block")
-
-    # newline
-    while (yield nl):
-        if not (yield ind):
-            raise pc.ParseFailure(f"indentation with level {indent}")
-        if (yield eol):
-            continue
-        if (yield cmt):
-            continue
-        return "\n"
-
-    return ""
-
-@pc.parsec
 def enclose_by(elem, sep, opening, closing):
     yield opening
     yield sep.optional()
@@ -151,9 +115,10 @@ def enclose_by(elem, sep, opening, closing):
 
     return results
 
-def make_patterns_parser(indent=0):
-    end = make_msp_parser(indent=indent).reject(lambda sp: None if sp == "" else "end of block")
-    msp = make_msp_parser(indent=indent).reject(lambda sp: None if sp in (" ", "\n") else "whitespace or newline")
+@IIFE
+def patterns_parser():
+    end = pc.regex(r"[ \t\n]*$").desc("end of file")
+    msp = pc.regex(r"([ \t\n$]|#[^\n]*[\n$])+").desc("whitespace")
     div = pc.regex(r"/(\d+)").map(lambda m: int(m[1:])) | pc.nothing(2)
 
     instant = enclose_by(pc.proxy(lambda: pattern), msp, pc.string("{"), pc.string("}")).map(Instant)
@@ -167,118 +132,71 @@ def make_patterns_parser(indent=0):
 class PatternError(Exception):
     pass
 
-@dataclasses.dataclass
-class Track:
-    # TRACK(beat=0, length=1/2):
-    #     ...
+def to_events(patterns, beat=0, length=1, notations={}):
+    def build(beat, length, last_event, patterns):
+        for pattern in patterns:
+            if isinstance(pattern, Division):
+                beat, last_event = yield from build(beat, length / pattern.divisor, last_event, pattern.patterns)
 
-    beat: Union[int, Fraction] = 0
-    length: Union[int, Fraction] = 1
-    meter: Union[int, Fraction] = 4
-    hide: bool = False
-    patterns: List[Pattern] = dataclasses.field(default_factory=list)
+            elif isinstance(pattern, Instant):
+                if last_event is not None:
+                    yield last_event
+                last_event = None
 
-    def set_arguments(self, beat=0, length=1, meter=4, hide=False):
-        self.beat = beat
-        self.length = length
-        self.meter = meter
-        self.hide = hide
+                beat, last_event = yield from build(beat, Fraction(0, 1), last_event, pattern.patterns)
 
-    def get_arguments(self):
-        return dict(beat=self.beat, length=self.length, meter=self.meter, hide=self.hide)
+            elif pattern.symbol == "~":
+                if pattern.arguments[0] or pattern.arguments[1]:
+                    raise PatternError("lengthen note don't accept any argument")
 
-    def to_events(self, notations):
-        if self.hide:
-            return
+                if last_event is not None:
+                    last_event.length += length
+                beat += length
 
-        def build(beat, length, last_event, patterns):
-            for pattern in patterns:
-                if isinstance(pattern, Division):
-                    beat, last_event = yield from build(beat, length / pattern.divisor, last_event, pattern.patterns)
+            elif pattern.symbol == "|":
+                if pattern.arguments[0] or pattern.arguments[1]:
+                    raise PatternError("measure note don't accept any argument")
 
-                elif isinstance(pattern, Instant):
-                    if last_event is not None:
-                        yield last_event
-                    last_event = None
+            elif pattern.symbol == "_":
+                if pattern.arguments[0] or pattern.arguments[1]:
+                    raise PatternError("rest note don't accept any argument")
 
-                    beat, last_event = yield from build(beat, Fraction(0, 1), last_event, pattern.patterns)
+                if last_event is not None:
+                    yield last_event
+                last_event = None
+                beat += length
 
-                elif pattern.symbol == "~":
-                    if pattern.arguments[0] or pattern.arguments[1]:
-                        raise PatternError("lengthen note don't accept any argument")
+            else:
+                if pattern.symbol not in notations:
+                    raise PatternError("unknown symbol: " + pattern.symbol)
 
-                    if last_event is not None:
-                        last_event.length += length
-                    beat += length
+                if last_event is not None:
+                    yield last_event
+                event_type = notations[pattern.symbol]
+                last_event = event_type(beat, length, *pattern.arguments[0], **pattern.arguments[1])
+                beat += length
 
-                elif pattern.symbol == "|":
-                    if pattern.arguments[0] or pattern.arguments[1]:
-                        raise PatternError("measure note don't accept any argument")
+        return beat, last_event
 
-                    if (beat - self.beat) % self.meter != 0:
-                        raise PatternError("wrong measure")
+    beat = Fraction(1, 1) * beat
+    length = Fraction(1, 1) * length
+    last_event = None
 
-                elif pattern.symbol == "_":
-                    if pattern.arguments[0] or pattern.arguments[1]:
-                        raise PatternError("rest note don't accept any argument")
-
-                    if last_event is not None:
-                        yield last_event
-                    last_event = None
-                    beat += length
-
-                else:
-                    if pattern.symbol not in notations:
-                        raise PatternError("unknown symbol: " + pattern.symbol)
-
-                    if last_event is not None:
-                        yield last_event
-                    event_type = notations[pattern.symbol]
-                    last_event = event_type(beat, length, *pattern.arguments[0], **pattern.arguments[1])
-                    beat += length
-
-            return beat, last_event
-
-        beat = Fraction(1, 1) * self.beat
-        length = Fraction(1, 1) * self.length
-        last_event = None
-        beat, last_event = yield from build(beat, length, last_event, self.patterns)
-
-        if last_event is not None:
-            yield last_event
-
-        return beat
-
-    @staticmethod
-    def from_events(events):
-        raise NotImplementedError
-
-
-@IIFE
-@pc.parsec
-def chart_parser():
-    tracks = []
-
+    events = []
+    it = build(beat, length, last_event, patterns)
     while True:
-        sp = yield make_msp_parser(indent=0).reject(lambda sp: None if sp in ("\n", "") else "newline or end of block")
-        if sp == "":
-            return tracks
-
-        yield pc.string("TRACK")
-        arguments = yield arguments_parser
-
-        track = Track()
         try:
-            track.set_arguments(*arguments[0], **arguments[1])
-        except Exception as e:
-            raise pc.ParseFailure("valid arguments") from e
+            event = next(it)
+        except StopIteration as e:
+            last_beat, last_event = e.value
+            break
+        else:
+            events.append(event)
 
-        yield pc.regex(r":(?=\n)")
-        yield make_msp_parser(indent=4).reject(lambda sp: None if sp == "\n" else "newline")
+    if last_event is not None:
+        events.append(last_event)
 
-        patterns = yield make_patterns_parser(indent=4)
-        track.patterns = patterns
-        tracks.append(track)
+    return events, last_beat
 
 
 def format_value(value):
@@ -317,11 +235,4 @@ def format_patterns(patterns):
             assert False
         
     return " ".join(items)
-
-def format_chart(chart):
-    return "".join(
-        f"\nTRACK{format_arguments([], track.get_arguments())}:\n"
-        f"    {format_patterns(track.patterns)}\n"
-        for track in chart
-    )
 
