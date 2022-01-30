@@ -135,7 +135,7 @@ class BeatmapManager:
                 return None
             path = self._beatmaps[path][0]
         beatmap = self.get_beatmap_metadata(path)
-        return beatmap and beatmap.audio
+        return beatmap and BGMSong(self.songs_dir / path.parent, beatmap.audio, beatmap.info)
 
     def get_songs(self):
         songs = [self.get_song(path) for path in self._beatmaps.keys()]
@@ -183,6 +183,12 @@ class BeatmapParser(cmd.TreeParser):
             return "[rich]" + self.logger.format_dict(data, show_border=False)
 
 
+@dataclasses.dataclass(frozen=True)
+class BGMSong:
+    root: Path
+    audio: beatmaps.BeatmapAudio
+    info: str
+
 class BGMAction:
     pass
 
@@ -192,12 +198,12 @@ class StopBGM(BGMAction):
 
 @dataclasses.dataclass(frozen=True)
 class PlayBGM(BGMAction):
-    song: beatmaps.BeatmapAudio
+    song: BGMSong
     start: Optional[float]
 
 @dataclasses.dataclass(frozen=True)
 class PreviewSong(BGMAction):
-    song: beatmaps.BeatmapAudio
+    song: BGMSong
 
 @dataclasses.dataclass(frozen=True)
 class StopPreview(BGMAction):
@@ -263,7 +269,7 @@ class KAIKOBGMController:
 
         if isinstance(action, PreviewSong):
             song = action.song
-            start = action.song.preview
+            start = action.song.audio.preview
             delay = preview_delay
         elif isinstance(action, PlayBGM):
             song = action.song
@@ -275,7 +281,7 @@ class KAIKOBGMController:
         if delay is not None:
             yield from dn.sleep(delay).join()
 
-        with mixer.play_file(song.path, start=start, volume=song.volume) as song_handler:
+        with mixer.play_file(song.root / song.audio.path, start=start, volume=song.audio.volume) as song_handler:
             yield
             while not song_handler.is_finalized():
                 yield

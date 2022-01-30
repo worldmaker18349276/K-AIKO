@@ -1086,10 +1086,9 @@ class BeatmapScore:
 
 @dataclasses.dataclass
 class BeatmapAudio:
-    path: Optional[Path] = None
+    path: Optional[str] = None
     volume: float = 0.0
     preview: float = 0.0
-    info: str = ""
 
 @dataclasses.dataclass
 class PlayfieldState:
@@ -1098,7 +1097,8 @@ class PlayfieldState:
 
 class Beatmap:
     def __init__(
-        self, *,
+        self,
+        path=None,
         info=None,
         audio=None,
         metronome=None,
@@ -1106,6 +1106,7 @@ class Beatmap:
         event_sequences=None,
         settings=None,
     ):
+        self.path = path
         self.info = info if info is not None else ""
         self.audio = audio if audio is not None else BeatmapAudio()
         self.metronome = metronome if metronome is not None else engines.Metronome(offset=0.0, tempo=120.0)
@@ -1239,9 +1240,10 @@ class Beatmap:
                                                                       stop_event))
 
     def _load_resources(self, output_samplerate, output_nchannels, data_dir, stop_event):
-        if self.audio.path is not None:
+        if self.path is not None and self.audio.path is not None:
+            root = Path(self.path).parent
             try:
-                self.audionode = dn.DataNode.wrap(aud.load_sound(self.audio.path,
+                self.audionode = dn.DataNode.wrap(aud.load_sound(root / self.audio.path,
                                                                  samplerate=output_samplerate,
                                                                  channels=output_nchannels,
                                                                  volume=self.audio.volume,
@@ -1290,8 +1292,9 @@ class Beatmap:
         events = sorted(events, key=lambda e: e.lifespan[0])
 
         duration = 0.0
-        if self.audio.path is not None:
-            duration = aud.AudioMetadata.read(self.audio.path).duration
+        if self.path is not None and self.audio.path is not None:
+            root = Path(self.path).parent
+            duration = aud.AudioMetadata.read(root / self.audio.path).duration
 
         event_leadin_time = self.settings.notes.event_leadin_time
         total_subjects = sum([1 for event in events if event.is_subject], 0)

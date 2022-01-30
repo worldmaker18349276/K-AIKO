@@ -29,10 +29,9 @@ class BeatSheet(beatmaps.Beatmap):
 
     _fields = {
         "info": str,
-        "audio.path": Path,
+        "audio.path": str,
         "audio.volume": float,
         "audio.preview": float,
-        "audio.info": str,
         "metronome.offset": float,
         "metronome.tempo": float,
         "playfield_state.bar_shift": float,
@@ -159,28 +158,21 @@ def make_beatsheet_parser(filepath, metadata_only=False):
         raise ValueError("incompatible version")
 
     prepare = [
-        pc.string("from pathlib import Path"),
         pc.string(f"from {cls.__module__} import {cls.__name__}"),
-        pc.string(f"{beatmap_name} = {cls.__name__}()"),
+        pc.string(f"{beatmap_name} = {cls.__name__}(__file__)"),
     ]
     for prepare_parser in prepare:
         yield beatpatterns.make_msp_parser(indent=0).reject(lambda sp: None if sp is "\n" else "newline")
         yield prepare_parser
 
-    beatsheet = BeatSheet()
-    root = Path(filepath).parent
+    beatsheet = BeatSheet(filepath)
 
     valid_fields = {}
     for field, typ in beatsheet._fields.items():
         if field == "chart":
             valid_fields[field] = rmstr_parser
-        elif typ is str:
+        elif field == "info":
             valid_fields[field] = mstr_parser
-        elif typ is Path:
-            valid_fields[field] = (
-                pc.string("Path(__file__).parent / ")
-                >> sz.make_str_serializer().parser
-            ).map(lambda path: root / path)
         else:
             valid_fields[field] = sz.make_serializer_from_type_hint(typ).parser
 
@@ -247,8 +239,7 @@ class OSU:
             # if format != "osu file format v14\n":
             #     raise BeatmapParseError(f"invalid file format: {repr(format)}")
 
-            beatmap = beatmaps.Beatmap()
-            root = Path(filename).parent
+            beatmap = beatmaps.Beatmap(filename)
             beatmap.event_sequences = [[]]
             context = {}
 
@@ -277,7 +268,7 @@ class OSU:
                 else:
                     try:
                         if not metadata_only or parse != self.parse_timingpoints and parse != self.parse_hitobjects:
-                            parse(beatmap, root, context, line)
+                            parse(beatmap, context, line)
                     except Exception as e:
                         raise BeatmapParseError(f"parse error at line {index}") from e
 
@@ -286,28 +277,26 @@ class OSU:
 
         return beatmap
 
-    def parse_general(self, beatmap, root, context, line):
+    def parse_general(self, beatmap, context, line):
         option, value = line.split(": ", maxsplit=1)
         if option == 'AudioFilename':
-            beatmap.audio.path = root / value.rstrip("\n")
+            beatmap.audio.path = value.rstrip("\n")
         elif option == 'PreviewTime':
             beatmap.audio.preview = int(value)/1000
 
-    def parse_editor(self, beatmap, root, context, line): pass
+    def parse_editor(self, beatmap, context, line): pass
 
-    def parse_metadata(self, beatmap, root, context, line):
+    def parse_metadata(self, beatmap, context, line):
         beatmap.info += line
-        if re.match("(Title|TitleUnicode|Artist|ArtistUnicode|Source):", line):
-            beatmap.audio.info += line
 
-    def parse_difficulty(self, beatmap, root, context, line):
+    def parse_difficulty(self, beatmap, context, line):
         option, value = line.split(":", maxsplit=1)
         if option == 'SliderMultiplier':
             context['multiplier0'] = float(value)
 
-    def parse_events(self, beatmap, root, context, line): pass
+    def parse_events(self, beatmap, context, line): pass
 
-    def parse_timingpoints(self, beatmap, root, context, line):
+    def parse_timingpoints(self, beatmap, context, line):
         time,beatLength,meter,sampleSet,sampleIndex,volume,uninherited,effects = line.rstrip("\n").split(",")
         time = float(time)
         beatLength = float(beatLength)
@@ -334,9 +323,9 @@ class OSU:
 
         context['timings'].append((time, beatLength, meter, speed, volume, sliderVelocity, density))
 
-    def parse_colours(self, beatmap, root, context, line): pass
+    def parse_colours(self, beatmap, context, line): pass
 
-    def parse_hitobjects(self, beatmap, root, context, line):
+    def parse_hitobjects(self, beatmap, context, line):
         x,y,time,type,hitSound,*objectParams,hitSample = line.rstrip("\n").split(",")
         time = float(time)
         type = int(type)
