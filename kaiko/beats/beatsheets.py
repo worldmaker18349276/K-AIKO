@@ -240,7 +240,7 @@ class OSU:
             #     raise BeatmapParseError(f"invalid file format: {repr(format)}")
 
             beatmap = beatmaps.Beatmap(filename)
-            beatmap.event_sequences = [[]]
+            beatmap.tracks = {"main":beatmaps.BeatTrack([])}
             context = {}
 
             parse = None
@@ -340,11 +340,11 @@ class OSU:
         if type & 1: # circle
             if hitSound == 0 or hitSound & 1: # don
                 event = beatmaps.Soft(beat=beat, length=Fraction(0), speed=speed, volume=volume)
-                beatmap.event_sequences[0].append(event)
+                beatmap.tracks["main"].events.append(event)
 
             elif hitSound & 10: # kat
                 event = beatmaps.Loud(beat=beat, length=Fraction(0), speed=speed, volume=volume)
-                beatmap.event_sequences[0].append(event)
+                beatmap.tracks["main"].events.append(event)
 
         elif type & 2: # slider
             # curve,slides,sliderLength,edgeSounds,edgeSets = objectParams
@@ -353,7 +353,7 @@ class OSU:
             length = sliderLength / sliderVelocity
 
             event = beatmaps.Roll(beat=beat, length=length, density=density, speed=speed, volume=volume)
-            beatmap.event_sequences[0].append(event)
+            beatmap.tracks["main"].events.append(event)
 
         elif type & 8: # spinner
             end_time, = objectParams
@@ -361,6 +361,6 @@ class OSU:
             length = (end_time - time)/context['beatLength0']
 
             event = beatmaps.Spin(beat=beat, length=length, density=density, speed=speed, volume=volume)
-            beatmap.event_sequences[0].append(event)
+            beatmap.tracks["main"].events.append(event)
 
 OSU_FORMAT = OSU()
