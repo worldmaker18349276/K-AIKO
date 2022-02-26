@@ -6,11 +6,8 @@ K-AIK▣ is a sound-controlled terminal-based rhythm game.
 
      ⣿⣴⣧⣰⣤⣄ [00000/00032] □   □⛶  □   ■       ■   □   □   ■   ■   □   [  0.9%|00:01]
 
-Getting Started
----------------
-
-Install K-AIKO
-~~~~~~~~~~~~~~
+Install
+-------
 
 K-AIKO runs on linux with python 3.9, make sure you have it
 
@@ -48,9 +45,6 @@ Or fetch from source directly
     git clone git@github.com:worldmaker18349276/K-AIKO
     cd K-AIKO
     python -m pip install .
-
-Play
-~~~~
 
 Now you can play K-AIKO
 
