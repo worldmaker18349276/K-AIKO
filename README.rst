@@ -30,9 +30,7 @@ Or install PortAudio first
     sudo apt-get install python-dev portaudio19-dev
     python -m pip install pyaudio
 
-(see https://stackoverflow.com/a/61993070/3996613)
-
-Now you can install K-AIKO from PyPi
+You can install K-AIKO from PyPi
 
 ::
 
