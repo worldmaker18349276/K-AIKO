@@ -13,57 +13,7 @@ Install PyAudio
 ~~~~~~~~~~~~~~~
 
 Installing PyAudio via pip may encounter some problems, which is caused by the external dependency of PyAudio.
-Our recommendation is to use `Anaconda <https://www.anaconda.com/products/individual>`__, it can solve all problems.
-After installing Anaconda, just run
-
-::
-
-    conda install -c anaconda pyaudio
-
-If you have issue (no sound or error while playing), see `next section <#install-pyaudio-without-using-conda>`__.
-
-Install K-AIKO
-~~~~~~~~~~~~~~
-
-You can install it from PyPi
-
-::
-
-    python -m pip install K-AIKO
-
-Or fetch from source directly
-
-::
-
-    git clone git@github.com:worldmaker18349276/K-AIKO
-    cd K-AIKO
-    python -m pip install .
-
-Play
-~~~~
-
-Now you can play K-AIKO
-
-::
-
-    kaiko
-
-Or
-
-::
-
-    python -m kaiko
-
-Install PyAudio Without Using Conda
------------------------------------
-
-The PortAudio provided by Annaconda conda-forge channel seems have some issues, see `<https://github.com/ContinuumIO/anaconda-issues/issues/4139>`__.
-The solution is simple: don't use Annaconda.
-Before install PyAudio, you should uninstall them in conda
-
-::
-
-    conda remove pyaudio
+So you need to install PyAudio first.
 
 Linux
 ~~~~~
@@ -127,31 +77,37 @@ Then, install by wheel
 
 (see https://stackoverflow.com/a/54999645/3996613)
 
-Tests
------
+Install K-AIKO
+~~~~~~~~~~~~~~
 
-You can prepare environment for testing
+You can install it from PyPi
+
+::
+
+    python -m pip install K-AIKO
+
+Or fetch from source directly
 
 ::
 
     git clone git@github.com:worldmaker18349276/K-AIKO
     cd K-AIKO
-    conda env create -f environment.yml --prefix ./envs
+    python -m pip install .
 
-Remember to activate environment before testing
+Play
+~~~~
+
+Now you can play K-AIKO
 
 ::
 
-    conda activate ./envs
+    kaiko
+
+Or
+
+::
+
     python -m kaiko
-
-Publish
-
-::
-
-    python -m build --sdist --wheel .
-    twine upload dist/*
-    git push origin master --tags
 
 Compatibilities
 ---------------
