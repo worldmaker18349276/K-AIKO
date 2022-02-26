@@ -391,7 +391,6 @@ class KAIKOMenu:
         self.beatmap_manager.print_tree(self.logger)
 
     @cmd.subcommand
-    @property
     def bgm(self):
         """Background music."""
         return BGMCommand(self.bgm_controller, self.beatmap_manager, self.logger)
@@ -399,7 +398,6 @@ class KAIKOMenu:
     # devices
 
     @cmd.subcommand
-    @property
     def devices(self):
         """Devices."""
         return DevicesCommand(self._config, self.logger, self.manager)
@@ -407,7 +405,6 @@ class KAIKOMenu:
     # config
 
     @cmd.subcommand
-    @property
     def config(self):
         """Configuration."""
         return ConfigCommand(self._config, self.logger)

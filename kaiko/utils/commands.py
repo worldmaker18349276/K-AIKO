@@ -734,6 +734,10 @@ class CommandDescriptor:
 class subcommand(CommandDescriptor):
     r"""Command descriptor for subcommands."""
 
+    def __init__(self, proxy):
+        self.proxy = property(proxy)
+        functools.update_wrapper(self, proxy)
+
     def __get_command__(self, instance, owner):
         parent = self.proxy.__get__(instance, owner)
         fields = [k for k, v in type(parent).__dict__.items() if isinstance(v, CommandDescriptor)]
