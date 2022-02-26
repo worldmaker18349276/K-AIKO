@@ -978,25 +978,37 @@ def create_task(func):
     return res.get()
 
 @datanode
-def interval(producer=lambda _:None, consumer=lambda _:None, dt=0.0, t0=0.0):
-    producer = DataNode.wrap(producer)
-    consumer = DataNode.wrap(consumer)
+def interval(node, dt, t0=0.0):
+    node = DataNode.wrap(node)
 
-    def run(stop_event):
-        ref_time = time.perf_counter()
+    res = queue.Queue()
+    error = queue.Queue()
+    stop_event = threading.Event()
 
-        for i, data in enumerate(producer):
-            delta = ref_time+t0+i*dt - time.perf_counter()
-            if stop_event.wait(delta) if delta > 0 else stop_event.is_set():
-                break
+    def run():
+        try:
+            ref_time = time.perf_counter()
 
-            try:
-                consumer.send(data)
-            except StopIteration:
-                return
+            for i in itertools.count():
+                delta = ref_time+t0+i*dt - time.perf_counter()
+                if delta > 0.0 and stop_event.wait(delta):
+                    return
 
-    with producer, consumer:
-        yield from create_task(run).join()
+                try:
+                    expired = delta <= 0.0
+                    node.send(expired)
+                except StopIteration as stop:
+                    res.put(stop.value)
+                    return
+
+        except Exception as e:
+            error.put(e)
+
+    with node:
+        thread = threading.Thread(target=run)
+        yield from _thread_task(thread, stop_event, error)
+        assert not res.empty()
+        return res.get()
 
 
 # not data nodes

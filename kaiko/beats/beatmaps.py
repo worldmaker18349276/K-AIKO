@@ -1245,7 +1245,7 @@ class Beatmap:
 
         # game loop
         updater = self.update_events(events, score, playfield, start_time, end_time, tickrate, prepare_time, stop_event)
-        event_task = dn.interval(consumer=updater, dt=1/tickrate)
+        event_task = dn.interval(updater, dt=1/tickrate)
 
         yield from dn.pipe(event_task, mixer_task, detector_task, renderer_task, controller_task).join()
 

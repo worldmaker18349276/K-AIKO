@@ -157,33 +157,27 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
     if stream is None:
         stream = sys.stdout
 
-    def run(stop_event):
-        ref_time = time.perf_counter()
+    @dn.datanode
+    def run(node):
+        with node:
+            expired = True
+            yield
+            while True:
+                try:
+                    view = node.send(not expired)
+                except StopIteration as stop:
+                    return stop.value
+                shown = False
 
-        shown = False
-        i = -1
-        while True:
-            try:
-                view = node.send(shown)
-            except StopIteration as e:
-                return e.value
-            shown = False
-            i += 1
+                expired = yield
 
-            delta = ref_time+t0+i*dt - time.perf_counter()
-            if delta < 0:
-                continue
-            if stop_event.wait(delta):
-                return
-
-            stream.write(view)
-            stream.flush()
-            shown = True
+                if not expired:
+                    stream.write(view)
+                    stream.flush()
 
     with show_ctxt(stream, hide_cursor, end):
-        with node:
-            result = yield from dn.create_task(run).join()
-            return result
+        result = yield from dn.interval(run(node), dt, t0).join()
+        return result
 
 
 class TerminalSettings(cfg.Configurable):

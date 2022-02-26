@@ -560,7 +560,7 @@ class Renderer:
         clear_screen = rich_renderer.render(rich_renderer.clear_screen().expand())
         size_node = term.terminal_size()
 
-        index = -1
+        index = 0
         width = 0
         resize_time = 0.0
         resized = False
