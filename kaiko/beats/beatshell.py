@@ -268,6 +268,9 @@ class BeatShellSettings(cfg.Configurable):
         preview_song : bool
             Whether to preview the song when selected.
 
+        history_size : int
+            The maximum history size.
+
         keymap : dict from str to str
             The keymap of beatshell.  The key of dict is the keystroke, and the
             value of dict is the action to activate.  The format of action is just
@@ -284,6 +287,8 @@ class BeatShellSettings(cfg.Configurable):
         autocomplete_keys: Tuple[str, str, str] = ("Tab", "Shift_Tab", "Esc")
 
         preview_song: bool = True
+
+        history_size: int = 500
 
         keymap: Dict[str, str] = {
             "Backspace"     : "input.backspace()",
@@ -600,11 +605,9 @@ class BeatInput:
         """
         if record_current:
             command = "".join(self.buffer).strip()
-            if command and command != self.prev_command:
-                open(self.history, "a").write("\n" + command)
+            self.write_history(command)
 
-        self.buffers = list(list(command.strip()) for command in open(self.history) if command.strip())
-        self.prev_command = "".join(self.buffers[-1]) if self.buffers else None
+        self.buffers = self.read_history()
         self.buffers.append([])
         self.buffer_index = -1
 
@@ -615,6 +618,27 @@ class BeatInput:
         self.cancel_hint()
         self.clear_result()
         self.state = "EDIT"
+
+    def write_history(self, command):
+        if command and command != self.prev_command:
+            open(self.history, "a").write("\n" + command)
+            self.prev_command = command
+
+    def read_history(self):
+        history_size = self.settings.input.history_size
+        trim_len = 10
+
+        buffers = []
+        for command in open(self.history):
+            command = command.strip()
+            if command:
+                buffers.append(command)
+            if len(buffers) - history_size > trim_len:
+                del buffers[:trim_len]
+
+        buffers = [list(command) for command in buffers[-history_size:]]
+        self.prev_command = "".join(buffers[-1]) if buffers else None
+        return buffers
 
     @locked
     @onstate("FIN")
