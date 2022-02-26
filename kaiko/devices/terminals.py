@@ -32,18 +32,18 @@ def ucs_detect():
 
     @dn.datanode
     def query_pos():
-        old_version = '4.1.0'
+        old_version = "4.1.0"
         wide_by_version = [
-            ('5.1.0', '龼'),
-            ('5.2.0', '🈯'),
-            ('6.0.0', '🈁'),
-            ('8.0.0', '🉐'),
-            ('9.0.0', '🐹'),
-            ('10.0.0', '🦖'),
-            ('11.0.0', '🧪'),
-            ('12.0.0', '🪐'),
-            ('12.1.0', '㋿'),
-            ('13.0.0', '🫕'),
+            ("5.1.0", "龼"),
+            ("5.2.0", "🈯"),
+            ("6.0.0", "🈁"),
+            ("8.0.0", "🉐"),
+            ("9.0.0", "🐹"),
+            ("10.0.0", "🦖"),
+            ("11.0.0", "🧪"),
+            ("12.0.0", "🪐"),
+            ("12.1.0", "㋿"),
+            ("13.0.0", "🫕"),
         ]
 
         yield
@@ -66,7 +66,7 @@ def ucs_detect():
             xs.append(x)
 
         index = xs.index(1) if 1 in xs else len(wide_by_version)
-        version = old_version if index == 0 else wide_by_version[index-1][0]
+        version = old_version if index == 0 else wide_by_version[index - 1][0]
 
         return version
 
@@ -74,11 +74,14 @@ def ucs_detect():
     yield from dn.pipe(inkey(get_pos), query_task).join()
     return query_task.result
 
+
 @dn.datanode
 def terminal_size():
     resize_event = threading.Event()
+
     def SIGWINCH_handler(sig, frame):
         resize_event.set()
+
     resize_event.set()
     signal.signal(signal.SIGWINCH, SIGWINCH_handler)
 
@@ -89,6 +92,7 @@ def terminal_size():
             resize_event.clear()
             size = shutil.get_terminal_size()
         yield size
+
 
 @contextlib.contextmanager
 def inkey_ctxt(stream, raw=False):
@@ -107,6 +111,7 @@ def inkey_ctxt(stream, raw=False):
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old_attrs)
         os.set_blocking(fd, old_blocking)
+
 
 @dn.datanode
 def inkey(node, stream=None, raw=False, dt=0.1):
@@ -128,7 +133,7 @@ def inkey(node, stream=None, raw=False, dt=0.1):
             data = stream.read() if fd in ready else None
 
             try:
-                node.send((time.perf_counter()-ref_time, data))
+                node.send((time.perf_counter() - ref_time, data))
             except StopIteration as e:
                 return e.value
 
@@ -136,6 +141,7 @@ def inkey(node, stream=None, raw=False, dt=0.1):
         with node:
             result = yield from dn.create_task(run()).join()
             return result
+
 
 @contextlib.contextmanager
 def show_ctxt(stream, hide_cursor=False, end="\n"):
@@ -152,6 +158,7 @@ def show_ctxt(stream, hide_cursor=False, end="\n"):
             stream.write("\x1b[?25h")
         stream.write(end)
         stream.flush()
+
 
 @dn.datanode
 def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
@@ -205,115 +212,101 @@ class TerminalSettings(cfg.Configurable):
     unicode_version: str = "auto"
     color_support: mu.ColorSupport = mu.ColorSupport.TRUECOLOR
     keycodes: Dict[str, str] = {
-        "\x1b"       : "Esc",
-        "\x1b\x1b"   : "Alt_Esc",
-
-        "\n"         : "Enter",
-        "\x1b\n"     : "Alt_Enter",
-
-        "\x7f"       : "Backspace",
-        "\x08"       : "Ctrl_Backspace",
-        "\x1b\x7f"   : "Alt_Backspace",
-        "\x1b\x08"   : "Ctrl_Alt_Backspace",
-
-        "\t"         : "Tab",
-        "\x1b[Z"     : "Shift_Tab",
-        "\x1b\t"     : "Alt_Tab",
-        "\x1b\x1b[Z" : "Alt_Shift_Tab",
-
-        "\x1b[A"     : "Up",
-        "\x1b[1;2A"  : "Shift_Up",
-        "\x1b[1;3A"  : "Alt_Up",
-        "\x1b[1;4A"  : "Alt_Shift_Up",
-        "\x1b[1;5A"  : "Ctrl_Up",
-        "\x1b[1;6A"  : "Ctrl_Shift_Up",
-        "\x1b[1;7A"  : "Ctrl_Alt_Up",
-        "\x1b[1;8A"  : "Ctrl_Alt_Shift_Up",
-
-        "\x1b[B"     : "Down",
-        "\x1b[1;2B"  : "Shift_Down",
-        "\x1b[1;3B"  : "Alt_Down",
-        "\x1b[1;4B"  : "Alt_Shift_Down",
-        "\x1b[1;5B"  : "Ctrl_Down",
-        "\x1b[1;6B"  : "Ctrl_Shift_Down",
-        "\x1b[1;7B"  : "Ctrl_Alt_Down",
-        "\x1b[1;8B"  : "Ctrl_Alt_Shift_Down",
-
-        "\x1b[C"     : "Right",
-        "\x1b[1;2C"  : "Shift_Right",
-        "\x1b[1;3C"  : "Alt_Right",
-        "\x1b[1;4C"  : "Alt_Shift_Right",
-        "\x1b[1;5C"  : "Ctrl_Right",
-        "\x1b[1;6C"  : "Ctrl_Shift_Right",
-        "\x1b[1;7C"  : "Ctrl_Alt_Right",
-        "\x1b[1;8C"  : "Ctrl_Alt_Shift_Right",
-
-        "\x1b[D"     : "Left",
-        "\x1b[1;2D"  : "Shift_Left",
-        "\x1b[1;3D"  : "Alt_Left",
-        "\x1b[1;4D"  : "Alt_Shift_Left",
-        "\x1b[1;5D"  : "Ctrl_Left",
-        "\x1b[1;6D"  : "Ctrl_Shift_Left",
-        "\x1b[1;7D"  : "Ctrl_Alt_Left",
-        "\x1b[1;8D"  : "Ctrl_Alt_Shift_Left",
-
-        "\x1b[F"     : "End",
-        "\x1b[1;2F"  : "Shift_End",
-        "\x1b[1;3F"  : "Alt_End",
-        "\x1b[1;4F"  : "Alt_Shift_End",
-        "\x1b[1;5F"  : "Ctrl_End",
-        "\x1b[1;6F"  : "Ctrl_Shift_End",
-        "\x1b[1;7F"  : "Ctrl_Alt_End",
-        "\x1b[1;8F"  : "Ctrl_Alt_Shift_End",
-
-        "\x1b[H"     : "Home",
-        "\x1b[1;2H"  : "Shift_Home",
-        "\x1b[1;3H"  : "Alt_Home",
-        "\x1b[1;4H"  : "Alt_Shift_Home",
-        "\x1b[1;5H"  : "Ctrl_Home",
-        "\x1b[1;6H"  : "Ctrl_Shift_Home",
-        "\x1b[1;7H"  : "Ctrl_Alt_Home",
-        "\x1b[1;8H"  : "Ctrl_Alt_Shift_Home",
-
-        "\x1b[2~"    : "Insert",
-        "\x1b[2;2~"  : "Shift_Insert",
-        "\x1b[2;3~"  : "Alt_Insert",
-        "\x1b[2;4~"  : "Alt_Shift_Insert",
-        "\x1b[2;5~"  : "Ctrl_Insert",
-        "\x1b[2;6~"  : "Ctrl_Shift_Insert",
-        "\x1b[2;7~"  : "Ctrl_Alt_Insert",
-        "\x1b[2;8~"  : "Ctrl_Alt_Shift_Insert",
-
-        "\x1b[3~"    : "Delete",
-        "\x1b[3;2~"  : "Shift_Delete",
-        "\x1b[3;3~"  : "Alt_Delete",
-        "\x1b[3;4~"  : "Alt_Shift_Delete",
-        "\x1b[3;5~"  : "Ctrl_Delete",
-        "\x1b[3;6~"  : "Ctrl_Shift_Delete",
-        "\x1b[3;7~"  : "Ctrl_Alt_Delete",
-        "\x1b[3;8~"  : "Ctrl_Alt_Shift_Delete",
-
-        "\x1b[5~"    : "PageUp",
-        "\x1b[5;2~"  : "Shift_PageUp",
-        "\x1b[5;3~"  : "Alt_PageUp",
-        "\x1b[5;4~"  : "Alt_Shift_PageUp",
-        "\x1b[5;5~"  : "Ctrl_PageUp",
-        "\x1b[5;6~"  : "Ctrl_Shift_PageUp",
-        "\x1b[5;7~"  : "Ctrl_Alt_PageUp",
-        "\x1b[5;8~"  : "Ctrl_Alt_Shift_PageUp",
-
-        "\x1b[6~"    : "PageDown",
-        "\x1b[6;2~"  : "Shift_PageDown",
-        "\x1b[6;3~"  : "Alt_PageDown",
-        "\x1b[6;4~"  : "Alt_Shift_PageDown",
-        "\x1b[6;5~"  : "Ctrl_PageDown",
-        "\x1b[6;6~"  : "Ctrl_Shift_PageDown",
-        "\x1b[6;7~"  : "Ctrl_Alt_PageDown",
-        "\x1b[6;8~"  : "Ctrl_Alt_Shift_PageDown",
+        "\x1b": "Esc",
+        "\x1b\x1b": "Alt_Esc",
+        "\n": "Enter",
+        "\x1b\n": "Alt_Enter",
+        "\x7f": "Backspace",
+        "\x08": "Ctrl_Backspace",
+        "\x1b\x7f": "Alt_Backspace",
+        "\x1b\x08": "Ctrl_Alt_Backspace",
+        "\t": "Tab",
+        "\x1b[Z": "Shift_Tab",
+        "\x1b\t": "Alt_Tab",
+        "\x1b\x1b[Z": "Alt_Shift_Tab",
+        "\x1b[A": "Up",
+        "\x1b[1;2A": "Shift_Up",
+        "\x1b[1;3A": "Alt_Up",
+        "\x1b[1;4A": "Alt_Shift_Up",
+        "\x1b[1;5A": "Ctrl_Up",
+        "\x1b[1;6A": "Ctrl_Shift_Up",
+        "\x1b[1;7A": "Ctrl_Alt_Up",
+        "\x1b[1;8A": "Ctrl_Alt_Shift_Up",
+        "\x1b[B": "Down",
+        "\x1b[1;2B": "Shift_Down",
+        "\x1b[1;3B": "Alt_Down",
+        "\x1b[1;4B": "Alt_Shift_Down",
+        "\x1b[1;5B": "Ctrl_Down",
+        "\x1b[1;6B": "Ctrl_Shift_Down",
+        "\x1b[1;7B": "Ctrl_Alt_Down",
+        "\x1b[1;8B": "Ctrl_Alt_Shift_Down",
+        "\x1b[C": "Right",
+        "\x1b[1;2C": "Shift_Right",
+        "\x1b[1;3C": "Alt_Right",
+        "\x1b[1;4C": "Alt_Shift_Right",
+        "\x1b[1;5C": "Ctrl_Right",
+        "\x1b[1;6C": "Ctrl_Shift_Right",
+        "\x1b[1;7C": "Ctrl_Alt_Right",
+        "\x1b[1;8C": "Ctrl_Alt_Shift_Right",
+        "\x1b[D": "Left",
+        "\x1b[1;2D": "Shift_Left",
+        "\x1b[1;3D": "Alt_Left",
+        "\x1b[1;4D": "Alt_Shift_Left",
+        "\x1b[1;5D": "Ctrl_Left",
+        "\x1b[1;6D": "Ctrl_Shift_Left",
+        "\x1b[1;7D": "Ctrl_Alt_Left",
+        "\x1b[1;8D": "Ctrl_Alt_Shift_Left",
+        "\x1b[F": "End",
+        "\x1b[1;2F": "Shift_End",
+        "\x1b[1;3F": "Alt_End",
+        "\x1b[1;4F": "Alt_Shift_End",
+        "\x1b[1;5F": "Ctrl_End",
+        "\x1b[1;6F": "Ctrl_Shift_End",
+        "\x1b[1;7F": "Ctrl_Alt_End",
+        "\x1b[1;8F": "Ctrl_Alt_Shift_End",
+        "\x1b[H": "Home",
+        "\x1b[1;2H": "Shift_Home",
+        "\x1b[1;3H": "Alt_Home",
+        "\x1b[1;4H": "Alt_Shift_Home",
+        "\x1b[1;5H": "Ctrl_Home",
+        "\x1b[1;6H": "Ctrl_Shift_Home",
+        "\x1b[1;7H": "Ctrl_Alt_Home",
+        "\x1b[1;8H": "Ctrl_Alt_Shift_Home",
+        "\x1b[2~": "Insert",
+        "\x1b[2;2~": "Shift_Insert",
+        "\x1b[2;3~": "Alt_Insert",
+        "\x1b[2;4~": "Alt_Shift_Insert",
+        "\x1b[2;5~": "Ctrl_Insert",
+        "\x1b[2;6~": "Ctrl_Shift_Insert",
+        "\x1b[2;7~": "Ctrl_Alt_Insert",
+        "\x1b[2;8~": "Ctrl_Alt_Shift_Insert",
+        "\x1b[3~": "Delete",
+        "\x1b[3;2~": "Shift_Delete",
+        "\x1b[3;3~": "Alt_Delete",
+        "\x1b[3;4~": "Alt_Shift_Delete",
+        "\x1b[3;5~": "Ctrl_Delete",
+        "\x1b[3;6~": "Ctrl_Shift_Delete",
+        "\x1b[3;7~": "Ctrl_Alt_Delete",
+        "\x1b[3;8~": "Ctrl_Alt_Shift_Delete",
+        "\x1b[5~": "PageUp",
+        "\x1b[5;2~": "Shift_PageUp",
+        "\x1b[5;3~": "Alt_PageUp",
+        "\x1b[5;4~": "Alt_Shift_PageUp",
+        "\x1b[5;5~": "Ctrl_PageUp",
+        "\x1b[5;6~": "Ctrl_Shift_PageUp",
+        "\x1b[5;7~": "Ctrl_Alt_PageUp",
+        "\x1b[5;8~": "Ctrl_Alt_Shift_PageUp",
+        "\x1b[6~": "PageDown",
+        "\x1b[6;2~": "Shift_PageDown",
+        "\x1b[6;3~": "Alt_PageDown",
+        "\x1b[6;4~": "Alt_Shift_PageDown",
+        "\x1b[6;5~": "Ctrl_PageDown",
+        "\x1b[6;6~": "Ctrl_Shift_PageDown",
+        "\x1b[6;7~": "Ctrl_Alt_PageDown",
+        "\x1b[6;8~": "Ctrl_Alt_Shift_PageDown",
     }
 
     best_screen_size: int = 80
     adjust_screen_delay: float = 1.0
 
     editor: str = "nano"
-

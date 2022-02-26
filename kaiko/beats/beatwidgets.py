@@ -19,20 +19,25 @@ def uint_format(value, width, zero_padded=False):
 
     if width == 2 and value < 1000:
         return f"{value:{pad}{width}d}" if value < 10 else "9+"
-    elif value < 10**width:
+    elif value < 10 ** width:
         return f"{value:{pad}{width}d}"
 
     for scale, symbol in enumerate(scales):
-        if value < 1000**(scale+2):
+        if value < 1000 ** (scale + 2):
             if width == 2:
                 return symbol + "+"
 
-            value_ = value // 1000**(scale+1)
-            eff = f"{value_:{pad}{width-2}d}" if value_ < 10**(width-2) else str(10**(width-2)-1)
+            value_ = value // 1000 ** (scale + 1)
+            eff = (
+                f"{value_:{pad}{width-2}d}"
+                if value_ < 10 ** (width - 2)
+                else str(10 ** (width - 2) - 1)
+            )
             return eff + symbol + "+"
 
     else:
-        return str(10**(width-2)-1) + scales[-1] + "+"
+        return str(10 ** (width - 2) - 1) + scales[-1] + "+"
+
 
 def time_format(value, width):
     if width < 4:
@@ -40,13 +45,14 @@ def time_format(value, width):
     else:
         return f"{uint_format(value//60, width-3, True)}:{value%60:02d}"
 
+
 def pc_format(value, width):
     if width == 0:
         return ""
     if width == 1:
         return "1" if value == 1 else "0"
     if width == 2:
-        return f"1." if value == 1 else "." + str(int(value*10))
+        return f"1." if value == 1 else "." + str(int(value * 10))
     if width == 3:
         return f"1.0" if value == 1 else f"{value:>{width}.0%}"
     if width >= 4:
@@ -78,6 +84,7 @@ class SpectrumWidgetSettings:
     spec_time_res: float = 0.0116099773
     spec_freq_res: float = 21.5332031
 
+
 @dataclasses.dataclass
 class SpectrumWidget:
     spectrum: str
@@ -93,26 +100,31 @@ class SpectrumWidget:
         win_length = round(samplerate / self.settings.spec_freq_res)
         spec_decay_time = self.settings.spec_decay_time
 
-        df = samplerate/win_length
-        n_fft = win_length//2+1
-        n = numpy.linspace(1, 88, spec_width*2+1)
-        f = 440 * 2**((n-49)/12) # frequency of n-th piano key
-        sec = numpy.minimum(n_fft-1, (f/df).round().astype(int))
-        slices = [slice(start, stop) for start, stop in zip(sec[:-1], (sec+1)[1:])]
+        df = samplerate / win_length
+        n_fft = win_length // 2 + 1
+        n = numpy.linspace(1, 88, spec_width * 2 + 1)
+        f = 440 * 2 ** ((n - 49) / 12)  # frequency of n-th piano key
+        sec = numpy.minimum(n_fft - 1, (f / df).round().astype(int))
+        slices = [slice(start, stop) for start, stop in zip(sec[:-1], (sec + 1)[1:])]
 
         decay = hop_length / samplerate / spec_decay_time / 4
-        volume_of = lambda J: dn.power2db(J.mean() * samplerate / 2, scale=(1e-5, 1e6)) / 60.0
+        volume_of = (
+            lambda J: dn.power2db(J.mean() * samplerate / 2, scale=(1e-5, 1e6)) / 60.0
+        )
 
-        A = numpy.cumsum([0, 2**6, 2**2, 2**1, 2**0])
-        B = numpy.cumsum([0, 2**7, 2**5, 2**4, 2**3])
-        draw_bar = lambda a, b: chr(0x2800 + A[int(a*4)] + B[int(b*4)])
+        A = numpy.cumsum([0, 2 ** 6, 2 ** 2, 2 ** 1, 2 ** 0])
+        B = numpy.cumsum([0, 2 ** 7, 2 ** 5, 2 ** 4, 2 ** 3])
+        draw_bar = lambda a, b: chr(0x2800 + A[int(a * 4)] + B[int(b * 4)])
 
-        node = dn.pipe(dn.frame(win_length, hop_length), dn.power_spectrum(win_length, samplerate=samplerate))
+        node = dn.pipe(
+            dn.frame(win_length, hop_length),
+            dn.power_spectrum(win_length, samplerate=samplerate),
+        )
 
         @dn.datanode
         def draw():
             with node:
-                vols = [0.0]*(spec_width*2)
+                vols = [0.0] * (spec_width * 2)
 
                 data = yield
                 while True:
@@ -121,8 +133,10 @@ class SpectrumWidget:
                     except StopIteration:
                         return
 
-                    vols = [max(0.0, prev-decay, min(1.0, volume_of(J[slic])))
-                            for slic, prev in zip(slices, vols)]
+                    vols = [
+                        max(0.0, prev - decay, min(1.0, volume_of(J[slic])))
+                        for slic, prev in zip(slices, vols)
+                    ]
                     data = yield "".join(map(draw_bar, vols[0::2], vols[1::2]))
 
         return draw()
@@ -136,9 +150,11 @@ class SpectrumWidget:
 
         template = self.rich.parse(self.settings.template, slotted=True)
 
-        self.spectrum = "\u2800"*spec_width
+        self.spectrum = "\u2800" * spec_width
         draw = dn.pipe(self.draw_spectrum(), lambda v: setattr(self, "spectrum", v))
-        handler = dn.pipe(lambda a:a[0], dn.branch(dn.unchunk(draw, (hop_length, nchannels))))
+        handler = dn.pipe(
+            lambda a: a[0], dn.branch(dn.unchunk(draw, (hop_length, nchannels)))
+        )
         self.mixer.add_effect(handler, zindex=(-1,))
 
         def widget_func(time, ran):
@@ -163,6 +179,7 @@ class VolumeIndicatorWidgetSettings:
     template: str = "[color=bright_magenta][slot/][/]"
     vol_decay_time: float = 0.01
 
+
 @dataclasses.dataclass
 class VolumeIndicatorWidget:
     volume: float
@@ -181,7 +198,7 @@ class VolumeIndicatorWidget:
 
         decay = buffer_length / samplerate / vol_decay_time
 
-        volume_of = lambda x: dn.power2db((x**2).mean(), scale=(1e-5, 1e6)) / 60.0
+        volume_of = lambda x: dn.power2db((x ** 2).mean(), scale=(1e-5, 1e6)) / 60.0
 
         @dn.datanode
         def volume_indicator():
@@ -189,10 +206,10 @@ class VolumeIndicatorWidget:
 
             while True:
                 data = yield
-                vol = max(0.0, vol-decay, min(1.0, volume_of(data)))
+                vol = max(0.0, vol - decay, min(1.0, volume_of(data)))
                 self.volume = vol
 
-        handler = dn.pipe(lambda a:a[0], dn.branch(volume_indicator()))
+        handler = dn.pipe(lambda a: a[0], dn.branch(volume_indicator()))
         self.mixer.add_effect(handler, zindex=(-1,))
 
         def widget_func(time, ran):
@@ -220,12 +237,13 @@ class AccuracyMeterWidgetSettings:
     meter_decay_time: float = 1.5
     meter_radius: float = 0.10
 
+
 @dataclasses.dataclass
 class AccuracyMeterWidget:
     last_perf: int
     last_time: float
     rich: mu.RichParser
-    state: object # with property `perfs`
+    state: object  # with property `perfs`
     settings: AccuracyMeterWidgetSettings
 
     @dn.datanode
@@ -234,12 +252,18 @@ class AccuracyMeterWidget:
         meter_decay_time = self.settings.meter_decay_time
         meter_radius = self.settings.meter_radius
 
-        length = meter_width*2
-        hit = [0.0]*length
+        length = meter_width * 2
+        hit = [0.0] * length
 
         colors = [c << 16 | c << 8 | c for c in range(8, 248, 10)]
         nlevel = len(colors)
-        texts = [[self.rich.parse(f"[bgcolor={a:06x}][color={b:06x}]▐[/][/]") for b in colors] for a in colors]
+        texts = [
+            [
+                self.rich.parse(f"[bgcolor={a:06x}][color={b:06x}]▐[/][/]")
+                for b in colors
+            ]
+            for a in colors
+        ]
 
         def widget_func(time, ran):
             perfs = self.state.perfs
@@ -248,19 +272,38 @@ class AccuracyMeterWidget:
             while len(perfs) > self.last_perf:
                 err = perfs[self.last_perf].err
                 if err is not None:
-                    new_err.append(max(min(int((err-meter_radius)/-meter_radius/2 * length//1), length-1), 0))
+                    new_err.append(
+                        max(
+                            min(
+                                int(
+                                    (err - meter_radius)
+                                    / -meter_radius
+                                    / 2
+                                    * length
+                                    // 1
+                                ),
+                                length - 1,
+                            ),
+                            0,
+                        )
+                    )
                 self.last_perf += 1
 
             decay = max(0.0, time - self.last_time) / meter_decay_time
             self.last_time = time
 
-            for i in range(meter_width*2):
+            for i in range(meter_width * 2):
                 if i in new_err:
                     hit[i] = 1.0
                 else:
                     hit[i] = max(0.0, hit[i] - decay)
 
-            return mu.Group(tuple(texts[int(i*(nlevel-1))][int(j*(nlevel-1))] for i, j in zip(hit[::2], hit[1::2])))
+            return mu.Group(
+                tuple(
+                    texts[int(i * (nlevel - 1))][int(j * (nlevel - 1))]
+                    for i, j in zip(hit[::2], hit[1::2])
+                )
+            )
 
         yield
         return widget_func
@@ -271,9 +314,11 @@ class MonitorTarget(Enum):
     detector = "detector"
     renderer = "renderer"
 
+
 @dataclasses.dataclass
 class MonitorWidgetSettings:
     target: MonitorTarget = MonitorTarget.renderer
+
 
 @dataclasses.dataclass
 class MonitorWidget:
@@ -292,8 +337,13 @@ class MonitorWidget:
             if monitor.eff is None:
                 return mu.Text("")
             width = len(ran)
-            level = int(monitor.eff * width*(ticks_len-1))
-            return mu.Text("".join(ticks[max(0, min(ticks_len-1, level-i*(ticks_len-1)))] for i in range(width)))
+            level = int(monitor.eff * width * (ticks_len - 1))
+            return mu.Text(
+                "".join(
+                    ticks[max(0, min(ticks_len - 1, level - i * (ticks_len - 1)))]
+                    for i in range(width)
+                )
+            )
 
         yield
         return widget_func
@@ -309,9 +359,10 @@ class ScoreWidgetSettings:
     """
     template: str = "[color=bright_blue][slot/][/]"
 
+
 @dataclasses.dataclass
 class ScoreWidget:
-    state: object # with properties `score`, `full_score`
+    state: object  # with properties `score`, `full_score`
     rich: mu.RichParser
     settings: ScoreWidgetSettings
 
@@ -331,11 +382,11 @@ class ScoreWidget:
             if width == 2:
                 return mu.replace_slot(template, mu.Text("[]"))
             if width <= 7:
-                score_str = uint_format(score, width-2, True)
+                score_str = uint_format(score, width - 2, True)
                 return mu.replace_slot(template, mu.Text(f"[{score_str}]"))
 
-            w1 = max((width-3)//2, 5)
-            w2 = (width-3) - w1
+            w1 = max((width - 3) // 2, 5)
+            w2 = (width - 3) - w1
             score_str = uint_format(score, w1, True)
             full_score_str = uint_format(full_score, w2, True)
             return mu.replace_slot(template, mu.Text(f"[{score_str}/{full_score_str}]"))
@@ -354,9 +405,10 @@ class ProgressWidgetSettings:
     """
     template: str = "[color=bright_blue][slot/][/]"
 
+
 @dataclasses.dataclass
 class ProgressWidget:
-    state: object # with properties `finished_subjects`, `total_subjects`, `time`
+    state: object  # with properties `finished_subjects`, `total_subjects`, `time`
     rich: mu.RichParser
     settings: ProgressWidgetSettings
 
@@ -369,7 +421,11 @@ class ProgressWidget:
             total_subjects = self.state.total_subjects
             time = self.state.time
 
-            progress = min(1.0, finished_subjects/total_subjects) if total_subjects>0 else 1.0
+            progress = (
+                min(1.0, finished_subjects / total_subjects)
+                if total_subjects > 0
+                else 1.0
+            )
             time = int(max(0.0, time))
             width = len(ran)
 
@@ -380,11 +436,11 @@ class ProgressWidget:
             if width == 2:
                 return mu.replace_slot(template, mu.Text("[]"))
             if width <= 7:
-                progress_str = pc_format(progress, width-2)
+                progress_str = pc_format(progress, width - 2)
                 return mu.replace_slot(template, mu.Text(f"[{progress_str}]"))
 
-            w1 = max((width-3)//2, 5)
-            w2 = (width-3) - w1
+            w1 = max((width - 3) // 2, 5)
+            w2 = (width - 3) - w1
             progress_str = pc_format(progress, w1)
             time_str = time_format(time, w2)
             return mu.replace_slot(template, mu.Text(f"[{progress_str}/{time_str}]"))
@@ -401,16 +457,19 @@ class PatternsWidgetSettings:
     patterns : list of str
         The patterns to loop.
     """
-    patterns: List[str] = dataclasses.field(default_factory=lambda: [
-        "[color=cyan]⠶⠦⣚⠀⠶[/]",
-        "[color=cyan]⢎⣀⡛⠀⠶[/]",
-        "[color=cyan]⢖⣄⠻⠀⠶[/]",
-        "[color=cyan]⠖⠐⡩⠂⠶[/]",
-        "[color=cyan]⠶⠀⡭⠲⠶[/]",
-        "[color=cyan]⠶⠀⣬⠉⡱[/]",
-        "[color=cyan]⠶⠀⣦⠙⠵[/]",
-        "[color=cyan]⠶⠠⣊⠄⠴[/]",
-    ])
+    patterns: List[str] = dataclasses.field(
+        default_factory=lambda: [
+            "[color=cyan]⠶⠦⣚⠀⠶[/]",
+            "[color=cyan]⢎⣀⡛⠀⠶[/]",
+            "[color=cyan]⢖⣄⠻⠀⠶[/]",
+            "[color=cyan]⠖⠐⡩⠂⠶[/]",
+            "[color=cyan]⠶⠀⡭⠲⠶[/]",
+            "[color=cyan]⠶⠀⣬⠉⡱[/]",
+            "[color=cyan]⠶⠀⣦⠙⠵[/]",
+            "[color=cyan]⠶⠠⣊⠄⠴[/]",
+        ]
+    )
+
 
 @dataclasses.dataclass
 class PatternsWidget:
@@ -432,6 +491,7 @@ class PatternsWidget:
         yield
         return patterns_func
 
+
 @dataclasses.dataclass
 class MarkerWidgetSettings:
     r"""
@@ -444,6 +504,7 @@ class MarkerWidgetSettings:
     """
     markers: Tuple[str, str] = ("❯ ", "[weight=bold]❯ [/]")
     blink_ratio: float = 0.3
+
 
 @dataclasses.dataclass
 class MarkerWidget:
@@ -470,4 +531,3 @@ class MarkerWidget:
 
         yield
         return marker_func
-

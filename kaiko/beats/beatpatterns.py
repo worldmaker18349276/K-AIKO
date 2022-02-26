@@ -8,8 +8,10 @@ from ..utils import parsec as pc
 Value = Union[None, bool, int, Fraction, float, str]
 Arguments = Tuple[List[Value], Dict[str, Value]]
 
+
 class Pattern:
     pass
+
 
 @dataclasses.dataclass
 class Note(Pattern):
@@ -22,6 +24,7 @@ class Note(Pattern):
     symbol: str
     arguments: Arguments
 
+
 @dataclasses.dataclass
 class Division(Pattern):
     # [x o]
@@ -30,26 +33,33 @@ class Division(Pattern):
     divisor: int = 2
     patterns: List[Pattern] = dataclasses.field(default_factory=list)
 
+
 @dataclasses.dataclass
 class Instant(Pattern):
     # {x x o}
     patterns: List[Pattern] = dataclasses.field(default_factory=list)
 
+
 def IIFE(func):
     return func()
 
+
 @IIFE
 def value_parser():
-    none  = pc.regex(r"None").map(ast.literal_eval)
-    bool  = pc.regex(r"True|False").map(ast.literal_eval)
-    int   = pc.regex(r"[-+]?(0|[1-9][0-9]*)").map(ast.literal_eval)
-    frac  = pc.regex(r"[-+]?(0|[1-9][0-9]*)\/[1-9][0-9]*").map(Fraction)
-    float = pc.regex(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+[eE][-+]?[0-9]+)").map(ast.literal_eval)
-    str   = pc.regex(
-        r'"([^\r\n\\"]|\\[\\"btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*"').map(ast.literal_eval)
+    none = pc.regex(r"None").map(ast.literal_eval)
+    bool = pc.regex(r"True|False").map(ast.literal_eval)
+    int = pc.regex(r"[-+]?(0|[1-9][0-9]*)").map(ast.literal_eval)
+    frac = pc.regex(r"[-+]?(0|[1-9][0-9]*)\/[1-9][0-9]*").map(Fraction)
+    float = pc.regex(r"[-+]?([0-9]+\.[0-9]+(e[-+]?[0-9]+)?|[0-9]+[eE][-+]?[0-9]+)").map(
+        ast.literal_eval
+    )
+    str = pc.regex(
+        r'"([^\r\n\\"]|\\[\\"btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*"'
+    ).map(ast.literal_eval)
 
     desc = "None or bool or str or float or frac or int"
     return pc.choice(none, bool, str, float, frac, int).desc(desc)
+
 
 @IIFE
 @pc.parsec
@@ -87,15 +97,17 @@ def arguments_parser():
             return psargs, kwargs
         yield comma
 
+
 @IIFE
 def note_parser():
     symbol = pc.regex(r"[^ \b\t\n\r\f\v()[\]{}\'\"\\#]+")
     text = pc.regex(
-        r'"([^\r\n\\"\x00]|\\[\\"btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*"').map(ast.literal_eval)
-    return (
-        (symbol + arguments_parser).starmap(Note)
-        | (text + arguments_parser).starmap(lambda text, arg: Note('Text', ([text, *arg[0]], arg[1])))
-    )
+        r'"([^\r\n\\"\x00]|\\[\\"btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*"'
+    ).map(ast.literal_eval)
+    return (symbol + arguments_parser).starmap(Note) | (
+        text + arguments_parser
+    ).starmap(lambda text, arg: Note("Text", ([text, *arg[0]], arg[1])))
+
 
 @pc.parsec
 def enclose_by(elem, sep, opening, closing):
@@ -115,13 +127,16 @@ def enclose_by(elem, sep, opening, closing):
 
     return results
 
+
 @IIFE
 def patterns_parser():
     end = pc.regex(r"[ \t\n]*$").desc("end of file")
     msp = pc.regex(r"([ \t\n$]|#[^\n]*[\n$])+").desc("whitespace")
     div = pc.regex(r"/(\d+)").map(lambda m: int(m[1:])) | pc.nothing(2)
 
-    instant = enclose_by(pc.proxy(lambda: pattern), msp, pc.string("{"), pc.string("}")).map(Instant)
+    instant = enclose_by(
+        pc.proxy(lambda: pattern), msp, pc.string("{"), pc.string("}")
+    ).map(Instant)
     division = (
         enclose_by(pc.proxy(lambda: pattern), msp, pc.string("["), pc.string("]")) + div
     ).starmap(lambda a, b: Division(b, a))
@@ -132,18 +147,23 @@ def patterns_parser():
 class PatternError(Exception):
     pass
 
+
 def to_events(patterns, beat=0, length=1, notations={}):
     def build(beat, length, last_event, patterns):
         for pattern in patterns:
             if isinstance(pattern, Division):
-                beat, last_event = yield from build(beat, length / pattern.divisor, last_event, pattern.patterns)
+                beat, last_event = yield from build(
+                    beat, length / pattern.divisor, last_event, pattern.patterns
+                )
 
             elif isinstance(pattern, Instant):
                 if last_event is not None:
                     yield last_event
                 last_event = None
 
-                beat, last_event = yield from build(beat, Fraction(0, 1), last_event, pattern.patterns)
+                beat, last_event = yield from build(
+                    beat, Fraction(0, 1), last_event, pattern.patterns
+                )
 
             elif pattern.symbol == "~":
                 if pattern.arguments[0] or pattern.arguments[1]:
@@ -173,7 +193,9 @@ def to_events(patterns, beat=0, length=1, notations={}):
                 if last_event is not None:
                     yield last_event
                 event_type = notations[pattern.symbol]
-                last_event = event_type(beat, length, *pattern.arguments[0], **pattern.arguments[1])
+                last_event = event_type(
+                    beat, length, *pattern.arguments[0], **pattern.arguments[1]
+                )
                 beat += length
 
         return beat, last_event
@@ -207,9 +229,12 @@ def format_value(value):
     elif isinstance(value, Fraction):
         return str(value)
     elif isinstance(value, str):
-        return '"' + repr(value + '"')[1:-2].replace('"', r'\"').replace(r"\'", "'") + '"'
+        return (
+            '"' + repr(value + '"')[1:-2].replace('"', r"\"").replace(r"\'", "'") + '"'
+        )
     else:
         assert False
+
 
 def format_arguments(psargs, kwargs):
     if len(psargs) + len(kwargs) == 0:
@@ -217,6 +242,7 @@ def format_arguments(psargs, kwargs):
     items = [format_value(value) for value in psargs]
     items += [key + "=" + format_value(value) for key, value in kwargs.items()]
     return "(%s)" % ", ".join(items)
+
 
 def format_patterns(patterns):
     items = []
@@ -233,6 +259,5 @@ def format_patterns(patterns):
 
         else:
             assert False
-        
-    return " ".join(items)
 
+    return " ".join(items)

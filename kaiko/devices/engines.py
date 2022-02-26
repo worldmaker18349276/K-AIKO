@@ -30,9 +30,9 @@ class Monitor:
 
     @dn.datanode
     def monitoring(self, node):
-        if hasattr(time, 'thread_time'):
+        if hasattr(time, "thread_time"):
             get_time = time.thread_time
-        elif hasattr(time, 'clock_gettime'):
+        elif hasattr(time, "clock_gettime"):
             get_time = lambda: time.clock_gettime(time.CLOCK_THREAD_CPUTIME_ID)
         else:
             get_time = time.perf_counter
@@ -43,14 +43,14 @@ class Monitor:
         self.count = 0
         total = 0.0
         total2 = 0.0
-        spend_N = [0.0]*N
-        recent_N = [0.0]*N
-        best_N = [numpy.inf]*N
-        worst_N = [-numpy.inf]*N
+        spend_N = [0.0] * N
+        recent_N = [0.0] * N
+        best_N = [numpy.inf] * N
+        worst_N = [-numpy.inf] * N
 
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(self.path, 'w') as file:
+        with open(self.path, "w") as file:
             with node:
                 try:
                     data = yield
@@ -69,7 +69,7 @@ class Monitor:
 
                         self.count += 1
                         total += t
-                        total2 += t**2
+                        total2 += t ** 2
                         spend_N.insert(0, spend)
                         spend_N.pop()
                         recent_N.insert(0, t)
@@ -78,10 +78,10 @@ class Monitor:
                         best_N.pop()
                         bisect.insort(worst_N, t)
                         worst_N.pop(0)
-                        self.avg = sum(recent_N)/N
-                        self.eff = sum(recent_N)/sum(spend_N)
-                        self.best = sum(best_N)/N
-                        self.worst = sum(worst_N)/N
+                        self.avg = sum(recent_N) / N
+                        self.eff = sum(recent_N) / sum(spend_N)
+                        self.best = sum(best_N) / N
+                        self.worst = sum(worst_N) / N
 
                         data = yield data
 
@@ -92,9 +92,11 @@ class Monitor:
                     stop = time.perf_counter()
 
                     if self.count > 0:
-                        self.total_avg = total/self.count
-                        self.total_dev = (total2/self.count - self.total_avg**2)**0.5
-                        self.total_eff = total/(stop - start)
+                        self.total_avg = total / self.count
+                        self.total_dev = (
+                            total2 / self.count - self.total_avg ** 2
+                        ) ** 0.5
+                        self.total_eff = total / (stop - start)
 
     def __str__(self):
         if self.count is None:
@@ -106,13 +108,15 @@ class Monitor:
         assert self.total_dev is not None
         assert self.total_eff is not None
 
-        if self.best is None or self.best == float('inf'):
+        if self.best is None or self.best == float("inf"):
             return f"count={self.count}, avg={self.total_avg*1000:5.3f}±{self.total_dev*1000:5.3f}ms ({self.total_eff: >6.1%})"
 
         assert self.worst is not None
 
-        return (f"count={self.count}, avg={self.total_avg*1000:5.3f}±{self.total_dev*1000:5.3f}ms"
-                f" ({self.best*1000:5.3f}ms ~ {self.worst*1000:5.3f}ms) ({self.total_eff: >6.1%})")
+        return (
+            f"count={self.count}, avg={self.total_avg*1000:5.3f}±{self.total_dev*1000:5.3f}ms"
+            f" ({self.best*1000:5.3f}ms ~ {self.worst*1000:5.3f}ms) ({self.total_eff: >6.1%})"
+        )
 
 
 class MixerSettings(cfg.Configurable):
@@ -136,14 +140,17 @@ class MixerSettings(cfg.Configurable):
     """
     output_device: int = -1
     output_samplerate: int = 44100
-    output_buffer_length: int = 512*4
+    output_buffer_length: int = 512 * 4
     output_channels: int = 1
-    output_format: str = 'f4'
+    output_format: str = "f4"
 
     sound_delay: float = 0.0
 
+
 class Mixer:
-    def __init__(self, effects_scheduler, samplerate, buffer_length, nchannels, monitor):
+    def __init__(
+        self, effects_scheduler, samplerate, buffer_length, nchannels, monitor
+    ):
         self.effects_scheduler = effects_scheduler
         self.samplerate = samplerate
         self.buffer_length = buffer_length
@@ -162,12 +169,14 @@ class Mixer:
         if monitor:
             output_node = monitor.monitoring(output_node)
 
-        return aud.play(manager, output_node,
-                        samplerate=samplerate,
-                        buffer_shape=(buffer_length, nchannels),
-                        format=format,
-                        device=device,
-                        )
+        return aud.play(
+            manager,
+            output_node,
+            samplerate=samplerate,
+            buffer_shape=(buffer_length, nchannels),
+            format=format,
+            device=device,
+        )
 
     @staticmethod
     @dn.datanode
@@ -180,7 +189,9 @@ class Mixer:
         with scheduler:
             yield
             while True:
-                time = index * buffer_length / samplerate + settings.sound_delay - ref_time
+                time = (
+                    index * buffer_length / samplerate + settings.sound_delay - ref_time
+                )
                 data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
                 try:
                     data = scheduler.send((data, time))
@@ -217,13 +228,15 @@ class Mixer:
 
         with node:
             data, time = yield
-            offset = round((start_time - time) * samplerate) if start_time is not None else 0
+            offset = (
+                round((start_time - time) * samplerate) if start_time is not None else 0
+            )
 
             while offset < 0:
                 length = min(-offset, buffer_length)
                 dummy = numpy.zeros((length, nchannels), dtype=numpy.float32)
                 try:
-                    node.send((dummy, time+offset/samplerate))
+                    node.send((dummy, time + offset / samplerate))
                 except StopIteration:
                     return
                 offset += length
@@ -234,7 +247,7 @@ class Mixer:
                 else:
                     data1, data2 = data[:offset], data[offset:]
                     try:
-                        data2 = node.send((data2, time+offset/samplerate))
+                        data2 = node.send((data2, time + offset / samplerate))
                     except StopIteration:
                         return
                     data = numpy.concatenate((data1, data2), axis=0)
@@ -248,7 +261,9 @@ class Mixer:
                 except StopIteration:
                     return
 
-    def resample(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None):
+    def resample(
+        self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None
+    ):
         if start is not None or end is not None:
             node = dn.tslice(node, samplerate or self.samplerate, start, end)
         if channels is not None and channels != self.nchannels:
@@ -256,13 +271,23 @@ class Mixer:
         if samplerate is not None and samplerate != self.samplerate:
             node = dn.pipe(node, dn.resample(ratio=(self.samplerate, samplerate)))
         if volume != 0:
-            node = dn.pipe(node, lambda s: s * 10**(volume/20))
+            node = dn.pipe(node, lambda s: s * 10 ** (volume / 20))
 
         return node
 
-    def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
+    def play(
+        self,
+        node,
+        samplerate=None,
+        channels=None,
+        volume=0.0,
+        start=None,
+        end=None,
+        time=None,
+        zindex=(0,),
+    ):
         node = self.resample(node, samplerate, channels, volume, start, end)
-        node = dn.pipe(lambda a:a[0], dn.attach(node))
+        node = dn.pipe(lambda a: a[0], dn.attach(node))
         return self.add_effect(node, time=time, zindex=zindex)
 
     def play_file(self, path, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
@@ -273,7 +298,7 @@ class Mixer:
         # initialize before attach; it will seek to the starting frame
         sliced_node.__enter__()
         sliced_node = self.resample(sliced_node, meta.samplerate, meta.channels, volume)
-        effect_node = dn.pipe(lambda a:a[0], dn.attach(sliced_node))
+        effect_node = dn.pipe(lambda a: a[0], dn.attach(sliced_node))
         return self.add_effect(effect_node, time=time, zindex=zindex)
 
 
@@ -302,21 +327,22 @@ class DetectorSettings(cfg.Configurable):
     input_samplerate: int = 44100
     input_buffer_length: int = 512
     input_channels: int = 1
-    input_format: str = 'f4'
+    input_format: str = "f4"
 
     @cfg.subconfig
     class detect(cfg.Configurable):
-        time_res: float = 0.0116099773 # hop_length = 512 if samplerate == 44100
-        freq_res: float = 21.5332031 # win_length = 512*4 if samplerate == 44100
+        time_res: float = 0.0116099773  # hop_length = 512 if samplerate == 44100
+        freq_res: float = 21.5332031  # win_length = 512*4 if samplerate == 44100
         pre_max: float = 0.03
         post_max: float = 0.03
         pre_avg: float = 0.03
         post_avg: float = 0.03
         wait: float = 0.03
-        delta: float = 5.48e-6 # ~ noise_power * 20
+        delta: float = 5.48e-6  # ~ noise_power * 20
 
     knock_delay: float = 0.0
-    knock_energy: float = 1.0e-3 # ~ Dt / knock_max_energy
+    knock_energy: float = 1.0e-3  # ~ Dt / knock_max_energy
+
 
 class Detector:
     def __init__(self, listeners_scheduler, monitor):
@@ -332,7 +358,7 @@ class Detector:
         device = settings.input_device
 
         time_res = settings.detect.time_res
-        hop_length = round(samplerate*time_res)
+        hop_length = round(samplerate * time_res)
 
         input_node = Detector._detect_node(scheduler, ref_time, settings)
         if buffer_length != hop_length:
@@ -340,12 +366,14 @@ class Detector:
         if monitor:
             input_node = monitor.monitoring(input_node)
 
-        return aud.record(manager, input_node,
-                          samplerate=samplerate,
-                          buffer_shape=(buffer_length, nchannels),
-                          format=format,
-                          device=device,
-                          )
+        return aud.record(
+            manager,
+            input_node,
+            samplerate=samplerate,
+            buffer_shape=(buffer_length, nchannels),
+            format=format,
+            device=device,
+        )
 
     @staticmethod
     @dn.datanode
@@ -354,28 +382,33 @@ class Detector:
 
         time_res = settings.detect.time_res
         freq_res = settings.detect.freq_res
-        hop_length = round(samplerate*time_res)
-        win_length = round(samplerate/freq_res)
+        hop_length = round(samplerate * time_res)
+        win_length = round(samplerate / freq_res)
 
-        pre_max  = round(settings.detect.pre_max  / time_res)
+        pre_max = round(settings.detect.pre_max / time_res)
         post_max = round(settings.detect.post_max / time_res)
-        pre_avg  = round(settings.detect.pre_avg  / time_res)
+        pre_avg = round(settings.detect.pre_avg / time_res)
         post_avg = round(settings.detect.post_avg / time_res)
-        wait     = round(settings.detect.wait     / time_res)
-        delta    =       settings.detect.delta
+        wait = round(settings.detect.wait / time_res)
+        delta = settings.detect.delta
 
         prepare = max(post_max, post_avg)
 
         window = dn.get_half_Hann_window(win_length)
         onset = dn.pipe(
             dn.frame(win_length=win_length, hop_length=hop_length),
-            dn.power_spectrum(win_length=win_length,
-                              samplerate=samplerate,
-                              windowing=window,
-                              weighting=True),
-            dn.onset_strength(1))
-        delay = dn.delay((index * hop_length / samplerate + settings.knock_delay - ref_time, 0.0)
-                         for index in range(-prepare, 0))
+            dn.power_spectrum(
+                win_length=win_length,
+                samplerate=samplerate,
+                windowing=window,
+                weighting=True,
+            ),
+            dn.onset_strength(1),
+        )
+        delay = dn.delay(
+            (index * hop_length / samplerate + settings.knock_delay - ref_time, 0.0)
+            for index in range(-prepare, 0)
+        )
         picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
 
         with scheduler, onset, delay, picker:
@@ -447,29 +480,30 @@ def to_range(start, stop, width):
     if start is None:
         start = 0
     elif start < 0:
-        start = width+start
+        start = width + start
     else:
         start = start
 
     if stop is None:
         stop = width
     elif stop < 0:
-        stop = width+stop
+        stop = width + stop
     else:
         stop = stop
 
     return range(start, stop)
+
 
 class RichBar:
     def __init__(self, terminal_settings):
         self.markups = []
         self.rich_renderer = mu.RichBarRenderer(terminal_settings.unicode_version)
 
-    def add_markup(self, markup, mask=slice(None,None), shift=0):
+    def add_markup(self, markup, mask=slice(None, None), shift=0):
         self.markups.append((markup, mask, shift))
 
     def draw(self, width):
-        buffer = [" "]*width
+        buffer = [" "] * width
         xran = range(width)
 
         for markup, mask, shift in self.markups:
@@ -480,9 +514,12 @@ class RichBar:
             else:
                 x = shift + mask.start + width
 
-            self.rich_renderer._render(buffer, markup, x=x, width=width, xmask=xran[mask], attrs=())
+            self.rich_renderer._render(
+                buffer, markup, x=x, width=width, xmask=xran[mask], attrs=()
+            )
 
         return "".join(buffer).rstrip()
+
 
 class RendererSettings(cfg.Configurable):
     r"""
@@ -495,9 +532,10 @@ class RendererSettings(cfg.Configurable):
     resize_delay : float
         The delay time to redraw display after resizing.
     """
-    display_framerate: float = 160.0 # ~ 2 / detect.time_res
+    display_framerate: float = 160.0  # ~ 2 / detect.time_res
     display_delay: float = 0.0
     resize_delay: float = 0.5
+
 
 class Renderer:
     def __init__(self, drawers_scheduler, monitor):
@@ -508,10 +546,15 @@ class Renderer:
     def get_task(scheduler, settings, term_settings, ref_time, monitor):
         framerate = settings.display_framerate
 
-        display_node = Renderer._resize_node(Renderer._render_node(scheduler, term_settings), settings, term_settings, ref_time)
+        display_node = Renderer._resize_node(
+            Renderer._render_node(scheduler, term_settings),
+            settings,
+            term_settings,
+            ref_time,
+        )
         if monitor:
             display_node = monitor.monitoring(display_node)
-        return term.show(display_node, 1/framerate, hide_cursor=True)
+        return term.show(display_node, 1 / framerate, hide_cursor=True)
 
     @staticmethod
     @dn.datanode
@@ -539,7 +582,9 @@ class Renderer:
                 elif not msgs:
                     res_text = f"{clear_below}{view_str}\r"
                 else:
-                    msg_text = rich_renderer.render_less(mu.Group((mu.Text("\n"), *msgs)), size)
+                    msg_text = rich_renderer.render_less(
+                        mu.Group((mu.Text("\n"), *msgs)), size
+                    )
                     res_text = f"{clear_below}{view_str}\r{msg_text}"
 
                 shown, resized, time, size = yield res_text
@@ -606,7 +651,7 @@ class Renderer:
     def add_message(self, msg, zindex=(0,)):
         return self.add_drawer(self._msg_drawer(msg), zindex)
 
-    def add_text(self, text_node, xmask=slice(None,None), zindex=(0,)):
+    def add_text(self, text_node, xmask=slice(None, None), zindex=(0,)):
         return self.add_drawer(self._text_drawer(text_node, xmask), zindex)
 
     @staticmethod
@@ -618,7 +663,7 @@ class Renderer:
 
     @staticmethod
     @dn.datanode
-    def _text_drawer(text_node, xmask=slice(None,None)):
+    def _text_drawer(text_node, xmask=slice(None, None)):
         text_node = dn.DataNode.wrap(text_node)
         with text_node:
             (view, msg), time, width = yield
@@ -646,13 +691,17 @@ class ControllerSettings(cfg.Configurable):
     """
     update_interval: float = 0.1
 
+
 class Controller:
     def __init__(self, handlers_scheduler):
         self.handlers_scheduler = handlers_scheduler
 
     @staticmethod
     def get_task(scheduler, settings, term_settings, ref_time):
-        return term.inkey(Controller._control_node(scheduler, settings, term_settings, ref_time), dt=settings.update_interval)
+        return term.inkey(
+            Controller._control_node(scheduler, settings, term_settings, ref_time),
+            dt=settings.update_interval,
+        )
 
     @staticmethod
     @dn.datanode
@@ -721,7 +770,7 @@ class Metronome:
         -------
         time : float
         """
-        return self.offset + beat*60/self.tempo
+        return self.offset + beat * 60 / self.tempo
 
     def beat(self, time):
         r"""Convert time (in seconds) to beat.
@@ -734,7 +783,7 @@ class Metronome:
         -------
         beat : float
         """
-        return (time - self.offset)*self.tempo/60
+        return (time - self.offset) * self.tempo / 60
 
     def dtime(self, beat, length):
         r"""Convert length to time difference (in seconds).
@@ -748,7 +797,7 @@ class Metronome:
         -------
         dtime : float
         """
-        return self.time(beat+length) - self.time(beat)
+        return self.time(beat + length) - self.time(beat)
 
 
 class DevicesSettings(cfg.Configurable):

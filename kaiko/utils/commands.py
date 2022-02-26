@@ -42,17 +42,26 @@ def suitability(part, full):
     while states:
         new_states = []
         for pstart, fstart, seclens in states:
-            for flast in range(fstart, flen-plen+pstart+1):
+            for flast in range(fstart, flen - plen + pstart + 1):
                 if full[flast] == part[pstart]:
                     for plast in range(pstart, plen):
-                        if full[flast+plast-pstart] != part[plast]:
-                            new_states.append((plast, flast+plast-pstart, (*seclens, plast-pstart)))
+                        if full[flast + plast - pstart] != part[plast]:
+                            new_states.append(
+                                (
+                                    plast,
+                                    flast + plast - pstart,
+                                    (*seclens, plast - pstart),
+                                )
+                            )
                             break
                     else:
-                        suitabilities.append(((*seclens, plen-pstart), -(flast+plen-pstart), -flen))
+                        suitabilities.append(
+                            ((*seclens, plen - pstart), -(flast + plen - pstart), -flen)
+                        )
         states = new_states
 
     return max(suitabilities, default=())
+
 
 def fit(part, options):
     r"""Sort options by its suitability.
@@ -82,6 +91,7 @@ def fit(part, options):
 class CommandUnfinishError(Exception):
     pass
 
+
 class CommandParseError(Exception):
     def __init__(self, msg, token=None, expected=None):
         self.msg = msg
@@ -95,6 +105,7 @@ class CommandParseError(Exception):
                 return self.msg + "\n" + desc
         return self.msg
 
+
 class TOKEN_TYPE(Enum):
     COMMAND = "command"
     ARGUMENT = "argument"
@@ -105,6 +116,7 @@ def do_you_mean(options):
     if not options:
         return None
     return "Do you mean:\n" + "\n".join("• " + s for s in options)
+
 
 class ArgumentParser:
     r"""Parser for the argument of command."""
@@ -170,6 +182,7 @@ class ArgumentParser:
         """
         return None
 
+
 class RawParser(ArgumentParser):
     r"""Parse a raw string."""
 
@@ -198,6 +211,7 @@ class RawParser(ArgumentParser):
         else:
             return [val + "\000" for val in fit(token, [self.default])]
 
+
 class OptionParser(ArgumentParser):
     r"""Parse an option."""
 
@@ -224,7 +238,9 @@ class OptionParser(ArgumentParser):
     def parse(self, token):
         if token not in self.options:
             desc = self.desc()
-            raise CommandParseError("Invalid value" + ("\n" + desc if desc is not None else ""))
+            raise CommandParseError(
+                "Invalid value" + ("\n" + desc if desc is not None else "")
+            )
 
         if isinstance(self.options, dict):
             return self.options[token]
@@ -232,8 +248,13 @@ class OptionParser(ArgumentParser):
             return token
 
     def suggest(self, token):
-        options = list(self.options.keys()) if isinstance(self.options, dict) else self.options
+        options = (
+            list(self.options.keys())
+            if isinstance(self.options, dict)
+            else self.options
+        )
         return [val + "\000" for val in fit(token, options)]
+
 
 class PathParser(ArgumentParser):
     r"""Parse a file path."""
@@ -265,7 +286,9 @@ class PathParser(ArgumentParser):
 
         if not exists:
             desc = self.desc()
-            raise CommandParseError("Path does not exist" + ("\n" + desc if desc is not None else ""))
+            raise CommandParseError(
+                "Path does not exist" + ("\n" + desc if desc is not None else "")
+            )
 
         return Path(token)
 
@@ -300,7 +323,10 @@ class PathParser(ArgumentParser):
         if not os.path.isdir(parentpath):
             return suggestions
 
-        names = fit(suffix, [name for name in os.listdir(parentpath) if not name.startswith(".")])
+        names = fit(
+            suffix,
+            [name for name in os.listdir(parentpath) if not name.startswith(".")],
+        )
         for name in names:
             subpath = os.path.join(parentpath, name)
             sugg = os.path.join(prefix, name)
@@ -313,6 +339,7 @@ class PathParser(ArgumentParser):
                 suggestions.append(sugg + "\000")
 
         return suggestions
+
 
 class TreeParser(ArgumentParser):
     r"""Parse something following a tree.
@@ -374,19 +401,23 @@ class TreeParser(ArgumentParser):
 
             for key, subtree in sorted(tree.items(), key=lambda a: a[0], reverse=True):
                 if key and target.startswith(key):
-                    target = target[len(key):]
+                    target = target[len(key) :]
                     tree = subtree
                     break
 
             else:
                 desc = self.desc()
-                raise CommandParseError("Invalid value" + ("\n" + desc if desc is not None else ""))
+                raise CommandParseError(
+                    "Invalid value" + ("\n" + desc if desc is not None else "")
+                )
 
         if target:
             desc = self.desc()
-            raise CommandParseError("Invalid value" + ("\n" + desc if desc is not None else ""))
+            raise CommandParseError(
+                "Invalid value" + ("\n" + desc if desc is not None else "")
+            )
 
-        if not hasattr(tree, '__call__'):
+        if not hasattr(tree, "__call__"):
             raise ValueError("Not a function.")
 
         return tree(token)
@@ -400,19 +431,23 @@ class TreeParser(ArgumentParser):
             for key, subtree in sorted(tree.items(), key=lambda a: a[0], reverse=True):
                 if target and key and target.startswith(key):
                     prefix = prefix + key
-                    target = target[len(key):]
+                    target = target[len(key) :]
                     tree = subtree
                     break
 
             else:
-                comp = [key + ("\000" if hasattr(subtree, '__call__') else "") for key, subtree in tree.items()]
+                comp = [
+                    key + ("\000" if hasattr(subtree, "__call__") else "")
+                    for key, subtree in tree.items()
+                ]
                 comp = fit(target, comp)
                 return [prefix + c for c in comp]
 
-        if not hasattr(tree, '__call__'):
+        if not hasattr(tree, "__call__"):
             raise ValueError("Not a function.")
 
         return [token + "\000"] if not target else []
+
 
 class LiteralParser(ArgumentParser):
     r"""Parse a Python literal."""
@@ -432,7 +467,9 @@ class LiteralParser(ArgumentParser):
         self.type_hint = type_hint
         self.default = default
         suggestions = [default] if default is not inspect.Parameter.empty else []
-        self.parser = sz.make_serializer_from_type_hint(type_hint, suggestions).parser << pc.eof()
+        self.parser = (
+            sz.make_serializer_from_type_hint(type_hint, suggestions).parser << pc.eof()
+        )
         self._desc = desc or f"It should be {type_hint}"
 
     def desc(self):
@@ -444,7 +481,9 @@ class LiteralParser(ArgumentParser):
         except pc.ParseError as e:
             if isinstance(e.__cause__, pc.ParseFailure):
                 expected = e.__cause__.expected
-                raise CommandParseError(f"Invalid value\nexpecting {expected} at {e.index}") from e
+                raise CommandParseError(
+                    f"Invalid value\nexpecting {expected} at {e.index}"
+                ) from e
             else:
                 raise CommandParseError(f"Invalid value") from e
 
@@ -453,7 +492,9 @@ class LiteralParser(ArgumentParser):
             self.parser.parse(token)
         except pc.ParseError as e:
             if isinstance(e.__cause__, pc.ParseFailure):
-                sugg = [e.text[:e.index] + sugg for sugg in sz.get_suggestions(e.__cause__)]
+                sugg = [
+                    e.text[: e.index] + sugg for sugg in sz.get_suggestions(e.__cause__)
+                ]
                 return [*fit(token, sugg), token]
             else:
                 return []
@@ -545,6 +586,7 @@ class CommandParser:
         """
         raise NotImplementedError
 
+
 class FunctionCommandParser(CommandParser):
     r"""Command parser for a function, which will result in partially applied function."""
 
@@ -591,7 +633,9 @@ class FunctionCommandParser(CommandParser):
 
             value = parser.parse(token)
             bound = {**self.bound, name: value}
-            return TOKEN_TYPE.ARGUMENT, FunctionCommandParser(self.func, args, self.kwargs, bound)
+            return TOKEN_TYPE.ARGUMENT, FunctionCommandParser(
+                self.func, args, self.kwargs, bound
+            )
 
         # parse keyword arguments
         if self.kwargs:
@@ -601,10 +645,14 @@ class FunctionCommandParser(CommandParser):
 
             if parser_func is None:
                 msg = f"Unknown argument {token!r}"
-                raise CommandParseError(msg, token, ["--" + key for key in self.kwargs.keys()])
+                raise CommandParseError(
+                    msg, token, ["--" + key for key in self.kwargs.keys()]
+                )
 
             args = OrderedDict([(name, parser_func)])
-            return TOKEN_TYPE.KEYWORD, FunctionCommandParser(self.func, args, kwargs, self.bound)
+            return TOKEN_TYPE.KEYWORD, FunctionCommandParser(
+                self.func, args, kwargs, self.bound
+            )
 
         # rest
         raise CommandParseError("Too many arguments")
@@ -651,6 +699,7 @@ class FunctionCommandParser(CommandParser):
 
         # rest
         return None
+
 
 class SubCommandParser(CommandParser):
     r"""Command parser for subcommands."""
@@ -704,6 +753,7 @@ def getcmd(obj, name):
 
     return descriptor.__get_command__(obj, clz)
 
+
 def getcmddesc(obj, name):
     clz = type(obj)
     if name not in clz.__dict__:
@@ -718,6 +768,7 @@ def getcmddesc(obj, name):
 
     return cleandoc(doc)
 
+
 class CommandDescriptor:
     r"""Command descriptor."""
 
@@ -731,6 +782,7 @@ class CommandDescriptor:
     def __get_command__(self, instance, owner):
         raise NotImplementedError
 
+
 class subcommand(CommandDescriptor):
     r"""Command descriptor for subcommands."""
 
@@ -740,8 +792,13 @@ class subcommand(CommandDescriptor):
 
     def __get_command__(self, instance, owner):
         parent = self.proxy.__get__(instance, owner)
-        fields = [k for k, v in type(parent).__dict__.items() if isinstance(v, CommandDescriptor)]
+        fields = [
+            k
+            for k, v in type(parent).__dict__.items()
+            if isinstance(v, CommandDescriptor)
+        ]
         return SubCommandParser(parent, fields)
+
 
 class function_command(CommandDescriptor):
     r"""Command descriptor for function command."""
@@ -759,7 +816,9 @@ class function_command(CommandDescriptor):
             elif param.annotation is not inspect.Signature.empty:
                 return lambda *_, **__: LiteralParser(param.annotation, param.default)
             else:
-                raise ValueError(f"No parser for argument {param.name} in {self.proxy.__name__}")
+                raise ValueError(
+                    f"No parser for argument {param.name} in {self.proxy.__name__}"
+                )
 
         sig = inspect.signature(func)
         args = OrderedDict()
@@ -784,10 +843,13 @@ class function_command(CommandDescriptor):
         -------
         arg_parser_dec : function
         """
+
         def arg_parser_dec(parser):
             self.parsers[name] = parser
             return parser
+
         return arg_parser_dec
+
 
 class RootCommandParser(SubCommandParser):
     r"""Parser for root command."""
@@ -801,7 +863,11 @@ class RootCommandParser(SubCommandParser):
             The object of root command, where all fields with command descriptors
             will become the valid subcommands.
         """
-        fields = [k for k, v in type(root).__dict__.items() if isinstance(v, CommandDescriptor)]
+        fields = [
+            k
+            for k, v in type(root).__dict__.items()
+            if isinstance(v, CommandDescriptor)
+        ]
         super(RootCommandParser, self).__init__(root, fields)
 
     def build(self, tokens):
@@ -923,4 +989,3 @@ class RootCommandParser(SubCommandParser):
             except CommandParseError:
                 return None
         return parser.info(target)
-

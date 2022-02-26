@@ -16,8 +16,10 @@ import wcwidth
 #   pair: [color=green]>>> [weight=bold][slot/][/]
 #   single: [color=red]!!![/]
 
+
 class MarkupParseError(Exception):
     pass
+
 
 def loc_at(text, index):
     line = text.count("\n", 0, index)
@@ -25,12 +27,15 @@ def loc_at(text, index):
     col = index - (last_ln + 1)
     return f"{line}:{col}"
 
+
 def parse_markup(markup_str, tags, props={}):
     stack = [(Group, [])]
 
-    for match in re.finditer(r"(?P<text>([^\[]|\[\[)+)|(?P<tag>\[[^\]]*\])", markup_str):
-        tag = match.group('tag')
-        text = match.group('text')
+    for match in re.finditer(
+        r"(?P<text>([^\[]|\[\[)+)|(?P<tag>\[[^\]]*\])", markup_str
+    ):
+        tag = match.group("tag")
+        text = match.group("text")
 
         if text is not None:
             # process escapes
@@ -38,21 +43,21 @@ def parse_markup(markup_str, tags, props={}):
             stack[-1][1].append(Text(raw))
             continue
 
-        if tag == "[/]": # [/]
+        if tag == "[/]":  # [/]
             if len(stack) <= 1:
-                loc = loc_at(markup_str, match.start('tag'))
+                loc = loc_at(markup_str, match.start("tag"))
                 raise MarkupParseError(f"parse failed at {loc}, too many closing tag")
             markup_type, children, *param = stack.pop()
             markup = markup_type(tuple(children), *param)
             stack[-1][1].append(markup)
             continue
 
-        match_single = re.match(r"^\[(\w+)(?:=(.*))?/\]$", tag) # [tag=param/]
+        match_single = re.match(r"^\[(\w+)(?:=(.*))?/\]$", tag)  # [tag=param/]
         if match_single:
             name = match_single.group(1)
             param_str = match_single.group(2)
             if name not in tags or not issubclass(tags[name], Single):
-                loc = loc_at(markup_str, match.start('tag'))
+                loc = loc_at(markup_str, match.start("tag"))
                 raise MarkupParseError(f"parse failed at {loc}, unknown tag [{name}/]")
             param = tags[name].parse(param_str)
             if name in props:
@@ -60,12 +65,12 @@ def parse_markup(markup_str, tags, props={}):
             stack[-1][1].append(tags[name](*param))
             continue
 
-        match_pair = re.match("^\[(\w+)(?:=(.*))?\]$", tag) # [tag=param]
+        match_pair = re.match("^\[(\w+)(?:=(.*))?\]$", tag)  # [tag=param]
         if match_pair:
             name = match_pair.group(1)
             param_str = match_pair.group(2)
             if name not in tags or not issubclass(tags[name], Pair):
-                loc = loc_at(markup_str, match.start('tag'))
+                loc = loc_at(markup_str, match.start("tag"))
                 raise MarkupParseError(f"parse failed at {loc}, unknown tag [{name}]")
             param = tags[name].parse(param_str)
             if name in props:
@@ -73,19 +78,21 @@ def parse_markup(markup_str, tags, props={}):
             stack.append((tags[name], [], *param))
             continue
 
-        loc = loc_at(markup_str, match.start('tag'))
+        loc = loc_at(markup_str, match.start("tag"))
         raise MarkupParseError(f"parse failed at {loc}, invalid tag {tag}")
 
-    for i in range(len(stack)-1, 0, -1):
+    for i in range(len(stack) - 1, 0, -1):
         markup_type, children, *param = stack[i]
         markup = markup_type(tuple(children), *param)
-        stack[i-1][1].append(markup)
+        stack[i - 1][1].append(markup)
     markup_type, children, *param = stack[0]
     markup = markup_type(tuple(children), *param)
     return markup
 
+
 def escape(text):
     return text.replace("[", "[[")
+
 
 class Markup:
     def _represent(self):
@@ -99,6 +106,7 @@ class Markup:
 
     def traverse(self, markup_type, func):
         raise NotImplementedError
+
 
 @dataclasses.dataclass(frozen=True)
 class Text(Markup):
@@ -114,6 +122,7 @@ class Text(Markup):
         else:
             return self
 
+
 @dataclasses.dataclass(frozen=True)
 class Group(Markup):
     children: Sequence[Markup]
@@ -123,7 +132,9 @@ class Group(Markup):
             yield from child._represent()
 
     def expand(self):
-        return dataclasses.replace(self, children=tuple(child.expand() for child in self.children))
+        return dataclasses.replace(
+            self, children=tuple(child.expand() for child in self.children)
+        )
 
     def traverse(self, markup_type, func):
         children = []
@@ -133,12 +144,18 @@ class Group(Markup):
             children.append(child_)
             modified = modified or child_ is not child
 
-        return self if not modified else dataclasses.replace(self, children=tuple(children))
+        return (
+            self
+            if not modified
+            else dataclasses.replace(self, children=tuple(children))
+        )
+
 
 class Tag(Markup):
     @classmethod
     def parse(cls, param):
         raise NotImplementedError
+
 
 @dataclasses.dataclass(frozen=True)
 class Single(Tag):
@@ -159,6 +176,7 @@ class Single(Tag):
         else:
             return self
 
+
 @dataclasses.dataclass(frozen=True)
 class Pair(Tag):
     # name
@@ -177,7 +195,9 @@ class Pair(Tag):
         yield f"[/]"
 
     def expand(self):
-        return dataclasses.replace(self, children=tuple(child.expand() for child in self.children))
+        return dataclasses.replace(
+            self, children=tuple(child.expand() for child in self.children)
+        )
 
     def traverse(self, markup_type, func):
         if isinstance(self, markup_type):
@@ -190,7 +210,11 @@ class Pair(Tag):
                 children.append(child_)
                 modified = modified or child_ is not child
 
-            return self if not modified else dataclasses.replace(self, children=tuple(children))
+            return (
+                self
+                if not modified
+                else dataclasses.replace(self, children=tuple(children))
+            )
 
 
 # template
@@ -212,6 +236,7 @@ class SingleTemplate(Single):
     def expand(self):
         return self._template.expand()
 
+
 @dataclasses.dataclass(frozen=True)
 class Slot(Single):
     name = "slot"
@@ -225,6 +250,7 @@ class Slot(Single):
     @property
     def param(self):
         return None
+
 
 @dataclasses.dataclass(frozen=True)
 class PairTemplate(Pair):
@@ -244,21 +270,26 @@ class PairTemplate(Pair):
     def expand(self):
         return replace_slot(self._template, Group(self.children)).expand()
 
+
 def replace_slot(template, markup):
     injected = False
+
     def inject_once(slot):
         nonlocal injected
         if injected:
             return Group([])
         injected = True
         return markup
+
     return template.traverse(Slot, inject_once)
+
 
 def make_single_template(name, template, tags, props={}):
     temp = parse_markup(template, tags=tags, props=props)
     cls = type(name.capitalize(), (SingleTemplate,), dict(name=name, _template=temp))
     cls = dataclasses.dataclass(frozen=True)(cls)
     return cls
+
 
 def make_pair_template(name, template, tags, props={}):
     temp = parse_markup(template, tags=dict(tags, slot=Slot), props=props)
@@ -277,7 +308,7 @@ class CSI(Single):
     def parse(cls, param):
         if param is None:
             raise MarkupParseError(f"missing parameter for tag [{cls.name}/]")
-        return param,
+        return (param,)
 
     @property
     def param(self):
@@ -289,6 +320,7 @@ class CSI(Single):
 
     def __str__(self):
         return self.ansi_code
+
 
 @dataclasses.dataclass(frozen=True)
 class Move(Single):
@@ -334,6 +366,7 @@ class Move(Single):
             res += f"\x1b[{-self.y}A"
         return res
 
+
 @dataclasses.dataclass(frozen=True)
 class Pos(Single):
     name = "pos"
@@ -360,6 +393,7 @@ class Pos(Single):
     def __str__(self):
         return f"\x1b[{self.y+1};{self.x+1}H"
 
+
 @dataclasses.dataclass(frozen=True)
 class Scroll(Single):
     name = "scroll"
@@ -373,7 +407,7 @@ class Scroll(Single):
             x = int(param)
         except ValueError:
             raise MarkupParseError(f"invalid parameter for tag [{cls.name}/]: {param}")
-        return x,
+        return (x,)
 
     @property
     def param(self):
@@ -395,6 +429,7 @@ class Scroll(Single):
         else:
             return ""
 
+
 class ClearRegion(enum.Enum):
     to_right = "0K"
     to_left = "1K"
@@ -402,6 +437,7 @@ class ClearRegion(enum.Enum):
     to_end = "0J"
     to_beginning = "1J"
     screen = "2J"
+
 
 @dataclasses.dataclass(frozen=True)
 class Clear(Single):
@@ -416,7 +452,7 @@ class Clear(Single):
             raise MarkupParseError(f"invalid parameter for tag [{cls.name}/]: {param}")
         region = ClearRegion[param]
 
-        return region,
+        return (region,)
 
     @property
     def param(self):
@@ -450,7 +486,7 @@ class SGR(Pair):
     def param(self):
         if not self.attr:
             return None
-        return ';'.join(map(str, self.attr))
+        return ";".join(map(str, self.attr))
 
     @property
     def ansi_delimiters(self):
@@ -461,6 +497,7 @@ class SGR(Pair):
 
     def __str__(self):
         return self.ansi_delimiters[0] or ""
+
 
 @dataclasses.dataclass(frozen=True)
 class SimpleAttr(Pair):
@@ -476,43 +513,53 @@ class SimpleAttr(Pair):
             param = next(iter(cls._options.keys()))
         if param not in cls._options:
             raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
-        return param,
+        return (param,)
 
     def expand(self):
-        return SGR(tuple(child.expand() for child in self.children), (self._options[self.option],))
+        return SGR(
+            tuple(child.expand() for child in self.children),
+            (self._options[self.option],),
+        )
 
     def __str__(self):
         return f"\x1b[{self._options[self.option]}m"
+
 
 @dataclasses.dataclass(frozen=True)
 class Reset(SimpleAttr):
     name = "reset"
     _options = {"on": 0}
 
+
 @dataclasses.dataclass(frozen=True)
 class Weight(SimpleAttr):
     name = "weight"
     _options = {"bold": 1, "dim": 2, "normal": 22}
+
 
 @dataclasses.dataclass(frozen=True)
 class Italic(SimpleAttr):
     name = "italic"
     _options = {"on": 3, "off": 23}
 
+
 @dataclasses.dataclass(frozen=True)
 class Underline(SimpleAttr):
     name = "underline"
     _options = {"on": 4, "double": 21, "off": 24}
+
 
 @dataclasses.dataclass(frozen=True)
 class Strike(SimpleAttr):
     name = "strike"
     _options = {"on": 9, "off": 29}
 
+
 @dataclasses.dataclass(frozen=True)
 class Blink(SimpleAttr):
     name = "blink"
     _options = {"on": 5, "off": 25}
+
 
 @dataclasses.dataclass(frozen=True)
 class Invert(SimpleAttr):
@@ -529,15 +576,15 @@ colors_16 = [
     (0x00, 0x00, 0x80),
     (0x80, 0x00, 0x80),
     (0x00, 0x80, 0x80),
-    (0xc0, 0xc0, 0xc0),
+    (0xC0, 0xC0, 0xC0),
     (0x80, 0x80, 0x80),
-    (0xff, 0x00, 0x00),
-    (0x00, 0xff, 0x00),
-    (0xff, 0xff, 0x00),
-    (0x00, 0x00, 0xff),
-    (0xff, 0x00, 0xff),
-    (0x00, 0xff, 0xff),
-    (0xff, 0xff, 0xff),
+    (0xFF, 0x00, 0x00),
+    (0x00, 0xFF, 0x00),
+    (0xFF, 0xFF, 0x00),
+    (0x00, 0x00, 0xFF),
+    (0xFF, 0x00, 0xFF),
+    (0x00, 0xFF, 0xFF),
+    (0xFF, 0xFF, 0xFF),
 ]
 colors_256 = []
 for r in (0, *range(95, 256, 40)):
@@ -547,28 +594,33 @@ for r in (0, *range(95, 256, 40)):
 for gray in range(8, 248, 10):
     colors_256.append((gray, gray, gray))
 
+
 class ColorSupport(enum.Enum):
     MONO = "mono"
     STANDARD = "standard"
     COLORS256 = "colors256"
     TRUECOLOR = "truecolor"
 
+
 def sRGB(c1, c2):
     r1, g1, b1 = c1
     r2, g2, b2 = c2
 
     if r1 + r2 < 256:
-        return 2*(r1-r2)**2 + 4*(g1-g2)**2 + 3*(b1-b2)**2
+        return 2 * (r1 - r2) ** 2 + 4 * (g1 - g2) ** 2 + 3 * (b1 - b2) ** 2
     else:
-        return 3*(r1-r2)**2 + 4*(g1-g2)**2 + 2*(b1-b2)**2
+        return 3 * (r1 - r2) ** 2 + 4 * (g1 - g2) ** 2 + 2 * (b1 - b2) ** 2
+
 
 def find_256color(code):
     code = min(colors_256, key=lambda c: sRGB(c, code))
     return colors_256.index(code) + 16
 
+
 def find_16color(code):
     code = min(colors_16, key=lambda c: sRGB(c, code))
     return colors_16.index(code)
+
 
 class Palette(enum.Enum):
     DEFAULT = "default"
@@ -589,7 +641,9 @@ class Palette(enum.Enum):
     BRIGHT_CYAN = "bright_cyan"
     BRIGHT_WHITE = "bright_white"
 
+
 color_names = [color.value for color in Palette]
+
 
 @dataclasses.dataclass(frozen=True)
 class Color(Pair):
@@ -625,7 +679,7 @@ class Color(Pair):
             rgb = Palette(param) if param in color_names else int(param, 16)
         except ValueError:
             raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
-        return rgb,
+        return (rgb,)
 
     @property
     def param(self):
@@ -634,20 +688,25 @@ class Color(Pair):
     def expand(self):
         if isinstance(self.rgb, Palette):
             if self.color_support is not ColorSupport.MONO:
-                return SGR(tuple(child.expand() for child in self.children), (self._palette[self.rgb],))
+                return SGR(
+                    tuple(child.expand() for child in self.children),
+                    (self._palette[self.rgb],),
+                )
             else:
                 return Group(tuple(child.expand() for child in self.children))
 
-        r = (self.rgb & 0xff0000) >> 16
-        g = (self.rgb & 0x00ff00) >> 8
-        b = (self.rgb & 0x0000ff)
+        r = (self.rgb & 0xFF0000) >> 16
+        g = (self.rgb & 0x00FF00) >> 8
+        b = self.rgb & 0x0000FF
         if self.color_support is ColorSupport.TRUECOLOR:
-            return SGR(tuple(child.expand() for child in self.children), (38,2,r,g,b))
+            return SGR(
+                tuple(child.expand() for child in self.children), (38, 2, r, g, b)
+            )
         elif self.color_support is ColorSupport.COLORS256:
-            c = find_256color((r,g,b))
-            return SGR(tuple(child.expand() for child in self.children), (38,5,c))
+            c = find_256color((r, g, b))
+            return SGR(tuple(child.expand() for child in self.children), (38, 5, c))
         elif self.color_support is ColorSupport.STANDARD:
-            c = find_16color((r,g,b))
+            c = find_16color((r, g, b))
             if c < 8:
                 c += 30
             else:
@@ -655,6 +714,7 @@ class Color(Pair):
             return SGR(tuple(child.expand() for child in self.children), (c,))
         else:
             return Group(tuple(child.expand() for child in self.children))
+
 
 @dataclasses.dataclass(frozen=True)
 class BgColor(Pair):
@@ -690,7 +750,7 @@ class BgColor(Pair):
             rgb = Palette(param) if param in color_names else int(param, 16)
         except ValueError:
             raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
-        return rgb,
+        return (rgb,)
 
     @property
     def param(self):
@@ -699,20 +759,25 @@ class BgColor(Pair):
     def expand(self):
         if isinstance(self.rgb, Palette):
             if self.color_support is not ColorSupport.MONO:
-                return SGR(tuple(child.expand() for child in self.children), (self._palette[self.rgb],))
+                return SGR(
+                    tuple(child.expand() for child in self.children),
+                    (self._palette[self.rgb],),
+                )
             else:
                 return Group(tuple(child.expand() for child in self.children))
 
-        r = (self.rgb & 0xff0000) >> 16
-        g = (self.rgb & 0x00ff00) >> 8
-        b = (self.rgb & 0x0000ff)
+        r = (self.rgb & 0xFF0000) >> 16
+        g = (self.rgb & 0x00FF00) >> 8
+        b = self.rgb & 0x0000FF
         if self.color_support is ColorSupport.TRUECOLOR:
-            return SGR(tuple(child.expand() for child in self.children), (48,2,r,g,b))
+            return SGR(
+                tuple(child.expand() for child in self.children), (48, 2, r, g, b)
+            )
         elif self.color_support is ColorSupport.COLORS256:
-            c = find_256color((r,g,b))
-            return SGR(tuple(child.expand() for child in self.children), (48,5,c))
+            c = find_256color((r, g, b))
+            return SGR(tuple(child.expand() for child in self.children), (48, 5, c))
         elif self.color_support is ColorSupport.STANDARD:
-            c = find_16color((r,g,b))
+            c = find_16color((r, g, b))
             if c < 8:
                 c += 40
             else:
@@ -737,25 +802,30 @@ class ControlCharacter(Single):
     def param(self):
         return None
 
+
 @dataclasses.dataclass(frozen=True)
 class BEL(ControlCharacter):
     name = "bel"
     character = "\a"
+
 
 @dataclasses.dataclass(frozen=True)
 class BS(ControlCharacter):
     name = "bs"
     character = "\b"
 
+
 @dataclasses.dataclass(frozen=True)
 class CR(ControlCharacter):
     name = "cr"
     character = "\r"
 
+
 @dataclasses.dataclass(frozen=True)
 class VT(ControlCharacter):
     name = "vt"
     character = "\v"
+
 
 @dataclasses.dataclass(frozen=True)
 class FF(ControlCharacter):
@@ -769,10 +839,12 @@ class Tab(ControlCharacter):
     name = "tab"
     character = "\t"
 
+
 @dataclasses.dataclass(frozen=True)
 class Newline(ControlCharacter):
     name = "nl"
     character = "\n"
+
 
 @dataclasses.dataclass(frozen=True)
 class Space(Single):
@@ -792,6 +864,7 @@ class Space(Single):
     def expand(self):
         return Text(self.character)
 
+
 @dataclasses.dataclass(frozen=True)
 class Wide(Single):
     name = "wide"
@@ -804,7 +877,7 @@ class Wide(Single):
             raise MarkupParseError(f"missing parameter for tag [{cls.name}/]")
         if len(param) != 1 or not param.isprintable():
             raise MarkupParseError(f"invalid parameter for tag [{cls.name}/]: {param}")
-        return param,
+        return (param,)
 
     @property
     def param(self):
@@ -813,7 +886,7 @@ class Wide(Single):
     def expand(self):
         w = wcwidth.wcwidth(self.char, self.unicode_version)
         if w == 1:
-            return Text(self.char+" ")
+            return Text(self.char + " ")
         else:
             return Text(self.char)
 
@@ -832,11 +905,12 @@ class X(Single):
             x = int(param)
         except ValueError:
             raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
-        return x,
+        return (x,)
 
     @property
     def param(self):
         return str(self.x)
+
 
 @dataclasses.dataclass(frozen=True)
 class DX(Single):
@@ -851,11 +925,12 @@ class DX(Single):
             dx = int(param)
         except ValueError:
             raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
-        return dx,
+        return (dx,)
 
     @property
     def param(self):
         return str(self.dx)
+
 
 @dataclasses.dataclass(frozen=True)
 class Restore(Pair):
@@ -871,6 +946,7 @@ class Restore(Pair):
     def param(self):
         return None
 
+
 @dataclasses.dataclass(frozen=True)
 class Mask(Pair):
     name = "mask"
@@ -882,7 +958,7 @@ class Mask(Pair):
             start, stop = [int(p) if p else None for p in (param or ":").split(":")]
         except ValueError:
             raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
-        return slice(start, stop),
+        return (slice(start, stop),)
 
     @property
     def param(self):
@@ -905,6 +981,7 @@ class Rich(Pair):
 
     def expand(self):
         return Group(self.children).expand()
+
 
 class RichParser:
     default_tags = {
@@ -982,7 +1059,7 @@ class RichTextRenderer:
         return Group((Clear(ClearRegion.to_end), CR()))
 
     def clear_screen(self):
-        return Group((Clear(ClearRegion.screen), Pos(0,0)))
+        return Group((Clear(ClearRegion.screen), Pos(0, 0)))
 
     def _render(self, markup, reopens=()):
         if isinstance(markup, Text):
@@ -1037,7 +1114,9 @@ class RichTextRenderer:
             try:
                 yield from self._render_context(child, print, reopens)
             finally:
-                yield from self._render_context(Group(markup.children[1:]), print, reopens)
+                yield from self._render_context(
+                    Group(markup.children[1:]), print, reopens
+                )
 
         elif isinstance(markup, SGR):
             open, close = markup.ansi_delimiters
@@ -1046,7 +1125,9 @@ class RichTextRenderer:
                 print(open)
 
             try:
-                yield from self._render_context(Group(markup.children), print, (open, *reopens))
+                yield from self._render_context(
+                    Group(markup.children), print, (open, *reopens)
+                )
             finally:
                 if close:
                     print(close)
@@ -1061,7 +1142,7 @@ class RichTextRenderer:
     def render_context(self, markup, print):
         yield from self._render_context(markup, print)
 
-    def _less(self, markup, size, pos=(0,0), reopens=(), wrap=True):
+    def _less(self, markup, size, pos=(0, 0), reopens=(), wrap=True):
         if pos is None:
             return None
 
@@ -1109,7 +1190,9 @@ class RichTextRenderer:
             if open:
                 yield open
             for child in markup.children:
-                pos = yield from self._less(child, size, pos, (open, *reopens), wrap=wrap)
+                pos = yield from self._less(
+                    child, size, pos, (open, *reopens), wrap=wrap
+                )
             if close:
                 yield close
             for reopen in reopens[::-1]:
@@ -1120,11 +1203,11 @@ class RichTextRenderer:
         else:
             raise TypeError(f"unknown markup type: {type(markup)}")
 
-    def render_less(self, markup, size, pos=(0,0), wrap=True, restore=True):
+    def render_less(self, markup, size, pos=(0, 0), wrap=True, restore=True):
         def _restore_pos(markup, size, pos, wrap):
             x0, y0 = pos
             pos = yield from self._less(markup, size, pos, wrap=wrap)
-            x, y = pos or (None, size.lines-1)
+            x, y = pos or (None, size.lines - 1)
             if y > y0:
                 yield f"\x1b[{y-y0}A"
             yield "\r"
@@ -1141,6 +1224,7 @@ def clamp(ran, mask):
     stop = max(min(mask.stop, ran.stop), mask.start)
     return range(start, stop)
 
+
 class RichBarRenderer:
     def __init__(self, unicode_version="auto"):
         self.unicode_version = unicode_version
@@ -1153,7 +1237,7 @@ class RichBarRenderer:
             if w == -1:
                 raise ValueError(f"invalid string: {repr(ch)} in {repr(string)}")
 
-            if x+w > stop:
+            if x + w > stop:
                 break
 
             if x < start:
@@ -1170,20 +1254,24 @@ class RichBarRenderer:
                     buffer[x_] += ch
 
             elif w == 1:
-                if 0 <= x-1 and buffer[x] == "":
-                    buffer[x-1] = " "
-                if x+1 < width and buffer[x+1] == "":
-                    buffer[x+1] = " "
-                buffer[x] = ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}\x1b[m"
+                if 0 <= x - 1 and buffer[x] == "":
+                    buffer[x - 1] = " "
+                if x + 1 < width and buffer[x + 1] == "":
+                    buffer[x + 1] = " "
+                buffer[x] = (
+                    ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}\x1b[m"
+                )
                 x += 1
 
             else:
                 x_ = x + 1
-                if 0 <= x-1 and buffer[x] == "":
-                    buffer[x-1] = " "
-                if x_+1 < width and buffer[x_+1] == "":
-                    buffer[x_+1] = " "
-                buffer[x] = ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}\x1b[m"
+                if 0 <= x - 1 and buffer[x] == "":
+                    buffer[x - 1] = " "
+                if x_ + 1 < width and buffer[x_ + 1] == "":
+                    buffer[x_ + 1] = " "
+                buffer[x] = (
+                    ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}\x1b[m"
+                )
                 buffer[x_] = ""
                 x += 2
 
@@ -1208,7 +1296,7 @@ class RichBarRenderer:
             return markup.x
 
         elif isinstance(markup, DX):
-            return x+markup.dx
+            return x + markup.dx
 
         elif isinstance(markup, Restore):
             x0 = x
@@ -1226,7 +1314,6 @@ class RichBarRenderer:
             raise TypeError(f"unknown markup type: {type(markup)}")
 
     def render(self, width, markup):
-        buffer = [" "]*width
+        buffer = [" "] * width
         self._render(buffer, markup, 0, width, range(width), ())
         return "".join(buffer).rstrip()
-

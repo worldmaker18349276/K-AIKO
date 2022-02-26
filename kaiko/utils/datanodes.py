@@ -17,10 +17,13 @@ def datanode(gen_func):
     @functools.wraps(gen_func)
     def node_func(*args, **kwargs):
         return DataNode(gen_func(*args, **kwargs))
+
     return node_func
+
 
 class DataNodeStateError(Exception):
     pass
+
 
 class DataNode:
     def __init__(self, generator):
@@ -119,10 +122,10 @@ class DataNode:
         if isinstance(node_like, DataNode):
             return node_like
 
-        elif hasattr(node_like, '__iter__'):
+        elif hasattr(node_like, "__iter__"):
             return DataNode.from_iter(node_like)
 
-        elif hasattr(node_like, '__call__'):
+        elif hasattr(node_like, "__call__"):
             return DataNode.from_func(node_like)
 
         else:
@@ -130,6 +133,7 @@ class DataNode:
 
     def exhaust(self, dt=0.0, interruptible=False):
         stop_event = threading.Event()
+
         def SIGINT_handler(sig, frame):
             stop_event.set()
 
@@ -179,6 +183,7 @@ def delay(prepend):
         buffer.append(data)
         data = yield buffer.pop(0)
 
+
 @datanode
 def skip(node, prefeed):
     """A data node skips signals by feeding given values when initializing.
@@ -218,6 +223,7 @@ def skip(node, prefeed):
         except StopIteration:
             return
 
+
 @datanode
 def take(predicate):
     """A data node takes finite signals.
@@ -248,6 +254,7 @@ def take(predicate):
                 data = yield data
         except StopIteration:
             return
+
 
 @datanode
 def pipe(*nodes):
@@ -283,6 +290,7 @@ def pipe(*nodes):
                     return
             data = yield res
 
+
 @datanode
 def pair(*nodes):
     """A data node processes data parallelly.
@@ -316,6 +324,7 @@ def pair(*nodes):
                 except StopIteration:
                     return
             data = yield tuple(data_)
+
 
 @datanode
 def chain(*nodes):
@@ -351,6 +360,7 @@ def chain(*nodes):
                         break
                     data = yield data
 
+
 @datanode
 def branch(*nodes):
     """A data node processes data additionally.
@@ -381,6 +391,7 @@ def branch(*nodes):
             except StopIteration:
                 break
             data = yield data
+
 
 @datanode
 def merge(*nodes):
@@ -448,6 +459,7 @@ def frame(win_length, hop_length):
         data[:-hop_length] = data[hop_length:]
         data[-hop_length:] = data_last
 
+
 @datanode
 def power_spectrum(win_length, samplerate=44100, windowing=True, weighting=True):
     """A data node maps signal `x` to power spectrum `J`.
@@ -483,7 +495,7 @@ def power_spectrum(win_length, samplerate=44100, windowing=True, weighting=True)
         windowing = get_Hann_window(win_length) if windowing else 1
     if isinstance(weighting, bool):
         weighting = get_A_weight(samplerate, win_length) if weighting else 1
-    weighting *= 2/win_length/samplerate
+    weighting *= 2 / win_length / samplerate
 
     x = yield
     if x.ndim > 1:
@@ -491,7 +503,8 @@ def power_spectrum(win_length, samplerate=44100, windowing=True, weighting=True)
         weighting = weighting[:, None] if numpy.ndim(weighting) > 0 else weighting
 
     while True:
-        x = yield weighting * numpy.abs(numpy.fft.rfft(x*windowing, axis=0))**2
+        x = yield weighting * numpy.abs(numpy.fft.rfft(x * windowing, axis=0)) ** 2
+
 
 @datanode
 def onset_strength(df):
@@ -515,7 +528,10 @@ def onset_strength(df):
     curr = yield
     prev = numpy.zeros_like(curr)
     while True:
-        prev, curr = curr, (yield numpy.mean(numpy.maximum(0.0, curr - prev).sum(axis=0)) * df)
+        prev, curr = curr, (
+            yield numpy.mean(numpy.maximum(0.0, curr - prev).sum(axis=0)) * df
+        )
+
 
 @datanode
 def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
@@ -542,11 +558,11 @@ def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
     """
     center = max(pre_max, pre_avg)
     delay = max(post_max, post_avg)
-    buffer = numpy.zeros(center+delay+1, dtype=numpy.float32)
-    max_buffer = buffer[center-pre_max:center+post_max+1]
-    avg_buffer = buffer[center-pre_avg:center+post_avg+1]
-    index = -1-delay
-    prev_index = -1-wait
+    buffer = numpy.zeros(center + delay + 1, dtype=numpy.float32)
+    max_buffer = buffer[center - pre_max : center + post_max + 1]
+    avg_buffer = buffer[center - pre_avg : center + post_avg + 1]
+    index = -1 - delay
+    prev_index = -1 - wait
 
     #               center
     #     pre_avg     |    post_avg
@@ -599,8 +615,8 @@ def chunk(node, chunk_shape=1024):
             data = node.send()
 
             while True:
-                length = min(chunk.shape[0]-index, data.shape[0]-jndex)
-                chunk[index:index+length] = data[jndex:jndex+length]
+                length = min(chunk.shape[0] - index, data.shape[0] - jndex)
+                chunk[index : index + length] = data[jndex : jndex + length]
                 index += length
                 jndex += length
 
@@ -616,6 +632,7 @@ def chunk(node, chunk_shape=1024):
         except StopIteration:
             if index > 0:
                 yield chunk
+
 
 @datanode
 def unchunk(node, chunk_shape=1024):
@@ -643,8 +660,8 @@ def unchunk(node, chunk_shape=1024):
             data = yield
 
             while True:
-                length = min(chunk.shape[0]-index, data.shape[0]-jndex)
-                chunk[index:index+length] = data[jndex:jndex+length]
+                length = min(chunk.shape[0] - index, data.shape[0] - jndex)
+                chunk[index : index + length] = data[jndex : jndex + length]
                 index += length
                 jndex += length
 
@@ -667,6 +684,7 @@ def unchunk(node, chunk_shape=1024):
                 except StopIteration:
                     return
 
+
 @datanode
 def attach(node):
     index = 0
@@ -679,8 +697,8 @@ def attach(node):
             signal = node.send()
 
             while True:
-                length = min(data.shape[0]-index, signal.shape[0]-jndex)
-                data[index:index+length] += signal[jndex:jndex+length]
+                length = min(data.shape[0] - index, signal.shape[0] - jndex)
+                data[index : index + length] += signal[jndex : jndex + length]
                 index += length
                 jndex += length
 
@@ -727,11 +745,19 @@ def rechannel(channels, original=None):
 
     else:
         if original is None:
-            return lambda data: numpy.tile(data[:, None] if data.ndim == 1 else numpy.mean(data, axis=1, keepdims=True), (1, channels))
+            return lambda data: numpy.tile(
+                data[:, None]
+                if data.ndim == 1
+                else numpy.mean(data, axis=1, keepdims=True),
+                (1, channels),
+            )
         elif original == 0:
             return lambda data: numpy.tile(data[:, None], (1, channels))
         else:
-            return lambda data: numpy.tile(numpy.mean(data, axis=1, keepdims=True), (1, channels))
+            return lambda data: numpy.tile(
+                numpy.mean(data, axis=1, keepdims=True), (1, channels)
+            )
+
 
 @datanode
 def resample(ratio):
@@ -757,11 +783,12 @@ def resample(ratio):
 
     data = yield
     while True:
-        next_index = index + data.shape[0] * up/down
+        next_index = index + data.shape[0] * up / down
         length = int(next_index) - int(index)
         data_ = scipy.signal.resample(data, length, axis=0)
         index = next_index % 1.0
         data = yield data_
+
 
 @datanode
 def tslice(node, samplerate, start=None, end=None):
@@ -785,8 +812,8 @@ def tslice(node, samplerate, start=None, end=None):
     """
     node = DataNode.wrap(node)
     index = 0
-    start = max(0, round(start*samplerate)) if start is not None else 0
-    end = round(end*samplerate) if end is not None else end
+    start = max(0, round(start * samplerate)) if start is not None else 0
+    end = round(end * samplerate) if end is not None else end
 
     with node:
         for data in node:
@@ -797,10 +824,10 @@ def tslice(node, samplerate, start=None, end=None):
 
             if index - data.shape[0] <= start:
                 yield
-                data = data[start-index:]
+                data = data[start - index :]
 
             if end is not None and index > end:
-                data = data[:end-index]
+                data = data[: end - index]
 
             yield data
 
@@ -841,10 +868,16 @@ class Scheduler(DataNode):
                         del nodes[key]
                     if node is not None:
                         node.__enter__()
-                        zindex_func = zindex if hasattr(zindex, '__call__') else lambda z=zindex: z
+                        zindex_func = (
+                            zindex
+                            if hasattr(zindex, "__call__")
+                            else lambda z=zindex: z
+                        )
                         nodes[key] = (node, zindex_func)
 
-                for key, (node, _) in sorted(nodes.items(), key=lambda item: item[1][1]()):
+                for key, (node, _) in sorted(
+                    nodes.items(), key=lambda item: item[1][1]()
+                ):
                     try:
                         data = node.send((data, *meta))
                     except StopIteration:
@@ -884,12 +917,14 @@ class Scheduler(DataNode):
     def remove_node(self, key):
         self.queue.put((key, None, (0,)))
 
+
 @datanode
 def sleep(delta):
     start = time.perf_counter()
     yield
     while time.perf_counter() - start < delta:
         yield
+
 
 @datanode
 def tick(dt, t0=0.0, shift=0.0, stop_event=None):
@@ -899,13 +934,14 @@ def tick(dt, t0=0.0, shift=0.0, stop_event=None):
 
     yield
     for i in itertools.count():
-        if stop_event.wait(max(0.0, ref_time+t0+i*dt - time.perf_counter())):
+        if stop_event.wait(max(0.0, ref_time + t0 + i * dt - time.perf_counter())):
             break
 
-        yield time.perf_counter()-ref_time+shift
+        yield time.perf_counter() - ref_time + shift
+
 
 @datanode
-def cache(func, key=lambda a:a):
+def cache(func, key=lambda a: a):
     data = yield
     res_key = key(data)
     res = func(data)
@@ -918,8 +954,9 @@ def cache(func, key=lambda a:a):
         res_key = res_key_
         res = func(data)
 
+
 @datanode
-def starcache(func, key=lambda *a:a):
+def starcache(func, key=lambda *a: a):
     data = yield
     res_key = key(*data)
     res = func(*data)
@@ -946,6 +983,7 @@ def subprocess_task(command):
         proc.kill()
     return proc.returncode
 
+
 def _thread_task(thread, stop_event, error):
     yield
     thread.start()
@@ -959,6 +997,7 @@ def _thread_task(thread, stop_event, error):
             thread.join()
         if not error.empty():
             raise error.get()
+
 
 @datanode
 def create_task(node):
@@ -983,6 +1022,7 @@ def create_task(node):
     assert not res.empty()
     return res.get()
 
+
 @datanode
 def interval(node, dt, t0=0.0):
     node = DataNode.wrap(node)
@@ -996,7 +1036,7 @@ def interval(node, dt, t0=0.0):
             ref_time = time.perf_counter()
 
             for i in itertools.count():
-                delta = ref_time+t0+i*dt - time.perf_counter()
+                delta = ref_time + t0 + i * dt - time.perf_counter()
                 if delta > 0.0 and stop_event.wait(delta):
                     return
 
@@ -1021,51 +1061,57 @@ def interval(node, dt, t0=0.0):
 def filter(x, distr):
     return numpy.fft.irfft(numpy.fft.rfft(x, axis=0) * distr, axis=0)
 
+
 def pulse(samplerate=44100, freq=1000.0, decay_time=0.01, amplitude=1.0, length=None):
     if length is None:
         length = decay_time
-    t = numpy.linspace(0, length, int(length*samplerate), endpoint=False, dtype=numpy.float32)
-    return amplitude * 2**(-t/decay_time) * numpy.sin(2 * numpy.pi * freq * t)
+    t = numpy.linspace(
+        0, length, int(length * samplerate), endpoint=False, dtype=numpy.float32
+    )
+    return amplitude * 2 ** (-t / decay_time) * numpy.sin(2 * numpy.pi * freq * t)
+
 
 def power2db(power, scale=(1e-5, 1e6)):
-    return 10.0 * numpy.log10(numpy.maximum(scale[0], power*scale[1]))
+    return 10.0 * numpy.log10(numpy.maximum(scale[0], power * scale[1]))
+
 
 def get_Hann_window(win_length):
     a = numpy.linspace(0, numpy.pi, win_length)
-    window = numpy.sin(a)**2
-    gain = (3/8)**0.5 # (window**2).mean()**0.5
+    window = numpy.sin(a) ** 2
+    gain = (3 / 8) ** 0.5  # (window**2).mean()**0.5
     return window / gain
 
+
 def get_half_Hann_window(win_length):
-    a = numpy.linspace(0, numpy.pi/2, win_length)
-    window = numpy.sin(a)**2
+    a = numpy.linspace(0, numpy.pi / 2, win_length)
+    window = numpy.sin(a) ** 2
     return window
 
+
 def get_A_weight(samplerate, win_length):
-    f = numpy.arange(win_length//2+1) * (samplerate/win_length)
+    f = numpy.arange(win_length // 2 + 1) * (samplerate / win_length)
 
     f1 = 20.6
     f2 = 107.7
     f3 = 737.9
     f4 = 12194.0
-    weight  = (f**4 * f4**2)**2
-    weight /= (f**2 + f1**2)**2
-    weight /= (f**2 + f2**2)
-    weight /= (f**2 + f3**2)
-    weight /= (f**2 + f4**2)**2
+    weight = (f ** 4 * f4 ** 2) ** 2
+    weight /= (f ** 2 + f1 ** 2) ** 2
+    weight /= f ** 2 + f2 ** 2
+    weight /= f ** 2 + f3 ** 2
+    weight /= (f ** 2 + f4 ** 2) ** 2
 
     # normalize on 1000 Hz
     f0 = 1000.0
-    weight0  = (f0**4 * f4**2)**2
-    weight0 /= (f0**2 + f1**2)**2
-    weight0 /= (f0**2 + f2**2)
-    weight0 /= (f0**2 + f3**2)
-    weight0 /= (f0**2 + f4**2)**2
+    weight0 = (f0 ** 4 * f4 ** 2) ** 2
+    weight0 /= (f0 ** 2 + f1 ** 2) ** 2
+    weight0 /= f0 ** 2 + f2 ** 2
+    weight0 /= f0 ** 2 + f3 ** 2
+    weight0 /= (f0 ** 2 + f4 ** 2) ** 2
     # weight0 == 10**-0.1
 
     weight /= weight0
-    weight[f<10] = 0.0
-    weight[f>20000] = 0.0
+    weight[f < 10] = 0.0
+    weight[f > 20000] = 0.0
 
     return weight
-

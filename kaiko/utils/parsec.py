@@ -25,6 +25,7 @@ class ParseFailure(Exception):
         except ParseFailure as failure:
             raise ParseChoiceFailure([self, failure]) from failure
 
+
 class ParseChoiceFailure(ParseFailure):
     def __init__(self, failures):
         self.failures = failures
@@ -40,6 +41,7 @@ class ParseChoiceFailure(ParseFailure):
         except ParseFailure as failure:
             raise ParseChoiceFailure([*self.failures, failure]) from failure
 
+
 class ParseExtendFailure(ParseFailure):
     def __init__(self, prefix, failure):
         self.prefix = prefix
@@ -48,6 +50,7 @@ class ParseExtendFailure(ParseFailure):
     @property
     def expected(self):
         return f"{self.prefix!r} followed by {self.failure.expected}"
+
 
 class ParseError(Exception):
     """A class of parse error to explain where."""
@@ -128,7 +131,9 @@ class ParseError(Exception):
         line, col = ParseError.locate(self.text, self.index)
         return (
             f"parse fail at ln {line}, col {col}:\n"
-            + self.text[:self.index] + "◊" + self.text[self.index:]
+            + self.text[: self.index]
+            + "◊"
+            + self.text[self.index :]
         )
 
 
@@ -188,6 +193,7 @@ def parsec(func):
                                 return stop.value, index
 
         return Parsec(parser)
+
     return parser_func
 
 
@@ -277,6 +283,7 @@ class Parsec:
         -------
         Parsec
         """
+
         def bind_parser(text, index):
             try:
                 value, index = self.func(text, index)
@@ -319,9 +326,11 @@ class Parsec:
         -------
         Parsec
         """
+
         def map_parser(text, index):
             value, index = self.func(text, index)
             return func(value), index
+
         return Parsec(map_parser)
 
     def starmap(self, func):
@@ -346,9 +355,11 @@ class Parsec:
         -------
         Parsec
         """
+
         def starmap_parser(text, index):
             value, index = self.func(text, index)
             return func(*value), index
+
         return Parsec(starmap_parser)
 
     def then(self, other):
@@ -373,10 +384,12 @@ class Parsec:
         -------
         Parsec
         """
+
         def then_parser(text, index):
             _, index = self.func(text, index)
             value, index = other.func(text, index)
             return value, index
+
         return Parsec(then_parser)
 
     def skip(self, other):
@@ -401,10 +414,12 @@ class Parsec:
         -------
         Parsec
         """
+
         def skip_parser(text, index):
             value, index = self.func(text, index)
             _, index = other.func(text, index)
             return value, index
+
         return Parsec(skip_parser)
 
     def choice(self, *others):
@@ -432,6 +447,7 @@ class Parsec:
         -------
         Parsec
         """
+
         def choice_parser(text, index):
             failures = []
             for parser in [self, *others]:
@@ -471,12 +487,14 @@ class Parsec:
         -------
         Parsec
         """
+
         def concat_parser(text, index):
             results = []
             for parser in [self, *others]:
                 value, index = parser.func(text, index)
                 results.append(value)
             return tuple(results), index
+
         return Parsec(concat_parser)
 
     def __or__(self, other):
@@ -538,9 +556,11 @@ class Parsec:
         -------
         Parsec
         """
+
         def result_parser(text, index):
             _, index = self.func(text, index)
             return res, index
+
         return Parsec(result_parser)
 
     def desc(self, expected):
@@ -568,6 +588,7 @@ class Parsec:
         -------
         Parsec
         """
+
         def desc_parser(text, index):
             try:
                 value, index = self.func(text, index)
@@ -593,9 +614,11 @@ class Parsec:
         -------
         Parsec
         """
+
         def ahead_parser(text, index):
             value, _ = self.func(text, index)
             return value, index
+
         return Parsec(ahead_parser)
 
     def attempt(self):
@@ -608,16 +631,23 @@ class Parsec:
         -------
         Parsec
         """
+
         def attempt_parser(text, index):
             try:
                 return self.func(text, index)
             except ParseError as error:
-                if not isinstance(error.__cause__, ParseFailure) or error.index == index:
+                if (
+                    not isinstance(error.__cause__, ParseFailure)
+                    or error.index == index
+                ):
                     raise error
                 failure = error.__cause__
                 assert isinstance(failure, ParseFailure)
                 with ParseError.at(error.text, index):
-                    raise ParseExtendFailure(text[index:error.index], failure) from failure
+                    raise ParseExtendFailure(
+                        text[index : error.index], failure
+                    ) from failure
+
         return Parsec(attempt_parser)
 
     def reject(self, func):
@@ -633,6 +663,7 @@ class Parsec:
         -------
         Parsec
         """
+
         def reject_parser(text, index):
             res, next_index = self.func(text, index)
             expected = func(res)
@@ -640,6 +671,7 @@ class Parsec:
                 with ParseError.at(text, index):
                     raise ParseFailure(expected)
             return res, next_index
+
         return Parsec(reject_parser)
 
     def optional(self):
@@ -667,6 +699,7 @@ class Parsec:
         -------
         Parsec
         """
+
         def optional_parser(text, index):
             try:
                 value, index = self.func(text, index)
@@ -676,6 +709,7 @@ class Parsec:
                 return (), index
             else:
                 return (value,), index
+
         return Parsec(optional_parser)
 
     # atomic
@@ -697,9 +731,11 @@ class Parsec:
         -------
         Parsec
         """
+
         def fail_parser(text, index):
             with ParseError.at(text, index):
                 raise ParseFailure(expected)
+
         return Parsec(fail_parser)
 
     @staticmethod
@@ -719,8 +755,10 @@ class Parsec:
         -------
         Parsec
         """
+
         def nothing_parser(text, index):
             return res, index
+
         return Parsec(nothing_parser)
 
     # combinators
@@ -752,6 +790,7 @@ class Parsec:
         -------
         Parsec
         """
+
         def join_parser(text, index):
             results = []
             is_first = True
@@ -765,6 +804,7 @@ class Parsec:
                 results.append(value)
 
             return tuple(results), index
+
         return Parsec(join_parser)
 
     def between(self, opening, closing):
@@ -792,11 +832,13 @@ class Parsec:
         -------
         Parsec
         """
+
         def between_parser(text, index):
             _, index = opening.func(text, index)
             value, index = self.func(text, index)
             _, index = closing.func(text, index)
             return value, index
+
         return Parsec(between_parser)
 
     def times(self, n, m=None):
@@ -844,6 +886,7 @@ class Parsec:
                     break
                 results.append(value)
             return results, index
+
         return Parsec(times_parser)
 
     def many(self):
@@ -869,6 +912,7 @@ class Parsec:
         -------
         Parsec
         """
+
         def many_parser(text, index):
             check = check_forward()
             results = []
@@ -882,6 +926,7 @@ class Parsec:
                 else:
                     check.func(text, index)
                     results.append(res)
+
         return Parsec(many_parser)
 
     def many_till(self, end):
@@ -910,6 +955,7 @@ class Parsec:
         -------
         Parsec
         """
+
         def many_till_parser(text, index):
             check = check_forward()
             results = []
@@ -925,6 +971,7 @@ class Parsec:
                 res, index = self.func(text, index)
                 check.func(text, index)
                 results.append(res)
+
         return Parsec(many_till_parser)
 
     def sep_by(self, sep):
@@ -959,6 +1006,7 @@ class Parsec:
         -------
         Parsec
         """
+
         def sep_by_parser(text, index):
             check = check_forward()
             results = []
@@ -1009,6 +1057,7 @@ class Parsec:
         -------
         Parsec
         """
+
         def sep_by1_parser(text, index):
             check = check_forward()
             results = []
@@ -1059,6 +1108,7 @@ class Parsec:
         -------
         Parsec
         """
+
         def sep_end_by_parser(text, index):
             check = check_forward()
             results = []
@@ -1078,6 +1128,7 @@ class Parsec:
                     if not error.is_failed_at(index):
                         raise error
                     return results, index
+
         return Parsec(sep_end_by_parser)
 
     def sep_end_by1(self, sep):
@@ -1114,6 +1165,7 @@ class Parsec:
         -------
         Parsec
         """
+
         def sep_end_by1_parser(text, index):
             check = check_forward()
             results = []
@@ -1172,6 +1224,7 @@ class Parsec:
         -------
         Parsec
         """
+
         def sep_by_till_parser(text, index):
             check = check_forward()
             results = []
@@ -1189,7 +1242,7 @@ class Parsec:
                 if is_first:
                     _, index = sep.func(text, index)
                 is_first = False
-                
+
                 res, index = self.func(text, index)
                 check.func(text, index)
                 results.append(res)
@@ -1200,21 +1253,26 @@ class Parsec:
 def proxy(parser_getter):
     return Parsec(lambda text, index: parser_getter().func(text, index))
 
+
 def choice(*parsers):
     if not parsers:
         raise ValueError("no choice")
     return parsers[0].choice(*parsers[1:])
+
 
 def concat(*parsers):
     if not parsers:
         raise ValueError("nothing to concatenate")
     return parsers[0].concat(*parsers[1:])
 
+
 def fail(expected):
     return Parsec.fail(expected)
 
+
 def nothing(res=None):
     return Parsec.nothing(res)
+
 
 def any():
     """Parse an arbitrary character.  It failed at the EOF.
@@ -1223,13 +1281,16 @@ def any():
     -------
     Parsec
     """
+
     def any_parser(text, index):
         if index < len(text):
             return text[index], index + 1
         else:
             with ParseError.at(text, index):
                 raise ParseFailure("a random char")
+
     return Parsec(any_parser)
+
 
 def oneOf(chars):
     """Parse a character from specified string.
@@ -1243,13 +1304,16 @@ def oneOf(chars):
     -------
     Parsec
     """
+
     def one_of_parser(text, index):
         if index < len(text) and text[index] in chars:
             return text[index], index + 1
         else:
             with ParseError.at(text, index):
                 raise ParseFailure(f"one of {repr(chars)}")
+
     return Parsec(one_of_parser)
+
 
 def noneOf(chars):
     """Parse a character not from specified string.
@@ -1263,13 +1327,16 @@ def noneOf(chars):
     -------
     Parsec
     """
+
     def none_of_parser(text, index):
         if index < len(text) and text[index] not in chars:
             return text[index], index + 1
         else:
             with ParseError.at(text, index):
                 raise ParseFailure(f"none of {repr(chars)}")
+
     return Parsec(none_of_parser)
+
 
 def satisfy(validater, desc=None):
     """Parse a character validated by specified function.
@@ -1287,13 +1354,16 @@ def satisfy(validater, desc=None):
     """
     if desc is None:
         desc = repr(validater)
+
     def satisfy_parser(text, index):
         if index < len(text) and validater(text[index]):
             return text[index], index + 1
         else:
             with ParseError.at(text, index):
                 raise ParseFailure(f"a character that satisfy {desc}")
+
     return Parsec(satisfy_parser)
+
 
 def eof():
     """Parse EOF.  The result value is `""`.
@@ -1302,13 +1372,16 @@ def eof():
     -------
     Parsec
     """
+
     def eof_parser(text, index):
         if index >= len(text):
             return "", index
         else:
             with ParseError.at(text, index):
                 raise ParseFailure("EOF")
+
     return Parsec(eof_parser)
+
 
 def regex(exp, flags=0):
     """Parse according to a regular expression.
@@ -1334,11 +1407,13 @@ def regex(exp, flags=0):
         else:
             with ParseError.at(text, index):
                 raise ParseFailure(f"/{exp.pattern}/")
+
     return Parsec(regex_parser)
+
 
 def string(string):
     """Try to match a string.  Return the matching string.
-    
+
     Parameters
     ----------
     string : str
@@ -1348,6 +1423,7 @@ def string(string):
     -------
     Parsec
     """
+
     def string_parser(text, index):
         next_index = index + len(string)
         if text[index:next_index] == string:
@@ -1355,11 +1431,13 @@ def string(string):
         else:
             with ParseError.at(text, index):
                 raise ParseFailure(repr(string))
+
     return Parsec(string_parser)
+
 
 def tokens(tokens):
     """Try to match a list of strings.  Return the matching string.
-    
+
     This method sorts the strings to prevent conflicts.  For example,
     it will try to match "letter" before "let", otherwise "letter"
     will be parsed as "let" with rest "ter".
@@ -1377,6 +1455,7 @@ def tokens(tokens):
         return fail("nothing")
     tokens = sorted(tokens, reverse=True)
     return choice(*[string(token) for token in tokens])
+
 
 def check_forward():
     """Create a parser to check for infinite pattern on every call.
@@ -1402,4 +1481,3 @@ def check_forward():
         return None, index
 
     return Parsec(check)
-

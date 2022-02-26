@@ -25,13 +25,17 @@ class UpdateContext:
         The updated fields in the context.
     """
 
-    update: Dict[str, Union[None, bool, int, Fraction, float, str]] = dataclasses.field(default_factory=dict)
+    update: Dict[str, Union[None, bool, int, Fraction, float, str]] = dataclasses.field(
+        default_factory=dict
+    )
 
     def prepare(self, beatmap, rich, context):
         context.update(**self.update)
 
+
 def Context(beat, length, **contexts):
     return UpdateContext(contexts)
+
 
 @dataclasses.dataclass
 class Event:
@@ -150,14 +154,14 @@ class Text(Event):
     def prepare(self, beatmap, rich, context):
         self.time = beatmap.metronome.time(self.beat)
         if self.speed is None:
-            self.speed = context.get('speed', 1.0)
+            self.speed = context.get("speed", 1.0)
 
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.time + travel_time)
         self.zindex = (-2, -self.time)
 
     def pos(self, time):
-        return (self.time-time) * 0.5 * self.speed
+        return (self.time - time) * 0.5 * self.speed
 
     def register(self, state, playfield):
         if self.text is not None:
@@ -166,8 +170,9 @@ class Text(Event):
                 mu.Text(self.text),
                 zindex=self.zindex,
                 start=self.lifespan[0],
-                duration=self.lifespan[1]-self.lifespan[0],
+                duration=self.lifespan[1] - self.lifespan[0],
             )
+
 
 @dataclasses.dataclass
 class Title(Event):
@@ -203,8 +208,9 @@ class Title(Event):
                 mu.Text(self.text),
                 zindex=self.zindex,
                 start=self.lifespan[0],
-                duration=self.lifespan[1]-self.lifespan[0],
+                duration=self.lifespan[1] - self.lifespan[0],
             )
+
 
 @dataclasses.dataclass
 class Flip(Event):
@@ -244,6 +250,7 @@ class Flip(Event):
 
         time, width = yield
 
+
 @dataclasses.dataclass
 class Shift(Event):
     r"""An event that shifts the scrolling bar of the playfield.
@@ -265,7 +272,7 @@ class Shift(Event):
 
     def prepare(self, beatmap, rich, context):
         self.time = beatmap.metronome.time(self.beat)
-        self.end = beatmap.metronome.time(self.beat+self.span)
+        self.end = beatmap.metronome.time(self.beat + self.span)
         self.lifespan = (self.time, self.end)
 
     def register(self, state, playfield):
@@ -279,7 +286,11 @@ class Shift(Event):
             time, width = yield
 
         shift0 = playfield.bar_shift
-        speed = (self.shift - shift0) / (self.end - self.time) if self.end != self.time else 0
+        speed = (
+            (self.shift - shift0) / (self.end - self.time)
+            if self.end != self.time
+            else 0
+        )
 
         while time < self.end:
             playfield.bar_shift = shift0 + speed * (time - self.time)
@@ -288,6 +299,7 @@ class Shift(Event):
         playfield.bar_shift = self.shift
 
         time, width = yield
+
 
 # targets
 class Target(Event):
@@ -343,7 +355,12 @@ class Target(Event):
 
     def register(self, state, playfield):
         self.approach(state, playfield)
-        playfield.listen(self.listen(state, playfield), start=self.range[0], duration=self.range[1]-self.range[0])
+        playfield.listen(
+            self.listen(state, playfield),
+            start=self.range[0],
+            duration=self.range[1] - self.range[0],
+        )
+
 
 @dataclasses.dataclass
 class OneshotTarget(Target):
@@ -391,12 +408,12 @@ class OneshotTarget(Target):
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.time + travel_time)
         tol = beatmap.settings.difficulty.failed_tolerance
-        self.range = (self.time-tol, self.time+tol)
+        self.range = (self.time - tol, self.time + tol)
         self._scores = beatmap.settings.scores.performances_scores
         self.full_score = beatmap.settings.scores.performances_max_score
 
     def pos(self, time):
-        return (self.time-time) * 0.5 * self.speed
+        return (self.time - time) * 0.5 * self.speed
 
     def appearance(self, time):
         if self.nofeedback or not self.is_finished:
@@ -425,12 +442,14 @@ class OneshotTarget(Target):
             self.appearance,
             zindex=self.zindex,
             start=self.lifespan[0],
-            duration=self.lifespan[1]-self.lifespan[0],
+            duration=self.lifespan[1] - self.lifespan[0],
         )
         playfield.reset_sight(start=self.range[0])
 
     def hit(self, state, playfield, time, strength, is_correct_key=True):
-        perf = beatbar.Performance.judge(self.performance_tolerance, self.time, time, is_correct_key)
+        perf = beatbar.Performance.judge(
+            self.performance_tolerance, self.time, time, is_correct_key
+        )
         state.add_perf(perf, self.speed < 0)
         if not self.nofeedback:
             playfield.set_perf(perf, self.speed < 0)
@@ -442,6 +461,7 @@ class OneshotTarget(Target):
         self.perf = perf
         state.add_full_score(self.full_score)
         state.add_score(self.score)
+
 
 @dataclasses.dataclass
 class Soft(OneshotTarget):
@@ -482,16 +502,17 @@ class Soft(OneshotTarget):
         self.threshold = beatmap.settings.difficulty.soft_threshold
 
         if self.speed is None:
-            self.speed = context.get('speed', 1.0)
+            self.speed = context.get("speed", 1.0)
         if self.volume is None:
-            self.volume = context.get('volume', 0.0)
+            self.volume = context.get("volume", 0.0)
         if self.nofeedback is None:
-            self.nofeedback = context.get('nofeedback', False)
+            self.nofeedback = context.get("nofeedback", False)
 
         super().prepare(beatmap, rich, context)
 
     def hit(self, state, playfield, time, strength):
         super().hit(state, playfield, time, strength, strength < self.threshold)
+
 
 @dataclasses.dataclass
 class Loud(OneshotTarget):
@@ -532,16 +553,17 @@ class Loud(OneshotTarget):
         self.threshold = beatmap.settings.difficulty.loud_threshold
 
         if self.speed is None:
-            self.speed = context.get('speed', 1.0)
+            self.speed = context.get("speed", 1.0)
         if self.volume is None:
-            self.volume = context.get('volume', 0.0)
+            self.volume = context.get("volume", 0.0)
         if self.nofeedback is None:
-            self.nofeedback = context.get('nofeedback', False)
+            self.nofeedback = context.get("nofeedback", False)
 
         super().prepare(beatmap, rich, context)
 
     def hit(self, state, playfield, time, strength):
         super().hit(state, playfield, time, strength, strength >= self.threshold)
+
 
 class IncrGroup:
     def __init__(self, threshold=0.0, total=0):
@@ -552,6 +574,7 @@ class IncrGroup:
 
     def hit(self, strength):
         self.threshold = max(self.threshold, strength)
+
 
 @dataclasses.dataclass
 class Incr(OneshotTarget):
@@ -600,17 +623,17 @@ class Incr(OneshotTarget):
         self.incr_threshold = beatmap.settings.difficulty.incr_threshold
 
         if self.speed is None:
-            self.speed = context.get('speed', 1.0)
+            self.speed = context.get("speed", 1.0)
         if self.group_volume is None:
-            self.group_volume = context.get('volume', 0.0)
+            self.group_volume = context.get("volume", 0.0)
         if self.nofeedback is None:
-            self.nofeedback = context.get('nofeedback', False)
+            self.nofeedback = context.get("nofeedback", False)
 
         super().prepare(beatmap, rich, context)
 
-        if '<incrs>' not in context:
-            context['<incrs>'] = OrderedDict()
-        self.groups = context['<incrs>']
+        if "<incrs>" not in context:
+            context["<incrs>"] = OrderedDict()
+        self.groups = context["<incrs>"]
 
         if self.group is None:
             # determine group of incr note according to the context
@@ -639,13 +662,17 @@ class Incr(OneshotTarget):
     @property
     def volume(self):
         group_obj = self.groups[self.group]
-        return group_obj.volume + numpy.log10(0.2 + 0.8 * (self.count-1)/group_obj.total) * 20
+        return (
+            group_obj.volume
+            + numpy.log10(0.2 + 0.8 * (self.count - 1) / group_obj.total) * 20
+        )
 
     def hit(self, state, playfield, time, strength):
         group_obj = self.groups[self.group]
         threshold = max(0.0, min(1.0, group_obj.threshold + self.incr_threshold))
         super().hit(state, playfield, time, strength, strength >= threshold)
         group_obj.hit(strength)
+
 
 @dataclasses.dataclass
 class Roll(Target):
@@ -687,41 +714,50 @@ class Roll(Target):
         self.rock_score = beatmap.settings.scores.roll_rock_score
 
         if self.speed is None:
-            self.speed = context.get('speed', 1.0)
+            self.speed = context.get("speed", 1.0)
         if self.volume is None:
-            self.volume = context.get('volume', 0.0)
+            self.volume = context.get("volume", 0.0)
         if self.nofeedback is None:
-            self.nofeedback = context.get('nofeedback', False)
+            self.nofeedback = context.get("nofeedback", False)
 
         self.time = beatmap.metronome.time(self.beat)
-        self.end = beatmap.metronome.time(self.beat+self.length)
+        self.end = beatmap.metronome.time(self.beat + self.length)
         self.roll = 0
         self.number = max(int(self.length * self.density // -1 * -1), 1)
         self.is_finished = False
         self.score = 0
 
-        self.times = [beatmap.metronome.time(self.beat+i/self.density) for i in range(self.number)]
+        self.times = [
+            beatmap.metronome.time(self.beat + i / self.density)
+            for i in range(self.number)
+        ]
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.end + travel_time)
         self.range = (self.time - self.tolerance, self.end + self.tolerance)
         self.full_score = self.number * self.rock_score
 
     def pos_of(self, index):
-        return lambda time: (self.times[index]-time) * 0.5 * self.speed
+        return lambda time: (self.times[index] - time) * 0.5 * self.speed
 
     def appearance_of(self, index):
-        return lambda time: self.rock_appearance if self.nofeedback or self.roll <= index else (mu.Text(""), mu.Text(""))
+        return (
+            lambda time: self.rock_appearance
+            if self.nofeedback or self.roll <= index
+            else (mu.Text(""), mu.Text(""))
+        )
 
     def approach(self, state, playfield):
         for i, time in enumerate(self.times):
             if self.sound is not None:
-                playfield.play(dn.DataNode.wrap(self.sound), time=time, volume=self.volume)
+                playfield.play(
+                    dn.DataNode.wrap(self.sound), time=time, volume=self.volume
+                )
             playfield.draw_content(
                 self.pos_of(i),
                 self.appearance_of(i),
                 zindex=self.zindex,
                 start=self.lifespan[0],
-                duration=self.lifespan[1]-self.lifespan[0],
+                duration=self.lifespan[1] - self.lifespan[0],
             )
         playfield.reset_sight(start=self.range[0])
 
@@ -729,7 +765,9 @@ class Roll(Target):
         self.roll += 1
 
         if self.roll <= self.number:
-            perf = beatbar.Performance.judge(self.performance_tolerance, self.times[self.roll-1], time, True)
+            perf = beatbar.Performance.judge(
+                self.performance_tolerance, self.times[self.roll - 1], time, True
+            )
             state.add_perf(perf)
 
             state.add_score(self.rock_score)
@@ -742,9 +780,10 @@ class Roll(Target):
         self.is_finished = True
         state.add_full_score(self.full_score)
 
-        for time in self.times[self.roll:]:
+        for time in self.times[self.roll :]:
             perf = beatbar.Performance.judge(self.performance_tolerance, time)
             state.add_perf(perf)
+
 
 @dataclasses.dataclass
 class Spin(Target):
@@ -776,8 +815,10 @@ class Spin(Target):
 
     def prepare(self, beatmap, rich, context):
         self.tolerance = beatmap.settings.difficulty.spin_tolerance
-        self.disk_appearances = [(rich.parse(spin_disk_appearance[0]), rich.parse(spin_disk_appearance[1]))
-                                 for spin_disk_appearance in beatmap.settings.notes.spin_disk_appearances]
+        self.disk_appearances = [
+            (rich.parse(spin_disk_appearance[0]), rich.parse(spin_disk_appearance[1]))
+            for spin_disk_appearance in beatmap.settings.notes.spin_disk_appearances
+        ]
         self.finishing_appearance = (
             rich.parse(beatmap.settings.notes.spin_finishing_appearance[0]),
             rich.parse(beatmap.settings.notes.spin_finishing_appearance[1]),
@@ -788,26 +829,31 @@ class Spin(Target):
         self.full_score = beatmap.settings.scores.spin_score
 
         if self.speed is None:
-            self.speed = context.get('speed', 1.0)
+            self.speed = context.get("speed", 1.0)
         if self.volume is None:
-            self.volume = context.get('volume', 0.0)
+            self.volume = context.get("volume", 0.0)
         if self.nofeedback is None:
-            self.nofeedback = context.get('nofeedback', False)
+            self.nofeedback = context.get("nofeedback", False)
 
         self.time = beatmap.metronome.time(self.beat)
-        self.end = beatmap.metronome.time(self.beat+self.length)
+        self.end = beatmap.metronome.time(self.beat + self.length)
         self.charge = 0.0
         self.capacity = float(self.length * self.density)
         self.is_finished = False
         self.score = 0
 
-        self.times = [beatmap.metronome.time(self.beat+i/self.density) for i in range(int(self.capacity))]
+        self.times = [
+            beatmap.metronome.time(self.beat + i / self.density)
+            for i in range(int(self.capacity))
+        ]
         travel_time = 1.0 / abs(0.5 * self.speed)
         self.lifespan = (self.time - travel_time, self.end + travel_time)
         self.range = (self.time - self.tolerance, self.end + self.tolerance)
 
     def pos(self, time):
-        return (max(0.0, self.time-time) + min(0.0, self.end-time)) * 0.5 * self.speed
+        return (
+            (max(0.0, self.time - time) + min(0.0, self.end - time)) * 0.5 * self.speed
+        )
 
     def appearance(self, time):
         if self.nofeedback or not self.is_finished:
@@ -825,9 +871,13 @@ class Spin(Target):
             self.appearance,
             zindex=self.zindex,
             start=self.lifespan[0],
-            duration=self.lifespan[1]-self.lifespan[0],
+            duration=self.lifespan[1] - self.lifespan[0],
         )
-        playfield.draw_sight((mu.Text(""), mu.Text("")), start=self.range[0], duration=self.range[1]-self.range[0])
+        playfield.draw_sight(
+            (mu.Text(""), mu.Text("")),
+            start=self.range[0],
+            duration=self.range[1] - self.range[0],
+        )
 
     def hit(self, state, playfield, time, strength):
         self.charge = min(self.charge + min(1.0, strength), self.capacity)
@@ -855,6 +905,7 @@ class Spin(Target):
             if self.speed < 0:
                 appearance = appearance[::-1]
             playfield.draw_sight(appearance, duration=self.finish_sustain_time)
+
 
 # beatmap
 class BeatmapSettings(cfg.Configurable):
@@ -890,10 +941,10 @@ class BeatmapSettings(cfg.Configurable):
         roll_tolerance: float = 0.10
         spin_tolerance: float = 0.10
 
-        perfect_tolerance = property(lambda self: self.performance_tolerance*1)
-        good_tolerance    = property(lambda self: self.performance_tolerance*3)
-        bad_tolerance     = property(lambda self: self.performance_tolerance*5)
-        failed_tolerance  = property(lambda self: self.performance_tolerance*7)
+        perfect_tolerance = property(lambda self: self.performance_tolerance * 1)
+        good_tolerance = property(lambda self: self.performance_tolerance * 3)
+        bad_tolerance = property(lambda self: self.performance_tolerance * 5)
+        failed_tolerance = property(lambda self: self.performance_tolerance * 7)
 
     @cfg.subconfig
     class scores(cfg.Configurable):
@@ -908,26 +959,26 @@ class BeatmapSettings(cfg.Configurable):
             The score of sping note.
         """
         performances_scores: Dict[beatbar.PerformanceGrade, int] = {
-            beatbar.PerformanceGrade.MISS               : 0,
+            beatbar.PerformanceGrade.MISS: 0,
+            beatbar.PerformanceGrade.LATE_FAILED: 0,
+            beatbar.PerformanceGrade.LATE_BAD: 2,
+            beatbar.PerformanceGrade.LATE_GOOD: 8,
+            beatbar.PerformanceGrade.PERFECT: 16,
+            beatbar.PerformanceGrade.EARLY_GOOD: 8,
+            beatbar.PerformanceGrade.EARLY_BAD: 2,
+            beatbar.PerformanceGrade.EARLY_FAILED: 0,
+            beatbar.PerformanceGrade.LATE_FAILED_WRONG: 0,
+            beatbar.PerformanceGrade.LATE_BAD_WRONG: 1,
+            beatbar.PerformanceGrade.LATE_GOOD_WRONG: 4,
+            beatbar.PerformanceGrade.PERFECT_WRONG: 8,
+            beatbar.PerformanceGrade.EARLY_GOOD_WRONG: 4,
+            beatbar.PerformanceGrade.EARLY_BAD_WRONG: 1,
+            beatbar.PerformanceGrade.EARLY_FAILED_WRONG: 0,
+        }
 
-            beatbar.PerformanceGrade.LATE_FAILED        : 0,
-            beatbar.PerformanceGrade.LATE_BAD           : 2,
-            beatbar.PerformanceGrade.LATE_GOOD          : 8,
-            beatbar.PerformanceGrade.PERFECT            : 16,
-            beatbar.PerformanceGrade.EARLY_GOOD         : 8,
-            beatbar.PerformanceGrade.EARLY_BAD          : 2,
-            beatbar.PerformanceGrade.EARLY_FAILED       : 0,
-
-            beatbar.PerformanceGrade.LATE_FAILED_WRONG  : 0,
-            beatbar.PerformanceGrade.LATE_BAD_WRONG     : 1,
-            beatbar.PerformanceGrade.LATE_GOOD_WRONG    : 4,
-            beatbar.PerformanceGrade.PERFECT_WRONG      : 8,
-            beatbar.PerformanceGrade.EARLY_GOOD_WRONG   : 4,
-            beatbar.PerformanceGrade.EARLY_BAD_WRONG    : 1,
-            beatbar.PerformanceGrade.EARLY_FAILED_WRONG : 0,
-            }
-
-        performances_max_score = property(lambda self: max(self.performances_scores.values()))
+        performances_max_score = property(
+            lambda self: max(self.performances_scores.values())
+        )
 
         roll_rock_score: int = 2
         spin_score: int = 16
@@ -975,34 +1026,61 @@ class BeatmapSettings(cfg.Configurable):
         event_leadin_time : float
             The minimum time of silence before and after the gameplay.
         """
-        soft_approach_appearance:  Tuple[str, str] = ("[color=bright_cyan]□[/]", "[color=bright_cyan]□[/]")
-        soft_wrong_appearance:     Tuple[str, str] = ("[color=bright_cyan]⬚[/]", "[color=bright_cyan]⬚[/]")
-        soft_sound: str = 'soft'
-        loud_approach_appearance:  Tuple[str, str] = ("[color=bright_blue]■[/]", "[color=bright_blue]■[/]")
-        loud_wrong_appearance:     Tuple[str, str] = ("[color=bright_blue]⬚[/]", "[color=bright_blue]⬚[/]")
-        loud_sound: str = 'loud'
-        incr_approach_appearance:  Tuple[str, str] = ("[color=bright_blue]⬒[/]", "[color=bright_blue]⬒[/]")
-        incr_wrong_appearance:     Tuple[str, str] = ("[color=bright_blue]⬚[/]", "[color=bright_blue]⬚[/]")
-        incr_sound: str = 'incr'
-        roll_rock_appearance:      Tuple[str, str] = ("[color=bright_cyan]◎[/]", "[color=bright_cyan]◎[/]")
-        roll_rock_sound: str = 'rock'
-        spin_disk_appearances:     List[Tuple[str, str]] = [("[color=bright_blue]◴[/]", "[color=bright_blue]◴[/]"),
-                                                            ("[color=bright_blue]◵[/]", "[color=bright_blue]◵[/]"),
-                                                            ("[color=bright_blue]◶[/]", "[color=bright_blue]◶[/]"),
-                                                            ("[color=bright_blue]◷[/]", "[color=bright_blue]◷[/]")]
-        spin_finishing_appearance: Tuple[str, str] = ("[color=bright_blue]☺[/]", "[color=bright_blue]☺[/]")
+        soft_approach_appearance: Tuple[str, str] = (
+            "[color=bright_cyan]□[/]",
+            "[color=bright_cyan]□[/]",
+        )
+        soft_wrong_appearance: Tuple[str, str] = (
+            "[color=bright_cyan]⬚[/]",
+            "[color=bright_cyan]⬚[/]",
+        )
+        soft_sound: str = "soft"
+        loud_approach_appearance: Tuple[str, str] = (
+            "[color=bright_blue]■[/]",
+            "[color=bright_blue]■[/]",
+        )
+        loud_wrong_appearance: Tuple[str, str] = (
+            "[color=bright_blue]⬚[/]",
+            "[color=bright_blue]⬚[/]",
+        )
+        loud_sound: str = "loud"
+        incr_approach_appearance: Tuple[str, str] = (
+            "[color=bright_blue]⬒[/]",
+            "[color=bright_blue]⬒[/]",
+        )
+        incr_wrong_appearance: Tuple[str, str] = (
+            "[color=bright_blue]⬚[/]",
+            "[color=bright_blue]⬚[/]",
+        )
+        incr_sound: str = "incr"
+        roll_rock_appearance: Tuple[str, str] = (
+            "[color=bright_cyan]◎[/]",
+            "[color=bright_cyan]◎[/]",
+        )
+        roll_rock_sound: str = "rock"
+        spin_disk_appearances: List[Tuple[str, str]] = [
+            ("[color=bright_blue]◴[/]", "[color=bright_blue]◴[/]"),
+            ("[color=bright_blue]◵[/]", "[color=bright_blue]◵[/]"),
+            ("[color=bright_blue]◶[/]", "[color=bright_blue]◶[/]"),
+            ("[color=bright_blue]◷[/]", "[color=bright_blue]◷[/]"),
+        ]
+        spin_finishing_appearance: Tuple[str, str] = (
+            "[color=bright_blue]☺[/]",
+            "[color=bright_blue]☺[/]",
+        )
         spin_finish_sustain_time: float = 0.1
-        spin_disk_sound: str = 'disk'
+        spin_disk_sound: str = "disk"
 
         event_leadin_time: float = 1.0
 
     resources: Dict[str, str] = {
-        'soft': "samples/soft.wav", # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
-        'loud': "samples/loud.wav", # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
-        'incr': "samples/incr.wav", # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
-        'rock': "samples/rock.wav", # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
-        'disk': "samples/disk.wav", # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
+        "soft": "samples/soft.wav",  # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
+        "loud": "samples/loud.wav",  # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
+        "incr": "samples/incr.wav",  # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
+        "rock": "samples/rock.wav",  # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
+        "disk": "samples/disk.wav",  # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
     }
+
 
 class GameplaySettings(cfg.Configurable):
     debug_monitor: bool = False
@@ -1049,18 +1127,19 @@ class GameplaySettings(cfg.Configurable):
         load_time: float = 0.5
         prepare_time: float = 0.1
         tickrate: float = 60.0
-        stop_key: str = 'Esc'
+        stop_key: str = "Esc"
 
-        sound_delay_adjust_keys: Tuple[str, str] = ('Shift_Left', 'Shift_Right')
-        display_delay_adjust_keys: Tuple[str, str] = ('Ctrl_Left', 'Ctrl_Right')
-        knock_delay_adjust_keys: Tuple[str, str] = ('Left', 'Right')
-        knock_energy_adjust_keys: Tuple[str, str] = ('Down', 'Up')
+        sound_delay_adjust_keys: Tuple[str, str] = ("Shift_Left", "Shift_Right")
+        display_delay_adjust_keys: Tuple[str, str] = ("Ctrl_Left", "Ctrl_Right")
+        knock_delay_adjust_keys: Tuple[str, str] = ("Left", "Right")
+        knock_energy_adjust_keys: Tuple[str, str] = ("Down", "Up")
         sound_delay_adjust_step: float = 0.001
         display_delay_adjust_step: float = 0.001
         knock_delay_adjust_step: float = 0.001
         knock_energy_adjust_step: float = 0.0001
 
     widgets = cfg.subconfig(beatbar.BeatbarWidgetSettings)
+
 
 class BeatmapScore:
     def __init__(self):
@@ -1086,28 +1165,31 @@ class BeatmapScore:
     def add_perf(self, perf, is_reversed=False):
         self.perfs.append(perf)
 
+
 @dataclasses.dataclass
 class BeatmapAudio:
     path: Optional[str] = None
     volume: float = 0.0
     preview: float = 0.0
 
+
 @dataclasses.dataclass
 class PlayfieldState:
     bar_shift: float = 0.1
     bar_flip: bool = False
 
+
 class BeatTrack:
     _notations = {
-        'x': Soft,
-        'o': Loud,
-        '<': Incr,
-        '%': Roll,
-        '@': Spin,
-        'Context': Context,
-        'Text': Text,
-        'Flip': Flip,
-        'Shift': Shift,
+        "x": Soft,
+        "o": Loud,
+        "<": Incr,
+        "%": Roll,
+        "@": Spin,
+        "Context": Context,
+        "Text": Text,
+        "Flip": Flip,
+        "Shift": Shift,
     }
 
     def __init__(self, events):
@@ -1127,6 +1209,7 @@ class BeatTrack:
         else:
             return track
 
+
 class Beatmap:
     def __init__(
         self,
@@ -1141,8 +1224,14 @@ class Beatmap:
         self.path = path
         self.info = info if info is not None else ""
         self.audio = audio if audio is not None else BeatmapAudio()
-        self.metronome = metronome if metronome is not None else engines.Metronome(offset=0.0, tempo=120.0)
-        self.playfield_state = playfield_state if playfield_state is not None else PlayfieldState()
+        self.metronome = (
+            metronome
+            if metronome is not None
+            else engines.Metronome(offset=0.0, tempo=120.0)
+        )
+        self.playfield_state = (
+            playfield_state if playfield_state is not None else PlayfieldState()
+        )
         self.tracks = tracks if tracks is not None else {}
         self.settings = settings if settings is not None else BeatmapSettings()
 
@@ -1160,15 +1249,22 @@ class Beatmap:
         prepare_time = gameplay_settings.controls.prepare_time
         debug_monitor = gameplay_settings.debug_monitor
 
-        rich = mu.RichParser(devices_settings.terminal.unicode_version, devices_settings.terminal.color_support)
+        rich = mu.RichParser(
+            devices_settings.terminal.unicode_version,
+            devices_settings.terminal.color_support,
+        )
 
         # prepare
         try:
-            yield from dn.create_task(self.load_resources(samplerate, nchannels, user.data_dir)).join()
+            yield from dn.create_task(
+                self.load_resources(samplerate, nchannels, user.data_dir)
+            ).join()
         except aud.IOCancelled:
             return
 
-        total_subjects, start_time, end_time, events = yield from dn.create_task(self.prepare_events(rich)).join()
+        total_subjects, start_time, end_time, events = yield from dn.create_task(
+            self.prepare_events(rich)
+        ).join()
 
         score = BeatmapScore()
         score.set_total_subjects(total_subjects)
@@ -1177,14 +1273,29 @@ class Beatmap:
         mixer_monitor = detector_monitor = renderer_monitor = None
         if debug_monitor:
             mixer_monitor = engines.Monitor(user.cache_dir / "monitor" / "mixer.csv")
-            detector_monitor = engines.Monitor(user.cache_dir / "monitor" / "detector.csv")
-            renderer_monitor = engines.Monitor(user.cache_dir / "monitor" / "renderer.csv")
+            detector_monitor = engines.Monitor(
+                user.cache_dir / "monitor" / "detector.csv"
+            )
+            renderer_monitor = engines.Monitor(
+                user.cache_dir / "monitor" / "renderer.csv"
+            )
 
         ref_time = load_time + abs(start_time)
-        mixer_task, mixer = engines.Mixer.create(devices_settings.mixer, manager, ref_time, mixer_monitor)
-        detector_task, detector = engines.Detector.create(devices_settings.detector, manager, ref_time, detector_monitor)
-        renderer_task, renderer = engines.Renderer.create(devices_settings.renderer, devices_settings.terminal, ref_time, renderer_monitor)
-        controller_task, controller = engines.Controller.create(devices_settings.controller, devices_settings.terminal, ref_time)
+        mixer_task, mixer = engines.Mixer.create(
+            devices_settings.mixer, manager, ref_time, mixer_monitor
+        )
+        detector_task, detector = engines.Detector.create(
+            devices_settings.detector, manager, ref_time, detector_monitor
+        )
+        renderer_task, renderer = engines.Renderer.create(
+            devices_settings.renderer,
+            devices_settings.terminal,
+            ref_time,
+            renderer_monitor,
+        )
+        controller_task, controller = engines.Controller.create(
+            devices_settings.controller, devices_settings.terminal, ref_time
+        )
 
         # load widgets
         widget_builder = beatbar.BeatbarWidgetBuilder(
@@ -1196,16 +1307,39 @@ class Beatmap:
             controller=controller,
             devices_settings=devices_settings,
         )
-        icon = yield from widget_builder.create(gameplay_settings.widgets.icon_widget).load().join()
-        header = yield from widget_builder.create(gameplay_settings.widgets.header_widget).load().join()
-        footer = yield from widget_builder.create(gameplay_settings.widgets.footer_widget).load().join()
-        sight = yield from beatbar.Sight(rich, gameplay_settings.playfield.sight).load().join()
+        icon = (
+            yield from widget_builder.create(gameplay_settings.widgets.icon_widget)
+            .load()
+            .join()
+        )
+        header = (
+            yield from widget_builder.create(gameplay_settings.widgets.header_widget)
+            .load()
+            .join()
+        )
+        footer = (
+            yield from widget_builder.create(gameplay_settings.widgets.footer_widget)
+            .load()
+            .join()
+        )
+        sight = (
+            yield from beatbar.Sight(rich, gameplay_settings.playfield.sight)
+            .load()
+            .join()
+        )
 
         # make beatbar
         playfield = beatbar.Beatbar(
-            mixer, detector, renderer, controller,
-            icon, header, footer, sight,
-            self.playfield_state.bar_shift, self.playfield_state.bar_flip,
+            mixer,
+            detector,
+            renderer,
+            controller,
+            icon,
+            header,
+            footer,
+            sight,
+            self.playfield_state.bar_shift,
+            self.playfield_state.bar_flip,
             gameplay_settings.playfield,
         )
 
@@ -1213,41 +1347,90 @@ class Beatmap:
 
         # handler
         stop_event = threading.Event()
-        playfield.add_handler(lambda _: stop_event.set(), gameplay_settings.controls.stop_key)
+        playfield.add_handler(
+            lambda _: stop_event.set(), gameplay_settings.controls.stop_key
+        )
 
         sound_delay_adjust_step = gameplay_settings.controls.sound_delay_adjust_step
-        def incr_sound_delay(_): devices_settings.mixer.sound_delay += sound_delay_adjust_step
-        def decr_sound_delay(_): devices_settings.mixer.sound_delay -= sound_delay_adjust_step
-        playfield.add_handler(incr_sound_delay, gameplay_settings.controls.sound_delay_adjust_keys[0])
-        playfield.add_handler(decr_sound_delay, gameplay_settings.controls.sound_delay_adjust_keys[1])
+
+        def incr_sound_delay(_):
+            devices_settings.mixer.sound_delay += sound_delay_adjust_step
+
+        def decr_sound_delay(_):
+            devices_settings.mixer.sound_delay -= sound_delay_adjust_step
+
+        playfield.add_handler(
+            incr_sound_delay, gameplay_settings.controls.sound_delay_adjust_keys[0]
+        )
+        playfield.add_handler(
+            decr_sound_delay, gameplay_settings.controls.sound_delay_adjust_keys[1]
+        )
 
         display_delay_adjust_step = gameplay_settings.controls.display_delay_adjust_step
-        def incr_display_delay(_): devices_settings.renderer.display_delay += display_delay_adjust_step
-        def decr_display_delay(_): devices_settings.renderer.display_delay -= display_delay_adjust_step
-        playfield.add_handler(incr_display_delay, gameplay_settings.controls.display_delay_adjust_keys[0])
-        playfield.add_handler(decr_display_delay, gameplay_settings.controls.display_delay_adjust_keys[1])
+
+        def incr_display_delay(_):
+            devices_settings.renderer.display_delay += display_delay_adjust_step
+
+        def decr_display_delay(_):
+            devices_settings.renderer.display_delay -= display_delay_adjust_step
+
+        playfield.add_handler(
+            incr_display_delay, gameplay_settings.controls.display_delay_adjust_keys[0]
+        )
+        playfield.add_handler(
+            decr_display_delay, gameplay_settings.controls.display_delay_adjust_keys[1]
+        )
 
         knock_delay_adjust_step = gameplay_settings.controls.knock_delay_adjust_step
-        def incr_knock_delay(_): devices_settings.detector.knock_delay += knock_delay_adjust_step
-        def decr_knock_delay(_): devices_settings.detector.knock_delay -= knock_delay_adjust_step
-        playfield.add_handler(incr_knock_delay, gameplay_settings.controls.knock_delay_adjust_keys[0])
-        playfield.add_handler(decr_knock_delay, gameplay_settings.controls.knock_delay_adjust_keys[1])
+
+        def incr_knock_delay(_):
+            devices_settings.detector.knock_delay += knock_delay_adjust_step
+
+        def decr_knock_delay(_):
+            devices_settings.detector.knock_delay -= knock_delay_adjust_step
+
+        playfield.add_handler(
+            incr_knock_delay, gameplay_settings.controls.knock_delay_adjust_keys[0]
+        )
+        playfield.add_handler(
+            decr_knock_delay, gameplay_settings.controls.knock_delay_adjust_keys[1]
+        )
 
         knock_energy_adjust_step = gameplay_settings.controls.knock_energy_adjust_step
-        def incr_knock_energy(_): devices_settings.detector.knock_energy += knock_energy_adjust_step
-        def decr_knock_energy(_): devices_settings.detector.knock_energy -= knock_energy_adjust_step
-        playfield.add_handler(incr_knock_energy, gameplay_settings.controls.knock_energy_adjust_keys[0])
-        playfield.add_handler(decr_knock_energy, gameplay_settings.controls.knock_energy_adjust_keys[1])
+
+        def incr_knock_energy(_):
+            devices_settings.detector.knock_energy += knock_energy_adjust_step
+
+        def decr_knock_energy(_):
+            devices_settings.detector.knock_energy -= knock_energy_adjust_step
+
+        playfield.add_handler(
+            incr_knock_energy, gameplay_settings.controls.knock_energy_adjust_keys[0]
+        )
+        playfield.add_handler(
+            decr_knock_energy, gameplay_settings.controls.knock_energy_adjust_keys[1]
+        )
 
         # play music
         if self.audionode is not None:
             playfield.mixer.play(self.audionode, time=0.0, zindex=(-3,))
 
         # game loop
-        updater = self.update_events(events, score, playfield, start_time, end_time, tickrate, prepare_time, stop_event)
-        event_task = dn.interval(updater, dt=1/tickrate)
+        updater = self.update_events(
+            events,
+            score,
+            playfield,
+            start_time,
+            end_time,
+            tickrate,
+            prepare_time,
+            stop_event,
+        )
+        event_task = dn.interval(updater, dt=1 / tickrate)
 
-        yield from dn.pipe(event_task, mixer_task, detector_task, renderer_task, controller_task).join()
+        yield from dn.pipe(
+            event_task, mixer_task, detector_task, renderer_task, controller_task
+        ).join()
 
         if debug_monitor:
             print()
@@ -1301,7 +1484,9 @@ class Beatmap:
                 raise
 
             except Exception as e:
-                raise RuntimeError(f"Failed to load resource {name} at {sound_path}") from e
+                raise RuntimeError(
+                    f"Failed to load resource {name} at {sound_path}"
+                ) from e
 
     @dn.datanode
     def prepare_events(self, rich):
@@ -1342,13 +1527,27 @@ class Beatmap:
 
         event_leadin_time = self.settings.notes.event_leadin_time
         total_subjects = sum([1 for event in events if event.is_subject], 0)
-        start_time = min([0.0, *[event.lifespan[0] - event_leadin_time for event in events]])
-        end_time = max([duration, *[event.lifespan[1] + event_leadin_time for event in events]])
+        start_time = min(
+            [0.0, *[event.lifespan[0] - event_leadin_time for event in events]]
+        )
+        end_time = max(
+            [duration, *[event.lifespan[1] + event_leadin_time for event in events]]
+        )
 
         return total_subjects, start_time, end_time, events
 
     @dn.datanode
-    def update_events(self, events, state, playfield, start_time, end_time, tickrate, prepare_time, stop_event):
+    def update_events(
+        self,
+        events,
+        state,
+        playfield,
+        start_time,
+        end_time,
+        tickrate,
+        prepare_time,
+        stop_event,
+    ):
         # register events
         events_iter = iter(events)
         event = next(events_iter, None)
@@ -1374,17 +1573,13 @@ class Beatmap:
             yield
             index += 1
 
+
 class Loop(Beatmap):
     def __init__(
-            self, *,
-            offset=1.0,
-            tempo=120.0,
-            width=Fraction(0),
-            track=None,
-            settings=None
-        ):
+        self, *, offset=1.0, tempo=120.0, width=Fraction(0), track=None, settings=None
+    ):
         metronome = engines.Metronome(offset=offset, tempo=tempo)
-        super().__init__(metronome=metronome, tracks={"main":track}, settings=settings)
+        super().__init__(metronome=metronome, tracks={"main": track}, settings=settings)
         self.width = width
 
     def repeat_events(self, rich):
@@ -1397,7 +1592,7 @@ class Loop(Beatmap):
             events = []
 
             for event in track:
-                event = dataclasses.replace(event, beat=event.beat+n*width)
+                event = dataclasses.replace(event, beat=event.beat + n * width)
                 event.prepare(self, rich, context)
                 if isinstance(event, Event):
                     events.append(event)
@@ -1409,8 +1604,7 @@ class Loop(Beatmap):
     def _prepare_events(self, rich, stop_event):
         total_subjects = 0
         start_time = 0.0
-        end_time = float('inf')
+        end_time = float("inf")
         events = self.repeat_events(rich)
 
         return total_subjects, start_time, end_time, events
-

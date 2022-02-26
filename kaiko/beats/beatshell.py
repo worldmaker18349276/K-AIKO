@@ -18,6 +18,7 @@ class SHLEXER_STATE(Enum):
     BACKSLASHED = "\\"
     QUOTED = "'"
 
+
 def shlexer_tokenize(raw):
     r"""Tokenizer for shell-like grammar.
     The delimiter is just whitespace, and the token is defined as::
@@ -117,6 +118,7 @@ def shlexer_tokenize(raw):
                 yield "".join(token), slice(start, length), quotes
                 return SHLEXER_STATE.PLAIN
 
+
 def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
     r"""Escape a given string so that it can be inserted into an untokenized string.
     The strategy to escape insert string only depends on the state of insert position.
@@ -153,7 +155,9 @@ def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
         elif compreply == "":
             raw = "'"
         else:
-            raw = compreply[:-1].replace("'", r"'\''") + (r"'\'" if compreply[-1] == "'" else compreply[-1] + "'")
+            raw = compreply[:-1].replace("'", r"'\''") + (
+                r"'\'" if compreply[-1] == "'" else compreply[-1] + "'"
+            )
 
     elif state == SHLEXER_STATE.SPACED:
         if compreply != "" and " " not in compreply:
@@ -164,12 +168,17 @@ def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
         elif compreply == "":
             raw = "''"
         else:
-            raw = "'" + compreply[:-1].replace("'", r"'\''") + (r"'\'" if compreply[-1] == "'" else compreply[-1] + "'")
+            raw = (
+                "'"
+                + compreply[:-1].replace("'", r"'\''")
+                + (r"'\'" if compreply[-1] == "'" else compreply[-1] + "'")
+            )
 
     else:
         assert False
 
     return raw if partial else raw + " "
+
 
 def shlexer_markup(buffer, tokens, typeahead, tags):
     r"""Markup shlex.
@@ -210,14 +219,14 @@ def shlexer_markup(buffer, tokens, typeahead, tags):
         # markup whitespace
         for index in range(mask.start, mask.stop):
             if buffer[index] == " ":
-                buffer[index] = tags['ws']()
+                buffer[index] = tags["ws"]()
 
         # markup escape
         for index in quotes:
             if buffer[index] == "'":
-                buffer[index] = tags['qt']()
+                buffer[index] = tags["qt"]()
             elif buffer[index] == "\\":
-                buffer[index] = tags['bs']()
+                buffer[index] = tags["bs"]()
             else:
                 assert False
 
@@ -225,21 +234,21 @@ def shlexer_markup(buffer, tokens, typeahead, tags):
     prev_index = 0
     for n, (_, type, mask, _) in enumerate(tokens):
         # markup delimiter
-        markup_children.append(mu.Group(_wrap(buffer[prev_index:mask.start])))
+        markup_children.append(mu.Group(_wrap(buffer[prev_index : mask.start])))
         prev_index = mask.stop
 
         # markup token
         if type is None:
             if mask.stop == length:
-                markup_children.append(tags['unfinished'](_wrap(buffer[mask])))
+                markup_children.append(tags["unfinished"](_wrap(buffer[mask])))
             else:
-                markup_children.append(tags['unknown'](_wrap(buffer[mask])))
+                markup_children.append(tags["unknown"](_wrap(buffer[mask])))
         elif type is cmd.TOKEN_TYPE.COMMAND:
-            markup_children.append(tags['cmd'](_wrap(buffer[mask])))
+            markup_children.append(tags["cmd"](_wrap(buffer[mask])))
         elif type is cmd.TOKEN_TYPE.KEYWORD:
-            markup_children.append(tags['kw'](_wrap(buffer[mask])))
+            markup_children.append(tags["kw"](_wrap(buffer[mask])))
         elif type is cmd.TOKEN_TYPE.ARGUMENT:
-            markup_children.append(tags['arg'](_wrap(buffer[mask])))
+            markup_children.append(tags["arg"](_wrap(buffer[mask])))
         else:
             assert False
 
@@ -247,7 +256,7 @@ def shlexer_markup(buffer, tokens, typeahead, tags):
         markup_children.append(mu.Group(_wrap(buffer[prev_index:])))
 
         # markup typeahead
-        markup_children.append(tags['typeahead']((mu.Text(typeahead),)))
+        markup_children.append(tags["typeahead"]((mu.Text(typeahead),)))
 
     return mu.Group(tuple(markup_children))
 
@@ -291,21 +300,21 @@ class BeatShellSettings(cfg.Configurable):
         history_size: int = 500
 
         keymap: Dict[str, str] = {
-            "Backspace"     : "input.backspace()",
-            "Alt_Backspace" : "input.delete_all()",
-            "Delete"        : "input.delete()",
-            "Left"          : "input.move_left()",
-            "Right"         : "input.insert_typeahead() or input.move_right()",
-            "Up"            : "input.prev()",
-            "Down"          : "input.next()",
-            "Home"          : "input.move_to_start()",
-            "End"           : "input.move_to_end()",
-            "Ctrl_Left"     : "input.move_to_word_start()",
-            "Ctrl_Right"    : "input.move_to_word_end()",
+            "Backspace": "input.backspace()",
+            "Alt_Backspace": "input.delete_all()",
+            "Delete": "input.delete()",
+            "Left": "input.move_left()",
+            "Right": "input.insert_typeahead() or input.move_right()",
+            "Up": "input.prev()",
+            "Down": "input.next()",
+            "Home": "input.move_to_start()",
+            "End": "input.move_to_end()",
+            "Ctrl_Left": "input.move_to_word_start()",
+            "Ctrl_Right": "input.move_to_word_end()",
             "Ctrl_Backspace": "input.delete_to_word_start()",
-            "Ctrl_Delete"   : "input.delete_to_word_end()",
-            "Esc"           : "input.cancel_typeahead() | input.cancel_hint()",
-            "'\\x04'"       : "input.delete() or input.exit_if_empty()",
+            "Ctrl_Delete": "input.delete_to_word_end()",
+            "Esc": "input.cancel_typeahead() | input.cancel_hint()",
+            "'\\x04'": "input.delete() or input.exit_if_empty()",
         }
 
     @cfg.subconfig
@@ -353,7 +362,11 @@ class BeatShellSettings(cfg.Configurable):
 
         input_margin: int = 3
 
-        caret: Tuple[str, str, str] = ("[slot/]", "[weight=dim][invert][slot/][/][/]", "[weight=bold][invert][slot/][/][/]")
+        caret: Tuple[str, str, str] = (
+            "[slot/]",
+            "[weight=dim][invert][slot/][/][/]",
+            "[weight=bold][invert][slot/][/][/]",
+        )
         caret_blink_ratio: float = 0.3
 
     @cfg.subconfig
@@ -386,40 +399,49 @@ class BeatShellSettings(cfg.Configurable):
 class Hint:
     pass
 
+
 @dataclasses.dataclass(frozen=True)
 class DescHint(Hint):
-    message : str
+    message: str
+
 
 @dataclasses.dataclass(frozen=True)
 class InfoHint(Hint):
-    message : str
+    message: str
+
 
 @dataclasses.dataclass(frozen=True)
 class SuggestionsHint(Hint):
-    suggestions : List[str]
-    selected : int
-    message : str
+    suggestions: List[str]
+    selected: int
+    message: str
+
 
 class Result:
     pass
 
+
 @dataclasses.dataclass(frozen=True)
 class ErrorResult(Result):
-    error : Exception
+    error: Exception
+
 
 @dataclasses.dataclass(frozen=True)
 class HelpResult(Result):
-    command : Callable
+    command: Callable
+
 
 @dataclasses.dataclass(frozen=True)
 class CompleteResult(Result):
-    command : Callable
+    command: Callable
+
 
 @dataclasses.dataclass
 class HintState:
-    index : int
-    hint : Hint
-    tokens : Optional[List[str]]
+    index: int
+    hint: Hint
+    tokens: Optional[List[str]]
+
 
 @dataclasses.dataclass
 class TabState:
@@ -430,8 +452,10 @@ class TabState:
     original_pos: int
     selection: slice
 
+
 class ShellSyntaxError(Exception):
     pass
+
 
 def onstate(*states):
     def onstate_dec(func):
@@ -440,15 +464,20 @@ def onstate(*states):
             if self.state not in states:
                 return False
             return func(self, *args, **kwargs)
+
         return onstate_func
+
     return onstate_dec
+
 
 def locked(func):
     @functools.wraps(func)
     def locked_func(self, *args, **kwargs):
         with self.lock:
             return func(self, *args, **kwargs)
+
     return locked_func
+
 
 class BeatInput:
     r"""Input editor for beatshell.
@@ -496,6 +525,7 @@ class BeatInput:
     modified_event : int
         The event counter for modifying buffer.
     """
+
     def __init__(self, promptable, preview_handler, logger, history, settings=None):
         r"""Constructor.
 
@@ -554,9 +584,19 @@ class BeatInput:
             The datanode to execute the prompt.
         """
         debug_monitor = self.settings.debug_monitor
-        renderer_monitor = engines.Monitor(user.cache_dir / "monitor" / "prompt.csv") if debug_monitor else None
-        input_task, controller = engines.Controller.create(devices_settings.controller, devices_settings.terminal)
-        display_task, renderer = engines.Renderer.create(devices_settings.renderer, devices_settings.terminal, monitor=renderer_monitor)
+        renderer_monitor = (
+            engines.Monitor(user.cache_dir / "monitor" / "prompt.csv")
+            if debug_monitor
+            else None
+        )
+        input_task, controller = engines.Controller.create(
+            devices_settings.controller, devices_settings.terminal
+        )
+        display_task, renderer = engines.Renderer.create(
+            devices_settings.renderer,
+            devices_settings.terminal,
+            monitor=renderer_monitor,
+        )
         stroke = BeatStroke(self, self.settings.input)
 
         t0 = self.settings.prompt.t0
@@ -566,20 +606,50 @@ class BeatInput:
         if debug_monitor:
             monitor_settings = beatwidgets.MonitorWidgetSettings()
             monitor_settings.target = beatwidgets.MonitorTarget.renderer
-            icon = yield from beatwidgets.MonitorWidget(renderer, monitor_settings).load().join()
+            icon = (
+                yield from beatwidgets.MonitorWidget(renderer, monitor_settings)
+                .load()
+                .join()
+            )
         else:
             patterns_settings = beatwidgets.PatternsWidgetSettings()
             patterns_settings.patterns = self.settings.prompt.icons
-            icon = yield from beatwidgets.PatternsWidget(metronome, self.logger.rich, patterns_settings).load().join()
+            icon = (
+                yield from beatwidgets.PatternsWidget(
+                    metronome, self.logger.rich, patterns_settings
+                )
+                .load()
+                .join()
+            )
 
         marker_settings = beatwidgets.MarkerWidgetSettings()
         marker_settings.markers = self.settings.prompt.markers
         marker_settings.blink_ratio = self.settings.prompt.caret_blink_ratio
-        marker = yield from beatwidgets.MarkerWidget(metronome, self.logger.rich, marker_settings).load().join()
+        marker = (
+            yield from beatwidgets.MarkerWidget(
+                metronome, self.logger.rich, marker_settings
+            )
+            .load()
+            .join()
+        )
 
-        caret = yield from Caret(metronome, self.logger.rich, self.settings.prompt).load().join()
+        caret = (
+            yield from Caret(metronome, self.logger.rich, self.settings.prompt)
+            .load()
+            .join()
+        )
 
-        prompt = BeatPrompt(stroke, self, self.settings, self.logger.rich, metronome, icon, marker, caret, renderer_monitor)
+        prompt = BeatPrompt(
+            stroke,
+            self,
+            self.settings,
+            self.logger.rich,
+            metronome,
+            icon,
+            marker,
+            caret,
+            renderer_monitor,
+        )
 
         stroke.register(controller)
         prompt.register(renderer)
@@ -683,8 +753,11 @@ class BeatInput:
             tokens.append((token, mask, quotes))
 
         types, _ = self.command.parse_command(token for token, _, _ in tokens)
-        types.extend([None]*(len(tokens) - len(types)))
-        self.tokens = [(token, type, mask, quotes) for (token, mask, quotes), type in zip(tokens, types)]
+        types.extend([None] * (len(tokens) - len(types)))
+        self.tokens = [
+            (token, type, mask, quotes)
+            for (token, mask, quotes), type in zip(tokens, types)
+        ]
         self.modified_event += 1
         return True
 
@@ -777,9 +850,17 @@ class BeatInput:
         """
         self.highlighted = index
         if isinstance(hint, DescHint):
-            msg_tokens = [token for token, _, _, _ in self.tokens[:index]] if index is not None else None
+            msg_tokens = (
+                [token for token, _, _, _ in self.tokens[:index]]
+                if index is not None
+                else None
+            )
         elif isinstance(hint, (InfoHint, SuggestionsHint)):
-            msg_tokens = [token for token, _, _, _ in self.tokens[:index+1]] if index is not None else None
+            msg_tokens = (
+                [token for token, _, _, _ in self.tokens[: index + 1]]
+                if index is not None
+                else None
+            )
         else:
             assert False
         self.hint_state = HintState(index, hint, msg_tokens)
@@ -828,7 +909,10 @@ class BeatInput:
             if token != token_:
                 return self.cancel_hint()
 
-        if isinstance(self.hint_state.hint, DescHint) and self.tokens[len(self.hint_state.tokens)-1][1] is not None:
+        if (
+            isinstance(self.hint_state.hint, DescHint)
+            and self.tokens[len(self.hint_state.tokens) - 1][1] is not None
+        ):
             return self.cancel_hint()
 
         return False
@@ -841,7 +925,10 @@ class BeatInput:
             self.preview_handler(None)
         elif not isinstance(self.hint_state.hint, (InfoHint, SuggestionsHint)):
             self.preview_handler(None)
-        elif isinstance(self.hint_state.hint, SuggestionsHint) and not self.hint_state.hint.message:
+        elif (
+            isinstance(self.hint_state.hint, SuggestionsHint)
+            and not self.hint_state.hint.message
+        ):
             self.preview_handler(None)
         elif self.hint_state.tokens is None:
             self.preview_handler(None)
@@ -867,7 +954,7 @@ class BeatInput:
         if self.typeahead == "" or self.pos != len(self.buffer):
             return False
 
-        self.buffer[self.pos:self.pos] = self.typeahead
+        self.buffer[self.pos : self.pos] = self.typeahead
         self.pos += len(self.typeahead)
         self.typeahead = ""
         self.update_buffer()
@@ -899,13 +986,13 @@ class BeatInput:
 
         while len(text) > 0 and text[0] == "\b":
             del text[0]
-            del self.buffer[self.pos-1]
-            self.pos = self.pos-1
+            del self.buffer[self.pos - 1]
+            self.pos = self.pos - 1
 
         if not all(ch.isprintable() for ch in self.buffer):
             raise ValueError("invalid text to insert: " + repr("".join(self.buffer)))
 
-        self.buffer[self.pos:self.pos] = text
+        self.buffer[self.pos : self.pos] = text
         self.pos += len(text)
         self.update_buffer()
 
@@ -990,7 +1077,9 @@ class BeatInput:
         succ : bool
         """
         start = min(max(0, start), len(self.buffer)) if start is not None else 0
-        end = min(max(0, end), len(self.buffer)) if end is not None else len(self.buffer)
+        end = (
+            min(max(0, end), len(self.buffer)) if end is not None else len(self.buffer)
+        )
 
         if start >= end:
             return False
@@ -1051,7 +1140,9 @@ class BeatInput:
         -------
         succ : bool
         """
-        pos = min(max(0, pos), len(self.buffer)) if pos is not None else len(self.buffer)
+        pos = (
+            min(max(0, pos), len(self.buffer)) if pos is not None else len(self.buffer)
+        )
         self.cancel_typeahead()
 
         if self.pos == pos:
@@ -1073,7 +1164,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        return self.move_to(self.pos+offset)
+        return self.move_to(self.pos + offset)
 
     @locked
     @onstate("EDIT")
@@ -1264,16 +1355,22 @@ class BeatInput:
         if not hint.message:
             return False
         if isinstance(hint, DescHint):
-            template = self.logger.rich.parse(self.settings.text.desc_message, slotted=True)
+            template = self.logger.rich.parse(
+                self.settings.text.desc_message, slotted=True
+            )
         elif isinstance(hint, (InfoHint, SuggestionsHint)):
-            template = self.logger.rich.parse(self.settings.text.info_message, slotted=True)
+            template = self.logger.rich.parse(
+                self.settings.text.info_message, slotted=True
+            )
         else:
             assert False
-        msg_markup = mu.replace_slot(template, self.logger.rich.parse(hint.message, root_tag=True))
+        msg_markup = mu.replace_slot(
+            template, self.logger.rich.parse(hint.message, root_tag=True)
+        )
 
         self.cancel_hint()
         self.finish_autocomplete()
-        self.set_result(HelpResult(lambda:self.logger.print(msg_markup)))
+        self.set_result(HelpResult(lambda: self.logger.print(msg_markup)))
         self.finish()
         return True
 
@@ -1290,16 +1387,18 @@ class BeatInput:
         self.cancel_hint()
 
         if len(self.tokens) == 0:
-            self.set_result(CompleteResult(lambda:None))
+            self.set_result(CompleteResult(lambda: None))
             self.finish()
             return True
 
         if self.lex_state == SHLEXER_STATE.BACKSLASHED:
-            res, index = ShellSyntaxError("No escaped character"), len(self.tokens)-1
+            res, index = ShellSyntaxError("No escaped character"), len(self.tokens) - 1
         elif self.lex_state == SHLEXER_STATE.QUOTED:
-            res, index = ShellSyntaxError("No closing quotation"), len(self.tokens)-1
+            res, index = ShellSyntaxError("No closing quotation"), len(self.tokens) - 1
         else:
-            types, res = self.command.parse_command(token for token, _, _, _ in self.tokens)
+            types, res = self.command.parse_command(
+                token for token, _, _, _ in self.tokens
+            )
             index = len(types)
 
         if isinstance(res, cmd.CommandUnfinishError):
@@ -1371,7 +1470,10 @@ class BeatInput:
             token_index = len(parents)
 
             # generate suggestions
-            suggestions = [shlexer_quoting(sugg) for sugg in self.command.suggest_command(parents, target)]
+            suggestions = [
+                shlexer_quoting(sugg)
+                for sugg in self.command.suggest_command(parents, target)
+            ]
             sugg_index = len(suggestions) if action == -1 else -1
 
             if len(suggestions) == 0:
@@ -1402,7 +1504,8 @@ class BeatInput:
                 token_index=token_index,
                 original_token=self.buffer[selection],
                 original_pos=original_pos,
-                selection=selection)
+                selection=selection,
+            )
 
         sugg_index = self.tab_state.sugg_index
         selection = self.tab_state.selection
@@ -1436,13 +1539,17 @@ class BeatInput:
         self.tab_state.selection = slice(selection.start, self.pos)
 
         self.update_buffer()
-        parents = [token for token, _, _, _ in self.tokens[:self.tab_state.token_index]]
+        parents = [
+            token for token, _, _, _ in self.tokens[: self.tab_state.token_index]
+        ]
         target, target_type, _, _ = self.tokens[self.tab_state.token_index]
         if target_type is None:
             msg = ""
         else:
             msg = self.command.info_command(parents, target) or ""
-        self.set_hint(SuggestionsHint(suggestions, sugg_index, msg), self.tab_state.token_index)
+        self.set_hint(
+            SuggestionsHint(suggestions, sugg_index, msg), self.tab_state.token_index
+        )
         return True
 
     @locked
@@ -1478,6 +1585,7 @@ class BeatInput:
         self.set_result(ErrorResult(ValueError(f"Unknown key: " + key)))
         self.finish()
 
+
 class BeatStroke:
     r"""Keyboard controller for beatshell."""
 
@@ -1495,7 +1603,11 @@ class BeatStroke:
         """
         controller.add_handler(self.keypress_handler())
 
-        controller.add_handler(self.autocomplete_handler(self.settings.autocomplete_keys, self.settings.help_key))
+        controller.add_handler(
+            self.autocomplete_handler(
+                self.settings.autocomplete_keys, self.settings.help_key
+            )
+        )
         controller.add_handler(self.printable_handler(), "PRINTABLE")
 
         for key, func in self.settings.keymap.items():
@@ -1508,6 +1620,7 @@ class BeatStroke:
     def keypress_handler(self):
         def keypress(args):
             self.key_event += 1
+
         return keypress
 
     def confirm_handler(self):
@@ -1527,6 +1640,7 @@ class BeatStroke:
                 self.input.autocomplete(0)
             elif key != help_key:
                 self.input.finish_autocomplete()
+
         return handler
 
     def action_handler(self, func):
@@ -1546,16 +1660,21 @@ class BeatStroke:
         keys.append(settings.help_key)
         keys.extend(settings.autocomplete_keys)
         keys.append("PRINTABLE")
+
         def handler(args):
             _, _, key, code = args
             if key not in keys:
                 self.input.unknown_key(key)
+
         return handler
+
 
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
-    def __init__(self, stroke, input, settings, rich, metronome, icon, marker, caret, monitor):
+    def __init__(
+        self, stroke, input, settings, rich, metronome, icon, marker, caret, monitor
+    ):
         r"""Constructor.
 
         Parameters
@@ -1603,8 +1722,8 @@ class BeatPrompt:
         input_margin = self.settings.prompt.input_margin
 
         icon_mask = slice(None, icon_width)
-        marker_mask = slice(icon_width, icon_width+marker_width)
-        input_mask = slice(icon_width+marker_width, None)
+        marker_mask = slice(icon_width, icon_width + marker_width)
+        input_mask = slice(icon_width + marker_width, None)
 
         icon_drawer = lambda arg: (0, self.icon_func(arg[0], arg[1]))
         marker_drawer = lambda arg: (0, self.marker_func(arg[0], arg[1]))
@@ -1614,8 +1733,8 @@ class BeatPrompt:
         renderer.add_drawer(self.adjust_input_offset(), zindex=(0,))
         renderer.add_drawer(self.hint_handler(), zindex=(1,))
         renderer.add_text(self.text_handler(), input_mask, zindex=(1,))
-        renderer.add_text(self.get_left_ellipsis_func(), input_mask, zindex=(1,10))
-        renderer.add_text(self.get_right_ellipsis_func(), input_mask, zindex=(1,10))
+        renderer.add_text(self.get_left_ellipsis_func(), input_mask, zindex=(1, 10))
+        renderer.add_text(self.get_right_ellipsis_func(), input_mask, zindex=(1, 10))
         renderer.add_text(icon_drawer, icon_mask, zindex=(2,))
         renderer.add_text(marker_drawer, marker_mask, zindex=(3,))
 
@@ -1634,7 +1753,11 @@ class BeatPrompt:
 
                 self.typeahead = self.input.typeahead
                 self.clean = self.input.result is not None
-                self.hint = self.input.hint_state.hint if self.input.hint_state is not None else None
+                self.hint = (
+                    self.input.hint_state.hint
+                    if self.input.hint_state is not None
+                    else None
+                )
                 self.state = self.input.state
 
             (view, msg), time, width = yield (view, msg)
@@ -1666,7 +1789,7 @@ class BeatPrompt:
         marker_width = self.settings.prompt.marker_width
         input_margin = self.settings.prompt.input_margin
 
-        input_mask = slice(icon_width+marker_width, None)
+        input_mask = slice(icon_width + marker_width, None)
 
         self.input_offset = 0
         self.left_overflow = False
@@ -1679,14 +1802,18 @@ class BeatPrompt:
             (view, msg), time, width = yield
             while True:
                 typeahead = self.typeahead if not self.clean else ""
-                text_width, typeahead_width, caret_dis = geo_node.send((self.buffer, typeahead, self.pos))
+                text_width, typeahead_width, caret_dis = geo_node.send(
+                    (self.buffer, typeahead, self.pos)
+                )
                 input_width = len(range(width)[input_mask])
 
                 # adjust input offset
                 if text_width - self.input_offset < input_width - 1 - input_margin:
                     # from: ......[....I...    ]
                     #   to: ...[.......I... ]
-                    self.input_offset = max(0, text_width-input_width+1+input_margin)
+                    self.input_offset = max(
+                        0, text_width - input_width + 1 + input_margin
+                    )
                 if caret_dis - self.input_offset >= input_width - input_margin:
                     # from: ...[............]..I....
                     #   to: ........[..........I.]..
@@ -1698,7 +1825,9 @@ class BeatPrompt:
 
                 # determine overflow
                 self.left_overflow = self.input_offset > 0
-                self.right_overflow = text_width + typeahead_width - self.input_offset > input_width - 1
+                self.right_overflow = (
+                    text_width + typeahead_width - self.input_offset > input_width - 1
+                )
 
                 (view, msg), time, width = yield (view, msg)
 
@@ -1726,21 +1855,27 @@ class BeatPrompt:
         for n, token in enumerate(markup.children):
             for m, subword in enumerate(token.children):
                 l = len(subword.string) if isinstance(subword, mu.Text) else 1
-                if pos >= i+l:
+                if pos >= i + l:
                     i += l
                     continue
 
                 if isinstance(subword, mu.Text):
                     subwords = (
-                        mu.Text(subword.string[:pos-i]),
-                        CaretPlaceholder((mu.Text(subword.string[pos-i]),)),
-                        mu.Text(subword.string[pos-i+1:]),
+                        mu.Text(subword.string[: pos - i]),
+                        CaretPlaceholder((mu.Text(subword.string[pos - i]),)),
+                        mu.Text(subword.string[pos - i + 1 :]),
                     )
                 else:
-                    subwords = CaretPlaceholder((subword,)),
+                    subwords = (CaretPlaceholder((subword,)),)
 
-                token = dataclasses.replace(token, children=token.children[:m] + subwords + token.children[m+1:])
-                markup = dataclasses.replace(markup, children=markup.children[:n] + (token,) + markup.children[n+1:])
+                token = dataclasses.replace(
+                    token,
+                    children=token.children[:m] + subwords + token.children[m + 1 :],
+                )
+                markup = dataclasses.replace(
+                    markup,
+                    children=markup.children[:n] + (token,) + markup.children[n + 1 :],
+                )
                 break
             else:
                 continue
@@ -1750,23 +1885,31 @@ class BeatPrompt:
         if clean and len(markup.children) >= 3:
             n = -3
             token = markup.children[n]
-            if isinstance(token, self.rich.tags['unfinished']):
-                token = self.rich.tags['unknown'](token.children)
-                markup = dataclasses.replace(markup, children=markup.children[:n] + (token,) + markup.children[n+1:])
+            if isinstance(token, self.rich.tags["unfinished"]):
+                token = self.rich.tags["unknown"](token.children)
+                markup = dataclasses.replace(
+                    markup,
+                    children=markup.children[:n] + (token,) + markup.children[n + 1 :],
+                )
 
         # highlight
         if highlighted is not None:
-            n = highlighted*2+1
+            n = highlighted * 2 + 1
             token = markup.children[n]
-            token = self.rich.tags['highlight']((token,))
-            markup = dataclasses.replace(markup, children=markup.children[:n] + (token,) + markup.children[n+1:])
+            token = self.rich.tags["highlight"]((token,))
+            markup = dataclasses.replace(
+                markup,
+                children=markup.children[:n] + (token,) + markup.children[n + 1 :],
+            )
 
         markup = markup.expand()
         return markup
 
     def render_caret(self, markup, caret):
         if caret is not None:
-            return markup.traverse(CaretPlaceholder, lambda m: mu.replace_slot(caret, mu.Group(m.children)))
+            return markup.traverse(
+                CaretPlaceholder, lambda m: mu.replace_slot(caret, mu.Group(m.children))
+            )
         else:
             return markup.traverse(CaretPlaceholder, lambda m: mu.Group(m.children))
 
@@ -1775,7 +1918,12 @@ class BeatPrompt:
         syntax_key = lambda buffer, tokens, typeahead: (id(buffer), typeahead)
         syntax_node = dn.starcache(self.markup_syntax, syntax_key)
 
-        dec_key = lambda markup, pos, highlighted, clean: (id(markup), pos, highlighted, clean)
+        dec_key = lambda markup, pos, highlighted, clean: (
+            id(markup),
+            pos,
+            highlighted,
+            clean,
+        )
         dec_node = dn.starcache(self.decorate_tokens, dec_key)
 
         caret_node = dn.starcache(self.render_caret)
@@ -1788,7 +1936,11 @@ class BeatPrompt:
                 markup = syntax_node.send((self.buffer, self.tokens, typeahead))
                 markup = dec_node.send((markup, self.pos, self.highlighted, self.clean))
 
-                caret = self.caret_func(time, self.key_pressed_time) if not self.clean else None
+                caret = (
+                    self.caret_func(time, self.key_pressed_time)
+                    if not self.clean
+                    else None
+                )
                 markup = caret_node.send((markup, caret))
 
                 time, ran = yield -self.input_offset, markup
@@ -1799,7 +1951,7 @@ class BeatPrompt:
 
     def get_right_ellipsis_func(self):
         ellipis = mu.Text("…")
-        return lambda arg: ((len(arg[1])-1, ellipis) if self.right_overflow else None)
+        return lambda arg: ((len(arg[1]) - 1, ellipis) if self.right_overflow else None)
 
     def markup_hint(self, messages, hint):
         r"""Render hint.
@@ -1833,6 +1985,7 @@ class BeatPrompt:
         if hint.message:
             msg = self.rich.parse(hint.message, root_tag=True)
             lines = 0
+
             def trim_lines(text):
                 nonlocal lines
                 if lines >= message_max_lines:
@@ -1846,6 +1999,7 @@ class BeatPrompt:
                         res_string.append("…")
                         break
                 return mu.Text("".join(res_string))
+
             msg = msg.traverse(mu.Text, trim_lines)
 
             if isinstance(hint, DescHint):
@@ -1864,15 +2018,15 @@ class BeatPrompt:
                 messages.append(mu.Text("…\n"))
             for i, sugg in enumerate(suggs):
                 sugg = mu.Text(sugg)
-                if i == hint.selected-sugg_start:
+                if i == hint.selected - sugg_start:
                     sugg = mu.replace_slot(sugg_items[1], sugg)
                 else:
                     sugg = mu.replace_slot(sugg_items[0], sugg)
                 messages.append(sugg)
-                if i == hint.selected-sugg_start and msg is not None:
+                if i == hint.selected - sugg_start and msg is not None:
                     messages.append(mu.Text("\n"))
                     messages.append(msg)
-                if i != len(suggs)-1:
+                if i != len(suggs) - 1:
                     messages.append(mu.Text("\n"))
             if sugg_end < len(hint.suggestions):
                 messages.append(mu.Text("\n…"))
@@ -1897,6 +2051,7 @@ class BeatPrompt:
 @dataclasses.dataclass(frozen=True)
 class CaretPlaceholder(mu.Pair):
     name = "caret"
+
 
 @dataclasses.dataclass
 class Caret:
@@ -1929,4 +2084,3 @@ class Caret:
 
         yield
         return caret_func
-

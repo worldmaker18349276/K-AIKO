@@ -14,9 +14,13 @@ from ..devices import engines
 from ..beats import beatmaps
 from ..beats import beatsheets
 
+
 def format_info(info, logger):
-    data = dict(tuple(line.split(":", maxsplit=1)) for line in info.strip().splitlines())
+    data = dict(
+        tuple(line.split(":", maxsplit=1)) for line in info.strip().splitlines()
+    )
     return logger.format_dict(data)
+
 
 class BeatmapManager:
     def __init__(self, songs_dir, logger):
@@ -41,7 +45,7 @@ class BeatmapManager:
                     continue
                 logger.print(f"[data/] Unzip file {logger.emph(file.as_uri())}...")
                 distpath.mkdir()
-                zf = zipfile.ZipFile(str(file), 'r')
+                zf = zipfile.ZipFile(str(file), "r")
                 zf.extractall(path=str(distpath))
                 file.unlink()
 
@@ -72,7 +76,9 @@ class BeatmapManager:
             logger.print(f"[warn]File not found: {logger.escape(str(path))}[/]")
             return
         if not path.is_file() and not path.is_dir():
-            logger.print(f"[warn]Not a file or directory: {logger.escape(str(path))}[/]")
+            logger.print(
+                f"[warn]Not a file or directory: {logger.escape(str(path))}[/]"
+            )
             return
 
         logger.print(f"[data/] Add a new song from {logger.emph(path.as_uri())}...")
@@ -83,7 +89,9 @@ class BeatmapManager:
             n += 1
             distpath = songs_dir / f"{path.stem} ({n}){path.suffix}"
         if n != 1:
-            logger.print(f"[data/] Name conflict! Rename to {logger.emph(distpath.name)}")
+            logger.print(
+                f"[data/] Name conflict! Rename to {logger.emph(distpath.name)}"
+            )
 
         if path.is_file():
             shutil.copy(str(path), str(songs_dir))
@@ -98,18 +106,24 @@ class BeatmapManager:
 
         if self.is_beatmap(path):
             beatmap_path = songs_dir / path
-            logger.print(f"[data/] Remove the beatmap at {logger.emph(beatmap_path.as_uri())}...")
+            logger.print(
+                f"[data/] Remove the beatmap at {logger.emph(beatmap_path.as_uri())}..."
+            )
             beatmap_path.unlink()
             self.reload()
 
         elif self.is_beatmapset(path):
             beatmapset_path = songs_dir / path
-            logger.print(f"[data/] Remove the beatmapset at {logger.emph(beatmapset_path.as_uri())}...")
+            logger.print(
+                f"[data/] Remove the beatmapset at {logger.emph(beatmapset_path.as_uri())}..."
+            )
             shutil.rmtree(str(beatmapset_path))
             self.reload()
 
         else:
-            logger.print(f"[warn]Not a beatmap or beatmapset: {logger.escape(str(path))}[/]")
+            logger.print(
+                f"[warn]Not a beatmap or beatmapset: {logger.escape(str(path))}[/]"
+            )
 
     def is_beatmapset(self, path):
         return path in self._beatmaps
@@ -135,7 +149,9 @@ class BeatmapManager:
                 return None
             path = self._beatmaps[path][0]
         beatmap = self.get_beatmap_metadata(path)
-        return beatmap and BGMSong(self.songs_dir / path.parent, beatmap.audio, beatmap.info)
+        return beatmap and BGMSong(
+            self.songs_dir / path.parent, beatmap.audio, beatmap.info
+        )
 
     def get_songs(self):
         songs = [self.get_song(path) for path in self._beatmaps.keys()]
@@ -147,13 +163,16 @@ class BeatmapManager:
     def print_tree(self, logger):
         beatmapsets = self._beatmaps.items()
         for i, (path, beatmapset) in enumerate(beatmapsets):
-            prefix = "└── " if i == len(beatmapsets)-1 else "├── "
+            prefix = "└── " if i == len(beatmapsets) - 1 else "├── "
             logger.print(prefix + logger.emph(str(path)))
 
-            preprefix = "    " if i == len(beatmapsets)-1 else "│   "
+            preprefix = "    " if i == len(beatmapsets) - 1 else "│   "
             for j, beatmap in enumerate(beatmapset):
-                prefix = "└── " if j == len(beatmapset)-1 else "├── "
-                logger.print(preprefix + prefix + logger.escape(str(beatmap.relative_to(path))))
+                prefix = "└── " if j == len(beatmapset) - 1 else "├── "
+                logger.print(
+                    preprefix + prefix + logger.escape(str(beatmap.relative_to(path)))
+                )
+
 
 class BeatmapParser(cmd.TreeParser):
     def __init__(self, beatmap_manager, logger):
@@ -179,7 +198,10 @@ class BeatmapParser(cmd.TreeParser):
             beatmap = self.beatmap_manager.get_beatmap_metadata(path)
             if beatmap is None or not beatmap.info.strip():
                 return None
-            data = dict(tuple(line.split(":", maxsplit=1)) for line in beatmap.info.strip().splitlines())
+            data = dict(
+                tuple(line.split(":", maxsplit=1))
+                for line in beatmap.info.strip().splitlines()
+            )
             return "[rich]" + self.logger.format_dict(data, show_border=False)
 
 
@@ -189,25 +211,31 @@ class BGMSong:
     audio: beatmaps.BeatmapAudio
     info: str
 
+
 class BGMAction:
     pass
+
 
 @dataclasses.dataclass(frozen=True)
 class StopBGM(BGMAction):
     pass
+
 
 @dataclasses.dataclass(frozen=True)
 class PlayBGM(BGMAction):
     song: BGMSong
     start: Optional[float]
 
+
 @dataclasses.dataclass(frozen=True)
 class PreviewSong(BGMAction):
     song: BGMSong
 
+
 @dataclasses.dataclass(frozen=True)
 class StopPreview(BGMAction):
     pass
+
 
 class KAIKOBGMController:
     def __init__(self, mixer_settings, logger, beatmap_manager):
@@ -254,7 +282,9 @@ class KAIKOBGMController:
         @contextlib.contextmanager
         def require(self):
             if self.mixer is None:
-                self.mixer_task, self.mixer = engines.Mixer.create(self.mixer_settings, self.manager)
+                self.mixer_task, self.mixer = engines.Mixer.create(
+                    self.mixer_settings, self.manager
+                )
 
             key = object()
             self.required.add(key)
@@ -281,7 +311,9 @@ class KAIKOBGMController:
         if delay is not None:
             yield from dn.sleep(delay).join()
 
-        with mixer.play_file(song.root / song.audio.path, start=start, volume=song.audio.volume) as song_handler:
+        with mixer.play_file(
+            song.root / song.audio.path, start=start, volume=song.audio.volume
+        ) as song_handler:
             yield
             while not song_handler.is_finalized():
                 yield
@@ -339,7 +371,11 @@ class KAIKOBGMController:
                                 song_task.send(None)
                             except StopIteration:
                                 song = self.random_song()
-                                action = PlayBGM(song, None) if song is not None else StopBGM()
+                                action = (
+                                    PlayBGM(song, None)
+                                    if song is not None
+                                    else StopBGM()
+                                )
                                 break
 
                             if not self._action_queue.empty():
@@ -389,6 +425,7 @@ class KAIKOBGMController:
         else:
             self.stop_preview()
 
+
 class BGMCommand:
     def __init__(self, bgm_controller, beatmap_manager, logger):
         self.bgm_controller = bgm_controller
@@ -437,7 +474,7 @@ class BGMCommand:
             self.bgm_controller.play(song)
 
     @cmd.function_command
-    def play(self, beatmap, start:Optional[float]=None):
+    def play(self, beatmap, start: Optional[float] = None):
         """[rich]Play the song of beatmap.
 
         usage: [cmd]bgm[/] [cmd]play[/] [arg]{beatmap}[/] [[[kw]--start[/] [arg]{START}[/]]]

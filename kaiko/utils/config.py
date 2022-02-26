@@ -24,8 +24,8 @@ def make_field_parser(config_type):
     """
     identifier = (
         pc.regex(r"[a-zA-Z_][a-zA-Z0-9_]*")
-            .reject(lambda name: None if not keyword.iskeyword(name) else "not keyword")
-            .desc("identifier")
+        .reject(lambda name: None if not keyword.iskeyword(name) else "not keyword")
+        .desc("identifier")
     )
 
     field = []
@@ -35,11 +35,16 @@ def make_field_parser(config_type):
         if not is_first:
             yield pc.string(".")
         is_first = False
-        name = yield identifier.reject(lambda name: None if name in current else " or ".join(map(repr, current.keys())))
+        name = yield identifier.reject(
+            lambda name: None
+            if name in current
+            else " or ".join(map(repr, current.keys()))
+        )
         current = current[name]
         field.append(name)
 
     return tuple(field)
+
 
 @pc.parsec
 def make_configuration_parser(config_type, config_name):
@@ -63,8 +68,8 @@ def make_configuration_parser(config_type, config_name):
     end = pc.eof().optional()
     identifier = (
         pc.regex(r"[a-zA-Z_][a-zA-Z0-9_]*")
-            .reject(lambda name: None if not keyword.iskeyword(name) else "not keyword")
-            .desc("identifier")
+        .reject(lambda name: None if not keyword.iskeyword(name) else "not keyword")
+        .desc("identifier")
     )
 
     # parse header
@@ -75,11 +80,7 @@ def make_configuration_parser(config_type, config_name):
     ) + identifier.sep_by(pc.regex(r"[ ]*,[ ]*").desc("','"))
     sz.validate_identifier(config_name)
     sz.validate_identifier(config_type.__name__)
-    init = (
-        pc.string(config_name)
-        >> equal
-        >> pc.string(config_type.__name__ + "()")
-    )
+    init = pc.string(config_name) >> equal >> pc.string(config_type.__name__ + "()")
     header = (imports << nl << vindent).many_till(init << nl << vindent)
 
     def require(typ):
@@ -97,7 +98,7 @@ def make_configuration_parser(config_type, config_name):
     # start building config
     config = config_type()
     require(config_type)
-    
+
     while True:
         if (yield end):
             return config
@@ -119,12 +120,15 @@ def make_configuration_parser(config_type, config_name):
 
         yield nl
 
+
 class SubConfigurable:
     def __init__(self, cls):
         self.cls = cls
 
+
 def subconfig(cls):
     return SubConfigurable(cls)
+
 
 class ConfigurableMeta(type):
     def __init__(self, name, supers, attrs):
@@ -133,7 +137,7 @@ class ConfigurableMeta(type):
         self.__configurable_fields__ = self.make_configurable_fields()
 
     def make_configurable_fields(self):
-        excludes = getattr(self, '__configurable_excludes__', [])
+        excludes = getattr(self, "__configurable_excludes__", [])
         fields_doc = ConfigurableMeta._parse_fields_doc(self.__doc__)
 
         configurable_fields = {}
@@ -146,7 +150,9 @@ class ConfigurableMeta(type):
         for name in dir(self):
             if isinstance(getattr(self, name), SubConfigurable):
                 if name not in configurable_fields:
-                    configurable_fields[name] = getattr(self, name).cls.__configurable_fields__
+                    configurable_fields[name] = getattr(
+                        self, name
+                    ).cls.__configurable_fields__
 
         return configurable_fields
 
@@ -183,14 +189,14 @@ class ConfigurableMeta(type):
         m = re.search(r"Fields\n------\n", doc)
         if not m:
             return res
-        doc = doc[m.end(0):]
+        doc = doc[m.end(0) :]
 
         while True:
             m = re.match(r"([0-9a-zA-Z_]+) : [^\n]+\n+((?:[ ]+[^\n]*(?:\n+|$))*)", doc)
             if not m:
                 return res
             res[m.group(1)] = cleandoc(m.group(2)).strip()
-            doc = doc[m.end(0):]
+            doc = doc[m.end(0) :]
 
     def iter_all_fields(self):
         def it(current):
@@ -227,6 +233,7 @@ class ConfigurableMeta(type):
     def get_field_serializer(self, field):
         field_type_hint, _ = self.get_field_hint(field)
         return sz.make_serializer_from_type_hint(field_type_hint)
+
 
 class Configurable(metaclass=ConfigurableMeta):
     """The super class for configuration.
@@ -270,6 +277,7 @@ class Configurable(metaclass=ConfigurableMeta):
     def write(self, path, name="settings"):
         return write(type(self), self, path, name)
 
+
 def set(config, field, value):
     """Set a field of the configuration to the given value.
 
@@ -293,6 +301,7 @@ def set(config, field, value):
     else:
         setattr(config, field[-1], value)
 
+
 def unset(config, field):
     """Unset a field of the configuration.
 
@@ -313,6 +322,7 @@ def unset(config, field):
         config = config.__dict__.get(name)
     else:
         delattr(config, field[-1])
+
 
 def get(config, field):
     """Get a field of the configuration.
@@ -340,6 +350,7 @@ def get(config, field):
     else:
         return getattr(config, field[-1])
 
+
 def has(config, field):
     """Check if a field of the configuration has a value.
 
@@ -365,6 +376,7 @@ def has(config, field):
         config = config.__dict__.get(name)
     else:
         return field[-1] in config.__dict__
+
 
 def get_default(config, field):
     """Get default value of a field of the configuration.
@@ -392,6 +404,7 @@ def get_default(config, field):
     else:
         return getattr(type(config), field[-1])
 
+
 def has_default(config, field):
     """Check if a field of the configuration has a default value.
 
@@ -418,9 +431,11 @@ def has_default(config, field):
     else:
         return hasattr(type(config), field[-1])
 
+
 def parse(cls, text, name="settings"):
     parser = make_configuration_parser(cls, name)
     return parser.parse(text)
+
 
 def format(cls, config, name="settings"):
     res = []
@@ -444,9 +459,11 @@ def format(cls, config, name="settings"):
         sz.validate_identifier(submodule)
     sz.validate_identifier(cls.__name__)
     imports.append(f"from {cls.__module__} import {cls.__name__}\n")
-    
+
     custom_types_list = sorted(list(used_types), key=lambda typ: typ.__module__)
-    for module, types in itertools.groupby(custom_types_list, key=lambda typ: typ.__module__):
+    for module, types in itertools.groupby(
+        custom_types_list, key=lambda typ: typ.__module__
+    ):
         names = [typ.__name__ for typ in types]
         if module == "builtins":
             continue
@@ -457,6 +474,7 @@ def format(cls, config, name="settings"):
         imports.append(f"from {module} import " + ", ".join(names) + "\n")
 
     return "".join(imports) + "\n" + "".join(res)
+
 
 def read(cls, path, name="settings"):
     """Read configuration from a file.
@@ -491,9 +509,10 @@ def read(cls, path, name="settings"):
     # exec(text, globals(), locals)
     # return locals[self.name]
 
-    text = open(path, 'r').read()
+    text = open(path, "r").read()
     res = parse(cls, text, name=name)
     return res
+
 
 def write(cls, config, path, name="settings"):
     """Write this configuration to a file.
@@ -518,5 +537,4 @@ def write(cls, config, path, name="settings"):
         path = Path(path)
 
     text = format(cls, config, name)
-    open(path, 'w').write(text)
-
+    open(path, "w").write(text)

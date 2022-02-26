@@ -57,6 +57,7 @@ def prepare_pyaudio(logger):
         if not has_exited and not hit_except:
             verb_ctxt.__exit__(None, None, None)
 
+
 def fit_screen(logger, terminal_settings):
     r"""Guide user to adjust screen size.
 
@@ -75,7 +76,7 @@ def fit_screen(logger, terminal_settings):
 
     skip_event = threading.Event()
 
-    skip = term.inkey(lambda a: skip_event.set() if a[1] == '\x1b' else None)
+    skip = term.inkey(lambda a: skip_event.set() if a[1] == "\x1b" else None)
 
     @dn.datanode
     def fit():
@@ -87,9 +88,9 @@ def fit_screen(logger, terminal_settings):
         logger.print(f"Can you adjust the width to (or bigger than) {width}?")
         logger.print("Or [emph]Esc[/] to skip this process.")
         logger.print("You can try to fit the line below.")
-        logger.print("━"*width, flush=True)
+        logger.print("━" * width, flush=True)
 
-        while current_width < width or time.perf_counter() < t+delay:
+        while current_width < width or time.perf_counter() < t + delay:
             if skip_event.is_set():
                 logger.print()
                 break
@@ -106,7 +107,9 @@ def fit_screen(logger, terminal_settings):
                 else:
                     hint = "(great!)"
                 logger.clear_line()
-                logger.print(f"Current width: {current_width} {hint}", end="", flush=True)
+                logger.print(
+                    f"Current width: {current_width} {hint}", end="", flush=True
+                )
 
             size = yield
 
@@ -118,10 +121,11 @@ def fit_screen(logger, terminal_settings):
 
         # sleep
         t = time.perf_counter()
-        while time.perf_counter() < t+delay:
+        while time.perf_counter() < t + delay:
             yield
 
     return dn.pipe(skip, term.terminal_size(), fit())
+
 
 @dn.datanode
 def determine_unicode_version(logger):
@@ -139,6 +143,7 @@ def determine_unicode_version(logger):
         logger.print(f"[emph]UNICODE_VERSION={version}; export UNICODE_VERSION[/]")
 
     return version
+
 
 class DevicesCommand:
     def __init__(self, config, logger, manager):
@@ -166,7 +171,9 @@ class DevicesCommand:
         samplerate = self.config.current.devices.detector.input_samplerate
         channels = self.config.current.devices.detector.input_channels
         format = self.config.current.devices.detector.input_format
-        logger.print(f"current input device: {device} ({samplerate/1000} kHz, {channels} ch)")
+        logger.print(
+            f"current input device: {device} ({samplerate/1000} kHz, {channels} ch)"
+        )
 
         device = self.config.current.devices.mixer.output_device
         if device == -1:
@@ -174,7 +181,9 @@ class DevicesCommand:
         samplerate = self.config.current.devices.mixer.output_samplerate
         channels = self.config.current.devices.mixer.output_channels
         format = self.config.current.devices.mixer.output_format
-        logger.print(f"current output device: {device} ({samplerate/1000} kHz, {channels} ch)")
+        logger.print(
+            f"current output device: {device} ({samplerate/1000} kHz, {channels} ch)"
+        )
 
     @cmd.function_command
     def test_mic(self, device):
@@ -228,7 +237,9 @@ class DevicesCommand:
 
         try:
             logger.print("Validate input device...")
-            aud.validate_input_device(self.manager, device, pa_samplerate, pa_channels, pa_format)
+            aud.validate_input_device(
+                self.manager, device, pa_samplerate, pa_channels, pa_format
+            )
             logger.print("Success!")
 
         except:
@@ -276,7 +287,9 @@ class DevicesCommand:
 
         try:
             logger.print("Validate output device...")
-            aud.validate_output_device(self.manager, device, pa_samplerate, pa_channels, pa_format)
+            aud.validate_output_device(
+                self.manager, device, pa_samplerate, pa_channels, pa_format
+            )
             logger.print("Success!")
 
         except:
@@ -315,7 +328,7 @@ class DevicesCommand:
     @set_mic.arg_parser("ch")
     @set_speaker.arg_parser("ch")
     def _audio_channels_parser(self, device, **__):
-        return cmd.OptionParser({'2': 2, '1': 1})
+        return cmd.OptionParser({"2": 2, "1": 1})
 
     @set_mic.arg_parser("len")
     @set_speaker.arg_parser("len")
@@ -325,7 +338,7 @@ class DevicesCommand:
     @set_mic.arg_parser("fmt")
     @set_speaker.arg_parser("fmt")
     def _audio_format_parser(self, device, **__):
-        return cmd.OptionParser(['f4', 'i4', 'i2', 'i1', 'u1'])
+        return cmd.OptionParser(["f4", "i4", "i2", "i1", "u1"])
 
     # terminal
 
@@ -336,9 +349,9 @@ class DevicesCommand:
         usage: [cmd]devices[/] [cmd]terminal[/]
         """
 
-        term = os.environ.get('TERM', None)
-        vte = os.environ.get('VTE_VERSION', None)
-        uni = os.environ.get('UNICODE_VERSION', None)
+        term = os.environ.get("TERM", None)
+        vte = os.environ.get("VTE_VERSION", None)
+        uni = os.environ.get("UNICODE_VERSION", None)
         size = shutil.get_terminal_size()
 
         self.logger.print(f"terminal type: {term}")
@@ -380,7 +393,7 @@ class DevicesCommand:
         """
 
         logger = self.logger
-        exit_key = 'Esc'
+        exit_key = "Esc"
 
         logger.print(f"[hint/] Press {logger.emph(exit_key)} to end test.")
         logger.print()
@@ -391,10 +404,14 @@ class DevicesCommand:
         def handler(arg):
             _, time, keyname, keycode = arg
             logger.clear_line()
-            logger.print(f"[[{time:07.3f} s]] {logger.emph(keyname)} ({logger.escape(repr(keycode))})")
+            logger.print(
+                f"[[{time:07.3f} s]] {logger.emph(keyname)} ({logger.escape(repr(keycode))})"
+            )
             logger.print("[[ <time>  ]] [emph]<keyname>[/] (<keycode>)", end="\r")
 
-        controller_task, controller = engines.Controller.create(self.config.current.devices.controller, self.config.current.devices.terminal)
+        controller_task, controller = engines.Controller.create(
+            self.config.current.devices.controller, self.config.current.devices.terminal
+        )
         controller.add_handler(handler)
         controller.add_handler(lambda _: stop_event.set(), exit_key)
 
@@ -419,6 +436,7 @@ class DevicesCommand:
         ref_time = 0.0
         return KnockTest(ref_time, settings, self.logger)
 
+
 class KnockTest:
     def __init__(self, ref_time, settings, logger):
         self.ref_time = ref_time
@@ -430,7 +448,9 @@ class KnockTest:
         self.logger.print("[hint/] Press any key to end test.")
         self.logger.print()
 
-        detector_task, detector = engines.Detector.create(self.settings, manager, self.ref_time)
+        detector_task, detector = engines.Detector.create(
+            self.settings, manager, self.ref_time
+        )
         detector.add_listener(self.hit_listener())
 
         @dn.datanode
@@ -438,6 +458,7 @@ class KnockTest:
             keycode = None
             while keycode is None:
                 _, keycode = yield
+
         exit_task = term.inkey(exit_any())
 
         return dn.pipe(detector_task, self.show_hit(), exit_task)
@@ -449,14 +470,19 @@ class KnockTest:
         length = 10
         try:
             while True:
-                self.logger.print("[[ <time>  ]] │[emph]<strength>[/]│ (<value>)", end="\r")
+                self.logger.print(
+                    "[[ <time>  ]] │[emph]<strength>[/]│ (<value>)", end="\r"
+                )
 
                 while self.hit_queue.empty():
                     yield
 
                 time, strength = self.hit_queue.get()
                 value = int(strength * length * nticks)
-                level = "".join(ticks[min(nticks, max(0, value - i * nticks))] for i in range(length))
+                level = "".join(
+                    ticks[min(nticks, max(0, value - i * nticks))]
+                    for i in range(length)
+                )
                 level = f"{level[:length//2]}[weight=bold]{level[length//2:]}[/]"
                 self.logger.print(f"[[{time:07.3f} s]] │{level}│ ({strength:.5f})")
 
@@ -470,6 +496,7 @@ class KnockTest:
 
             if detected:
                 self.hit_queue.put((time, strength))
+
 
 class PyAudioDeviceParser(cmd.ArgumentParser):
     def __init__(self, manager, is_input):
@@ -491,19 +518,20 @@ class PyAudioDeviceParser(cmd.ArgumentParser):
         value = int(token)
         if value == -1:
             if self.is_input:
-                value = self.manager.get_default_input_device_info()['index']
+                value = self.manager.get_default_input_device_info()["index"]
             else:
-                value = self.manager.get_default_output_device_info()['index']
+                value = self.manager.get_default_output_device_info()["index"]
 
         device_info = self.manager.get_device_info_by_index(value)
 
-        name = device_info['name']
-        api = self.manager.get_host_api_info_by_index(device_info['hostApi'])['name']
-        freq = device_info['defaultSampleRate']/1000
-        ch_in = device_info['maxInputChannels']
-        ch_out = device_info['maxOutputChannels']
+        name = device_info["name"]
+        api = self.manager.get_host_api_info_by_index(device_info["hostApi"])["name"]
+        freq = device_info["defaultSampleRate"] / 1000
+        ch_in = device_info["maxInputChannels"]
+        ch_out = device_info["maxOutputChannels"]
 
         return f"{name} by {api} ({freq} kHz, in: {ch_in}, out: {ch_out})"
+
 
 class SpeakerTest:
     def __init__(self, device, logger, tempo=120.0, delay=0.5):
@@ -516,11 +544,11 @@ class SpeakerTest:
         device = self.device
 
         if device == -1:
-            device = manager.get_default_output_device_info()['index']
+            device = manager.get_default_output_device_info()["index"]
         device_info = manager.get_device_info_by_index(device)
 
-        samplerate = int(device_info['defaultSampleRate'])
-        nchannels = min(device_info['maxOutputChannels'], 2)
+        samplerate = int(device_info["defaultSampleRate"])
+        nchannels = min(device_info["maxOutputChannels"], 2)
         format = engines.MixerSettings.output_format
 
         try:
@@ -547,9 +575,11 @@ class SpeakerTest:
 
         mixer_task, mixer = engines.Mixer.create(settings, manager)
 
-        dt = 60.0/self.tempo
+        dt = 60.0 / self.tempo
         t0 = self.delay
-        click_task = dn.interval(producer=self.make_click(mixer, samplerate, nchannels), dt=dt, t0=t0)
+        click_task = dn.interval(
+            producer=self.make_click(mixer, samplerate, nchannels), dt=dt, t0=t0
+        )
 
         return dn.pipe(mixer_task, click_task)
 
@@ -559,7 +589,7 @@ class SpeakerTest:
         yield
 
         for n in range(nchannels):
-            sound = click[:,None] * [[m==n for m in range(nchannels)]]
+            sound = click[:, None] * [[m == n for m in range(nchannels)]]
             self.logger.print(f"Test channel {n}: ", end="", flush=True)
             yield
             for m in range(4):
@@ -568,6 +598,7 @@ class SpeakerTest:
                 yield
             self.logger.print(flush=True)
             yield
+
 
 class MicTest:
     def __init__(self, device, logger, width=12, decay_time=0.1):
@@ -580,10 +611,10 @@ class MicTest:
         device = self.device
 
         if device == -1:
-            device = manager.get_default_input_device_info()['index']
+            device = manager.get_default_input_device_info()["index"]
         device_info = manager.get_device_info_by_index(device)
 
-        samplerate = int(device_info['defaultSampleRate'])
+        samplerate = int(device_info["defaultSampleRate"])
         channels = 1
         buffer_length = engines.DetectorSettings.input_buffer_length
         format = engines.DetectorSettings.input_format
@@ -617,10 +648,16 @@ class MicTest:
             keycode = None
             while keycode is None:
                 _, keycode = yield
+
         exit_task = term.inkey(exit_any())
-        mic_task = aud.record(manager, vol, samplerate=samplerate,
-                                            buffer_shape=(buffer_length, channels),
-                                            format=format, device=device)
+        mic_task = aud.record(
+            manager,
+            vol,
+            samplerate=samplerate,
+            buffer_shape=(buffer_length, channels),
+            format=format,
+            device=device,
+        )
 
         self.logger.print("[hint/] Press any key to end testing.")
         yield from dn.pipe(mic_task, exit_task).join()
@@ -633,15 +670,20 @@ class MicTest:
         width = self.width
 
         decay = buffer_length / samplerate / decay_time
-        volume_of = lambda x: dn.power2db((x**2).mean(), scale=(1e-5, 1e6)) / 60.0
+        volume_of = lambda x: dn.power2db((x ** 2).mean(), scale=(1e-5, 1e6)) / 60.0
 
         vol = 0.0
         try:
             while True:
                 data = yield
-                vol = max(0.0, vol-decay, min(1.0, volume_of(data)))
+                vol = max(0.0, vol - decay, min(1.0, volume_of(data)))
                 size = int(vol * width)
-                self.logger.print("[" + tick1 * size + tick0 * (width-size) + "]\r", end="", flush=True, markup=False)
+                self.logger.print(
+                    "[" + tick1 * size + tick0 * (width - size) + "]\r",
+                    end="",
+                    flush=True,
+                    markup=False,
+                )
 
         finally:
             self.logger.print()
