@@ -9,16 +9,18 @@ K-AIK▣ is a sound-controlled terminal-based rhythm game.
 Getting Started
 ---------------
 
-Install PyAudio
-~~~~~~~~~~~~~~~
+Install K-AIKO
+~~~~~~~~~~~~~~
 
-Installing PyAudio via pip may encounter some problems, which is caused by the external dependency of PyAudio.
-So you need to install PyAudio first.
+K-AIKO runs on linux with python 3.9, make sure you have it
 
-Linux
-~~~~~
+::
 
-Install PyAudio via apt
+    python --version
+
+K-AIKO requires PyAudio package, which has external dependencies that pip cannot handle.
+
+You can install PyAudio via apt
 
 ::
 
@@ -33,54 +35,7 @@ Or install PortAudio first
 
 (see https://stackoverflow.com/a/61993070/3996613)
 
-Mac
-~~~
-
-Install portaudio using homebrew (or method of your choice)
-
-::
-
-    brew install portaudio
-
-Create ``$HOME/.pydistutils.cfg`` using the include and lib directories of your portaudio install
-
-::
-
-    [build_ext]
-    include_dirs=/Users/jrobert1271/homebrew/Cellar/portaudio/19.20140130/include/
-    library_dirs=/Users/jrobert1271/homebrew/Cellar/portaudio/19.20140130/lib/
-
-Then in your virtualenv
-
-::
-
-    pip install --allow-external pyaudio --allow-unverified pyaudio pyaudio
-
-(see https://stackoverflow.com/a/62091426/3996613)
-
-Windows
-~~~~~~~
-
-Download the wheel on this site https://www.lfd.uci.edu/~gohlke/pythonlibs/#pyaudio.
-
-Choose ``PyAudio‑*‑win32.whl`` (the newest one) if you use 32 bit, or ``PyAudio‑*‑win_amd64.whl`` for 64 bit. Then go to your download folder
-
-::
-
-    cd <your donwload path>
-
-Then, install by wheel
-
-::
-
-    python -m pip install <PyAudio's wheel file>
-
-(see https://stackoverflow.com/a/54999645/3996613)
-
-Install K-AIKO
-~~~~~~~~~~~~~~
-
-You can install it from PyPi
+Now you can install K-AIKO from PyPi
 
 ::
 
@@ -108,15 +63,6 @@ Or
 ::
 
     python -m kaiko
-
-Compatibilities
----------------
-
-It is compatible to linux system with VT100 terminal emulator.
-
-Tested terminals:
-
--  GNOME terminal (Linux)
 
 License
 -------
