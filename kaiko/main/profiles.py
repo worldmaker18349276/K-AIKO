@@ -36,7 +36,7 @@ def edit(text, editor, suffix=""):
         return open(file.name, mode='r').read()
 
 class ProfileManager:
-    """Profile manager for Configurable type.
+    """Profile manager for Configurable object.
 
     Attributes
     ----------
@@ -46,14 +46,14 @@ class ProfileManager:
     profiles : list of str
         A list of names of profiles.
     default_name : str or None
-        The name of default configuration.
+        The name of default profile.
     current_name : str
-        The name of current configuration.
+        The name of current profile.
     current : config.Configurable
         The current configuration.
     """
 
-    default_meta = ".default-config"
+    default_meta = ".default-profile"
     extension = ".py"
     settings_name = "settings"
     config_type = KAIKOSettings
@@ -159,7 +159,7 @@ class ProfileManager:
         return True
 
     def set_default(self):
-        """Set the current configuration as default configuration.
+        """Set the current profile as default.
 
         Returns
         -------
@@ -167,7 +167,7 @@ class ProfileManager:
         """
         logger = self.logger
 
-        logger.print(f"[data/] Set {logger.emph(self.current_name)} as the default configuration...")
+        logger.print(f"[data/] Set {logger.emph(self.current_name)} as the default profile...")
 
         if not self.path.exists():
             logger.print(f"[warn]No such profile directory: {logger.emph(self.path.as_uri())}[/]")
@@ -216,7 +216,7 @@ class ProfileManager:
         return True
 
     def load(self):
-        """Load the current configuration.
+        """Load the current profile.
 
         Returns
         -------
@@ -249,7 +249,7 @@ class ProfileManager:
         return True
 
     def use(self, name=None):
-        """change the current profile of configuration.
+        """change the current profile.
 
         Parameters
         ----------
@@ -282,7 +282,7 @@ class ProfileManager:
         return True
 
     def new(self, name=None, clone=None):
-        """make a new profile of configuration.
+        """make a new profile.
 
         Parameters
         ----------
@@ -297,7 +297,7 @@ class ProfileManager:
         """
         logger = self.logger
 
-        logger.print("Make new configuration...")
+        logger.print("Make new profile...")
 
         if clone is not None and clone not in self.profiles:
             logger.print(f"[warn]No such profile: {logger.emph(clone)}[/]")
@@ -350,7 +350,7 @@ class ProfileManager:
         logger = self.logger
 
         target_path = self.path / (name + self.extension)
-        logger.print(f"[data/] Delete configuration {logger.emph(target_path.as_uri())}...")
+        logger.print(f"[data/] Delete profile {logger.emph(target_path.as_uri())}...")
 
         if name not in self.profiles:
             logger.print(f"[warn]No such profile: {logger.emph(name)}[/]")
@@ -386,7 +386,7 @@ class ProfileManager:
         target_path = self.path / (name + self.extension)
         current_name = logger.emph(current_path.as_uri())
         target_name = logger.emph(target_path.as_uri())
-        logger.print(f"[data/] Rename configuration file {current_name} to {target_name}...")
+        logger.print(f"[data/] Rename profile {current_name} to {target_name}...")
 
         if not name.isprintable() or "/" in name:
             logger.print(f"[warn]Invalid profile name: {logger.emph(name)}[/]")
@@ -439,7 +439,7 @@ class ProfilesCommand:
 
     @cmd.function_command
     def show(self):
-        """[rich]Show configuration.
+        """[rich]Show the current configuration.
 
         usage: [cmd]profiles[/] [cmd]show[/]
         """
@@ -571,7 +571,7 @@ class ProfilesCommand:
 
     @cmd.function_command
     def reload(self):
-        """[rich]Reload configuration.
+        """[rich]Reload the configuration.
 
         usage: [cmd]profiles[/] [cmd]reload[/]
         """
@@ -584,7 +584,7 @@ class ProfilesCommand:
 
     @cmd.function_command
     def save(self):
-        """[rich]Save configuration.
+        """[rich]Save the configuration.
 
         usage: [cmd]profiles[/] [cmd]save[/]
         """
@@ -597,7 +597,7 @@ class ProfilesCommand:
 
     @cmd.function_command
     def set_default(self):
-        """[rich]Set the current configuration profile as default.
+        """[rich]Set the current profile as default.
 
         usage: [cmd]profiles[/] [cmd]set_default[/]
         """
@@ -608,7 +608,7 @@ class ProfilesCommand:
 
     @cmd.function_command
     def use(self, profile):
-        """[rich]Change the current configuration profile.
+        """[rich]Change the current profile.
 
         usage: [cmd]profiles[/] [cmd]use[/] [arg]{profile}[/]
                                 ╱
@@ -622,7 +622,7 @@ class ProfilesCommand:
 
     @cmd.function_command
     def rename(self, profile):
-        """[rich]Rename current configuration profile.
+        """[rich]Rename the current profile.
 
         usage: [cmd]profiles[/] [cmd]rename[/] [arg]{profile}[/]
                                   ╱
@@ -635,7 +635,7 @@ class ProfilesCommand:
 
     @cmd.function_command
     def new(self, profile, clone=None):
-        """[rich]Make new configuration profile.
+        """[rich]Make a new profile.
 
         usage: [cmd]profiles[/] [cmd]new[/] [arg]{profile}[/] [[[kw]--clone[/] [arg]{PROFILE}[/]]]
                                 ╱                    ╲
@@ -648,7 +648,7 @@ class ProfilesCommand:
 
     @cmd.function_command
     def delete(self, profile):
-        """[rich]Delete a configuration profile.
+        """[rich]Delete a profile.
 
         usage: [cmd]profiles[/] [cmd]delete[/] [arg]{profile}[/]
                                   ╱
