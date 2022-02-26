@@ -397,6 +397,10 @@ class BGMCommand:
 
     @cmd.function_command
     def on(self):
+        """[rich]Turn on bgm.
+
+        usage: [cmd]bgm[/] [cmd]on[/]
+        """
         logger = self.logger
 
         if self.bgm_controller.is_bgm_on:
@@ -414,10 +418,18 @@ class BGMCommand:
 
     @cmd.function_command
     def off(self):
+        """[rich]Turn off bgm.
+
+        usage: [cmd]bgm[/] [cmd]off[/]
+        """
         self.bgm_controller.stop()
 
     @cmd.function_command
     def skip(self):
+        """[rich]Skip the currently playing song.
+
+        usage: [cmd]bgm[/] [cmd]skip[/]
+        """
         if self.bgm_controller.current_action is not None:
             song = self.bgm_controller.random_song()
             self.logger.print("will play:")
@@ -426,6 +438,13 @@ class BGMCommand:
 
     @cmd.function_command
     def play(self, beatmap, start:Optional[float]=None):
+        """[rich]Play the song of beatmap.
+
+        usage: [cmd]bgm[/] [cmd]play[/] [arg]{beatmap}[/] [[[kw]--start[/] [arg]{START}[/]]]
+                           ╱                   ╲
+                 Path, the path to the       float, the time
+               beatmap you want to play.     the song started.
+        """
         logger = self.logger
 
         try:
@@ -448,6 +467,10 @@ class BGMCommand:
 
     @cmd.function_command
     def now_playing(self):
+        """[rich]Show the currently playing song.
+
+        usage: [cmd]bgm[/] [cmd]now_playing[/]
+        """
         current = self.bgm_controller.current_action
         if isinstance(current, PlayBGM):
             self.logger.print("now playing:")

@@ -318,6 +318,14 @@ class KAIKOMenu:
 
     @cmd.function_command
     def loop(self, pattern, tempo:float=120.0, offset:float=1.0):
+        """[rich]Beat with the pattern repeatly.
+
+        usage: [cmd]loop[/] [arg]{pattern}[/] [[[kw]--tempo[/] [arg]{TEMPO}[/]]] [[[kw]--offset[/] [arg]{OFFSET}[/]]]
+                        ╱                  ╲                  ╲
+            text, the pattern     float, the tempo of         float, the offset time
+                to repeat.     pattern; default is 120.0.    at start; default is 1.0.
+        """
+
         return KAIKOLoop(pattern, tempo, offset,
                          self.user, self.settings.devices, self.settings.gameplay, self.logger)
 
@@ -331,7 +339,10 @@ class KAIKOMenu:
 
     @cmd.function_command
     def reload(self):
-        """Reload your songs."""
+        """[rich]Reload your songs.
+
+        usage: [cmd]reload[/]
+        """
         self.beatmap_manager.reload()
 
     @cmd.function_command
@@ -370,7 +381,10 @@ class KAIKOMenu:
 
     @cmd.function_command
     def beatmaps(self):
-        """Your beatmaps."""
+        """[rich]Show your beatmaps.
+
+        usage: [cmd]beatmaps[/]
+        """
         if not self.beatmap_manager.is_uptodate():
             self.reload()
 
@@ -402,7 +416,10 @@ class KAIKOMenu:
 
     @cmd.function_command
     def me(self):
-        """About user."""
+        """[rich]About user.
+
+        usage: [cmd]me[/]
+        """
         logger = self.logger
 
         logger.print(f"username: {logger.emph(self.user.username)}")
@@ -416,11 +433,11 @@ class KAIKOMenu:
     def print(self, message, markup=True):
         """[rich]Print something.
 
-        usage: [cmd]say[/] [arg]{message}[/] [[[kw]--markup[/] [arg]{MARKUP}[/]]]
-                      ╱                    ╲
-            text, the message               ╲
-             to be printed.          bool, use markup or not;
-                                        default is True.
+        usage: [cmd]print[/] [arg]{message}[/] [[[kw]--markup[/] [arg]{MARKUP}[/]]]
+                        ╱                    ╲
+              text, the message               ╲
+               to be printed.          bool, use markup or not;
+                                          default is True.
         """
 
         try:
@@ -442,13 +459,19 @@ class KAIKOMenu:
 
     @cmd.function_command
     def clean(self):
-        """Clean screen."""
+        """[rich]Clean screen.
+
+        usage: [cmd]clean[/]
+        """
         self.logger.clear()
 
     @cmd.function_command
     @dn.datanode
     def bye(self):
-        """Close K-AIKO."""
+        """[rich]Close K-AIKO.
+
+        usage: [cmd]bye[/]
+        """
         if self._config.is_changed():
             yes = yield from self.logger.ask("Exit without saving current configuration?").join()
             if not yes:
@@ -459,7 +482,10 @@ class KAIKOMenu:
     @cmd.function_command
     @dn.datanode
     def bye_forever(self):
-        """Clean up all your data and close K-AIKO."""
+        """[rich]Clean up all your data and close K-AIKO.
+
+        usage: [cmd]bye_forever[/]
+        """
         logger = self.logger
 
         logger.print("This command will clean up all your data.")

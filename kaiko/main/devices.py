@@ -150,7 +150,10 @@ class DevicesCommand:
 
     @cmd.function_command
     def audio(self):
-        """Show your audio configuration."""
+        """[rich]Show your audio configuration.
+
+        usage: [cmd]devices[/] [cmd]audio[/]
+        """
 
         logger = self.logger
         aud.print_pyaudio_info(self.manager)
@@ -179,7 +182,7 @@ class DevicesCommand:
 
         usage: [cmd]devices[/] [cmd]test_mic[/] [arg]{device}[/]
                                   ╱
-                        the index of input
+                        The index of input
                          device, -1 is the
                           default device.
         """
@@ -191,7 +194,7 @@ class DevicesCommand:
 
         usage: [cmd]devices[/] [cmd]test_speaker[/] [arg]{device}[/]
                                       ╱
-                            the index of output
+                            The index of output
                              device, -1 is the
                               default device.
         """
@@ -201,16 +204,12 @@ class DevicesCommand:
     def set_mic(self, device, rate=None, ch=None, len=None, fmt=None):
         """[rich]Configure audio input.
 
-                                          the sample rate        the buffer length
+                                          The sample rate        The buffer length
                                          of recorded sound.       of input device.
                                                   ╲                         ╲
-        usage: [cmd]devices[/] [cmd]set_mic[/] [arg]{device}[/] \
-[[[kw]--rate[/] [arg]{RATE}[/]]] \
-[[[kw]--ch[/] [arg]{CH}[/]]] \
-[[[kw]--len[/] [arg]{LEN}[/]]] \
-[[[kw]--fmt[/] [arg]{FMT}[/]]]
+        usage: [cmd]devices[/] [cmd]set_mic[/] [arg]{device}[/] [[[kw]--rate[/] [arg]{RATE}[/]]] [[[kw]--ch[/] [arg]{CH}[/]]] [[[kw]--len[/] [arg]{LEN}[/]]] [[[kw]--fmt[/] [arg]{FMT}[/]]]
                                  ╱                             ╱                          ╱
-                       the index of input           the channel of audio         the data format
+                       The index of input           The channel of audio         The data format
                         device, -1 is the            input: 1 for mono,         of recorded sound.
                          default device.               2 for stereo.
         """
@@ -253,16 +252,12 @@ class DevicesCommand:
     def set_speaker(self, device, rate=None, ch=None, len=None, fmt=None):
         """[rich]Configure audio output.
 
-                                              the sample rate        the buffer length
+                                              The sample rate        The buffer length
                                               of played sound.       of output device.
                                                       ╲                         ╲
-        usage: [cmd]devices[/] [cmd]set_speaker[/] [arg]{device}[/] \
-[[[kw]--rate[/] [arg]{RATE}[/]]] \
-[[[kw]--ch[/] [arg]{CH}[/]]] \
-[[[kw]--len[/] [arg]{LEN}[/]]] \
-[[[kw]--fmt[/] [arg]{FMT}[/]]]
+        usage: [cmd]devices[/] [cmd]set_speaker[/] [arg]{device}[/] [[[kw]--rate[/] [arg]{RATE}[/]]] [[[kw]--ch[/] [arg]{CH}[/]]] [[[kw]--len[/] [arg]{LEN}[/]]] [[[kw]--fmt[/] [arg]{FMT}[/]]]
                                      ╱                             ╱                          ╱
-                           the index of output          the channel of audio         the data format
+                           The index of output          The channel of audio         The data format
                             device, -1 is the           output: 1 for mono,          of played sound.
                              default device.               2 for stereo.
         """
@@ -336,7 +331,10 @@ class DevicesCommand:
 
     @cmd.function_command
     def terminal(self):
-        """Show your terminal configuration."""
+        """[rich]Show your terminal configuration.
+
+        usage: [cmd]devices[/] [cmd]terminal[/]
+        """
 
         term = os.environ.get('TERM', None)
         vte = os.environ.get('VTE_VERSION', None)
@@ -350,14 +348,20 @@ class DevicesCommand:
 
     @cmd.function_command
     def fit_screen(self):
-        """Fit your terminal screen."""
+        """[rich]Fit your terminal screen.
+
+        usage: [cmd]devices[/] [cmd]fit_screen[/]
+        """
 
         return fit_screen(self.logger, self.config.current.devices.terminal)
 
     @cmd.function_command
     @dn.datanode
     def ucs_detect(self):
-        """Determines the unicode version of your terminal."""
+        """[rich]Determines the unicode version of your terminal.
+
+        usage: [cmd]devices[/] [cmd]ucs_detect[/]
+        """
 
         version = yield from determine_unicode_version(self.logger).join()
         if version is not None:
@@ -370,7 +374,10 @@ class DevicesCommand:
     @cmd.function_command
     @dn.datanode
     def test_keyboard(self):
-        """Test your keyboard."""
+        """[rich]Test your keyboard.
+
+        usage: [cmd]devices[/] [cmd]test_keyboard[/]
+        """
 
         logger = self.logger
         exit_key = 'Esc'
@@ -404,7 +411,10 @@ class DevicesCommand:
 
     @cmd.function_command
     def test_knock(self):
-        """Test knock detection."""
+        """[rich]Test knock detection.
+
+        usage: [cmd]devices[/] [cmd]test_knock[/]
+        """
         settings = self.config.current.devices.detector
         ref_time = 0.0
         return KnockTest(ref_time, settings, self.logger)

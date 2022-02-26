@@ -439,7 +439,10 @@ class ConfigCommand:
 
     @cmd.function_command
     def show(self):
-        """Show configuration."""
+        """[rich]Show configuration.
+
+        usage: [cmd]config[/] [cmd]show[/]
+        """
         text = self.config.format()
         is_changed = self.config.is_changed()
         title = self.config.get_title()
@@ -568,7 +571,10 @@ class ConfigCommand:
 
     @cmd.function_command
     def reload(self):
-        """Reload configuration."""
+        """[rich]Reload configuration.
+
+        usage: [cmd]config[/] [cmd]reload[/]
+        """
         logger = self.logger
 
         if not self.config.is_uptodate():
@@ -578,7 +584,10 @@ class ConfigCommand:
 
     @cmd.function_command
     def save(self):
-        """Save configuration."""
+        """[rich]Save configuration.
+
+        usage: [cmd]config[/] [cmd]save[/]
+        """
         logger = self.logger
 
         if not self.config.is_uptodate():
