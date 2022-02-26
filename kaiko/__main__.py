@@ -1,7 +1,4 @@
-from .main.menu import KAIKOMenu
-
-def main():
-    KAIKOMenu.main()
+from . import main
 
 if __name__ == '__main__':
-    main()
+    main.main()

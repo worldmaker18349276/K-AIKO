@@ -38,7 +38,7 @@ setup(
     include_package_data=True,
     entry_points={
         "console_scripts": [
-            "kaiko = kaiko.__main__:main",
+            "kaiko = kaiko.main:main",
         ],
     },
     project_urls={
