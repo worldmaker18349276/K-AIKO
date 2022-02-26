@@ -260,10 +260,6 @@ class Mixer:
 
         return node
 
-    @functools.lru_cache(maxsize=32)
-    def load_sound(self, filepath, stop_event=None):
-        return aud.load_sound(filepath, channels=self.nchannels, samplerate=self.samplerate, stop_event=stop_event)
-
     def play(self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
         node = self.resample(node, samplerate, channels, volume, start, end)
         node = dn.pipe(lambda a:a[0], dn.attach(node))

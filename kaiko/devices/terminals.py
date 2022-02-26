@@ -116,12 +116,14 @@ def inkey(node, stream=None, raw=False, dt=0.1):
         stream = sys.stdin
     fd = stream.fileno()
 
-    def run(stop_event):
+    @dn.datanode
+    def run():
+        yield
         ref_time = time.perf_counter()
+        yield
         while True:
             ready, _, _ = select.select([fd], [], [], dt)
-            if stop_event.is_set():
-                break
+            yield
 
             data = stream.read() if fd in ready else None
 
@@ -132,7 +134,7 @@ def inkey(node, stream=None, raw=False, dt=0.1):
 
     with inkey_ctxt(stream, raw):
         with node:
-            result = yield from dn.create_task(run).join()
+            result = yield from dn.create_task(run()).join()
             return result
 
 @contextlib.contextmanager

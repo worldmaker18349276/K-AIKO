@@ -1164,11 +1164,11 @@ class Beatmap:
 
         # prepare
         try:
-            yield from self.load_resources(samplerate, nchannels, user.data_dir).join()
+            yield from dn.create_task(self.load_resources(samplerate, nchannels, user.data_dir)).join()
         except aud.IOCancelled:
             return
 
-        total_subjects, start_time, end_time, events = yield from self.prepare_events(rich).join()
+        total_subjects, start_time, end_time, events = yield from dn.create_task(self.prepare_events(rich)).join()
 
         score = BeatmapScore()
         score.set_total_subjects(total_subjects)
@@ -1257,8 +1257,9 @@ class Beatmap:
 
         return score
 
+    @dn.datanode
     def load_resources(self, output_samplerate, output_nchannels, data_dir):
-        r"""Load resources asynchronously.
+        r"""Load resources.
 
         Parameters
         ----------
@@ -1266,35 +1267,45 @@ class Beatmap:
         output_channels : int
         data_dir : Path
         """
-        return dn.create_task(lambda stop_event: self._load_resources(output_samplerate,
-                                                                      output_nchannels,
-                                                                      data_dir,
-                                                                      stop_event))
 
-    def _load_resources(self, output_samplerate, output_nchannels, data_dir, stop_event):
         if self.path is not None and self.audio.path is not None:
             root = Path(self.path).parent
             try:
-                self.audionode = dn.DataNode.wrap(aud.load_sound(root / self.audio.path,
-                                                                 samplerate=output_samplerate,
-                                                                 channels=output_nchannels,
-                                                                 volume=self.audio.volume,
-                                                                 stop_event=stop_event))
+                sound = yield from aud.load_sound(
+                    root / self.audio.path,
+                    samplerate=output_samplerate,
+                    channels=output_nchannels,
+                    volume=self.audio.volume,
+                ).join()
+
+                self.audionode = dn.DataNode.wrap(sound)
+
+            except aud.IOCancelled:
+                raise
+
             except Exception as e:
                 raise RuntimeError(f"Failed to load song {self.audio.path}") from e
 
         for name, path in self.settings.resources.items():
             sound_path = os.path.join(data_dir, path)
             try:
-                self.resources[name] = aud.load_sound(sound_path,
-                                                      samplerate=output_samplerate,
-                                                      channels=output_nchannels,
-                                                      stop_event=stop_event)
+                resource = yield from aud.load_sound(
+                    sound_path,
+                    samplerate=output_samplerate,
+                    channels=output_nchannels,
+                ).join()
+
+                self.resources[name] = resource
+
+            except aud.IOCancelled:
+                raise
+
             except Exception as e:
                 raise RuntimeError(f"Failed to load resource {name} at {sound_path}") from e
 
+    @dn.datanode
     def prepare_events(self, rich):
-        r"""Prepare events asynchronously.
+        r"""Prepare events.
 
         Parameters
         ----------
@@ -1307,15 +1318,16 @@ class Beatmap:
         end_time: float
         events: list of Event
         """
-        return dn.create_task(lambda stop_event: self._prepare_events(rich, stop_event))
 
-    def _prepare_events(self, rich, stop_event):
         events = []
         for track in self.tracks.values():
             context = {}
             for event in track:
-                if stop_event.is_set():
+                try:
+                    yield
+                except GeneratorExit:
                     raise RuntimeError("The operation has been cancelled.")
+
                 event = dataclasses.replace(event)
                 event.prepare(self, rich, context)
                 if isinstance(event, Event):

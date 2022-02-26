@@ -250,9 +250,6 @@ def play(manager, node, samplerate=44100, buffer_shape=1024, format='f4', device
         yield from _stream_task(output_stream, error)
 
 
-class IOCancelled(Exception):
-    pass
-
 @dataclasses.dataclass
 class AudioMetadata:
     samplerate : float
@@ -282,31 +279,21 @@ class AudioMetadata:
         return cls(samplerate, duration, channels, sampwidth)
 
 @dn.datanode
-def load(filepath, stop_event=None):
+def load(filepath):
     """A data node to load sound file.
 
     Parameters
     ----------
     filepath : str or Path
         The sound file to load.
-    stop_event : Event
-        The event to cancel loading file.
 
     Yields
     ------
     data : ndarray
         The loaded signal.
-
-    Raises
-    ------
-    IOCancelled
-        when the task has been cancelled.
     """
     if isinstance(filepath, str):
         filepath = Path(filepath)
-
-    if stop_event is None:
-        stop_event = threading.Event()
 
     if filepath.suffix == ".wav":
         with wave.open(str(filepath), 'rb') as file:
@@ -323,8 +310,6 @@ def load(filepath, stop_event=None):
                 data = file.readframes(chunk)
                 remaining -= len(data)//width
                 yield frombuffer(data)
-                if stop_event.is_set():
-                    raise IOCancelled(f"The operation of loading file {filepath} has been cancelled.")
 
     else:
         with audioread.audio_open(str(filepath)) as file:
@@ -336,11 +321,9 @@ def load(filepath, stop_event=None):
 
             for data in file:
                 yield frombuffer(data)
-                if stop_event.is_set():
-                    raise IOCancelled(f"The operation of loading file {filepath} has been cancelled.")
 
 @dn.datanode
-def save(filepath, samplerate=44100, channels=1, width=2, stop_event=None):
+def save(filepath, samplerate=44100, channels=1, width=2):
     """A data node to save as .wav file.
 
     Parameters
@@ -353,24 +336,14 @@ def save(filepath, samplerate=44100, channels=1, width=2, stop_event=None):
         The number of channels, default is `1`.
     width : int, optional
         The sample width in bytes.
-    stop_event : Event
-        The event to cancel saving file.
 
     Receives
     ------
     data : ndarray
         The signal to save.
-
-    Raises
-    ------
-    IOCancelled
-        when the task has been cancelled.
     """
     if isinstance(filepath, str):
         filepath = Path(filepath)
-
-    if stop_event is None:
-        stop_event = threading.Event()
 
     with wave.open(str(filepath), 'wb') as file:
         scale = 2.0 ** (8*width - 1)
@@ -385,12 +358,14 @@ def save(filepath, samplerate=44100, channels=1, width=2, stop_event=None):
 
         while True:
             file.writeframes(tobuffer((yield)))
-            if stop_event.is_set():
-                raise IOCancelled(f"The operation of saving file {filepath} has been cancelled.")
 
-def load_sound(filepath, samplerate=None, channels=None, volume=0.0, start=None, end=None, chunk_length=1024, stop_event=None):
+class IOCancelled(Exception):
+    pass
+
+@dn.datanode
+def load_sound(filepath, samplerate=None, channels=None, volume=0.0, start=None, end=None, chunk_length=1024):
     meta = AudioMetadata.read(filepath)
-    node = load(filepath, stop_event)
+    node = load(filepath)
 
     if start is not None or end is not None:
         node = dn.tslice(node, meta.samplerate, start, end)
@@ -404,6 +379,13 @@ def load_sound(filepath, samplerate=None, channels=None, volume=0.0, start=None,
     if chunk_length is not None:
         curr_channels = channels if channels is not None else meta.channels
         node = dn.chunk(node, chunk_shape=(chunk_length, curr_channels))
+
+    sound = []
     with node:
-        sound = list(node)
+        for data in node:
+            sound.append(data)
+            try:
+                yield
+            except GeneratorExit:
+                raise IOCancelled(f"The operation of loading file {filepath} has been cancelled.")
     return sound
