@@ -430,9 +430,9 @@ class FieldParser(cmd.TreeParser):
         field = self.parse(token)
         return self.config_type.get_field_doc(field)
 
-class ConfigCommand:
-    def __init__(self, config, logger):
-        self.config = config
+class ProfilesCommand:
+    def __init__(self, profiles, logger):
+        self.profiles = profiles
         self.logger = logger
 
     # configuration
@@ -441,68 +441,68 @@ class ConfigCommand:
     def show(self):
         """[rich]Show configuration.
 
-        usage: [cmd]config[/] [cmd]show[/]
+        usage: [cmd]profiles[/] [cmd]show[/]
         """
-        text = self.config.format()
-        is_changed = self.config.is_changed()
-        title = self.config.get_title()
+        text = self.profiles.format()
+        is_changed = self.profiles.is_changed()
+        title = self.profiles.get_title()
         self.logger.print(self.logger.format_code(text, title=title, is_changed=is_changed))
 
     @cmd.function_command
     def has(self, field):
         """[rich]Check whether this field is set in the configuration.
 
-        usage: [cmd]config[/] [cmd]has[/] [arg]{field}[/]
-                            ╱
-                     The field name.
+        usage: [cmd]profiles[/] [cmd]has[/] [arg]{field}[/]
+                              ╱
+                       The field name.
         """
-        return self.config.has(field)
+        return self.profiles.has(field)
 
     @cmd.function_command
     def get(self, field):
         """[rich]Get the value of this field in the configuration.
 
-        usage: [cmd]config[/] [cmd]get[/] [arg]{field}[/]
-                            ╱
-                     The field name.
+        usage: [cmd]profiles[/] [cmd]get[/] [arg]{field}[/]
+                              ╱
+                       The field name.
         """
-        if not self.config.has(field) and not self.config.has_default(field):
+        if not self.profiles.has(field) and not self.profiles.has_default(field):
             self.logger.print(f"[warn]No value for field {'.'.join(field)}[/]")
             return
-        return self.config.get(field)
+        return self.profiles.get(field)
 
     @cmd.function_command
     def set(self, field, value):
         """[rich]Set this field in the configuration.
 
-        usage: [cmd]config[/] [cmd]set[/] [arg]{field}[/] [arg]{value}[/]
-                            ╱         ╲
-                   The field name.   The value.
+        usage: [cmd]profiles[/] [cmd]set[/] [arg]{field}[/] [arg]{value}[/]
+                              ╱         ╲
+                     The field name.   The value.
         """
-        self.config.set(field, value)
-        self.config.set_change()
+        self.profiles.set(field, value)
+        self.profiles.set_change()
 
     @cmd.function_command
     def unset(self, field):
         """[rich]Unset this field in the configuration.
 
-        usage: [cmd]config[/] [cmd]unset[/] [arg]{field}[/]
-                              ╱
-                       The field name.
+        usage: [cmd]profiles[/] [cmd]unset[/] [arg]{field}[/]
+                                ╱
+                         The field name.
         """
-        self.config.unset(field)
-        self.config.set_change()
+        self.profiles.unset(field)
+        self.profiles.set_change()
 
     @cmd.function_command
     @dn.datanode
     def edit(self):
         """[rich]Edit the configuration by external editor.
 
-        usage: [cmd]config[/] [cmd]edit[/]
+        usage: [cmd]profiles[/] [cmd]edit[/]
         """
-        editor = self.config.current.devices.terminal.editor
+        editor = self.profiles.current.devices.terminal.editor
 
-        text = cfg.format(self.config.config_type, self.config.current, self.config.settings_name)
+        text = cfg.format(self.profiles.config_type, self.profiles.current, self.profiles.settings_name)
 
         yield
 
@@ -515,7 +515,7 @@ class ConfigCommand:
 
         # parse result
         try:
-            res = cfg.parse(self.config.config_type, text, self.config.settings_name)
+            res = cfg.parse(self.profiles.config_type, text, self.profiles.settings_name)
 
         except pc.ParseError as error:
             line, col = pc.ParseError.locate(error.text, error.index)
@@ -532,132 +532,132 @@ class ConfigCommand:
                 self.logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
-            self.config.current = res
-            self.config.set_change()
+            self.profiles.current = res
+            self.profiles.set_change()
 
     @get.arg_parser("field")
     @has.arg_parser("field")
     @unset.arg_parser("field")
     @set.arg_parser("field")
     def _field_parser(self):
-        return FieldParser(self.config.config_type)
+        return FieldParser(self.profiles.config_type)
 
     @set.arg_parser("value")
     def _set_value_parser(self, field):
-        annotation = self.config.config_type.get_field_type(field)
-        default = self.config.get(field)
+        annotation = self.profiles.config_type.get_field_type(field)
+        default = self.profiles.get(field)
         return cmd.LiteralParser(annotation, default)
 
     # profiles
 
     @cmd.function_command
-    def profiles(self):
+    def list(self):
         """[rich]Show all profiles.
 
-        usage: [cmd]config[/] [cmd]profiles[/]
+        usage: [cmd]profiles[/] [cmd]list[/]
         """
         logger = self.logger
 
-        if not self.config.is_uptodate():
-            self.config.update()
+        if not self.profiles.is_uptodate():
+            self.profiles.update()
 
-        for profile in self.config.profiles:
+        for profile in self.profiles.profiles:
             note = ""
-            if profile == self.config.default_name:
+            if profile == self.profiles.default_name:
                 note += " (default)"
-            if profile == self.config.current_name:
+            if profile == self.profiles.current_name:
                 note += " (current)"
-            logger.print(logger.emph(profile + self.config.extension) + note)
+            logger.print(logger.emph(profile + self.profiles.extension) + note)
 
     @cmd.function_command
     def reload(self):
         """[rich]Reload configuration.
 
-        usage: [cmd]config[/] [cmd]reload[/]
+        usage: [cmd]profiles[/] [cmd]reload[/]
         """
         logger = self.logger
 
-        if not self.config.is_uptodate():
-            self.config.update()
+        if not self.profiles.is_uptodate():
+            self.profiles.update()
 
-        self.config.load()
+        self.profiles.load()
 
     @cmd.function_command
     def save(self):
         """[rich]Save configuration.
 
-        usage: [cmd]config[/] [cmd]save[/]
+        usage: [cmd]profiles[/] [cmd]save[/]
         """
         logger = self.logger
 
-        if not self.config.is_uptodate():
-            self.config.update()
+        if not self.profiles.is_uptodate():
+            self.profiles.update()
 
-        self.config.save()
+        self.profiles.save()
 
     @cmd.function_command
     def set_default(self):
         """[rich]Set the current configuration profile as default.
 
-        usage: [cmd]config[/] [cmd]set_default[/]
+        usage: [cmd]profiles[/] [cmd]set_default[/]
         """
-        if not self.config.is_uptodate():
-            self.config.update()
+        if not self.profiles.is_uptodate():
+            self.profiles.update()
 
-        self.config.set_default()
+        self.profiles.set_default()
 
     @cmd.function_command
     def use(self, profile):
         """[rich]Change the current configuration profile.
 
-        usage: [cmd]config[/] [cmd]use[/] [arg]{profile}[/]
-                              ╱
-                     The profile name.
+        usage: [cmd]profiles[/] [cmd]use[/] [arg]{profile}[/]
+                                ╱
+                       The profile name.
         """
 
-        if not self.config.is_uptodate():
-            self.config.update()
+        if not self.profiles.is_uptodate():
+            self.profiles.update()
 
-        self.config.use(profile)
+        self.profiles.use(profile)
 
     @cmd.function_command
     def rename(self, profile):
         """[rich]Rename current configuration profile.
 
-        usage: [cmd]config[/] [cmd]rename[/] [arg]{profile}[/]
-                                ╱
-                      The profile name.
+        usage: [cmd]profiles[/] [cmd]rename[/] [arg]{profile}[/]
+                                  ╱
+                        The profile name.
         """
-        if not self.config.is_uptodate():
-            self.config.update()
+        if not self.profiles.is_uptodate():
+            self.profiles.update()
 
-        self.config.rename(profile)
+        self.profiles.rename(profile)
 
     @cmd.function_command
     def new(self, profile, clone=None):
         """[rich]Make new configuration profile.
 
-        usage: [cmd]config[/] [cmd]new[/] [arg]{profile}[/] [[[kw]--clone[/] [arg]{PROFILE}[/]]]
-                              ╱                    ╲
-                     The profile name.      The profile to be cloned.
+        usage: [cmd]profiles[/] [cmd]new[/] [arg]{profile}[/] [[[kw]--clone[/] [arg]{PROFILE}[/]]]
+                                ╱                    ╲
+                       The profile name.      The profile to be cloned.
         """
-        if not self.config.is_uptodate():
-            self.config.update()
+        if not self.profiles.is_uptodate():
+            self.profiles.update()
 
-        self.config.new(profile, clone)
+        self.profiles.new(profile, clone)
 
     @cmd.function_command
     def delete(self, profile):
         """[rich]Delete a configuration profile.
 
-        usage: [cmd]config[/] [cmd]delete[/] [arg]{profile}[/]
-                                ╱
-                       The profile name.
+        usage: [cmd]profiles[/] [cmd]delete[/] [arg]{profile}[/]
+                                  ╱
+                         The profile name.
         """
-        if not self.config.is_uptodate():
-            self.config.update()
+        if not self.profiles.is_uptodate():
+            self.profiles.update()
 
-        self.config.delete(profile)
+        self.profiles.delete(profile)
 
     @rename.arg_parser("profile")
     @new.arg_parser("profile")
@@ -668,5 +668,5 @@ class ConfigCommand:
     @use.arg_parser("profile")
     @delete.arg_parser("profile")
     def _old_profile_parser(self, *_, **__):
-        return cmd.OptionParser(self.config.profiles,
+        return cmd.OptionParser(self.profiles.profiles,
                                 desc="It should be the name of the profile that exists in the configuration.")

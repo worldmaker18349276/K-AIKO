@@ -15,7 +15,7 @@ from ..devices import loggers as log
 from ..beats import beatshell
 from ..beats import beatmaps
 from ..beats import beatsheets
-from .profiles import ProfileManager, ConfigCommand
+from .profiles import ProfileManager, ProfilesCommand
 from .songs import BeatmapManager, KAIKOBGMController, BGMCommand
 from .devices import prepare_pyaudio, DevicesCommand, determine_unicode_version, fit_screen
 
@@ -115,23 +115,23 @@ class KAIKOUser:
 class KAIKOMenu:
     update_interval = 0.01
 
-    def __init__(self, config, user, manager, logger):
+    def __init__(self, profiles, user, manager, logger):
         r"""Constructor.
 
         Parameters
         ----------
-        config : ProfileManager
+        profiles : ProfileManager
         user : KAIKOUser
         manager : PyAudio
         logger : loggers.Logger
         """
-        self._config = config
+        self._profiles = profiles
         self.user = user
         self.manager = manager
         self.logger = logger
         self.beatmap_manager = BeatmapManager(user.songs_dir, logger)
-        self.bgm_controller = KAIKOBGMController(config.current.devices.mixer, logger, self.beatmap_manager)
-        config.on_change(lambda settings: self.bgm_controller.update_mixer_settings(settings.devices.mixer))
+        self.bgm_controller = KAIKOBGMController(profiles.current.devices.mixer, logger, self.beatmap_manager)
+        profiles.on_change(lambda settings: self.bgm_controller.update_mixer_settings(settings.devices.mixer))
 
     @classmethod
     def main(cls):
@@ -161,26 +161,26 @@ class KAIKOMenu:
         user = KAIKOUser.create()
         user.prepare(logger)
 
-        # load config
-        config = ProfileManager(user.config_dir, logger)
-        config.update()
+        # load profiles
+        profiles = ProfileManager(user.config_dir, logger)
+        profiles.update()
 
-        succ = config.use()
+        succ = profiles.use()
         if not succ:
-            yes = logger.ask("Make a new configuration?").exhaust(dt=cls.update_interval, interruptible=True)
+            yes = logger.ask("Make a new profile?").exhaust(dt=cls.update_interval, interruptible=True)
             if not yes:
-                raise RuntimeError("Fail to load configuration")
+                raise RuntimeError("Fail to load profile")
 
-            succ = config.new()
+            succ = profiles.new()
             if not succ:
-                raise RuntimeError("Fail to load configuration")
+                raise RuntimeError("Fail to load profile")
 
         # load PyAudio
         logger.print("[info/] Load PyAudio...")
         logger.print()
 
         with prepare_pyaudio(logger) as manager:
-            yield cls(config, user, manager, logger)
+            yield cls(profiles, user, manager, logger)
 
     @dn.datanode
     def run(self):
@@ -198,7 +198,7 @@ class KAIKOMenu:
             if version is not None:
                 os.environ["UNICODE_VERSION"] = version
                 self.settings.devices.terminal.unicode_version = version
-                self._config.set_change()
+                self._profiles.set_change()
             logger.print()
 
         # fit screen size
@@ -293,7 +293,7 @@ class KAIKOMenu:
     @property
     def settings(self):
         r"""Current settings."""
-        return self._config.current
+        return self._profiles.current
 
     # beatmaps
 
@@ -392,22 +392,22 @@ class KAIKOMenu:
 
     @cmd.subcommand
     def bgm(self):
-        """Background music."""
+        """Subcommand to control background music."""
         return BGMCommand(self.bgm_controller, self.beatmap_manager, self.logger)
 
     # devices
 
     @cmd.subcommand
     def devices(self):
-        """Devices."""
-        return DevicesCommand(self._config, self.logger, self.manager)
+        """Subcommand to manage devices."""
+        return DevicesCommand(self._profiles, self.logger, self.manager)
 
-    # config
+    # profiles
 
     @cmd.subcommand
-    def config(self):
-        """Configuration."""
-        return ConfigCommand(self._config, self.logger)
+    def profiles(self):
+        """Subcommand to manage profiles and configurations."""
+        return ProfilesCommand(self._profiles, self.logger)
 
     # system
 
@@ -469,7 +469,7 @@ class KAIKOMenu:
 
         usage: [cmd]bye[/]
         """
-        if self._config.is_changed():
+        if self._profiles.is_changed():
             yes = yield from self.logger.ask("Exit without saving current configuration?").join()
             if not yes:
                 return
