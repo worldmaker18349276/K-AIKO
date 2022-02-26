@@ -524,7 +524,7 @@ class BeatbarWidgetBuilder:
         else:
             assert False
 
-BeatbarWidgetSettings = Union[
+BeatbarIconWidgetSettings = Union[
     beatwidgets.SpectrumWidgetSettings,
     beatwidgets.VolumeIndicatorWidgetSettings,
     beatwidgets.ScoreWidgetSettings,
@@ -532,19 +532,21 @@ BeatbarWidgetSettings = Union[
     beatwidgets.AccuracyMeterWidgetSettings,
     beatwidgets.MonitorWidgetSettings,
 ]
+BeatbarHeaderWidgetSettings = BeatbarIconWidgetSettings
+BeatbarFooterWidgetSettings = BeatbarIconWidgetSettings
 
 class BeatbarWidgetSettings(cfg.Configurable):
     r"""
     Fields
     ------
-    icon_widget : BeatbarWidgetSettings
+    icon_widget : BeatbarIconWidgetSettings
         The widget on the icon.
-    header_widget : BeatbarWidgetSettings
+    header_widget : BeatbarHeaderWidgetSettings
         The widget on the header.
-    footer_widget : BeatbarWidgetSettings
+    footer_widget : BeatbarFooterWidgetSettings
         The widget on the footer.
     """
-    icon_widget: BeatbarWidgetSettings = BeatbarWidgetBuilder.spectrum()
-    header_widget: BeatbarWidgetSettings = BeatbarWidgetBuilder.score()
-    footer_widget: BeatbarWidgetSettings = BeatbarWidgetBuilder.progress()
+    icon_widget: BeatbarIconWidgetSettings = BeatbarWidgetBuilder.spectrum()
+    header_widget: BeatbarHeaderWidgetSettings = BeatbarWidgetBuilder.score()
+    footer_widget: BeatbarFooterWidgetSettings = BeatbarWidgetBuilder.progress()
 
