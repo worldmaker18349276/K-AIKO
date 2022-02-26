@@ -1,4 +1,4 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 exec(open("kaiko/__init__.py").read())
 
@@ -25,7 +25,7 @@ setup(
         "terminal-based",
         "rhythm game",
     ],
-    packages=["kaiko"],
+    packages=find_packages(),
     python_requires=">=3.9, <4",
     install_requires=[
         "numpy",
@@ -38,7 +38,7 @@ setup(
     include_package_data=True,
     entry_points={
         "console_scripts": [
-            "kaiko = kaiko.main:main",
+            "kaiko = kaiko.__main__:main",
         ],
     },
     project_urls={
