@@ -578,7 +578,7 @@ class SpeakerTest:
         dt = 60.0 / self.tempo
         t0 = self.delay
         click_task = dn.interval(
-            producer=self.make_click(mixer, samplerate, nchannels), dt=dt, t0=t0
+            self.make_click(mixer, samplerate, nchannels), dt=dt, t0=t0
         )
 
         return dn.pipe(mixer_task, click_task)
