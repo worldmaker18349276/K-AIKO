@@ -21,6 +21,7 @@ class SHLEXER_STATE(Enum):
 
 def shlexer_tokenize(raw):
     r"""Tokenizer for shell-like grammar.
+
     The delimiter is just whitespace, and the token is defined as::
 
         <nonspace-character> ::= /[^ \\\']/
@@ -28,9 +29,10 @@ def shlexer_tokenize(raw):
         <quoted-string> ::= "'" /[^']*/ "'"
         <token> ::= ( <nonspace-character> | <backslashed-character> | <quoted-string> )*
 
-    The backslashes and quotation marks used for escaping will be deleted after being interpreted as a string.
-    The input string should be printable, so it doesn't contain tab, newline, backspace, etc.
-    In this grammar, the token of an empty string can be expressed as `''`.
+    The backslashes and quotation marks used for escaping will be deleted after
+    being interpreted as a string. The input string should be printable, so it
+    doesn't contain tab, newline, backspace, etc. In this grammar, the token of
+    an empty string can be expressed as `''`.
 
     Parameters
     ----------
@@ -45,7 +47,8 @@ def shlexer_tokenize(raw):
         The position of this token.
     quotes : list of int
         The indices of all backslashes and quotation marks used for escaping.
-        The token is equal to `''.join(raw[i] for i in range(*slice.indices(len(raw))) if i not in quotes)`.
+        The token is equal to
+        `''.join(raw[i] for i in range(*slice.indices(len(raw))) if i not in quotes)`.
 
     Returns
     -------
@@ -121,20 +124,24 @@ def shlexer_tokenize(raw):
 
 def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
     r"""Escape a given string so that it can be inserted into an untokenized string.
-    The strategy to escape insert string only depends on the state of insert position.
+
+    The strategy to escape insert string only depends on the state of insert
+    position.
 
     Parameters
     ----------
     compreply : str
-        The string to insert.  The suffix `'\000'` indicate closing the token.
-        But inserting `'\000'` after backslash results in `''`, since it is impossible to close it.
+        The string to insert. The suffix `'\000'` indicate closing the token.
+        But inserting `'\000'` after backslash results in `''`, since it is
+        impossible to close it.
     state : SHLEXER_STATE
         The state of insert position.
 
     Returns
     -------
     raw : str
-        The escaped string which can be inserted into untokenized string directly.
+        The escaped string which can be inserted into untokenized string
+        directly.
     """
     partial = not compreply.endswith("\000")
     if not partial:
@@ -281,10 +288,10 @@ class BeatShellSettings(cfg.Configurable):
             The maximum history size.
 
         keymap : dict from str to str
-            The keymap of beatshell.  The key of dict is the keystroke, and the
-            value of dict is the action to activate.  The format of action is just
-            like a normal python code: `input.insert_typeahead() or input.move_right()`.
-            The syntax are::
+            The keymap of beatshell. The key of dict is the keystroke, and the
+            value of dict is the action to activate. The format of action is
+            just like a normal python code: `input.insert_typeahead() or
+            input.move_right()`. The syntax are::
 
                 <function> ::= "input." /(?!_)\w+/ "()"
                 <operator> ::= " | " | " & " | " and " | " or "
@@ -764,13 +771,15 @@ class BeatInput:
     @locked
     def show_typeahead(self):
         """Make typeahead.
-        Show the possible command you want to type.  Only work if the caret is at
-        the end of buffer.
+
+        Show the possible command you want to type. Only work if the caret is
+        at the end of buffer.
 
         Returns
         -------
         succ : bool
-            `False` if unable to complete or the caret is not at the end of buffer.
+            `False` if unable to complete or the caret is not at the end of
+            buffer.
         """
         if self.pos != len(self.buffer):
             self.typeahead = ""
@@ -835,6 +844,7 @@ class BeatInput:
     @locked
     def set_hint(self, hint, index=None):
         """Set hint.
+
         Show hint below the prompt.
 
         Parameters
@@ -842,7 +852,8 @@ class BeatInput:
         hint : Hint
             The hint.
         index : int or None
-            Index of the token to which the hint is directed, or `None` for nothing.
+            Index of the token to which the hint is directed, or `None` for
+            nothing.
 
         Returns
         -------
@@ -870,6 +881,7 @@ class BeatInput:
     @locked
     def cancel_hint(self):
         """Cancel hint.
+
         Remove the hint below the prompt.
 
         Returns
@@ -886,6 +898,7 @@ class BeatInput:
     @locked
     def update_hint(self):
         """Update hint.
+
         Remove hint if the target is updated.
 
         Returns
@@ -943,12 +956,14 @@ class BeatInput:
     @onstate("EDIT")
     def insert_typeahead(self):
         """Insert typeahead.
+
         Insert the typeahead if the caret is at the end of buffer.
 
         Returns
         -------
         succ : bool
-            `False` if there is no typeahead or the caret is not at the end of buffer.
+            `False` if there is no typeahead or the caret is not at the end of
+            buffer.
         """
 
         if self.typeahead == "" or self.pos != len(self.buffer):
@@ -966,12 +981,13 @@ class BeatInput:
     @onstate("EDIT")
     def insert(self, text):
         """Input.
+
         Insert some text into the buffer.
 
         Parameters
         ----------
         text : str
-            The text to insert.  It shouldn't contain any nongraphic character,
+            The text to insert. It shouldn't contain any nongraphic character,
             except for prefix `\\b` which indicate deleting.
 
         Returns
@@ -1005,6 +1021,7 @@ class BeatInput:
     @onstate("EDIT")
     def backspace(self):
         """Backspace.
+
         Delete one character before the caret if exists.
 
         Returns
@@ -1026,6 +1043,7 @@ class BeatInput:
     @onstate("EDIT")
     def delete(self):
         """Delete.
+
         Delete one character after the caret if exists.
 
         Returns
@@ -1096,6 +1114,7 @@ class BeatInput:
     @onstate("EDIT")
     def delete_to_word_start(self):
         """Delete to the word start.
+
         The word is defined as `\\w+|\\W+`.
 
         Returns
@@ -1112,6 +1131,7 @@ class BeatInput:
     @onstate("EDIT")
     def delete_to_word_end(self):
         """Delete to the word end.
+
         The word is defined as `\\w+|\\W+`.
 
         Returns
@@ -1128,6 +1148,7 @@ class BeatInput:
     @onstate("EDIT")
     def move_to(self, pos):
         """Move caret to the specific position.
+
         Regardless of success or failure, typeahead will be cancelled.
 
         Parameters
@@ -1286,6 +1307,7 @@ class BeatInput:
     @onstate("EDIT")
     def ask_hint(self, index=None, clear=False):
         """Ask some hint for command.
+
         Provide some hint for the command on the caret.
 
         Parameters
@@ -1334,6 +1356,7 @@ class BeatInput:
     @onstate("EDIT")
     def help(self):
         """Help for command.
+
         Print some hint for the command before the caret.
 
         Returns
@@ -1435,14 +1458,16 @@ class BeatInput:
     @onstate("EDIT")
     def autocomplete(self, action=+1):
         """Autocomplete.
+
         Complete the token on the caret, or fill in suggestions if caret is
         located in between.
 
         Parameters
         ----------
         action : +1 or -1 or 0
-            Indicating direction for exploration of suggestions.  `+1` for next
-            suggestion; `-1` for previous suggestion; `0` for canceling the process.
+            Indicating direction for exploration of suggestions. `+1` for next
+            suggestion; `-1` for previous suggestion; `0` for canceling the
+            process.
 
         Returns
         -------

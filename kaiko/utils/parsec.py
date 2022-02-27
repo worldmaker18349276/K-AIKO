@@ -1,5 +1,6 @@
 """
-A universal Python parser combinator library inspired by Parsec library of Haskell.
+A universal Python parser combinator library inspired by Parsec library of
+Haskell.
 
 This is a fork of https://github.com/sighingnow/parsec.py.
 """
@@ -140,9 +141,9 @@ class ParseError(Exception):
 def parsec(func):
     """Make a parser function in generator form.
 
-    Yield parser to parse text, and the result will be send back.
-    Catch exception `ParseFailure` to deal with the failure.
-    Use `return` to return parsing result.
+    Yield parser to parse text, and the result will be send back. Catch
+    exception `ParseFailure` to deal with the failure. Use `return` to return
+    parsing result.
 
     Parameters
     ----------
@@ -200,12 +201,12 @@ def parsec(func):
 class Parsec:
     """The parser combinator.
 
-    Parsec is an object that wrap up all functionality of parser combinator
-    in a pythonic way.  It provides monadic methods to manipulate the parsing
-    state and result values.  Parser can be built up by simple atomic parsers
-    and combinators very easily, so there is no need to manage parser state
-    by hand.  But the flaws are hard to backtrack and easy to encounter infinite
-    loop.  Nevertheless, it is still very powerful for writing simple parsers.
+    Parsec is an object that wrap up all functionality of parser combinator in a
+    pythonic way. It provides monadic methods to manipulate the parsing state
+    and result values. Parser can be built up by simple atomic parsers and
+    combinators very easily, so there is no need to manage parser state by hand.
+    But the flaws are hard to backtrack and easy to encounter infinite loop.
+    Nevertheless, it is still very powerful for writing simple parsers.
     """
 
     def __init__(self, func):
@@ -214,12 +215,11 @@ class Parsec:
         Parameters
         ----------
         func : function
-            The function that do the parsing work.
-            Arguments of this function should be a string to be parsed and
-            the index on which to begin parsing.
-            The function should return `(value, next_index)` if parsing
-            successfully, or raise `ParseError` on the failure, which should
-            be caused by `ParseFailure`.
+            The function that do the parsing work. Arguments of this function
+            should be a string to be parsed and the index on which to begin
+            parsing. The function should return `(value, next_index)` if parsing
+            successfully, or raise `ParseError` on the failure, which should be
+            caused by `ParseFailure`.
         """
         self.func = func
 
@@ -258,10 +258,9 @@ class Parsec:
         """Bind a parser function with the result of this parser.
 
         If the parsing is successful, passes the result to `successor`, and
-        continues with the parser returned from `successor`.  If it fails,
-        passes the failure to `catcher`, and continues with the parser
-        returned from `catcher`.
-        In the generator form, it looks like::
+        continues with the parser returned from `successor`. If it fails, passes
+        the failure to `catcher`, and continues with the parser returned from
+        `catcher`. In the generator form, it looks like::
 
             try:
                 res1 = yield self
@@ -307,8 +306,8 @@ class Parsec:
     def map(self, func):
         """Modify the result value by a function.
 
-        If parser is success, transforms the produced value of parser with `func`.
-        In the combinator form, it looks like::
+        If parser is success, transforms the produced value of parser with
+        `func`. In the combinator form, it looks like::
 
             self.bind(lambda res: nothing(func(res)))
 
@@ -336,8 +335,8 @@ class Parsec:
     def starmap(self, func):
         """Transform parser results, which should be wrapped up in a tuple, by a function.
 
-        It is the same as `map` except spreading.
-        In the combinator form, it looks like::
+        It is the same as `map` except spreading. In the combinator form, it
+        looks like::
 
             self.map(lambda res: func(*res))
 
@@ -425,8 +424,8 @@ class Parsec:
     def choice(self, *others):
         """Parse others if this parser failed without consuming any input.
 
-        If you need backtracking, apply `attempt` first.
-        In the combinator form, it looks like::
+        If you need backtracking, apply `attempt` first. In the combinator form,
+        it looks like::
 
             self.bind(catcher=lambda _: other)
 
@@ -466,7 +465,7 @@ class Parsec:
         return Parsec(choice_parser)
 
     def concat(self, *others):
-        """Concatenate multiple parsers into one.  Return a tuple of results they produced.
+        """Concatenate multiple parsers into one. Return a tuple of results they produced.
 
         In the combinator form, it looks like::
 
@@ -607,8 +606,8 @@ class Parsec:
     def ahead(self):
         """Parse string by looking ahead.
 
-        It will parse without consuming any input if success,
-        but still consume input on failure.
+        It will parse without consuming any input if success, but still consume
+        input on failure.
 
         Returns
         -------
@@ -624,8 +623,8 @@ class Parsec:
     def attempt(self):
         """Backtrack to the original position.
 
-        It will not consume any input when it failed,
-        so that one can parse another case by `choice`.
+        It will not consume any input when it failed, so that one can parse
+        another case by `choice`.
 
         Returns
         -------
@@ -677,9 +676,8 @@ class Parsec:
     def optional(self):
         """Make a parser as optional.
 
-        It will wrap up the result value in a tuple,
-        and return empty tuple on failure.
-        In the combinator form, it looks like::
+        It will wrap up the result value in a tuple, and return empty tuple on
+        failure. In the combinator form, it looks like::
 
             self.bind(
                 lambda res: nothing((res,)),
@@ -764,7 +762,7 @@ class Parsec:
     # combinators
 
     def join(self, parsers):
-        """Join parsers just like `str.join`.  Return a tuple of result values of `self`.
+        """Join parsers just like `str.join`. Return a tuple of result values of `self`.
 
         In the combinator form, it looks like::
 
@@ -808,7 +806,7 @@ class Parsec:
         return Parsec(join_parser)
 
     def between(self, opening, closing):
-        """Enclose a parser by `opening` and `closing`.  Return the result value of `self`.
+        """Enclose a parser by `opening` and `closing`. Return the result value of `self`.
 
         In the combinator form, it looks like::
 
@@ -890,7 +888,7 @@ class Parsec:
         return Parsec(times_parser)
 
     def many(self):
-        """Repeat a parser as much as possible.  Return a list of result values of `self`.
+        """Repeat a parser as much as possible. Return a list of result values of `self`.
 
         In the combinator form, it looks like::
 
@@ -930,7 +928,7 @@ class Parsec:
         return Parsec(many_parser)
 
     def many_till(self, end):
-        """Repeat a parser until `end` succeed.  Return a list of result values of `self`.
+        """Repeat a parser until `end` succeed. Return a list of result values of `self`.
 
         In the combinator form, it looks like::
 
@@ -975,7 +973,7 @@ class Parsec:
         return Parsec(many_till_parser)
 
     def sep_by(self, sep):
-        """Repeat a parser and separated by `sep`.  Return a list of result values of `self`.
+        """Repeat a parser and separated by `sep`. Return a list of result values of `self`.
 
         In the combinator form, it looks like::
 
@@ -1034,7 +1032,7 @@ class Parsec:
         return Parsec(sep_by_parser)
 
     def sep_by1(self, sep):
-        """Repeat a parser at least once, separated by `sep`.  Return a list of result values of `self`.
+        """Repeat a parser at least once, separated by `sep`. Return a list of result values of `self`.
 
         In the combinator form, it looks like::
 
@@ -1077,7 +1075,7 @@ class Parsec:
         return Parsec(sep_by1_parser)
 
     def sep_end_by(self, sep):
-        """Repeat a parser and separated/optionally end by `sep`.  Return a list of result values of `self`.
+        """Repeat a parser and separated/optionally end by `sep`. Return a list of result values of `self`.
 
         In the combinator form, it looks like::
 
@@ -1132,7 +1130,7 @@ class Parsec:
         return Parsec(sep_end_by_parser)
 
     def sep_end_by1(self, sep):
-        """Repeat a parser at least once and separated/optionally end by `sep`.  Return a list of result values of `self`.
+        """Repeat a parser at least once and separated/optionally end by `sep`. Return a list of result values of `self`.
 
         In the combinator form, it looks like::
 
@@ -1193,7 +1191,7 @@ class Parsec:
         return Parsec(sep_end_by1_parser)
 
     def sep_by_till(self, sep, end):
-        """Repeat a parser and separated by `sep` until `end` succeed.  Return a list of result values of `self`.
+        """Repeat a parser and separated by `sep` until `end` succeed. Return a list of result values of `self`.
 
         In the combinator form, it looks like::
 
@@ -1275,7 +1273,7 @@ def nothing(res=None):
 
 
 def any():
-    """Parse an arbitrary character.  It failed at the EOF.
+    """Parse an arbitrary character. It failed at the EOF.
 
     Returns
     -------
@@ -1366,7 +1364,7 @@ def satisfy(validater, desc=None):
 
 
 def eof():
-    """Parse EOF.  The result value is `""`.
+    """Parse EOF. The result value is `""`.
 
     Returns
     -------
@@ -1412,7 +1410,7 @@ def regex(exp, flags=0):
 
 
 def string(string):
-    """Try to match a string.  Return the matching string.
+    """Try to match a string. Return the matching string.
 
     Parameters
     ----------
@@ -1436,11 +1434,11 @@ def string(string):
 
 
 def tokens(tokens):
-    """Try to match a list of strings.  Return the matching string.
+    """Try to match a list of strings. Return the matching string.
 
-    This method sorts the strings to prevent conflicts.  For example,
-    it will try to match "letter" before "let", otherwise "letter"
-    will be parsed as "let" with rest "ter".
+    This method sorts the strings to prevent conflicts. For example, it will try
+    to match "letter" before "let", otherwise "letter" will be parsed as "let"
+    with rest "ter".
 
     Parameters
     ----------
@@ -1460,10 +1458,9 @@ def tokens(tokens):
 def check_forward():
     """Create a parser to check for infinite pattern on every call.
 
-    When this parser is called twice at the same position, it will raise
-    a `ValueError`.
-    This parser should be inserted into an infinite loop without state,
-    so if the position of each loop does not change, it can be confirmed
+    When this parser is called twice at the same position, it will raise a
+    `ValueError`. This parser should be inserted into an infinite loop without
+    state, so if the position of each loop does not change, it can be confirmed
     that an infinite loop is encountered.
 
     Returns

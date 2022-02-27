@@ -11,12 +11,13 @@ from . import serializers as sz
 
 def suitability(part, full):
     r"""Compute suitability of a string `full` to the given substring `part`.
-    The suitability is defined by substring mask:
-    The substring mask of a string `full` is a list of non-empty slices `sections`
-    such that `''.join(full[sec] for sec in sections) == part`.  The suitability of
-    an option is the greatest tuple `(seclens, -last, -length)` in all possible substring
-    masks.  Where `seclens` is a list of section lengths.  `last` is the last index of
-    the substring mask.  `length` is the length of string `full`.
+
+    The suitability is defined by substring mask: The substring mask of a string
+    `full` is a list of non-empty slices `sections` such that `''.join(full[sec]
+    for sec in sections) == part`. The suitability of an option is the greatest
+    tuple `(seclens, -last, -length)` in all possible substring masks. Where
+    `seclens` is a list of section lengths. `last` is the last index of the
+    substring mask. `length` is the length of string `full`.
 
     Parameters
     ----------
@@ -28,8 +29,9 @@ def suitability(part, full):
     Returns
     -------
     suitability : tuple
-        A value representing suitability of a string `full` to given substring `part`.
-        The larger value means more suitable.  The suitability of unmatched string is `()`.
+        A value representing suitability of a string `full` to given substring
+        `part`. The larger value means more suitable. The suitability of
+        unmatched string is `()`.
     """
     if part == "":
         return ((), 0, -len(full))
@@ -65,6 +67,7 @@ def suitability(part, full):
 
 def fit(part, options):
     r"""Sort options by its suitability.
+
     It will also filter out the option that has no such substring.
 
     Parameters
@@ -122,7 +125,7 @@ class ArgumentParser:
     r"""Parser for the argument of command."""
 
     def parse(self, token):
-        r"""Parse the token as into an argument.
+        r"""Parse the token into an argument.
 
         Parameters
         ----------
@@ -222,7 +225,7 @@ class OptionParser(ArgumentParser):
         ----------
         options : list of str or dict
             The list of options, or dictionary that maps option name to its
-            value.  If it is dictionary, the result of parsing will be its value.
+            value. If it is dictionary, the result of parsing will be its value.
         default : any, optional
             The default value of this argument.
         desc : str, optional
@@ -365,7 +368,7 @@ class TreeParser(ArgumentParser):
             },
         }
 
-    will match strings 'abcx', 'abcyz', 'abcyw', 'def', 'defg', 'abd'.  In each
+    will match strings 'abcx', 'abcyz', 'abcyw', 'def', 'defg', 'abd'. In each
     layer, It parsed longer string first, so one should prevent from putting
     ambiguious case.
     """
@@ -376,8 +379,8 @@ class TreeParser(ArgumentParser):
         Parameters
         ----------
         tree : dict from str to parser tree
-            The parser tree, the leaf should be a function producing parsed result,
-            and the key of node should be a non-empty string.
+            The parser tree, the leaf should be a function producing parsed
+            result, and the key of node should be a non-empty string.
         default : any, optional
             The default value of this argument.
         desc : str, optional
@@ -504,6 +507,7 @@ class LiteralParser(ArgumentParser):
 
 class CommandParser:
     r"""Command parser.
+
     To parse a command with tokens `abc efg 123`, use
     `cmdparser.parse("abc").parse("efg").parse("123").finish()`.
     """
@@ -556,7 +560,7 @@ class CommandParser:
         Returns
         -------
         suggestions : list of str
-            A list of possible tokens.  Use the suffix '\000' to mark token as
+            A list of possible tokens. Use the suffix '\000' to mark token as
             complete.
         """
         raise NotImplementedError
@@ -596,9 +600,9 @@ class FunctionCommandParser(CommandParser):
         Parameters
         ----------
         func : function
-            The function to parse.  Its signature should be in a simple form,
-            like `func(a, b, c, d=1, e=2, f=3)`.  The positional arguments are
-            required, and keyword arguments are optional and unordered.  This
+            The function to parse. Its signature should be in a simple form,
+            like `func(a, b, c, d=1, e=2, f=3)`. The positional arguments are
+            required, and keyword arguments are optional and unordered. This
             function will be interpreted as a command
             `func a_value b_value c_value --d d_value --e e_value --f f_value`.
         args : dict of function
@@ -787,8 +791,7 @@ class subcommand(CommandDescriptor):
     r"""Command descriptor for subcommands."""
 
     def __init__(self, proxy):
-        self.proxy = property(proxy)
-        functools.update_wrapper(self, proxy)
+        super(subcommand, self).__init__(property(proxy))
 
     def __get_command__(self, instance, owner):
         parent = self.proxy.__get__(instance, owner)
@@ -860,8 +863,8 @@ class RootCommandParser(SubCommandParser):
         Parameters
         ----------
         root : object
-            The object of root command, where all fields with command descriptors
-            will become the valid subcommands.
+            The object of root command, where all fields with command
+            descriptors will become the valid subcommands.
         """
         fields = [
             k

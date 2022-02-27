@@ -109,13 +109,19 @@ class Monitor:
         assert self.total_eff is not None
 
         if self.best is None or self.best == float("inf"):
-            return f"count={self.count}, avg={self.total_avg*1000:5.3f}±{self.total_dev*1000:5.3f}ms ({self.total_eff: >6.1%})"
+            return (
+                f"count={self.count}, "
+                f"avg={self.total_avg*1000:5.3f}±{self.total_dev*1000:5.3f}ms "
+                f"({self.total_eff: >6.1%})"
+            )
 
         assert self.worst is not None
 
         return (
-            f"count={self.count}, avg={self.total_avg*1000:5.3f}±{self.total_dev*1000:5.3f}ms"
-            f" ({self.best*1000:5.3f}ms ~ {self.worst*1000:5.3f}ms) ({self.total_eff: >6.1%})"
+            f"count={self.count}, "
+            f"avg={self.total_avg*1000:5.3f}±{self.total_dev*1000:5.3f}ms"
+            f" ({self.best*1000:5.3f}ms ~ {self.worst*1000:5.3f}ms) "
+            f"({self.total_eff: >6.1%})"
         )
 
 
@@ -128,12 +134,13 @@ class MixerSettings(cfg.Configurable):
     output_samplerate : int
         The samplerate of output device.
     output_buffer_length : int
-        The buffer length of output device.
-        Note that too large will affect the reaction time, but too small will affect the efficiency.
+        The buffer length of output device. Note that too large will affect the
+        reaction time, but too small will affect the efficiency.
     output_channels : int
         The number of channels of output device.
     output_format : str
-        The data format of output device.  The valid formats are 'f4', 'i4', 'i2', 'i1', 'u1'.
+        The data format of output device. The valid formats are 'f4', 'i4',
+        'i2', 'i1', 'u1'.
 
     sound_delay : float
         The delay of clock of the mixer.
@@ -311,12 +318,13 @@ class DetectorSettings(cfg.Configurable):
     input_samplerate : int
         The samplerate of input device.
     input_buffer_length : int
-        The buffer length of input device.
-        Note that too large will affect the reaction time, but too small will affect the efficiency.
+        The buffer length of input device. Note that too large will affect the
+        reaction time, but too small will affect the efficiency.
     input_channels : int
         The number of channels of input device.
     input_format : str
-        The data format of input device.  The valid formats are 'f4', 'i4', 'i2', 'i1', 'u1'.
+        The data format of input device. The valid formats are 'f4', 'i4', 'i2',
+        'i1', 'u1'.
 
     knock_delay : float
         The delay of clock of the detector.
@@ -687,7 +695,9 @@ class ControllerSettings(cfg.Configurable):
     Fields
     ------
     update_interval : float
-        The update interval of controllers.
+        The update interval of controllers. This is not related to precision of
+        time, it is timeout of stdin select. The user will only notice the
+        difference in latency when closing the controller.
     """
     update_interval: float = 0.1
 

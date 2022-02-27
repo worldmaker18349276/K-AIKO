@@ -200,7 +200,8 @@ class TerminalSettings(cfg.Configurable):
         The maps from keycodes to keynames.
 
     best_screen_size : int
-        Recommended screen size.  If your screen size is smaller than this size, the system will ask you to adjust it.
+        Recommended screen size. If your screen size is smaller than this size,
+        the system will ask you to adjust it.
     adjust_screen_delay : float
         The delay time to complete the screen adjustment.
 

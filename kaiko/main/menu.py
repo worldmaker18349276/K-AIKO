@@ -299,9 +299,10 @@ class KAIKOMenu:
     @dn.datanode
     def execute(self, command):
         r"""Execute a command.
+
         If it returns executable object (an object has method `execute`), call
-        `result.execute(manager)`; if it returns a DataNode, exhaust it; otherwise,
-        print repr of result.
+        `result.execute(manager)`; if it returns a DataNode, exhaust it;
+        otherwise, print repr of result.
 
         Parameters
         ----------

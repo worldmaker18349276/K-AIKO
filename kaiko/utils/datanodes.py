@@ -159,7 +159,8 @@ def delay(prepend):
     Parameters
     ----------
     prepend : int or DataNode
-        The number of delay with prepending `None`, or data node of prepended values.
+        The number of delay with prepending `None`, or data node of prepended
+        values.
 
     Receives
     --------
@@ -191,7 +192,8 @@ def skip(node, prefeed):
     Parameters
     ----------
     prefeed : int or DataNode
-        The number of skips with prefeeding `None`, or data node of prefeeded values.
+        The number of skips with prefeeding `None`, or data node of prefeeded
+        values.
 
     Receives
     --------
@@ -468,7 +470,8 @@ def power_spectrum(win_length, samplerate=44100, windowing=True, weighting=True)
 
         (J * df).sum(axis=0) == (x**2).mean(axis=0)
 
-    where the time resolution `dt = 1/samplerate` and the frequency resolution `df = samplerate/win_length`.
+    where the time resolution `dt = 1/samplerate` and the frequency resolution
+    `df = samplerate/win_length`.
 
     Parameters
     ----------
@@ -477,9 +480,11 @@ def power_spectrum(win_length, samplerate=44100, windowing=True, weighting=True)
     samplerate : int, optional
         The sample rate of input signal, default is `44100`.
     windowing : bool or ndarray, optional
-        The window function of signal, `True` for default Hann window, `False` for no windowing.
+        The window function of signal, `True` for default Hann window, `False`
+        for no windowing.
     weighting : bool or ndarray, optional
-        The weight function of spectrum, `True` for default A-weighting, `False` for no weighting.
+        The weight function of spectrum, `True` for default A-weighting, `False`
+        for no weighting.
 
     Receives
     --------
@@ -541,7 +546,7 @@ def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
     range, and is largest one in another given range. Those two ranges are
     determined by four parameters, they mean
 
-    ::
+    ..code::
 
                       center
             pre_avg     |    post_avg

@@ -102,23 +102,29 @@ class BeatbarSettings(cfg.Configurable):
         icon_width : int
             The width of icon.
 
-             ⣠⣴⣤⣿⣤⣦ [[00000/00400]]       □  ⛶     □                 ■   [[11.3%|00:09]]
-            ^^^^^^^^
-              here
+            ..code::
+
+                 ⣠⣴⣤⣿⣤⣦ [[00000/00400]]       □  ⛶     □                 ■   [[11.3%|00:09]]
+                ^^^^^^^^
+                  here
 
         header_width : int
             The width of header.
 
-             ⣠⣴⣤⣿⣤⣦ [[00000/00400]]       □  ⛶     □                 ■   [[11.3%|00:09]]
-                    ^^^^^^^^^^^^^
-                        here
+            ..code::
+
+                 ⣠⣴⣤⣿⣤⣦ [[00000/00400]]       □  ⛶     □                 ■   [[11.3%|00:09]]
+                        ^^^^^^^^^^^^^
+                            here
 
         footer_width : int
             The width of footer.
 
-             ⣠⣴⣤⣿⣤⣦ [[00000/00400]]       □  ⛶     □                 ■   [[11.3%|00:09]]
-                                                                       ^^^^^^^^^^^^^
-                                                                            here
+            ..code::
+
+                 ⣠⣴⣤⣿⣤⣦ [[00000/00400]]       □  ⛶     □                 ■   [[11.3%|00:09]]
+                                                                           ^^^^^^^^^^^^^
+                                                                                here
 
         """
         icon_width: int = 8
@@ -131,11 +137,11 @@ class BeatbarSettings(cfg.Configurable):
         Fields
         ------
         sight_appearances : list of tuple of str and str
-            The appearances of the judgement line.
-            The first string is default appearance, and the rest is the appearances
-            for the different hitting strength (from soft to loud).
-            If the element is tuple of strings, then the first/second string is
-            used for right-to-left/left-to-right direction.
+            The appearances of the judgement line. The first string is default
+            appearance, and the rest is the appearances for the different
+            hitting strength (from soft to loud). If the element is tuple of
+            strings, then the first/second string is used for
+            right-to-left/left-to-right direction.
         hit_decay_time : float
             The decay time of the hitting strength is displayed on the sight.
         hit_sustain_time : float
@@ -144,8 +150,9 @@ class BeatbarSettings(cfg.Configurable):
             sustain until this time.
 
         performances_appearances : dict from PerformanceGrade to tuple of str and str
-            The hint for different performance, which will be drawn on the sight.
-            The first/second string is used for right-to-left/left-to-right notes.
+            The hint for different performance, which will be drawn on the
+            sight. The first/second string is used for
+            right-to-left/left-to-right notes.
         performance_sustain_time : float
             The sustain time of performance hint.
         """

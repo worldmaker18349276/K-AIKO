@@ -260,14 +260,14 @@ class Configurable(metaclass=ConfigurableMeta):
         print(settings.field1)  # 456
         print(settings.subsettings.field3)  # False
 
-    The field that is annotated or is Configurable type object will be
-    assigned as a field of this configuration.  One can define an
-    exclusion list `__configurable_excludes__` to exclude them.  The
-    Configurable type object in this class will become sub-configuration,
-    and will be created before initializing object.  The others fields
-    will become the field of this configuration, which is initially absent.
-    So in the above example, the field access at the beginning is the
-    fallback value of the static field in the class.
+    The field that is annotated or is Configurable type object will be assigned
+    as a field of this configuration. One can define an exclusion list
+    `__configurable_excludes__` to exclude them. The Configurable type object in
+    this class will become sub-configuration, and will be created before
+    initializing object. The others fields will become the field of this
+    configuration, which is initially absent. So in the above example, the field
+    access at the beginning is the fallback value of the static field in the
+    class.
     """
 
     @classmethod

@@ -39,10 +39,11 @@ def Context(beat, length, **contexts):
 
 @dataclasses.dataclass
 class Event:
-    r"""An event of beatmap.  Event represents an effect and action that occur
+    r"""An event of beatmap. Event represents an effect and action that occur
     within a specific time span.
 
-    The tracks, which are sequences of events, can be drawn as a timeline diagram
+    The tracks, which are sequences of events, can be drawn as a timeline
+    diagram
 
     ..code::
 
@@ -52,12 +53,13 @@ class Event:
         track2 |                              [========event4========]    [event5]              |
                |________________________________________________________________________________|
 
-    Where `track1` contains three events, and `track2` contains two events.  Like
+    Where `track1` contains three events, and `track2` contains two events. Like
     `event3`, some events have no length (determined by attribute `has_length`).
     The square bracket is an interval `(beat, beat+length)`, which define the
     timespan of action of this event, just like hit object and hold object in
-    others rhythm game.  The interval should be ordered and exclusive in each
+    others rhythm game. The interval should be ordered and exclusive in each
     track, but there is no limit to events between tracks.
+
     The attribute `lifespan` of events can be drawn as a timeline diagram
 
     ..code::
@@ -73,36 +75,36 @@ class Event:
 
     Where the region in the bar lines is an interval `lifespan`, which define
     when this event occurred; it also includes the process that hit object runs
-    in and out of the view.  Just like `event1` and `event2`, the lifespan of
+    in and out of the view. Just like `event1` and `event2`, the lifespan of
     events can be unordered and overlapping.
 
     Event is a dataclass described by some (immutable) fields, which is
-    documented in the section `Fields`.  These fields determine how this event
-    occurred.  Event also contains some attributes related to runtime conditions,
-    which is documented in the section `Attributes`.  These attributes are
-    determined by method `Event.prepare` and may change during execution.
-    One can use `dataclasses.replace` to copy the event, which will not copy
-    runtime attributes.
+    documented in the section `Fields`. These fields determine how this event
+    occurred. Event also contains some attributes related to runtime conditions,
+    which is documented in the section `Attributes`. These attributes are
+    determined by method `Event.prepare` and may change during execution. One
+    can use `dataclasses.replace` to copy the event, which will not copy runtime
+    attributes.
 
     Fields
     ------
     beat, length : Fraction
-        The start time and sustain time of action of this event.  The actual
+        The start time and sustain time of action of this event. The actual
         meaning in each event is different. `beat` is the time in the unit
-        defined by beatmap.  `length` is the time difference started from `beat`
-        in the unit defined by beatmap.  If `has_length` is False, the attribute
+        defined by beatmap. `length` is the time difference started from `beat`
+        in the unit defined by beatmap. If `has_length` is False, the attribute
         `length` can be dropped.
 
     Attributes
     ----------
     lifespan : tuple of float and float
-        The start time and end time (in seconds) of this event.  In general, the
+        The start time and end time (in seconds) of this event. In general, the
         lifespan is determined by attributes `beat` and `length`.
     is_subject : bool, optional
-        True if this event is an action.  To increase the value of progress bar,
+        True if this event is an action. To increase the value of progress bar,
         use `state.add_finished`.
     full_score : int, optional
-        The full score of this event.  To increase score counter and full score
+        The full score of this event. To increase score counter and full score
         counter, use `state.add_score` and `state.add_full_score`.
     has_length : bool, optional
         True if the attribute `length` is meaningful.
@@ -110,14 +112,14 @@ class Event:
     Methods
     -------
     prepare(beatmap, rich, context)
-        Prepare resources for this event in the given context.  The context is a
-        mutable dictionary, which can be used to transfer parameters between events.
-        The context of each track is different, so event cannot affect each others
-        between tracks.
+        Prepare resources for this event in the given context. The context is a
+        mutable dictionary, which can be used to transfer parameters between
+        events. The context of each track is different, so event cannot affect
+        each others between tracks.
     register(state, playfield)
-        Schedule handlers for this event.  `state` is the game state of beatmap,
-        `playfield` is an instance of `beatbar.Beatbar`, which controls the whole
-        gameplay.
+        Schedule handlers for this event. `state` is the game state of beatmap,
+        `playfield` is an instance of `beatbar.Beatbar`, which controls the
+        whole gameplay.
     """
 
     beat: Fraction = Fraction(0, 1)
@@ -131,7 +133,7 @@ class Event:
 # scripts
 @dataclasses.dataclass
 class Text(Event):
-    r"""An event that displays text on the playfield.  The text will move to the
+    r"""An event that displays text on the playfield. The text will move to the
     left at a constant speed.
 
     Fields
@@ -142,7 +144,7 @@ class Text(Event):
     text : str, optional
         The text to show, or None for no text.
     speed : float, optional
-        The speed of the text (unit: half bar per second).  Default speed will be
+        The speed of the text (unit: half bar per second). Default speed will be
         determined by context value `speed`, or 1.0 if absence.
     """
 
@@ -176,13 +178,14 @@ class Text(Event):
 
 @dataclasses.dataclass
 class Title(Event):
-    r"""An event that displays title on the playfield.  The text will be placed
+    r"""An event that displays title on the playfield. The text will be placed
     at the specific position.
 
     Fields
     ------
     beat, length : Fraction
-        `beat` is the display time of the text, `length` is the display duration.
+        `beat` is the display time of the text, `length` is the display
+        duration.
     text : str, optional
         The text to show, or None for no text.
     pos : float, optional
@@ -260,7 +263,8 @@ class Shift(Event):
     beat, length : Fraction
         `beat` is the time to start shifting, `length` is meaningless.
     shift : float, optional
-        The value of `bar_shift` of the scrolling bar after shifting, default is 0.0.
+        The value of `bar_shift` of the scrolling bar after shifting, default is
+        0.0.
     span : int or float or Fraction, optional
         the duration of shifting, default is 0.
     """
@@ -303,30 +307,31 @@ class Shift(Event):
 
 # targets
 class Target(Event):
-    r"""A target to hit.  Target will be counted as an action, and recorded by
-    the progress bar during the gameplay.  Players will be asked to do some
-    actions to accomplish this target, such as hitting a note or keeping hitting
-    within a timespan.
+    r"""A target to hit.
+
+    Target will be counted as an action, and recorded by the progress bar during
+    the gameplay. Players will be asked to do some actions to accomplish this
+    target, such as hitting a note or keeping hitting within a timespan.
 
     Fields
     ------
     beat, length : Fraction
-        `beat` is the time this target should be hit, `length` is the duration of
-        this target.
+        `beat` is the time this target should be hit, `length` is the duration
+        of this target.
 
     Attributes
     ----------
     range : tuple of float and float
-        The range of time this target listen to.  It is often slightly larger than
-        the interval `(beat, beat+length)` to includes the hit tolerance.
+        The range of time this target listen to. It is often slightly larger
+        than the interval `(beat, beat+length)` to includes the hit tolerance.
     is_finished : bool
-        Whether this target is finished.  The progress bar will increase by 1
+        Whether this target is finished. The progress bar will increase by 1
         after completion.
 
     Methods
     -------
     approach(state, playfield)
-        Register handlers for approaching effect of this target.  The hit handler
+        Register handlers for approaching effect of this target. The hit handler
         and increasing progress bar will be managed automatically.
     hit(state, playfield, time, strength)
         Deal with the hit event on this target.
@@ -364,19 +369,21 @@ class Target(Event):
 
 @dataclasses.dataclass
 class OneshotTarget(Target):
-    r"""A target to hit with one shot.  The target will move in a constant speed.
-    The score, range and hit tolerance are determined by settings. Only appearances
-    of targets, sound of target and rule of hitting target are different.
+    r"""A target to hit with one shot.
+
+    The target will move in a constant speed. The score, range and hit tolerance
+    are determined by settings. Only appearances of targets, sound of target and
+    rule of hitting target are different.
 
     Fields
     ------
     beat, length : Fraction
         `beat` is the time this target should be hit, `length` is meaningless.
     speed : float, optional
-        The speed of this target (unit: half bar per second).  Default speed will
+        The speed of this target (unit: half bar per second). Default speed will
         be determined by context value `speed`, or 1.0 if absence.
     volume : float, optional
-        The relative volume of sound of this target (unit: dB).  Default volume
+        The relative volume of sound of this target (unit: dB). Default volume
         will be determined by context value `volume`, or 0.0 if absence.
     nofeedback : bool, optional
         Whether to make a visual cue for the action of hitting the target.
@@ -465,18 +472,20 @@ class OneshotTarget(Target):
 
 @dataclasses.dataclass
 class Soft(OneshotTarget):
-    r"""A target to hit softly.  Player should hit this target with a volume
-    below a certain threshold, otherwise it will be counted as a wrong-shot target.
+    r"""A target to hit softly.
+
+    Player should hit this target with a volume below a certain threshold,
+    otherwise it will be counted as a wrong-shot target.
 
     Fields
     ------
     beat, length : Fraction
         `beat` is the time this target should be hit, `length` is meaningless.
     speed : float, optional
-        The speed of this target (unit: half bar per second).  Default speed will
+        The speed of this target (unit: half bar per second). Default speed will
         be determined by context value `speed`, or 1.0 if absence.
     volume : float, optional
-        The relative volume of sound of this target (unit: dB).  Default volume
+        The relative volume of sound of this target (unit: dB). Default volume
         will be determined by context value `volume`, or 0.0 if absence.
     nofeedback : bool, optional
         Whether to make a visual cue for the action of hitting the target.
@@ -516,18 +525,20 @@ class Soft(OneshotTarget):
 
 @dataclasses.dataclass
 class Loud(OneshotTarget):
-    r"""A target to hit loudly.  Player should hit this target with a volume
-    above a certain threshold, otherwise it will be counted as a wrong-shot target.
+    r"""A target to hit loudly.
+
+    Player should hit this target with a volume above a certain threshold,
+    otherwise it will be counted as a wrong-shot target.
 
     Fields
     ------
     beat, length : Fraction
         `beat` is the time this target should be hit, `length` is meaningless.
     speed : float, optional
-        The speed of this target (unit: half bar per second).  Default speed will
+        The speed of this target (unit: half bar per second). Default speed will
         be determined by context value `speed`, or 1.0 if absence.
     volume : float, optional
-        The relative volume of sound of this target (unit: dB).  Default volume
+        The relative volume of sound of this target (unit: dB). Default volume
         will be determined by context value `volume`, or 0.0 if absence.
     nofeedback : bool, optional
         Whether to make a visual cue for the action of hitting the target.
@@ -578,23 +589,24 @@ class IncrGroup:
 
 @dataclasses.dataclass
 class Incr(OneshotTarget):
-    r"""A target to hit louder and louder.  Player should hit the target with a
-    volume louder than the previous target, otherwise it will be counted as a
-    wrong-shot target.
+    r"""A target to hit louder and louder.
+
+    Player should hit the target with a volume louder than the previous target,
+    otherwise it will be counted as a wrong-shot target.
 
     Fields
     ------
     beat, length : Fraction
         `beat` is the time this target should be hit, `length` is meaningless.
     group : str, optional
-        The group name this target belongs to, or None for automatically determine
-        The group by context.  The threshold will be dynamically changed by
-        hitting the target under the same group.
+        The group name this target belongs to, or None for automatically
+        determine The group by context. The threshold will be dynamically
+        changed by hitting the target under the same group.
     speed : float, optional
-        The speed of this target (unit: half bar per second).  Default speed will
+        The speed of this target (unit: half bar per second). Default speed will
         be determined by context value `speed`, or 1.0 if absence.
     group_volume : float, optional
-        The relative group volume of sound of this target (unit: dB).  Default
+        The relative group volume of sound of this target (unit: dB). Default
         volume will be determined by context value `volume`, or 0.0 if absence.
         The volume of targets will be louder and louder, which is determined by
         the group volume of the first target in the same group.
@@ -684,12 +696,13 @@ class Roll(Target):
         `beat` is the time this target start rolling, `length` is the duration
         of rolling.
     density : int or float or Fraction, optional
-        The density of rolling (unit: hit per beat).  Default value is Fraction(2).
+        The density of rolling (unit: hit per beat). Default value is
+        Fraction(2).
     speed : float, optional
-        The speed of this target (unit: half bar per second).  Default speed will
+        The speed of this target (unit: half bar per second). Default speed will
         be determined by context value `speed`, or 1.0 if absence.
     volume : float, optional
-        The relative volume of sound of this target (unit: dB).  Default volume
+        The relative volume of sound of this target (unit: dB). Default volume
         will be determined by context value `volume`, or 0.0 if absence.
     nofeedback : bool, optional
         Whether to make a visual cue for the action of hitting the target.
@@ -795,12 +808,12 @@ class Spin(Target):
         `beat` is the time this target start spinning, `length` is the duration
         of spinning.
     density : int or float or Fraction, optional
-        The density of spinning (unit: hit per beat).  Default value is 2.0.
+        The density of spinning (unit: hit per beat). Default value is 2.0.
     speed : float, optional
-        The speed of this target (unit: half bar per second).  Default speed will
+        The speed of this target (unit: half bar per second). Default speed will
         be determined by context value `speed`, or 1.0 if absence.
     volume : float, optional
-        The relative volume of sound of this target (unit: dB).  Default volume
+        The relative volume of sound of this target (unit: dB). Default volume
         will be determined by context value `volume`, or 0.0 if absence.
     nofeedback : bool, optional
         Whether to make a visual cue for the action of hitting the target.

@@ -17,9 +17,9 @@ from ..devices import engines
 def prepare_pyaudio(logger):
     r"""Prepare PyAudio and print out some information.
 
-    Loading PyAudio will cause PortAudio to print something to the terminal, which
-    cannot be turned off by PyAudio, so why not print more information to make it
-    more hacky.
+    Loading PyAudio will cause PortAudio to print something to the terminal,
+    which cannot be turned off by PyAudio, so why not print more information to
+    make it more hacky.
 
     Parameters
     ----------
