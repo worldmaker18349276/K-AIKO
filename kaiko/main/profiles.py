@@ -78,13 +78,6 @@ class ProfileManager:
         self._profiles_mtime = None
         self.on_change_handlers = []
 
-        self.on_change(
-            lambda settings: logger.recompile_style(
-                terminal_settings=settings.devices.terminal,
-                logger_settings=settings.devices.logger,
-            )
-        )
-
     def on_change(self, on_change_handler):
         self.on_change_handlers.append(on_change_handler)
 
@@ -127,7 +120,7 @@ class ProfileManager:
             return True
         return self._current_mtime != os.stat(str(current_path)).st_mtime
 
-    def set_change(self):
+    def set_as_changed(self):
         self._current_mtime = None
         for on_change_handler in self.on_change_handlers:
             on_change_handler(self.current)
@@ -284,7 +277,7 @@ class ProfileManager:
                 logger.print(traceback.format_exc(), end="", markup=False)
             return False
 
-        self.set_change()
+        self.set_as_changed()
         self._current_mtime = current_mtime
         return True
 
@@ -364,7 +357,7 @@ class ProfileManager:
         if clone is None:
             self.current_name = name
             self.current = self.config_type()
-            self.set_change()
+            self.set_as_changed()
 
         else:
             old_name = self.current_name
@@ -530,7 +523,7 @@ class ProfilesCommand:
                      The field name.   The value.
         """
         self.profiles.set(field, value)
-        self.profiles.set_change()
+        self.profiles.set_as_changed()
 
     @cmd.function_command
     def unset(self, field):
@@ -541,7 +534,7 @@ class ProfilesCommand:
                          The field name.
         """
         self.profiles.unset(field)
-        self.profiles.set_change()
+        self.profiles.set_as_changed()
 
     @cmd.function_command
     @dn.datanode
@@ -593,7 +586,7 @@ class ProfilesCommand:
 
         else:
             self.profiles.current = res
-            self.profiles.set_change()
+            self.profiles.set_as_changed()
 
     @get.arg_parser("field")
     @has.arg_parser("field")

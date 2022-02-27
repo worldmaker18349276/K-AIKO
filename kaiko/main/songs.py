@@ -238,19 +238,20 @@ class StopPreview(BGMAction):
 
 
 class KAIKOBGMController:
-    def __init__(self, mixer_settings, logger, beatmap_manager):
-        self.mixer_settings = mixer_settings
+    def __init__(
+        self, logger, beatmap_manager, mixer_settings_getter=engines.MixerSettings
+    ):
+        self._mixer_settings_getter = mixer_settings_getter
         self.logger = logger
         self.current_action = None
         self._action_queue = queue.Queue()
         self.beatmap_manager = beatmap_manager
-
-    def update_mixer_settings(self, mixer_settings):
-        self.mixer_settings = mixer_settings
+        self.is_bgm_on = False
+        self.current_action = None
 
     class MixerLoader:
-        def __init__(self, mixer_settings, manager):
-            self.mixer_settings = mixer_settings
+        def __init__(self, manager, mixer_settings_getter=engines.MixerSettings):
+            self._mixer_settings_getter = mixer_settings_getter
             self.manager = manager
             self.required = set()
             self.mixer_task = None
@@ -283,7 +284,7 @@ class KAIKOBGMController:
         def require(self):
             if self.mixer is None:
                 self.mixer_task, self.mixer = engines.Mixer.create(
-                    self.mixer_settings, self.manager
+                    self.mixer_settings_getter(), self.manager
                 )
 
             key = object()
@@ -321,8 +322,6 @@ class KAIKOBGMController:
     @dn.datanode
     def _bgm_event_loop(self, require_mixer):
         action = StopBGM()
-        self.is_bgm_on = False
-        self.current_action = None
 
         yield
         while True:
@@ -388,7 +387,7 @@ class KAIKOBGMController:
 
     @dn.datanode
     def load_bgm(self, manager):
-        mixer_loader = self.MixerLoader(self.mixer_settings, manager)
+        mixer_loader = self.MixerLoader(manager, self._mixer_settings_getter)
         with mixer_loader.task() as mixer_task:
             with self._bgm_event_loop(mixer_loader.require) as event_task:
                 while True:

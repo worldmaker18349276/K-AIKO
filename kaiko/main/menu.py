@@ -59,18 +59,11 @@ class KAIKOUser:
     def songs_dir(self):
         return self.data_dir / "songs"
 
-    @property
-    def history_file(self):
-        return self.cache_dir / ".beatshell_history"
-
     def is_prepared(self):
         if not self.data_dir.exists():
             return False
 
         if not self.cache_dir.exists():
-            return False
-
-        if not self.history_file.exists():
             return False
 
         if not self.config_dir.exists():
@@ -91,7 +84,6 @@ class KAIKOUser:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.songs_dir.mkdir(parents=True, exist_ok=True)
-        self.history_file.touch()
 
         (self.data_dir / "samples/").mkdir(exist_ok=True)
         resources = [
@@ -141,18 +133,13 @@ class KAIKOMenu:
         manager : PyAudio
         logger : loggers.Logger
         """
-        self._profiles = profiles
+        self.profiles = profiles
         self.user = user
         self.manager = manager
         self.logger = logger
         self.beatmap_manager = BeatmapManager(user.songs_dir, logger)
         self.bgm_controller = KAIKOBGMController(
-            profiles.current.devices.mixer, logger, self.beatmap_manager
-        )
-        profiles.on_change(
-            lambda settings: self.bgm_controller.update_mixer_settings(
-                settings.devices.mixer
-            )
+            logger, self.beatmap_manager, lambda: self.profiles.current.devices.mixer
         )
 
     @classmethod
@@ -161,7 +148,7 @@ class KAIKOMenu:
         print(logo, flush=True)
 
         try:
-            with KAIKOMenu.init() as menu:
+            with cls.init() as menu:
                 menu.run().exhaust(dt=cls.update_interval, interruptible=True)
 
         except KeyboardInterrupt:
@@ -185,16 +172,16 @@ class KAIKOMenu:
 
         # load profiles
         profiles = ProfileManager(user.config_dir, logger)
+        profiles.on_change(
+            lambda settings: logger.recompile_style(
+                terminal_settings=settings.devices.terminal,
+                logger_settings=settings.devices.logger,
+            )
+        )
         profiles.update()
 
         succ = profiles.use()
         if not succ:
-            yes = logger.ask("Make a new profile?").exhaust(
-                dt=cls.update_interval, interruptible=True
-            )
-            if not yes:
-                raise RuntimeError("Fail to load profile")
-
             succ = profiles.new()
             if not succ:
                 raise RuntimeError("Fail to load profile")
@@ -225,7 +212,7 @@ class KAIKOMenu:
             if version is not None:
                 os.environ["UNICODE_VERSION"] = version
                 self.settings.devices.terminal.unicode_version = version
-                self._profiles.set_change()
+                self.profiles.set_as_changed()
             logger.print()
 
         # fit screen size
@@ -271,13 +258,13 @@ class KAIKOMenu:
             self,
             preview_handler,
             self.logger,
-            self.user.history_file,
-            self.settings.shell,
+            self.user.cache_dir,
+            lambda: self.profiles.current.shell,
+            lambda: self.profiles.current.devices,
         )
         while True:
             # parse command
-            input.update_settings(self.settings.shell)
-            yield from input.prompt(self.settings.devices, self.user).join()
+            yield from input.prompt().join()
 
             # execute result
             result = input.result
@@ -329,7 +316,7 @@ class KAIKOMenu:
     @property
     def settings(self):
         r"""Current settings."""
-        return self._profiles.current
+        return self.profiles.current
 
     # beatmaps
 
@@ -450,14 +437,14 @@ class KAIKOMenu:
     @cmd.subcommand
     def devices(self):
         """Subcommand to manage devices."""
-        return DevicesCommand(self._profiles, self.logger, self.manager)
+        return DevicesCommand(self.profiles, self.logger, self.manager)
 
     # profiles
 
     @cmd.subcommand
     def profiles(self):
         """Subcommand to manage profiles and configurations."""
-        return ProfilesCommand(self._profiles, self.logger)
+        return ProfilesCommand(self.profiles, self.logger)
 
     # system
 
@@ -473,7 +460,6 @@ class KAIKOMenu:
         logger.print(f"data directory: {logger.emph(self.user.data_dir.as_uri())}")
         logger.print(f"config directory: {logger.emph(self.user.config_dir.as_uri())}")
         logger.print(f"songs directory: {logger.emph(self.user.songs_dir.as_uri())}")
-        logger.print(f"command history: {logger.emph(self.user.history_file.as_uri())}")
         logger.print(f"cache directory: {logger.emph(self.user.cache_dir.as_uri())}")
 
     @cmd.function_command
@@ -523,7 +509,7 @@ class KAIKOMenu:
 
         usage: [cmd]bye[/]
         """
-        if self._profiles.is_changed():
+        if self.profiles.is_changed():
             yes = yield from self.logger.ask(
                 "Exit without saving current configuration?"
             ).join()

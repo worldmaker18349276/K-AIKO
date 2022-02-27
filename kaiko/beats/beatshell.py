@@ -497,10 +497,14 @@ class BeatInput:
         A function to preview beatmap.
     logger : loggers.Logger
         The logger.
-    history : Path
-        The file of input history.
-    settings : BeatShellSettings
-        The settings.
+    cache_dir : Path
+        The directory of cache data.
+    history_path : Path
+        The path of input history.
+    shell_settings : BeatShellSettings
+        The shell settings.
+    devices_settings : DevicesSettings
+        The devices settings.
     prev_command : str or None
         The previous command.
     buffers : list of list of str
@@ -533,7 +537,15 @@ class BeatInput:
         The event counter for modifying buffer.
     """
 
-    def __init__(self, promptable, preview_handler, logger, history, settings=None):
+    def __init__(
+        self,
+        promptable,
+        preview_handler,
+        logger,
+        cache_dir,
+        shell_settings_getter=BeatShellSettings,
+        devices_settings_getter=engines.DevicesSettings,
+    ):
         r"""Constructor.
 
         Parameters
@@ -542,19 +554,19 @@ class BeatInput:
             The root command.
         preview_handler : function
         logger : loggers.Logger
-        history : Path
-            The file of input history.
-        settings : BeatShellSettings
-            The settings of beatshell.
+        cache_dir : Path
+            The directory of cache data.
+        shell_settings_getter : BeatShellSettings
+            The settings getter of beatshell.
+        devices_settings_getter : engines.DevicesSettings
+            The settings getter of devices.
         """
-        if settings is None:
-            settings = BeatShellSettings()
-
         self.command = cmd.RootCommandParser(promptable)
         self.preview_handler = preview_handler
         self.logger = logger
-        self.history = history
-        self.settings = settings
+        self.cache_dir = cache_dir
+        self._shell_settings_getter = shell_settings_getter
+        self._devices_settings_getter = devices_settings_getter
         self.prev_command = None
         self.buffers = [[]]
         self.buffer_index = -1
@@ -572,27 +584,33 @@ class BeatInput:
         self.modified_event = 0
         self.new_session(False)
 
-    def update_settings(self, settings):
-        self.settings = settings
+    @property
+    def history_path(self):
+        return self.cache_dir / ".beatshell_history"
+
+    @property
+    def shell_settings(self):
+        return self._shell_settings_getter()
+
+    @property
+    def devices_settings(self):
+        return self._devices_settings_getter()
 
     @dn.datanode
-    def prompt(self, devices_settings, user):
+    def prompt(self):
         r"""Start prompt.
-
-        Parameters
-        ----------
-        devices_settings : engines.DevicesSettings
-            The settings of devices.
-        user : KAIKOUser
 
         Returns
         -------
         prompt_task : datanodes.DataNode
             The datanode to execute the prompt.
         """
-        debug_monitor = self.settings.debug_monitor
+        shell_settings = self.shell_settings
+        devices_settings = self.devices_settings
+
+        debug_monitor = shell_settings.debug_monitor
         renderer_monitor = (
-            engines.Monitor(user.cache_dir / "monitor" / "prompt.csv")
+            engines.Monitor(self.cache_dir / "monitor" / "prompt.csv")
             if debug_monitor
             else None
         )
@@ -604,10 +622,10 @@ class BeatInput:
             devices_settings.terminal,
             monitor=renderer_monitor,
         )
-        stroke = BeatStroke(self, self.settings.input)
+        stroke = BeatStroke(self, shell_settings.input)
 
-        t0 = self.settings.prompt.t0
-        tempo = self.settings.prompt.tempo
+        t0 = shell_settings.prompt.t0
+        tempo = shell_settings.prompt.tempo
         metronome = engines.Metronome(t0, tempo)
 
         if debug_monitor:
@@ -620,7 +638,7 @@ class BeatInput:
             )
         else:
             patterns_settings = beatwidgets.PatternsWidgetSettings()
-            patterns_settings.patterns = self.settings.prompt.icons
+            patterns_settings.patterns = shell_settings.prompt.icons
             icon = (
                 yield from beatwidgets.PatternsWidget(
                     metronome, self.logger.rich, patterns_settings
@@ -630,8 +648,8 @@ class BeatInput:
             )
 
         marker_settings = beatwidgets.MarkerWidgetSettings()
-        marker_settings.markers = self.settings.prompt.markers
-        marker_settings.blink_ratio = self.settings.prompt.caret_blink_ratio
+        marker_settings.markers = shell_settings.prompt.markers
+        marker_settings.blink_ratio = shell_settings.prompt.caret_blink_ratio
         marker = (
             yield from beatwidgets.MarkerWidget(
                 metronome, self.logger.rich, marker_settings
@@ -641,7 +659,7 @@ class BeatInput:
         )
 
         caret = (
-            yield from Caret(metronome, self.logger.rich, self.settings.prompt)
+            yield from Caret(metronome, self.logger.rich, shell_settings.prompt)
             .load()
             .join()
         )
@@ -649,7 +667,7 @@ class BeatInput:
         prompt = BeatPrompt(
             stroke,
             self,
-            self.settings,
+            shell_settings,
             self.logger.rich,
             metronome,
             icon,
@@ -697,16 +715,18 @@ class BeatInput:
         self.state = "EDIT"
 
     def write_history(self, command):
+        self.history_path.touch()
         if command and command != self.prev_command:
-            open(self.history, "a").write("\n" + command)
+            open(self.history_path, "a").write("\n" + command)
             self.prev_command = command
 
     def read_history(self):
-        history_size = self.settings.input.history_size
+        history_size = self.shell_settings.input.history_size
         trim_len = 10
 
         buffers = []
-        for command in open(self.history):
+        self.history_path.touch()
+        for command in open(self.history_path):
             command = command.strip()
             if command:
                 buffers.append(command)
@@ -932,7 +952,7 @@ class BeatInput:
 
     @locked
     def update_preview(self):
-        if not self.settings.input.preview_song:
+        if not self.shell_settings.input.preview_song:
             return
         if self.hint_state is None:
             self.preview_handler(None)
@@ -1379,11 +1399,11 @@ class BeatInput:
             return False
         if isinstance(hint, DescHint):
             template = self.logger.rich.parse(
-                self.settings.text.desc_message, slotted=True
+                self.shell_settings.text.desc_message, slotted=True
             )
         elif isinstance(hint, (InfoHint, SuggestionsHint)):
             template = self.logger.rich.parse(
-                self.settings.text.info_message, slotted=True
+                self.shell_settings.text.info_message, slotted=True
             )
         else:
             assert False

@@ -101,29 +101,22 @@ class LoggerSettings(cfg.Configurable):
 class Logger:
     def __init__(self, terminal_settings=None, logger_settings=None):
         self.level = 1
-        self.terminal_settings = terminal_settings
-        self.logger_settings = logger_settings
         self.recompile_style(terminal_settings, logger_settings)
 
-    def recompile_style(self, terminal_settings=None, logger_settings=None):
-        if terminal_settings is not None:
-            self.terminal_settings = terminal_settings
-        if logger_settings is not None:
-            self.logger_settings = logger_settings
+    def recompile_style(self, terminal_settings, logger_settings):
+        if terminal_settings is None:
+            terminal_settings = term.TerminalSettings()
+        if logger_settings is None:
+            logger_settings = LoggerSettings()
 
-        terminal_settings = (
-            self.terminal_settings
-            if self.terminal_settings
-            else term.TerminalSettings()
-        )
+        self.terminal_settings = terminal_settings
+        self.logger_settings = logger_settings
+
         self.rich = mu.RichParser(
             terminal_settings.unicode_version, terminal_settings.color_support
         )
         self.renderer = mu.RichTextRenderer(terminal_settings.unicode_version)
 
-        logger_settings = (
-            self.logger_settings if self.logger_settings else LoggerSettings()
-        )
         self.rich.add_single_template("data", logger_settings.data_icon)
         self.rich.add_single_template("info", logger_settings.info_icon)
         self.rich.add_single_template("hint", logger_settings.hint_icon)
@@ -162,11 +155,7 @@ class Logger:
     @contextlib.contextmanager
     def verb(self):
         level = self.level
-        verb_block = (
-            self.logger_settings.verb_block
-            if self.logger_settings
-            else LoggerSettings.verb_block
-        )
+        verb_block = self.logger_settings.verb_block
         template = self.rich.parse(verb_block, slotted=True)
         self.level = 0
         try:
@@ -180,11 +169,7 @@ class Logger:
     @contextlib.contextmanager
     def warn(self):
         level = self.level
-        warn_block = (
-            self.logger_settings.warn_block
-            if self.logger_settings
-            else LoggerSettings.warn_block
-        )
+        warn_block = self.logger_settings.warn_block
         template = self.rich.parse(warn_block, slotted=True)
         self.level = 2
         try:
