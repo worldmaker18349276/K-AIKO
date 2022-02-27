@@ -970,6 +970,23 @@ def starcache(func, key=lambda *a: a):
         res = func(*data)
 
 
+@datanode
+def ensure(node, exception):
+    node = DataNode.wrap(node)
+    data = None
+    with node:
+        while True:
+            try:
+                data = yield data
+            except GeneratorExit:
+                raise exception()
+
+            try:
+                data = node.send(data)
+            except StopIteration as stop:
+                return stop.value
+
+
 # async processes
 @datanode
 def subprocess_task(command):
@@ -984,6 +1001,10 @@ def subprocess_task(command):
     return proc.returncode
 
 
+class ThreadError(Exception):
+    pass
+
+
 def _thread_task(thread, stop_event, error):
     yield
     thread.start()
@@ -996,7 +1017,7 @@ def _thread_task(thread, stop_event, error):
         if thread.is_alive():
             thread.join()
         if not error.empty():
-            raise error.get()
+            raise ThreadError() from error.get()
 
 
 @datanode

@@ -123,7 +123,6 @@ def inkey(node, stream=None, raw=False, dt=0.1):
 
     @dn.datanode
     def run():
-        yield
         ref_time = time.perf_counter()
         yield
         while True:

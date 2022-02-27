@@ -428,13 +428,13 @@ def load_sound(
         node = dn.chunk(node, chunk_shape=(chunk_length, curr_channels))
 
     sound = []
-    with node:
-        for data in node:
-            sound.append(data)
-            try:
-                yield
-            except GeneratorExit:
-                raise IOCancelled(
-                    f"The operation of loading file {filepath} has been cancelled."
-                )
+
+    node = dn.ensure(
+        dn.pipe(node, sound.append),
+        lambda: IOCancelled(
+            f"The operation of loading file {filepath} has been cancelled."
+        ),
+    )
+
+    yield from node.join()
     return sound
