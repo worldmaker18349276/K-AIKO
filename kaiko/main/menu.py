@@ -233,7 +233,7 @@ class KAIKOMenu:
             return
 
         # load bgm
-        bgm_task = self.bgm_controller.load_bgm(self.manager)
+        bgm_task = self.bgm_controller.execute(self.manager)
 
         # tips
         confirm_key = self.settings.shell.input.confirm_key

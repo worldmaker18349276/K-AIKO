@@ -237,6 +237,52 @@ class StopPreview(BGMAction):
     pass
 
 
+class MixerLoader:
+    def __init__(self, manager, mixer_settings_getter=engines.MixerSettings):
+        self._mixer_settings_getter = mixer_settings_getter
+        self.manager = manager
+        self.required = set()
+        self.mixer_task = None
+        self.mixer = None
+
+    @dn.datanode
+    def task(self):
+        while True:
+            yield
+            if not self.required:
+                continue
+
+            assert isinstance(self.mixer_task, dn.DataNode)
+
+            with self.mixer_task:
+                yield
+
+                while self.required:
+                    try:
+                        self.mixer_task.send(None)
+                    except StopIteration:
+                        return
+
+                    yield
+
+                self.mixer_task = None
+                self.mixer = None
+
+    @contextlib.contextmanager
+    def require(self):
+        if self.mixer is None:
+            self.mixer_task, self.mixer = engines.Mixer.create(
+                self.mixer_settings_getter(), self.manager
+            )
+
+        key = object()
+        self.required.add(key)
+        try:
+            yield self.mixer
+        finally:
+            self.required.remove(key)
+
+
 class KAIKOBGMController:
     def __init__(
         self, logger, beatmap_manager, mixer_settings_getter=engines.MixerSettings
@@ -249,50 +295,15 @@ class KAIKOBGMController:
         self.is_bgm_on = False
         self.current_action = None
 
-    class MixerLoader:
-        def __init__(self, manager, mixer_settings_getter=engines.MixerSettings):
-            self._mixer_settings_getter = mixer_settings_getter
-            self.manager = manager
-            self.required = set()
-            self.mixer_task = None
-            self.mixer = None
-
-        @dn.datanode
-        def task(self):
-            while True:
-                yield
-                if not self.required:
-                    continue
-
-                assert isinstance(self.mixer_task, dn.DataNode)
-
-                with self.mixer_task:
+    @dn.datanode
+    def execute(self, manager):
+        mixer_loader = MixerLoader(manager, self._mixer_settings_getter)
+        with mixer_loader.task() as mixer_task:
+            with self._bgm_event_loop(mixer_loader.require) as event_task:
+                while True:
                     yield
-
-                    while self.required:
-                        try:
-                            self.mixer_task.send(None)
-                        except StopIteration:
-                            return
-
-                        yield
-
-                    self.mixer_task = None
-                    self.mixer = None
-
-        @contextlib.contextmanager
-        def require(self):
-            if self.mixer is None:
-                self.mixer_task, self.mixer = engines.Mixer.create(
-                    self.mixer_settings_getter(), self.manager
-                )
-
-            key = object()
-            self.required.add(key)
-            try:
-                yield self.mixer
-            finally:
-                self.required.remove(key)
+                    mixer_task.send(None)
+                    event_task.send(None)
 
     @dn.datanode
     def _play_song(self, mixer, action):
@@ -384,16 +395,6 @@ class KAIKOBGMController:
 
             else:
                 assert False
-
-    @dn.datanode
-    def load_bgm(self, manager):
-        mixer_loader = self.MixerLoader(manager, self._mixer_settings_getter)
-        with mixer_loader.task() as mixer_task:
-            with self._bgm_event_loop(mixer_loader.require) as event_task:
-                while True:
-                    yield
-                    mixer_task.send(None)
-                    event_task.send(None)
 
     def random_song(self):
         songs = self.beatmap_manager.get_songs()
