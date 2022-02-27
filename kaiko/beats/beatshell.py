@@ -1669,6 +1669,21 @@ class BeatStroke:
         return handler
 
 
+@dn.datanode
+def starcache(func, key_func=lambda *a: a):
+    data = yield
+    key = key_func(*data)
+    value = func(*data)
+
+    while True:
+        data = yield value
+        key_ = key_func(*data)
+        if key == key_:
+            continue
+        key = key_
+        value = func(*data)
+
+
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
@@ -1796,7 +1811,7 @@ class BeatPrompt:
         self.right_overflow = False
 
         geo_key = lambda buffer, typeahead, pos: (id(buffer), typeahead, pos)
-        geo_node = dn.starcache(self.input_geometry, geo_key)
+        geo_node = starcache(self.input_geometry, geo_key)
 
         with geo_node:
             (view, msg), time, width = yield
@@ -1916,7 +1931,7 @@ class BeatPrompt:
     @dn.datanode
     def text_handler(self):
         syntax_key = lambda buffer, tokens, typeahead: (id(buffer), typeahead)
-        syntax_node = dn.starcache(self.markup_syntax, syntax_key)
+        syntax_node = starcache(self.markup_syntax, syntax_key)
 
         dec_key = lambda markup, pos, highlighted, clean: (
             id(markup),
@@ -1924,9 +1939,9 @@ class BeatPrompt:
             highlighted,
             clean,
         )
-        dec_node = dn.starcache(self.decorate_tokens, dec_key)
+        dec_node = starcache(self.decorate_tokens, dec_key)
 
-        caret_node = dn.starcache(self.render_caret)
+        caret_node = starcache(self.render_caret)
 
         with syntax_node, dec_node, caret_node:
             time, ran = yield
@@ -2040,7 +2055,7 @@ class BeatPrompt:
 
     @dn.datanode
     def hint_handler(self):
-        hint_node = dn.starcache(self.markup_hint, lambda msg, hint: hint)
+        hint_node = starcache(self.markup_hint, lambda msg, hint: hint)
         with hint_node:
             (view, msg), time, width = yield
             while True:

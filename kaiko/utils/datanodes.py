@@ -941,36 +941,6 @@ def tick(dt, t0=0.0, shift=0.0, stop_event=None):
 
 
 @datanode
-def cache(func, key=lambda a: a):
-    data = yield
-    res_key = key(data)
-    res = func(data)
-
-    while True:
-        data = yield res
-        res_key_ = key(data)
-        if res_key == res_key_:
-            continue
-        res_key = res_key_
-        res = func(data)
-
-
-@datanode
-def starcache(func, key=lambda *a: a):
-    data = yield
-    res_key = key(*data)
-    res = func(*data)
-
-    while True:
-        data = yield res
-        res_key_ = key(*data)
-        if res_key == res_key_:
-            continue
-        res_key = res_key_
-        res = func(*data)
-
-
-@datanode
 def ensure(node, exception):
     node = DataNode.wrap(node)
     data = None
