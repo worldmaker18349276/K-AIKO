@@ -991,19 +991,26 @@ class ThreadError(Exception):
     pass
 
 
-def _thread_task(thread, stop_event, error):
+def _thread_task(thread, stop_event, res, error):
     yield
     thread.start()
+
     try:
         yield
         while thread.is_alive():
             yield
-    finally:
+
+    except:
         stop_event.set()
         if thread.is_alive():
             thread.join()
         if not error.empty():
             raise ThreadError() from error.get()
+        else:
+            raise
+
+    assert not res.empty()
+    return res.get()
 
 
 @datanode
@@ -1025,9 +1032,7 @@ def create_task(node):
             error.put(e)
 
     thread = threading.Thread(target=run)
-    yield from _thread_task(thread, stop_event, error)
-    assert not res.empty()
-    return res.get()
+    return (yield from _thread_task(thread, stop_event, res, error))
 
 
 @datanode
@@ -1059,9 +1064,7 @@ def interval(node, dt, t0=0.0):
 
     with node:
         thread = threading.Thread(target=run)
-        yield from _thread_task(thread, stop_event, error)
-        assert not res.empty()
-        return res.get()
+        return (yield from _thread_task(thread, stop_event, res, error))
 
 
 # not data nodes
