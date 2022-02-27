@@ -535,7 +535,25 @@ def onset_strength(df):
 
 @datanode
 def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
-    """A data node of peak detaction.
+    r"""A data node of peak detaction.
+
+    The value is picked iff: it is `delta` larger than the average in the given
+    range, and is largest one in another given range. Those two ranges are
+    determined by four parameters, they mean
+
+    ::
+
+                      center
+            pre_avg     |    post_avg
+          ___________   |   ___________
+         /           \  v  /           \
+        [x, x, x, x, x, x, x, x, x, x, x]
+               \_____/     \_____/      \____ new data
+               pre_max     post_max
+
+    In `wait` periods after picked, no peak can be picked. The yielded value is
+    a boolean indicating whether `center` is picked, it has a delay
+    `max(post_max, post_avg)`.
 
     Parameters
     ----------
@@ -563,14 +581,6 @@ def pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta):
     avg_buffer = buffer[center - pre_avg : center + post_avg + 1]
     index = -1 - delay
     prev_index = -1 - wait
-
-    #               center
-    #     pre_avg     |    post_avg
-    #   ___________   |   ___________
-    #  /           \  v  /           \
-    # [x, x, x, x, x, x, x, x, x, x, x]
-    #        \_____/     \_____/      \____ new data
-    #        pre_max     post_max
 
     buffer[-1] = yield
     while True:
