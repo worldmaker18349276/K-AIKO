@@ -747,25 +747,31 @@ def rechannel(channels, original=None):
     """
     if channels == 0:
         if original is None:
-            return lambda data: (data if data.ndim == 1 else numpy.mean(data, axis=1))
+            return DataNode.wrap(
+                lambda data: (data if data.ndim == 1 else numpy.mean(data, axis=1))
+            )
         elif original == 0:
-            return lambda data: data
+            return DataNode.wrap(lambda data: data)
         else:
-            return lambda data: numpy.mean(data, axis=1)
+            return DataNode.wrap(lambda data: numpy.mean(data, axis=1))
 
     else:
         if original is None:
-            return lambda data: numpy.tile(
-                data[:, None]
-                if data.ndim == 1
-                else numpy.mean(data, axis=1, keepdims=True),
-                (1, channels),
+            return DataNode.wrap(
+                lambda data: numpy.tile(
+                    data[:, None]
+                    if data.ndim == 1
+                    else numpy.mean(data, axis=1, keepdims=True),
+                    (1, channels),
+                )
             )
         elif original == 0:
-            return lambda data: numpy.tile(data[:, None], (1, channels))
+            return DataNode.wrap(lambda data: numpy.tile(data[:, None], (1, channels)))
         else:
-            return lambda data: numpy.tile(
-                numpy.mean(data, axis=1, keepdims=True), (1, channels)
+            return DataNode.wrap(
+                lambda data: numpy.tile(
+                    numpy.mean(data, axis=1, keepdims=True), (1, channels)
+                )
             )
 
 
