@@ -996,7 +996,7 @@ class ThreadError(Exception):
     pass
 
 
-def _thread_task(thread, stop_event, res, error):
+def _thread_task(thread, stop_event, res, err):
     yield
     thread.start()
 
@@ -1005,23 +1005,23 @@ def _thread_task(thread, stop_event, res, error):
         while thread.is_alive():
             yield
 
-    except:
+    except GeneratorExit:
         stop_event.set()
         if thread.is_alive():
             thread.join()
-        if not error.empty():
-            raise ThreadError() from error.get()
-        else:
-            raise
 
-    assert not res.empty()
-    return res.get()
+    else:
+        if not err.empty():
+            raise ThreadError() from err.get()
+        else:
+            assert not res.empty()
+            return res.get()
 
 
 @datanode
 def create_task(node):
     res = queue.Queue()
-    error = queue.Queue()
+    err = queue.Queue()
     stop_event = threading.Event()
 
     def run():
@@ -1033,11 +1033,12 @@ def create_task(node):
                     except StopIteration as stop:
                         res.put(stop.value)
                         return
+            res.put(None)
         except Exception as e:
-            error.put(e)
+            err.put(e)
 
     thread = threading.Thread(target=run)
-    return (yield from _thread_task(thread, stop_event, res, error))
+    return (yield from _thread_task(thread, stop_event, res, err))
 
 
 @datanode
@@ -1045,7 +1046,7 @@ def interval(node, dt, t0=0.0):
     node = DataNode.wrap(node)
 
     res = queue.Queue()
-    error = queue.Queue()
+    err = queue.Queue()
     stop_event = threading.Event()
 
     def run():
@@ -1054,7 +1055,8 @@ def interval(node, dt, t0=0.0):
 
             for i in itertools.count():
                 delta = ref_time + t0 + i * dt - time.perf_counter()
-                if delta > 0.0 and stop_event.wait(delta):
+                if stop_event.wait(delta) if delta > 0.0 else stop_event.is_set():
+                    res.put(None)
                     return
 
                 try:
@@ -1065,11 +1067,11 @@ def interval(node, dt, t0=0.0):
                     return
 
         except Exception as e:
-            error.put(e)
+            err.put(e)
 
     with node:
         thread = threading.Thread(target=run)
-        return (yield from _thread_task(thread, stop_event, res, error))
+        return (yield from _thread_task(thread, stop_event, res, err))
 
 
 # not data nodes
