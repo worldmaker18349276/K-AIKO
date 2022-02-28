@@ -272,7 +272,7 @@ class MixerLoader:
     def require(self):
         if self.mixer is None:
             self.mixer_task, self.mixer = engines.Mixer.create(
-                self.mixer_settings_getter(), self.manager
+                self._mixer_settings_getter(), self.manager
             )
 
         key = object()
