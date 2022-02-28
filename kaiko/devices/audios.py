@@ -413,25 +413,27 @@ def load_sound(
     chunk_length=1024,
 ):
     meta = AudioMetadata.read(filepath)
-    node = load(filepath)
 
-    if start is not None or end is not None:
-        node = dn.tslice(node, meta.samplerate, start, end)
+    # resampling
+    pipeline = []
     if channels is not None and meta.channels != channels:
-        node = dn.pipe(node, dn.rechannel(channels, meta.channels))
+        pipeline.append(dn.rechannel(channels, meta.channels))
     if samplerate is not None and meta.samplerate != samplerate:
-        node = dn.pipe(node, dn.resample(ratio=(samplerate, meta.samplerate)))
+        pipeline.append(dn.resample(ratio=(samplerate, meta.samplerate)))
     if volume != 0:
-        node = dn.pipe(node, lambda s: s * 10 ** (volume / 20))
-
-    if chunk_length is not None:
-        curr_channels = channels if channels is not None else meta.channels
-        node = dn.chunk(node, chunk_shape=(chunk_length, curr_channels))
+        pipeline.append(lambda s: s * 10 ** (volume / 20))
 
     sound = []
+    pipeline = dn.pipe(*pipeline, sound.append)
+
+    # chuncking
+    if chunk_length is not None:
+        pipeline = dn.unchunk(pipeline, chunk_shape=(chunk_length, meta.channels))
+    if start is not None or end is not None:
+        pipeline = dn.tunslice(pipeline, meta.samplerate, start, end)
 
     node = dn.ensure(
-        dn.pipe(node, sound.append),
+        dn.pipe(load(filepath), pipeline),
         lambda: IOCancelled(
             f"The operation of loading file {filepath} has been cancelled."
         ),

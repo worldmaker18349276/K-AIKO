@@ -790,7 +790,7 @@ def resample(ratio):
         The resampling factor.
 
     Receives
-    ------
+    --------
     data : ndarray
         The original signal.
 
@@ -806,9 +806,56 @@ def resample(ratio):
     while True:
         next_index = index + data.shape[0] * up / down
         length = int(next_index) - int(index)
-        data_ = scipy.signal.resample(data, length, axis=0)
+        data_ = scipy.signal.resample(data, length, axis=0) if length > 0 else data
         index = next_index % 1.0
         data = yield data_
+
+
+@datanode
+def tspan(samplerate, start=None, end=None):
+    """A data node can only pass within a given timespan.
+
+    Parameters
+    ----------
+    samplerate : int
+        The sample rate of data.
+    start : float, optional
+        The start time, default is no slicing.
+    end : float, optional
+        The end time, default is no slicing.
+
+    Receives
+    --------
+    data : ndarray
+        The original signal.
+
+    Yields
+    ------
+    data : ndarray
+        The sliced signal.
+    """
+    node = DataNode.wrap(node)
+    index = 0
+    start = max(0, round(start * samplerate)) if start is not None else 0
+    end = round(end * samplerate) if end is not None else float("inf")
+
+    data = yield
+    while True:
+        index += data.shape[0]
+
+        if index <= start:
+            data = data[0:0]
+
+        else:
+            if index - data.shape[0] <= start:
+                data = data[start - index :]
+            if index > end:
+                data = data[: end - index]
+
+        data = yield data
+
+        if index > end:
+            break
 
 
 @datanode
@@ -834,7 +881,7 @@ def tslice(node, samplerate, start=None, end=None):
     node = DataNode.wrap(node)
     index = 0
     start = max(0, round(start * samplerate)) if start is not None else 0
-    end = round(end * samplerate) if end is not None else end
+    end = round(end * samplerate) if end is not None else float("inf")
 
     with node:
         for data in node:
@@ -847,12 +894,58 @@ def tslice(node, samplerate, start=None, end=None):
                 yield
                 data = data[start - index :]
 
-            if end is not None and index > end:
+            if index > end:
                 data = data[: end - index]
 
             yield data
 
-            if end is not None and index > end:
+            if index > end:
+                break
+
+
+@datanode
+def tunslice(node, samplerate, start=None, end=None):
+    """A data node unsliced by given timespan.
+
+    Parameters
+    ----------
+    node : DataNode
+        The data node to unslice.
+    samplerate : int
+        The sample rate of data.
+    start : float, optional
+        The start time, default is no slicing.
+    end : float, optional
+        The end time, default is no slicing.
+
+    Receives
+    --------
+    data : ndarray
+        The unsliced signal.
+    """
+    node = DataNode.wrap(node)
+    index = 0
+    start = max(0, round(start * samplerate)) if start is not None else 0
+    end = round(end * samplerate) if end is not None else float("inf")
+
+    with node:
+        while True:
+            data = yield
+
+            index += data.shape[0]
+
+            if index <= start:
+                continue
+
+            if index - data.shape[0] <= start:
+                data = data[start - index :]
+
+            if index > end:
+                data = data[: end - index]
+
+            node.send(data)
+
+            if index > end:
                 break
 
 
