@@ -571,6 +571,7 @@ class Renderer:
         clear_line = rich_renderer.render(rich_renderer.clear_line().expand())
         clear_below = rich_renderer.render(rich_renderer.clear_below().expand())
         width = 0
+        logs = []
         msgs = []
         curr_msgs = list(msgs)
         with scheduler:
@@ -579,24 +580,29 @@ class Renderer:
                 width = size.columns
                 view = RichBar(term_settings)
                 try:
-                    view, msgs = scheduler.send(((view, msgs), time, width))
+                    view, msgs, logs = scheduler.send(((view, msgs, logs), time, width))
                 except StopIteration:
                     return
                 view_str = view.draw(width)
 
+                logs_str = rich_renderer.render(mu.Group(tuple(logs))) + "\r" if logs else ""
+
                 # track changes of the message
-                if not resized and curr_msgs == msgs:
+                if not resized and not logs and curr_msgs == msgs:
                     res_text = f"{clear_line}{view_str}\r"
-                elif not msgs:
-                    res_text = f"{clear_below}{view_str}\r"
                 else:
-                    msg_text = rich_renderer.render_less(
-                        mu.Group((mu.Text("\n"), *msgs)), size
+                    msg_text = (
+                        rich_renderer.render_less(
+                            mu.Group((mu.Text("\n"), *msgs)), size
+                        )
+                        if msgs
+                        else ""
                     )
-                    res_text = f"{clear_below}{view_str}\r{msg_text}"
+                    res_text = f"{clear_below}{logs_str}{view_str}\r{msg_text}"
 
                 shown, resized, time, size = yield res_text
                 if shown:
+                    logs.clear()
                     curr_msgs = list(msgs)
 
     @staticmethod
@@ -656,6 +662,9 @@ class Renderer:
     def remove_drawer(self, key):
         self.drawers_scheduler.remove_node(key)
 
+    def add_log(self, msg, zindex=(0,)):
+        return self.add_drawer(self._log_drawer(msg), zindex)
+
     def add_message(self, msg, zindex=(0,)):
         return self.add_drawer(self._msg_drawer(msg), zindex)
 
@@ -664,17 +673,24 @@ class Renderer:
 
     @staticmethod
     @dn.datanode
+    def _log_drawer(msg):
+        (view, msgs, logs), _, _ = yield
+        logs.append(msg)
+        yield (view, msgs, logs)
+
+    @staticmethod
+    @dn.datanode
     def _msg_drawer(msg):
-        (view, msgs), _, _ = yield
+        (view, msgs, logs), _, _ = yield
         msgs.append(msg)
-        yield (view, msgs)
+        yield (view, msgs, logs)
 
     @staticmethod
     @dn.datanode
     def _text_drawer(text_node, xmask=slice(None, None)):
         text_node = dn.DataNode.wrap(text_node)
         with text_node:
-            (view, msg), time, width = yield
+            (view, msg, logs), time, width = yield
             while True:
                 xran = to_range(xmask.start, xmask.stop, width)
 
@@ -687,7 +703,7 @@ class Renderer:
                     xshift, text = res
                     view.add_markup(text, xmask, xshift)
 
-                (view, msg), time, width = yield (view, msg)
+                (view, msg, logs), time, width = yield (view, msg, logs)
 
 
 class ControllerSettings(cfg.Configurable):

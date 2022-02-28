@@ -272,10 +272,6 @@ class KAIKOMenu:
                 input.prev_session()
                 self.logger.print(f"[warn]{str(result.error)}[/]")
 
-            elif isinstance(result, beatshell.HelpResult):
-                input.prev_session()
-                yield from self.execute(result.command).join()
-
             elif isinstance(result, beatshell.CompleteResult):
                 input.new_session()
                 yield from self.execute(result.command).join()

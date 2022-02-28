@@ -2,6 +2,7 @@ from enum import Enum
 import functools
 import re
 import threading
+import queue
 from typing import Optional, List, Tuple, Dict, Callable
 import dataclasses
 from ..utils import datanodes as dn
@@ -434,11 +435,6 @@ class ErrorResult(Result):
 
 
 @dataclasses.dataclass(frozen=True)
-class HelpResult(Result):
-    command: Callable
-
-
-@dataclasses.dataclass(frozen=True)
 class CompleteResult(Result):
     command: Callable
 
@@ -529,6 +525,8 @@ class BeatInput:
         The state of autocomplete.
     hint_state : HintState or None
         The hint state of input.
+    popup : queue of DescHint or InfoHint
+        The message displayed above the prompt.
     result : Result or None
         The result of input.
     state : str
@@ -577,6 +575,7 @@ class BeatInput:
         self.lex_state = SHLEXER_STATE.SPACED
         self.highlighted = None
         self.hint_state = None
+        self.popup = queue.Queue()
         self.result = None
         self.tab_state = None
         self.state = "FIN"
@@ -993,7 +992,7 @@ class BeatInput:
         self.pos += len(self.typeahead)
         self.typeahead = ""
         self.update_buffer()
-        self.ask_hint()
+        self.ask_for_hint()
 
         return True
 
@@ -1033,7 +1032,7 @@ class BeatInput:
         self.update_buffer()
 
         self.show_typeahead()
-        self.ask_hint()
+        self.ask_for_hint()
 
         return True
 
@@ -1055,7 +1054,7 @@ class BeatInput:
         del self.buffer[self.pos]
         self.update_buffer()
         self.cancel_typeahead()
-        self.ask_hint(clear=True)
+        self.ask_for_hint(clear=True)
 
         return True
 
@@ -1076,7 +1075,7 @@ class BeatInput:
         del self.buffer[self.pos]
         self.update_buffer()
         self.cancel_typeahead()
-        self.ask_hint(clear=True)
+        self.ask_for_hint(clear=True)
 
         return True
 
@@ -1126,7 +1125,7 @@ class BeatInput:
         self.pos = start
         self.update_buffer()
         self.cancel_typeahead()
-        self.ask_hint(clear=True)
+        self.ask_for_hint(clear=True)
 
         return True
 
@@ -1325,7 +1324,7 @@ class BeatInput:
 
     @locked
     @onstate("EDIT")
-    def ask_hint(self, index=None, clear=False):
+    def ask_for_hint(self, index=None, clear=False):
         """Ask some hint for command.
 
         Provide some hint for the command on the caret.
@@ -1391,30 +1390,16 @@ class BeatInput:
             return False
 
         if self.hint_state is None or self.hint_state.index != index:
-            self.ask_hint(index)
+            self.ask_for_hint(index)
             return False
 
         hint = self.hint_state.hint
         if not hint.message:
             return False
-        if isinstance(hint, DescHint):
-            template = self.logger.rich.parse(
-                self.shell_settings.text.desc_message, slotted=True
-            )
-        elif isinstance(hint, (InfoHint, SuggestionsHint)):
-            template = self.logger.rich.parse(
-                self.shell_settings.text.info_message, slotted=True
-            )
-        else:
-            assert False
-        msg_markup = mu.replace_slot(
-            template, self.logger.rich.parse(hint.message, root_tag=True)
-        )
+        if isinstance(hint, SuggestionsHint):
+            hint = InfoHint(hint.message)
 
-        self.cancel_hint()
-        self.finish_autocomplete()
-        self.set_result(HelpResult(lambda: self.logger.print(msg_markup)))
-        self.finish()
+        self.popup.put(hint)
         return True
 
     @locked
@@ -1800,7 +1785,7 @@ class BeatPrompt:
 
     @dn.datanode
     def state_updater(self):
-        (view, msg), time, width = yield
+        (view, msgs, logs), time, width = yield
         while True:
             # extract input state
             with self.input.lock:
@@ -1818,9 +1803,16 @@ class BeatPrompt:
                     if self.input.hint_state is not None
                     else None
                 )
+                self.popup = []
+                while True:
+                    try:
+                        msg = self.input.popup.get(False)
+                    except queue.Empty:
+                        break
+                    self.popup.append(msg)
                 self.state = self.input.state
 
-            (view, msg), time, width = yield (view, msg)
+            (view, msgs, logs), time, width = yield (view, msgs, logs)
 
             # fin
             if self.state == "FIN" and not self.fin_event.is_set():
@@ -1830,12 +1822,12 @@ class BeatPrompt:
     def update_metronome(self):
         key_event = None
 
-        (view, msg), time, width = yield
+        (view, msgs, logs), time, width = yield
         while True:
             if self.stroke.key_event != key_event:
                 key_event = self.stroke.key_event
                 self.key_pressed_time = time
-            (view, msg), time, width = yield (view, msg)
+            (view, msgs, logs), time, width = yield (view, msgs, logs)
 
     def input_geometry(self, buffer, typeahead, pos):
         text_width = self.rich.widthof(buffer)
@@ -1859,7 +1851,7 @@ class BeatPrompt:
         geo_node = starcache(self.input_geometry, geo_key)
 
         with geo_node:
-            (view, msg), time, width = yield
+            (view, msgs, logs), time, width = yield
             while True:
                 typeahead = self.typeahead if not self.clean else ""
                 text_width, typeahead_width, caret_dis = geo_node.send(
@@ -1889,7 +1881,7 @@ class BeatPrompt:
                     text_width + typeahead_width - self.input_offset > input_width - 1
                 )
 
-                (view, msg), time, width = yield (view, msg)
+                (view, msgs, logs), time, width = yield (view, msgs, logs)
 
     def markup_syntax(self, buffer, tokens, typeahead):
         r"""Markup syntax of input text.
@@ -2013,12 +2005,12 @@ class BeatPrompt:
         ellipis = mu.Text("…")
         return lambda arg: ((len(arg[1]) - 1, ellipis) if self.right_overflow else None)
 
-    def markup_hint(self, messages, hint):
+    def markup_hint(self, msgs, hint):
         r"""Render hint.
 
         Parameters
         ----------
-        messages : list of Markup
+        msgs : list of Markup
             The rendered hint.
         hint : Hint
         """
@@ -2035,11 +2027,11 @@ class BeatPrompt:
         desc = self.rich.parse(self.settings.text.desc_message, slotted=True)
         info = self.rich.parse(self.settings.text.info_message, slotted=True)
 
-        messages.clear()
+        msgs.clear()
 
         # draw hint
         if hint is None:
-            return messages
+            return msgs
 
         msg = None
         if hint.message:
@@ -2075,37 +2067,72 @@ class BeatPrompt:
             sugg_end = sugg_start + sugg_lines
             suggs = hint.suggestions[sugg_start:sugg_end]
             if sugg_start > 0:
-                messages.append(mu.Text("…\n"))
+                msgs.append(mu.Text("…\n"))
             for i, sugg in enumerate(suggs):
                 sugg = mu.Text(sugg)
                 if i == hint.selected - sugg_start:
                     sugg = mu.replace_slot(sugg_items[1], sugg)
                 else:
                     sugg = mu.replace_slot(sugg_items[0], sugg)
-                messages.append(sugg)
+                msgs.append(sugg)
                 if i == hint.selected - sugg_start and msg is not None:
-                    messages.append(mu.Text("\n"))
-                    messages.append(msg)
+                    msgs.append(mu.Text("\n"))
+                    msgs.append(msg)
                 if i != len(suggs) - 1:
-                    messages.append(mu.Text("\n"))
+                    msgs.append(mu.Text("\n"))
             if sugg_end < len(hint.suggestions):
-                messages.append(mu.Text("\n…"))
-            messages.append(self.rich.parse("\n"))
+                msgs.append(mu.Text("\n…"))
+            msgs.append(self.rich.parse("\n"))
 
         else:
             if msg is not None:
-                messages.append(msg)
+                msgs.append(msg)
 
-        return messages
+        return msgs
+
+    def markup_popup(self, logs, popup):
+        r"""Render popup.
+
+        Parameters
+        ----------
+        logs : list of Markup
+            The rendered popup.
+        popup : list of DescHint or InfoHint
+        """
+        desc = self.rich.parse(self.settings.text.desc_message, slotted=True)
+        info = self.rich.parse(self.settings.text.info_message, slotted=True)
+
+        # draw popup
+        for hint in popup:
+            msg = None
+            if hint.message:
+                msg = self.rich.parse(hint.message, root_tag=True)
+
+                if isinstance(hint, DescHint):
+                    msg = mu.replace_slot(desc, msg)
+                elif isinstance(hint, InfoHint):
+                    msg = mu.replace_slot(info, msg)
+                else:
+                    assert False
+
+                msg = mu.Group((msg, mu.Text("\n")))
+                msg = msg.expand()
+
+            if msg is not None:
+                logs.append(msg)
+
+        return logs
 
     @dn.datanode
     def hint_handler(self):
-        hint_node = starcache(self.markup_hint, lambda msg, hint: hint)
-        with hint_node:
-            (view, msg), time, width = yield
+        hint_node = starcache(self.markup_hint, lambda msgs, hint: hint)
+        popup_node = starcache(self.markup_popup, lambda logs, popup: popup)
+        with hint_node, popup_node:
+            (view, msgs, logs), time, width = yield
             while True:
-                msg = hint_node.send((msg, self.hint))
-                (view, msg), time, width = yield (view, msg)
+                msgs = hint_node.send((msgs, self.hint))
+                logs = popup_node.send((logs, self.popup))
+                (view, msgs, logs), time, width = yield (view, msgs, logs)
 
 
 @dataclasses.dataclass(frozen=True)
