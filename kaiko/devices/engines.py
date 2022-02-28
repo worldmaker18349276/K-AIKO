@@ -585,7 +585,9 @@ class Renderer:
                     return
                 view_str = view.draw(width)
 
-                logs_str = rich_renderer.render(mu.Group(tuple(logs))) + "\r" if logs else ""
+                logs_str = (
+                    rich_renderer.render(mu.Group(tuple(logs))) + "\r" if logs else ""
+                )
 
                 # track changes of the message
                 if not resized and not logs and curr_msgs == msgs:

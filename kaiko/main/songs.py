@@ -294,10 +294,13 @@ class MixerLoader:
 
 
 @dn.datanode
-def play_fadeinout(mixer, path, fadein_time, fadeout_time, volume=0.0, start=None, end=None):
+def play_fadeinout(
+    mixer, path, fadein_time, fadeout_time, volume=0.0, start=None, end=None
+):
     meta = aud.AudioMetadata.read(path)
     node = aud.load(path)
     node = dn.tslice(node, meta.samplerate, start, end)
+    # initialize before attach; it will seek to the starting frame
     node.__enter__()
     node = mixer.resample(node, meta.samplerate, meta.channels, volume)
 
