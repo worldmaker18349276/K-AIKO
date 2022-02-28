@@ -329,6 +329,7 @@ def load(filepath):
             chunk = 256
             nchannels = file.getnchannels()
             width = file.getsampwidth()
+            framewidth = width * nchannels
             scale = 2.0 ** (1 - 8 * width)
             fmt = f"<i{width}"
 
@@ -340,7 +341,7 @@ def load(filepath):
             remaining = file.getnframes()
             while remaining > 0:
                 data = file.readframes(chunk)
-                remaining -= len(data) // width
+                remaining -= len(data) // framewidth
                 yield frombuffer(data)
 
     else:
