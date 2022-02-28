@@ -1,7 +1,9 @@
 import os
 import contextlib
+import time
 import random
 import shutil
+import threading
 import queue
 import zipfile
 import dataclasses
@@ -10,6 +12,7 @@ from pathlib import Path
 from ..utils import commands as cmd
 from ..utils import datanodes as dn
 from ..utils import markups as mu
+from ..devices import audios as aud
 from ..devices import engines
 from ..beats import beatmaps
 from ..beats import beatsheets
@@ -238,9 +241,10 @@ class StopPreview(BGMAction):
 
 
 class MixerLoader:
-    def __init__(self, manager, mixer_settings_getter=engines.MixerSettings):
+    def __init__(self, manager, delay=0.0, mixer_settings_getter=engines.MixerSettings):
         self._mixer_settings_getter = mixer_settings_getter
         self.manager = manager
+        self.delay = delay
         self.required = set()
         self.mixer_task = None
         self.mixer = None
@@ -257,7 +261,13 @@ class MixerLoader:
             with self.mixer_task:
                 yield
 
-                while self.required:
+                expiration = None
+                while expiration is None or time.time() < expiration:
+                    if expiration is None and not self.required:
+                        expiration = time.time() + self.delay
+                    elif expiration is not None and self.required:
+                        expiration = None
+
                     try:
                         self.mixer_task.send(None)
                     except StopIteration:
@@ -283,7 +293,40 @@ class MixerLoader:
             self.required.remove(key)
 
 
+@dn.datanode
+def play_fadeinout(mixer, path, fadein_time, fadeout_time, volume=0.0, start=None, end=None):
+    meta = aud.AudioMetadata.read(path)
+    node = aud.load(path)
+    node = dn.tslice(node, meta.samplerate, start, end)
+    node.__enter__()
+    node = mixer.resample(node, meta.samplerate, meta.channels, volume)
+
+    samplerate = mixer.samplerate
+    out_event = threading.Event()
+    start = start if start is not None else 0.0
+    before = end - start - fadeout_time if end is not None else None
+    node = dn.pipe(
+        node,
+        dn.fadein(samplerate, fadein_time),
+        dn.fadeout(samplerate, fadeout_time, out_event, before),
+    )
+
+    song_handler = mixer.play(node)
+    while not song_handler.is_finalized():
+        try:
+            yield
+        except GeneratorExit:
+            out_event.set()
+            raise
+
+
 class KAIKOBGMController:
+    mixer_loader_delay = 3.0
+    preview_delay = 0.5
+    fadein_time = 0.5
+    fadeout_time = 1.0
+    preview_duration = 30.0
+
     def __init__(
         self, logger, beatmap_manager, mixer_settings_getter=engines.MixerSettings
     ):
@@ -297,7 +340,9 @@ class KAIKOBGMController:
 
     @dn.datanode
     def execute(self, manager):
-        mixer_loader = MixerLoader(manager, self._mixer_settings_getter)
+        mixer_loader = MixerLoader(
+            manager, self.mixer_loader_delay, self._mixer_settings_getter
+        )
         with mixer_loader.task() as mixer_task:
             with self._bgm_event_loop(mixer_loader.require) as event_task:
                 while True:
@@ -307,28 +352,43 @@ class KAIKOBGMController:
 
     @dn.datanode
     def _play_song(self, mixer, action):
-        preview_delay = 0.5
-
         if isinstance(action, PreviewSong):
             song = action.song
+            volume = song.audio.volume
             start = action.song.audio.preview
-            delay = preview_delay
+            if start is None:
+                start = 0.0
+            end = (
+                start + self.preview_duration
+                if self.preview_duration is not None
+                else None
+            )
+
+            yield from dn.sleep(self.preview_delay).join()
+
+            yield from play_fadeinout(
+                mixer,
+                song.root / song.audio.path,
+                fadein_time=self.fadein_time,
+                fadeout_time=self.fadeout_time,
+                volume=volume,
+                start=start,
+                end=end,
+            ).join()
+
         elif isinstance(action, PlayBGM):
             song = action.song
-            start = action.start
-            delay = None
+            with mixer.play_file(
+                song.root / song.audio.path,
+                start=action.start,
+                volume=song.audio.volume,
+            ) as song_handler:
+                yield
+                while not song_handler.is_finalized():
+                    yield
+
         else:
             assert False
-
-        if delay is not None:
-            yield from dn.sleep(delay).join()
-
-        with mixer.play_file(
-            song.root / song.audio.path, start=start, volume=song.audio.volume
-        ) as song_handler:
-            yield
-            while not song_handler.is_finalized():
-                yield
 
     @dn.datanode
     def _bgm_event_loop(self, require_mixer):
