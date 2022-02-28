@@ -269,18 +269,18 @@ class Mixer:
                     return
 
     def resample(
-        self, node, samplerate=None, channels=None, volume=0.0, start=None, end=None
+        self, samplerate=None, channels=None, volume=0.0, start=None, end=None
     ):
+        pipeline = []
         if start is not None or end is not None:
-            node = dn.tslice(node, samplerate or self.samplerate, start, end)
+            pipeline.append(dn.tspan(samplerate or self.samplerate, start, end))
         if channels is not None and channels != self.nchannels:
-            node = dn.pipe(node, dn.rechannel(self.nchannels, channels))
+            pipeline.append(dn.rechannel(self.nchannels, channels))
         if samplerate is not None and samplerate != self.samplerate:
-            node = dn.pipe(node, dn.resample(ratio=(self.samplerate, samplerate)))
+            pipeline.append(dn.resample(ratio=(self.samplerate, samplerate)))
         if volume != 0:
-            node = dn.pipe(node, lambda s: s * 10 ** (volume / 20))
-
-        return node
+            pipeline.append(lambda s: s * 10 ** (volume / 20))
+        return dn.pipe(*pipeline)
 
     def play(
         self,
@@ -293,20 +293,25 @@ class Mixer:
         time=None,
         zindex=(0,),
     ):
-        node = self.resample(node, samplerate, channels, volume, start, end)
+        node = dn.pipe(node, self.resample(samplerate, channels, volume, start, end))
         node = dn.pipe(lambda a: a[0], dn.attach(node))
         return self.add_effect(node, time=time, zindex=zindex)
 
     def play_file(self, path, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
         meta = aud.AudioMetadata.read(path)
         node = aud.load(path)
-
-        sliced_node = dn.tslice(node, meta.samplerate, start, end)
+        node = dn.tslice(node, meta.samplerate, start, end)
         # initialize before attach; it will seek to the starting frame
-        sliced_node.__enter__()
-        sliced_node = self.resample(sliced_node, meta.samplerate, meta.channels, volume)
-        effect_node = dn.pipe(lambda a: a[0], dn.attach(sliced_node))
-        return self.add_effect(effect_node, time=time, zindex=zindex)
+        node.__enter__()
+
+        return self.play(
+            node,
+            samplerate=meta.samplerate,
+            channels=meta.channels,
+            volume=volume,
+            time=time,
+            zindex=zindex,
+        )
 
 
 class DetectorSettings(cfg.Configurable):

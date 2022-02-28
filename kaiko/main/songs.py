@@ -302,7 +302,6 @@ def play_fadeinout(
     node = dn.tslice(node, meta.samplerate, start, end)
     # initialize before attach; it will seek to the starting frame
     node.__enter__()
-    node = mixer.resample(node, meta.samplerate, meta.channels, volume)
 
     samplerate = mixer.samplerate
     out_event = threading.Event()
@@ -310,6 +309,7 @@ def play_fadeinout(
     before = end - start - fadeout_time if end is not None else None
     node = dn.pipe(
         node,
+        mixer.resample(meta.samplerate, meta.channels, volume),
         dn.fadein(samplerate, fadein_time),
         dn.fadeout(samplerate, fadeout_time, out_event, before),
     )

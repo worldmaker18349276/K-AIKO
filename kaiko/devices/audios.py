@@ -426,7 +426,7 @@ def load_sound(
     sound = []
     pipeline = dn.pipe(*pipeline, sound.append)
 
-    # chuncking
+    # rechunking
     if chunk_length is not None:
         pipeline = dn.unchunk(pipeline, chunk_shape=(chunk_length, meta.channels))
     if start is not None or end is not None:
