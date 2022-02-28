@@ -270,7 +270,7 @@ class KAIKOMenu:
             result = input.result
             if isinstance(result, beatshell.ErrorResult):
                 input.prev_session()
-                self.logger.print(f"[warn]{str(result.error)}[/]")
+                self.logger.print(f"[warn]{self.logger.escape(str(result.error))}[/]")
 
             elif isinstance(result, beatshell.CompleteResult):
                 input.new_session()
