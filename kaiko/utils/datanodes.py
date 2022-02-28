@@ -991,6 +991,29 @@ def fadeout(samplerate, duration, out_event, before=None):
         data = yield data
 
 
+@datanode
+def lfilter(b, a=1):
+    zi = scipy.signal.lfilter_zi(b, a)
+    data = yield
+    while data.shape[0] == 0:
+        data = yield data
+    zi = zi[(slice(None), *(None,) * (data.ndim - 1))] * data[0:1]
+    while True:
+        if data.shape[0] > 0:
+            data, zi = scipy.signal.lfilter(b, a, data, axis=0, zi=zi)
+        data = yield data
+
+
+def bandpass(N, bands, gains, samplerate):
+    return lfilter(
+        scipy.signal.remez(N, [0, *bands, samplerate / 2], gains, fs=samplerate)
+    )
+
+
+def gammatone(freq, samplerate):
+    return lfilter(*scipy.signal.gammatone(freq, "iir", fs=samplerate))
+
+
 # others
 class Scheduler(DataNode):
     """A data node schedule given data nodes dynamically.
