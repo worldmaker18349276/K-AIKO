@@ -30,6 +30,7 @@ setup(
     install_requires=[
         "numpy",
         "scipy",
+        "numexpr",
         "audioread",
         "pyaudio",
         "wcwidth",

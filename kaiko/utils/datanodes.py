@@ -11,6 +11,7 @@ from typing import Callable
 import numpy
 import scipy
 import scipy.signal
+import numexpr
 
 
 def datanode(gen_func):
@@ -1012,6 +1013,44 @@ def bandpass(N, bands, gains, samplerate):
 
 def gammatone(freq, samplerate):
     return lfilter(*scipy.signal.gammatone(freq, "iir", fs=samplerate))
+
+
+@datanode
+def waveform(expr, samplerate=44100, chunk_length=1024, variables=None):
+    # &, |, ~
+    # <, <=, ==, !=, >=, >
+    # +, -, *, /, **, %, <<, >>
+    # sin, cos, tan, arcsin, arccos, arctan, arctan2
+    # sinh, cosh, tanh, arcsinh, arccosh, arctanh
+    # log, log10, log1p, exp, expm1
+    # sqrt, abs, conj, real, imag, complex
+    # where
+    # pi, pi2, inf, e
+
+    if variables is None:
+        variables = {}
+    constants = {
+        "pi": numpy.pi,
+        "pi2": numpy.pi * 2,
+        "inf": numpy.inf,
+        "e": numpy.e,
+    }
+    t0 = 0.0
+    dt = chunk_length / samplerate
+    t_ = numpy.linspace(0, dt, chunk_length, dtype=numpy.float32)
+    yield
+    for _ in itertools.count():
+        t = t0 + t_
+        yield numexpr.evaluate(
+            expr, local_dict={"t": t, **variables}, global_dict=constants
+        )
+        t0 += dt
+
+
+sine_wave = "sin(t*f*pi2)"
+square_wave = "where(sin(t*f*pi2) > 0, 1, -1)"
+triangle_wave = "(arcsin(sin(t*f*pi2))/pi*2)"
+sawtooth_wave = "(arctan(tan(t*f*pi))/pi*2)"
 
 
 # others
