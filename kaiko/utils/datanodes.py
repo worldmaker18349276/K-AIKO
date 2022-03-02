@@ -1030,21 +1030,26 @@ def waveform(expr, samplerate=44100, chunk_length=1024, variables=None):
     if variables is None:
         variables = {}
     constants = {
+        **variables,
         "pi": numpy.pi,
         "pi2": numpy.pi * 2,
         "inf": numpy.inf,
         "e": numpy.e,
     }
-    t0 = 0.0
     dt = chunk_length / samplerate
-    t_ = numpy.linspace(0, dt, chunk_length, dtype=numpy.float32)
-    yield
-    for _ in itertools.count():
-        t = t0 + t_
-        yield numexpr.evaluate(
-            expr, local_dict={"t": t, **variables}, global_dict=constants
-        )
-        t0 += dt
+    t_ = numpy.linspace(0, dt, chunk_length)
+    numexpr.evaluate(expr, local_dict={"t": t_}, global_dict=constants)
+
+    @datanode
+    def waveform_node():
+        t0 = 0.0
+        yield
+        for _ in itertools.count():
+            t = t0 + t_
+            yield numexpr.evaluate(expr, local_dict={"t": t}, global_dict=constants)
+            t0 += dt
+
+    return waveform_node()
 
 
 sine_wave = "sin(t*f*pi2)"
