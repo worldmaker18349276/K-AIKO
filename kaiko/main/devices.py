@@ -309,6 +309,22 @@ class DevicesCommand:
                 self.config.current.devices.mixer.output_format = fmt
             self.config.set_change()
 
+    @cmd.function_command
+    def gen(self, waveform):
+        """[rich]Generate sound.
+
+        usage: [cmd]devices[/] [cmd]gen[/] [arg]{waveform}[/]
+                              ╱
+                       The function of
+                       output waveform.
+        """
+        settings = self.config.current.devices.mixer
+        return WaveformTest(waveform, self.logger, settings)
+
+    @gen.arg_parser("waveform")
+    def _gen_waveform_parser(self):
+        return cmd.RawParser(desc="It should be an expression of waveform.")
+
     @test_mic.arg_parser("device")
     @set_mic.arg_parser("device")
     def _set_mic_device_parser(self):
@@ -598,6 +614,35 @@ class SpeakerTest:
                 yield
             self.logger.print(flush=True)
             yield
+
+
+class WaveformTest:
+    def __init__(self, waveform, logger, mixer_settings):
+        self.waveform = waveform
+        self.logger = logger
+        self.mixer_settings = mixer_settings
+
+    @dn.datanode
+    def execute(self, manager):
+        self.logger.print("[hint/] Press any key to end test.")
+
+        mixer_task, mixer = engines.Mixer.create(self.mixer_settings, manager)
+        node = dn.waveform(
+            self.waveform,
+            self.mixer_settings.output_samplerate,
+            self.mixer_settings.output_buffer_length,
+        )
+        mixer.play(node, channels=0)
+
+        @dn.datanode
+        def exit_any():
+            keycode = None
+            while keycode is None:
+                _, keycode = yield
+
+        exit_task = term.inkey(exit_any())
+
+        yield from dn.pipe(mixer_task, exit_task).join()
 
 
 class MicTest:
