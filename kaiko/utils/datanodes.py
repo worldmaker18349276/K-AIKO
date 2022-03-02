@@ -1035,6 +1035,13 @@ def waveform(expr, samplerate=44100, chunk_length=1024, variables=None):
         "inf": numpy.inf,
         "e": numpy.e,
     }
+    expr = expr.format(
+        sine=sine_wave_template,
+        square=square_wave_template,
+        triangle=triangle_wave_template,
+        sawtooth=sawtooth_wave_template,
+    )
+
     dt = chunk_length / samplerate
     t_ = numpy.linspace(0, dt, chunk_length, dtype=numpy.float64, endpoint=False)
     _r = numexpr.evaluate(expr, local_dict={"t": t_}, global_dict=constants)
@@ -1055,10 +1062,18 @@ def waveform(expr, samplerate=44100, chunk_length=1024, variables=None):
     return waveform_node()
 
 
-sine_wave = "sin(t*f*pi2)"
-square_wave = "where(sin(t*f*pi2) > 0, 1, -1)"
-triangle_wave = "(arcsin(sin(t*f*pi2))/pi*2)"
-sawtooth_wave = "(arctan(tan(t*f*pi))/pi*2)"
+class Template:
+    def __init__(self, template):
+        self.template = template
+
+    def __format__(self, spec):
+        return self.template.format(spec)
+
+
+sine_wave_template = Template("(sin(({})*pi2))")
+square_wave_template = Template("(where(sin(({})*pi2)>0,1,-1))")
+triangle_wave_template = Template("(arcsin(sin(({})*pi2))/pi*2)")
+sawtooth_wave_template = Template("(arctan(tan(({})*pi))/pi*2)")
 
 
 # others
