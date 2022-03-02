@@ -601,7 +601,17 @@ class SpeakerTest:
 
     @dn.datanode
     def make_click(self, mixer, samplerate, nchannels):
-        click = dn.pulse(samplerate=samplerate)
+        freq = 1000.0
+        decay = 0.01
+        amp = 1.0
+        duration = 0.1
+        expr = f"{amp} * 2**(-t/{decay}) * {{sine:t*{freq}}}"
+        click = dn.pipe(
+            dn.waveform(expr, samplerate=samplerate, channels=0),
+            dn.tspan(samplerate=samplerate, end=duration),
+        )
+        click = dn.collect(click)
+
         yield
 
         for n in range(nchannels):
