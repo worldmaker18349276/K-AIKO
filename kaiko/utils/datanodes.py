@@ -1071,9 +1071,9 @@ class Template:
 
 
 sine_wave_template = Template("(sin(({})*pi2))")
-square_wave_template = Template("(where(sin(({})*pi2)>0,1,-1))")
+square_wave_template = Template("(where(({})%1<0.5,1,-1))")
 triangle_wave_template = Template("(arcsin(sin(({})*pi2))/pi*2)")
-sawtooth_wave_template = Template("(arctan(tan(({})*pi))/pi*2)")
+sawtooth_wave_template = Template("((({})+0.5)%1*2-1)")
 
 
 # others
