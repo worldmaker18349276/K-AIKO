@@ -622,16 +622,24 @@ class WaveformTest:
         self.logger = logger
         self.mixer_settings = mixer_settings
 
-    @dn.datanode
     def execute(self, manager):
-        self.logger.print("[hint/] Press any key to end test.")
+        self.logger.print("[info/] Compile waveform...")
 
+        try:
+            node = dn.waveform(
+                self.waveform,
+                self.mixer_settings.output_samplerate,
+                self.mixer_settings.output_buffer_length,
+            )
+
+        except:
+            self.logger.print("[warn]Fail to compile waveform.[/]")
+            with self.logger.warn():
+                self.logger.print(traceback.format_exc(), end="", markup=False)
+            return dn.DataNode.wrap([])
+
+        self.logger.print("[hint/] Press any key to end test.")
         mixer_task, mixer = engines.Mixer.create(self.mixer_settings, manager)
-        node = dn.waveform(
-            self.waveform,
-            self.mixer_settings.output_samplerate,
-            self.mixer_settings.output_buffer_length,
-        )
         mixer.play(node, channels=0)
 
         @dn.datanode
@@ -642,7 +650,7 @@ class WaveformTest:
 
         exit_task = term.inkey(exit_any())
 
-        yield from dn.pipe(mixer_task, exit_task).join()
+        return dn.pipe(mixer_task, exit_task)
 
 
 class MicTest:

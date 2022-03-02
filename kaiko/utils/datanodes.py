@@ -1037,6 +1037,11 @@ def waveform(expr, samplerate=44100, chunk_length=1024, variables=None):
     }
     dt = chunk_length / samplerate
     t_ = numpy.linspace(0, dt, chunk_length, dtype=numpy.float64, endpoint=False)
+    _r = numexpr.evaluate(expr, local_dict={"t": t_}, global_dict=constants)
+    if numpy.shape(_r) != t_.shape:
+        raise TypeError("The returned array shape should be the same as the input.")
+    if not numpy.issubdtype(_r.dtype, numpy.float64):
+        raise TypeError("The returned data type should be a subtype of float64.")
 
     @datanode
     def waveform_node():
