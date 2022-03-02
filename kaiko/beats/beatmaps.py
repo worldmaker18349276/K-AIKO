@@ -1086,12 +1086,19 @@ class BeatmapSettings(cfg.Configurable):
 
         event_leadin_time: float = 1.0
 
-    resources: Dict[str, str] = {
-        "soft": "samples/soft.wav",  # pulse(freq=830.61, decay_time=0.03, amplitude=0.5)
-        "loud": "samples/loud.wav",  # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
-        "incr": "samples/incr.wav",  # pulse(freq=1661.2, decay_time=0.03, amplitude=1.0)
-        "rock": "samples/rock.wav",  # pulse(freq=1661.2, decay_time=0.01, amplitude=0.5)
-        "disk": "samples/disk.wav",  # pulse(freq=1661.2, decay_time=0.01, amplitude=1.0)
+    # resources: Dict[str, Path] = {
+    #     "soft": pulse(freq=830.61, decay_time=0.03, amplitude=0.5),
+    #     "loud": pulse(freq=1661.2, decay_time=0.03, amplitude=1.0),
+    #     "incr": pulse(freq=1661.2, decay_time=0.03, amplitude=1.0),
+    #     "rock": pulse(freq=1661.2, decay_time=0.01, amplitude=0.5),
+    #     "disk": pulse(freq=1661.2, decay_time=0.01, amplitude=1.0),
+    # }
+    resources: Dict[str, Path] = {
+        "soft": Path("samples/soft.wav"),
+        "loud": Path("samples/loud.wav"),
+        "incr": Path("samples/incr.wav"),
+        "rock": Path("samples/rock.wav"),
+        "disk": Path("samples/disk.wav"),
     }
 
 
@@ -1483,7 +1490,7 @@ class Beatmap:
                 raise RuntimeError(f"Failed to load song {self.audio.path}") from e
 
         for name, path in self.settings.resources.items():
-            sound_path = os.path.join(data_dir, path)
+            sound_path = data_dir / path
             try:
                 resource = yield from aud.load_sound(
                     sound_path,
