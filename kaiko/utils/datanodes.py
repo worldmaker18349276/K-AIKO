@@ -992,6 +992,17 @@ def fadeout(samplerate, duration, out_event, before=None):
         data = yield data
 
 
+def clip(amplitude=1, method="hard"):
+    if method == "hard":
+        func = lambda x: numpy.clip(x, -amplitude, amplitude)
+    elif method == "tanh":
+        func = lambda x: numpy.tanh(x / amplitude) * amplitude
+    else:
+        raise ValueError(f"Invalid method: {method}")
+
+    return Datanode.wrap(func)
+
+
 @datanode
 def lfilter(b, a=1):
     zi = scipy.signal.lfilter_zi(b, a)
@@ -1074,6 +1085,11 @@ sine_wave_template = Template("(sin(({})*pi2))")
 square_wave_template = Template("(where(({})%1<0.5,1,-1))")
 triangle_wave_template = Template("(arcsin(sin(({})*pi2))/pi*2)")
 sawtooth_wave_template = Template("((({})+0.5)%1*2-1)")
+
+
+def collect(node):
+    with node:
+        return numpy.concatenate(list(node))
 
 
 # others
@@ -1301,7 +1317,7 @@ def filter(x, distr):
 
 def pulse(samplerate=44100, freq=1000.0, decay_time=0.01, amplitude=1.0, length=None):
     if length is None:
-        length = decay_time
+        length = decay_time * 10
     t = numpy.linspace(
         0, length, int(length * samplerate), endpoint=False, dtype=numpy.float32
     )
