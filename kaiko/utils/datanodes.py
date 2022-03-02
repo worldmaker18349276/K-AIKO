@@ -1026,7 +1026,7 @@ def gammatone(freq, samplerate):
     return lfilter(*scipy.signal.gammatone(freq, "iir", fs=samplerate))
 
 
-def waveform(expr, samplerate=44100, chunk_length=1024, variables=None):
+def waveform(expr, samplerate=44100, channels=1, chunk_length=1024, variables=None):
     # &, |, ~
     # <, <=, ==, !=, >=, >
     # +, -, *, /, **, %, <<, >>
@@ -1055,6 +1055,8 @@ def waveform(expr, samplerate=44100, chunk_length=1024, variables=None):
 
     dt = chunk_length / samplerate
     t_ = numpy.linspace(0, dt, chunk_length, dtype=numpy.float64, endpoint=False)
+    if channels > 0:
+        t_ = t_[:,None] * [[1]*channels]
     _r = numexpr.evaluate(expr, local_dict={"t": t_}, global_dict=constants)
     if numpy.shape(_r) != t_.shape:
         raise TypeError("The returned array shape should be the same as the input.")

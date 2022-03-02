@@ -629,6 +629,7 @@ class WaveformTest:
             node = dn.waveform(
                 self.waveform,
                 self.mixer_settings.output_samplerate,
+                self.mixer_settings.output_channels,
                 self.mixer_settings.output_buffer_length,
             )
 
@@ -640,7 +641,7 @@ class WaveformTest:
 
         self.logger.print("[hint/] Press any key to end test.")
         mixer_task, mixer = engines.Mixer.create(self.mixer_settings, manager)
-        mixer.play(node, channels=0)
+        mixer.play(node)
 
         @dn.datanode
         def exit_any():
