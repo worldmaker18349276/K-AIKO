@@ -1015,7 +1015,6 @@ def gammatone(freq, samplerate):
     return lfilter(*scipy.signal.gammatone(freq, "iir", fs=samplerate))
 
 
-@datanode
 def waveform(expr, samplerate=44100, chunk_length=1024, variables=None):
     # &, |, ~
     # <, <=, ==, !=, >=, >
@@ -1037,8 +1036,7 @@ def waveform(expr, samplerate=44100, chunk_length=1024, variables=None):
         "e": numpy.e,
     }
     dt = chunk_length / samplerate
-    t_ = numpy.linspace(0, dt, chunk_length)
-    numexpr.evaluate(expr, local_dict={"t": t_}, global_dict=constants)
+    t_ = numpy.linspace(0, dt, chunk_length, dtype=numpy.float64, endpoint=False)
 
     @datanode
     def waveform_node():
