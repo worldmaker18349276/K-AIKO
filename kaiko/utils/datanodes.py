@@ -813,53 +813,6 @@ def resample(ratio):
 
 
 @datanode
-def tspan(samplerate, start=None, end=None):
-    """A data node can only pass within a given timespan.
-
-    Parameters
-    ----------
-    samplerate : int
-        The sample rate of data.
-    start : float, optional
-        The start time, default is no slicing.
-    end : float, optional
-        The end time, default is no slicing.
-
-    Receives
-    --------
-    data : ndarray
-        The original signal.
-
-    Yields
-    ------
-    data : ndarray
-        The sliced signal.
-    """
-    node = DataNode.wrap(node)
-    index = 0
-    start = max(0, round(start * samplerate)) if start is not None else 0
-    end = round(end * samplerate) if end is not None else float("inf")
-
-    data = yield
-    while True:
-        index += data.shape[0]
-
-        if index <= start:
-            data = data[0:0]
-
-        else:
-            if index - data.shape[0] <= start:
-                data = data[start - index :]
-            if index > end:
-                data = data[: end - index]
-
-        data = yield data
-
-        if index > end:
-            break
-
-
-@datanode
 def tslice(node, samplerate, start=None, end=None):
     """A data node sliced by given timespan.
 
@@ -952,6 +905,63 @@ def tunslice(node, samplerate, start=None, end=None):
 
 # mixer
 @datanode
+def tspan(samplerate, start=None, end=None):
+    """A data node can only pass within a given timespan.
+
+    Parameters
+    ----------
+    samplerate : int
+        The sample rate of data.
+    start : float, optional
+        The start time, default is no slicing.
+    end : float, optional
+        The end time, default is no slicing.
+
+    Receives
+    --------
+    data : ndarray
+        The original signal.
+
+    Yields
+    ------
+    data : ndarray
+        The sliced signal.
+    """
+    index = 0
+    start = max(0, round(start * samplerate)) if start is not None else 0
+    end = round(end * samplerate) if end is not None else float("inf")
+
+    data = yield
+    while True:
+        index += data.shape[0]
+
+        if index <= start:
+            data = data[0:0]
+
+        else:
+            if index - data.shape[0] <= start:
+                data = data[start - index :]
+            if index > end:
+                data = data[: end - index]
+
+        data = yield data
+
+        if index > end:
+            break
+
+
+def clip(amplitude=1, method="hard"):
+    if method == "hard":
+        func = lambda x: numpy.clip(x, -amplitude, amplitude)
+    elif method == "tanh":
+        func = lambda x: numpy.tanh(x / amplitude) * amplitude
+    else:
+        raise ValueError(f"Invalid method: {method}")
+
+    return Datanode.wrap(func)
+
+
+@datanode
 def fadein(samplerate, duration):
     data = yield
     t = 0.0
@@ -990,17 +1000,6 @@ def fadeout(samplerate, duration, out_event, before=None):
 
         t += dt
         data = yield data
-
-
-def clip(amplitude=1, method="hard"):
-    if method == "hard":
-        func = lambda x: numpy.clip(x, -amplitude, amplitude)
-    elif method == "tanh":
-        func = lambda x: numpy.tanh(x / amplitude) * amplitude
-    else:
-        raise ValueError(f"Invalid method: {method}")
-
-    return Datanode.wrap(func)
 
 
 @datanode
@@ -1056,7 +1055,7 @@ def waveform(expr, samplerate=44100, channels=1, chunk_length=1024, variables=No
     dt = chunk_length / samplerate
     t_ = numpy.linspace(0, dt, chunk_length, dtype=numpy.float64, endpoint=False)
     if channels > 0:
-        t_ = t_[:,None] * [[1]*channels]
+        t_ = t_[:, None] * [[1] * channels]
     _r = numexpr.evaluate(expr, local_dict={"t": t_}, global_dict=constants)
     if numpy.shape(_r) != t_.shape:
         raise TypeError("The returned array shape should be the same as the input.")
