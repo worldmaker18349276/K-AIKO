@@ -1090,6 +1090,46 @@ sawtooth_wave_template = Template("((({})+0.5)%1*2-1)")
 square_dirty_wave_template = Template("(where(([{0}][0])%1<[{0}][1],1,-1))")
 
 
+@dataclasses.dataclass
+class Waveform:
+    expr: str
+
+    def generate(self, samplerate, channels, buffer_length=1024):
+        base, *effects = self.expr.split("#")
+        effect_nodes = []
+        for effect in effects:
+            name, args = effect.split(":", 1) if ":" in effect else (effect, "")
+            if name not in Waveform.valid_effects:
+                raise ValueError(f"invalid effect name {name}")
+            args = ast.literal_eval(f"({args},)") if args else ()
+            effect_nodes.append(getattr(Waveform, name)(samplerate, channels, *args))
+
+        return pipe(waveform(base, samplerate, channels, buffer_length), *effect_nodes)
+
+    valid_effects = [
+        "tspan",
+        "clip",
+        "bandpass",
+        "gammatone",
+    ]
+
+    @staticmethod
+    def tspan(samplerate, channels, start=None, end=None):
+        return tspan(samplerate, start=start, end=end)
+
+    @staticmethod
+    def clip(samplerate, channels, amplitude=1.0, method="hard"):
+        return clip(amplitude=amplitude, method=method)
+
+    @staticmethod
+    def bandpass(samplerate, channels, bands, gains, N=401):
+        return bandpass(N, bands, gains, samplerate)
+
+    @staticmethod
+    def gammatone(samplerate, channels, frequency):
+        return gammatone(frequency, samplerate)
+
+
 def collect(node):
     with node:
         return numpy.concatenate(list(node))

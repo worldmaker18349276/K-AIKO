@@ -636,8 +636,7 @@ class WaveformTest:
         self.logger.print("[info/] Compile waveform...")
 
         try:
-            node = dn.waveform(
-                self.waveform,
+            node = dn.Waveform(self.waveform).generate(
                 self.mixer_settings.output_samplerate,
                 self.mixer_settings.output_channels,
                 self.mixer_settings.output_buffer_length,
