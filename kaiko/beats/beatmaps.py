@@ -1086,19 +1086,12 @@ class BeatmapSettings(cfg.Configurable):
 
         event_leadin_time: float = 1.0
 
-    # resources: Dict[str, Path] = {
-    #     "soft": pulse(freq=830.61, decay_time=0.03, amplitude=0.5),
-    #     "loud": pulse(freq=1661.2, decay_time=0.03, amplitude=1.0),
-    #     "incr": pulse(freq=1661.2, decay_time=0.03, amplitude=1.0),
-    #     "rock": pulse(freq=1661.2, decay_time=0.01, amplitude=0.5),
-    #     "disk": pulse(freq=1661.2, decay_time=0.01, amplitude=1.0),
-    # }
-    resources: Dict[str, Path] = {
-        "soft": Path("samples/soft.wav"),
-        "loud": Path("samples/loud.wav"),
-        "incr": Path("samples/incr.wav"),
-        "rock": Path("samples/rock.wav"),
-        "disk": Path("samples/disk.wav"),
+    resources: Dict[str, Union[Path, dn.Waveform]] = {
+        "soft": dn.Waveform("0.5*2**(-t/0.01)*{sine:t*830.61}#tspan:0,0.06"),
+        "loud": dn.Waveform("1.0*2**(-t/0.01)*{sine:t*1661.2}#tspan:0,0.06"),
+        "incr": dn.Waveform("1.0*2**(-t/0.01)*{sine:t*1661.2}#tspan:0,0.06"),
+        "rock": dn.Waveform("0.5*2**(-t/0.005)*{sine:t*1661.2}#tspan:0,0.03"),
+        "disk": dn.Waveform("1.0*2**(-t/0.005)*{sine:t*1661.2}#tspan:0,0.03"),
     }
 
 
@@ -1490,23 +1483,57 @@ class Beatmap:
                 raise RuntimeError(f"Failed to load song {self.audio.path}") from e
 
         for name, path in self.settings.resources.items():
-            sound_path = data_dir / path
-            try:
-                resource = yield from aud.load_sound(
-                    sound_path,
-                    samplerate=output_samplerate,
-                    channels=output_nchannels,
-                ).join()
+            if isinstance(path, Path):
+                sound_path = data_dir / path
+                try:
+                    resource = yield from aud.load_sound(
+                        sound_path,
+                        samplerate=output_samplerate,
+                        channels=output_nchannels,
+                    ).join()
 
-                self.resources[name] = resource
+                    self.resources[name] = resource
 
-            except aud.IOCancelled:
-                raise
+                except aud.IOCancelled:
+                    raise
 
-            except Exception as e:
-                raise RuntimeError(
-                    f"Failed to load resource {name} at {sound_path}"
-                ) from e
+                except Exception as e:
+                    raise RuntimeError(
+                        f"Failed to load resource {name} at {sound_path}"
+                    ) from e
+
+            elif isinstance(path, dn.Waveform):
+                waveform_max_time = 30.0
+                try:
+                    node = path.generate(
+                        samplerate=output_samplerate,
+                        channels=output_nchannels,
+                    )
+
+                    resource = []
+                    yield from dn.ensure(
+                        dn.pipe(
+                            node,
+                            dn.tspan(
+                                samplerate=output_samplerate, end=waveform_max_time
+                            ),
+                            resource.append,
+                        ),
+                        lambda: aud.IOCancelled(
+                            f"The operation of generating sound {path!r} has been cancelled."
+                        ),
+                    ).join()
+
+                    self.resources[name] = resource
+
+                except aud.IOCancelled:
+                    raise
+
+                except Exception as e:
+                    raise RuntimeError(f"Failed to load resource {name}") from e
+
+            else:
+                raise TypeError
 
     @dn.datanode
     def prepare_events(self, rich):

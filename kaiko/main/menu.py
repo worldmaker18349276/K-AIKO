@@ -85,21 +85,6 @@ class KAIKOUser:
         self.config_dir.mkdir(parents=True, exist_ok=True)
         self.songs_dir.mkdir(parents=True, exist_ok=True)
 
-        (self.data_dir / "samples/").mkdir(exist_ok=True)
-        resources = [
-            "samples/soft.wav",
-            "samples/loud.wav",
-            "samples/incr.wav",
-            "samples/rock.wav",
-            "samples/disk.wav",
-        ]
-        for rspath in resources:
-            logger.print(f"[data/] Load resource {logger.escape(rspath)}...")
-            data = pkgutil.get_data("kaiko", rspath)
-            if data is None:
-                raise RuntimeError(f"Failed to load resource {rspath}")
-            open(self.data_dir / rspath, "wb").write(data)
-
         logger.print(
             f"[data/] Your data will be stored in {logger.emph(self.data_dir.as_uri())}"
         )

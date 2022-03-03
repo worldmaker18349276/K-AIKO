@@ -550,6 +550,8 @@ class PyAudioDeviceParser(cmd.ArgumentParser):
 
 
 class SpeakerTest:
+    test_waveform = "2**(-t/0.01)*{sine:t*1000.0}#tspan:0,0.1"
+
     def __init__(self, device, logger, tempo=120.0, delay=0.5):
         self.device = device
         self.logger = logger
@@ -601,15 +603,7 @@ class SpeakerTest:
 
     @dn.datanode
     def make_click(self, mixer, samplerate, nchannels):
-        freq = 1000.0
-        decay = 0.01
-        amp = 1.0
-        duration = 0.1
-        expr = f"{amp} * 2**(-t/{decay}) * {{sine:t*{freq}}}"
-        click = dn.pipe(
-            dn.waveform(expr, samplerate=samplerate, channels=0),
-            dn.tspan(samplerate=samplerate, end=duration),
-        )
+        click = dn.Waveform(self.test_waveform).generate(samplerate, 0)
         click = dn.collect(click)
 
         yield

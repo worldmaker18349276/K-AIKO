@@ -2,11 +2,13 @@ import time
 import functools
 import itertools
 from collections import OrderedDict
+import dataclasses
 import contextlib
 import queue
 import threading
 import subprocess
 import signal
+import ast
 from typing import Callable
 import numpy
 import scipy
@@ -958,7 +960,7 @@ def clip(amplitude=1, method="hard"):
     else:
         raise ValueError(f"Invalid method: {method}")
 
-    return Datanode.wrap(func)
+    return DataNode.wrap(func)
 
 
 @datanode

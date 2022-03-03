@@ -36,7 +36,6 @@ setup(
         "wcwidth",
         "appdirs",
     ],
-    include_package_data=True,
     entry_points={
         "console_scripts": [
             "kaiko = kaiko.__main__:main",
