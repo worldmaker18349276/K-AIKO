@@ -1018,9 +1018,11 @@ def lfilter(b, a=1):
 
 
 def bandpass(N, bands, gains, samplerate):
-    return lfilter(
-        scipy.signal.remez(N, [0, *bands, samplerate / 2], gains, fs=samplerate)
-    )
+    if bands and bands[0] is None:
+        bands[0] = 0
+    if bands and bands[-1] is None:
+        bands[-1] = samplerate / 2
+    return lfilter(scipy.signal.remez(N, bands, gains, fs=samplerate))
 
 
 def gammatone(freq, samplerate):
