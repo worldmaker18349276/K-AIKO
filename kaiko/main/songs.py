@@ -151,10 +151,11 @@ class BeatmapManager:
             if not self._beatmaps[path]:
                 return None
             path = self._beatmaps[path][0]
+
         beatmap = self.get_beatmap_metadata(path)
-        return beatmap and BGMSong(
-            self.songs_dir / path.parent, beatmap.audio, beatmap.info
-        )
+        if beatmap is None:
+            return None
+        return Song(self.songs_dir / path.parent, beatmap.audio)
 
     def get_songs(self):
         songs = [self.get_song(path) for path in self._beatmaps.keys()]
@@ -209,10 +210,9 @@ class BeatmapParser(cmd.TreeParser):
 
 
 @dataclasses.dataclass(frozen=True)
-class BGMSong:
+class Song:
     root: Path
     audio: beatmaps.BeatmapAudio
-    info: str
 
 
 class BGMAction:
@@ -226,13 +226,13 @@ class StopBGM(BGMAction):
 
 @dataclasses.dataclass(frozen=True)
 class PlayBGM(BGMAction):
-    song: BGMSong
+    song: Song
     start: Optional[float]
 
 
 @dataclasses.dataclass(frozen=True)
 class PreviewSong(BGMAction):
-    song: BGMSong
+    song: Song
 
 
 @dataclasses.dataclass(frozen=True)
