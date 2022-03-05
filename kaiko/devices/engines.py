@@ -241,7 +241,9 @@ class Mixer:
         with node:
             data, time_slice = yield
             offset = (
-                round((start_time - time_slice.start) * samplerate) if start_time is not None else 0
+                round((start_time - time_slice.start) * samplerate)
+                if start_time is not None
+                else 0
             )
 
             while offset < 0:
@@ -259,7 +261,9 @@ class Mixer:
                 else:
                     data1, data2 = data[:offset], data[offset:]
                     try:
-                        data2 = node.send((data2, time_slice.start + offset / samplerate))
+                        data2 = node.send(
+                            (data2, time_slice.start + offset / samplerate)
+                        )
                     except StopIteration:
                         return
                     data = numpy.concatenate((data1, data2), axis=0)
@@ -423,18 +427,26 @@ class Detector:
             ),
             dn.onset_strength(1),
         )
-        delay = dn.delay(
-            (index * hop_length / samplerate + settings.knock_delay + init_time, 0.0)
-            for index in range(-prepare, 0)
-        )
-        picker = dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta)
 
-        with scheduler, onset, delay, picker:
+        picker = dn.pipe(
+            lambda a: (a, a),
+            dn.pair(
+                dn.pick_peak(pre_max, post_max, pre_avg, post_avg, wait, delta),
+                dn.delay(0.0 for _ in range(-prepare, 0)),
+            ),
+        )
+
+        with scheduler, onset, picker:
             data = yield
-            index = 0
+            index = -prepare
             while True:
                 try:
                     strength = onset.send(data)
+                except StopIteration:
+                    return
+
+                try:
+                    detected, strength = picker.send(strength)
                 except StopIteration:
                     return
 
@@ -442,15 +454,6 @@ class Detector:
                     index * hop_length / samplerate + settings.knock_delay + init_time
                 )
                 normalized_strength = strength / settings.knock_energy
-                try:
-                    time, normalized_strength = delay.send((time, normalized_strength))
-                except StopIteration:
-                    return
-
-                try:
-                    detected = picker.send(strength)
-                except StopIteration:
-                    return
 
                 try:
                     scheduler.send((None, time, normalized_strength, detected))
