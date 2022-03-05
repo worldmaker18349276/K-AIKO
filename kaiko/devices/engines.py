@@ -193,19 +193,24 @@ class Mixer:
         nchannels = settings.output_channels
 
         index = 0
+        time = settings.sound_delay + init_time
         with scheduler:
             yield
             while True:
+                time0 = time
+                index += 1
                 time = (
-                    index * buffer_length / samplerate + settings.sound_delay + init_time
+                    index * buffer_length / samplerate
+                    + settings.sound_delay
+                    + init_time
                 )
                 data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
                 try:
-                    data = scheduler.send((data, time))
+                    data = scheduler.send((data, slice(time0, time)))
+                    # {slice(time0, time): slice(0, buffer_length)}
                 except StopIteration:
                     return
                 yield data
-                index += 1
 
     @classmethod
     def create(cls, settings, manager, init_time=0.0, monitor=None):
@@ -234,16 +239,16 @@ class Mixer:
         nchannels = self.nchannels
 
         with node:
-            data, time = yield
+            data, time_slice = yield
             offset = (
-                round((start_time - time) * samplerate) if start_time is not None else 0
+                round((start_time - time_slice.start) * samplerate) if start_time is not None else 0
             )
 
             while offset < 0:
                 length = min(-offset, buffer_length)
                 dummy = numpy.zeros((length, nchannels), dtype=numpy.float32)
                 try:
-                    node.send((dummy, time + offset / samplerate))
+                    node.send((dummy, time_slice.start + offset / samplerate))
                 except StopIteration:
                     return
                 offset += length
@@ -254,17 +259,17 @@ class Mixer:
                 else:
                     data1, data2 = data[:offset], data[offset:]
                     try:
-                        data2 = node.send((data2, time + offset / samplerate))
+                        data2 = node.send((data2, time_slice.start + offset / samplerate))
                     except StopIteration:
                         return
                     data = numpy.concatenate((data1, data2), axis=0)
                     offset = 0
 
-                data, time = yield data
+                data, time_slice = yield data
 
             while True:
                 try:
-                    data, time = yield node.send((data, time))
+                    data, time_slice = yield node.send((data, time_slice))
                 except StopIteration:
                     return
 
@@ -433,7 +438,9 @@ class Detector:
                 except StopIteration:
                     return
 
-                time = index * hop_length / samplerate + settings.knock_delay + init_time
+                time = (
+                    index * hop_length / samplerate + settings.knock_delay + init_time
+                )
                 normalized_strength = strength / settings.knock_energy
                 try:
                     time, normalized_strength = delay.send((time, normalized_strength))
