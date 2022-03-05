@@ -539,14 +539,10 @@ class KAIKOPlay:
 
         else:
             stop_key = gameplay_settings.controls.stop_key
-            sound_keys = gameplay_settings.controls.sound_delay_adjust_keys
             display_keys = gameplay_settings.controls.display_delay_adjust_keys
             knock_keys = gameplay_settings.controls.knock_delay_adjust_keys
             energy_keys = gameplay_settings.controls.knock_energy_adjust_keys
             logger.print(f"[hint/] Press {logger.emph(stop_key)} to end the game.")
-            logger.print(
-                f"[hint/] Use {logger.emph(sound_keys[0])} and {logger.emph(sound_keys[1])} to adjust click sound delay."
-            )
             logger.print(
                 f"[hint/] Use {logger.emph(display_keys[0])} and {logger.emph(display_keys[1])} to adjust display delay."
             )
@@ -606,14 +602,10 @@ class KAIKOLoop:
             )
 
             stop_key = gameplay_settings.controls.stop_key
-            sound_keys = gameplay_settings.controls.sound_delay_adjust_keys
             display_keys = gameplay_settings.controls.display_delay_adjust_keys
             knock_keys = gameplay_settings.controls.knock_delay_adjust_keys
             energy_keys = gameplay_settings.controls.knock_energy_adjust_keys
             logger.print(f"[hint/] Press {logger.emph(stop_key)} to end the game.")
-            logger.print(
-                f"[hint/] Use {logger.emph(sound_keys[0])} and {logger.emph(sound_keys[1])} to adjust click sound delay."
-            )
             logger.print(
                 f"[hint/] Use {logger.emph(display_keys[0])} and {logger.emph(display_keys[1])} to adjust display delay."
             )

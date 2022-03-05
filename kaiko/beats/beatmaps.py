@@ -1139,11 +1139,9 @@ class GameplaySettings(cfg.Configurable):
         tickrate: float = 60.0
         stop_key: str = "Esc"
 
-        sound_delay_adjust_keys: Tuple[str, str] = ("Shift_Left", "Shift_Right")
         display_delay_adjust_keys: Tuple[str, str] = ("Ctrl_Left", "Ctrl_Right")
         knock_delay_adjust_keys: Tuple[str, str] = ("Left", "Right")
         knock_energy_adjust_keys: Tuple[str, str] = ("Down", "Up")
-        sound_delay_adjust_step: float = 0.001
         display_delay_adjust_step: float = 0.001
         knock_delay_adjust_step: float = 0.001
         knock_energy_adjust_step: float = 0.0001
@@ -1363,25 +1361,6 @@ class Beatmap:
         stop_event = threading.Event()
         playfield.add_handler(
             lambda _: stop_event.set(), gameplay_settings.controls.stop_key
-        )
-
-        sound_delay_adjust_step = gameplay_settings.controls.sound_delay_adjust_step
-
-        def incr_sound_delay(_):
-            nonlocal settings_changed
-            settings_changed = True
-            devices_settings.mixer.sound_delay += sound_delay_adjust_step
-
-        def decr_sound_delay(_):
-            nonlocal settings_changed
-            settings_changed = True
-            devices_settings.mixer.sound_delay -= sound_delay_adjust_step
-
-        playfield.add_handler(
-            incr_sound_delay, gameplay_settings.controls.sound_delay_adjust_keys[0]
-        )
-        playfield.add_handler(
-            decr_sound_delay, gameplay_settings.controls.sound_delay_adjust_keys[1]
         )
 
         display_delay_adjust_step = gameplay_settings.controls.display_delay_adjust_step
