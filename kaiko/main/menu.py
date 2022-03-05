@@ -319,8 +319,7 @@ class KAIKOMenu:
         return KAIKOPlay(
             self.user,
             self.user.songs_dir / beatmap,
-            self.settings.devices,
-            self.settings.gameplay,
+            self.profiles,
             self.logger,
         )
 
@@ -339,8 +338,7 @@ class KAIKOMenu:
             tempo,
             offset,
             self.user,
-            self.settings.devices,
-            self.settings.gameplay,
+            self.profiles,
             self.logger,
         )
 
@@ -517,16 +515,17 @@ class KAIKOMenu:
 
 
 class KAIKOPlay:
-    def __init__(self, user, filepath, devices_settings, gameplay_settings, logger):
+    def __init__(self, user, filepath, profiles, logger):
         self.user = user
         self.filepath = filepath
-        self.devices_settings = devices_settings
-        self.gameplay_settings = gameplay_settings
+        self.profiles = profiles
         self.logger = logger
 
     @dn.datanode
     def execute(self, manager):
         logger = self.logger
+        devices_settings = self.profiles.current.devices
+        gameplay_settings = self.profiles.current.gameplay
 
         try:
             beatmap = beatsheets.read(str(self.filepath))
@@ -539,11 +538,11 @@ class KAIKOPlay:
                 logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
-            stop_key = self.gameplay_settings.controls.stop_key
-            sound_keys = self.gameplay_settings.controls.sound_delay_adjust_keys
-            display_keys = self.gameplay_settings.controls.display_delay_adjust_keys
-            knock_keys = self.gameplay_settings.controls.knock_delay_adjust_keys
-            energy_keys = self.gameplay_settings.controls.knock_energy_adjust_keys
+            stop_key = gameplay_settings.controls.stop_key
+            sound_keys = gameplay_settings.controls.sound_delay_adjust_keys
+            display_keys = gameplay_settings.controls.display_delay_adjust_keys
+            knock_keys = gameplay_settings.controls.knock_delay_adjust_keys
+            energy_keys = gameplay_settings.controls.knock_energy_adjust_keys
             logger.print(f"[hint/] Press {logger.emph(stop_key)} to end the game.")
             logger.print(
                 f"[hint/] Use {logger.emph(sound_keys[0])} and {logger.emph(sound_keys[1])} to adjust click sound delay."
@@ -559,9 +558,18 @@ class KAIKOPlay:
             )
             logger.print()
 
-            score = yield from beatmap.play(
-                manager, self.user, self.devices_settings, self.gameplay_settings
+            score, devices_settings = yield from beatmap.play(
+                manager, self.user, devices_settings, gameplay_settings
             ).join()
+
+            if devices_settings is not None:
+                yes = yield from self.logger.ask(
+                    "Keep changes to device settings?"
+                ).join()
+                if yes:
+                    logger.print("[data/] Update device settings...")
+                    self.profiles.current.devices = devices_settings
+                    self.profiles.set_as_changed()
 
             logger.print()
             logger.print_scores(
@@ -570,20 +578,19 @@ class KAIKOPlay:
 
 
 class KAIKOLoop:
-    def __init__(
-        self, pattern, tempo, offset, user, devices_settings, gameplay_settings, logger
-    ):
+    def __init__(self, pattern, tempo, offset, user, profiles, logger):
         self.pattern = pattern
         self.tempo = tempo
         self.offset = offset
         self.user = user
-        self.devices_settings = devices_settings
-        self.gameplay_settings = gameplay_settings
+        self.profiles = profiles
         self.logger = logger
 
     @dn.datanode
     def execute(self, manager):
         logger = self.logger
+        devices_settings = self.profiles.current.devices
+        gameplay_settings = self.profiles.current.gameplay
 
         try:
             track, width = beatmaps.BeatTrack.parse(self.pattern, ret_width=True)
@@ -598,11 +605,11 @@ class KAIKOLoop:
                 tempo=self.tempo, offset=self.offset, width=width, track=track
             )
 
-            stop_key = self.gameplay_settings.controls.stop_key
-            sound_keys = self.gameplay_settings.controls.sound_delay_adjust_keys
-            display_keys = self.gameplay_settings.controls.display_delay_adjust_keys
-            knock_keys = self.gameplay_settings.controls.knock_delay_adjust_keys
-            energy_keys = self.gameplay_settings.controls.knock_energy_adjust_keys
+            stop_key = gameplay_settings.controls.stop_key
+            sound_keys = gameplay_settings.controls.sound_delay_adjust_keys
+            display_keys = gameplay_settings.controls.display_delay_adjust_keys
+            knock_keys = gameplay_settings.controls.knock_delay_adjust_keys
+            energy_keys = gameplay_settings.controls.knock_energy_adjust_keys
             logger.print(f"[hint/] Press {logger.emph(stop_key)} to end the game.")
             logger.print(
                 f"[hint/] Use {logger.emph(sound_keys[0])} and {logger.emph(sound_keys[1])} to adjust click sound delay."
@@ -618,9 +625,18 @@ class KAIKOLoop:
             )
             logger.print()
 
-            score = yield from beatmap.play(
-                manager, self.user, self.devices_settings, self.gameplay_settings
+            score, devices_settings = yield from beatmap.play(
+                manager, self.user, devices_settings, gameplay_settings
             ).join()
+
+            if devices_settings is not None:
+                yes = yield from self.logger.ask(
+                    "Keep changes to device settings?"
+                ).join()
+                if yes:
+                    logger.print("[data/] Update device settings...")
+                    self.profiles.current.devices = devices_settings
+                    self.profiles.set_as_changed()
 
             logger.print()
             logger.print_scores(

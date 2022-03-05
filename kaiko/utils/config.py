@@ -277,6 +277,9 @@ class Configurable(metaclass=ConfigurableMeta):
     def write(self, path, name="settings"):
         return write(type(self), self, path, name)
 
+    def copy(self):
+        return copy(type(self), self)
+
 
 def set(config, field, value):
     """Set a field of the configuration to the given value.
@@ -474,6 +477,18 @@ def format(cls, config, name="settings"):
         imports.append(f"from {module} import " + ", ".join(names) + "\n")
 
     return "".join(imports) + "\n" + "".join(res)
+
+
+def copy(cls, config):
+    copied = cls()
+
+    for field in cls.iter_all_fields():
+        if not has(config, field):
+            continue
+        value = get(config, field)
+        set(copied, field, value)
+
+    return copied
 
 
 def read(cls, path, name="settings"):

@@ -1258,6 +1258,7 @@ class Beatmap:
     @dn.datanode
     def play(self, manager, user, devices_settings, gameplay_settings=None):
         gameplay_settings = gameplay_settings or GameplaySettings()
+        devices_settings = devices_settings.copy()
 
         samplerate = devices_settings.mixer.output_samplerate
         nchannels = devices_settings.mixer.output_channels
@@ -1362,6 +1363,8 @@ class Beatmap:
         yield from playfield.load().join()
 
         # handler
+        settings_changed = False
+
         stop_event = threading.Event()
         playfield.add_handler(
             lambda _: stop_event.set(), gameplay_settings.controls.stop_key
@@ -1370,9 +1373,13 @@ class Beatmap:
         sound_delay_adjust_step = gameplay_settings.controls.sound_delay_adjust_step
 
         def incr_sound_delay(_):
+            nonlocal settings_changed
+            settings_changed = True
             devices_settings.mixer.sound_delay += sound_delay_adjust_step
 
         def decr_sound_delay(_):
+            nonlocal settings_changed
+            settings_changed = True
             devices_settings.mixer.sound_delay -= sound_delay_adjust_step
 
         playfield.add_handler(
@@ -1385,9 +1392,13 @@ class Beatmap:
         display_delay_adjust_step = gameplay_settings.controls.display_delay_adjust_step
 
         def incr_display_delay(_):
+            nonlocal settings_changed
+            settings_changed = True
             devices_settings.renderer.display_delay += display_delay_adjust_step
 
         def decr_display_delay(_):
+            nonlocal settings_changed
+            settings_changed = True
             devices_settings.renderer.display_delay -= display_delay_adjust_step
 
         playfield.add_handler(
@@ -1400,9 +1411,13 @@ class Beatmap:
         knock_delay_adjust_step = gameplay_settings.controls.knock_delay_adjust_step
 
         def incr_knock_delay(_):
+            nonlocal settings_changed
+            settings_changed = True
             devices_settings.detector.knock_delay += knock_delay_adjust_step
 
         def decr_knock_delay(_):
+            nonlocal settings_changed
+            settings_changed = True
             devices_settings.detector.knock_delay -= knock_delay_adjust_step
 
         playfield.add_handler(
@@ -1415,9 +1430,13 @@ class Beatmap:
         knock_energy_adjust_step = gameplay_settings.controls.knock_energy_adjust_step
 
         def incr_knock_energy(_):
+            nonlocal settings_changed
+            settings_changed = True
             devices_settings.detector.knock_energy += knock_energy_adjust_step
 
         def decr_knock_energy(_):
+            nonlocal settings_changed
+            settings_changed = True
             devices_settings.detector.knock_energy -= knock_energy_adjust_step
 
         playfield.add_handler(
@@ -1454,7 +1473,7 @@ class Beatmap:
             print("detector: " + str(detector_monitor))
             print("renderer: " + str(renderer_monitor))
 
-        return score
+        return score, (devices_settings if settings_changed else None)
 
     @dn.datanode
     def load_resources(self, output_samplerate, output_nchannels, data_dir):
@@ -1574,7 +1593,10 @@ class Beatmap:
             [0.0, *[event.lifespan[0] - event_leadin_time for event in self.events]]
         )
         self.end_time = max(
-            [duration, *[event.lifespan[1] + event_leadin_time for event in self.events]]
+            [
+                duration,
+                *[event.lifespan[1] + event_leadin_time for event in self.events],
+            ]
         )
 
     @dn.datanode
