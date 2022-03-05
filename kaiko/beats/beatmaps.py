@@ -1642,5 +1642,6 @@ class Loop(Beatmap):
             yield from events
             n += 1
 
-    def _prepare_events(self, rich, stop_event):
+    def prepare_events(self, rich):
+        yield
         self.events = self.repeat_events(rich)
