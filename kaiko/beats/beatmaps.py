@@ -1250,6 +1250,10 @@ class Beatmap:
 
         self.audionode = None
         self.resources = {}
+        self.total_subjects = 0
+        self.start_time = 0.0
+        self.end_time = float("inf")
+        self.events = []
 
     @dn.datanode
     def play(self, manager, user, devices_settings, gameplay_settings=None):
@@ -1270,17 +1274,16 @@ class Beatmap:
         # prepare
         try:
             yield from dn.create_task(
-                self.load_resources(samplerate, nchannels, user.data_dir)
+                dn.chain(
+                    self.load_resources(samplerate, nchannels, user.data_dir),
+                    self.prepare_events(rich),
+                ),
             ).join()
         except aud.IOCancelled:
             return
 
-        total_subjects, start_time, end_time, events = yield from dn.create_task(
-            self.prepare_events(rich)
-        ).join()
-
         score = BeatmapScore()
-        score.set_total_subjects(total_subjects)
+        score.set_total_subjects(self.total_subjects)
 
         # load engines
         mixer_monitor = detector_monitor = renderer_monitor = None
@@ -1293,7 +1296,7 @@ class Beatmap:
                 user.cache_dir / "monitor" / "renderer.csv"
             )
 
-        ref_time = load_time + abs(start_time)
+        ref_time = load_time + abs(self.start_time)
         mixer_task, mixer = engines.Mixer.create(
             devices_settings.mixer, manager, ref_time, mixer_monitor
         )
@@ -1430,11 +1433,11 @@ class Beatmap:
 
         # game loop
         updater = self.update_events(
-            events,
+            self.events,
             score,
             playfield,
-            start_time,
-            end_time,
+            self.start_time,
+            self.end_time,
             tickrate,
             prepare_time,
             stop_event,
@@ -1455,7 +1458,7 @@ class Beatmap:
 
     @dn.datanode
     def load_resources(self, output_samplerate, output_nchannels, data_dir):
-        r"""Load resources.
+        r"""Load resources to `audionode` and `resources`.
 
         Parameters
         ----------
@@ -1537,18 +1540,11 @@ class Beatmap:
 
     @dn.datanode
     def prepare_events(self, rich):
-        r"""Prepare events.
+        r"""Prepare events `total_subjects`, `start_time`, `end_time`, `events`.
 
         Parameters
         ----------
         rich : markups.RichParser
-
-        Returns
-        -------
-        total_subjects: int
-        start_time: float
-        end_time: float
-        events: list of Event
         """
 
         events = []
@@ -1558,14 +1554,14 @@ class Beatmap:
                 try:
                     yield
                 except GeneratorExit:
-                    raise RuntimeError("The operation has been cancelled.")
+                    raise aud.IOCancelled("The operation has been cancelled.")
 
                 event = dataclasses.replace(event)
                 event.prepare(self, rich, context)
                 if isinstance(event, Event):
                     events.append(event)
 
-        events = sorted(events, key=lambda e: e.lifespan[0])
+        self.events = sorted(events, key=lambda e: e.lifespan[0])
 
         duration = 0.0
         if self.path is not None and self.audio.path is not None:
@@ -1573,15 +1569,13 @@ class Beatmap:
             duration = aud.AudioMetadata.read(root / self.audio.path).duration
 
         event_leadin_time = self.settings.notes.event_leadin_time
-        total_subjects = sum([1 for event in events if event.is_subject], 0)
-        start_time = min(
-            [0.0, *[event.lifespan[0] - event_leadin_time for event in events]]
+        self.total_subjects = sum([1 for event in self.events if event.is_subject], 0)
+        self.start_time = min(
+            [0.0, *[event.lifespan[0] - event_leadin_time for event in self.events]]
         )
-        end_time = max(
-            [duration, *[event.lifespan[1] + event_leadin_time for event in events]]
+        self.end_time = max(
+            [duration, *[event.lifespan[1] + event_leadin_time for event in self.events]]
         )
-
-        return total_subjects, start_time, end_time, events
 
     @dn.datanode
     def update_events(
@@ -1649,9 +1643,4 @@ class Loop(Beatmap):
             n += 1
 
     def _prepare_events(self, rich, stop_event):
-        total_subjects = 0
-        start_time = 0.0
-        end_time = float("inf")
-        events = self.repeat_events(rich)
-
-        return total_subjects, start_time, end_time, events
+        self.events = self.repeat_events(rich)
