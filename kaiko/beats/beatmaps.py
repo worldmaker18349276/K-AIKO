@@ -1106,8 +1106,6 @@ class GameplaySettings(cfg.Configurable):
         Fields
         ------
         skip_time : float
-        load_time : float
-            The minimum time before the first event.
         prepare_time : float
             The time between preparing the event and the lifespan of the event.
         tickrate : float
@@ -1137,7 +1135,6 @@ class GameplaySettings(cfg.Configurable):
             The adjustment interval of knock energy.
         """
         skip_time: float = 8.0
-        load_time: float = 0.5
         prepare_time: float = 0.1
         tickrate: float = 60.0
         stop_key: str = "Esc"
@@ -1262,7 +1259,6 @@ class Beatmap:
 
         samplerate = devices_settings.mixer.output_samplerate
         nchannels = devices_settings.mixer.output_channels
-        load_time = gameplay_settings.controls.load_time
         tickrate = gameplay_settings.controls.tickrate
         prepare_time = gameplay_settings.controls.prepare_time
         debug_monitor = gameplay_settings.debug_monitor
@@ -1297,21 +1293,20 @@ class Beatmap:
                 user.cache_dir / "monitor" / "renderer.csv"
             )
 
-        init_time = self.start_time - load_time
         mixer_task, mixer = engines.Mixer.create(
-            devices_settings.mixer, manager, init_time, mixer_monitor
+            devices_settings.mixer, manager, self.start_time, mixer_monitor
         )
         detector_task, detector = engines.Detector.create(
-            devices_settings.detector, manager, init_time, detector_monitor
+            devices_settings.detector, manager, self.start_time, detector_monitor
         )
         renderer_task, renderer = engines.Renderer.create(
             devices_settings.renderer,
             devices_settings.terminal,
-            init_time,
+            self.start_time,
             renderer_monitor,
         )
         controller_task, controller = engines.Controller.create(
-            devices_settings.controller, devices_settings.terminal, init_time
+            devices_settings.controller, devices_settings.terminal, self.start_time
         )
 
         # load widgets
@@ -1455,7 +1450,7 @@ class Beatmap:
             self.events,
             score,
             playfield,
-            init_time,
+            self.start_time,
             self.end_time,
             tickrate,
             prepare_time,
@@ -1605,7 +1600,7 @@ class Beatmap:
         events,
         state,
         playfield,
-        init_time,
+        start_time,
         end_time,
         tickrate,
         prepare_time,
@@ -1622,7 +1617,7 @@ class Beatmap:
             if stop_event.is_set():
                 break
 
-            time = index / tickrate + init_time
+            time = index / tickrate + start_time
 
             if end_time <= time:
                 return
