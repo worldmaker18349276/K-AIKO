@@ -192,25 +192,31 @@ class Mixer:
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
 
-        index = 0
-        time = settings.sound_delay + init_time
-        with scheduler:
+        clock = Mixer._clock_node(init_time, buffer_length, samplerate, settings)
+
+        with clock, scheduler:
             yield
             while True:
-                time0 = time
-                index += 1
-                time = (
-                    index * buffer_length / samplerate
-                    + settings.sound_delay
-                    + init_time
-                )
                 data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
                 try:
-                    data = scheduler.send((data, slice(time0, time)))
-                    # {slice(time0, time): slice(0, buffer_length)}
+                    time_slice = clock.send(None)
+                    data = scheduler.send((data, time_slice))
                 except StopIteration:
                     return
                 yield data
+
+    @staticmethod
+    @dn.datanode
+    def _clock_node(init_time, buffer_length, samplerate, settings):
+        index = 0
+        time = settings.sound_delay + init_time
+        yield
+        while True:
+            time0 = time
+            index += 1
+            time = index * buffer_length / samplerate + settings.sound_delay + init_time
+            yield slice(time0, time)
+            # {slice(time0, time): slice(0, buffer_length)}
 
     @classmethod
     def create(cls, settings, manager, init_time=0.0, monitor=None):
@@ -416,6 +422,10 @@ class Detector:
 
         prepare = max(post_max, post_avg)
 
+        clock = Detector._clock_node(
+            init_time, hop_length, samplerate, prepare, settings
+        )
+
         window = dn.get_half_Hann_window(win_length)
         onset = dn.pipe(
             dn.frame(win_length=win_length, hop_length=hop_length),
@@ -436,32 +446,28 @@ class Detector:
             ),
         )
 
-        with scheduler, onset, picker:
+        with scheduler, clock, onset, picker:
             data = yield
-            index = -prepare
             while True:
                 try:
                     strength = onset.send(data)
-                except StopIteration:
-                    return
-
-                try:
                     detected, strength = picker.send(strength)
-                except StopIteration:
-                    return
-
-                time = (
-                    index * hop_length / samplerate + settings.knock_delay + init_time
-                )
-                normalized_strength = strength / settings.knock_energy
-
-                try:
+                    time = clock.send(None)
+                    normalized_strength = strength / settings.knock_energy
                     scheduler.send((None, time, normalized_strength, detected))
                 except StopIteration:
                     return
                 data = yield
 
-                index += 1
+    @staticmethod
+    @dn.datanode
+    def _clock_node(init_time, hop_length, samplerate, prepare, settings):
+        index = -prepare
+        yield
+        while True:
+            time = index * hop_length / samplerate + settings.knock_delay + init_time
+            yield time
+            index += 1
 
     @classmethod
     def create(cls, settings, manager, init_time=0.0, monitor=None):
@@ -570,10 +576,9 @@ class Renderer:
         framerate = settings.display_framerate
 
         display_node = Renderer._resize_node(
-            Renderer._render_node(scheduler, term_settings),
+            Renderer._render_node(scheduler, settings, term_settings, init_time),
             settings,
             term_settings,
-            init_time,
         )
         if monitor:
             display_node = monitor.monitoring(display_node)
@@ -581,7 +586,9 @@ class Renderer:
 
     @staticmethod
     @dn.datanode
-    def _render_node(scheduler, term_settings):
+    def _render_node(scheduler, settings, term_settings, init_time):
+        framerate = settings.display_framerate
+
         rich_renderer = mu.RichTextRenderer(term_settings.unicode_version)
         clear_line = rich_renderer.render(rich_renderer.clear_line().expand())
         clear_below = rich_renderer.render(rich_renderer.clear_below().expand())
@@ -589,12 +596,16 @@ class Renderer:
         logs = []
         msgs = []
         curr_msgs = list(msgs)
-        with scheduler:
-            shown, resized, time, size = yield
+
+        clock = Renderer._clock_node(init_time, framerate, settings)
+
+        with clock, scheduler:
+            shown, resized, size = yield
             while True:
                 width = size.columns
                 view = RichBar(term_settings)
                 try:
+                    time = clock.send(None)
                     view, msgs, logs = scheduler.send(((view, msgs, logs), time, width))
                 except StopIteration:
                     return
@@ -617,47 +628,44 @@ class Renderer:
                     )
                     res_text = f"{clear_below}{logs_str}{view_str}\r{msg_text}"
 
-                shown, resized, time, size = yield res_text
+                shown, resized, size = yield res_text
                 if shown:
                     logs.clear()
                     curr_msgs = list(msgs)
 
     @staticmethod
     @dn.datanode
-    def _resize_node(render_node, settings, term_settings, init_time):
-        framerate = settings.display_framerate
-
+    def _resize_node(render_node, settings, term_settings):
         rich_renderer = mu.RichTextRenderer(term_settings.unicode_version)
         clear_line = rich_renderer.render(rich_renderer.clear_line().expand())
         clear_screen = rich_renderer.render(rich_renderer.clear_screen().expand())
         size_node = term.terminal_size()
 
-        index = 0
         width = 0
-        resize_time = 0.0
+        resizing_since = time.perf_counter()
         resized = False
         with render_node, size_node:
             shown = yield
             while True:
-                index += 1
-                time = index / framerate + settings.display_delay + init_time
-
                 try:
                     size = size_node.send(None)
                 except StopIteration:
                     return
 
                 if size.columns < width:
-                    resize_time = time
+                    resizing_since = time.perf_counter()
                     resized = True
-                if resized and time < resize_time + settings.resize_delay:
+                if (
+                    resized
+                    and time.perf_counter() < resizing_since + settings.resize_delay
+                ):
                     yield f"{clear_line}resizing...\r"
                     width = size.columns
                     continue
 
                 width = size.columns
                 try:
-                    res_text = render_node.send((shown, resized, time, size))
+                    res_text = render_node.send((shown, resized, size))
                 except StopIteration:
                     return
                 if resized:
@@ -666,6 +674,16 @@ class Renderer:
                 shown = yield res_text
                 if shown:
                     resized = False
+
+    @staticmethod
+    @dn.datanode
+    def _clock_node(init_time, framerate, settings):
+        index = 0
+        yield
+        while True:
+            index += 1
+            time = index / framerate + settings.display_delay + init_time
+            yield time
 
     @classmethod
     def create(cls, settings, term_settings, init_time=0.0, monitor=None):
@@ -751,9 +769,11 @@ class Controller:
     def _control_node(scheduler, settings, term_settings, init_time):
         keycodes = term_settings.keycodes
 
-        with scheduler:
+        clock = Controller._clock_node(init_time, settings.update_interval)
+
+        with clock, scheduler:
             while True:
-                time, keycode = yield
+                _, keycode = yield
 
                 if keycode is None:
                     keyname = None
@@ -764,11 +784,21 @@ class Controller:
                 else:
                     keyname = repr(keycode)
 
-                time_ = time + init_time
                 try:
-                    scheduler.send((None, time_, keyname, keycode))
+                    time = clock.send(None)
+                    scheduler.send((None, time, keyname, keycode))
                 except StopIteration:
                     return
+
+    @staticmethod
+    @dn.datanode
+    def _clock_node(init_time, update_interval):
+        index = 0
+        yield
+        while True:
+            time = index * update_interval + init_time
+            yield time
+            index += 1
 
     @classmethod
     def create(cls, settings, term_settings, init_time=0.0):
