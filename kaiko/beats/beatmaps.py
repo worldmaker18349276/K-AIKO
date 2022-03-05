@@ -1297,21 +1297,21 @@ class Beatmap:
                 user.cache_dir / "monitor" / "renderer.csv"
             )
 
-        ref_time = load_time + abs(self.start_time)
+        init_time = self.start_time - load_time
         mixer_task, mixer = engines.Mixer.create(
-            devices_settings.mixer, manager, ref_time, mixer_monitor
+            devices_settings.mixer, manager, init_time, mixer_monitor
         )
         detector_task, detector = engines.Detector.create(
-            devices_settings.detector, manager, ref_time, detector_monitor
+            devices_settings.detector, manager, init_time, detector_monitor
         )
         renderer_task, renderer = engines.Renderer.create(
             devices_settings.renderer,
             devices_settings.terminal,
-            ref_time,
+            init_time,
             renderer_monitor,
         )
         controller_task, controller = engines.Controller.create(
-            devices_settings.controller, devices_settings.terminal, ref_time
+            devices_settings.controller, devices_settings.terminal, init_time
         )
 
         # load widgets
@@ -1455,7 +1455,7 @@ class Beatmap:
             self.events,
             score,
             playfield,
-            self.start_time,
+            init_time,
             self.end_time,
             tickrate,
             prepare_time,
@@ -1605,7 +1605,7 @@ class Beatmap:
         events,
         state,
         playfield,
-        start_time,
+        init_time,
         end_time,
         tickrate,
         prepare_time,
@@ -1622,7 +1622,7 @@ class Beatmap:
             if stop_event.is_set():
                 break
 
-            time = index / tickrate + start_time
+            time = index / tickrate + init_time
 
             if end_time <= time:
                 return

@@ -449,13 +449,11 @@ class DevicesCommand:
         usage: [cmd]devices[/] [cmd]test_knock[/]
         """
         settings = self.config.current.devices.detector
-        ref_time = 0.0
-        return KnockTest(ref_time, settings, self.logger)
+        return KnockTest(settings, self.logger)
 
 
 class KnockTest:
-    def __init__(self, ref_time, settings, logger):
-        self.ref_time = ref_time
+    def __init__(self, settings, logger):
         self.settings = settings
         self.logger = logger
         self.hit_queue = queue.Queue()
@@ -464,9 +462,7 @@ class KnockTest:
         self.logger.print("[hint/] Press any key to end test.")
         self.logger.print()
 
-        detector_task, detector = engines.Detector.create(
-            self.settings, manager, self.ref_time
-        )
+        detector_task, detector = engines.Detector.create(self.settings, manager)
         detector.add_listener(self.hit_listener())
 
         @dn.datanode
