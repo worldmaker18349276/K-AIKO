@@ -147,8 +147,8 @@ class ClockSkip(ClockAction):
 
 
 @dn.datanode
-def clock(offset, slope, actions):
-    slope0 = slope
+def clock(offset, ratio, actions):
+    ratio0 = ratio
 
     waited = None
     action = None
@@ -165,11 +165,11 @@ def clock(offset, slope, actions):
 
         # update state
         if action is None:
-            time = yield offset + time * slope
+            time = yield (offset + time * ratio, ratio)
         elif isinstance(action, ClockResume):
-            offset, slope = offset + action.time * (slope - slope0), slope0
+            offset, ratio = offset + action.time * (ratio - ratio0), ratio0
         elif isinstance(action, ClockPause):
-            offset, slope = offset + action.time * slope, 0
+            offset, ratio = offset + action.time * ratio, 0
         elif isinstance(action, ClockSkip):
             offset += action.delta
         else:
@@ -177,8 +177,8 @@ def clock(offset, slope, actions):
 
 
 @dn.datanode
-def clock_slice(offset, slope, actions):
-    slope0 = slope
+def clock_slice(offset, ratio, actions):
+    ratio0 = ratio
 
     slices_map = []
     waited = None
@@ -205,7 +205,8 @@ def clock_slice(offset, slope, actions):
             slices_map.append(
                 (
                     slice(time_slice.start, time),
-                    slice(offset + time_slice.start * slope, offset + time * slope),
+                    slice(offset + time_slice.start * ratio, offset + time * ratio),
+                    ratio,
                 )
             )
             time_slice = slice(time, time_slice.stop)
@@ -215,17 +216,18 @@ def clock_slice(offset, slope, actions):
             time_slice = yield slices_map
             slices_map = []
         elif isinstance(action, ClockResume):
-            offset, slope = offset + action.time * (slope - slope0), slope0
+            offset, ratio = offset + action.time * (ratio - ratio0), ratio0
         elif isinstance(action, ClockPause):
-            offset, slope = offset + action.time * slope, 0
+            offset, ratio = offset + action.time * ratio, 0
         elif isinstance(action, ClockSkip):
             slices_map.append(
                 (
                     slice(action.time, action.time),
                     slice(
-                        offset + action.time * slope,
-                        offset + action.time * slope + action.delta,
+                        offset + action.time * ratio,
+                        offset + action.time * ratio + action.delta,
                     ),
+                    ratio,
                 )
             )
             offset += action.delta
@@ -381,7 +383,7 @@ class Mixer:
 
             while True:
                 data_offset = slices_map[0][0].start
-                for data_slice, time_slice in slices_map:
+                for data_slice, time_slice, ratio in slices_map:
                     # pause
                     if time_slice.start == time_slice.stop:
                         continue
@@ -446,9 +448,6 @@ class Mixer:
         zindex=(0,),
     ):
         node = dn.pipe(node, self.resample(samplerate, channels, volume, start, end))
-        # node = dn.pipe(lambda a: a[0], dn.attach(node))
-        # if time is not None:
-        #     node = self.tmask(node, time)
         node = self.tmask(dn.attach(node), time)
         return self.add_effect(node, zindex=zindex)
 
@@ -593,9 +592,9 @@ class Detector:
                 try:
                     strength = onset.send(data)
                     detected, strength = picker.send(strength)
-                    tick = clock.send(None)
+                    time, ratio = clock.send(None)
                     normalized_strength = strength / settings.knock_energy
-                    scheduler.send((None, tick, normalized_strength, detected))
+                    scheduler.send((None, time, normalized_strength, detected))
                 except StopIteration:
                     return
                 data = yield
@@ -604,11 +603,7 @@ class Detector:
     def _clock_node(action_queue, init_time, hop_length, samplerate, prepare, settings):
         return dn.pipe(
             dn.count(-prepare * hop_length / samplerate, hop_length / samplerate),
-            clock(
-                settings.knock_delay + init_time,
-                1,
-                action_queue,
-            ),
+            clock(settings.knock_delay + init_time, 1, action_queue),
         )
 
     @classmethod
@@ -762,8 +757,8 @@ class Renderer:
                 width = size.columns
                 view = RichBar(term_settings)
                 try:
-                    tick = clock.send(None)
-                    view, msgs, logs = scheduler.send(((view, msgs, logs), tick, width))
+                    time, ratio = clock.send(None)
+                    view, msgs, logs = scheduler.send(((view, msgs, logs), time, width))
                 except StopIteration:
                     return
                 view_str = view.draw(width)
@@ -836,11 +831,7 @@ class Renderer:
     def _clock_node(action_queue, init_time, framerate, settings):
         return dn.pipe(
             dn.count(1 / framerate, 1 / framerate),
-            clock(
-                settings.display_delay + init_time,
-                1,
-                action_queue,
-            ),
+            clock(settings.display_delay + init_time, 1, action_queue),
         )
 
     @classmethod
@@ -960,8 +951,8 @@ class Controller:
                     keyname = repr(keycode)
 
                 try:
-                    tick = clock.send(None)
-                    scheduler.send((None, tick, keyname, keycode))
+                    time, ratio = clock.send(None)
+                    scheduler.send((None, time, keyname, keycode))
                 except StopIteration:
                     return
 
@@ -999,12 +990,12 @@ class Controller:
         node = dn.DataNode.wrap(node)
         with node:
             while True:
-                _, tick, keyname, keycode = yield
+                _, time, keyname, keycode = yield
                 if keycode is None:
                     continue
                 if name is None or name == keyname:
                     try:
-                        node.send((None, tick, keyname, keycode))
+                        node.send((None, time, keyname, keycode))
                     except StopIteration:
                         return
 
