@@ -397,7 +397,7 @@ class Mixer:
                         length = min(-offset, buffer_length)
                         dummy = numpy.zeros((length, nchannels), dtype=numpy.float32)
                         try:
-                            node.send((dummy, time))
+                            node.send(dummy)
                         except StopIteration:
                             return
                         offset += length
