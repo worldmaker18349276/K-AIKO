@@ -1,4 +1,4 @@
-import time
+import time as time_module
 import functools
 import itertools
 from collections import OrderedDict
@@ -1223,10 +1223,27 @@ class Scheduler(DataNode):
 
 
 @datanode
-def sleep(delta):
-    start = time.perf_counter()
+def count(start, step):
+    index = 0
     yield
-    while time.perf_counter() - start < delta:
+    while True:
+        yield start + index * step
+        index += 1
+
+
+@datanode
+def time(shift=0.0):
+    ref_time = time_module.perf_counter()
+    yield
+    while True:
+        yield time_module.perf_counter() - ref_time + shift
+
+
+@datanode
+def sleep(delta):
+    start = time_module.perf_counter()
+    yield
+    while time_module.perf_counter() - start < delta:
         yield
 
 
@@ -1234,14 +1251,16 @@ def sleep(delta):
 def tick(dt, t0=0.0, shift=0.0, stop_event=None):
     if stop_event is None:
         stop_event = threading.Event()
-    ref_time = time.perf_counter()
+    ref_time = time_module.perf_counter()
 
     yield
     for i in itertools.count():
-        if stop_event.wait(max(0.0, ref_time + t0 + i * dt - time.perf_counter())):
+        if stop_event.wait(
+            max(0.0, ref_time + t0 + i * dt - time_module.perf_counter())
+        ):
             break
 
-        yield time.perf_counter() - ref_time + shift
+        yield time_module.perf_counter() - ref_time + shift
 
 
 @datanode
@@ -1334,10 +1353,10 @@ def interval(node, dt, t0=0.0):
 
     def run():
         try:
-            ref_time = time.perf_counter()
+            ref_time = time_module.perf_counter()
 
             for i in itertools.count():
-                delta = ref_time + t0 + i * dt - time.perf_counter()
+                delta = ref_time + t0 + i * dt - time_module.perf_counter()
                 if stop_event.wait(delta) if delta > 0.0 else stop_event.is_set():
                     res.put(None)
                     return
