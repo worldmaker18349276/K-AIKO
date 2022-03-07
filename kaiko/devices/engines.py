@@ -154,6 +154,8 @@ def clock(offset, ratio, actions):
     action = None
 
     time = yield
+    last_time = time
+    last_tick = offset + last_time * ratio
     while True:
         # find unhandled action
         if waited is None and not actions.empty():
@@ -163,10 +165,18 @@ def clock(offset, ratio, actions):
         else:
             action = None
 
-        # update state
+        # no action -> yield value
         if action is None:
-            time = yield (offset + time * ratio, ratio)
-        elif isinstance(action, ClockResume):
+            last_time = time
+            if last_tick <= offset + last_time * ratio:
+                last_tick = offset + last_time * ratio
+                time = yield (last_tick, ratio)
+            else:
+                time = yield (last_tick, 0)
+            continue
+
+        # update state
+        if isinstance(action, ClockResume):
             offset, ratio = offset + action.time * (ratio - ratio0), ratio0
         elif isinstance(action, ClockPause):
             offset, ratio = offset + action.time * ratio, 0
@@ -175,18 +185,24 @@ def clock(offset, ratio, actions):
         else:
             raise TypeError
 
+        last_tick = max(last_tick, offset + last_time * ratio)
+        last_time = max(last_time, action.time)
+        last_tick = max(last_tick, offset + last_time * ratio)
+
 
 @dn.datanode
 def clock_slice(offset, ratio, actions):
     ratio0 = ratio
 
-    slices_map = []
     waited = None
     action = None
 
     time_slice = yield
+    slices_map = []
+    last_time = time_slice.start
+    last_tick = offset + last_time * ratio
     while True:
-        # find unhandle action
+        # find unhandled action
         if waited is None and not actions.empty():
             waited = actions.get()
         if waited is not None and waited.time <= time_slice.stop:
@@ -195,41 +211,46 @@ def clock_slice(offset, ratio, actions):
             action = None
 
         # slice
-        if action is not None:
-            # if action.time < time_slice.start:
-            #     print("clock underrun")
-            time = action.time
-        else:
-            time = time_slice.stop
-        if time_slice.start < time:
-            slices_map.append(
-                (
-                    slice(time_slice.start, time),
-                    slice(offset + time_slice.start * ratio, offset + time * ratio),
-                    ratio,
-                )
-            )
-            time_slice = slice(time, time_slice.stop)
+        time = time_slice.stop if action is None else action.time
+        if last_time < time:
+            tick_slice = slice(offset + last_time * ratio, offset + time * ratio)
 
-        # update state
+            if last_tick < tick_slice.start:
+                slices_map.append(
+                    (
+                        slice(last_time, last_time),
+                        slice(last_tick, tick_slice.start),
+                        ratio,
+                    )
+                )
+                last_tick = tick_slice.start
+
+            if last_tick > tick_slice.start:
+                cut_time = (last_tick - offset) / ratio if ratio != 0 else time
+                cut_time = min(max(cut_time, last_time), time)
+                slices_map.append(
+                    (slice(last_time, cut_time), slice(last_tick, last_tick), 0)
+                )
+                last_time = cut_time
+                tick_slice = slice(last_tick, offset + time * ratio)
+
+            if last_time < time:
+                slices_map.append((slice(last_time, time), tick_slice, ratio))
+                last_time = time
+                last_tick = tick_slice.stop
+
+        # no action -> yield value
         if action is None:
             time_slice = yield slices_map
             slices_map = []
-        elif isinstance(action, ClockResume):
+            continue
+
+        # update state
+        if isinstance(action, ClockResume):
             offset, ratio = offset + action.time * (ratio - ratio0), ratio0
         elif isinstance(action, ClockPause):
             offset, ratio = offset + action.time * ratio, 0
         elif isinstance(action, ClockSkip):
-            slices_map.append(
-                (
-                    slice(action.time, action.time),
-                    slice(
-                        offset + action.time * ratio,
-                        offset + action.time * ratio + action.delta,
-                    ),
-                    ratio,
-                )
-            )
             offset += action.delta
         else:
             raise TypeError
@@ -327,11 +348,14 @@ class Mixer:
     @staticmethod
     def _clock_node(action_queue, init_time, buffer_length, samplerate, settings):
         return dn.pipe(
-            dn.count(0, buffer_length),
-            lambda time: slice(time, time + buffer_length),
+            dn.count(0, 1),
+            lambda index: slice(
+                index * buffer_length / samplerate,
+                (index + 1) * buffer_length / samplerate,
+            ),
             clock_slice(
                 settings.sound_delay + init_time,
-                1 / samplerate,
+                1,
                 action_queue,
             ),
         )
@@ -352,15 +376,13 @@ class Mixer:
         )
 
     def pause(self, when):
-        self.action_queue.put(ClockPause(round(when * self.samplerate)))
+        self.action_queue.put(ClockPause(when))
 
     def resume(self, when):
-        self.action_queue.put(ClockResume(round(when * self.samplerate)))
+        self.action_queue.put(ClockResume(when))
 
     def skip(self, when, delta):
-        self.action_queue.put(
-            ClockSkip(round(when * self.samplerate), round(delta * self.samplerate))
-        )
+        self.action_queue.put(ClockSkip(when, delta))
 
     def add_effect(self, node, zindex=(0,)):
         return self.effects_scheduler.add_node(node, zindex=zindex)
@@ -382,7 +404,7 @@ class Mixer:
                 time = slices_map[0][1].start
 
             while True:
-                data_offset = slices_map[0][0].start
+                data_offset = round(slices_map[0][0].start * samplerate)
                 for data_slice, time_slice, ratio in slices_map:
                     # pause
                     if time_slice.start == time_slice.stop:
@@ -406,15 +428,15 @@ class Mixer:
                         time += length / samplerate
 
                     # overrun
-                    if data_slice.stop - data_slice.start <= offset:
+                    data_start = round(data_slice.start * samplerate) - data_offset
+                    data_stop = round(data_slice.stop * samplerate) - data_offset
+                    if data_stop - data_start <= offset:
                         continue
 
                     try:
-                        slic = slice(
-                            data_slice.start + offset - data_offset,
-                            data_slice.stop - data_offset,
+                        data[data_start + offset : data_stop] = node.send(
+                            data[data_start + offset : data_stop]
                         )
-                        data[slic] = node.send(data[slic])
                     except StopIteration:
                         return
 
