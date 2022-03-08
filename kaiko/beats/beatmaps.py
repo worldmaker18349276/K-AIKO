@@ -1370,43 +1370,43 @@ class Beatmap:
             lambda _: stop_event.set(), gameplay_settings.controls.stop_key
         )
 
-        display_delay_adjust_step = gameplay_settings.controls.display_delay_adjust_step
+        # display_delay_adjust_step = gameplay_settings.controls.display_delay_adjust_step
 
-        def incr_display_delay(_):
-            nonlocal settings_changed
-            settings_changed = True
-            devices_settings.renderer.display_delay += display_delay_adjust_step
+        # def incr_display_delay(_):
+        #     nonlocal settings_changed
+        #     settings_changed = True
+        #     devices_settings.renderer.display_delay += display_delay_adjust_step
 
-        def decr_display_delay(_):
-            nonlocal settings_changed
-            settings_changed = True
-            devices_settings.renderer.display_delay -= display_delay_adjust_step
+        # def decr_display_delay(_):
+        #     nonlocal settings_changed
+        #     settings_changed = True
+        #     devices_settings.renderer.display_delay -= display_delay_adjust_step
 
-        playfield.add_handler(
-            incr_display_delay, gameplay_settings.controls.display_delay_adjust_keys[0]
-        )
-        playfield.add_handler(
-            decr_display_delay, gameplay_settings.controls.display_delay_adjust_keys[1]
-        )
+        # playfield.add_handler(
+        #     incr_display_delay, gameplay_settings.controls.display_delay_adjust_keys[0]
+        # )
+        # playfield.add_handler(
+        #     decr_display_delay, gameplay_settings.controls.display_delay_adjust_keys[1]
+        # )
 
-        knock_delay_adjust_step = gameplay_settings.controls.knock_delay_adjust_step
+        # knock_delay_adjust_step = gameplay_settings.controls.knock_delay_adjust_step
 
-        def incr_knock_delay(_):
-            nonlocal settings_changed
-            settings_changed = True
-            devices_settings.detector.knock_delay += knock_delay_adjust_step
+        # def incr_knock_delay(_):
+        #     nonlocal settings_changed
+        #     settings_changed = True
+        #     devices_settings.detector.knock_delay += knock_delay_adjust_step
 
-        def decr_knock_delay(_):
-            nonlocal settings_changed
-            settings_changed = True
-            devices_settings.detector.knock_delay -= knock_delay_adjust_step
+        # def decr_knock_delay(_):
+        #     nonlocal settings_changed
+        #     settings_changed = True
+        #     devices_settings.detector.knock_delay -= knock_delay_adjust_step
 
-        playfield.add_handler(
-            incr_knock_delay, gameplay_settings.controls.knock_delay_adjust_keys[0]
-        )
-        playfield.add_handler(
-            decr_knock_delay, gameplay_settings.controls.knock_delay_adjust_keys[1]
-        )
+        # playfield.add_handler(
+        #     incr_knock_delay, gameplay_settings.controls.knock_delay_adjust_keys[0]
+        # )
+        # playfield.add_handler(
+        #     decr_knock_delay, gameplay_settings.controls.knock_delay_adjust_keys[1]
+        # )
 
         knock_energy_adjust_step = gameplay_settings.controls.knock_energy_adjust_step
 
