@@ -1112,6 +1112,10 @@ class GameplaySettings(cfg.Configurable):
         tickrate : float
             The event updating rate.
 
+        pause_delay : float
+            The delay to pausing/resuming the game.
+        pause_key : str
+            The key to pause/resume the game.
         stop_key : str
             The key to stop the game.
         sound_delay_adjust_keys : tuple of str and str
@@ -1138,6 +1142,8 @@ class GameplaySettings(cfg.Configurable):
         skip_time: float = 8.0
         prepare_time: float = 0.1
         tickrate: float = 60.0
+        pause_delay = 0.1
+        pause_key = "Enter"
         stop_key: str = "Esc"
 
         display_delay_adjust_keys: Tuple[str, str] = ("Ctrl_Left", "Ctrl_Right")
@@ -1422,6 +1428,35 @@ class Beatmap:
         )
 
         event_clock = engines.Clock()
+
+        pause_delay = gameplay_settings.controls.pause_delay
+        pause_key = gameplay_settings.controls.pause_key
+
+        @dn.datanode
+        def pause_node():
+            paused = False
+            time_node = dn.time()
+            with time_node:
+                while True:
+                    _, _, keyname, keycode = yield
+                    time = time_node.send(None)
+                    if keyname == pause_key:
+                        if paused:
+                            mixer.clock.resume(time + pause_delay)
+                            detector.clock.resume(time + pause_delay)
+                            renderer.clock.resume(time + pause_delay)
+                            controller.clock.resume(time + pause_delay)
+                            event_clock.resume(time + pause_delay)
+                            paused = False
+                        else:
+                            mixer.clock.pause(time + pause_delay)
+                            detector.clock.pause(time + pause_delay)
+                            renderer.clock.pause(time + pause_delay)
+                            controller.clock.pause(time + pause_delay)
+                            event_clock.pause(time + pause_delay)
+                            paused = True
+
+        controller.handlers_scheduler.add_node(pause_node(), (0,))
 
         # play music
         if self.audionode is not None:
