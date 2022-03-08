@@ -627,7 +627,11 @@ class BeatbarWidgetBuilder:
             )
         elif isinstance(widget_settings, BeatbarWidgetBuilder.accuracy_meter):
             return beatwidgets.AccuracyMeterWidget(
-                0, float("inf"), self.rich, self.state, widget_settings
+                0,
+                self.rich,
+                self.state,
+                self.devices_settings.renderer,
+                widget_settings,
             )
         elif isinstance(widget_settings, BeatbarWidgetBuilder.monitor):
             if widget_settings.target == beatwidgets.MonitorTarget.mixer:

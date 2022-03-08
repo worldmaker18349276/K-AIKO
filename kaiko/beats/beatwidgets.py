@@ -241,9 +241,9 @@ class AccuracyMeterWidgetSettings:
 @dataclasses.dataclass
 class AccuracyMeterWidget:
     last_perf: int
-    last_time: float
     rich: mu.RichParser
     state: object  # with property `perfs`
+    renderer_settings: engines.RendererSettings
     settings: AccuracyMeterWidgetSettings
 
     @dn.datanode
@@ -251,6 +251,8 @@ class AccuracyMeterWidget:
         meter_width = self.settings.meter_width
         meter_decay_time = self.settings.meter_decay_time
         meter_radius = self.settings.meter_radius
+        display_framerate = self.renderer_settings.display_framerate
+        decay = 1 / display_framerate / meter_decay_time
 
         length = meter_width * 2
         hit = [0.0] * length
@@ -288,9 +290,6 @@ class AccuracyMeterWidget:
                         )
                     )
                 self.last_perf += 1
-
-            decay = max(0.0, time - self.last_time) / meter_decay_time
-            self.last_time = time
 
             for i in range(meter_width * 2):
                 if i in new_err:
