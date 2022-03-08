@@ -5,6 +5,7 @@ from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
 from fractions import Fraction
 import threading
+import queue
 import numpy
 from ..utils import config as cfg
 from ..utils import datanodes as dn
@@ -1420,6 +1421,8 @@ class Beatmap:
             decr_knock_energy, gameplay_settings.controls.knock_energy_adjust_keys[1]
         )
 
+        event_clock = engines.Clock()
+
         # play music
         if self.audionode is not None:
             playfield.mixer.play(self.audionode, time=0.0, zindex=(-3,))
@@ -1433,6 +1436,7 @@ class Beatmap:
             self.end_time,
             tickrate,
             prepare_time,
+            event_clock,
             stop_event,
         )
         event_task = dn.interval(updater, dt=1 / tickrate)
@@ -1583,32 +1587,39 @@ class Beatmap:
         end_time,
         tickrate,
         prepare_time,
+        clock,
         stop_event,
     ):
         # register events
         events_iter = iter(events)
         event = next(events_iter, None)
 
-        yield
-        index = 0
+        timer = dn.pipe(
+            dn.count(0.0, 1 / tickrate),
+            clock.clock(start_time, 1),
+        )
 
-        while True:
-            if stop_event.is_set():
-                break
-
-            time = index / tickrate + start_time
-
-            if end_time <= time:
-                return
-
-            while event is not None and event.lifespan[0] - prepare_time <= time:
-                event.register(state, playfield)
-                event = next(events_iter, None)
-
-            state.time = time
-
+        with timer:
             yield
-            index += 1
+            while True:
+                if stop_event.is_set():
+                    break
+
+                try:
+                    time, ratio = timer.send(None)
+                except StopIteration:
+                    return
+
+                if end_time <= time:
+                    return
+
+                while event is not None and event.lifespan[0] - prepare_time <= time:
+                    event.register(state, playfield)
+                    event = next(events_iter, None)
+
+                state.time = time
+
+                yield
 
 
 class Loop(Beatmap):
