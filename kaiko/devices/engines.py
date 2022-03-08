@@ -146,114 +146,126 @@ class ClockSkip(ClockAction):
     delta: float
 
 
-@dn.datanode
-def clock(offset, ratio, actions):
-    ratio0 = ratio
+class Clock:
+    def __init__(self):
+        self.action_queue = queue.Queue()
 
-    waited = None
-    action = None
+    @dn.datanode
+    def clock(self, offset, ratio):
+        ratio0 = ratio
 
-    time = yield
-    last_time = time
-    last_tick = offset + last_time * ratio
-    while True:
-        # find unhandled action
-        if waited is None and not actions.empty():
-            waited = actions.get()
-        if waited is not None and waited.time <= time:
-            action, waited = waited, None
-        else:
-            action = None
+        waited = None
+        action = None
 
-        # no action -> yield value
-        if action is None:
-            last_time = time
-            if last_tick <= offset + last_time * ratio:
-                last_tick = offset + last_time * ratio
-                time = yield (last_tick, ratio)
+        time = yield
+        last_time = time
+        last_tick = offset + last_time * ratio
+        while True:
+            # find unhandled action
+            if waited is None and not self.action_queue.empty():
+                waited = self.action_queue.get()
+            if waited is not None and waited.time <= time:
+                action, waited = waited, None
             else:
-                time = yield (last_tick, 0)
-            continue
+                action = None
 
-        # update state
-        if isinstance(action, ClockResume):
-            offset, ratio = offset + action.time * (ratio - ratio0), ratio0
-        elif isinstance(action, ClockPause):
-            offset, ratio = offset + action.time * ratio, 0
-        elif isinstance(action, ClockSkip):
-            offset += action.delta
-        else:
-            raise TypeError
-
-        last_tick = max(last_tick, offset + last_time * ratio)
-        last_time = max(last_time, action.time)
-        last_tick = max(last_tick, offset + last_time * ratio)
-
-
-@dn.datanode
-def clock_slice(offset, ratio, actions):
-    ratio0 = ratio
-
-    waited = None
-    action = None
-
-    time_slice = yield
-    slices_map = []
-    last_time = time_slice.start
-    last_tick = offset + last_time * ratio
-    while True:
-        # find unhandled action
-        if waited is None and not actions.empty():
-            waited = actions.get()
-        if waited is not None and waited.time <= time_slice.stop:
-            action, waited = waited, None
-        else:
-            action = None
-
-        # slice
-        time = time_slice.stop if action is None else action.time
-        if last_time < time:
-            tick_slice = slice(offset + last_time * ratio, offset + time * ratio)
-
-            if last_tick < tick_slice.start:
-                slices_map.append(
-                    (
-                        slice(last_time, last_time),
-                        slice(last_tick, tick_slice.start),
-                        ratio,
-                    )
-                )
-                last_tick = tick_slice.start
-
-            if last_tick > tick_slice.start:
-                cut_time = (last_tick - offset) / ratio if ratio != 0 else time
-                cut_time = min(max(cut_time, last_time), time)
-                slices_map.append(
-                    (slice(last_time, cut_time), slice(last_tick, last_tick), 0)
-                )
-                last_time = cut_time
-                tick_slice = slice(last_tick, offset + time * ratio)
-
-            if last_time < time:
-                slices_map.append((slice(last_time, time), tick_slice, ratio))
+            # no action -> yield value
+            if action is None:
                 last_time = time
-                last_tick = tick_slice.stop
+                if last_tick <= offset + last_time * ratio:
+                    last_tick = offset + last_time * ratio
+                    time = yield (last_tick, ratio)
+                else:
+                    time = yield (last_tick, 0)
+                continue
 
-        # no action -> yield value
-        if action is None:
-            time_slice = yield slices_map
-            slices_map = []
-            continue
+            # update state
+            if isinstance(action, ClockResume):
+                offset, ratio = offset + action.time * (ratio - ratio0), ratio0
+            elif isinstance(action, ClockPause):
+                offset, ratio = offset + action.time * ratio, 0
+            elif isinstance(action, ClockSkip):
+                offset += action.delta
+            else:
+                raise TypeError
 
-        # update state
-        if isinstance(action, ClockResume):
-            offset, ratio = offset + action.time * (ratio - ratio0), ratio0
-        elif isinstance(action, ClockPause):
-            offset, ratio = offset + action.time * ratio, 0
-        elif isinstance(action, ClockSkip):
-            offset += action.delta
-        else:
-            raise TypeError
+            last_tick = max(last_tick, offset + last_time * ratio)
+            last_time = max(last_time, action.time)
+            last_tick = max(last_tick, offset + last_time * ratio)
+
+    @dn.datanode
+    def clock_slice(self, offset, ratio):
+        ratio0 = ratio
+
+        waited = None
+        action = None
+
+        time_slice = yield
+        slices_map = []
+        last_time = time_slice.start
+        last_tick = offset + last_time * ratio
+        while True:
+            # find unhandled action
+            if waited is None and not self.action_queue.empty():
+                waited = self.action_queue.get()
+            if waited is not None and waited.time <= time_slice.stop:
+                action, waited = waited, None
+            else:
+                action = None
+
+            # slice
+            time = time_slice.stop if action is None else action.time
+            if last_time < time:
+                tick_slice = slice(offset + last_time * ratio, offset + time * ratio)
+
+                if last_tick < tick_slice.start:
+                    slices_map.append(
+                        (
+                            slice(last_time, last_time),
+                            slice(last_tick, tick_slice.start),
+                            ratio,
+                        )
+                    )
+                    last_tick = tick_slice.start
+
+                if last_tick > tick_slice.start:
+                    cut_time = (last_tick - offset) / ratio if ratio != 0 else time
+                    cut_time = min(max(cut_time, last_time), time)
+                    slices_map.append(
+                        (slice(last_time, cut_time), slice(last_tick, last_tick), 0)
+                    )
+                    last_time = cut_time
+                    tick_slice = slice(last_tick, offset + time * ratio)
+
+                if last_time < time:
+                    slices_map.append((slice(last_time, time), tick_slice, ratio))
+                    last_time = time
+                    last_tick = tick_slice.stop
+
+            # no action -> yield value
+            if action is None:
+                time_slice = yield slices_map
+                slices_map = []
+                continue
+
+            # update state
+            if isinstance(action, ClockResume):
+                offset, ratio = offset + action.time * (ratio - ratio0), ratio0
+            elif isinstance(action, ClockPause):
+                offset, ratio = offset + action.time * ratio, 0
+            elif isinstance(action, ClockSkip):
+                offset += action.delta
+            else:
+                raise TypeError
+
+    def resume(self, time):
+        self.action_queue.put(ClockResume(time))
+
+    def pause(self, time):
+        self.action_queue.put(ClockPause(time))
+
+    def skip(self, time, delta):
+        self.action_queue.put(ClockSkip(time, delta))
 
 
 class MixerSettings(cfg.Configurable):
@@ -289,28 +301,28 @@ class Mixer:
     def __init__(
         self,
         effects_scheduler,
-        action_queue,
+        clock,
         samplerate,
         buffer_length,
         nchannels,
         monitor,
     ):
         self.effects_scheduler = effects_scheduler
-        self.action_queue = action_queue
+        self.clock = clock
         self.samplerate = samplerate
         self.buffer_length = buffer_length
         self.nchannels = nchannels
         self.monitor = monitor
 
     @staticmethod
-    def get_task(scheduler, action_queue, settings, manager, init_time, monitor):
+    def get_task(scheduler, clock, settings, manager, init_time, monitor):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
         format = settings.output_format
         device = settings.output_device
 
-        output_node = Mixer._mix_node(scheduler, action_queue, settings, init_time)
+        output_node = Mixer._mix_node(scheduler, clock, settings, init_time)
         if monitor:
             output_node = monitor.monitoring(output_node)
 
@@ -325,39 +337,33 @@ class Mixer:
 
     @staticmethod
     @dn.datanode
-    def _mix_node(scheduler, action_queue, settings, init_time):
+    def _mix_node(scheduler, clock, settings, init_time):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
 
-        clock = Mixer._clock_node(
-            action_queue, init_time, buffer_length, samplerate, settings
-        )
+        timer = Mixer._timer_node(clock, init_time, buffer_length, samplerate, settings)
 
-        with clock, scheduler:
+        with timer, scheduler:
             yield
             while True:
                 data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
                 try:
-                    slices_map = clock.send(None)
+                    slices_map = timer.send(None)
                     data = scheduler.send((data, slices_map))
                 except StopIteration:
                     return
                 yield data
 
     @staticmethod
-    def _clock_node(action_queue, init_time, buffer_length, samplerate, settings):
+    def _timer_node(clock, init_time, buffer_length, samplerate, settings):
         return dn.pipe(
             dn.count(0, 1),
             lambda index: slice(
                 index * buffer_length / samplerate,
                 (index + 1) * buffer_length / samplerate,
             ),
-            clock_slice(
-                settings.sound_delay + init_time,
-                1,
-                action_queue,
-            ),
+            clock.clock_slice(settings.sound_delay + init_time, 1),
         )
 
     @classmethod
@@ -367,22 +373,11 @@ class Mixer:
         nchannels = settings.output_channels
 
         scheduler = dn.Scheduler()
-        action_queue = queue.Queue()
-        task = cls.get_task(
-            scheduler, action_queue, settings, manager, init_time, monitor
-        )
+        clock = Clock()
+        task = cls.get_task(scheduler, clock, settings, manager, init_time, monitor)
         return task, cls(
-            scheduler, action_queue, samplerate, buffer_length, nchannels, monitor
+            scheduler, clock, samplerate, buffer_length, nchannels, monitor
         )
-
-    def pause(self, when):
-        self.action_queue.put(ClockPause(when))
-
-    def resume(self, when):
-        self.action_queue.put(ClockResume(when))
-
-    def skip(self, when, delta):
-        self.action_queue.put(ClockSkip(when, delta))
 
     def add_effect(self, node, zindex=(0,)):
         return self.effects_scheduler.add_node(node, zindex=zindex)
@@ -534,13 +529,13 @@ class DetectorSettings(cfg.Configurable):
 
 
 class Detector:
-    def __init__(self, listeners_scheduler, action_queue, monitor):
+    def __init__(self, listeners_scheduler, clock, monitor):
         self.listeners_scheduler = listeners_scheduler
-        self.action_queue = action_queue
+        self.clock = clock
         self.monitor = monitor
 
     @staticmethod
-    def get_task(scheduler, action_queue, settings, manager, init_time, monitor):
+    def get_task(scheduler, clock, settings, manager, init_time, monitor):
         samplerate = settings.input_samplerate
         buffer_length = settings.input_buffer_length
         nchannels = settings.input_channels
@@ -550,7 +545,7 @@ class Detector:
         time_res = settings.detect.time_res
         hop_length = round(samplerate * time_res)
 
-        input_node = Detector._detect_node(scheduler, action_queue, init_time, settings)
+        input_node = Detector._detect_node(scheduler, clock, init_time, settings)
         if buffer_length != hop_length:
             input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
         if monitor:
@@ -567,7 +562,7 @@ class Detector:
 
     @staticmethod
     @dn.datanode
-    def _detect_node(scheduler, action_queue, init_time, settings):
+    def _detect_node(scheduler, clock, init_time, settings):
         samplerate = settings.input_samplerate
 
         time_res = settings.detect.time_res
@@ -584,8 +579,8 @@ class Detector:
 
         prepare = max(post_max, post_avg)
 
-        clock = Detector._clock_node(
-            action_queue, init_time, hop_length, samplerate, prepare, settings
+        timer = Detector._timer_node(
+            clock, init_time, hop_length, samplerate, prepare, settings
         )
 
         window = dn.get_half_Hann_window(win_length)
@@ -608,13 +603,13 @@ class Detector:
             ),
         )
 
-        with scheduler, clock, onset, picker:
+        with scheduler, timer, onset, picker:
             data = yield
             while True:
                 try:
                     strength = onset.send(data)
                     detected, strength = picker.send(strength)
-                    time, ratio = clock.send(None)
+                    time, ratio = timer.send(None)
                     normalized_strength = strength / settings.knock_energy
                     scheduler.send((None, time, normalized_strength, detected))
                 except StopIteration:
@@ -622,29 +617,18 @@ class Detector:
                 data = yield
 
     @staticmethod
-    def _clock_node(action_queue, init_time, hop_length, samplerate, prepare, settings):
+    def _timer_node(clock, init_time, hop_length, samplerate, prepare, settings):
         return dn.pipe(
             dn.count(-prepare * hop_length / samplerate, hop_length / samplerate),
-            clock(settings.knock_delay + init_time, 1, action_queue),
+            clock.clock(settings.knock_delay + init_time, 1),
         )
 
     @classmethod
     def create(cls, settings, manager, init_time=0.0, monitor=None):
         scheduler = dn.Scheduler()
-        action_queue = queue.Queue()
-        task = cls.get_task(
-            scheduler, action_queue, settings, manager, init_time, monitor
-        )
-        return task, cls(scheduler, action_queue, monitor)
-
-    def pause(self, when):
-        self.action_queue.put(ClockPause(when))
-
-    def resume(self, when):
-        self.action_queue.put(ClockResume(when))
-
-    def skip(self, when, delta):
-        self.action_queue.put(ClockSkip(when, delta))
+        clock = Clock()
+        task = cls.get_task(scheduler, clock, settings, manager, init_time, monitor)
+        return task, cls(scheduler, clock, monitor)
 
     def add_listener(self, node):
         return self.listeners_scheduler.add_node(node, (0,))
@@ -738,19 +722,17 @@ class RendererSettings(cfg.Configurable):
 
 
 class Renderer:
-    def __init__(self, drawers_scheduler, action_queue, monitor):
+    def __init__(self, drawers_scheduler, clock, monitor):
         self.drawers_scheduler = drawers_scheduler
-        self.action_queue = action_queue
+        self.clock = clock
         self.monitor = monitor
 
     @staticmethod
-    def get_task(scheduler, action_queue, settings, term_settings, init_time, monitor):
+    def get_task(scheduler, clock, settings, term_settings, init_time, monitor):
         framerate = settings.display_framerate
 
         display_node = Renderer._resize_node(
-            Renderer._render_node(
-                scheduler, action_queue, settings, term_settings, init_time
-            ),
+            Renderer._render_node(scheduler, clock, settings, term_settings, init_time),
             settings,
             term_settings,
         )
@@ -760,7 +742,7 @@ class Renderer:
 
     @staticmethod
     @dn.datanode
-    def _render_node(scheduler, action_queue, settings, term_settings, init_time):
+    def _render_node(scheduler, clock, settings, term_settings, init_time):
         framerate = settings.display_framerate
 
         rich_renderer = mu.RichTextRenderer(term_settings.unicode_version)
@@ -771,15 +753,15 @@ class Renderer:
         msgs = []
         curr_msgs = list(msgs)
 
-        clock = Renderer._clock_node(action_queue, init_time, framerate, settings)
+        timer = Renderer._timer_node(clock, init_time, framerate, settings)
 
-        with clock, scheduler:
+        with timer, scheduler:
             shown, resized, size = yield
             while True:
                 width = size.columns
                 view = RichBar(term_settings)
                 try:
-                    time, ratio = clock.send(None)
+                    time, ratio = timer.send(None)
                     view, msgs, logs = scheduler.send(((view, msgs, logs), time, width))
                 except StopIteration:
                     return
@@ -850,29 +832,20 @@ class Renderer:
                     resized = False
 
     @staticmethod
-    def _clock_node(action_queue, init_time, framerate, settings):
+    def _timer_node(clock, init_time, framerate, settings):
         return dn.pipe(
             dn.count(1 / framerate, 1 / framerate),
-            clock(settings.display_delay + init_time, 1, action_queue),
+            clock.clock(settings.display_delay + init_time, 1),
         )
 
     @classmethod
     def create(cls, settings, term_settings, init_time=0.0, monitor=None):
         scheduler = dn.Scheduler()
-        action_queue = queue.Queue()
+        clock = Clock()
         task = cls.get_task(
-            scheduler, action_queue, settings, term_settings, init_time, monitor
+            scheduler, clock, settings, term_settings, init_time, monitor
         )
-        return task, cls(scheduler, action_queue, monitor)
-
-    def pause(self, when):
-        self.action_queue.put(ClockPause(when))
-
-    def resume(self, when):
-        self.action_queue.put(ClockResume(when))
-
-    def skip(self, when, delta):
-        self.action_queue.put(ClockSkip(when, delta))
+        return task, cls(scheduler, clock, monitor)
 
     def add_drawer(self, node, zindex=(0,)):
         return self.drawers_scheduler.add_node(node, zindex=zindex)
@@ -937,29 +910,27 @@ class ControllerSettings(cfg.Configurable):
 
 
 class Controller:
-    def __init__(self, handlers_scheduler, action_queue):
+    def __init__(self, handlers_scheduler, clock):
         self.handlers_scheduler = handlers_scheduler
-        self.action_queue = action_queue
+        self.clock = clock
 
     @staticmethod
-    def get_task(scheduler, action_queue, settings, term_settings, init_time):
+    def get_task(scheduler, clock, settings, term_settings, init_time):
         return term.inkey(
             Controller._control_node(
-                scheduler, action_queue, settings, term_settings, init_time
+                scheduler, clock, settings, term_settings, init_time
             ),
             dt=settings.update_interval,
         )
 
     @staticmethod
     @dn.datanode
-    def _control_node(scheduler, action_queue, settings, term_settings, init_time):
+    def _control_node(scheduler, clock, settings, term_settings, init_time):
         keycodes = term_settings.keycodes
 
-        clock = Controller._clock_node(
-            action_queue, init_time, settings.update_interval
-        )
+        timer = Controller._timer_node(clock, init_time, settings.update_interval)
 
-        with clock, scheduler:
+        with timer, scheduler:
             while True:
                 _, keycode = yield
 
@@ -973,33 +944,24 @@ class Controller:
                     keyname = repr(keycode)
 
                 try:
-                    time, ratio = clock.send(None)
+                    time, ratio = timer.send(None)
                     scheduler.send((None, time, keyname, keycode))
                 except StopIteration:
                     return
 
     @staticmethod
-    def _clock_node(action_queue, init_time, update_interval):
+    def _timer_node(clock, init_time, update_interval):
         return dn.pipe(
             dn.time(0.0),
-            clock(init_time, 1, action_queue),
+            clock.clock(init_time, 1),
         )
 
     @classmethod
     def create(cls, settings, term_settings, init_time=0.0):
         scheduler = dn.Scheduler()
-        action_queue = queue.Queue()
-        task = cls.get_task(scheduler, action_queue, settings, term_settings, init_time)
-        return task, cls(scheduler, action_queue)
-
-    def pause(self, when):
-        self.action_queue.put(ClockPause(when))
-
-    def resume(self, when):
-        self.action_queue.put(ClockResume(when))
-
-    def skip(self, when, delta):
-        self.action_queue.put(ClockSkip(when, delta))
+        clock = Clock()
+        task = cls.get_task(scheduler, clock, settings, term_settings, init_time)
+        return task, cls(scheduler, clock)
 
     def add_handler(self, node, keyname=None):
         return self.handlers_scheduler.add_node(self._filter_node(node, keyname), (0,))
