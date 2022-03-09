@@ -1214,6 +1214,7 @@ class Scheduler(DataNode):
             self.remove()
 
     def add_node(self, node, zindex=(0,)):
+        node = DataNode.wrap(node)
         key = self._NodeKey(self, node)
         self.queue.put((key, node, zindex))
         return key

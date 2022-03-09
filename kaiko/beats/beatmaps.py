@@ -458,9 +458,7 @@ class OneshotTarget(Target):
         perf = beatbar.Performance.judge(
             self.performance_tolerance, self.time, time, is_correct_key
         )
-        state.add_perf(perf, self.speed < 0)
-        if not self.nofeedback:
-            playfield.set_perf(perf, self.speed < 0)
+        state.add_perf(perf)
         self.finish(state, playfield, perf)
 
     def finish(self, state, playfield, perf=None):
@@ -1177,7 +1175,7 @@ class BeatmapScore:
     def add_finished(self, finished=1):
         self.finished_subjects += finished
 
-    def add_perf(self, perf, is_reversed=False):
+    def add_perf(self, perf):
         self.perfs.append(perf)
 
 
@@ -1340,7 +1338,7 @@ class Beatmap:
             .join()
         )
         sight = (
-            yield from beatbar.Sight(rich, gameplay_settings.playfield.sight)
+            yield from widget_builder.create(gameplay_settings.playfield.sight)
             .load()
             .join()
         )
