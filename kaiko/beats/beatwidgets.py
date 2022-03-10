@@ -360,8 +360,9 @@ class ScoreWidgetSettings:
 
 
 class ScoreWidget:
-    def __init__(self, state, rich, settings):
-        self.state = state  # object with properties `score`, `full_score`
+    def __init__(self, score_getter, rich, settings):
+        # score_getter: () -> (int, int)
+        self.score_getter = score_getter
         self.rich = rich
         self.settings = settings
 
@@ -370,8 +371,7 @@ class ScoreWidget:
         template = self.rich.parse(self.settings.template, slotted=True)
 
         def widget_func(time, ran):
-            score = self.state.score
-            full_score = self.state.full_score
+            score, full_score = self.score_getter()
             width = len(ran)
 
             if width == 0:
@@ -406,8 +406,11 @@ class ProgressWidgetSettings:
 
 
 class ProgressWidget:
-    def __init__(self, state, rich, settings):
-        self.state = state  # object with properties `finished_subjects`, `total_subjects`, `time`
+    def __init__(self, progress_getter, time_getter, rich, settings):
+        # progress_getter: () -> float
+        # time_getter: () -> float
+        self.progress_getter = progress_getter
+        self.time_getter = time_getter
         self.rich = rich
         self.settings = settings
 
@@ -416,15 +419,10 @@ class ProgressWidget:
         template = self.rich.parse(self.settings.template, slotted=True)
 
         def widget_func(time, ran):
-            finished_subjects = self.state.finished_subjects
-            total_subjects = self.state.total_subjects
-            time = self.state.time
+            progress = self.progress_getter()
+            time = self.time_getter()
 
-            progress = (
-                min(1.0, finished_subjects / total_subjects)
-                if total_subjects > 0
-                else 1.0
-            )
+            progress = max(min(1.0, progress), 0.0)
             time = int(max(0.0, time))
             width = len(ran)
 

@@ -649,9 +649,18 @@ class BeatbarWidgetBuilder:
             else:
                 assert False
         elif isinstance(widget_settings, BeatbarWidgetBuilder.score):
-            return beatwidgets.ScoreWidget(self.state, self.rich, widget_settings)
+            score_getter = lambda: (self.state.score, self.state.full_score)
+            return beatwidgets.ScoreWidget(score_getter, self.rich, widget_settings)
         elif isinstance(widget_settings, BeatbarWidgetBuilder.progress):
-            return beatwidgets.ProgressWidget(self.state, self.rich, widget_settings)
+            progress_getter = (
+                lambda: self.state.finished_subjects / self.state.total_subjects
+                if self.state.total_subjects > 0
+                else 1.0
+            )
+            time_getter = lambda: self.state.time
+            return beatwidgets.ProgressWidget(
+                progress_getter, time_getter, self.rich, widget_settings
+            )
         elif isinstance(widget_settings, BeatbarWidgetBuilder.sight):
             return SightWidget(
                 self.rich,
