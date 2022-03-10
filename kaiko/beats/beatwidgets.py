@@ -85,13 +85,13 @@ class SpectrumWidgetSettings:
     spec_freq_res: float = 21.5332031
 
 
-@dataclasses.dataclass
 class SpectrumWidget:
-    spectrum: str
-    rich: mu.RichParser
-    mixer: engines.Mixer
-    mixer_settings: engines.MixerSettings
-    settings: SpectrumWidgetSettings
+    def __init__(self, rich, mixer, mixer_settings, settings):
+        self.rich = rich
+        self.mixer = mixer
+        self.mixer_settings = mixer_settings
+        self.settings = settings
+        self.spectrum = ""
 
     def draw_spectrum(self):
         spec_width = self.settings.spec_width
@@ -180,13 +180,13 @@ class VolumeIndicatorWidgetSettings:
     vol_decay_time: float = 0.01
 
 
-@dataclasses.dataclass
 class VolumeIndicatorWidget:
-    volume: float
-    rich: mu.RichParser
-    mixer: engines.Mixer
-    mixer_settings: engines.MixerSettings
-    settings: VolumeIndicatorWidgetSettings
+    def __init__(self, rich, mixer, mixer_settings, settings):
+        self.rich = rich
+        self.mixer = mixer
+        self.mixer_settings = mixer_settings
+        self.settings = settings
+        self.volume = 0.0
 
     @dn.datanode
     def load(self):
@@ -238,13 +238,13 @@ class AccuracyMeterWidgetSettings:
     meter_radius: float = 0.10
 
 
-@dataclasses.dataclass
 class AccuracyMeterWidget:
-    last_perf: int
-    rich: mu.RichParser
-    state: object  # with property `perfs`
-    renderer_settings: engines.RendererSettings
-    settings: AccuracyMeterWidgetSettings
+    def __init__(self, rich, state, renderer_settings, settings):
+        self.rich = rich
+        self.state = state  # object with property `perfs`
+        self.renderer_settings = renderer_settings
+        self.settings = settings
+        self.last_perf = 0
 
     @dn.datanode
     def load(self):
@@ -319,10 +319,10 @@ class MonitorWidgetSettings:
     target: MonitorTarget = MonitorTarget.renderer
 
 
-@dataclasses.dataclass
 class MonitorWidget:
-    target: Union[engines.Mixer, engines.Detector, engines.Renderer, None]
-    settings: MonitorWidgetSettings
+    def __init__(self, target, settings):
+        self.target = target
+        self.settings = settings
 
     @dn.datanode
     def load(self):
@@ -359,11 +359,11 @@ class ScoreWidgetSettings:
     template: str = "[color=bright_blue][slot/][/]"
 
 
-@dataclasses.dataclass
 class ScoreWidget:
-    state: object  # with properties `score`, `full_score`
-    rich: mu.RichParser
-    settings: ScoreWidgetSettings
+    def __init__(self, state, rich, settings):
+        self.state = state  # object with properties `score`, `full_score`
+        self.rich = rich
+        self.settings = settings
 
     @dn.datanode
     def load(self):
@@ -405,11 +405,11 @@ class ProgressWidgetSettings:
     template: str = "[color=bright_blue][slot/][/]"
 
 
-@dataclasses.dataclass
 class ProgressWidget:
-    state: object  # with properties `finished_subjects`, `total_subjects`, `time`
-    rich: mu.RichParser
-    settings: ProgressWidgetSettings
+    def __init__(self, state, rich, settings):
+        self.state = state  # object with properties `finished_subjects`, `total_subjects`, `time`
+        self.rich = rich
+        self.settings = settings
 
     @dn.datanode
     def load(self):
@@ -470,11 +470,11 @@ class PatternsWidgetSettings:
     )
 
 
-@dataclasses.dataclass
 class PatternsWidget:
-    metronome: engines.Metronome
-    rich: mu.RichParser
-    settings: PatternsWidgetSettings
+    def __init__(self, metronome, rich, settings):
+        self.metronome = metronome
+        self.rich = rich
+        self.settings = settings
 
     @dn.datanode
     def load(self):
@@ -505,11 +505,11 @@ class MarkerWidgetSettings:
     blink_ratio: float = 0.3
 
 
-@dataclasses.dataclass
 class MarkerWidget:
-    metronome: engines.Metronome
-    rich: mu.RichParser
-    settings: MarkerWidgetSettings
+    def __init__(self, metronome, rich, settings):
+        self.metronome = metronome
+        self.rich = rich
+        self.settings = settings
 
     @dn.datanode
     def load(self):

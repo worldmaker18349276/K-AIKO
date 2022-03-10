@@ -185,15 +185,22 @@ class SightWidgetSettings(cfg.Configurable):
     hit_sustain_time: float = 0.1
 
 
-@dataclasses.dataclass
 class SightWidget:
-    last_perf: Tuple[float, int]
-    last_hit: Tuple[float, float]
-    rich: mu.RichParser
-    state: object  # with property `perfs`
-    detector: engines.Detector
-    renderer_settings: engines.RendererSettings
-    settings: SightWidgetSettings
+    def __init__(
+        self,
+        rich,
+        state,
+        detector,
+        renderer_settings,
+        settings,
+    ):
+        self.rich = rich
+        self.state = state  # object with property `perfs`
+        self.detector = detector
+        self.renderer_settings = renderer_settings
+        self.settings = settings
+        self.last_perf = (0.0, -1)
+        self.last_hit = (0.0, 0.0)
 
     @dn.datanode
     def load(self):
@@ -513,11 +520,7 @@ class Beatbar:
         self.target_queue.put((node, start, duration))
 
     def draw_sight(self, text, start=None, duration=None):
-        text_func = (
-            text
-            if hasattr(text, "__call__")
-            else lambda time: text
-        )
+        text_func = text if hasattr(text, "__call__") else lambda time: text
         self.current_sight.set(text_func, start, duration)
 
     def reset_sight(self, start=None):
@@ -623,15 +626,14 @@ class BeatbarWidgetBuilder:
     def create(self, widget_settings):
         if isinstance(widget_settings, BeatbarWidgetBuilder.spectrum):
             return beatwidgets.SpectrumWidget(
-                "", self.rich, self.mixer, self.devices_settings.mixer, widget_settings
+                self.rich, self.mixer, self.devices_settings.mixer, widget_settings
             )
         elif isinstance(widget_settings, BeatbarWidgetBuilder.volume_indicator):
             return beatwidgets.VolumeIndicatorWidget(
-                0.0, self.rich, self.mixer, self.devices_settings.mixer, widget_settings
+                self.rich, self.mixer, self.devices_settings.mixer, widget_settings
             )
         elif isinstance(widget_settings, BeatbarWidgetBuilder.accuracy_meter):
             return beatwidgets.AccuracyMeterWidget(
-                0,
                 self.rich,
                 self.state,
                 self.devices_settings.renderer,
@@ -652,8 +654,6 @@ class BeatbarWidgetBuilder:
             return beatwidgets.ProgressWidget(self.state, self.rich, widget_settings)
         elif isinstance(widget_settings, BeatbarWidgetBuilder.sight):
             return SightWidget(
-                (0.0, -1),
-                (0.0, 0.0),
                 self.rich,
                 self.state,
                 self.detector,
