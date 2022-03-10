@@ -146,8 +146,8 @@ def determine_unicode_version(logger):
 
 
 class DevicesCommand:
-    def __init__(self, config, logger, manager):
-        self.config = config
+    def __init__(self, profiles, logger, manager):
+        self.profiles = profiles
         self.logger = logger
         self.manager = manager
 
@@ -165,22 +165,22 @@ class DevicesCommand:
 
         logger.print()
 
-        device = self.config.current.devices.detector.input_device
+        device = self.profiles.current.devices.detector.input_device
         if device == -1:
             device = "default"
-        samplerate = self.config.current.devices.detector.input_samplerate
-        channels = self.config.current.devices.detector.input_channels
-        format = self.config.current.devices.detector.input_format
+        samplerate = self.profiles.current.devices.detector.input_samplerate
+        channels = self.profiles.current.devices.detector.input_channels
+        format = self.profiles.current.devices.detector.input_format
         logger.print(
             f"current input device: {device} ({samplerate/1000} kHz, {channels} ch)"
         )
 
-        device = self.config.current.devices.mixer.output_device
+        device = self.profiles.current.devices.mixer.output_device
         if device == -1:
             device = "default"
-        samplerate = self.config.current.devices.mixer.output_samplerate
-        channels = self.config.current.devices.mixer.output_channels
-        format = self.config.current.devices.mixer.output_format
+        samplerate = self.profiles.current.devices.mixer.output_samplerate
+        channels = self.profiles.current.devices.mixer.output_channels
+        format = self.profiles.current.devices.mixer.output_format
         logger.print(
             f"current output device: {device} ({samplerate/1000} kHz, {channels} ch)"
         )
@@ -229,11 +229,11 @@ class DevicesCommand:
         pa_format = fmt
 
         if pa_samplerate is None:
-            pa_samplerate = self.config.current.devices.detector.input_samplerate
+            pa_samplerate = self.profiles.current.devices.detector.input_samplerate
         if pa_channels is None:
-            pa_channels = self.config.current.devices.detector.input_channels
+            pa_channels = self.profiles.current.devices.detector.input_channels
         if pa_format is None:
-            pa_format = self.config.current.devices.detector.input_format
+            pa_format = self.profiles.current.devices.detector.input_format
 
         try:
             logger.print("Validate input device...")
@@ -248,16 +248,16 @@ class DevicesCommand:
                 logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
-            self.config.current.devices.detector.input_device = device
+            self.profiles.current.devices.detector.input_device = device
             if rate is not None:
-                self.config.current.devices.detector.input_samplerate = rate
+                self.profiles.current.devices.detector.input_samplerate = rate
             if ch is not None:
-                self.config.current.devices.detector.input_channels = ch
+                self.profiles.current.devices.detector.input_channels = ch
             if len is not None:
-                self.config.current.devices.detector.input_buffer_length = len
+                self.profiles.current.devices.detector.input_buffer_length = len
             if fmt is not None:
-                self.config.current.devices.detector.input_format = fmt
-            self.config.set_change()
+                self.profiles.current.devices.detector.input_format = fmt
+            self.profiles.set_as_changed()
 
     @cmd.function_command
     def set_speaker(self, device, rate=None, ch=None, len=None, fmt=None):
@@ -279,11 +279,11 @@ class DevicesCommand:
         pa_format = fmt
 
         if pa_samplerate is None:
-            pa_samplerate = self.config.current.devices.mixer.output_samplerate
+            pa_samplerate = self.profiles.current.devices.mixer.output_samplerate
         if pa_channels is None:
-            pa_channels = self.config.current.devices.mixer.output_channels
+            pa_channels = self.profiles.current.devices.mixer.output_channels
         if pa_format is None:
-            pa_format = self.config.current.devices.mixer.output_format
+            pa_format = self.profiles.current.devices.mixer.output_format
 
         try:
             logger.print("Validate output device...")
@@ -298,16 +298,16 @@ class DevicesCommand:
                 logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
-            self.config.current.devices.mixer.output_device = device
+            self.profiles.current.devices.mixer.output_device = device
             if rate is not None:
-                self.config.current.devices.mixer.output_samplerate = rate
+                self.profiles.current.devices.mixer.output_samplerate = rate
             if ch is not None:
-                self.config.current.devices.mixer.output_channels = ch
+                self.profiles.current.devices.mixer.output_channels = ch
             if len is not None:
-                self.config.current.devices.mixer.output_buffer_length = len
+                self.profiles.current.devices.mixer.output_buffer_length = len
             if fmt is not None:
-                self.config.current.devices.mixer.output_format = fmt
-            self.config.set_change()
+                self.profiles.current.devices.mixer.output_format = fmt
+            self.profiles.set_as_changed()
 
     @cmd.function_command
     def gen(self, waveform):
@@ -318,7 +318,7 @@ class DevicesCommand:
                        The function of
                        output waveform.
         """
-        settings = self.config.current.devices.mixer
+        settings = self.profiles.current.devices.mixer
         return WaveformTest(waveform, self.logger, settings)
 
     @gen.arg_parser("waveform")
@@ -382,7 +382,7 @@ class DevicesCommand:
         usage: [cmd]devices[/] [cmd]fit_screen[/]
         """
 
-        return fit_screen(self.logger, self.config.current.devices.terminal)
+        return fit_screen(self.logger, self.profiles.current.devices.terminal)
 
     @cmd.function_command
     @dn.datanode
@@ -395,8 +395,8 @@ class DevicesCommand:
         version = yield from determine_unicode_version(self.logger).join()
         if version is not None:
             os.environ["UNICODE_VERSION"] = version
-            self.config.current.devices.terminal.unicode_version = version
-            self.config.set_change()
+            self.profiles.current.devices.terminal.unicode_version = version
+            self.profiles.set_as_changed()
 
     # engines
 
@@ -426,7 +426,7 @@ class DevicesCommand:
             logger.print("[[ <time>  ]] [emph]<keyname>[/] (<keycode>)", end="\r")
 
         controller_task, controller = engines.Controller.create(
-            self.config.current.devices.controller, self.config.current.devices.terminal
+            self.profiles.current.devices.controller, self.profiles.current.devices.terminal
         )
         controller.add_handler(handler)
         controller.add_handler(lambda _: stop_event.set(), exit_key)
@@ -448,7 +448,7 @@ class DevicesCommand:
 
         usage: [cmd]devices[/] [cmd]test_knock[/]
         """
-        settings = self.config.current.devices.detector
+        settings = self.profiles.current.devices.detector
         return KnockTest(settings, self.logger)
 
 
