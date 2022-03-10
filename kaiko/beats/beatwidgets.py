@@ -239,9 +239,11 @@ class AccuracyMeterWidgetSettings:
 
 
 class AccuracyMeterWidget:
-    def __init__(self, rich, state, renderer_settings, settings):
+    def __init__(self, accuracy_getter, rich, perfs, renderer_settings, settings):
+        # accuracy_getter: Performance -> float
+        self.accuracy_getter = accuracy_getter
         self.rich = rich
-        self.state = state  # object with property `perfs`
+        self.perfs = perfs
         self.renderer_settings = renderer_settings
         self.settings = settings
         self.last_perf = 0
@@ -268,11 +270,9 @@ class AccuracyMeterWidget:
         ]
 
         def widget_func(time, ran):
-            perfs = self.state.perfs
-
             new_err = []
-            while len(perfs) > self.last_perf:
-                err = perfs[self.last_perf].err
+            while len(self.perfs) > self.last_perf:
+                err = self.accuracy_getter(self.perfs[self.last_perf])
                 if err is not None:
                     new_err.append(
                         max(

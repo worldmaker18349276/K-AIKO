@@ -633,9 +633,11 @@ class BeatbarWidgetBuilder:
                 self.rich, self.mixer, self.devices_settings.mixer, widget_settings
             )
         elif isinstance(widget_settings, BeatbarWidgetBuilder.accuracy_meter):
+            accuracy_getter = lambda perf: perf.err
             return beatwidgets.AccuracyMeterWidget(
+                accuracy_getter,
                 self.rich,
-                self.state,
+                self.state.perfs,
                 self.devices_settings.renderer,
                 widget_settings,
             )
