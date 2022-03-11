@@ -1140,8 +1140,8 @@ def collect(node):
 
 
 # others
-class Scheduler(DataNode):
-    """A data node schedule given data nodes dynamically.
+class DataBus(DataNode):
+    """Chaining given data nodes dynamically.
 
     Receives
     --------

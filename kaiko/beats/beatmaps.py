@@ -1454,7 +1454,7 @@ class Beatmap:
                             event_clock.pause(time + pause_delay)
                             paused = True
 
-        controller.handlers_scheduler.add_node(pause_node(), (0,))
+        controller.handlers_bus.add_node(pause_node(), (0,))
 
         # play music
         if self.audionode is not None:

@@ -300,14 +300,14 @@ class MixerSettings(cfg.Configurable):
 class Mixer:
     def __init__(
         self,
-        effects_scheduler,
+        effects_bus,
         clock,
         samplerate,
         buffer_length,
         nchannels,
         monitor,
     ):
-        self.effects_scheduler = effects_scheduler
+        self.effects_bus = effects_bus
         self.clock = clock
         self.samplerate = samplerate
         self.buffer_length = buffer_length
@@ -315,14 +315,14 @@ class Mixer:
         self.monitor = monitor
 
     @staticmethod
-    def get_task(scheduler, clock, settings, manager, init_time, monitor):
+    def get_task(bus, clock, settings, manager, init_time, monitor):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
         format = settings.output_format
         device = settings.output_device
 
-        output_node = Mixer._mix_node(scheduler, clock, settings, init_time)
+        output_node = Mixer._mix_node(bus, clock, settings, init_time)
         if monitor:
             output_node = monitor.monitoring(output_node)
 
@@ -337,20 +337,20 @@ class Mixer:
 
     @staticmethod
     @dn.datanode
-    def _mix_node(scheduler, clock, settings, init_time):
+    def _mix_node(bus, clock, settings, init_time):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
 
         timer = Mixer._timer_node(clock, init_time, buffer_length, samplerate, settings)
 
-        with timer, scheduler:
+        with timer, bus:
             yield
             while True:
                 data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
                 try:
                     slices_map = timer.send(None)
-                    data = scheduler.send((data, slices_map))
+                    data = bus.send((data, slices_map))
                 except StopIteration:
                     return
                 yield data
@@ -372,18 +372,16 @@ class Mixer:
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
 
-        scheduler = dn.Scheduler()
+        bus = dn.DataBus()
         clock = Clock()
-        task = cls.get_task(scheduler, clock, settings, manager, init_time, monitor)
-        return task, cls(
-            scheduler, clock, samplerate, buffer_length, nchannels, monitor
-        )
+        task = cls.get_task(bus, clock, settings, manager, init_time, monitor)
+        return task, cls(bus, clock, samplerate, buffer_length, nchannels, monitor)
 
     def add_effect(self, node, zindex=(0,)):
-        return self.effects_scheduler.add_node(node, zindex=zindex)
+        return self.effects_bus.add_node(node, zindex=zindex)
 
     def remove_effect(self, key):
-        return self.effects_scheduler.remove_node(key)
+        return self.effects_bus.remove_node(key)
 
     @dn.datanode
     def tmask(self, node, time):
@@ -529,13 +527,13 @@ class DetectorSettings(cfg.Configurable):
 
 
 class Detector:
-    def __init__(self, listeners_scheduler, clock, monitor):
-        self.listeners_scheduler = listeners_scheduler
+    def __init__(self, listeners_bus, clock, monitor):
+        self.listeners_bus = listeners_bus
         self.clock = clock
         self.monitor = monitor
 
     @staticmethod
-    def get_task(scheduler, clock, settings, manager, init_time, monitor):
+    def get_task(bus, clock, settings, manager, init_time, monitor):
         samplerate = settings.input_samplerate
         buffer_length = settings.input_buffer_length
         nchannels = settings.input_channels
@@ -545,7 +543,7 @@ class Detector:
         time_res = settings.detect.time_res
         hop_length = round(samplerate * time_res)
 
-        input_node = Detector._detect_node(scheduler, clock, init_time, settings)
+        input_node = Detector._detect_node(bus, clock, init_time, settings)
         if buffer_length != hop_length:
             input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
         if monitor:
@@ -562,7 +560,7 @@ class Detector:
 
     @staticmethod
     @dn.datanode
-    def _detect_node(scheduler, clock, init_time, settings):
+    def _detect_node(bus, clock, init_time, settings):
         samplerate = settings.input_samplerate
 
         time_res = settings.detect.time_res
@@ -603,7 +601,7 @@ class Detector:
             ),
         )
 
-        with scheduler, timer, onset, picker:
+        with bus, timer, onset, picker:
             data = yield
             while True:
                 try:
@@ -611,7 +609,7 @@ class Detector:
                     detected, strength = picker.send(strength)
                     time, ratio = timer.send(None)
                     normalized_strength = strength / settings.knock_energy
-                    scheduler.send((None, time, normalized_strength, detected))
+                    bus.send((None, time, normalized_strength, detected))
                 except StopIteration:
                     return
                 data = yield
@@ -625,16 +623,16 @@ class Detector:
 
     @classmethod
     def create(cls, settings, manager, init_time=0.0, monitor=None):
-        scheduler = dn.Scheduler()
+        bus = dn.DataBus()
         clock = Clock()
-        task = cls.get_task(scheduler, clock, settings, manager, init_time, monitor)
-        return task, cls(scheduler, clock, monitor)
+        task = cls.get_task(bus, clock, settings, manager, init_time, monitor)
+        return task, cls(bus, clock, monitor)
 
     def add_listener(self, node):
-        return self.listeners_scheduler.add_node(node, (0,))
+        return self.listeners_bus.add_node(node, (0,))
 
     def remove_listener(self, key):
-        self.listeners_scheduler.remove_node(key)
+        self.listeners_bus.remove_node(key)
 
     def on_hit(self, func, time=None, duration=None):
         return self.add_listener(self._hit_listener(func, time, duration))
@@ -722,17 +720,17 @@ class RendererSettings(cfg.Configurable):
 
 
 class Renderer:
-    def __init__(self, drawers_scheduler, clock, monitor):
-        self.drawers_scheduler = drawers_scheduler
+    def __init__(self, drawers_bus, clock, monitor):
+        self.drawers_bus = drawers_bus
         self.clock = clock
         self.monitor = monitor
 
     @staticmethod
-    def get_task(scheduler, clock, settings, term_settings, init_time, monitor):
+    def get_task(bus, clock, settings, term_settings, init_time, monitor):
         framerate = settings.display_framerate
 
         display_node = Renderer._resize_node(
-            Renderer._render_node(scheduler, clock, settings, term_settings, init_time),
+            Renderer._render_node(bus, clock, settings, term_settings, init_time),
             settings,
             term_settings,
         )
@@ -742,7 +740,7 @@ class Renderer:
 
     @staticmethod
     @dn.datanode
-    def _render_node(scheduler, clock, settings, term_settings, init_time):
+    def _render_node(bus, clock, settings, term_settings, init_time):
         framerate = settings.display_framerate
 
         rich_renderer = mu.RichTextRenderer(term_settings.unicode_version)
@@ -755,14 +753,14 @@ class Renderer:
 
         timer = Renderer._timer_node(clock, init_time, framerate, settings)
 
-        with timer, scheduler:
+        with timer, bus:
             shown, resized, size = yield
             while True:
                 width = size.columns
                 view = RichBar(term_settings)
                 try:
                     time, ratio = timer.send(None)
-                    view, msgs, logs = scheduler.send(((view, msgs, logs), time, width))
+                    view, msgs, logs = bus.send(((view, msgs, logs), time, width))
                 except StopIteration:
                     return
                 view_str = view.draw(width)
@@ -840,18 +838,16 @@ class Renderer:
 
     @classmethod
     def create(cls, settings, term_settings, init_time=0.0, monitor=None):
-        scheduler = dn.Scheduler()
+        bus = dn.DataBus()
         clock = Clock()
-        task = cls.get_task(
-            scheduler, clock, settings, term_settings, init_time, monitor
-        )
-        return task, cls(scheduler, clock, monitor)
+        task = cls.get_task(bus, clock, settings, term_settings, init_time, monitor)
+        return task, cls(bus, clock, monitor)
 
     def add_drawer(self, node, zindex=(0,)):
-        return self.drawers_scheduler.add_node(node, zindex=zindex)
+        return self.drawers_bus.add_node(node, zindex=zindex)
 
     def remove_drawer(self, key):
-        self.drawers_scheduler.remove_node(key)
+        self.drawers_bus.remove_node(key)
 
     def add_log(self, msg, zindex=(0,)):
         return self.add_drawer(self._log_drawer(msg), zindex)
@@ -909,27 +905,25 @@ class ControllerSettings(cfg.Configurable):
 
 
 class Controller:
-    def __init__(self, handlers_scheduler, clock):
-        self.handlers_scheduler = handlers_scheduler
+    def __init__(self, handlers_bus, clock):
+        self.handlers_bus = handlers_bus
         self.clock = clock
 
     @staticmethod
-    def get_task(scheduler, clock, settings, term_settings, init_time):
+    def get_task(bus, clock, settings, term_settings, init_time):
         return term.inkey(
-            Controller._control_node(
-                scheduler, clock, settings, term_settings, init_time
-            ),
+            Controller._control_node(bus, clock, settings, term_settings, init_time),
             dt=settings.update_interval,
         )
 
     @staticmethod
     @dn.datanode
-    def _control_node(scheduler, clock, settings, term_settings, init_time):
+    def _control_node(bus, clock, settings, term_settings, init_time):
         keycodes = term_settings.keycodes
 
         timer = Controller._timer_node(clock, init_time, settings.update_interval)
 
-        with timer, scheduler:
+        with timer, bus:
             while True:
                 _, keycode = yield
 
@@ -944,7 +938,7 @@ class Controller:
 
                 try:
                     time, ratio = timer.send(None)
-                    scheduler.send((None, time, keyname, keycode))
+                    bus.send((None, time, keyname, keycode))
                 except StopIteration:
                     return
 
@@ -957,16 +951,16 @@ class Controller:
 
     @classmethod
     def create(cls, settings, term_settings, init_time=0.0):
-        scheduler = dn.Scheduler()
+        bus = dn.DataBus()
         clock = Clock()
-        task = cls.get_task(scheduler, clock, settings, term_settings, init_time)
-        return task, cls(scheduler, clock)
+        task = cls.get_task(bus, clock, settings, term_settings, init_time)
+        return task, cls(bus, clock)
 
     def add_handler(self, node, keyname=None):
-        return self.handlers_scheduler.add_node(self._filter_node(node, keyname), (0,))
+        return self.handlers_bus.add_node(self._filter_node(node, keyname), (0,))
 
     def remove_handler(self, key):
-        self.handlers_scheduler.remove_node(key)
+        self.handlers_bus.remove_node(key)
 
     @dn.datanode
     def _filter_node(self, node, name):
