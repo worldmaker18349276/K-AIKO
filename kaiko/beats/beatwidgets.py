@@ -241,14 +241,39 @@ class AccuracyMeterWidgetSettings:
 
 
 class AccuracyMeterWidget:
-    def __init__(self, accuracy_getter, rich, perfs, renderer_settings, settings):
-        # accuracy_getter: Performance -> float
-        self.accuracy_getter = accuracy_getter
+    def __init__(self, accuracy_getter, rich, renderer_settings, settings):
+        # accuracy_getter: DataNode[None -> List[float]]
+        self.accuracy_getter = dn.DataNode.wrap(accuracy_getter)
         self.rich = rich
-        self.perfs = perfs
         self.renderer_settings = renderer_settings
         self.settings = settings
-        self.last_perf = 0
+        self.hit = []
+
+    @dn.datanode
+    def widget_node(self, decay, to_hit, render_heat):
+        with self.accuracy_getter:
+            time, ran = yield
+            while True:
+                try:
+                    new_errs = self.accuracy_getter.send(None)
+                except StopIteration:
+                    return
+
+                new_hit = [to_hit(err) for err in new_errs if err is not None]
+
+                for i in range(len(self.hit)):
+                    if i in new_hit:
+                        self.hit[i] = 1.0
+                    else:
+                        self.hit[i] = max(0.0, self.hit[i] - decay)
+
+                res = mu.Group(
+                    tuple(
+                        render_heat(i, j) for i, j in zip(self.hit[::2], self.hit[1::2])
+                    )
+                )
+
+                time, ran = yield res
 
     @dn.datanode
     def load(self):
@@ -259,11 +284,15 @@ class AccuracyMeterWidget:
         decay = 1 / display_framerate / meter_decay_time
 
         length = meter_width * 2
-        hit = [0.0] * length
+        self.hit = [0.0] * length
+
+        def to_hit(err):
+            hit = int((err - meter_radius) / -meter_radius / 2 * length // 1)
+            return max(min(hit, length - 1), 0)
 
         colors = [c << 16 | c << 8 | c for c in range(8, 248, 10)]
         nlevel = len(colors)
-        texts = [
+        prerendered_heat = [
             [
                 self.rich.parse(f"[bgcolor={a:06x}][color={b:06x}]▐[/][/]")
                 for b in colors
@@ -271,44 +300,13 @@ class AccuracyMeterWidget:
             for a in colors
         ]
 
-        def widget_func(arg):
-            time, ran = arg
-            new_err = []
-            while len(self.perfs) > self.last_perf:
-                err = self.accuracy_getter(self.perfs[self.last_perf])
-                if err is not None:
-                    new_err.append(
-                        max(
-                            min(
-                                int(
-                                    (err - meter_radius)
-                                    / -meter_radius
-                                    / 2
-                                    * length
-                                    // 1
-                                ),
-                                length - 1,
-                            ),
-                            0,
-                        )
-                    )
-                self.last_perf += 1
-
-            for i in range(meter_width * 2):
-                if i in new_err:
-                    hit[i] = 1.0
-                else:
-                    hit[i] = max(0.0, hit[i] - decay)
-
-            return mu.Group(
-                tuple(
-                    texts[int(i * (nlevel - 1))][int(j * (nlevel - 1))]
-                    for i, j in zip(hit[::2], hit[1::2])
-                )
-            )
+        def render_heat(heat1, heat2):
+            i = int(heat1 * (nlevel - 1))
+            j = int(heat2 * (nlevel - 1))
+            return prerendered_heat[i][j]
 
         yield
-        return widget_func
+        return self.widget_node(decay, to_hit, render_heat)
 
 
 class MonitorTarget(Enum):
@@ -365,38 +363,48 @@ class ScoreWidgetSettings:
 
 class ScoreWidget:
     def __init__(self, score_getter, rich, settings):
-        # score_getter: () -> (int, int)
-        self.score_getter = score_getter
+        # score_getter: DataNode[None -> (int, int)]
+        self.score_getter = dn.DataNode.wrap(score_getter)
         self.rich = rich
         self.settings = settings
+
+    @dn.datanode
+    def widget_node(self, template):
+        with self.score_getter:
+            time, ran = yield
+            while True:
+                try:
+                    score, full_score = self.score_getter.send(None)
+                except StopIteration:
+                    return
+                width = len(ran)
+
+                if width == 0:
+                    return mu.Text("")
+                if width == 1:
+                    return mu.replace_slot(template, mu.Text("|"))
+                if width == 2:
+                    return mu.replace_slot(template, mu.Text("[]"))
+                if width <= 7:
+                    score_str = uint_format(score, width - 2, True)
+                    return mu.replace_slot(template, mu.Text(f"[{score_str}]"))
+
+                w1 = max((width - 3) // 2, 5)
+                w2 = (width - 3) - w1
+                score_str = uint_format(score, w1, True)
+                full_score_str = uint_format(full_score, w2, True)
+                res = mu.replace_slot(
+                    template, mu.Text(f"[{score_str}/{full_score_str}]")
+                )
+
+                time, ran = yield res
 
     @dn.datanode
     def load(self):
         template = self.rich.parse(self.settings.template, slotted=True)
 
-        def widget_func(arg):
-            time, ran = arg
-            score, full_score = self.score_getter()
-            width = len(ran)
-
-            if width == 0:
-                return mu.Text("")
-            if width == 1:
-                return mu.replace_slot(template, mu.Text("|"))
-            if width == 2:
-                return mu.replace_slot(template, mu.Text("[]"))
-            if width <= 7:
-                score_str = uint_format(score, width - 2, True)
-                return mu.replace_slot(template, mu.Text(f"[{score_str}]"))
-
-            w1 = max((width - 3) // 2, 5)
-            w2 = (width - 3) - w1
-            score_str = uint_format(score, w1, True)
-            full_score_str = uint_format(full_score, w2, True)
-            return mu.replace_slot(template, mu.Text(f"[{score_str}/{full_score_str}]"))
-
         yield
-        return widget_func
+        return self.widget_node(template)
 
 
 @dataclasses.dataclass
@@ -412,44 +420,52 @@ class ProgressWidgetSettings:
 
 class ProgressWidget:
     def __init__(self, progress_getter, time_getter, rich, settings):
-        # progress_getter: () -> float
-        # time_getter: () -> float
-        self.progress_getter = progress_getter
-        self.time_getter = time_getter
+        # progress_getter: DataNode[None -> float]
+        # time_getter: DataNode[None -> float]
+        self.progress_getter = dn.DataNode.wrap(progress_getter)
+        self.time_getter = dn.DataNode.wrap(time_getter)
         self.rich = rich
         self.settings = settings
+
+    @dn.datanode
+    def widget_node(self, template):
+        with self.progress_getter, self.time_getter:
+            time, ran = yield
+            while True:
+                try:
+                    progress = self.progress_getter.send(None)
+                    time = self.time_getter.send(None)
+                except StopIteration:
+                    return
+
+                progress = max(min(1.0, progress), 0.0)
+                time = int(max(0.0, time))
+                width = len(ran)
+
+                if width == 0:
+                    return mu.Text("")
+                if width == 1:
+                    return mu.replace_slot(template, mu.Text("|"))
+                if width == 2:
+                    return mu.replace_slot(template, mu.Text("[]"))
+                if width <= 7:
+                    progress_str = pc_format(progress, width - 2)
+                    return mu.replace_slot(template, mu.Text(f"[{progress_str}]"))
+
+                w1 = max((width - 3) // 2, 5)
+                w2 = (width - 3) - w1
+                progress_str = pc_format(progress, w1)
+                time_str = time_format(time, w2)
+                res = mu.replace_slot(template, mu.Text(f"[{progress_str}/{time_str}]"))
+
+                time, ran = yield res
 
     @dn.datanode
     def load(self):
         template = self.rich.parse(self.settings.template, slotted=True)
 
-        def widget_func(arg):
-            time, ran = arg
-            progress = self.progress_getter()
-            time = self.time_getter()
-
-            progress = max(min(1.0, progress), 0.0)
-            time = int(max(0.0, time))
-            width = len(ran)
-
-            if width == 0:
-                return mu.Text("")
-            if width == 1:
-                return mu.replace_slot(template, mu.Text("|"))
-            if width == 2:
-                return mu.replace_slot(template, mu.Text("[]"))
-            if width <= 7:
-                progress_str = pc_format(progress, width - 2)
-                return mu.replace_slot(template, mu.Text(f"[{progress_str}]"))
-
-            w1 = max((width - 3) // 2, 5)
-            w2 = (width - 3) - w1
-            progress_str = pc_format(progress, w1)
-            time_str = time_format(time, w2)
-            return mu.replace_slot(template, mu.Text(f"[{progress_str}/{time_str}]"))
-
         yield
-        return widget_func
+        return self.widget_node(template)
 
 
 @dataclasses.dataclass

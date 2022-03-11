@@ -613,6 +613,18 @@ class TimedVariable:
         self._queue.put(TimedValue(self._default_value, start, float("inf")))
 
 
+@dn.datanode
+def observe(stack):
+    last = 0
+    yield
+    while True:
+        observed = []
+        while len(stack) > last:
+            observed.append(stack[last])
+            last += 1
+        yield observed
+
+
 # widgets
 class BeatbarWidgetBuilder:
     spectrum = beatwidgets.SpectrumWidgetSettings
@@ -644,11 +656,12 @@ class BeatbarWidgetBuilder:
                 self.rich, self.mixer, self.devices_settings.mixer, widget_settings
             )
         elif isinstance(widget_settings, BeatbarWidgetBuilder.accuracy_meter):
-            accuracy_getter = lambda perf: perf.err
+            accuracy_getter = dn.pipe(
+                observe(self.state.perfs), lambda perfs: [perf.err for perf in perfs]
+            )
             return beatwidgets.AccuracyMeterWidget(
                 accuracy_getter,
                 self.rich,
-                self.state.perfs,
                 self.devices_settings.renderer,
                 widget_settings,
             )
@@ -662,15 +675,15 @@ class BeatbarWidgetBuilder:
             else:
                 assert False
         elif isinstance(widget_settings, BeatbarWidgetBuilder.score):
-            score_getter = lambda: (self.state.score, self.state.full_score)
+            score_getter = lambda _: (self.state.score, self.state.full_score)
             return beatwidgets.ScoreWidget(score_getter, self.rich, widget_settings)
         elif isinstance(widget_settings, BeatbarWidgetBuilder.progress):
-            progress_getter = (
-                lambda: self.state.finished_subjects / self.state.total_subjects
+            progress_getter = lambda _: (
+                self.state.finished_subjects / self.state.total_subjects
                 if self.state.total_subjects > 0
                 else 1.0
             )
-            time_getter = lambda: self.state.time
+            time_getter = lambda _: self.state.time
             return beatwidgets.ProgressWidget(
                 progress_getter, time_getter, self.rich, widget_settings
             )
