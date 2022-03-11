@@ -110,66 +110,40 @@ class SightWidgetSettings(cfg.Configurable):
         If the hitting strength is too soft, the style of the sight will
         sustain until this time.
 
-    performances_appearances : dict from PerformanceGrade to tuple of str and str
+    performances_appearances : list of tuple of str and str
         The hint for different performance, which will be drawn on the
         sight. The first/second string is used for
         right-to-left/left-to-right notes.
     performance_sustain_time : float
         The sustain time of performance hint.
     """
-    performances_appearances: Dict[PerformanceGrade, Tuple[str, str]] = {
-        PerformanceGrade.MISS: ("", ""),
-        PerformanceGrade.LATE_FAILED: (
-            "[dx=-1/][color=bright_magenta]⟪[/]",
-            "[dx=2/][color=bright_magenta]⟫[/]",
-        ),
-        PerformanceGrade.LATE_BAD: (
-            "[dx=-1/][color=bright_magenta]⟨[/]",
-            "[dx=2/][color=bright_magenta]⟩[/]",
-        ),
-        PerformanceGrade.LATE_GOOD: (
-            "[dx=-1/][color=bright_magenta]‹[/]",
-            "[dx=2/][color=bright_magenta]›[/]",
-        ),
-        PerformanceGrade.PERFECT: ("", ""),
-        PerformanceGrade.EARLY_GOOD: (
-            "[dx=2/][color=bright_magenta]›[/]",
-            "[dx=-1/][color=bright_magenta]‹[/]",
-        ),
-        PerformanceGrade.EARLY_BAD: (
-            "[dx=2/][color=bright_magenta]⟩[/]",
-            "[dx=-1/][color=bright_magenta]⟨[/]",
-        ),
-        PerformanceGrade.EARLY_FAILED: (
+    performances_appearances: List[Tuple[str, str]] = [
+        (
             "[dx=2/][color=bright_magenta]⟫[/]",
             "[dx=-1/][color=bright_magenta]⟪[/]",
         ),
-        PerformanceGrade.LATE_FAILED_WRONG: (
-            "[dx=-1/][color=bright_magenta]⟪[/]",
-            "[dx=2/][color=bright_magenta]⟫[/]",
-        ),
-        PerformanceGrade.LATE_BAD_WRONG: (
-            "[dx=-1/][color=bright_magenta]⟨[/]",
-            "[dx=2/][color=bright_magenta]⟩[/]",
-        ),
-        PerformanceGrade.LATE_GOOD_WRONG: (
-            "[dx=-1/][color=bright_magenta]‹[/]",
-            "[dx=2/][color=bright_magenta]›[/]",
-        ),
-        PerformanceGrade.PERFECT_WRONG: ("", ""),
-        PerformanceGrade.EARLY_GOOD_WRONG: (
-            "[dx=2/][color=bright_magenta]›[/]",
-            "[dx=-1/][color=bright_magenta]‹[/]",
-        ),
-        PerformanceGrade.EARLY_BAD_WRONG: (
+        (
             "[dx=2/][color=bright_magenta]⟩[/]",
             "[dx=-1/][color=bright_magenta]⟨[/]",
         ),
-        PerformanceGrade.EARLY_FAILED_WRONG: (
-            "[dx=2/][color=bright_magenta]⟫[/]",
-            "[dx=-1/][color=bright_magenta]⟪[/]",
+        (
+            "[dx=2/][color=bright_magenta]›[/]",
+            "[dx=-1/][color=bright_magenta]‹[/]",
         ),
-    }
+        ("", ""),
+        (
+            "[dx=-1/][color=bright_magenta]‹[/]",
+            "[dx=2/][color=bright_magenta]›[/]",
+        ),
+        (
+            "[dx=-1/][color=bright_magenta]⟨[/]",
+            "[dx=2/][color=bright_magenta]⟩[/]",
+        ),
+        (
+            "[dx=-1/][color=bright_magenta]⟪[/]",
+            "[dx=2/][color=bright_magenta]⟫[/]",
+        ),
+    ]
     performance_sustain_time: float = 0.1
 
     sight_appearances: List[Tuple[str, str]] = [
@@ -188,32 +162,28 @@ class SightWidgetSettings(cfg.Configurable):
 class SightWidget:
     def __init__(
         self,
+        grade_getter,
         rich,
-        state,
         detector,
         renderer_settings,
         settings,
     ):
+        # grade_getter: DataNode[None -> List[int]]
+        self.grade_getter = dn.DataNode.wrap(grade_getter)
         self.rich = rich
-        self.state = state  # object with property `perfs`
         self.detector = detector
         self.renderer_settings = renderer_settings
         self.settings = settings
-        self.last_perf = (0.0, -1)
-        self.last_hit = (0.0, 0.0)
 
     @dn.datanode
     def load(self):
-        perf_appearances = {
-            key: (
+        perf_appearances = [
+            (
                 self.rich.parse(f"[restore]{appearance1}[/]"),
                 self.rich.parse(f"[restore]{appearance2}[/]"),
             )
-            for key, (
-                appearance1,
-                appearance2,
-            ) in self.settings.performances_appearances.items()
-        }
+            for appearance1, appearance2 in self.settings.performances_appearances
+        ]
         sight_appearances = [
             (self.rich.parse(appearance1), self.rich.parse(appearance2))
             for appearance1, appearance2 in self.settings.sight_appearances
@@ -233,51 +203,62 @@ class SightWidget:
 
         self.detector.add_listener(listen)
 
-        def sight_func(time):
-            perfs = self.state.perfs
+        @dn.datanode
+        def sight_node():
+            last_grade = (0.0, 0)
+            last_hit = (0.0, 0.0)
 
-            # draw perf hint
-            while len(perfs) > self.last_perf[1] + 1:
-                index = self.last_perf[1] + 1
-                perf = perfs[index]
-                self.last_perf = (perf_sustain_time, index)
+            with self.grade_getter:
+                time = yield
+                while True:
+                    # draw perf hint
+                    try:
+                        new_grades = self.grade_getter.send(None)
+                    except StopIteration:
+                        return
 
-            if self.last_perf[0] > 0:
-                perf_ap = perf_appearances[perfs[self.last_perf[1]].grade]
+                    if new_grades:
+                        last_grade = (perf_sustain_time, new_grades[-1])
 
-                self.last_perf = (
-                    self.last_perf[0] - 1 / framerate,
-                    self.last_perf[1],
-                )
+                    perf_index = last_grade[1] + len(perf_appearances) // 2
+                    if last_grade[0] > 0 and perf_index in range(len(perf_appearances)):
+                        perf_ap = perf_appearances[perf_index]
 
-            else:
-                perf_ap = (mu.Text(""), mu.Text(""))
+                        last_grade = (
+                            last_grade[0] - 1 / framerate,
+                            last_grade[1],
+                        )
 
-            # draw sight
-            while not new_hits.empty():
-                self.last_hit = new_hits.get()
+                    else:
+                        perf_ap = (mu.Group(()), mu.Group(()))
 
-            if self.last_hit[0] > 0 or self.last_hit[1] > 0:
-                strength = max(0.0, min(1.0, self.last_hit[1]))
-                loudness = int(strength * (len(sight_appearances) - 1))
-                loudness = max(1, loudness)
-                sight_ap = sight_appearances[loudness]
+                    # draw sight
+                    while not new_hits.empty():
+                        last_hit = new_hits.get()
 
-                self.last_hit = (
-                    self.last_hit[0] - 1 / framerate,
-                    self.last_hit[1] - 1 / framerate / hit_decay_time,
-                )
+                    if last_hit[0] > 0 or last_hit[1] > 0:
+                        strength = max(0.0, min(1.0, last_hit[1]))
+                        loudness = int(strength * (len(sight_appearances) - 1))
+                        loudness = max(1, loudness)
+                        sight_ap = sight_appearances[loudness]
 
-            else:
-                sight_ap = sight_appearances[0]
+                        last_hit = (
+                            last_hit[0] - 1 / framerate,
+                            last_hit[1] - 1 / framerate / hit_decay_time,
+                        )
 
-            return (
-                mu.Group((perf_ap[0], sight_ap[0])),
-                mu.Group((perf_ap[1], sight_ap[1])),
-            )
+                    else:
+                        sight_ap = sight_appearances[0]
+
+                    res = (
+                        mu.Group((perf_ap[0], sight_ap[0])),
+                        mu.Group((perf_ap[1], sight_ap[1])),
+                    )
+
+                    time = yield res
 
         yield
-        return sight_func
+        return sight_node()
 
 
 # beatbar
@@ -729,9 +710,12 @@ class BeatbarWidgetBuilder:
                 progress_getter, time_getter, self.rich, widget_settings
             )
         elif isinstance(widget_settings, BeatbarWidgetBuilder.sight):
+            grade_getter = dn.pipe(
+                observe(self.state.perfs), lambda perfs: [perf.grade.shift for perf in perfs]
+            )
             return SightWidget(
+                grade_getter,
                 self.rich,
-                self.state,
                 self.detector,
                 self.devices_settings.renderer,
                 widget_settings,
