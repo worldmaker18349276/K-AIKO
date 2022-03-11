@@ -1,6 +1,7 @@
 import os
 import dataclasses
 from pathlib import Path
+from enum import Enum
 from typing import List, Tuple, Dict, Optional, Union
 from collections import OrderedDict
 from fractions import Fraction
@@ -455,7 +456,7 @@ class OneshotTarget(Target):
         playfield.reset_sight(start=self.range[0])
 
     def hit(self, state, playfield, time, strength, is_correct_key=True):
-        perf = beatbar.Performance.judge(
+        perf = Performance.judge(
             self.performance_tolerance, self.time, time, is_correct_key
         )
         state.add_perf(perf)
@@ -463,7 +464,7 @@ class OneshotTarget(Target):
 
     def finish(self, state, playfield, perf=None):
         if perf is None:
-            perf = beatbar.Performance.judge(self.performance_tolerance, self.time)
+            perf = Performance.judge(self.performance_tolerance, self.time)
         self.perf = perf
         state.add_full_score(self.full_score)
         state.add_score(self.score)
@@ -777,7 +778,7 @@ class Roll(Target):
         self.roll += 1
 
         if self.roll <= self.number:
-            perf = beatbar.Performance.judge(
+            perf = Performance.judge(
                 self.performance_tolerance, self.times[self.roll - 1], time, True
             )
             state.add_perf(perf)
@@ -793,7 +794,7 @@ class Roll(Target):
         state.add_full_score(self.full_score)
 
         for time in self.times[self.roll :]:
-            perf = beatbar.Performance.judge(self.performance_tolerance, time)
+            perf = Performance.judge(self.performance_tolerance, time)
             state.add_perf(perf)
 
 
@@ -919,6 +920,113 @@ class Spin(Target):
             playfield.draw_sight(appearance, duration=self.finish_sustain_time)
 
 
+# performance
+class PerformanceGrade(Enum):
+    MISS = (None, None)
+    PERFECT = (0, False)
+    LATE_GOOD = (+1, False)
+    EARLY_GOOD = (-1, False)
+    LATE_BAD = (+2, False)
+    EARLY_BAD = (-2, False)
+    LATE_FAILED = (+3, False)
+    EARLY_FAILED = (-3, False)
+    PERFECT_WRONG = (0, True)
+    LATE_GOOD_WRONG = (+1, True)
+    EARLY_GOOD_WRONG = (-1, True)
+    LATE_BAD_WRONG = (+2, True)
+    EARLY_BAD_WRONG = (-2, True)
+    LATE_FAILED_WRONG = (+3, True)
+    EARLY_FAILED_WRONG = (-3, True)
+
+    def __init__(self, shift, is_wrong):
+        self.shift = shift
+        self.is_wrong = is_wrong
+
+    def __repr__(self):
+        return f"PerformanceGrade.{self.name}"
+
+
+class Performance:
+    def __init__(self, grade, time, err):
+        self.grade = grade
+        self.time = time
+        self.err = err
+
+    @staticmethod
+    def judge(tol, time, hit_time=None, is_correct_key=True):
+        if hit_time is None:
+            return Performance(PerformanceGrade.MISS, time, None)
+
+        is_wrong = not is_correct_key
+        err = hit_time - time
+        shift = next((i for i in range(3) if abs(err) < tol * (2 * i + 1)), 3)
+        if err < 0:
+            shift = -shift
+
+        for grade in PerformanceGrade:
+            if grade.shift == shift and grade.is_wrong == is_wrong:
+                return Performance(grade, time, err)
+
+    @property
+    def shift(self):
+        return self.grade.shift
+
+    @property
+    def is_wrong(self):
+        return self.grade.is_wrong
+
+    @property
+    def is_miss(self):
+        return self.grade == PerformanceGrade.MISS
+
+    descriptions = {
+        PerformanceGrade.MISS: "Miss",
+        PerformanceGrade.PERFECT: "Perfect",
+        PerformanceGrade.LATE_GOOD: "Late Good",
+        PerformanceGrade.EARLY_GOOD: "Early Good",
+        PerformanceGrade.LATE_BAD: "Late Bad",
+        PerformanceGrade.EARLY_BAD: "Early Bad",
+        PerformanceGrade.LATE_FAILED: "Late Failed",
+        PerformanceGrade.EARLY_FAILED: "Early Failed",
+        PerformanceGrade.PERFECT_WRONG: "Perfect but Wrong Key",
+        PerformanceGrade.LATE_GOOD_WRONG: "Late Good but Wrong Key",
+        PerformanceGrade.EARLY_GOOD_WRONG: "Early Good but Wrong Key",
+        PerformanceGrade.LATE_BAD_WRONG: "Late Bad but Wrong Key",
+        PerformanceGrade.EARLY_BAD_WRONG: "Early Bad but Wrong Key",
+        PerformanceGrade.LATE_FAILED_WRONG: "Late Failed but Wrong Key",
+        PerformanceGrade.EARLY_FAILED_WRONG: "Early Failed but Wrong Key",
+    }
+
+    @property
+    def description(self):
+        return self.descriptions[self.grade]
+
+
+class BeatmapScore:
+    def __init__(self):
+        self.total_subjects = 0
+        self.finished_subjects = 0
+        self.full_score = 0
+        self.score = 0
+        self.perfs = []
+        self.time = 0.0
+
+    def set_total_subjects(self, total_subjects):
+        self.total_subjects = total_subjects
+
+    def add_score(self, score):
+        self.score += score
+
+    def add_full_score(self, full_score):
+        self.full_score += full_score
+
+    def add_finished(self, finished=1):
+        self.finished_subjects += finished
+
+    def add_perf(self, perf):
+        self.perfs.append(perf)
+
+
 # beatmap
 class BeatmapSettings(cfg.Configurable):
     r"""
@@ -963,29 +1071,29 @@ class BeatmapSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        performances_scores : dict from beatbar.PerformanceGrade to int
+        performances_scores : dict from PerformanceGrade to int
             The grades of different performance.
         roll_rock_score : int
             The score of each rock in the roll note.
         spin_score : int
             The score of sping note.
         """
-        performances_scores: Dict[beatbar.PerformanceGrade, int] = {
-            beatbar.PerformanceGrade.MISS: 0,
-            beatbar.PerformanceGrade.LATE_FAILED: 0,
-            beatbar.PerformanceGrade.LATE_BAD: 2,
-            beatbar.PerformanceGrade.LATE_GOOD: 8,
-            beatbar.PerformanceGrade.PERFECT: 16,
-            beatbar.PerformanceGrade.EARLY_GOOD: 8,
-            beatbar.PerformanceGrade.EARLY_BAD: 2,
-            beatbar.PerformanceGrade.EARLY_FAILED: 0,
-            beatbar.PerformanceGrade.LATE_FAILED_WRONG: 0,
-            beatbar.PerformanceGrade.LATE_BAD_WRONG: 1,
-            beatbar.PerformanceGrade.LATE_GOOD_WRONG: 4,
-            beatbar.PerformanceGrade.PERFECT_WRONG: 8,
-            beatbar.PerformanceGrade.EARLY_GOOD_WRONG: 4,
-            beatbar.PerformanceGrade.EARLY_BAD_WRONG: 1,
-            beatbar.PerformanceGrade.EARLY_FAILED_WRONG: 0,
+        performances_scores: Dict[PerformanceGrade, int] = {
+            PerformanceGrade.MISS: 0,
+            PerformanceGrade.LATE_FAILED: 0,
+            PerformanceGrade.LATE_BAD: 2,
+            PerformanceGrade.LATE_GOOD: 8,
+            PerformanceGrade.PERFECT: 16,
+            PerformanceGrade.EARLY_GOOD: 8,
+            PerformanceGrade.EARLY_BAD: 2,
+            PerformanceGrade.EARLY_FAILED: 0,
+            PerformanceGrade.LATE_FAILED_WRONG: 0,
+            PerformanceGrade.LATE_BAD_WRONG: 1,
+            PerformanceGrade.LATE_GOOD_WRONG: 4,
+            PerformanceGrade.PERFECT_WRONG: 8,
+            PerformanceGrade.EARLY_GOOD_WRONG: 4,
+            PerformanceGrade.EARLY_BAD_WRONG: 1,
+            PerformanceGrade.EARLY_FAILED_WRONG: 0,
         }
 
         performances_max_score = property(
@@ -1152,31 +1260,6 @@ class GameplaySettings(cfg.Configurable):
         knock_energy_adjust_step: float = 0.0001
 
     widgets = cfg.subconfig(beatbar.BeatbarWidgetSettings)
-
-
-class BeatmapScore:
-    def __init__(self):
-        self.total_subjects = 0
-        self.finished_subjects = 0
-        self.full_score = 0
-        self.score = 0
-        self.perfs = []
-        self.time = 0.0
-
-    def set_total_subjects(self, total_subjects):
-        self.total_subjects = total_subjects
-
-    def add_score(self, score):
-        self.score += score
-
-    def add_full_score(self, full_score):
-        self.full_score += full_score
-
-    def add_finished(self, finished=1):
-        self.finished_subjects += finished
-
-    def add_perf(self, perf):
-        self.perfs.append(perf)
 
 
 @dataclasses.dataclass
