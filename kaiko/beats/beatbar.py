@@ -389,86 +389,103 @@ class Beatbar:
         return
 
     @dn.datanode
-    def _content_node(self, pos_func, text_func, start, duration):
+    def _content_node(self, pos_node, text_node, start, duration):
         mask = self.content_mask
 
-        (view, msg, logs), time, width = yield
+        with pos_node, text_node:
+            (view, msg, logs), time, width = yield
 
-        if start is None:
-            start = time
+            if start is None:
+                start = time
 
-        while time < start:
-            (view, msg, logs), time, width = yield (view, msg, logs)
-
-        while duration is None or time < start + duration:
-            ran = engines.to_range(mask.start, mask.stop, width)
-
-            pos = pos_func(time)
-            text = text_func(time)
-            shift = self.bar_shift
-            flip = self.bar_flip
-
-            pos = pos + shift
-            if flip:
-                pos = 1 - pos
-
-            index = pos * max(0, len(ran) - 1)
-            if not math.isfinite(index):
+            while time < start:
                 (view, msg, logs), time, width = yield (view, msg, logs)
-                continue
 
-            index = round(index)
-            if isinstance(text, tuple):
-                text = text[flip]
-            if text is not None:
-                view.add_markup(text, mask, shift=index)
+            while duration is None or time < start + duration:
+                ran = engines.to_range(mask.start, mask.stop, width)
 
-            (view, msg, logs), time, width = yield (view, msg, logs)
+                try:
+                    pos = pos_node.send(time)
+                    text = text_node.send(time)
+                except StopIteration:
+                    return
+
+                shift = self.bar_shift
+                flip = self.bar_flip
+
+                pos = pos + shift
+                if flip:
+                    pos = 1 - pos
+
+                index = pos * max(0, len(ran) - 1)
+                if not math.isfinite(index):
+                    (view, msg, logs), time, width = yield (view, msg, logs)
+                    continue
+
+                index = round(index)
+                if isinstance(text, tuple):
+                    text = text[flip]
+                if text is not None:
+                    view.add_markup(text, mask, shift=index)
+
+                (view, msg, logs), time, width = yield (view, msg, logs)
 
     def draw_content(self, pos, text, start=None, duration=None, zindex=(0,)):
-        pos_func = pos if hasattr(pos, "__call__") else lambda time: pos
-        text_func = text if hasattr(text, "__call__") else lambda time: text
+        pos_node = dn.DataNode.wrap(
+            pos if not isinstance(pos, (int, float)) else lambda time: pos
+        )
+        text_node = dn.DataNode.wrap(
+            text if not isinstance(text, mu.Markup) else lambda time: text
+        )
 
-        node = self._content_node(pos_func, text_func, start, duration)
+        node = self._content_node(pos_node, text_node, start, duration)
         zindex_ = (
             (lambda: (0, *zindex())) if hasattr(zindex, "__call__") else (0, *zindex)
         )
         return self.renderer.add_drawer(node, zindex=zindex_)
 
     @dn.datanode
-    def _title_node(self, pos_func, text_func, start, duration):
+    def _title_node(self, pos_node, text_node, start, duration):
         mask = self.content_mask
 
-        (view, msg, logs), time, width = yield
+        with pos_node, text_node:
+            (view, msg, logs), time, width = yield
 
-        if start is None:
-            start = time
+            if start is None:
+                start = time
 
-        while time < start:
-            (view, msg, logs), time, width = yield (view, msg, logs)
+            while time < start:
+                (view, msg, logs), time, width = yield (view, msg, logs)
 
-        while duration is None or time < start + duration:
-            ran = engines.to_range(mask.start, mask.stop, width)
+            while duration is None or time < start + duration:
+                ran = engines.to_range(mask.start, mask.stop, width)
 
-            pos = pos_func(time)
-            text = text_func(time)
+                try:
+                    pos = pos_node.send(time)
+                    text = text_node.send(time)
+                except StopIteration:
+                    return
 
-            index = pos * max(0, len(ran) - 1)
-            if not math.isfinite(index):
-                time, ran = yield None
-                continue
+                index = pos * max(0, len(ran) - 1)
+                if not math.isfinite(index):
+                    time, ran = yield None
+                    continue
 
-            index = round(index)
-            if text is not None:
-                view.add_markup(text, mask, shift=index)
+                index = round(index)
+                if text is not None:
+                    view.add_markup(text, mask, shift=index)
 
-            (view, msg, logs), time, width = yield (view, msg, logs)
+                (view, msg, logs), time, width = yield (view, msg, logs)
 
     def draw_title(self, pos, text, start=None, duration=None, zindex=(10,)):
-        pos_func = pos if hasattr(pos, "__call__") else lambda time: pos
-        text_func = text if hasattr(text, "__call__") else lambda time: text
+        pos_node = dn.DataNode.wrap(
+            pos if not isinstance(pos, (int, float)) else lambda time: pos
+        )
+        text_node = dn.DataNode.wrap(
+            text if not isinstance(text, mu.Markup) else lambda time: text
+        )
 
-        node = self._title_node(pos_func, text_func, start, duration)
+        node = self._title_node(pos_node, text_node, start, duration)
         zindex_ = (
             (lambda: (0, *zindex())) if hasattr(zindex, "__call__") else (0, *zindex)
         )
