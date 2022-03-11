@@ -362,9 +362,9 @@ class Beatbar:
             slice(-footer_width, None) if footer_width > 0 else slice(0, 0)
         )
 
-        self.icon_func = icon
-        self.header_func = header
-        self.footer_func = footer
+        self.icon = icon
+        self.header = header
+        self.footer = footer
         self.sight_func = sight
 
     @dn.datanode
@@ -378,14 +378,11 @@ class Beatbar:
         # register handlers
         self.current_sight = TimedVariable(value=self.sight_func)
 
-        icon_drawer = lambda arg: self.icon_func(arg[0], arg[1])
-        header_drawer = lambda arg: self.header_func(arg[0], arg[1])
-        footer_drawer = lambda arg: self.footer_func(arg[0], arg[1])
         sight_drawer = lambda time: self.current_sight.get(time).value(time)
 
-        self.renderer.add_text(icon_drawer, xmask=self.icon_mask, zindex=(1,))
-        self.renderer.add_text(header_drawer, xmask=self.header_mask, zindex=(2,))
-        self.renderer.add_text(footer_drawer, xmask=self.footer_mask, zindex=(3,))
+        self.renderer.add_text(self.icon, xmask=self.icon_mask, zindex=(1,))
+        self.renderer.add_text(self.header, xmask=self.header_mask, zindex=(2,))
+        self.renderer.add_text(self.footer, xmask=self.footer_mask, zindex=(3,))
         self.draw_content(0.0, sight_drawer, zindex=(2,))
 
         yield

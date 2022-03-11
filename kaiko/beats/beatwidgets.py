@@ -157,7 +157,8 @@ class SpectrumWidget:
         )
         self.mixer.add_effect(handler, zindex=(-1,))
 
-        def widget_func(time, ran):
+        def widget_func(arg):
+            time, ran = arg
             width = len(ran)
             text = mu.Text(f"{self.spectrum:^{width}.{width}s}")
             return mu.replace_slot(template, text)
@@ -212,7 +213,8 @@ class VolumeIndicatorWidget:
         handler = dn.pipe(lambda a: a[0], dn.branch(volume_indicator()))
         self.mixer.add_effect(handler, zindex=(-1,))
 
-        def widget_func(time, ran):
+        def widget_func(arg):
+            time, ran = arg
             width = len(ran)
             text = mu.Text("▮" * int(self.volume * width))
             return mu.replace_slot(template, text)
@@ -269,7 +271,8 @@ class AccuracyMeterWidget:
             for a in colors
         ]
 
-        def widget_func(time, ran):
+        def widget_func(arg):
+            time, ran = arg
             new_err = []
             while len(self.perfs) > self.last_perf:
                 err = self.accuracy_getter(self.perfs[self.last_perf])
@@ -330,7 +333,8 @@ class MonitorWidget:
         ticks_len = len(ticks)
         monitor = self.target.monitor if self.target is not None else None
 
-        def widget_func(time, ran):
+        def widget_func(arg):
+            time, ran = arg
             if monitor is None:
                 return mu.Text("")
             if monitor.eff is None:
@@ -370,7 +374,8 @@ class ScoreWidget:
     def load(self):
         template = self.rich.parse(self.settings.template, slotted=True)
 
-        def widget_func(time, ran):
+        def widget_func(arg):
+            time, ran = arg
             score, full_score = self.score_getter()
             width = len(ran)
 
@@ -418,7 +423,8 @@ class ProgressWidget:
     def load(self):
         template = self.rich.parse(self.settings.template, slotted=True)
 
-        def widget_func(time, ran):
+        def widget_func(arg):
+            time, ran = arg
             progress = self.progress_getter()
             time = self.time_getter()
 
@@ -480,7 +486,8 @@ class PatternsWidget:
 
         markuped_patterns = [self.rich.parse(pattern) for pattern in patterns]
 
-        def patterns_func(time, ran):
+        def patterns_func(arg):
+            time, ran = arg
             beat = self.metronome.beat(time)
             ind = int(beat * len(markuped_patterns) // 1) % len(markuped_patterns)
             return markuped_patterns[ind]
@@ -519,7 +526,8 @@ class MarkerWidget:
             self.rich.parse(markers[1]),
         )
 
-        def marker_func(time, ran):
+        def marker_func(arg):
+            time, ran = arg
             beat = self.metronome.beat(time)
             if beat % 4 < min(1.0, blink_ratio):
                 return markuped_markers[1]

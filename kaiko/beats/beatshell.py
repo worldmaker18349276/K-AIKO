@@ -1729,8 +1729,8 @@ class BeatPrompt:
         settings : BeatShellSettings
         rich : markups.RichParser
         metronome : engines.Metronome
-        icon : function
-        marker : function
+        icon : DataNode
+        marker : DataNode
         caret : function
         monitor : engines.Monitor or None
         """
@@ -1757,8 +1757,8 @@ class BeatPrompt:
 
         # widgets
         self.metronome = metronome
-        self.icon_func = icon
-        self.marker_func = marker
+        self.icon = icon
+        self.marker = marker
         self.caret_func = caret
 
     def register(self, renderer):
@@ -1770,9 +1770,6 @@ class BeatPrompt:
         marker_mask = slice(icon_width, icon_width + marker_width)
         input_mask = slice(icon_width + marker_width, None)
 
-        icon_drawer = lambda arg: self.icon_func(arg[0], arg[1])
-        marker_drawer = lambda arg: self.marker_func(arg[0], arg[1])
-
         renderer.add_drawer(self.state_updater(), zindex=())
         renderer.add_drawer(self.update_metronome(), zindex=(0,))
         renderer.add_drawer(self.adjust_input_offset(), zindex=(0,))
@@ -1780,8 +1777,8 @@ class BeatPrompt:
         renderer.add_text(self.text_handler(), input_mask, zindex=(1,))
         renderer.add_text(*self.get_left_ellipsis_func(input_mask), zindex=(1, 10))
         renderer.add_text(*self.get_right_ellipsis_func(input_mask), zindex=(1, 10))
-        renderer.add_text(icon_drawer, icon_mask, zindex=(2,))
-        renderer.add_text(marker_drawer, marker_mask, zindex=(3,))
+        renderer.add_text(self.icon, icon_mask, zindex=(2,))
+        renderer.add_text(self.marker, marker_mask, zindex=(3,))
 
     @dn.datanode
     def state_updater(self):
