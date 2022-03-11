@@ -378,9 +378,9 @@ class Beatbar:
         # register handlers
         self.current_sight = TimedVariable(value=self.sight_func)
 
-        icon_drawer = lambda arg: (0, self.icon_func(arg[0], arg[1]))
-        header_drawer = lambda arg: (0, self.header_func(arg[0], arg[1]))
-        footer_drawer = lambda arg: (0, self.footer_func(arg[0], arg[1]))
+        icon_drawer = lambda arg: self.icon_func(arg[0], arg[1])
+        header_drawer = lambda arg: self.header_func(arg[0], arg[1])
+        footer_drawer = lambda arg: self.footer_func(arg[0], arg[1])
         sight_drawer = lambda time: self.current_sight.get(time).value(time)
 
         self.renderer.add_text(icon_drawer, xmask=self.icon_mask, zindex=(1,))
@@ -393,15 +393,19 @@ class Beatbar:
 
     @dn.datanode
     def _content_node(self, pos_func, text_func, start, duration):
-        time, ran = yield
+        mask = self.content_mask
+
+        (view, msg, logs), time, width = yield
 
         if start is None:
             start = time
 
         while time < start:
-            time, ran = yield None
+            (view, msg, logs), time, width = yield (view, msg, logs)
 
         while duration is None or time < start + duration:
+            ran = engines.to_range(mask.start, mask.stop, width)
+
             pos = pos_func(time)
             text = text_func(time)
             shift = self.bar_shift
@@ -413,13 +417,16 @@ class Beatbar:
 
             index = pos * max(0, len(ran) - 1)
             if not math.isfinite(index):
-                time, ran = yield None
+                (view, msg, logs), time, width = yield (view, msg, logs)
                 continue
 
             index = round(index)
             if isinstance(text, tuple):
                 text = text[flip]
-            time, ran = yield index, text
+            if text is not None:
+                view.add_markup(text, mask, shift=index)
+
+            (view, msg, logs), time, width = yield (view, msg, logs)
 
     def draw_content(self, pos, text, start=None, duration=None, zindex=(0,)):
         pos_func = pos if hasattr(pos, "__call__") else lambda time: pos
@@ -429,19 +436,23 @@ class Beatbar:
         zindex_ = (
             (lambda: (0, *zindex())) if hasattr(zindex, "__call__") else (0, *zindex)
         )
-        return self.renderer.add_text(node, self.content_mask, zindex=zindex_)
+        return self.renderer.add_drawer(node, zindex=zindex_)
 
     @dn.datanode
     def _title_node(self, pos_func, text_func, start, duration):
-        time, ran = yield
+        mask = self.content_mask
+
+        (view, msg, logs), time, width = yield
 
         if start is None:
             start = time
 
         while time < start:
-            time, ran = yield None
+            (view, msg, logs), time, width = yield (view, msg, logs)
 
         while duration is None or time < start + duration:
+            ran = engines.to_range(mask.start, mask.stop, width)
+
             pos = pos_func(time)
             text = text_func(time)
 
@@ -451,7 +462,10 @@ class Beatbar:
                 continue
 
             index = round(index)
-            time, ran = yield index, text
+            if text is not None:
+                view.add_markup(text, mask, shift=index)
+
+            (view, msg, logs), time, width = yield (view, msg, logs)
 
     def draw_title(self, pos, text, start=None, duration=None, zindex=(10,)):
         pos_func = pos if hasattr(pos, "__call__") else lambda time: pos
@@ -461,7 +475,7 @@ class Beatbar:
         zindex_ = (
             (lambda: (0, *zindex())) if hasattr(zindex, "__call__") else (0, *zindex)
         )
-        return self.renderer.add_text(node, self.content_mask, zindex=zindex_)
+        return self.renderer.add_drawer(node, zindex=zindex_)
 
     def remove_content_drawer(self, key):
         self.renderer.remove_drawer(key)

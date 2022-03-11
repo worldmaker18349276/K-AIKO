@@ -886,13 +886,12 @@ class Renderer:
                 xran = to_range(xmask.start, xmask.stop, width)
 
                 try:
-                    res = text_node.send((time, xran))
+                    text = text_node.send((time, xran))
                 except StopIteration:
                     return
 
-                if res is not None:
-                    xshift, text = res
-                    view.add_markup(text, xmask, xshift)
+                if text is not None:
+                    view.add_markup(text, xmask)
 
                 (view, msg, logs), time, width = yield (view, msg, logs)
 

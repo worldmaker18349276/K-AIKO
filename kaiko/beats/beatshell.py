@@ -1770,16 +1770,16 @@ class BeatPrompt:
         marker_mask = slice(icon_width, icon_width + marker_width)
         input_mask = slice(icon_width + marker_width, None)
 
-        icon_drawer = lambda arg: (0, self.icon_func(arg[0], arg[1]))
-        marker_drawer = lambda arg: (0, self.marker_func(arg[0], arg[1]))
+        icon_drawer = lambda arg: self.icon_func(arg[0], arg[1])
+        marker_drawer = lambda arg: self.marker_func(arg[0], arg[1])
 
         renderer.add_drawer(self.state_updater(), zindex=())
         renderer.add_drawer(self.update_metronome(), zindex=(0,))
         renderer.add_drawer(self.adjust_input_offset(), zindex=(0,))
         renderer.add_drawer(self.hint_handler(), zindex=(1,))
         renderer.add_text(self.text_handler(), input_mask, zindex=(1,))
-        renderer.add_text(self.get_left_ellipsis_func(), input_mask, zindex=(1, 10))
-        renderer.add_text(self.get_right_ellipsis_func(), input_mask, zindex=(1, 10))
+        renderer.add_text(*self.get_left_ellipsis_func(input_mask), zindex=(1, 10))
+        renderer.add_text(*self.get_right_ellipsis_func(input_mask), zindex=(1, 10))
         renderer.add_text(icon_drawer, icon_mask, zindex=(2,))
         renderer.add_text(marker_drawer, marker_mask, zindex=(3,))
 
@@ -1994,16 +1994,41 @@ class BeatPrompt:
                     else None
                 )
                 markup = caret_node.send((markup, caret))
+                markup = mu.Group((mu.DX(dx=-self.input_offset), markup))
 
-                time, ran = yield -self.input_offset, markup
+                time, ran = yield markup
 
-    def get_left_ellipsis_func(self):
-        ellipis = mu.Text("…")
-        return lambda arg: ((0, ellipis) if self.left_overflow else None)
+    def get_left_ellipsis_func(self, input_mask):
+        ellipsis = mu.Text("…")
+        width = 1
 
-    def get_right_ellipsis_func(self):
-        ellipis = mu.Text("…")
-        return lambda arg: ((len(arg[1]) - 1, ellipis) if self.right_overflow else None)
+        if input_mask.start is None:
+            left_ellipsis_stop = width
+        elif input_mask.start >= 0 or input_mask.start + width < 0:
+            left_ellipsis_stop = input_mask.start + width
+        else:
+            left_ellipsis_stop = None
+        left_ellipsis_mask = slice(input_mask.start, left_ellipsis_stop)
+
+        left_ellipsis_func = lambda arg: (ellipsis if self.left_overflow else None)
+
+        return left_ellipsis_func, left_ellipsis_mask
+
+    def get_right_ellipsis_func(self, input_mask):
+        ellipsis = mu.Text("…")
+        width = 1
+
+        if input_mask.stop is None:
+            right_ellipsis_start = -width
+        elif input_mask.stop < 0 or input_mask.stop - width >= 0:
+            right_ellipsis_start = input_mask.stop - width
+        else:
+            right_ellipsis_start = None
+        right_ellipsis_mask = slice(right_ellipsis_start, input_mask.stop)
+
+        right_ellipsis_func = lambda arg: (ellipsis if self.right_overflow else None)
+
+        return right_ellipsis_func, right_ellipsis_mask
 
     def markup_hint(self, msgs, hint):
         r"""Render hint.
