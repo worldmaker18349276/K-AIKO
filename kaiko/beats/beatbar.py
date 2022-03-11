@@ -376,14 +376,12 @@ class Beatbar:
         self.detector.add_listener(hit_handler)
 
         # register handlers
-        self.current_sight = TimedVariable(value=self.sight_func)
-
-        sight_drawer = lambda time: self.current_sight.get(time).value(time)
+        self.sight_scheduler = Scheduler(default=self.sight_func)
 
         self.renderer.add_text(self.icon, xmask=self.icon_mask, zindex=(1,))
         self.renderer.add_text(self.header, xmask=self.header_mask, zindex=(2,))
         self.renderer.add_text(self.footer, xmask=self.footer_mask, zindex=(3,))
-        self.draw_content(0.0, sight_drawer, zindex=(2,))
+        self.draw_content(0.0, self.sight_scheduler, zindex=(2,))
 
         yield
         return
@@ -548,11 +546,13 @@ class Beatbar:
         self.target_queue.put((node, start, duration))
 
     def draw_sight(self, text, start=None, duration=None):
-        text_func = text if hasattr(text, "__call__") else lambda time: text
-        self.current_sight.set(text_func, start, duration)
+        text_node = dn.DataNode.wrap(
+            text if not isinstance(text, tuple) else lambda time: text
+        )
+        self.sight_scheduler.set(text_node, start, duration)
 
     def reset_sight(self, start=None):
-        self.current_sight.reset(start)
+        self.sight_scheduler.reset(start)
 
     def play(
         self,
@@ -583,51 +583,75 @@ class Beatbar:
         self.controller.remove_handler(key)
 
 
-@dataclasses.dataclass
-class TimedValue:
-    value: Any
-    start: Optional[float]
-    duration: float
-
-
-class TimedVariable:
-    def __init__(self, value=None, duration=float("inf")):
+class Scheduler(dn.DataNode):
+    def __init__(self, default):
         self._queue = queue.Queue()
-        self._lock = threading.Lock()
-        self._scheduled_values = []
-        self._default_value = value
-        self._default_duration = duration
-        self._current_value = TimedValue(value, None, float("inf"))
+        super().__init__(self.proxy(default))
 
-    def get(self, time):
-        with self._lock:
-            value = self._current_value
-            if value.start is None:
-                value.start = time
+    class _TimedNode:
+        def __init__(self, value, start, duration):
+            self.value = value
+            self.start = start
+            self.duration = duration
 
+        def __enter__(self):
+            if self.value is not None:
+                self.value.__enter__()
+
+        def __exit__(self, type=None, value=None, traceback=None):
+            if self.value is not None:
+                self.value.__exit__(type, value, traceback)
+
+        def send(self, value, fallback):
+            if self.value is not None:
+                return self.value.send(value)
+            else:
+                return fallback
+
+    def proxy(self, default):
+        default = dn.DataNode.wrap(default)
+        current = self._TimedNode(None, None, float("inf"))
+        scheduled = []
+
+        def fetch(time):
             while not self._queue.empty():
                 item = self._queue.get()
                 if item.start is None:
                     item.start = time
-                self._scheduled_values.append(item)
-            self._scheduled_values.sort(key=lambda item: item.start)
+                scheduled.append(item)
+            scheduled.sort(key=lambda item: item.start)
 
-            while self._scheduled_values and self._scheduled_values[0].start <= time:
-                value = self._scheduled_values.pop(0)
+        with default:
+            time = yield
+            current.start = time
+            fetch(time)
+            while True:
+                with current:
+                    while True:
+                        if scheduled and scheduled[0].start <= time:
+                            current = scheduled.pop(0)
+                            break
 
-            if value.start + value.duration <= time:
-                value = TimedValue(self._default_value, None, float("inf"))
+                        if current.start + current.duration <= time:
+                            current = self._TimedNode(None, time, float("inf"))
+                            break
 
-            self._current_value = value
-            return self._current_value
+                        try:
+                            res = default.send(None)
+                            res = current.send(time, fallback=res)
+                        except StopIteration:
+                            return
 
-    def set(self, value, start=None, duration=None):
+                        time = yield res
+                        fetch(time)
+
+    def set(self, node, start=None, duration=None):
         if duration is None:
-            duration = self._default_duration
-        self._queue.put(TimedValue(value, start, duration))
+            duration = float("inf")
+        self._queue.put(self._TimedNode(node, start, duration))
 
     def reset(self, start=None):
-        self._queue.put(TimedValue(self._default_value, start, float("inf")))
+        self._queue.put(self._TimedNode(None, start, float("inf")))
 
 
 @dn.datanode
