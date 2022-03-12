@@ -633,7 +633,7 @@ class Detector:
                     detected, strength = picker.send(strength)
                     time, ratio = timer.send(None)
                     normalized_strength = strength / knock_energy.get()
-                    bus.send((None, time, normalized_strength, detected))
+                    bus.send((None, time, ratio, normalized_strength, detected))
                 except StopIteration:
                     return
                 data = yield
@@ -667,20 +667,20 @@ class Detector:
     @dn.datanode
     @staticmethod
     def _hit_listener(func, start_time, duration):
-        _, time, strength, detected = yield
+        _, time, ratio, strength, detected = yield
         if start_time is None:
             start_time = time
 
         while time < start_time:
-            _, time, strength, detected = yield
+            _, time, ratio, strength, detected = yield
 
         while duration is None or time < start_time + duration:
-            if detected:
+            if detected and ratio != 0:
                 finished = func(strength)
                 if finished:
                     return
 
-            _, time, strength, detected = yield
+            _, time, ratio, strength, detected = yield
 
 
 @functools.lru_cache(maxsize=32)

@@ -100,7 +100,7 @@ class SightWidget:
         new_hits = queue.Queue()
 
         def listen(args):
-            _, time, strength, detected = args
+            _, time, ratio, strength, detected = args
             if detected:
                 new_hits.put((hit_sustain_time, min(1.0, strength)))
 
@@ -383,7 +383,7 @@ class Beatbar:
 
         while True:
             # update hit signal
-            _, time, strength, detected = yield
+            _, time, ratio, strength, detected = yield
 
             strength = min(1.0, strength)
 
@@ -415,7 +415,7 @@ class Beatbar:
                     break
 
             # send message to listening target
-            if target is not None and detected:
+            if target is not None and detected and ratio != 0:
                 try:
                     target.send((time, strength))
                 except StopIteration:

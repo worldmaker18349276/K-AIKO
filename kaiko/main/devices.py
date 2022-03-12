@@ -504,7 +504,7 @@ class KnockTest:
     @dn.datanode
     def hit_listener(self):
         while True:
-            _, time, strength, detected = yield
+            _, time, ratio, strength, detected = yield
 
             if detected:
                 self.hit_queue.put((time, strength))
