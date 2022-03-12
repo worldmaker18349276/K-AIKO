@@ -489,6 +489,20 @@ class Mixer:
         )
 
 
+class AsyncAdditiveValue:
+    def __init__(self, value):
+        self.value = value
+        self._queue = queue.Queue()
+
+    def add(self, step):
+        self._queue.put(step)
+
+    def get(self):
+        while not self._queue.empty():
+            self.value += self._queue.get()
+        return self.value
+
+
 class DetectorSettings(cfg.Configurable):
     r"""
     Fields
@@ -533,14 +547,15 @@ class DetectorSettings(cfg.Configurable):
 
 
 class Detector:
-    def __init__(self, listeners_bus, clock, settings, monitor):
+    def __init__(self, listeners_bus, clock, knock_energy, settings, monitor):
         self.listeners_bus = listeners_bus
         self.clock = clock
+        self.knock_energy = knock_energy
         self.settings = settings
         self.monitor = monitor
 
     @staticmethod
-    def get_task(bus, clock, settings, manager, init_time, monitor):
+    def get_task(bus, clock, knock_energy, settings, manager, init_time, monitor):
         samplerate = settings.input_samplerate
         buffer_length = settings.input_buffer_length
         nchannels = settings.input_channels
@@ -550,7 +565,9 @@ class Detector:
         time_res = settings.detect.time_res
         hop_length = round(samplerate * time_res)
 
-        input_node = Detector._detect_node(bus, clock, init_time, settings)
+        input_node = Detector._detect_node(
+            bus, clock, knock_energy, init_time, settings
+        )
         if buffer_length != hop_length:
             input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
         if monitor:
@@ -567,7 +584,7 @@ class Detector:
 
     @staticmethod
     @dn.datanode
-    def _detect_node(bus, clock, init_time, settings):
+    def _detect_node(bus, clock, knock_energy, init_time, settings):
         samplerate = settings.input_samplerate
 
         time_res = settings.detect.time_res
@@ -615,7 +632,7 @@ class Detector:
                     strength = onset.send(data)
                     detected, strength = picker.send(strength)
                     time, ratio = timer.send(None)
-                    normalized_strength = strength / settings.knock_energy
+                    normalized_strength = strength / knock_energy.get()
                     bus.send((None, time, normalized_strength, detected))
                 except StopIteration:
                     return
@@ -631,9 +648,12 @@ class Detector:
     @classmethod
     def create(cls, settings, manager, init_time=0.0, monitor=None):
         bus = dn.DataBus()
+        knock_energy = AsyncAdditiveValue(settings.knock_energy)
         clock = Clock()
-        task = cls.get_task(bus, clock, settings, manager, init_time, monitor)
-        return task, cls(bus, clock, settings, monitor)
+        task = cls.get_task(
+            bus, clock, knock_energy, settings, manager, init_time, monitor
+        )
+        return task, cls(bus, clock, knock_energy, settings, monitor)
 
     def add_listener(self, node):
         return self.listeners_bus.add_node(node, (0,))
@@ -798,6 +818,8 @@ class Renderer:
     @staticmethod
     @dn.datanode
     def _resize_node(render_node, settings, term_settings):
+        resize_delay = settings.resize_delay
+
         rich_renderer = mu.RichTextRenderer(term_settings.unicode_version)
         clear_line = rich_renderer.render(rich_renderer.clear_line().expand())
         clear_screen = rich_renderer.render(rich_renderer.clear_screen().expand())
@@ -819,7 +841,7 @@ class Renderer:
                     resized = True
                 if (
                     resized
-                    and time.perf_counter() < resizing_since + settings.resize_delay
+                    and time.perf_counter() < resizing_since + resize_delay
                 ):
                     yield f"{clear_line}resizing...\r"
                     width = size.columns

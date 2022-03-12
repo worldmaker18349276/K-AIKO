@@ -1470,7 +1470,6 @@ class Beatmap:
     @dn.datanode
     def play(self, manager, user, devices_settings, gameplay_settings=None):
         gameplay_settings = gameplay_settings or GameplaySettings()
-        devices_settings = devices_settings.copy()
 
         samplerate = devices_settings.mixer.output_samplerate
         nchannels = devices_settings.mixer.output_channels
@@ -1551,6 +1550,7 @@ class Beatmap:
         # handler
         event_clock = engines.Clock()
 
+        devices_settings = devices_settings.copy()
         settings_changed = Beatmap.register_controllers(
             playfield,
             event_clock,
@@ -1636,11 +1636,13 @@ class Beatmap:
         knock_energy_adjust_keys = controls_settings.knock_energy_adjust_keys
 
         def incr_knock_energy(_):
-            playfield.detector.settings.knock_energy += knock_energy_adjust_step
+            playfield.detector.knock_energy.add(knock_energy_adjust_step)
+            devices_settings.detector.knock_energy += knock_energy_adjust_step
             settings_changed.set()
 
         def decr_knock_energy(_):
-            playfield.detector.settings.knock_energy -= knock_energy_adjust_step
+            playfield.detector.knock_energy.add(-knock_energy_adjust_step)
+            devices_settings.detector.knock_energy -= knock_energy_adjust_step
             settings_changed.set()
 
         playfield.add_handler(incr_knock_energy, knock_energy_adjust_keys[0])
