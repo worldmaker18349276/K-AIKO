@@ -1594,17 +1594,25 @@ class Beatmap:
         def incr_display_delay(arg):
             devices_settings.renderer.display_delay += display_delay_adjust_step
             playfield.renderer.clock.skip(arg[1], display_delay_adjust_step)
-            playfield.renderer.add_log(mu.Text(f"display_delay += {display_delay_adjust_step}\n"))
+            playfield.renderer.add_log(
+                mu.Text(f"display_delay += {display_delay_adjust_step}\n")
+            )
             settings_changed.set()
 
         def decr_display_delay(arg):
             devices_settings.renderer.display_delay -= display_delay_adjust_step
             playfield.renderer.clock.skip(arg[1], -display_delay_adjust_step)
-            playfield.renderer.add_log(mu.Text(f"display_delay -= {display_delay_adjust_step}\n"))
+            playfield.renderer.add_log(
+                mu.Text(f"display_delay -= {display_delay_adjust_step}\n")
+            )
             settings_changed.set()
 
-        playfield.controller.add_handler(incr_display_delay, display_delay_adjust_keys[0])
-        playfield.controller.add_handler(decr_display_delay, display_delay_adjust_keys[1])
+        playfield.controller.add_handler(
+            incr_display_delay, display_delay_adjust_keys[0]
+        )
+        playfield.controller.add_handler(
+            decr_display_delay, display_delay_adjust_keys[1]
+        )
 
         # knock delay
         knock_delay_adjust_step = controls_settings.knock_delay_adjust_step
@@ -1613,13 +1621,17 @@ class Beatmap:
         def incr_knock_delay(arg):
             devices_settings.detector.knock_delay += knock_delay_adjust_step
             playfield.detector.clock.skip(arg[1], knock_delay_adjust_step)
-            playfield.renderer.add_log(mu.Text(f"knock_delay += {knock_delay_adjust_step}\n"))
+            playfield.renderer.add_log(
+                mu.Text(f"knock_delay += {knock_delay_adjust_step}\n")
+            )
             settings_changed.set()
 
         def decr_knock_delay(arg):
             devices_settings.detector.knock_delay -= knock_delay_adjust_step
             playfield.detector.clock.skip(arg[1], -knock_delay_adjust_step)
-            playfield.renderer.add_log(mu.Text(f"knock_delay -= {knock_delay_adjust_step}\n"))
+            playfield.renderer.add_log(
+                mu.Text(f"knock_delay -= {knock_delay_adjust_step}\n")
+            )
             settings_changed.set()
 
         playfield.controller.add_handler(incr_knock_delay, knock_delay_adjust_keys[0])
@@ -1632,13 +1644,17 @@ class Beatmap:
         def incr_knock_energy(_):
             devices_settings.detector.knock_energy += knock_energy_adjust_step
             playfield.detector.knock_energy.add(knock_energy_adjust_step)
-            playfield.renderer.add_log(mu.Text(f"knock_energy += {knock_energy_adjust_step}\n"))
+            playfield.renderer.add_log(
+                mu.Text(f"knock_energy += {knock_energy_adjust_step}\n")
+            )
             settings_changed.set()
 
         def decr_knock_energy(_):
             devices_settings.detector.knock_energy -= knock_energy_adjust_step
             playfield.detector.knock_energy.add(-knock_energy_adjust_step)
-            playfield.renderer.add_log(mu.Text(f"knock_energy -= {knock_energy_adjust_step}\n"))
+            playfield.renderer.add_log(
+                mu.Text(f"knock_energy -= {knock_energy_adjust_step}\n")
+            )
             settings_changed.set()
 
         playfield.controller.add_handler(incr_knock_energy, knock_energy_adjust_keys[0])
@@ -1683,6 +1699,29 @@ class Beatmap:
         playfield.controller.handlers_bus.add_node(pause_node(), (0,))
 
         return settings_changed
+
+    @staticmethod
+    def print_hints(logger, settings):
+        pause_key = settings.controls.pause_key
+        skip_key = settings.controls.skip_key
+        stop_key = settings.controls.stop_key
+        display_keys = settings.controls.display_delay_adjust_keys
+        knock_keys = settings.controls.knock_delay_adjust_keys
+        energy_keys = settings.controls.knock_energy_adjust_keys
+        logger.print(
+            f"[hint/] Press {logger.emph(pause_key)} to pause/resume the game."
+        )
+        logger.print(f"[hint/] Press {logger.emph(skip_key)} to skip time.")
+        logger.print(f"[hint/] Press {logger.emph(stop_key)} to end the game.")
+        logger.print(
+            f"[hint/] Use {logger.emph(display_keys[0])} and {logger.emph(display_keys[1])} to adjust display delay."
+        )
+        logger.print(
+            f"[hint/] Use {logger.emph(knock_keys[0])} and {logger.emph(knock_keys[1])} to adjust hit delay."
+        )
+        logger.print(
+            f"[hint/] Use {logger.emph(energy_keys[0])} and {logger.emph(energy_keys[1])} to adjust hit strength."
+        )
 
     @dn.datanode
     def load_resources(self, output_samplerate, output_nchannels, data_dir):

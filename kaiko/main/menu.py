@@ -543,26 +543,7 @@ class KAIKOPlay:
                 logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
-            pause_key = gameplay_settings.controls.pause_key
-            skip_key = gameplay_settings.controls.skip_key
-            stop_key = gameplay_settings.controls.stop_key
-            display_keys = gameplay_settings.controls.display_delay_adjust_keys
-            knock_keys = gameplay_settings.controls.knock_delay_adjust_keys
-            energy_keys = gameplay_settings.controls.knock_energy_adjust_keys
-            logger.print(
-                f"[hint/] Press {logger.emph(pause_key)} to pause/resume the game."
-            )
-            logger.print(f"[hint/] Press {logger.emph(skip_key)} to skip time.")
-            logger.print(f"[hint/] Press {logger.emph(stop_key)} to end the game.")
-            logger.print(
-                f"[hint/] Use {logger.emph(display_keys[0])} and {logger.emph(display_keys[1])} to adjust display delay."
-            )
-            logger.print(
-                f"[hint/] Use {logger.emph(knock_keys[0])} and {logger.emph(knock_keys[1])} to adjust hit delay."
-            )
-            logger.print(
-                f"[hint/] Use {logger.emph(energy_keys[0])} and {logger.emph(energy_keys[1])} to adjust hit strength."
-            )
+            beatmap.print_hints(logger, gameplay_settings)
             logger.print()
 
             score, devices_settings = yield from beatmap.play(
@@ -612,26 +593,7 @@ class KAIKOLoop:
                 tempo=self.tempo, offset=self.offset, width=width, track=track
             )
 
-            pause_key = gameplay_settings.controls.pause_key
-            skip_key = gameplay_settings.controls.skip_key
-            stop_key = gameplay_settings.controls.stop_key
-            display_keys = gameplay_settings.controls.display_delay_adjust_keys
-            knock_keys = gameplay_settings.controls.knock_delay_adjust_keys
-            energy_keys = gameplay_settings.controls.knock_energy_adjust_keys
-            logger.print(
-                f"[hint/] Press {logger.emph(pause_key)} to pause/resume the game."
-            )
-            logger.print(f"[hint/] Press {logger.emph(skip_key)} to skip time.")
-            logger.print(f"[hint/] Press {logger.emph(stop_key)} to end the game.")
-            logger.print(
-                f"[hint/] Use {logger.emph(display_keys[0])} and {logger.emph(display_keys[1])} to adjust display delay."
-            )
-            logger.print(
-                f"[hint/] Use {logger.emph(knock_keys[0])} and {logger.emph(knock_keys[1])} to adjust hit delay."
-            )
-            logger.print(
-                f"[hint/] Use {logger.emph(energy_keys[0])} and {logger.emph(energy_keys[1])} to adjust hit strength."
-            )
+            beatmap.print_hints(logger, gameplay_settings)
             logger.print()
 
             score, devices_settings = yield from beatmap.play(
