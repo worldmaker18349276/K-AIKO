@@ -1817,9 +1817,10 @@ class BeatPrompt:
 
     @dn.datanode
     def update_metronome(self):
-        key_event = None
-
         (view, msgs, logs), time, width = yield
+        key_event = self.stroke.key_event
+        self.key_pressed_time = time - 100.0
+
         while True:
             if self.stroke.key_event != key_event:
                 key_event = self.stroke.key_event
