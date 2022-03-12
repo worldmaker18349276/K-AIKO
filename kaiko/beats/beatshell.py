@@ -296,7 +296,7 @@ class CaretWidgetSettings:
 
 
 @dataclasses.dataclass
-class Caret:
+class CaretWidget:
     metronome: engines.Metronome
     settings: CaretWidgetSettings
 
@@ -328,9 +328,8 @@ class BeatshellWidgetBuilder:
     marker = beatwidgets.MarkerWidgetSettings
     caret = CaretWidgetSettings
 
-    def __init__(self, metronome, rich, renderer):
-        self.metronome = metronome
-        self.rich = rich
+    def __init__(self, prompt, renderer):
+        self.prompt = prompt
         self.renderer = renderer
 
     def create(self, widget_settings):
@@ -344,15 +343,17 @@ class BeatshellWidgetBuilder:
             else:
                 assert False
         elif isinstance(widget_settings, BeatshellWidgetBuilder.patterns):
-            return beatwidgets.PatternsWidget(self.metronome, widget_settings).load(
-                self.rich
-            )
+            return beatwidgets.PatternsWidget(
+                self.prompt.metronome, widget_settings
+            ).load(self.prompt.rich)
         elif isinstance(widget_settings, BeatshellWidgetBuilder.marker):
-            return beatwidgets.MarkerWidget(self.metronome, widget_settings).load(
-                self.rich
-            )
+            return beatwidgets.MarkerWidget(
+                self.prompt.metronome, widget_settings
+            ).load(self.prompt.rich)
         elif isinstance(widget_settings, BeatshellWidgetBuilder.caret):
-            return Caret(self.metronome, widget_settings).load(self.rich)
+            return CaretWidget(self.prompt.metronome, widget_settings).load(
+                self.prompt.rich
+            )
         else:
             raise TypeError
 
@@ -425,7 +426,7 @@ class BeatShellSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        to : float
+        t0 : float
         tempo : float
 
         icon_width : int
@@ -700,16 +701,10 @@ class BeatInput:
         )
         stroke = BeatStroke(self, shell_settings.input)
 
-        # widgets
+        # prompt
         t0 = shell_settings.prompt.t0
         tempo = shell_settings.prompt.tempo
         metronome = engines.Metronome(t0, tempo)
-
-        widget_builder = BeatshellWidgetBuilder(metronome, self.logger.rich, renderer)
-
-        icon = widget_builder.create(shell_settings.prompt.icons)
-        marker = widget_builder.create(shell_settings.prompt.marker)
-        caret = widget_builder.create(shell_settings.prompt.caret)
 
         prompt = BeatPrompt(
             stroke,
@@ -717,12 +712,15 @@ class BeatInput:
             shell_settings,
             self.logger.rich,
             metronome,
-            icon,
-            marker,
-            caret,
-            renderer_monitor,
         )
 
+        widget_builder = BeatshellWidgetBuilder(prompt, renderer)
+
+        prompt.icon = widget_builder.create(shell_settings.prompt.icons)
+        prompt.marker = widget_builder.create(shell_settings.prompt.marker)
+        prompt.caret = widget_builder.create(shell_settings.prompt.caret)
+
+        # execute
         stroke.register(controller)
         prompt.register(renderer)
 
@@ -1765,9 +1763,7 @@ def starcache(func, key_func=lambda *a: a):
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
-    def __init__(
-        self, stroke, input, settings, rich, metronome, icon, marker, caret, monitor
-    ):
+    def __init__(self, stroke, input, settings, rich, metronome):
         r"""Constructor.
 
         Parameters
@@ -1777,16 +1773,11 @@ class BeatPrompt:
         settings : BeatShellSettings
         rich : markups.RichParser
         metronome : engines.Metronome
-        icon : DataNode
-        marker : DataNode
-        caret : function
-        monitor : engines.Monitor or None
         """
         self.stroke = stroke
 
         self.input = input
         self.settings = settings
-        self.monitor = monitor
         self.fin_event = threading.Event()
         self.key_pressed_time = 0.0
 
@@ -1805,9 +1796,9 @@ class BeatPrompt:
 
         # widgets
         self.metronome = metronome
-        self.icon = dn.DataNode.wrap(icon)
-        self.marker = dn.DataNode.wrap(marker)
-        self.caret = dn.DataNode.wrap(caret)
+        self.icon = lambda _: mu.Group(())
+        self.marker = lambda _: mu.Group(())
+        self.caret = lambda _: None
 
     def register(self, renderer):
         icon_width = self.settings.prompt.icon_width
@@ -2024,9 +2015,10 @@ class BeatPrompt:
         )
         dec_node = starcache(self.decorate_tokens, dec_key)
 
+        caret_widget = dn.DataNode.wrap(self.caret)
         caret_node = starcache(self.render_caret)
 
-        with syntax_node, dec_node, caret_node, self.caret:
+        with syntax_node, dec_node, caret_node, caret_widget:
             time, ran = yield
             while True:
                 typeahead = self.typeahead if not self.clean else ""
@@ -2034,11 +2026,10 @@ class BeatPrompt:
                 markup = syntax_node.send((self.buffer, self.tokens, typeahead))
                 markup = dec_node.send((markup, self.pos, self.highlighted, self.clean))
 
-                caret = (
-                    self.caret.send((time, self.key_pressed_time))
-                    if not self.clean
-                    else None
-                )
+                caret = caret_widget.send((time, self.key_pressed_time))
+                if self.clean:
+                    caret = None
+
                 markup = caret_node.send((markup, caret))
                 markup = mu.Group((mu.DX(dx=-self.input_offset), markup))
 
