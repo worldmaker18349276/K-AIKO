@@ -1763,7 +1763,7 @@ class BeatStroke:
                 self.settings.autocomplete_keys, self.settings.help_key
             )
         )
-        controller.add_handler(self.printable_handler(), "PRINTABLE")
+        controller.add_handler(self.printable_handler())
 
         for key, func in self.settings.keymap.items():
             controller.add_handler(self.action_handler(func), key)
@@ -1773,27 +1773,29 @@ class BeatStroke:
         controller.add_handler(self.unknown_handler(self.settings))
 
     def keypress_handler(self):
-        def keypress(args):
+        def keypress(_):
             self.key_event += 1
 
         return keypress
 
     def confirm_handler(self):
-        return lambda args: self.input.confirm()
+        return lambda _: self.input.confirm()
 
     def help_handler(self):
-        return lambda args: self.input.help()
+        return lambda _: self.input.help()
 
     def autocomplete_handler(self, keys, help_key):
+        next_key, prev_key, cancel_key = keys
+
         def handler(args):
-            key = args[2]
-            if key == keys[0]:
+            _, time, keyname, keycode = args
+            if keyname == next_key:
                 self.input.autocomplete(+1)
-            elif key == keys[1]:
+            elif keyname == prev_key:
                 self.input.autocomplete(-1)
-            elif key == keys[2]:
+            elif keyname == cancel_key:
                 self.input.autocomplete(0)
-            elif key != help_key:
+            elif keyname != help_key:
                 self.input.finish_autocomplete()
 
         return handler
@@ -1804,21 +1806,25 @@ class BeatStroke:
         regex = f"({fn}{op})*{fn}"
         if not re.match(regex, func):
             raise ValueError(f"invalid action: {repr(func)}")
-        return lambda args: eval(func, {}, {"input": self.input})
+        return lambda _: eval(func, {}, {"input": self.input})
 
     def printable_handler(self):
-        return lambda args: self.input.insert(args[3])
+        def handler(args):
+            _, time, keyname, keycode = args
+            if keycode.isprintable():
+                self.input.insert(keycode)
+
+        return handler
 
     def unknown_handler(self, settings):
         keys = list(settings.keymap.keys())
         keys.append(settings.confirm_key)
         keys.append(settings.help_key)
         keys.extend(settings.autocomplete_keys)
-        keys.append("PRINTABLE")
 
         def handler(args):
             _, _, key, code = args
-            if key not in keys:
+            if key not in keys and not key.isprintable():
                 self.input.unknown_key(key)
 
         return handler

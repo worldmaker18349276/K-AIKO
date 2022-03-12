@@ -962,8 +962,6 @@ class Controller:
                     keyname = None
                 elif keycode in keycodes:
                     keyname = keycodes[keycode]
-                elif keycode.isprintable():
-                    keyname = "PRINTABLE"
                 else:
                     keyname = repr(keycode)
 
