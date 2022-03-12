@@ -3,6 +3,7 @@ import dataclasses
 import enum
 import shutil
 import numpy
+import difflib
 from ..utils import datanodes as dn
 from ..utils import config as cfg
 from ..utils import markups as mu
@@ -212,7 +213,7 @@ class Logger:
     def format_code(self, content, title=None, is_changed=False):
         total_width = 80
         lines = content.split("\n")
-        n = len(str(len(lines) - 1))
+        n = len(str(content.count("\n") + 1))
         res = []
         if title is not None:
             change_mark = "*" if is_changed else ""
@@ -221,8 +222,40 @@ class Logger:
         res.append(f"[weight=dim]{'─'*n}──┬─{'─'*(max(0, total_width-n-4))}[/]")
         for i, line in enumerate(lines):
             res.append(
-                f" [weight=dim]{i:>{n}d}[/] [weight=dim]│[/] [color=bright_white]{self.escape(line)}[/]"
+                f" [weight=dim]{i+1:>{n}d}[/] [weight=dim]│[/] [color=bright_white]{self.escape(line)}[/]"
             )
+        res.append(f"[weight=dim]{'─'*n}──┴─{'─'*(max(0, total_width-n-4))}[/]")
+        return "\n".join(res)
+
+    def format_code_diff(self, old, new, title=None, is_changed=False):
+        lines = difflib.Differ().compare(old.split("\n"), new.split("\n"))
+
+        total_width = 80
+        n = len(str(new.count("\n") + 1))
+        res = []
+        if title is not None:
+            change_mark = "*" if is_changed else ""
+            res.append(f"[weight=dim]{'─'*n}────{'─'*(max(0, total_width-n-4))}[/]")
+            res.append(f" [emph]{self.escape(title)}[/]{change_mark}")
+        res.append(f"[weight=dim]{'─'*n}──┬─{'─'*(max(0, total_width-n-4))}[/]")
+        i = 0
+        for line in lines:
+            if line.startswith("  "):
+                res.append(
+                    f" [weight=dim]{i+1:>{n}d}[/] [weight=dim]│[/] [color=bright_white]{self.escape(line[2:])}[/]"
+                )
+                i += 1
+            elif line.startswith("+ "):
+                res.append(
+                    f" [color=bright_blue]{i+1:>{n}d}[/] [weight=dim]│[/] [color=bright_blue]{self.escape(line[2:])}[/]"
+                )
+                i += 1
+            elif line.startswith("- "):
+                res.append(
+                    f" [color=bright_red]{'-':>{n}s}[/] [weight=dim]│[/] [color=bright_red]{self.escape(line[2:])}[/]"
+                )
+            elif line.startswith("? "):
+                pass
         res.append(f"[weight=dim]{'─'*n}──┴─{'─'*(max(0, total_width-n-4))}[/]")
         return "\n".join(res)
 

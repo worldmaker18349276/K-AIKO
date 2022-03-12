@@ -550,19 +550,26 @@ class KAIKOPlay:
                 manager, self.user, devices_settings, gameplay_settings
             ).join()
 
+            logger.print()
+            logger.print_scores(
+                beatmap.settings.difficulty.performance_tolerance, score.perfs
+            )
+
             if devices_settings is not None:
+                logger.print()
                 yes = yield from self.logger.ask(
                     "Keep changes to device settings?"
                 ).join()
                 if yes:
                     logger.print("[data/] Update device settings...")
+                    title = self.profiles.get_title()
+                    old = self.profiles.format()
                     self.profiles.current.devices = devices_settings
+                    new = self.profiles.format()
+                    logger.print(
+                        logger.format_code_diff(old, new, title=title, is_changed=True)
+                    )
                     self.profiles.set_as_changed()
-
-            logger.print()
-            logger.print_scores(
-                beatmap.settings.difficulty.performance_tolerance, score.perfs
-            )
 
 
 class KAIKOLoop:
@@ -600,16 +607,23 @@ class KAIKOLoop:
                 manager, self.user, devices_settings, gameplay_settings
             ).join()
 
+            logger.print()
+            logger.print_scores(
+                beatmap.settings.difficulty.performance_tolerance, score.perfs
+            )
+
             if devices_settings is not None:
+                logger.print()
                 yes = yield from self.logger.ask(
                     "Keep changes to device settings?"
                 ).join()
                 if yes:
                     logger.print("[data/] Update device settings...")
+                    title = self.profiles.get_title()
+                    old = self.profiles.format()
                     self.profiles.current.devices = devices_settings
+                    new = self.profiles.format()
+                    logger.print(
+                        logger.format_code_diff(old, new, title=title, is_changed=True)
+                    )
                     self.profiles.set_as_changed()
-
-            logger.print()
-            logger.print_scores(
-                beatmap.settings.difficulty.performance_tolerance, score.perfs
-            )

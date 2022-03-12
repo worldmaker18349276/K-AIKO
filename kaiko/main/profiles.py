@@ -492,6 +492,27 @@ class ProfilesCommand:
         )
 
     @cmd.function_command
+    def show_diff(self):
+        """[rich]Show the difference of configuration.
+
+        usage: [cmd]profiles[/] [cmd]show_diff[/]
+        """
+        current_path = self.profiles.path / (
+            self.profiles.current_name + self.profiles.extension
+        )
+        if not current_path.exists() or not current_path.is_file():
+            old = ""
+        else:
+            old = open(current_path, "r").read()
+
+        text = self.profiles.format()
+        is_changed = self.profiles.is_changed()
+        title = self.profiles.get_title()
+        self.logger.print(
+            self.logger.format_code_diff(old, text, title=title, is_changed=is_changed)
+        )
+
+    @cmd.function_command
     def has(self, field):
         """[rich]Check whether this field is set in the configuration.
 
@@ -543,6 +564,8 @@ class ProfilesCommand:
 
         usage: [cmd]profiles[/] [cmd]edit[/]
         """
+        title = self.profiles.get_title()
+
         editor = self.profiles.current.devices.terminal.editor
 
         text = cfg.format(
@@ -558,12 +581,18 @@ class ProfilesCommand:
             self.logger.print(f"[warn]Unknown editor: {self.logger.escape(editor)}[/]")
             return
 
-        text = yield from edit(text, editor, ".py").join()
+        edited_text = yield from edit(text, editor, ".py").join()
+
+        self.logger.print(
+            self.logger.format_code_diff(
+                text, edited_text, title=title, is_changed=True
+            )
+        )
 
         # parse result
         try:
             res = cfg.parse(
-                self.profiles.config_type, text, self.profiles.settings_name
+                self.profiles.config_type, edited_text, self.profiles.settings_name
             )
 
         except pc.ParseError as error:
