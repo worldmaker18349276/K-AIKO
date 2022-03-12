@@ -505,6 +505,46 @@ class LiteralParser(ArgumentParser):
             return [token + "\000"]
 
 
+class TimeParser(ArgumentParser):
+    r"""Parse time."""
+
+    def __init__(self, default=inspect.Parameter.empty):
+        r"""Contructor.
+
+        Parameters
+        ----------
+        default : any, optional
+            The default value of this argument.
+        """
+        self.default = default
+        suggestions = [default] if default is not inspect.Parameter.empty else []
+        self.parser = (
+            pc.concat(
+                pc.regex(r"[-+]?").map(lambda a: -1 if a == "-" else 1),
+                (pc.regex(r"[0-9]+").map(int) << pc.string(":"))
+                .attempt()
+                .choice(pc.nothing(0)),
+                pc.regex(r"[0-9]+(\.[0-9]+)?").map(float),
+            ).starmap(lambda a, m, s: a * (m * 60 + s))
+            << pc.eof()
+        )
+
+    def desc(self):
+        return "It should be in the format `min:sec`"
+
+    def parse(self, token):
+        try:
+            return self.parser.parse(token)
+        except pc.ParseError as e:
+            if isinstance(e.__cause__, pc.ParseFailure):
+                expected = e.__cause__.expected
+                raise CommandParseError(
+                    f"Invalid value\nexpecting {expected} at {e.index}"
+                ) from e
+            else:
+                raise CommandParseError(f"Invalid value") from e
+
+
 class CommandParser:
     r"""Command parser.
 

@@ -1464,7 +1464,7 @@ class Beatmap:
         self.events = []
 
     @dn.datanode
-    def play(self, manager, user, devices_settings, gameplay_settings=None):
+    def play(self, manager, user, start_time, devices_settings, gameplay_settings=None):
         gameplay_settings = gameplay_settings or GameplaySettings()
 
         samplerate = devices_settings.mixer.output_samplerate
@@ -1488,6 +1488,9 @@ class Beatmap:
             ).join()
         except aud.IOCancelled:
             return
+
+        if start_time is not None:
+            self.start_time = start_time
 
         score = BeatmapScore()
         score.set_total_subjects(self.total_subjects)

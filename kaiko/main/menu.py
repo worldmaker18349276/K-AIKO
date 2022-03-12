@@ -306,7 +306,7 @@ class KAIKOMenu:
     # beatmaps
 
     @cmd.function_command
-    def play(self, beatmap):
+    def play(self, beatmap, start=None):
         """[rich]Let's beat with the song!
 
         usage: [cmd]play[/] [arg]{beatmap}[/]
@@ -324,6 +324,7 @@ class KAIKOMenu:
         return KAIKOPlay(
             self.user,
             self.user.songs_dir / beatmap,
+            start,
             self.profiles,
             self.logger,
         )
@@ -356,6 +357,10 @@ class KAIKOMenu:
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
         return self.beatmap_manager.make_parser()
+
+    @play.arg_parser("start")
+    def _play_start_parser(self, beatmap):
+        return cmd.TimeParser(0.0)
 
     @cmd.function_command
     def reload(self):
@@ -524,9 +529,10 @@ class KAIKOMenu:
 
 
 class KAIKOPlay:
-    def __init__(self, user, filepath, profiles, logger):
+    def __init__(self, user, filepath, start, profiles, logger):
         self.user = user
         self.filepath = filepath
+        self.start = start
         self.profiles = profiles
         self.logger = logger
 
@@ -551,7 +557,7 @@ class KAIKOPlay:
             logger.print()
 
             score, devices_settings = yield from beatmap.play(
-                manager, self.user, devices_settings, gameplay_settings
+                manager, self.user, self.start, devices_settings, gameplay_settings
             ).join()
 
             logger.print()
