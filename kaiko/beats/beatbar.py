@@ -572,25 +572,20 @@ class BeatbarWidgetBuilder:
     monitor = beatwidgets.MonitorWidgetSettings
     sight = SightWidgetSettings
 
-    def __init__(
-        self, *, state, rich, mixer, detector, renderer, controller, devices_settings
-    ):
+    def __init__(self, *, state, rich, mixer, detector, renderer, controller):
         self.state = state
         self.rich = rich
         self.mixer = mixer
         self.detector = detector
         self.renderer = renderer
         self.controller = controller
-        self.devices_settings = devices_settings
 
     def create(self, widget_settings):
         if isinstance(widget_settings, BeatbarWidgetBuilder.spectrum):
-            return beatwidgets.SpectrumWidget(
-                self.rich, self.mixer, self.devices_settings.mixer, widget_settings
-            )
+            return beatwidgets.SpectrumWidget(self.rich, self.mixer, widget_settings)
         elif isinstance(widget_settings, BeatbarWidgetBuilder.volume_indicator):
             return beatwidgets.VolumeIndicatorWidget(
-                self.rich, self.mixer, self.devices_settings.mixer, widget_settings
+                self.rich, self.mixer, widget_settings
             )
         elif isinstance(widget_settings, BeatbarWidgetBuilder.accuracy_meter):
             accuracy_getter = dn.pipe(
@@ -599,7 +594,7 @@ class BeatbarWidgetBuilder:
             return beatwidgets.AccuracyMeterWidget(
                 accuracy_getter,
                 self.rich,
-                self.devices_settings.renderer,
+                self.renderer.settings,
                 widget_settings,
             )
         elif isinstance(widget_settings, BeatbarWidgetBuilder.monitor):
@@ -633,7 +628,7 @@ class BeatbarWidgetBuilder:
                 grade_getter,
                 self.rich,
                 self.detector,
-                self.devices_settings.renderer,
+                self.renderer.settings,
                 widget_settings,
             )
         else:

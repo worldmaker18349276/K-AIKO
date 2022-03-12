@@ -86,16 +86,15 @@ class SpectrumWidgetSettings:
 
 
 class SpectrumWidget:
-    def __init__(self, rich, mixer, mixer_settings, settings):
+    def __init__(self, rich, mixer, settings):
         self.rich = rich
         self.mixer = mixer
-        self.mixer_settings = mixer_settings
         self.settings = settings
         self.spectrum = ""
 
     def draw_spectrum(self):
         spec_width = self.settings.spec_width
-        samplerate = self.mixer_settings.output_samplerate
+        samplerate = self.mixer.settings.output_samplerate
         hop_length = round(samplerate * self.settings.spec_time_res)
         win_length = round(samplerate / self.settings.spec_freq_res)
         spec_decay_time = self.settings.spec_decay_time
@@ -144,8 +143,8 @@ class SpectrumWidget:
     @dn.datanode
     def load(self):
         spec_width = self.settings.spec_width
-        samplerate = self.mixer_settings.output_samplerate
-        nchannels = self.mixer_settings.output_channels
+        samplerate = self.mixer.settings.output_samplerate
+        nchannels = self.mixer.settings.output_channels
         hop_length = round(samplerate * self.settings.spec_time_res)
 
         template = self.rich.parse(self.settings.template, slotted=True)
@@ -182,18 +181,17 @@ class VolumeIndicatorWidgetSettings:
 
 
 class VolumeIndicatorWidget:
-    def __init__(self, rich, mixer, mixer_settings, settings):
+    def __init__(self, rich, mixer, settings):
         self.rich = rich
         self.mixer = mixer
-        self.mixer_settings = mixer_settings
         self.settings = settings
         self.volume = 0.0
 
     @dn.datanode
     def load(self):
         vol_decay_time = self.settings.vol_decay_time
-        buffer_length = self.mixer_settings.output_buffer_length
-        samplerate = self.mixer_settings.output_samplerate
+        buffer_length = self.mixer.settings.output_buffer_length
+        samplerate = self.mixer.settings.output_samplerate
 
         template = self.rich.parse(self.settings.template, slotted=True)
 

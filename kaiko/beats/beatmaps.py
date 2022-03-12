@@ -1401,7 +1401,6 @@ class Beatmap:
             detector=detector,
             renderer=renderer,
             controller=controller,
-            devices_settings=devices_settings,
         )
         icon = (
             yield from widget_builder.create(gameplay_settings.widgets.icon_widget)
