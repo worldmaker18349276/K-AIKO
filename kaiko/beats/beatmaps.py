@@ -1420,21 +1420,6 @@ class BeatTrack:
             return track
 
 
-def register_knock_adjust_handler(
-    adjust_keys, adjust_step, detector, changed_event, playfield
-):
-    def incr_knock_energy(_):
-        detector.settings.knock_energy += adjust_step
-        changed_event.set()
-
-    def decr_knock_energy(_):
-        detector.settings.knock_energy -= adjust_step
-        changed_event.set()
-
-    playfield.add_handler(incr_knock_energy, adjust_keys[0])
-    playfield.add_handler(decr_knock_energy, adjust_keys[1])
-
-
 class Beatmap:
     def __init__(
         self,
@@ -1595,7 +1580,7 @@ class Beatmap:
 
         # stop
         stop_key = controls_settings.stop_key
-        playfield.add_handler(lambda arg: event_clock.stop(arg[1]), stop_key)
+        playfield.controller.add_handler(lambda arg: event_clock.stop(arg[1]), stop_key)
 
         # display delay
         display_delay_adjust_step = controls_settings.display_delay_adjust_step
@@ -1611,8 +1596,8 @@ class Beatmap:
             playfield.renderer.clock.skip(arg[1], -display_delay_adjust_step)
             settings_changed.set()
 
-        playfield.add_handler(incr_display_delay, display_delay_adjust_keys[0])
-        playfield.add_handler(decr_display_delay, display_delay_adjust_keys[1])
+        playfield.controller.add_handler(incr_display_delay, display_delay_adjust_keys[0])
+        playfield.controller.add_handler(decr_display_delay, display_delay_adjust_keys[1])
 
         # knock delay
         knock_delay_adjust_step = controls_settings.knock_delay_adjust_step
@@ -1628,8 +1613,8 @@ class Beatmap:
             playfield.detector.clock.skip(arg[1], -knock_delay_adjust_step)
             settings_changed.set()
 
-        playfield.add_handler(incr_knock_delay, knock_delay_adjust_keys[0])
-        playfield.add_handler(decr_knock_delay, knock_delay_adjust_keys[1])
+        playfield.controller.add_handler(incr_knock_delay, knock_delay_adjust_keys[0])
+        playfield.controller.add_handler(decr_knock_delay, knock_delay_adjust_keys[1])
 
         # knock strength
         knock_energy_adjust_step = controls_settings.knock_energy_adjust_step
@@ -1645,8 +1630,8 @@ class Beatmap:
             devices_settings.detector.knock_energy -= knock_energy_adjust_step
             settings_changed.set()
 
-        playfield.add_handler(incr_knock_energy, knock_energy_adjust_keys[0])
-        playfield.add_handler(decr_knock_energy, knock_energy_adjust_keys[1])
+        playfield.controller.add_handler(incr_knock_energy, knock_energy_adjust_keys[0])
+        playfield.controller.add_handler(decr_knock_energy, knock_energy_adjust_keys[1])
 
         # pause/resume
         pause_delay = controls_settings.pause_delay

@@ -455,12 +455,6 @@ class Beatbar:
             zindex=zindex,
         )
 
-    def add_handler(self, node, keyname=None):
-        return self.controller.add_handler(node, keyname)
-
-    def remove_handler(self, key):
-        self.controller.remove_handler(key)
-
 
 class Scheduler(dn.DataNode):
     def __init__(self, default):
