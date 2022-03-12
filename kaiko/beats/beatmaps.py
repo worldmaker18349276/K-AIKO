@@ -11,6 +11,7 @@ from ..utils import datanodes as dn
 from ..utils import markups as mu
 from ..devices import audios as aud
 from ..devices import engines
+from . import beatwidgets
 from . import beatbar
 from . import beatpatterns
 
@@ -1025,6 +1026,121 @@ class BeatmapScore:
         self.perfs.append(perf)
 
 
+@dn.datanode
+def observe(stack):
+    last = 0
+    yield
+    while True:
+        observed = []
+        while len(stack) > last:
+            observed.append(stack[last])
+            last += 1
+        yield observed
+
+
+# widgets
+class BeatbarWidgetBuilder:
+    spectrum = beatwidgets.SpectrumWidgetSettings
+    volume_indicator = beatwidgets.VolumeIndicatorWidgetSettings
+    score = beatwidgets.ScoreWidgetSettings
+    progress = beatwidgets.ProgressWidgetSettings
+    accuracy_meter = beatwidgets.AccuracyMeterWidgetSettings
+    monitor = beatwidgets.MonitorWidgetSettings
+    sight = beatbar.SightWidgetSettings
+
+    def __init__(self, state, rich, beatbar):
+        self.state = state
+        self.rich = rich
+        self.beatbar = beatbar
+
+    def create(self, widget_settings):
+        if isinstance(widget_settings, BeatbarWidgetBuilder.spectrum):
+            return beatwidgets.SpectrumWidget(widget_settings).load(
+                self.rich, self.beatbar.mixer
+            )
+        elif isinstance(widget_settings, BeatbarWidgetBuilder.volume_indicator):
+            return beatwidgets.VolumeIndicatorWidget(widget_settings).load(
+                self.rich, self.beatbar.mixer
+            )
+        elif isinstance(widget_settings, BeatbarWidgetBuilder.accuracy_meter):
+            accuracy_getter = dn.pipe(
+                observe(self.state.perfs), lambda perfs: [perf.err for perf in perfs]
+            )
+            return beatwidgets.AccuracyMeterWidget(
+                accuracy_getter, widget_settings
+            ).load(self.rich, self.beatbar.renderer.settings)
+        elif isinstance(widget_settings, BeatbarWidgetBuilder.monitor):
+            if widget_settings.target == beatwidgets.MonitorTarget.mixer:
+                return beatwidgets.MonitorWidget(
+                    self.beatbar.mixer, widget_settings
+                ).load()
+            elif widget_settings.target == beatwidgets.MonitorTarget.detector:
+                return beatwidgets.MonitorWidget(
+                    self.beatbar.detector, widget_settings
+                ).load()
+            elif widget_settings.target == beatwidgets.MonitorTarget.renderer:
+                return beatwidgets.MonitorWidget(
+                    self.beatbar.renderer, widget_settings
+                ).load()
+            else:
+                assert False
+        elif isinstance(widget_settings, BeatbarWidgetBuilder.score):
+            score_getter = lambda _: (self.state.score, self.state.full_score)
+            return beatwidgets.ScoreWidget(score_getter, widget_settings).load(
+                self.rich
+            )
+        elif isinstance(widget_settings, BeatbarWidgetBuilder.progress):
+            progress_getter = lambda _: (
+                self.state.finished_subjects / self.state.total_subjects
+                if self.state.total_subjects > 0
+                else 1.0
+            )
+            time_getter = lambda _: self.state.time
+            return beatwidgets.ProgressWidget(
+                progress_getter, time_getter, widget_settings
+            ).load(self.rich)
+        elif isinstance(widget_settings, BeatbarWidgetBuilder.sight):
+            grade_getter = dn.pipe(
+                observe(self.state.perfs),
+                lambda perfs: [perf.grade.shift for perf in perfs],
+            )
+            return beatbar.SightWidget(grade_getter, widget_settings).load(
+                self.rich,
+                self.beatbar.detector,
+                self.beatbar.renderer.settings,
+            )
+        else:
+            raise TypeError
+
+
+BeatbarIconWidgetSettings = Union[
+    beatwidgets.SpectrumWidgetSettings,
+    beatwidgets.VolumeIndicatorWidgetSettings,
+    beatwidgets.ScoreWidgetSettings,
+    beatwidgets.ProgressWidgetSettings,
+    beatwidgets.AccuracyMeterWidgetSettings,
+    beatwidgets.MonitorWidgetSettings,
+]
+BeatbarHeaderWidgetSettings = BeatbarIconWidgetSettings
+BeatbarFooterWidgetSettings = BeatbarIconWidgetSettings
+
+
+class BeatbarWidgetSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    icon_widget : BeatbarIconWidgetSettings
+        The widget on the icon.
+    header_widget : BeatbarHeaderWidgetSettings
+        The widget on the header.
+    footer_widget : BeatbarFooterWidgetSettings
+        The widget on the footer.
+    """
+    icon_widget: BeatbarIconWidgetSettings = BeatbarWidgetBuilder.spectrum()
+    header_widget: BeatbarHeaderWidgetSettings = BeatbarWidgetBuilder.score()
+    footer_widget: BeatbarFooterWidgetSettings = BeatbarWidgetBuilder.progress()
+
+
 # beatmap
 class BeatmapSettings(cfg.Configurable):
     r"""
@@ -1257,7 +1373,7 @@ class GameplaySettings(cfg.Configurable):
         knock_delay_adjust_step: float = 0.001
         knock_energy_adjust_step: float = 0.0001
 
-    widgets = cfg.subconfig(beatbar.BeatbarWidgetSettings)
+    widgets = cfg.subconfig(BeatbarWidgetSettings)
 
 
 @dataclasses.dataclass
@@ -1404,7 +1520,7 @@ class Beatmap:
             gameplay_settings.playfield,
         )
 
-        widget_builder = beatbar.BeatbarWidgetBuilder(score, rich, playfield)
+        widget_builder = BeatbarWidgetBuilder(score, rich, playfield)
 
         playfield.icon = widget_builder.create(gameplay_settings.widgets.icon_widget)
         playfield.header = widget_builder.create(
