@@ -1757,9 +1757,9 @@ class BeatPrompt:
 
         # widgets
         self.metronome = metronome
-        self.icon = icon
-        self.marker = marker
-        self.caret_func = caret
+        self.icon = dn.DataNode.wrap(icon)
+        self.marker = dn.DataNode.wrap(marker)
+        self.caret = dn.DataNode.wrap(caret)
 
     def register(self, renderer):
         icon_width = self.settings.prompt.icon_width
@@ -1977,7 +1977,7 @@ class BeatPrompt:
 
         caret_node = starcache(self.render_caret)
 
-        with syntax_node, dec_node, caret_node:
+        with syntax_node, dec_node, caret_node, self.caret:
             time, ran = yield
             while True:
                 typeahead = self.typeahead if not self.clean else ""
@@ -1986,7 +1986,7 @@ class BeatPrompt:
                 markup = dec_node.send((markup, self.pos, self.highlighted, self.clean))
 
                 caret = (
-                    self.caret_func(time, self.key_pressed_time)
+                    self.caret.send((time, self.key_pressed_time))
                     if not self.clean
                     else None
                 )
@@ -2179,7 +2179,8 @@ class Caret:
             self.rich.parse(caret[2], slotted=True),
         ]
 
-        def caret_func(time, key_pressed_time):
+        def caret_node(arg):
+            time, key_pressed_time = arg
             beat = self.metronome.beat(time)
             key_pressed_beat = self.metronome.beat(key_pressed_time) // -1 * -1
             # don't blink while key pressing
@@ -2192,4 +2193,4 @@ class Caret:
                 return markuped_caret[0]
 
         yield
-        return caret_func
+        return caret_node
