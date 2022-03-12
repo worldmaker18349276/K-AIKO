@@ -630,38 +630,22 @@ class BeatInput:
         if debug_monitor:
             monitor_settings = beatwidgets.MonitorWidgetSettings()
             monitor_settings.target = beatwidgets.MonitorTarget.renderer
-            icon = (
-                yield from beatwidgets.MonitorWidget(renderer, monitor_settings)
-                .load()
-                .join()
-            )
+            icon = beatwidgets.MonitorWidget(renderer, monitor_settings).load()
         else:
             patterns_settings = beatwidgets.PatternsWidgetSettings()
             patterns_settings.patterns = shell_settings.prompt.icons
-            icon = (
-                yield from beatwidgets.PatternsWidget(
-                    metronome, self.logger.rich, patterns_settings
-                )
-                .load()
-                .join()
+            icon = beatwidgets.PatternsWidget(metronome, patterns_settings).load(
+                self.logger.rich
             )
 
         marker_settings = beatwidgets.MarkerWidgetSettings()
         marker_settings.markers = shell_settings.prompt.markers
         marker_settings.blink_ratio = shell_settings.prompt.caret_blink_ratio
-        marker = (
-            yield from beatwidgets.MarkerWidget(
-                metronome, self.logger.rich, marker_settings
-            )
-            .load()
-            .join()
+        marker = beatwidgets.MarkerWidget(metronome, marker_settings).load(
+            self.logger.rich
         )
 
-        caret = (
-            yield from Caret(metronome, self.logger.rich, shell_settings.prompt)
-            .load()
-            .join()
-        )
+        caret = Caret(metronome, shell_settings.prompt).load(self.logger.rich)
 
         prompt = BeatPrompt(
             stroke,
@@ -2166,18 +2150,16 @@ class CaretPlaceholder(mu.Pair):
 @dataclasses.dataclass
 class Caret:
     metronome: engines.Metronome
-    rich: mu.RichParser
     settings: BeatShellSettings.prompt
 
-    @dn.datanode
-    def load(self):
+    def load(self, rich):
         caret_blink_ratio = self.settings.caret_blink_ratio
         caret = self.settings.caret
 
         markuped_caret = [
-            self.rich.parse(caret[0], slotted=True),
-            self.rich.parse(caret[1], slotted=True),
-            self.rich.parse(caret[2], slotted=True),
+            rich.parse(caret[0], slotted=True),
+            rich.parse(caret[1], slotted=True),
+            rich.parse(caret[2], slotted=True),
         ]
 
         def caret_node(arg):
@@ -2193,5 +2175,4 @@ class Caret:
             else:
                 return markuped_caret[0]
 
-        yield
         return caret_node

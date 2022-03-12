@@ -75,39 +75,28 @@ class SightWidgetSettings(cfg.Configurable):
 
 
 class SightWidget:
-    def __init__(
-        self,
-        grade_getter,
-        rich,
-        detector,
-        renderer_settings,
-        settings,
-    ):
+    def __init__(self, grade_getter, settings):
         # grade_getter: DataNode[None -> List[int]]
         self.grade_getter = dn.DataNode.wrap(grade_getter)
-        self.rich = rich
-        self.detector = detector
-        self.renderer_settings = renderer_settings
         self.settings = settings
 
-    @dn.datanode
-    def load(self):
+    def load(self, rich, detector, renderer_settings):
         perf_appearances = [
             (
-                self.rich.parse(f"[restore]{appearance1}[/]"),
-                self.rich.parse(f"[restore]{appearance2}[/]"),
+                rich.parse(f"[restore]{appearance1}[/]"),
+                rich.parse(f"[restore]{appearance2}[/]"),
             )
             for appearance1, appearance2 in self.settings.performances_appearances
         ]
         sight_appearances = [
-            (self.rich.parse(appearance1), self.rich.parse(appearance2))
+            (rich.parse(appearance1), rich.parse(appearance2))
             for appearance1, appearance2 in self.settings.sight_appearances
         ]
 
         hit_decay_time = self.settings.hit_decay_time
         hit_sustain_time = self.settings.hit_sustain_time
         perf_sustain_time = self.settings.performance_sustain_time
-        framerate = self.renderer_settings.display_framerate
+        framerate = renderer_settings.display_framerate
 
         new_hits = queue.Queue()
 
@@ -116,7 +105,7 @@ class SightWidget:
             if detected:
                 new_hits.put((hit_sustain_time, min(1.0, strength)))
 
-        self.detector.add_listener(listen)
+        detector.add_listener(listen)
 
         @dn.datanode
         def sight_node():
@@ -172,7 +161,6 @@ class SightWidget:
 
                     time = yield res
 
-        yield
         return sight_node()
 
 
@@ -590,33 +578,40 @@ class BeatbarWidgetBuilder:
 
     def create(self, widget_settings):
         if isinstance(widget_settings, BeatbarWidgetBuilder.spectrum):
-            return beatwidgets.SpectrumWidget(self.rich, self.beatbar.mixer, widget_settings)
+            return beatwidgets.SpectrumWidget(widget_settings).load(
+                self.rich, self.beatbar.mixer
+            )
         elif isinstance(widget_settings, BeatbarWidgetBuilder.volume_indicator):
-            return beatwidgets.VolumeIndicatorWidget(
-                self.rich, self.beatbar.mixer, widget_settings
+            return beatwidgets.VolumeIndicatorWidget(widget_settings).load(
+                self.rich, self.beatbar.mixer
             )
         elif isinstance(widget_settings, BeatbarWidgetBuilder.accuracy_meter):
             accuracy_getter = dn.pipe(
                 observe(self.state.perfs), lambda perfs: [perf.err for perf in perfs]
             )
             return beatwidgets.AccuracyMeterWidget(
-                accuracy_getter,
-                self.rich,
-                self.beatbar.renderer.settings,
-                widget_settings,
-            )
+                accuracy_getter, widget_settings
+            ).load(self.rich, self.beatbar.renderer.settings)
         elif isinstance(widget_settings, BeatbarWidgetBuilder.monitor):
             if widget_settings.target == beatwidgets.MonitorTarget.mixer:
-                return beatwidgets.MonitorWidget(self.beatbar.mixer, widget_settings)
+                return beatwidgets.MonitorWidget(
+                    self.beatbar.mixer, widget_settings
+                ).load()
             elif widget_settings.target == beatwidgets.MonitorTarget.detector:
-                return beatwidgets.MonitorWidget(self.beatbar.detector, widget_settings)
+                return beatwidgets.MonitorWidget(
+                    self.beatbar.detector, widget_settings
+                ).load()
             elif widget_settings.target == beatwidgets.MonitorTarget.renderer:
-                return beatwidgets.MonitorWidget(self.beatbar.renderer, widget_settings)
+                return beatwidgets.MonitorWidget(
+                    self.beatbar.renderer, widget_settings
+                ).load()
             else:
                 assert False
         elif isinstance(widget_settings, BeatbarWidgetBuilder.score):
             score_getter = lambda _: (self.state.score, self.state.full_score)
-            return beatwidgets.ScoreWidget(score_getter, self.rich, widget_settings)
+            return beatwidgets.ScoreWidget(score_getter, widget_settings).load(
+                self.rich
+            )
         elif isinstance(widget_settings, BeatbarWidgetBuilder.progress):
             progress_getter = lambda _: (
                 self.state.finished_subjects / self.state.total_subjects
@@ -625,19 +620,17 @@ class BeatbarWidgetBuilder:
             )
             time_getter = lambda _: self.state.time
             return beatwidgets.ProgressWidget(
-                progress_getter, time_getter, self.rich, widget_settings
-            )
+                progress_getter, time_getter, widget_settings
+            ).load(self.rich)
         elif isinstance(widget_settings, BeatbarWidgetBuilder.sight):
             grade_getter = dn.pipe(
                 observe(self.state.perfs),
                 lambda perfs: [perf.grade.shift for perf in perfs],
             )
-            return SightWidget(
-                grade_getter,
+            return SightWidget(grade_getter, widget_settings).load(
                 self.rich,
                 self.beatbar.detector,
                 self.beatbar.renderer.settings,
-                widget_settings,
             )
         else:
             raise TypeError

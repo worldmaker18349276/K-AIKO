@@ -86,15 +86,12 @@ class SpectrumWidgetSettings:
 
 
 class SpectrumWidget:
-    def __init__(self, rich, mixer, settings):
-        self.rich = rich
-        self.mixer = mixer
-        self.settings = settings
+    def __init__(self, settings):
         self.spectrum = ""
+        self.settings = settings
 
-    def draw_spectrum(self):
+    def draw_spectrum(self, samplerate):
         spec_width = self.settings.spec_width
-        samplerate = self.mixer.settings.output_samplerate
         hop_length = round(samplerate * self.settings.spec_time_res)
         win_length = round(samplerate / self.settings.spec_freq_res)
         spec_decay_time = self.settings.spec_decay_time
@@ -140,21 +137,22 @@ class SpectrumWidget:
 
         return draw()
 
-    @dn.datanode
-    def load(self):
+    def load(self, rich, mixer):
         spec_width = self.settings.spec_width
-        samplerate = self.mixer.settings.output_samplerate
-        nchannels = self.mixer.settings.output_channels
+        samplerate = mixer.settings.output_samplerate
+        nchannels = mixer.settings.output_channels
         hop_length = round(samplerate * self.settings.spec_time_res)
 
-        template = self.rich.parse(self.settings.template, slotted=True)
+        template = rich.parse(self.settings.template, slotted=True)
 
         self.spectrum = "\u2800" * spec_width
-        draw = dn.pipe(self.draw_spectrum(), lambda v: setattr(self, "spectrum", v))
+        draw = dn.pipe(
+            self.draw_spectrum(samplerate), lambda v: setattr(self, "spectrum", v)
+        )
         handler = dn.pipe(
             lambda a: a[0], dn.branch(dn.unchunk(draw, (hop_length, nchannels)))
         )
-        self.mixer.add_effect(handler, zindex=(-1,))
+        mixer.add_effect(handler, zindex=(-1,))
 
         def widget_func(arg):
             time, ran = arg
@@ -162,7 +160,6 @@ class SpectrumWidget:
             text = mu.Text(f"{self.spectrum:^{width}.{width}s}")
             return mu.replace_slot(template, text)
 
-        yield
         return widget_func
 
 
@@ -181,19 +178,16 @@ class VolumeIndicatorWidgetSettings:
 
 
 class VolumeIndicatorWidget:
-    def __init__(self, rich, mixer, settings):
-        self.rich = rich
-        self.mixer = mixer
-        self.settings = settings
+    def __init__(self, settings):
         self.volume = 0.0
+        self.settings = settings
 
-    @dn.datanode
-    def load(self):
+    def load(self, rich, mixer):
         vol_decay_time = self.settings.vol_decay_time
-        buffer_length = self.mixer.settings.output_buffer_length
-        samplerate = self.mixer.settings.output_samplerate
+        buffer_length = mixer.settings.output_buffer_length
+        samplerate = mixer.settings.output_samplerate
 
-        template = self.rich.parse(self.settings.template, slotted=True)
+        template = rich.parse(self.settings.template, slotted=True)
 
         decay = buffer_length / samplerate / vol_decay_time
 
@@ -209,7 +203,7 @@ class VolumeIndicatorWidget:
                 self.volume = vol
 
         handler = dn.pipe(lambda a: a[0], dn.branch(volume_indicator()))
-        self.mixer.add_effect(handler, zindex=(-1,))
+        mixer.add_effect(handler, zindex=(-1,))
 
         def widget_func(arg):
             time, ran = arg
@@ -217,7 +211,6 @@ class VolumeIndicatorWidget:
             text = mu.Text("▮" * int(self.volume * width))
             return mu.replace_slot(template, text)
 
-        yield
         return widget_func
 
 
@@ -239,13 +232,11 @@ class AccuracyMeterWidgetSettings:
 
 
 class AccuracyMeterWidget:
-    def __init__(self, accuracy_getter, rich, renderer_settings, settings):
+    def __init__(self, accuracy_getter, settings):
         # accuracy_getter: DataNode[None -> List[float]]
         self.accuracy_getter = dn.DataNode.wrap(accuracy_getter)
-        self.rich = rich
-        self.renderer_settings = renderer_settings
-        self.settings = settings
         self.hit = []
+        self.settings = settings
 
     @dn.datanode
     def widget_node(self, decay, to_hit, render_heat):
@@ -273,12 +264,11 @@ class AccuracyMeterWidget:
 
                 time, ran = yield res
 
-    @dn.datanode
-    def load(self):
+    def load(self, rich, renderer_settings):
         meter_width = self.settings.meter_width
         meter_decay_time = self.settings.meter_decay_time
         meter_radius = self.settings.meter_radius
-        display_framerate = self.renderer_settings.display_framerate
+        display_framerate = renderer_settings.display_framerate
         decay = 1 / display_framerate / meter_decay_time
 
         length = meter_width * 2
@@ -291,10 +281,7 @@ class AccuracyMeterWidget:
         colors = [c << 16 | c << 8 | c for c in range(8, 248, 10)]
         nlevel = len(colors)
         prerendered_heat = [
-            [
-                self.rich.parse(f"[bgcolor={a:06x}][color={b:06x}]▐[/][/]")
-                for b in colors
-            ]
+            [rich.parse(f"[bgcolor={a:06x}][color={b:06x}]▐[/][/]") for b in colors]
             for a in colors
         ]
 
@@ -303,7 +290,6 @@ class AccuracyMeterWidget:
             j = int(heat2 * (nlevel - 1))
             return prerendered_heat[i][j]
 
-        yield
         return self.widget_node(decay, to_hit, render_heat)
 
 
@@ -323,7 +309,6 @@ class MonitorWidget:
         self.target = target
         self.settings = settings
 
-    @dn.datanode
     def load(self):
         ticks = " ▏▎▍▌▋▊▉█"
         ticks_len = len(ticks)
@@ -344,7 +329,6 @@ class MonitorWidget:
                 )
             )
 
-        yield
         return widget_func
 
 
@@ -360,10 +344,9 @@ class ScoreWidgetSettings:
 
 
 class ScoreWidget:
-    def __init__(self, score_getter, rich, settings):
+    def __init__(self, score_getter, settings):
         # score_getter: DataNode[None -> (int, int)]
         self.score_getter = dn.DataNode.wrap(score_getter)
-        self.rich = rich
         self.settings = settings
 
     @dn.datanode
@@ -397,11 +380,9 @@ class ScoreWidget:
 
                 time, ran = yield res
 
-    @dn.datanode
-    def load(self):
-        template = self.rich.parse(self.settings.template, slotted=True)
+    def load(self, rich):
+        template = rich.parse(self.settings.template, slotted=True)
 
-        yield
         return self.widget_node(template)
 
 
@@ -417,12 +398,11 @@ class ProgressWidgetSettings:
 
 
 class ProgressWidget:
-    def __init__(self, progress_getter, time_getter, rich, settings):
+    def __init__(self, progress_getter, time_getter, settings):
         # progress_getter: DataNode[None -> float]
         # time_getter: DataNode[None -> float]
         self.progress_getter = dn.DataNode.wrap(progress_getter)
         self.time_getter = dn.DataNode.wrap(time_getter)
-        self.rich = rich
         self.settings = settings
 
     @dn.datanode
@@ -458,11 +438,9 @@ class ProgressWidget:
 
                 time, ran = yield res
 
-    @dn.datanode
-    def load(self):
-        template = self.rich.parse(self.settings.template, slotted=True)
+    def load(self, rich):
+        template = rich.parse(self.settings.template, slotted=True)
 
-        yield
         return self.widget_node(template)
 
 
@@ -489,16 +467,14 @@ class PatternsWidgetSettings:
 
 
 class PatternsWidget:
-    def __init__(self, metronome, rich, settings):
+    def __init__(self, metronome, settings):
         self.metronome = metronome
-        self.rich = rich
         self.settings = settings
 
-    @dn.datanode
-    def load(self):
+    def load(self, rich):
         patterns = self.settings.patterns
 
-        markuped_patterns = [self.rich.parse(pattern) for pattern in patterns]
+        markuped_patterns = [rich.parse(pattern) for pattern in patterns]
 
         def patterns_func(arg):
             time, ran = arg
@@ -506,7 +482,6 @@ class PatternsWidget:
             ind = int(beat * len(markuped_patterns) // 1) % len(markuped_patterns)
             return markuped_patterns[ind]
 
-        yield
         return patterns_func
 
 
@@ -525,19 +500,17 @@ class MarkerWidgetSettings:
 
 
 class MarkerWidget:
-    def __init__(self, metronome, rich, settings):
+    def __init__(self, metronome, settings):
         self.metronome = metronome
-        self.rich = rich
         self.settings = settings
 
-    @dn.datanode
-    def load(self):
+    def load(self, rich):
         markers = self.settings.markers
         blink_ratio = self.settings.blink_ratio
 
         markuped_markers = (
-            self.rich.parse(markers[0]),
-            self.rich.parse(markers[1]),
+            rich.parse(markers[0]),
+            rich.parse(markers[1]),
         )
 
         def marker_func(arg):
@@ -548,5 +521,4 @@ class MarkerWidget:
             else:
                 return markuped_markers[0]
 
-        yield
         return marker_func

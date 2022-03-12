@@ -1406,26 +1406,14 @@ class Beatmap:
 
         widget_builder = beatbar.BeatbarWidgetBuilder(score, rich, playfield)
 
-        playfield.icon = (
-            yield from widget_builder.create(gameplay_settings.widgets.icon_widget)
-            .load()
-            .join()
+        playfield.icon = widget_builder.create(gameplay_settings.widgets.icon_widget)
+        playfield.header = widget_builder.create(
+            gameplay_settings.widgets.header_widget
         )
-        playfield.header = (
-            yield from widget_builder.create(gameplay_settings.widgets.header_widget)
-            .load()
-            .join()
+        playfield.footer = widget_builder.create(
+            gameplay_settings.widgets.footer_widget
         )
-        playfield.footer = (
-            yield from widget_builder.create(gameplay_settings.widgets.footer_widget)
-            .load()
-            .join()
-        )
-        playfield.sight = (
-            yield from widget_builder.create(gameplay_settings.playfield.sight)
-            .load()
-            .join()
-        )
+        playfield.sight = widget_builder.create(gameplay_settings.playfield.sight)
 
         yield from playfield.load().join()
 
