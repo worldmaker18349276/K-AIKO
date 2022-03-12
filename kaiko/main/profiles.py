@@ -581,13 +581,9 @@ class ProfilesCommand:
             self.logger.print(f"[warn]Unknown editor: {self.logger.escape(editor)}[/]")
             return
 
-        edited_text = yield from edit(text, editor, ".py").join()
+        self.logger.print(f"[data/] Editing...")
 
-        self.logger.print(
-            self.logger.format_code_diff(
-                text, edited_text, title=title, is_changed=True
-            )
-        )
+        edited_text = yield from edit(text, editor, ".py").join()
 
         # parse result
         try:
@@ -597,12 +593,11 @@ class ProfilesCommand:
 
         except pc.ParseError as error:
             line, col = pc.ParseError.locate(error.text, error.index)
-            code = error.text[: error.index] + "◊" + error.text[error.index :]
 
             self.logger.print(
-                f"[warn]parse fail at ln {line}, col {col} (marked with ◊)[/]"
+                f"[warn]parse fail at ln {line+1}, col {col+1} (marked with ◊)[/]"
             )
-            self.logger.print(self.logger.format_code(code))
+            self.logger.print(self.logger.format_code(error.text, marked=(line, col), title=title))
             if error.__cause__ is not None:
                 self.logger.print(
                     f"[warn]{self.logger.escape(str(error.__cause__))}[/]"
@@ -614,6 +609,14 @@ class ProfilesCommand:
                 self.logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
+            self.logger.print(f"[data/] Your changes")
+
+            self.logger.print(
+                self.logger.format_code_diff(
+                    text, edited_text, title=title, is_changed=True
+                )
+            )
+
             self.profiles.current = res
             self.profiles.set_as_changed()
 

@@ -565,11 +565,13 @@ class KAIKOPlay:
                     title = self.profiles.get_title()
                     old = self.profiles.format()
                     self.profiles.current.devices = devices_settings
+                    self.profiles.set_as_changed()
                     new = self.profiles.format()
+
+                    self.logger.print(f"[data/] Your changes")
                     logger.print(
                         logger.format_code_diff(old, new, title=title, is_changed=True)
                     )
-                    self.profiles.set_as_changed()
 
 
 class KAIKOLoop:
@@ -622,8 +624,10 @@ class KAIKOLoop:
                     title = self.profiles.get_title()
                     old = self.profiles.format()
                     self.profiles.current.devices = devices_settings
+                    self.profiles.set_as_changed()
                     new = self.profiles.format()
+
+                    self.logger.print(f"[data/] Your changes")
                     logger.print(
                         logger.format_code_diff(old, new, title=title, is_changed=True)
                     )
-                    self.profiles.set_as_changed()
