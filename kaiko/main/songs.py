@@ -303,7 +303,7 @@ def play_fadeinout(
     # initialize before attach; it will seek to the starting frame
     node.__enter__()
 
-    samplerate = mixer.samplerate
+    samplerate = mixer.settings.output_samplerate
     out_event = threading.Event()
     start = start if start is not None else 0.0
     before = end - start - fadeout_time if end is not None else None

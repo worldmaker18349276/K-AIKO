@@ -298,20 +298,10 @@ class MixerSettings(cfg.Configurable):
 
 
 class Mixer:
-    def __init__(
-        self,
-        effects_bus,
-        clock,
-        samplerate,
-        buffer_length,
-        nchannels,
-        monitor,
-    ):
+    def __init__(self, effects_bus, clock, settings, monitor):
         self.effects_bus = effects_bus
         self.clock = clock
-        self.samplerate = samplerate
-        self.buffer_length = buffer_length
-        self.nchannels = nchannels
+        self.settings = settings
         self.monitor = monitor
 
     @staticmethod
@@ -375,7 +365,7 @@ class Mixer:
         bus = dn.DataBus()
         clock = Clock()
         task = cls.get_task(bus, clock, settings, manager, init_time, monitor)
-        return task, cls(bus, clock, samplerate, buffer_length, nchannels, monitor)
+        return task, cls(bus, clock, settings, monitor)
 
     def add_effect(self, node, zindex=(0,)):
         return self.effects_bus.add_node(node, zindex=zindex)
@@ -387,9 +377,9 @@ class Mixer:
     def tmask(self, node, time):
         node = dn.DataNode.wrap(node)
 
-        samplerate = self.samplerate
-        buffer_length = self.buffer_length
-        nchannels = self.nchannels
+        samplerate = self.settings.output_samplerate
+        buffer_length = self.settings.output_buffer_length
+        nchannels = self.settings.output_channels
 
         with node:
             data, slices_map = yield
@@ -442,11 +432,15 @@ class Mixer:
     ):
         pipeline = []
         if start is not None or end is not None:
-            pipeline.append(dn.tspan(samplerate or self.samplerate, start, end))
-        if channels is not None and channels != self.nchannels:
-            pipeline.append(dn.rechannel(self.nchannels, channels))
-        if samplerate is not None and samplerate != self.samplerate:
-            pipeline.append(dn.resample(ratio=(self.samplerate, samplerate)))
+            pipeline.append(
+                dn.tspan(samplerate or self.settings.output_samplerate, start, end)
+            )
+        if channels is not None and channels != self.settings.output_channels:
+            pipeline.append(dn.rechannel(self.settings.output_channels, channels))
+        if samplerate is not None and samplerate != self.settings.output_samplerate:
+            pipeline.append(
+                dn.resample(ratio=(self.settings.output_samplerate, samplerate))
+            )
         if volume != 0:
             pipeline.append(lambda s: s * 10 ** (volume / 20))
         return dn.pipe(*pipeline)
@@ -527,9 +521,10 @@ class DetectorSettings(cfg.Configurable):
 
 
 class Detector:
-    def __init__(self, listeners_bus, clock, monitor):
+    def __init__(self, listeners_bus, clock, settings, monitor):
         self.listeners_bus = listeners_bus
         self.clock = clock
+        self.settings = settings
         self.monitor = monitor
 
     @staticmethod
@@ -626,7 +621,7 @@ class Detector:
         bus = dn.DataBus()
         clock = Clock()
         task = cls.get_task(bus, clock, settings, manager, init_time, monitor)
-        return task, cls(bus, clock, monitor)
+        return task, cls(bus, clock, settings, monitor)
 
     def add_listener(self, node):
         return self.listeners_bus.add_node(node, (0,))
@@ -720,9 +715,10 @@ class RendererSettings(cfg.Configurable):
 
 
 class Renderer:
-    def __init__(self, drawers_bus, clock, monitor):
+    def __init__(self, drawers_bus, clock, settings, monitor):
         self.drawers_bus = drawers_bus
         self.clock = clock
+        self.settings = settings
         self.monitor = monitor
 
     @staticmethod
@@ -841,7 +837,7 @@ class Renderer:
         bus = dn.DataBus()
         clock = Clock()
         task = cls.get_task(bus, clock, settings, term_settings, init_time, monitor)
-        return task, cls(bus, clock, monitor)
+        return task, cls(bus, clock, settings, monitor)
 
     def add_drawer(self, node, zindex=(0,)):
         return self.drawers_bus.add_node(node, zindex=zindex)
@@ -905,9 +901,10 @@ class ControllerSettings(cfg.Configurable):
 
 
 class Controller:
-    def __init__(self, handlers_bus, clock):
+    def __init__(self, handlers_bus, clock, settings):
         self.handlers_bus = handlers_bus
         self.clock = clock
+        self.settings = settings
 
     @staticmethod
     def get_task(bus, clock, settings, term_settings, init_time):
@@ -954,7 +951,7 @@ class Controller:
         bus = dn.DataBus()
         clock = Clock()
         task = cls.get_task(bus, clock, settings, term_settings, init_time)
-        return task, cls(bus, clock)
+        return task, cls(bus, clock, settings)
 
     def add_handler(self, node, keyname=None):
         return self.handlers_bus.add_node(self._filter_node(node, keyname), (0,))
