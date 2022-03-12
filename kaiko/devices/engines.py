@@ -839,10 +839,7 @@ class Renderer:
                 if size.columns < width:
                     resizing_since = time.perf_counter()
                     resized = True
-                if (
-                    resized
-                    and time.perf_counter() < resizing_since + resize_delay
-                ):
+                if resized and time.perf_counter() < resizing_since + resize_delay:
                     yield f"{clear_line}resizing...\r"
                     width = size.columns
                     continue
@@ -962,6 +959,10 @@ class Controller:
                     keyname = None
                 elif keycode in keycodes:
                     keyname = keycodes[keycode]
+                elif keycode in term.printable_ascii_names:
+                    keyname = term.printable_ascii_names[keycode]
+                elif keycode[0] == "\x1b" and keycode[1:] in term.printable_ascii_names:
+                    keyname = "Alt_" + term.printable_ascii_names[keycode[1:]]
                 else:
                     keyname = repr(keycode)
 

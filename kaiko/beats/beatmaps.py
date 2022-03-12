@@ -1372,7 +1372,7 @@ class GameplaySettings(cfg.Configurable):
         tickrate: float = 60.0
 
         control_delay = 0.1
-        pause_key = "' '"
+        pause_key = "Space"
         stop_key: str = "Esc"
         skip_time: float = 0.5
         skip_key = "Tab"

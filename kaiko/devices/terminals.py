@@ -310,3 +310,47 @@ class TerminalSettings(cfg.Configurable):
     adjust_screen_delay: float = 1.0
 
     editor: str = "nano"
+
+
+printable_ascii_names = {
+    " ": "Space",
+    "!": "Bang",
+    "?": "Question",
+    "#": "Hash",
+    "$": "Dollar",
+    "%": "Percent",
+    "&": "Ampersand",
+    "@": "At",
+    '"': "Quote",
+    "'": "Tick",
+    "`": "Backtick",
+    "*": "Asterisk",
+    "+": "Plus",
+    "-": "Minus",
+    "/": "Slash",
+    "\\": "Backslash",
+    "|": "Bar",
+    ".": "Period",
+    ",": "Comma",
+    ":": "Colon",
+    ";": "Semicolon",
+    "^": "Hat",
+    "_": "Underscore",
+    "~": "Tilde",
+    "=": "Equal",
+    "<": "LessThan",
+    ">": "GreaterThan",
+    "(": "LeftParen",
+    ")": "RightParen",
+    "[": "LeftBracket",
+    "]": "RightBracket",
+    "{": "LeftBrace",
+    "}": "RightBrace",
+}
+
+for ch in range(ord("0"), ord("9") + 1):
+    printable_ascii_names[chr(ch)] = chr(ch)
+for ch in range(ord("A"), ord("Z") + 1):
+    printable_ascii_names[chr(ch)] = chr(ch)
+for ch in range(ord("a"), ord("z") + 1):
+    printable_ascii_names[chr(ch)] = chr(ch)
