@@ -478,12 +478,16 @@ class KAIKOMenu:
         )
 
     @cmd.function_command
-    def clean(self):
+    def clean(self, bottom: bool = False):
         """[rich]Clean screen.
 
-        usage: [cmd]clean[/]
+        usage: [cmd]clean[/] [[[kw]--bottom[/] [arg]{BOTTOM}[/]]]
+                                   ╲
+                                    ╲
+                             bool, move to bottom or
+                              not; default is False.
         """
-        self.logger.clear()
+        self.logger.clear(bottom)
 
     @cmd.function_command
     @dn.datanode

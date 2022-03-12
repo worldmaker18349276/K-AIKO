@@ -203,9 +203,13 @@ class Logger:
             flush=flush,
         )
 
-    def clear(self, flush=False):
+    def clear(self, bottom=False, flush=False):
+        markup = self.renderer.clear_screen()
+        if bottom:
+            y = shutil.get_terminal_size().lines - 1
+            markup = mu.Group((markup, mu.Move(x=0, y=y)))
         print(
-            self.renderer.render(self.renderer.clear_screen().expand()),
+            self.renderer.render(markup.expand()),
             end="",
             flush=flush,
         )
@@ -222,7 +226,11 @@ class Logger:
         res.append(f"[weight=dim]{'─'*n}──┬─{'─'*(max(0, total_width-n-4))}[/]")
         for i, line in enumerate(lines):
             if marked and marked[0] == i:
-                line = self.escape(line[:marked[1]]) + "[color=red]◊[/]" + self.escape(line[marked[1]:])
+                line = (
+                    self.escape(line[: marked[1]])
+                    + "[color=red]◊[/]"
+                    + self.escape(line[marked[1] :])
+                )
             else:
                 line = self.escape(line)
             res.append(
