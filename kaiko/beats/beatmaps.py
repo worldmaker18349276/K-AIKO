@@ -1393,49 +1393,38 @@ class Beatmap:
             devices_settings.controller, devices_settings.terminal, self.start_time
         )
 
-        # load widgets
-        widget_builder = beatbar.BeatbarWidgetBuilder(
-            state=score,
-            rich=rich,
-            mixer=mixer,
-            detector=detector,
-            renderer=renderer,
-            controller=controller,
-        )
-        icon = (
-            yield from widget_builder.create(gameplay_settings.widgets.icon_widget)
-            .load()
-            .join()
-        )
-        header = (
-            yield from widget_builder.create(gameplay_settings.widgets.header_widget)
-            .load()
-            .join()
-        )
-        footer = (
-            yield from widget_builder.create(gameplay_settings.widgets.footer_widget)
-            .load()
-            .join()
-        )
-        sight = (
-            yield from widget_builder.create(gameplay_settings.playfield.sight)
-            .load()
-            .join()
-        )
-
         # make beatbar
         playfield = beatbar.Beatbar(
             mixer,
             detector,
             renderer,
             controller,
-            icon,
-            header,
-            footer,
-            sight,
             self.playfield_state.bar_shift,
             self.playfield_state.bar_flip,
             gameplay_settings.playfield,
+        )
+
+        widget_builder = beatbar.BeatbarWidgetBuilder(score, rich, playfield)
+
+        playfield.icon = (
+            yield from widget_builder.create(gameplay_settings.widgets.icon_widget)
+            .load()
+            .join()
+        )
+        playfield.header = (
+            yield from widget_builder.create(gameplay_settings.widgets.header_widget)
+            .load()
+            .join()
+        )
+        playfield.footer = (
+            yield from widget_builder.create(gameplay_settings.widgets.footer_widget)
+            .load()
+            .join()
+        )
+        playfield.sight = (
+            yield from widget_builder.create(gameplay_settings.playfield.sight)
+            .load()
+            .join()
         )
 
         yield from playfield.load().join()

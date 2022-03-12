@@ -225,10 +225,6 @@ class Beatbar:
         detector,
         renderer,
         controller,
-        icon,
-        header,
-        footer,
-        sight,
         bar_shift,
         bar_flip,
         settings,
@@ -258,10 +254,10 @@ class Beatbar:
             slice(-footer_width, None) if footer_width > 0 else slice(0, 0)
         )
 
-        self.icon = icon
-        self.header = header
-        self.footer = footer
-        self.sight_func = sight
+        self.icon = lambda arg: mu.Group(())
+        self.header = lambda arg: mu.Group(())
+        self.footer = lambda arg: mu.Group(())
+        self.sight = lambda arg: mu.Group(())
 
     @dn.datanode
     def load(self):
@@ -272,7 +268,7 @@ class Beatbar:
         self.detector.add_listener(hit_handler)
 
         # register handlers
-        self.sight_scheduler = Scheduler(default=self.sight_func)
+        self.sight_scheduler = Scheduler(default=self.sight)
 
         self.renderer.add_text(self.icon, xmask=self.icon_mask, zindex=(1,))
         self.renderer.add_text(self.header, xmask=self.header_mask, zindex=(2,))
@@ -551,6 +547,21 @@ class Scheduler(dn.DataNode):
 
 
 @dn.datanode
+def cell(node, queue):
+    node = dn.DataNode.wrap(node)
+    data = None
+    while True:
+        with node:
+            while queue.empty():
+                data = yield data
+                try:
+                    data = node.send(data)
+                except StopIteration:
+                    return
+            node = queue.get()
+
+
+@dn.datanode
 def observe(stack):
     last = 0
     yield
@@ -572,20 +583,17 @@ class BeatbarWidgetBuilder:
     monitor = beatwidgets.MonitorWidgetSettings
     sight = SightWidgetSettings
 
-    def __init__(self, *, state, rich, mixer, detector, renderer, controller):
+    def __init__(self, state, rich, beatbar):
         self.state = state
         self.rich = rich
-        self.mixer = mixer
-        self.detector = detector
-        self.renderer = renderer
-        self.controller = controller
+        self.beatbar = beatbar
 
     def create(self, widget_settings):
         if isinstance(widget_settings, BeatbarWidgetBuilder.spectrum):
-            return beatwidgets.SpectrumWidget(self.rich, self.mixer, widget_settings)
+            return beatwidgets.SpectrumWidget(self.rich, self.beatbar.mixer, widget_settings)
         elif isinstance(widget_settings, BeatbarWidgetBuilder.volume_indicator):
             return beatwidgets.VolumeIndicatorWidget(
-                self.rich, self.mixer, widget_settings
+                self.rich, self.beatbar.mixer, widget_settings
             )
         elif isinstance(widget_settings, BeatbarWidgetBuilder.accuracy_meter):
             accuracy_getter = dn.pipe(
@@ -594,16 +602,16 @@ class BeatbarWidgetBuilder:
             return beatwidgets.AccuracyMeterWidget(
                 accuracy_getter,
                 self.rich,
-                self.renderer.settings,
+                self.beatbar.renderer.settings,
                 widget_settings,
             )
         elif isinstance(widget_settings, BeatbarWidgetBuilder.monitor):
             if widget_settings.target == beatwidgets.MonitorTarget.mixer:
-                return beatwidgets.MonitorWidget(self.mixer, widget_settings)
+                return beatwidgets.MonitorWidget(self.beatbar.mixer, widget_settings)
             elif widget_settings.target == beatwidgets.MonitorTarget.detector:
-                return beatwidgets.MonitorWidget(self.detector, widget_settings)
+                return beatwidgets.MonitorWidget(self.beatbar.detector, widget_settings)
             elif widget_settings.target == beatwidgets.MonitorTarget.renderer:
-                return beatwidgets.MonitorWidget(self.renderer, widget_settings)
+                return beatwidgets.MonitorWidget(self.beatbar.renderer, widget_settings)
             else:
                 assert False
         elif isinstance(widget_settings, BeatbarWidgetBuilder.score):
@@ -627,8 +635,8 @@ class BeatbarWidgetBuilder:
             return SightWidget(
                 grade_getter,
                 self.rich,
-                self.detector,
-                self.renderer.settings,
+                self.beatbar.detector,
+                self.beatbar.renderer.settings,
                 widget_settings,
             )
         else:
