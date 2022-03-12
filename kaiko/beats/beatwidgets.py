@@ -490,12 +490,15 @@ class MarkerWidgetSettings:
     r"""
     Fields
     ------
-    markers : tuple of str and str
-        The appearance of normal and blinking-style markers.
+    normal_appearance : str
+        The appearance of normal-style markers.
+    blinking_appearance : str
+        The appearance of blinking-style markers.
     blink_ratio : float
         The ratio to blink.
     """
-    markers: Tuple[str, str] = ("❯ ", "[weight=bold]❯ [/]")
+    normal_appearance: str = "❯ "
+    blinking_appearance: str = "[weight=bold]❯ [/]"
     blink_ratio: float = 0.3
 
 
@@ -505,20 +508,16 @@ class MarkerWidget:
         self.settings = settings
 
     def load(self, rich):
-        markers = self.settings.markers
         blink_ratio = self.settings.blink_ratio
-
-        markuped_markers = (
-            rich.parse(markers[0]),
-            rich.parse(markers[1]),
-        )
+        normal = rich.parse(self.settings.normal_appearance)
+        blinking = rich.parse(self.settings.blinking_appearance)
 
         def marker_func(arg):
             time, ran = arg
             beat = self.metronome.beat(time)
             if beat % 4 < min(1.0, blink_ratio):
-                return markuped_markers[1]
+                return blinking
             else:
-                return markuped_markers[0]
+                return normal
 
         return marker_func

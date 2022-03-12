@@ -3,7 +3,7 @@ import functools
 import re
 import threading
 import queue
-from typing import Optional, List, Tuple, Dict, Callable
+from typing import Optional, List, Tuple, Dict, Callable, Union
 import dataclasses
 from ..utils import datanodes as dn
 from ..utils import config as cfg
@@ -269,6 +269,101 @@ def shlexer_markup(buffer, tokens, typeahead, tags):
     return mu.Group(tuple(markup_children))
 
 
+# widgets
+@dataclasses.dataclass(frozen=True)
+class CaretPlaceholder(mu.Pair):
+    name = "caret"
+
+
+@dataclasses.dataclass
+class CaretWidgetSettings:
+    r"""
+    Fields
+    ------
+    normal_appearance : str
+        The markup template of the normal-style caret.
+    blinking_appearance : str
+        The markup template of the blinking-style caret.
+    blinking_appearance : str
+        The markup template of the highlighted-style caret.
+    blink_ratio : float
+        The ratio to blink.
+    """
+    normal_appearance: str = "[slot/]"
+    blinking_appearance: str = "[weight=dim][invert][slot/][/][/]"
+    highlighted_appearance: str = "[weight=bold][invert][slot/][/][/]"
+    blink_ratio: float = 0.3
+
+
+@dataclasses.dataclass
+class Caret:
+    metronome: engines.Metronome
+    settings: CaretWidgetSettings
+
+    def load(self, rich):
+        caret_blink_ratio = self.settings.blink_ratio
+        normal = rich.parse(self.settings.normal_appearance, slotted=True)
+        blinking = rich.parse(self.settings.blinking_appearance, slotted=True)
+        highlighted = rich.parse(self.settings.highlighted_appearance, slotted=True)
+
+        def caret_node(arg):
+            time, key_pressed_time = arg
+            beat = self.metronome.beat(time)
+            key_pressed_beat = self.metronome.beat(key_pressed_time) // -1 * -1
+            # don't blink while key pressing
+            if beat < key_pressed_beat or beat % 1 < caret_blink_ratio:
+                if beat % 4 < 1:
+                    return highlighted
+                else:
+                    return blinking
+            else:
+                return normal
+
+        return caret_node
+
+
+class BeatshellWidgetBuilder:
+    monitor = beatwidgets.MonitorWidgetSettings
+    patterns = beatwidgets.PatternsWidgetSettings
+    marker = beatwidgets.MarkerWidgetSettings
+    caret = CaretWidgetSettings
+
+    def __init__(self, metronome, rich, renderer):
+        self.metronome = metronome
+        self.rich = rich
+        self.renderer = renderer
+
+    def create(self, widget_settings):
+        if isinstance(widget_settings, BeatshellWidgetBuilder.monitor):
+            if widget_settings.target == beatwidgets.MonitorTarget.mixer:
+                return beatwidgets.MonitorWidget(None, widget_settings).load()
+            elif widget_settings.target == beatwidgets.MonitorTarget.detector:
+                return beatwidgets.MonitorWidget(None, widget_settings).load()
+            elif widget_settings.target == beatwidgets.MonitorTarget.renderer:
+                return beatwidgets.MonitorWidget(self.renderer, widget_settings).load()
+            else:
+                assert False
+        elif isinstance(widget_settings, BeatshellWidgetBuilder.patterns):
+            return beatwidgets.PatternsWidget(self.metronome, widget_settings).load(
+                self.rich
+            )
+        elif isinstance(widget_settings, BeatshellWidgetBuilder.marker):
+            return beatwidgets.MarkerWidget(self.metronome, widget_settings).load(
+                self.rich
+            )
+        elif isinstance(widget_settings, BeatshellWidgetBuilder.caret):
+            return Caret(self.metronome, widget_settings).load(self.rich)
+        else:
+            raise TypeError
+
+
+BeatshellIconWidgetSettings = Union[
+    beatwidgets.PatternsWidgetSettings,
+    beatwidgets.MonitorWidgetSettings,
+]
+
+
+# shell
 class BeatShellSettings(cfg.Configurable):
     @cfg.subconfig
     class input(cfg.Configurable):
@@ -332,50 +427,31 @@ class BeatShellSettings(cfg.Configurable):
         ------
         to : float
         tempo : float
-        icons : list of str
-            The appearances of icon.
+
         icon_width : int
             The text width of icon.
-
-        markers : tuple of str and str
-            The appearance of normal and blinking-style markers.
         marker_width : int
             The text width of marker.
-
         input_margin : int
             The width of margin of input field.
 
-        caret : tuple of str and str and str
-            The markup template of the normal/blinking/highlighted-style caret.
-        caret_blink_ratio : float
-            The ratio to blink.
+        icons : BeatShellIconWidgetSettings
+            The appearances of icon.
+        marker : MarkerWidgetSettings
+            The appearance of marker.
+        caret : CaretWidgetSettings
+            The appearance of caret.
         """
         t0: float = 0.0
         tempo: float = 130.0
 
-        icons: List[str] = [
-            "[color=cyan]⠶⠦⣚⠀⠶[/]",
-            "[color=cyan]⢎⣀⡛⠀⠶[/]",
-            "[color=cyan]⢖⣄⠻⠀⠶[/]",
-            "[color=cyan]⠖⠐⡩⠂⠶[/]",
-            "[color=cyan]⠶⠀⡭⠲⠶[/]",
-            "[color=cyan]⠶⠀⣬⠉⡱[/]",
-            "[color=cyan]⠶⠀⣦⠙⠵[/]",
-            "[color=cyan]⠶⠠⣊⠄⠴[/]",
-        ]
         icon_width: int = 5
-
-        markers: Tuple[str, str] = ("❯ ", "[weight=bold]❯ [/]")
         marker_width: int = 2
-
         input_margin: int = 3
 
-        caret: Tuple[str, str, str] = (
-            "[slot/]",
-            "[weight=dim][invert][slot/][/][/]",
-            "[weight=bold][invert][slot/][/][/]",
-        )
-        caret_blink_ratio: float = 0.3
+        icons: BeatshellIconWidgetSettings = beatwidgets.PatternsWidgetSettings()
+        marker: beatwidgets.MarkerWidgetSettings = beatwidgets.MarkerWidgetSettings()
+        caret: CaretWidgetSettings = CaretWidgetSettings()
 
     @cfg.subconfig
     class text(cfg.Configurable):
@@ -607,6 +683,7 @@ class BeatInput:
         shell_settings = self.shell_settings
         devices_settings = self.devices_settings
 
+        # engines
         debug_monitor = shell_settings.debug_monitor
         renderer_monitor = (
             engines.Monitor(self.cache_dir / "monitor" / "prompt.csv")
@@ -623,29 +700,16 @@ class BeatInput:
         )
         stroke = BeatStroke(self, shell_settings.input)
 
+        # widgets
         t0 = shell_settings.prompt.t0
         tempo = shell_settings.prompt.tempo
         metronome = engines.Metronome(t0, tempo)
 
-        if debug_monitor:
-            monitor_settings = beatwidgets.MonitorWidgetSettings()
-            monitor_settings.target = beatwidgets.MonitorTarget.renderer
-            icon = beatwidgets.MonitorWidget(renderer, monitor_settings).load()
-        else:
-            patterns_settings = beatwidgets.PatternsWidgetSettings()
-            patterns_settings.patterns = shell_settings.prompt.icons
-            icon = beatwidgets.PatternsWidget(metronome, patterns_settings).load(
-                self.logger.rich
-            )
+        widget_builder = BeatshellWidgetBuilder(metronome, self.logger.rich, renderer)
 
-        marker_settings = beatwidgets.MarkerWidgetSettings()
-        marker_settings.markers = shell_settings.prompt.markers
-        marker_settings.blink_ratio = shell_settings.prompt.caret_blink_ratio
-        marker = beatwidgets.MarkerWidget(metronome, marker_settings).load(
-            self.logger.rich
-        )
-
-        caret = Caret(metronome, shell_settings.prompt).load(self.logger.rich)
+        icon = widget_builder.create(shell_settings.prompt.icons)
+        marker = widget_builder.create(shell_settings.prompt.marker)
+        caret = widget_builder.create(shell_settings.prompt.caret)
 
         prompt = BeatPrompt(
             stroke,
@@ -2140,39 +2204,3 @@ class BeatPrompt:
                 msgs = hint_node.send((msgs, self.hint))
                 logs = popup_node.send((logs, self.popup))
                 (view, msgs, logs), time, width = yield (view, msgs, logs)
-
-
-@dataclasses.dataclass(frozen=True)
-class CaretPlaceholder(mu.Pair):
-    name = "caret"
-
-
-@dataclasses.dataclass
-class Caret:
-    metronome: engines.Metronome
-    settings: BeatShellSettings.prompt
-
-    def load(self, rich):
-        caret_blink_ratio = self.settings.caret_blink_ratio
-        caret = self.settings.caret
-
-        markuped_caret = [
-            rich.parse(caret[0], slotted=True),
-            rich.parse(caret[1], slotted=True),
-            rich.parse(caret[2], slotted=True),
-        ]
-
-        def caret_node(arg):
-            time, key_pressed_time = arg
-            beat = self.metronome.beat(time)
-            key_pressed_beat = self.metronome.beat(key_pressed_time) // -1 * -1
-            # don't blink while key pressing
-            if beat < key_pressed_beat or beat % 1 < caret_blink_ratio:
-                if beat % 4 < 1:
-                    return markuped_caret[2]
-                else:
-                    return markuped_caret[1]
-            else:
-                return markuped_caret[0]
-
-        return caret_node
