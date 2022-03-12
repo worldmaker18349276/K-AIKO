@@ -1326,18 +1326,21 @@ class GameplaySettings(cfg.Configurable):
         r"""
         Fields
         ------
-        skip_time : float
         prepare_time : float
             The time between preparing the event and the lifespan of the event.
         tickrate : float
             The event updating rate.
 
-        pause_delay : float
-            The delay to pausing/resuming the game.
+        control_delay : float
+            The delay of control action.
         pause_key : str
             The key to pause/resume the game.
         stop_key : str
             The key to stop the game.
+        skip_time : float
+        skip_key : str
+            The key to skip time.
+
         sound_delay_adjust_keys : tuple of str and str
             The keys to adjust click sound delay.
             The first/second string is the key to adjust faster/slower.
@@ -1359,12 +1362,14 @@ class GameplaySettings(cfg.Configurable):
         knock_energy_adjust_step : float
             The adjustment interval of knock energy.
         """
-        skip_time: float = 8.0
         prepare_time: float = 0.1
         tickrate: float = 60.0
-        pause_delay = 0.1
+
+        control_delay = 0.1
         pause_key = "Enter"
         stop_key: str = "Esc"
+        skip_time: float = 0.5
+        skip_key = "Tab"
 
         display_delay_adjust_keys: Tuple[str, str] = ("Ctrl_Left", "Ctrl_Right")
         knock_delay_adjust_keys: Tuple[str, str] = ("Left", "Right")
@@ -1589,11 +1594,13 @@ class Beatmap:
         def incr_display_delay(arg):
             devices_settings.renderer.display_delay += display_delay_adjust_step
             playfield.renderer.clock.skip(arg[1], display_delay_adjust_step)
+            playfield.renderer.add_log(mu.Text(f"display_delay += {display_delay_adjust_step}\n"))
             settings_changed.set()
 
         def decr_display_delay(arg):
             devices_settings.renderer.display_delay -= display_delay_adjust_step
             playfield.renderer.clock.skip(arg[1], -display_delay_adjust_step)
+            playfield.renderer.add_log(mu.Text(f"display_delay -= {display_delay_adjust_step}\n"))
             settings_changed.set()
 
         playfield.controller.add_handler(incr_display_delay, display_delay_adjust_keys[0])
@@ -1606,11 +1613,13 @@ class Beatmap:
         def incr_knock_delay(arg):
             devices_settings.detector.knock_delay += knock_delay_adjust_step
             playfield.detector.clock.skip(arg[1], knock_delay_adjust_step)
+            playfield.renderer.add_log(mu.Text(f"knock_delay += {knock_delay_adjust_step}\n"))
             settings_changed.set()
 
         def decr_knock_delay(arg):
             devices_settings.detector.knock_delay -= knock_delay_adjust_step
             playfield.detector.clock.skip(arg[1], -knock_delay_adjust_step)
+            playfield.renderer.add_log(mu.Text(f"knock_delay -= {knock_delay_adjust_step}\n"))
             settings_changed.set()
 
         playfield.controller.add_handler(incr_knock_delay, knock_delay_adjust_keys[0])
@@ -1621,21 +1630,25 @@ class Beatmap:
         knock_energy_adjust_keys = controls_settings.knock_energy_adjust_keys
 
         def incr_knock_energy(_):
-            playfield.detector.knock_energy.add(knock_energy_adjust_step)
             devices_settings.detector.knock_energy += knock_energy_adjust_step
+            playfield.detector.knock_energy.add(knock_energy_adjust_step)
+            playfield.renderer.add_log(mu.Text(f"knock_energy += {knock_energy_adjust_step}\n"))
             settings_changed.set()
 
         def decr_knock_energy(_):
-            playfield.detector.knock_energy.add(-knock_energy_adjust_step)
             devices_settings.detector.knock_energy -= knock_energy_adjust_step
+            playfield.detector.knock_energy.add(-knock_energy_adjust_step)
+            playfield.renderer.add_log(mu.Text(f"knock_energy -= {knock_energy_adjust_step}\n"))
             settings_changed.set()
 
         playfield.controller.add_handler(incr_knock_energy, knock_energy_adjust_keys[0])
         playfield.controller.add_handler(decr_knock_energy, knock_energy_adjust_keys[1])
 
-        # pause/resume
-        pause_delay = controls_settings.pause_delay
+        # pause/resume/skip
+        control_delay = controls_settings.control_delay
         pause_key = controls_settings.pause_key
+        skip_time = controls_settings.skip_time
+        skip_key = controls_settings.skip_key
 
         @dn.datanode
         def pause_node():
@@ -1647,19 +1660,25 @@ class Beatmap:
                     time = time_node.send(None)
                     if keyname == pause_key:
                         if paused:
-                            playfield.mixer.clock.resume(time + pause_delay)
-                            playfield.detector.clock.resume(time + pause_delay)
-                            playfield.renderer.clock.resume(time + pause_delay)
-                            playfield.controller.clock.resume(time + pause_delay)
-                            event_clock.resume(time + pause_delay)
+                            playfield.mixer.clock.resume(time + control_delay)
+                            playfield.detector.clock.resume(time + control_delay)
+                            playfield.renderer.clock.resume(time + control_delay)
+                            playfield.controller.clock.resume(time + control_delay)
+                            event_clock.resume(time + control_delay)
                             paused = False
                         else:
-                            playfield.mixer.clock.pause(time + pause_delay)
-                            playfield.detector.clock.pause(time + pause_delay)
-                            playfield.renderer.clock.pause(time + pause_delay)
-                            playfield.controller.clock.pause(time + pause_delay)
-                            event_clock.pause(time + pause_delay)
+                            playfield.mixer.clock.pause(time + control_delay)
+                            playfield.detector.clock.pause(time + control_delay)
+                            playfield.renderer.clock.pause(time + control_delay)
+                            playfield.controller.clock.pause(time + control_delay)
+                            event_clock.pause(time + control_delay)
                             paused = True
+                    if keyname == skip_key:
+                        playfield.mixer.clock.skip(time + control_delay, skip_time)
+                        playfield.detector.clock.skip(time + control_delay, skip_time)
+                        playfield.renderer.clock.skip(time + control_delay, skip_time)
+                        playfield.controller.clock.skip(time + control_delay, skip_time)
+                        event_clock.skip(time + control_delay, skip_time)
 
         playfield.controller.handlers_bus.add_node(pause_node(), (0,))
 
