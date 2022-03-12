@@ -1094,6 +1094,12 @@ sawtooth_wave_template = Template("((({})+0.5)%1*2-1)")
 square_dirty_wave_template = Template("(where(([{0}][0])%1<[{0}][1],1,-1))")
 
 
+def parse_minsec(s):
+    if s == "":
+        return None
+    min, sec = s.split(":", 1) if ":" in s else ("0", s)
+    return int(min) * 60 + float(sec)
+
 @dataclasses.dataclass
 class Waveform:
     expr: str
@@ -1102,10 +1108,15 @@ class Waveform:
         base, *effects = self.expr.split("#")
         effect_nodes = []
         for effect in effects:
-            name, args = effect.split(":", 1) if ":" in effect else (effect, "")
-            if name not in Waveform.valid_effects:
-                raise ValueError(f"invalid effect name {name}")
-            args = ast.literal_eval(f"({args},)") if args else ()
+            if "~" in effect:
+                start, end = effect.split("~", 1)
+                name = "tspan"
+                args = parse_minsec(start), parse_minsec(end)
+            else:
+                name, args = effect.split(":", 1) if ":" in effect else (effect, "")
+                if name not in Waveform.valid_effects:
+                    raise ValueError(f"invalid effect name {name}")
+                args = ast.literal_eval(f"({args},)") if args else ()
             effect_nodes.append(getattr(Waveform, name)(samplerate, channels, *args))
 
         return pipe(waveform(base, samplerate, channels, buffer_length), *effect_nodes)
