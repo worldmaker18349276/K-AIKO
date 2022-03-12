@@ -322,10 +322,48 @@ class CaretWidget:
         return caret_node
 
 
+@dataclasses.dataclass
+class MarkerWidgetSettings:
+    r"""
+    Fields
+    ------
+    normal_appearance : str
+        The appearance of normal-style markers.
+    blinking_appearance : str
+        The appearance of blinking-style markers.
+    blink_ratio : float
+        The ratio to blink.
+    """
+    normal_appearance: str = "❯ "
+    blinking_appearance: str = "[weight=bold]❯ [/]"
+    blink_ratio: float = 0.3
+
+
+class MarkerWidget:
+    def __init__(self, metronome, settings):
+        self.metronome = metronome
+        self.settings = settings
+
+    def load(self, rich):
+        blink_ratio = self.settings.blink_ratio
+        normal = rich.parse(self.settings.normal_appearance)
+        blinking = rich.parse(self.settings.blinking_appearance)
+
+        def marker_func(arg):
+            time, ran = arg
+            beat = self.metronome.beat(time)
+            if beat % 4 < min(1.0, blink_ratio):
+                return blinking
+            else:
+                return normal
+
+        return marker_func
+
+
 class BeatshellWidgetBuilder:
     monitor = beatwidgets.MonitorWidgetSettings
     patterns = beatwidgets.PatternsWidgetSettings
-    marker = beatwidgets.MarkerWidgetSettings
+    marker = MarkerWidgetSettings
     caret = CaretWidgetSettings
 
     def __init__(self, prompt, renderer):
@@ -347,9 +385,9 @@ class BeatshellWidgetBuilder:
                 self.prompt.metronome, widget_settings
             ).load(self.prompt.rich)
         elif isinstance(widget_settings, BeatshellWidgetBuilder.marker):
-            return beatwidgets.MarkerWidget(
-                self.prompt.metronome, widget_settings
-            ).load(self.prompt.rich)
+            return MarkerWidget(self.prompt.metronome, widget_settings).load(
+                self.prompt.rich
+            )
         elif isinstance(widget_settings, BeatshellWidgetBuilder.caret):
             return CaretWidget(self.prompt.metronome, widget_settings).load(
                 self.prompt.rich
@@ -451,7 +489,7 @@ class BeatShellSettings(cfg.Configurable):
         input_margin: int = 3
 
         icons: BeatshellIconWidgetSettings = beatwidgets.PatternsWidgetSettings()
-        marker: beatwidgets.MarkerWidgetSettings = beatwidgets.MarkerWidgetSettings()
+        marker: MarkerWidgetSettings = MarkerWidgetSettings()
         caret: CaretWidgetSettings = CaretWidgetSettings()
 
     @cfg.subconfig
