@@ -215,6 +215,60 @@ class VolumeIndicatorWidget:
 
 
 @dataclasses.dataclass
+class KnockMeterWidgetSettings:
+    r"""
+    Fields
+    ------
+    template : str
+        The template for the volume indicator.
+    decay_time : float
+        The decay time.
+    """
+    template: str = "[color=bright_magenta][slot/][/]"
+    decay_time: float = 0.2
+
+
+class KnockMeterWidget:
+    def __init__(self, settings):
+        self.strength = 0.0
+        self.settings = settings
+
+    @dn.datanode
+    def hit_listener(self):
+        while True:
+            _, time, strength, detected = yield
+
+            if detected:
+                self.strength = strength
+
+    def load(self, rich, detector, renderer_settings):
+        ticks = " ▏▎▍▌▋▊▉█"
+        nticks = len(ticks) - 1
+        decay_time = self.settings.decay_time
+        display_framerate = renderer_settings.display_framerate
+        decay = 1.0 / display_framerate / decay_time
+
+        template = rich.parse(self.settings.template, slotted=True)
+
+        detector.add_listener(self.hit_listener())
+
+        def knock_func(arg):
+            length = len(arg[1])
+            value = int(max(0.0, self.strength) * length * nticks)
+            if self.strength > 0:
+                self.strength -= decay
+            text = mu.Text(
+                "".join(
+                    ticks[min(nticks, max(0, value - i * nticks))]
+                    for i in range(length)
+                )
+            )
+            return mu.replace_slot(template, text)
+
+        return knock_func
+
+
+@dataclasses.dataclass
 class AccuracyMeterWidgetSettings:
     r"""
     Fields

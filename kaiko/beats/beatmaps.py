@@ -1042,6 +1042,7 @@ def observe(stack):
 class BeatbarWidgetBuilder:
     spectrum = beatwidgets.SpectrumWidgetSettings
     volume_indicator = beatwidgets.VolumeIndicatorWidgetSettings
+    knock_meter = beatwidgets.KnockMeterWidgetSettings
     score = beatwidgets.ScoreWidgetSettings
     progress = beatwidgets.ProgressWidgetSettings
     accuracy_meter = beatwidgets.AccuracyMeterWidgetSettings
@@ -1061,6 +1062,10 @@ class BeatbarWidgetBuilder:
         elif isinstance(widget_settings, BeatbarWidgetBuilder.volume_indicator):
             return beatwidgets.VolumeIndicatorWidget(widget_settings).load(
                 self.rich, self.beatbar.mixer
+            )
+        elif isinstance(widget_settings, BeatbarWidgetBuilder.knock_meter):
+            return beatwidgets.KnockMeterWidget(widget_settings).load(
+                self.rich, self.beatbar.detector, self.beatbar.renderer.settings
             )
         elif isinstance(widget_settings, BeatbarWidgetBuilder.accuracy_meter):
             accuracy_getter = dn.pipe(
@@ -1116,6 +1121,7 @@ class BeatbarWidgetBuilder:
 BeatbarIconWidgetSettings = Union[
     beatwidgets.SpectrumWidgetSettings,
     beatwidgets.VolumeIndicatorWidgetSettings,
+    beatwidgets.KnockMeterWidgetSettings,
     beatwidgets.ScoreWidgetSettings,
     beatwidgets.ProgressWidgetSettings,
     beatwidgets.AccuracyMeterWidgetSettings,
