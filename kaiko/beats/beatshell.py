@@ -270,6 +270,47 @@ def shlexer_markup(buffer, tokens, typeahead, tags):
 
 
 # widgets
+@dataclasses.dataclass
+class PatternsWidgetSettings:
+    r"""
+    Fields
+    ------
+    patterns : list of str
+        The patterns to loop.
+    """
+    patterns: List[str] = dataclasses.field(
+        default_factory=lambda: [
+            "[color=cyan]⠶⠦⣚⠀⠶[/]",
+            "[color=cyan]⢎⣀⡛⠀⠶[/]",
+            "[color=cyan]⢖⣄⠻⠀⠶[/]",
+            "[color=cyan]⠖⠐⡩⠂⠶[/]",
+            "[color=cyan]⠶⠀⡭⠲⠶[/]",
+            "[color=cyan]⠶⠀⣬⠉⡱[/]",
+            "[color=cyan]⠶⠀⣦⠙⠵[/]",
+            "[color=cyan]⠶⠠⣊⠄⠴[/]",
+        ]
+    )
+
+
+class PatternsWidget:
+    def __init__(self, metronome, settings):
+        self.metronome = metronome
+        self.settings = settings
+
+    def load(self, rich):
+        patterns = self.settings.patterns
+
+        markuped_patterns = [rich.parse(pattern) for pattern in patterns]
+
+        def patterns_func(arg):
+            time, ran = arg
+            beat = self.metronome.beat(time)
+            ind = int(beat * len(markuped_patterns) // 1) % len(markuped_patterns)
+            return markuped_patterns[ind]
+
+        return patterns_func
+
+
 @dataclasses.dataclass(frozen=True)
 class CaretPlaceholder(mu.Pair):
     name = "caret"
@@ -295,10 +336,10 @@ class CaretWidgetSettings:
     blink_ratio: float = 0.3
 
 
-@dataclasses.dataclass
 class CaretWidget:
-    metronome: engines.Metronome
-    settings: CaretWidgetSettings
+    def __init__(self, metronome, settings):
+        self.metronome = metronome
+        self.settings = settings
 
     def load(self, rich):
         caret_blink_ratio = self.settings.blink_ratio
@@ -362,7 +403,7 @@ class MarkerWidget:
 
 class BeatshellWidgetBuilder:
     monitor = beatwidgets.MonitorWidgetSettings
-    patterns = beatwidgets.PatternsWidgetSettings
+    patterns = PatternsWidgetSettings
     marker = MarkerWidgetSettings
     caret = CaretWidgetSettings
 
@@ -381,9 +422,9 @@ class BeatshellWidgetBuilder:
             else:
                 assert False
         elif isinstance(widget_settings, BeatshellWidgetBuilder.patterns):
-            return beatwidgets.PatternsWidget(
-                self.prompt.metronome, widget_settings
-            ).load(self.prompt.rich)
+            return PatternsWidget(self.prompt.metronome, widget_settings).load(
+                self.prompt.rich
+            )
         elif isinstance(widget_settings, BeatshellWidgetBuilder.marker):
             return MarkerWidget(self.prompt.metronome, widget_settings).load(
                 self.prompt.rich
@@ -397,7 +438,7 @@ class BeatshellWidgetBuilder:
 
 
 BeatshellIconWidgetSettings = Union[
-    beatwidgets.PatternsWidgetSettings,
+    PatternsWidgetSettings,
     beatwidgets.MonitorWidgetSettings,
 ]
 
@@ -488,7 +529,7 @@ class BeatShellSettings(cfg.Configurable):
         marker_width: int = 2
         input_margin: int = 3
 
-        icons: BeatshellIconWidgetSettings = beatwidgets.PatternsWidgetSettings()
+        icons: BeatshellIconWidgetSettings = PatternsWidgetSettings()
         marker: MarkerWidgetSettings = MarkerWidgetSettings()
         caret: CaretWidgetSettings = CaretWidgetSettings()
 
