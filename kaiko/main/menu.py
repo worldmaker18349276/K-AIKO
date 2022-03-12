@@ -277,21 +277,26 @@ class KAIKOMenu:
         command : function
             The command.
         """
-        result = command()
+        try:
+            result = command()
 
-        if hasattr(result, "execute"):
-            is_bgm_on = self.bgm_controller.is_bgm_on
-            self.bgm_controller.stop()
-            yield from result.execute(self.manager).join()
-            if is_bgm_on:
-                self.bgm_controller.play()
+            if hasattr(result, "execute"):
+                is_bgm_on = self.bgm_controller.is_bgm_on
+                self.bgm_controller.stop()
+                yield from result.execute(self.manager).join()
+                if is_bgm_on:
+                    self.bgm_controller.play()
 
-        elif isinstance(result, dn.DataNode):
-            yield from result.join()
+            elif isinstance(result, dn.DataNode):
+                yield from result.join()
 
-        elif result is not None:
-            yield
-            self.logger.print(self.logger.format_value(result))
+            elif result is not None:
+                yield
+                self.logger.print(self.logger.format_value(result))
+
+        except Exception:
+            with self.logger.warn():
+                self.logger.print(traceback.format_exc(), end="", markup=False)
 
     @property
     def settings(self):
