@@ -1550,12 +1550,10 @@ class Beatmap:
 
         # handler
         event_clock = engines.Clock()
-        stop_event = threading.Event()
 
         settings_changed = Beatmap.register_controllers(
             playfield,
             event_clock,
-            stop_event,
             devices_settings,
             gameplay_settings.controls,
         )
@@ -1574,7 +1572,6 @@ class Beatmap:
             tickrate,
             prepare_time,
             event_clock,
-            stop_event,
         )
         event_task = dn.interval(updater, dt=1 / tickrate)
 
@@ -1592,13 +1589,13 @@ class Beatmap:
 
     @staticmethod
     def register_controllers(
-        playfield, event_clock, stop_event, devices_settings, controls_settings
+        playfield, event_clock, devices_settings, controls_settings
     ):
         settings_changed = threading.Event()
 
         # stop
         stop_key = controls_settings.stop_key
-        playfield.add_handler(lambda _: stop_event.set(), stop_key)
+        playfield.add_handler(lambda arg: event_clock.stop(arg[1]), stop_key)
 
         # display delay
         display_delay_adjust_step = controls_settings.display_delay_adjust_step
@@ -1816,7 +1813,6 @@ class Beatmap:
         tickrate,
         prepare_time,
         clock,
-        stop_event,
     ):
         # register events
         events_iter = iter(events)
@@ -1830,9 +1826,6 @@ class Beatmap:
         with timer:
             yield
             while True:
-                if stop_event.is_set():
-                    break
-
                 try:
                     time, ratio = timer.send(None)
                 except StopIteration:

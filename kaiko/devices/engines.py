@@ -146,6 +146,11 @@ class ClockSkip(ClockAction):
     delta: float
 
 
+@dataclasses.dataclass(frozen=True)
+class ClockStop(ClockAction):
+    time: float
+
+
 class Clock:
     def __init__(self):
         self.action_queue = queue.Queue()
@@ -180,6 +185,8 @@ class Clock:
                 continue
 
             # update state
+            if isinstance(action, ClockStop):
+                return
             if isinstance(action, ClockResume):
                 offset, ratio = offset + action.time * (ratio - ratio0), ratio0
             elif isinstance(action, ClockPause):
@@ -249,6 +256,8 @@ class Clock:
                 continue
 
             # update state
+            if isinstance(action, ClockStop):
+                return
             if isinstance(action, ClockResume):
                 offset, ratio = offset + action.time * (ratio - ratio0), ratio0
             elif isinstance(action, ClockPause):
@@ -266,6 +275,9 @@ class Clock:
 
     def skip(self, time, delta):
         self.action_queue.put(ClockSkip(time, delta))
+
+    def stop(self, time):
+        self.action_queue.put(ClockStop(time))
 
 
 class MixerSettings(cfg.Configurable):
