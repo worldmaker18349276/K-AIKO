@@ -153,7 +153,7 @@ class BeatmapManager:
             path = self._beatmaps[path][0]
 
         beatmap = self.get_beatmap_metadata(path)
-        if beatmap is None:
+        if beatmap is None or beatmap.audio is None:
             return None
         return Song(self.songs_dir / path.parent, beatmap.audio)
 
@@ -213,6 +213,12 @@ class BeatmapParser(cmd.TreeParser):
 class Song:
     root: Path
     audio: beatmaps.BeatmapAudio
+
+    @property
+    def path(self):
+        if self.audio.path is None:
+            return None
+        return self.root / self.audio.path
 
 
 class BGMAction:
@@ -513,7 +519,7 @@ class BGMCommand:
             return
 
         logger.print("will play:")
-        logger.print(format_info(song.info, logger))
+        logger.print(str(song.path))
         self.bgm_controller.play(song)
 
     @cmd.function_command
@@ -533,7 +539,7 @@ class BGMCommand:
         if self.bgm_controller.current_action is not None:
             song = self.bgm_controller.random_song()
             self.logger.print("will play:")
-            self.logger.print(format_info(song.info, self.logger))
+            self.logger.print(str(song.path))
             self.bgm_controller.play(song)
 
     @cmd.function_command
@@ -558,7 +564,7 @@ class BGMCommand:
             return
 
         logger.print("will play:")
-        logger.print(format_info(song.info, logger))
+        logger.print(str(song.path))
         self.bgm_controller.play(song, start)
 
     @play.arg_parser("beatmap")
@@ -574,10 +580,10 @@ class BGMCommand:
         current = self.bgm_controller.current_action
         if isinstance(current, PlayBGM):
             self.logger.print("now playing:")
-            self.logger.print(format_info(current.song.info, self.logger))
+            self.logger.print(str(current.song.path))
         elif isinstance(current, PreviewSong):
             self.logger.print("now previewing:")
-            self.logger.print(format_info(current.song.info, self.logger))
+            self.logger.print(str(current.song.path))
         elif current is None:
             self.logger.print("no song")
         else:
