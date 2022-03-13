@@ -326,7 +326,7 @@ printable_ascii_names = {
     "`": "Backtick",
     "*": "Asterisk",
     "+": "Plus",
-    "-": "Minus",
+    "-": "Dash",
     "/": "Slash",
     "\\": "Backslash",
     "|": "Bar",
