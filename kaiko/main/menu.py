@@ -557,7 +557,12 @@ class KAIKOPlay:
             logger.print()
 
             score, devices_settings = yield from beatmap.play(
-                manager, self.user, self.start, devices_settings, gameplay_settings
+                manager,
+                self.user.data_dir,
+                self.user.cache_dir,
+                self.start,
+                devices_settings,
+                gameplay_settings,
             ).join()
 
             logger.print()
@@ -616,7 +621,12 @@ class KAIKOLoop:
             logger.print()
 
             score, devices_settings = yield from beatmap.play(
-                manager, self.user, devices_settings, gameplay_settings
+                manager,
+                self.user.data_dir,
+                self.user.cache_dir,
+                None,
+                devices_settings,
+                gameplay_settings,
             ).join()
 
             logger.print()

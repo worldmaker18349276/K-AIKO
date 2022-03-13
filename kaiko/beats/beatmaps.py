@@ -1464,7 +1464,15 @@ class Beatmap:
         self.events = []
 
     @dn.datanode
-    def play(self, manager, user, start_time, devices_settings, gameplay_settings=None):
+    def play(
+        self,
+        manager,
+        data_dir,
+        cache_dir,
+        start_time,
+        devices_settings,
+        gameplay_settings=None,
+    ):
         gameplay_settings = gameplay_settings or GameplaySettings()
 
         samplerate = devices_settings.mixer.output_samplerate
@@ -1482,7 +1490,7 @@ class Beatmap:
         try:
             yield from dn.create_task(
                 dn.chain(
-                    self.load_resources(samplerate, nchannels, user.data_dir),
+                    self.load_resources(samplerate, nchannels, data_dir),
                     self.prepare_events(rich),
                 ),
             ).join()
@@ -1498,13 +1506,9 @@ class Beatmap:
         # load engines
         mixer_monitor = detector_monitor = renderer_monitor = None
         if debug_monitor:
-            mixer_monitor = engines.Monitor(user.cache_dir / "monitor" / "mixer.csv")
-            detector_monitor = engines.Monitor(
-                user.cache_dir / "monitor" / "detector.csv"
-            )
-            renderer_monitor = engines.Monitor(
-                user.cache_dir / "monitor" / "renderer.csv"
-            )
+            mixer_monitor = engines.Monitor(cache_dir / "monitor" / "mixer.csv")
+            detector_monitor = engines.Monitor(cache_dir / "monitor" / "detector.csv")
+            renderer_monitor = engines.Monitor(cache_dir / "monitor" / "renderer.csv")
 
         mixer_task, mixer = engines.Mixer.create(
             devices_settings.mixer, manager, self.start_time, mixer_monitor
