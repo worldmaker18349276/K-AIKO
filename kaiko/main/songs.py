@@ -547,7 +547,7 @@ class BGMCommand:
             self.bgm_controller.play(song)
 
     @cmd.function_command
-    def play(self, beatmap, start: Optional[float] = None):
+    def play(self, beatmap, start=None):
         """[rich]Play the song of beatmap.
 
         usage: [cmd]bgm[/] [cmd]play[/] [arg]{beatmap}[/] [[[kw]--start[/] [arg]{START}[/]]]
@@ -574,6 +574,10 @@ class BGMCommand:
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
         return self.beatmap_manager.make_parser()
+
+    @play.arg_parser("start")
+    def _play_start_parser(self, beatmap):
+        return cmd.TimeParser(0.0)
 
     @cmd.function_command
     def now_playing(self):
