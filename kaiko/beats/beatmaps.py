@@ -1107,7 +1107,9 @@ class BeatbarWidgetBuilder:
         elif isinstance(widget_settings, BeatbarWidgetBuilder.sight):
             grade_getter = dn.pipe(
                 observe(self.state.perfs),
-                lambda perfs: [perf.grade.shift for perf in perfs],
+                lambda perfs: [
+                    perf.grade.shift for perf in perfs if perf.grade.shift is not None
+                ],
             )
             return beatbar.SightWidget(grade_getter, widget_settings).load(
                 self.rich,
