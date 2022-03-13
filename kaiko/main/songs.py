@@ -220,6 +220,10 @@ class Song:
             return None
         return self.root / self.audio.path
 
+    @property
+    def relpath(self):
+        return Path("~") / self.path.relative_to(Path("~").expanduser())
+
 
 class BGMAction:
     pass
@@ -377,7 +381,7 @@ class KAIKOBGMController:
 
             yield from play_fadeinout(
                 mixer,
-                song.root / song.audio.path,
+                song.path,
                 fadein_time=self.fadein_time,
                 fadeout_time=self.fadeout_time,
                 volume=volume,
@@ -388,7 +392,7 @@ class KAIKOBGMController:
         elif isinstance(action, PlayBGM):
             song = action.song
             with mixer.play_file(
-                song.root / song.audio.path,
+                song.path,
                 start=action.start,
                 volume=song.audio.volume,
             ) as song_handler:
@@ -519,7 +523,7 @@ class BGMCommand:
             return
 
         logger.print("will play:")
-        logger.print(str(song.path))
+        logger.print(logger.emph(str(song.relpath)))
         self.bgm_controller.play(song)
 
     @cmd.function_command
@@ -539,7 +543,7 @@ class BGMCommand:
         if self.bgm_controller.current_action is not None:
             song = self.bgm_controller.random_song()
             self.logger.print("will play:")
-            self.logger.print(str(song.path))
+            self.logger.print(logger.emph(str(song.relpath)))
             self.bgm_controller.play(song)
 
     @cmd.function_command
@@ -564,7 +568,7 @@ class BGMCommand:
             return
 
         logger.print("will play:")
-        logger.print(str(song.path))
+        logger.print(logger.emph(str(song.relpath)))
         self.bgm_controller.play(song, start)
 
     @play.arg_parser("beatmap")
@@ -580,10 +584,10 @@ class BGMCommand:
         current = self.bgm_controller.current_action
         if isinstance(current, PlayBGM):
             self.logger.print("now playing:")
-            self.logger.print(str(current.song.path))
+            self.logger.print(logger.emph(str(current.song.relpath)))
         elif isinstance(current, PreviewSong):
             self.logger.print("now previewing:")
-            self.logger.print(str(current.song.path))
+            self.logger.print(logger.emph(str(current.song.relpath)))
         elif current is None:
             self.logger.print("no song")
         else:
