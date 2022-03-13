@@ -1594,57 +1594,63 @@ class Beatmap:
 
         # stop
         stop_key = controls_settings.stop_key
-        playfield.controller.add_handler(lambda arg: event_clock.stop(arg[1]), stop_key)
+        playfield.controller.add_handler(
+            dn.pipe(dn.time(0.0), event_clock.stop), stop_key
+        )
 
         # display delay
         display_delay_adjust_step = controls_settings.display_delay_adjust_step
         display_delay_adjust_keys = controls_settings.display_delay_adjust_keys
 
-        def incr_display_delay(arg):
+        def incr_display_delay(time):
             devices_settings.renderer.display_delay += display_delay_adjust_step
-            playfield.renderer.clock.skip(arg[1], display_delay_adjust_step)
+            playfield.renderer.clock.skip(time, display_delay_adjust_step)
             playfield.renderer.add_log(
                 mu.Text(f"display_delay += {display_delay_adjust_step}\n")
             )
             settings_changed.set()
 
-        def decr_display_delay(arg):
+        def decr_display_delay(time):
             devices_settings.renderer.display_delay -= display_delay_adjust_step
-            playfield.renderer.clock.skip(arg[1], -display_delay_adjust_step)
+            playfield.renderer.clock.skip(time, -display_delay_adjust_step)
             playfield.renderer.add_log(
                 mu.Text(f"display_delay -= {display_delay_adjust_step}\n")
             )
             settings_changed.set()
 
         playfield.controller.add_handler(
-            incr_display_delay, display_delay_adjust_keys[0]
+            dn.pipe(dn.time(0.0), incr_display_delay), display_delay_adjust_keys[0]
         )
         playfield.controller.add_handler(
-            decr_display_delay, display_delay_adjust_keys[1]
+            dn.pipe(dn.time(0.0), decr_display_delay), display_delay_adjust_keys[1]
         )
 
         # knock delay
         knock_delay_adjust_step = controls_settings.knock_delay_adjust_step
         knock_delay_adjust_keys = controls_settings.knock_delay_adjust_keys
 
-        def incr_knock_delay(arg):
+        def incr_knock_delay(time):
             devices_settings.detector.knock_delay += knock_delay_adjust_step
-            playfield.detector.clock.skip(arg[1], knock_delay_adjust_step)
+            playfield.detector.clock.skip(time, knock_delay_adjust_step)
             playfield.renderer.add_log(
                 mu.Text(f"knock_delay += {knock_delay_adjust_step}\n")
             )
             settings_changed.set()
 
-        def decr_knock_delay(arg):
+        def decr_knock_delay(time):
             devices_settings.detector.knock_delay -= knock_delay_adjust_step
-            playfield.detector.clock.skip(arg[1], -knock_delay_adjust_step)
+            playfield.detector.clock.skip(time, -knock_delay_adjust_step)
             playfield.renderer.add_log(
                 mu.Text(f"knock_delay -= {knock_delay_adjust_step}\n")
             )
             settings_changed.set()
 
-        playfield.controller.add_handler(incr_knock_delay, knock_delay_adjust_keys[0])
-        playfield.controller.add_handler(decr_knock_delay, knock_delay_adjust_keys[1])
+        playfield.controller.add_handler(
+            dn.pipe(dn.time(0.0), incr_knock_delay), knock_delay_adjust_keys[0]
+        )
+        playfield.controller.add_handler(
+            dn.pipe(dn.time(0.0), decr_knock_delay), knock_delay_adjust_keys[1]
+        )
 
         # knock strength
         knock_energy_adjust_step = controls_settings.knock_energy_adjust_step
