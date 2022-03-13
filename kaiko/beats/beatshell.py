@@ -484,7 +484,8 @@ class BeatShellSettings(cfg.Configurable):
 
         keymap: Dict[str, str] = {
             "Backspace": "input.backspace()",
-            "Alt_Backspace": "input.delete_token()",
+            "Alt_Backspace": "input.delete_backward_token()",
+            "Alt_Delete": "input.delete_forward_token()",
             "Delete": "input.delete()",
             "Left": "input.move_left()",
             "Right": "input.insert_typeahead() or input.move_right()",
@@ -1256,8 +1257,8 @@ class BeatInput:
 
     @locked
     @onstate("EDIT")
-    def delete_token(self, index=None):
-        """Delete current token.
+    def delete_backward_token(self, index=None):
+        """Delete current or backward token.
 
         Parameters
         ----------
@@ -1277,6 +1278,30 @@ class BeatInput:
         else:
             # find nothing
             return self.delete_range(0, self.pos)
+
+    @locked
+    @onstate("EDIT")
+    def delete_forward_token(self, index=None):
+        """Delete current or forward token.
+
+        Parameters
+        ----------
+        index : int or None
+
+        Returns
+        -------
+        succ : bool
+        """
+        if index is not None:
+            _, _, slic, _ = self.tokens[index]
+            return self.delete_range(slic.start, slic.stop)
+
+        for _, _, slic, _ in self.tokens:
+            if self.pos <= slic.stop:
+                return self.delete_range(min(self.pos, slic.start), slic.stop)
+        else:
+            # find nothing
+            return self.delete_range(self.pos, None)
 
     @locked
     @onstate("EDIT")
