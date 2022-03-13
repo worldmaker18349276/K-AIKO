@@ -34,7 +34,6 @@ setup(
         "audioread",
         "pyaudio",
         "wcwidth",
-        "appdirs",
     ],
     entry_points={
         "console_scripts": [

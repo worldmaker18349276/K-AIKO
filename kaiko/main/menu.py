@@ -7,7 +7,6 @@ import getpass
 import shutil
 import pkgutil
 from pathlib import Path
-import appdirs
 from ..utils import markups as mu
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
@@ -47,8 +46,8 @@ class KAIKOUser:
     @classmethod
     def create(cls):
         username = getpass.getuser()
-        data_dir = Path(appdirs.user_data_dir("K-AIKO", username))
-        cache_dir = Path(appdirs.user_cache_dir("K-AIKO", username))
+        data_dir = Path("~/.local/share/K-AIKO").expanduser()
+        cache_dir = Path("~/.cache/K-AIKO").expanduser()
         return cls(username, data_dir, cache_dir)
 
     @property
