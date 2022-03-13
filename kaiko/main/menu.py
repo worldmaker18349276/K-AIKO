@@ -487,9 +487,8 @@ class KAIKOMenu:
 
         usage: [cmd]clean[/] [[[kw]--bottom[/] [arg]{BOTTOM}[/]]]
                                    ╲
-                                    ╲
-                             bool, move to bottom or
-                              not; default is False.
+                          bool, move to bottom or
+                           not; default is False.
         """
         self.logger.clear(bottom)
 
