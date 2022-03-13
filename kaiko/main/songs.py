@@ -153,7 +153,7 @@ class BeatmapManager:
             path = self._beatmaps[path][0]
 
         beatmap = self.get_beatmap_metadata(path)
-        if beatmap is None or beatmap.audio is None:
+        if beatmap is None or beatmap.audio is None or beatmap.audio.path is None:
             return None
         return Song(self.songs_dir / path.parent, beatmap.audio)
 
@@ -222,7 +222,10 @@ class Song:
 
     @property
     def relpath(self):
-        return Path("~") / self.path.relative_to(Path("~").expanduser())
+        path = self.path
+        if path is None:
+            return None
+        return Path("~") / path.relative_to(Path("~").expanduser())
 
 
 class BGMAction:
@@ -345,7 +348,6 @@ class KAIKOBGMController:
     ):
         self._mixer_settings_getter = mixer_settings_getter
         self.logger = logger
-        self.current_action = None
         self._action_queue = queue.Queue()
         self.beatmap_manager = beatmap_manager
         self.is_bgm_on = False
@@ -366,8 +368,6 @@ class KAIKOBGMController:
     @dn.datanode
     def _play_song(self, mixer, action):
         if isinstance(action, PreviewSong):
-            song = action.song
-            volume = song.audio.volume
             start = action.song.audio.preview
             if start is None:
                 start = 0.0
@@ -381,24 +381,25 @@ class KAIKOBGMController:
 
             yield from play_fadeinout(
                 mixer,
-                song.path,
+                action.song.path,
                 fadein_time=self.fadein_time,
                 fadeout_time=self.fadeout_time,
-                volume=volume,
+                volume=action.song.audio.volume,
                 start=start,
                 end=end,
             ).join()
 
         elif isinstance(action, PlayBGM):
-            song = action.song
-            with mixer.play_file(
-                song.path,
+            yield from dn.sleep(self.preview_delay).join()
+
+            yield from play_fadeinout(
+                mixer,
+                action.song.path,
+                fadein_time=self.fadein_time,
+                fadeout_time=self.fadeout_time,
+                volume=action.song.audio.volume,
                 start=action.start,
-                volume=song.audio.volume,
-            ) as song_handler:
-                yield
-                while not song_handler.is_finalized():
-                    yield
+            ).join()
 
         else:
             assert False
@@ -471,7 +472,7 @@ class KAIKOBGMController:
 
     def random_song(self):
         songs = self.beatmap_manager.get_songs()
-        if self.current_action is not None:
+        if self.current_action is not None and self.current_action.song in songs:
             songs.remove(self.current_action.song)
         return random.choice(songs) if songs else None
 
@@ -542,8 +543,12 @@ class BGMCommand:
         """
         if self.bgm_controller.current_action is not None:
             song = self.bgm_controller.random_song()
+            if song is None:
+                logger.print("[data/] There is no song in the folder yet!")
+                return
+
             self.logger.print("will play:")
-            self.logger.print(logger.emph(str(song.relpath)))
+            self.logger.print(self.logger.emph(str(song.relpath)))
             self.bgm_controller.play(song)
 
     @cmd.function_command
@@ -588,10 +593,10 @@ class BGMCommand:
         current = self.bgm_controller.current_action
         if isinstance(current, PlayBGM):
             self.logger.print("now playing:")
-            self.logger.print(logger.emph(str(current.song.relpath)))
+            self.logger.print(self.logger.emph(str(current.song.relpath)))
         elif isinstance(current, PreviewSong):
             self.logger.print("now previewing:")
-            self.logger.print(logger.emph(str(current.song.relpath)))
+            self.logger.print(self.logger.emph(str(current.song.relpath)))
         elif current is None:
             self.logger.print("no song")
         else:
