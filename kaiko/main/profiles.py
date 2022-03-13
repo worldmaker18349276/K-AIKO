@@ -479,38 +479,35 @@ class ProfilesCommand:
     # configuration
 
     @cmd.function_command
-    def show(self):
+    def show(self, diff: bool = False):
         """[rich]Show the current configuration.
 
-        usage: [cmd]profiles[/] [cmd]show[/]
+        usage: [cmd]profiles[/] [cmd]show[/] [[[kw]--diff[/] [arg]{DIFF}[/]]]
+                                        ╲
+                                 bool, highlight
+                                 changes or not.
         """
         text = self.profiles.format()
         is_changed = self.profiles.is_changed()
         title = self.profiles.get_title()
-        self.logger.print(
-            self.logger.format_code(text, title=title, is_changed=is_changed)
-        )
 
-    @cmd.function_command
-    def show_diff(self):
-        """[rich]Show the difference of configuration.
+        if diff:
+            current_path = self.profiles.path / (
+                self.profiles.current_name + self.profiles.extension
+            )
+            if not current_path.exists() or not current_path.is_file():
+                old = ""
+            else:
+                old = open(current_path, "r").read()
 
-        usage: [cmd]profiles[/] [cmd]show_diff[/]
-        """
-        current_path = self.profiles.path / (
-            self.profiles.current_name + self.profiles.extension
-        )
-        if not current_path.exists() or not current_path.is_file():
-            old = ""
+            res = self.logger.format_code_diff(
+                old, text, title=title, is_changed=is_changed
+            )
+
         else:
-            old = open(current_path, "r").read()
+            res = self.logger.format_code(text, title=title, is_changed=is_changed)
 
-        text = self.profiles.format()
-        is_changed = self.profiles.is_changed()
-        title = self.profiles.get_title()
-        self.logger.print(
-            self.logger.format_code_diff(old, text, title=title, is_changed=is_changed)
-        )
+        self.logger.print(res)
 
     @cmd.function_command
     def has(self, field):
@@ -597,7 +594,9 @@ class ProfilesCommand:
             self.logger.print(
                 f"[warn]parse fail at ln {line+1}, col {col+1} (marked with ◊)[/]"
             )
-            self.logger.print(self.logger.format_code(error.text, marked=(line, col), title=title))
+            self.logger.print(
+                self.logger.format_code(error.text, marked=(line, col), title=title)
+            )
             if error.__cause__ is not None:
                 self.logger.print(
                     f"[warn]{self.logger.escape(str(error.__cause__))}[/]"
