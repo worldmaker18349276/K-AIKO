@@ -61,9 +61,12 @@ def make_none_serializer(suggestions=[]):
 
 
 def make_bool_serializer(suggestions=[]):
-    return Serializer.make_literal(bool, r"False|True", repr).suggest(
-        suggestions or [False]
-    )
+    suggestions = list(suggestions)
+    if False not in suggestions:
+        suggestions.append(False)
+    if True not in suggestions:
+        suggestions.append(True)
+    return Serializer.make_literal(bool, r"False|True", repr).suggest(suggestions)
 
 
 def make_int_serializer(suggestions=[]):
