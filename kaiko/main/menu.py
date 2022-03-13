@@ -404,10 +404,10 @@ class KAIKOMenu:
         return self.beatmap_manager.make_parser()
 
     @cmd.function_command
-    def beatmaps(self):
-        """[rich]Show your beatmaps.
+    def list(self):
+        """[rich]List your beatmaps.
 
-        usage: [cmd]beatmaps[/]
+        usage: [cmd]list[/]
         """
         if not self.beatmap_manager.is_uptodate():
             self.reload()
