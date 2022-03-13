@@ -309,12 +309,12 @@ class KAIKOMenu:
     def play(self, beatmap, start=None):
         """[rich]Let's beat with the song!
 
-        usage: [cmd]play[/] [arg]{beatmap}[/]
-                         ╲
-               Path, the path to the
-              beatmap you want to play.
-              Only the beatmaps in your
-             songs folder can be accessed.
+        usage: [cmd]play[/] [arg]{beatmap}[/] [[[kw]--start[/] [arg]{START}[/]]]
+                       ╱                   ╲
+           Path, the path to the        The time to start playing
+          beatmap you want to play.    in the middle of the beatmap,
+          Only the beatmaps in your      if you want.
+         songs folder can be accessed.
         """
 
         if not self.beatmap_manager.is_beatmap(beatmap):
