@@ -484,7 +484,7 @@ class BeatShellSettings(cfg.Configurable):
 
         keymap: Dict[str, str] = {
             "Backspace": "input.backspace()",
-            "Alt_Backspace": "input.delete_all()",
+            "Alt_Backspace": "input.delete_token()",
             "Delete": "input.delete()",
             "Left": "input.move_left()",
             "Right": "input.insert_typeahead() or input.move_right()",
@@ -1253,6 +1253,30 @@ class BeatInput:
         self.ask_for_hint(clear=True)
 
         return True
+
+    @locked
+    @onstate("EDIT")
+    def delete_token(self, index=None):
+        """Delete current token.
+
+        Parameters
+        ----------
+        index : int or None
+
+        Returns
+        -------
+        succ : bool
+        """
+        if index is not None:
+            _, _, slic, _ = self.tokens[index]
+            return self.delete_range(slic.start, slic.stop)
+
+        for _, _, slic, _ in reversed(self.tokens):
+            if slic.start <= self.pos:
+                return self.delete_range(slic.start, max(self.pos, slic.stop))
+        else:
+            # find nothing
+            return self.delete_range(0, self.pos)
 
     @locked
     @onstate("EDIT")
