@@ -401,7 +401,8 @@ class OSU:
 
         beat = beatmap.metronome.beat(time / 1000)
         speed, volume, sliderVelocity, density = next(
-            vs for t, b, m, *vs in context["timings"][::-1] if t <= time
+            (vs for t, b, m, *vs in context["timings"][::-1] if t <= time),
+            context["timings"][0][3:],
         )
 
         # type : [_:_:_:_:Spinner:_:Slider:Circle]
