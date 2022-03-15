@@ -154,13 +154,26 @@ class DevicesCommand:
     # audio
 
     @cmd.function_command
-    def audio(self):
-        """[rich]Show your audio configuration.
+    def show(self):
+        """[rich]Show your device configuration.
 
-        usage: [cmd]devices[/] [cmd]audio[/]
+        usage: [cmd]devices[/] [cmd]show[/]
         """
 
         logger = self.logger
+
+        term = os.environ.get("TERM", None)
+        vte = os.environ.get("VTE_VERSION", None)
+        uni = os.environ.get("UNICODE_VERSION", None)
+        size = shutil.get_terminal_size()
+
+        logger.print(f"  terminal type: {term}")
+        logger.print(f"    VTE version: {vte}")
+        logger.print(f"unicode version: {uni}")
+        logger.print(f"  terminal size: {size.columns}×{size.lines}")
+
+        logger.print()
+
         aud.print_pyaudio_info(self.manager)
 
         logger.print()
@@ -341,23 +354,6 @@ class DevicesCommand:
         return cmd.OptionParser(["f4", "i4", "i2", "i1", "u1"])
 
     # terminal
-
-    @cmd.function_command
-    def terminal(self):
-        """[rich]Show your terminal configuration.
-
-        usage: [cmd]devices[/] [cmd]terminal[/]
-        """
-
-        term = os.environ.get("TERM", None)
-        vte = os.environ.get("VTE_VERSION", None)
-        uni = os.environ.get("UNICODE_VERSION", None)
-        size = shutil.get_terminal_size()
-
-        self.logger.print(f"terminal type: {term}")
-        self.logger.print(f"VTE version: {vte}")
-        self.logger.print(f"unicode version: {uni}")
-        self.logger.print(f"terminal size: {size.columns}×{size.lines}")
 
     @cmd.function_command
     def fit_screen(self):
