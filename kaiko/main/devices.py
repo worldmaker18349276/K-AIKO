@@ -353,32 +353,16 @@ class DevicesCommand:
     def _audio_format_parser(self, device, **__):
         return cmd.OptionParser(["f4", "i4", "i2", "i1", "u1"])
 
-    # terminal
-
-    @cmd.function_command
-    def fit_screen(self):
-        """[rich]Fit your terminal screen.
-
-        usage: [cmd]devices[/] [cmd]fit_screen[/]
-        """
-
-        return fit_screen(self.logger, self.profiles.current.devices.terminal)
-
-    @cmd.function_command
-    @dn.datanode
-    def ucs_detect(self):
-        """[rich]Determines the unicode version of your terminal.
-
-        usage: [cmd]devices[/] [cmd]ucs_detect[/]
-        """
-
-        version = yield from determine_unicode_version(self.logger).join()
-        if version is not None:
-            os.environ["UNICODE_VERSION"] = version
-            self.profiles.current.devices.terminal.unicode_version = version
-            self.profiles.set_as_changed()
-
     # engines
+
+    @cmd.function_command
+    def test_knock(self):
+        """[rich]Test knock detection.
+
+        usage: [cmd]devices[/] [cmd]test_knock[/]
+        """
+        settings = self.profiles.current.devices.detector
+        return KnockTest(settings, self.logger)
 
     @cmd.function_command
     @dn.datanode
@@ -423,14 +407,30 @@ class DevicesCommand:
         finally:
             logger.print()
 
-    @cmd.function_command
-    def test_knock(self):
-        """[rich]Test knock detection.
+    # terminal
 
-        usage: [cmd]devices[/] [cmd]test_knock[/]
+    @cmd.function_command
+    def fit_screen(self):
+        """[rich]Fit your terminal screen.
+
+        usage: [cmd]devices[/] [cmd]fit_screen[/]
         """
-        settings = self.profiles.current.devices.detector
-        return KnockTest(settings, self.logger)
+
+        return fit_screen(self.logger, self.profiles.current.devices.terminal)
+
+    @cmd.function_command
+    @dn.datanode
+    def ucs_detect(self):
+        """[rich]Determines the unicode version of your terminal.
+
+        usage: [cmd]devices[/] [cmd]ucs_detect[/]
+        """
+
+        version = yield from determine_unicode_version(self.logger).join()
+        if version is not None:
+            os.environ["UNICODE_VERSION"] = version
+            self.profiles.current.devices.terminal.unicode_version = version
+            self.profiles.set_as_changed()
 
 
 class KnockTest:
