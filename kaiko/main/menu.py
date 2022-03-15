@@ -51,8 +51,8 @@ class KAIKOUser:
         return cls(username, data_dir, cache_dir)
 
     @property
-    def config_dir(self):
-        return self.data_dir / "config"
+    def profiles_dir(self):
+        return self.data_dir / "profiles"
 
     @property
     def songs_dir(self):
@@ -65,7 +65,7 @@ class KAIKOUser:
         if not self.cache_dir.exists():
             return False
 
-        if not self.config_dir.exists():
+        if not self.profiles_dir.exists():
             return False
 
         if not self.songs_dir.exists():
@@ -81,7 +81,7 @@ class KAIKOUser:
         logger.print("[data/] Prepare your profile...")
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self.config_dir.mkdir(parents=True, exist_ok=True)
+        self.profiles_dir.mkdir(parents=True, exist_ok=True)
         self.songs_dir.mkdir(parents=True, exist_ok=True)
 
         logger.print(
@@ -91,9 +91,9 @@ class KAIKOUser:
 
     def remove(self, logger):
         logger.print(
-            f"[data/] Remove config directory {logger.emph(self.config_dir.as_uri())}..."
+            f"[data/] Remove config directory {logger.emph(self.profiles_dir.as_uri())}..."
         )
-        shutil.rmtree(str(self.config_dir))
+        shutil.rmtree(str(self.profiles_dir))
         logger.print(
             f"[data/] Remove songs directory {logger.emph(self.songs_dir.as_uri())}..."
         )
@@ -155,7 +155,7 @@ class KAIKOMenu:
         user.prepare(logger)
 
         # load profiles
-        profiles = ProfileManager(user.config_dir, logger)
+        profiles = ProfileManager(user.profiles_dir, logger)
         profiles.on_change(
             lambda settings: logger.recompile_style(
                 terminal_settings=settings.devices.terminal,
@@ -445,7 +445,9 @@ class KAIKOMenu:
 
         logger.print(f"username: {logger.emph(self.user.username)}")
         logger.print(f"data directory: {logger.emph(self.user.data_dir.as_uri())}")
-        logger.print(f"config directory: {logger.emph(self.user.config_dir.as_uri())}")
+        logger.print(
+            f"config directory: {logger.emph(self.user.profiles_dir.as_uri())}"
+        )
         logger.print(f"songs directory: {logger.emph(self.user.songs_dir.as_uri())}")
         logger.print(f"cache directory: {logger.emph(self.user.cache_dir.as_uri())}")
 
