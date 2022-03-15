@@ -93,7 +93,7 @@ class KAIKOUser:
 
     def remove(self, logger):
         logger.print(
-            f"[data/] Remove config directory {logger.emph(self.profiles_dir.as_uri())}..."
+            f"[data/] Remove profiles directory {logger.emph(self.profiles_dir.as_uri())}..."
         )
         shutil.rmtree(str(self.profiles_dir))
         logger.print(
@@ -448,7 +448,7 @@ class KAIKOMenu:
         logger.print(f"username: {logger.emph(self.user.username)}")
         logger.print(f"data directory: {logger.emph(self.user.data_dir.as_uri())}")
         logger.print(
-            f"config directory: {logger.emph(self.user.profiles_dir.as_uri())}"
+            f"profiles directory: {logger.emph(self.user.profiles_dir.as_uri())}"
         )
         logger.print(f"songs directory: {logger.emph(self.user.songs_dir.as_uri())}")
         logger.print(f"cache directory: {logger.emph(self.user.cache_dir.as_uri())}")
