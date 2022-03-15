@@ -309,22 +309,6 @@ class DevicesCommand:
                 self.profiles.current.devices.mixer.output_format = fmt
             self.profiles.set_as_changed()
 
-    @cmd.function_command
-    def gen(self, waveform):
-        """[rich]Generate sound.
-
-        usage: [cmd]devices[/] [cmd]gen[/] [arg]{waveform}[/]
-                              ╱
-                       The function of
-                       output waveform.
-        """
-        settings = self.profiles.current.devices.mixer
-        return WaveformTest(waveform, self.logger, settings)
-
-    @gen.arg_parser("waveform")
-    def _gen_waveform_parser(self):
-        return cmd.RawParser(desc="It should be an expression of waveform.")
-
     @test_mic.arg_parser("device")
     @set_mic.arg_parser("device")
     def _set_mic_device_parser(self):
@@ -426,7 +410,8 @@ class DevicesCommand:
             logger.print("[[ <time>  ]] [emph]<keyname>[/] (<keycode>)", end="\r")
 
         controller_task, controller = engines.Controller.create(
-            self.profiles.current.devices.controller, self.profiles.current.devices.terminal
+            self.profiles.current.devices.controller,
+            self.profiles.current.devices.terminal,
         )
         controller.add_handler(handler)
         controller.add_handler(lambda _: stop_event.set(), exit_key)
@@ -614,43 +599,6 @@ class SpeakerTest:
                 yield
             self.logger.print(flush=True)
             yield
-
-
-class WaveformTest:
-    def __init__(self, waveform, logger, mixer_settings):
-        self.waveform = waveform
-        self.logger = logger
-        self.mixer_settings = mixer_settings
-
-    def execute(self, manager):
-        self.logger.print("[info/] Compile waveform...")
-
-        try:
-            node = dn.Waveform(self.waveform).generate(
-                self.mixer_settings.output_samplerate,
-                self.mixer_settings.output_channels,
-                self.mixer_settings.output_buffer_length,
-            )
-
-        except:
-            self.logger.print("[warn]Fail to compile waveform.[/]")
-            with self.logger.warn():
-                self.logger.print(traceback.format_exc(), end="", markup=False)
-            return dn.DataNode.wrap([])
-
-        self.logger.print("[hint/] Press any key to end test.")
-        mixer_task, mixer = engines.Mixer.create(self.mixer_settings, manager)
-        mixer.play(node)
-
-        @dn.datanode
-        def exit_any():
-            keycode = None
-            while keycode is None:
-                _, keycode = yield
-
-        exit_task = term.inkey(exit_any())
-
-        return dn.pipe(mixer_task, exit_task)
 
 
 class MicTest:
