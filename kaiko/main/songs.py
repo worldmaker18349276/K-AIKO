@@ -26,22 +26,22 @@ def format_info(info, logger):
 
 
 class BeatmapManager:
-    def __init__(self, songs_dir, logger):
-        self.songs_dir = songs_dir
+    def __init__(self, beatmaps_dir, logger):
+        self.beatmaps_dir = beatmaps_dir
         self.logger = logger
         self._beatmaps = {}
         self._beatmaps_mtime = None
 
     def is_uptodate(self):
-        return self._beatmaps_mtime == os.stat(str(self.songs_dir)).st_mtime
+        return self._beatmaps_mtime == os.stat(str(self.beatmaps_dir)).st_mtime
 
     def reload(self):
         logger = self.logger
-        songs_dir = self.songs_dir
+        beatmaps_dir = self.beatmaps_dir
 
-        logger.print(f"[data/] Load songs from {logger.emph(songs_dir.as_uri())}...")
+        logger.print(f"[data/] Load beatmaps from {logger.emph(beatmaps_dir.as_uri())}...")
 
-        for file in songs_dir.iterdir():
+        for file in beatmaps_dir.iterdir():
             if file.is_file() and file.suffix == ".osz":
                 distpath = file.parent / file.stem
                 if distpath.exists():
@@ -54,17 +54,17 @@ class BeatmapManager:
 
         logger.print("[data/] Load beatmaps...")
 
-        beatmaps_mtime = os.stat(str(songs_dir)).st_mtime
+        beatmaps_mtime = os.stat(str(beatmaps_dir)).st_mtime
         self._beatmaps = {}
 
-        for song in songs_dir.iterdir():
+        for song in beatmaps_dir.iterdir():
             if song.is_dir():
                 beatmapset = []
                 for beatmap in song.iterdir():
                     if beatmap.suffix in (".kaiko", ".ka", ".osu"):
-                        beatmapset.append(beatmap.relative_to(songs_dir))
+                        beatmapset.append(beatmap.relative_to(beatmaps_dir))
                 if beatmapset:
-                    self._beatmaps[song.relative_to(songs_dir)] = beatmapset
+                    self._beatmaps[song.relative_to(beatmaps_dir)] = beatmapset
 
         if len(self._beatmaps) == 0:
             logger.print("[data/] There is no song in the folder yet!")
@@ -73,7 +73,7 @@ class BeatmapManager:
 
     def add(self, path):
         logger = self.logger
-        songs_dir = self.songs_dir
+        beatmaps_dir = self.beatmaps_dir
 
         if not path.exists():
             logger.print(f"[warn]File not found: {logger.escape(str(path))}[/]")
@@ -86,18 +86,18 @@ class BeatmapManager:
 
         logger.print(f"[data/] Add a new song from {logger.emph(path.as_uri())}...")
 
-        distpath = songs_dir / path.name
+        distpath = beatmaps_dir / path.name
         n = 1
         while distpath.exists():
             n += 1
-            distpath = songs_dir / f"{path.stem} ({n}){path.suffix}"
+            distpath = beatmaps_dir / f"{path.stem} ({n}){path.suffix}"
         if n != 1:
             logger.print(
                 f"[data/] Name conflict! Rename to {logger.emph(distpath.name)}"
             )
 
         if path.is_file():
-            shutil.copy(str(path), str(songs_dir))
+            shutil.copy(str(path), str(beatmaps_dir))
         elif path.is_dir():
             shutil.copytree(str(path), str(distpath))
 
@@ -105,10 +105,10 @@ class BeatmapManager:
 
     def remove(self, path):
         logger = self.logger
-        songs_dir = self.songs_dir
+        beatmaps_dir = self.beatmaps_dir
 
         if self.is_beatmap(path):
-            beatmap_path = songs_dir / path
+            beatmap_path = beatmaps_dir / path
             logger.print(
                 f"[data/] Remove the beatmap at {logger.emph(beatmap_path.as_uri())}..."
             )
@@ -116,7 +116,7 @@ class BeatmapManager:
             self.reload()
 
         elif self.is_beatmapset(path):
-            beatmapset_path = songs_dir / path
+            beatmapset_path = beatmaps_dir / path
             logger.print(
                 f"[data/] Remove the beatmapset at {logger.emph(beatmapset_path.as_uri())}..."
             )
@@ -138,7 +138,7 @@ class BeatmapManager:
         if not self.is_beatmap(path):
             raise ValueError(f"Not a beatmap: {str(path)}")
 
-        filepath = self.songs_dir / path
+        filepath = self.beatmaps_dir / path
         try:
             beatmap = beatsheets.read(str(filepath), metadata_only=True)
         except beatsheets.BeatmapParseError:
@@ -155,7 +155,7 @@ class BeatmapManager:
         beatmap = self.get_beatmap_metadata(path)
         if beatmap is None or beatmap.audio is None or beatmap.audio.path is None:
             return None
-        return Song(self.songs_dir / path.parent, beatmap.audio)
+        return Song(self.beatmaps_dir / path.parent, beatmap.audio)
 
     def get_songs(self):
         songs = [self.get_song(path) for path in self._beatmaps.keys()]

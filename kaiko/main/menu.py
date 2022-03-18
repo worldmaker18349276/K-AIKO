@@ -57,8 +57,8 @@ class KAIKOUser:
         return self.data_dir / "profiles"
 
     @property
-    def songs_dir(self):
-        return self.data_dir / "songs"
+    def beatmaps_dir(self):
+        return self.data_dir / "beatmaps"
 
     def is_prepared(self):
         if not self.data_dir.exists():
@@ -70,7 +70,7 @@ class KAIKOUser:
         if not self.profiles_dir.exists():
             return False
 
-        if not self.songs_dir.exists():
+        if not self.beatmaps_dir.exists():
             return False
 
         return True
@@ -84,7 +84,7 @@ class KAIKOUser:
         self.data_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.profiles_dir.mkdir(parents=True, exist_ok=True)
-        self.songs_dir.mkdir(parents=True, exist_ok=True)
+        self.beatmaps_dir.mkdir(parents=True, exist_ok=True)
 
         logger.print(
             f"[data/] Your data will be stored in {logger.emph(self.data_dir.as_uri())}"
@@ -97,9 +97,9 @@ class KAIKOUser:
         )
         shutil.rmtree(str(self.profiles_dir))
         logger.print(
-            f"[data/] Remove songs directory {logger.emph(self.songs_dir.as_uri())}..."
+            f"[data/] Remove beatmaps directory {logger.emph(self.beatmaps_dir.as_uri())}..."
         )
-        shutil.rmtree(str(self.songs_dir))
+        shutil.rmtree(str(self.beatmaps_dir))
         logger.print(
             f"[data/] Remove data directory {logger.emph(self.data_dir.as_uri())}..."
         )
@@ -123,7 +123,7 @@ class KAIKOMenu:
         self.user = user
         self.manager = manager
         self.logger = logger
-        self.beatmap_manager = BeatmapManager(user.songs_dir, logger)
+        self.beatmap_manager = BeatmapManager(user.beatmaps_dir, logger)
         self.bgm_controller = KAIKOBGMController(
             logger, self.beatmap_manager, lambda: self.profiles.current.devices.mixer
         )
@@ -209,7 +209,7 @@ class KAIKOMenu:
 
             yield from fit_screen(logger, self.settings.devices.terminal).join()
 
-        # load songs
+        # load beatmaps
         self.reload()
 
         # execute given command
@@ -315,7 +315,7 @@ class KAIKOMenu:
            Path, the path to the        The time to start playing
           beatmap you want to play.    in the middle of the beatmap,
           Only the beatmaps in your      if you want.
-         songs folder can be accessed.
+        beatmaps folder can be accessed.
         """
 
         if not self.beatmap_manager.is_beatmap(beatmap):
@@ -324,7 +324,7 @@ class KAIKOMenu:
 
         return KAIKOPlay(
             self.user,
-            self.user.songs_dir / beatmap,
+            self.user.beatmaps_dir / beatmap,
             start,
             self.profiles,
             self.logger,
@@ -365,7 +365,7 @@ class KAIKOMenu:
 
     @cmd.function_command
     def reload(self):
-        """[rich]Reload your songs.
+        """[rich]Reload your beatmaps.
 
         usage: [cmd]reload[/]
         """
@@ -373,7 +373,7 @@ class KAIKOMenu:
 
     @cmd.function_command
     def add(self, beatmap):
-        """[rich]Add beatmap/beatmapset to your songs folder.
+        """[rich]Add beatmap/beatmapset to your beatmaps folder.
 
         usage: [cmd]add[/] [arg]{beatmap}[/]
                         ╲
@@ -391,7 +391,7 @@ class KAIKOMenu:
 
     @cmd.function_command
     def remove(self, beatmap):
-        """[rich]Remove beatmap/beatmapset in your songs folder.
+        """[rich]Remove beatmap/beatmapset in your beatmaps folder.
 
         usage: [cmd]remove[/] [arg]{beatmap}[/]
                            ╲
@@ -450,7 +450,7 @@ class KAIKOMenu:
         logger.print(
             f"profiles directory: {logger.emph(self.user.profiles_dir.as_uri())}"
         )
-        logger.print(f"songs directory: {logger.emph(self.user.songs_dir.as_uri())}")
+        logger.print(f"beatmaps directory: {logger.emph(self.user.beatmaps_dir.as_uri())}")
         logger.print(f"cache directory: {logger.emph(self.user.cache_dir.as_uri())}")
 
     @cmd.function_command
