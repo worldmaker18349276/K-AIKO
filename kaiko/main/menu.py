@@ -43,14 +43,16 @@ logo = """
 class KAIKOUser:
     username: str
     data_dir: Path
-    cache_dir: Path
 
     @classmethod
     def create(cls):
         username = getpass.getuser()
         data_dir = Path("~/.local/share/K-AIKO").expanduser()
-        cache_dir = Path("~/.cache/K-AIKO").expanduser()
-        return cls(username, data_dir, cache_dir)
+        return cls(username, data_dir)
+
+    @property
+    def cache_dir(self):
+        return self.data_dir / "cache"
 
     @property
     def profiles_dir(self):
