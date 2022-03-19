@@ -363,29 +363,6 @@ class KAIKOMenu:
         r"""Current settings."""
         return self.profiles.current
 
-    # file system
-
-    @cmd.function_command
-    def cd(self, path):
-        self.workspace.cd(path, self.logger)
-
-    @cmd.function_command
-    def ls(self):
-        self.workspace.ls(self.logger)
-
-    @cmd.function_command
-    def cat(self, path):
-        abspath = self.workspace.get(path, self.logger)
-        code = self.logger.format_code(
-            abspath.read_text(), title=str(self.workspace.current / path)
-        )
-        self.logger.print(code)
-
-    @cd.arg_parser("path")
-    @cat.arg_parser("path")
-    def _cd_path_parser(self):
-        return cmd.PathParser(self.workspace.root / self.workspace.current)
-
     # beatmaps
 
     @cmd.function_command
@@ -520,6 +497,27 @@ class KAIKOMenu:
     # system
 
     @cmd.function_command
+    def cd(self, path):
+        self.workspace.cd(path, self.logger)
+
+    @cmd.function_command
+    def ls(self):
+        self.workspace.ls(self.logger)
+
+    @cmd.function_command
+    def cat(self, path):
+        abspath = self.workspace.get(path, self.logger)
+        code = self.logger.format_code(
+            abspath.read_text(), title=str(self.workspace.current / path)
+        )
+        self.logger.print(code)
+
+    @cd.arg_parser("path")
+    @cat.arg_parser("path")
+    def _cd_path_parser(self):
+        return cmd.PathParser(self.workspace.root / self.workspace.current)
+
+    @cmd.function_command
     def me(self):
         """[rich]About user.
 
@@ -538,7 +536,9 @@ class KAIKOMenu:
         logger.print(
             f"resources directory: {logger.emph(self.workspace.resources_dir.as_uri())}"
         )
-        logger.print(f"cache directory: {logger.emph(self.workspace.cache_dir.as_uri())}")
+        logger.print(
+            f"cache directory: {logger.emph(self.workspace.cache_dir.as_uri())}"
+        )
 
     @cmd.function_command
     def gen(self, waveform):
