@@ -42,32 +42,32 @@ logo = """
 @dataclasses.dataclass
 class KAIKOUser:
     username: str
-    data_dir: Path
+    root: Path
 
     @classmethod
     def create(cls):
         username = getpass.getuser()
-        data_dir = Path("~/.local/share/K-AIKO").expanduser()
-        return cls(username, data_dir)
+        root = Path("~/.local/share/K-AIKO").expanduser()
+        return cls(username, root)
 
     @property
     def cache_dir(self):
-        return self.data_dir / "cache"
+        return self.root / "cache"
 
     @property
     def profiles_dir(self):
-        return self.data_dir / "profiles"
+        return self.root / "profiles"
 
     @property
     def beatmaps_dir(self):
-        return self.data_dir / "beatmaps"
+        return self.root / "beatmaps"
 
     @property
     def resources_dir(self):
-        return self.data_dir / "resources"
+        return self.root / "resources"
 
     def is_prepared(self):
-        if not self.data_dir.exists():
+        if not self.root.exists():
             return False
 
         if not self.cache_dir.exists():
@@ -90,14 +90,14 @@ class KAIKOUser:
 
         # start up
         logger.print("[data/] Prepare your profile...")
-        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.root.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.profiles_dir.mkdir(parents=True, exist_ok=True)
         self.beatmaps_dir.mkdir(parents=True, exist_ok=True)
         self.resources_dir.mkdir(parents=True, exist_ok=True)
 
         logger.print(
-            f"[data/] Your data will be stored in {logger.emph(self.data_dir.as_uri())}"
+            f"[data/] Your data will be stored in {logger.emph(self.root.as_uri())}"
         )
         logger.print(flush=True)
 
@@ -115,9 +115,9 @@ class KAIKOUser:
         )
         shutil.rmtree(str(self.resources_dir))
         logger.print(
-            f"[data/] Remove data directory {logger.emph(self.data_dir.as_uri())}..."
+            f"[data/] Remove root directory {logger.emph(self.root.as_uri())}..."
         )
-        shutil.rmtree(str(self.data_dir))
+        shutil.rmtree(str(self.root))
 
 
 class KAIKOMenu:
@@ -460,7 +460,7 @@ class KAIKOMenu:
         logger = self.logger
 
         logger.print(f"username: {logger.emph(self.user.username)}")
-        logger.print(f"data directory: {logger.emph(self.user.data_dir.as_uri())}")
+        logger.print(f"root directory: {logger.emph(self.user.root.as_uri())}")
         logger.print(
             f"profiles directory: {logger.emph(self.user.profiles_dir.as_uri())}"
         )
