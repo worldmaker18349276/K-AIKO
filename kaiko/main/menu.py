@@ -31,7 +31,7 @@ logo = """
   ██▀ ▄██▀   ▄██████▄ ▀██████▄ ██  ▄██▀ █▀▀▀▀▀▀█
   ▀ ▄██▀  ▄▄▄▀█    ██    ██    ██▄██▀   █ ▓▓▓▓ █
   ▄██▀██▄ ▀▀▀▄███████    ██    ███▀██▄  █ ▓▓▓▓ █
-  █▀   ▀██▄  ██    ██ ▀██████▄ ██   ▀██▄█▄▄▄▄▄▄█
+  █▀   ▀██▄  ██    ██ ▀██████▄ ██   ▀██▄█▄▄▄▄▄▄█  {}
 
 
   🎧  Use headphones for the best experience 🎤 
@@ -131,9 +131,9 @@ class KAIKOMenu:
         )
 
     @classmethod
-    def main(cls):
+    def main(cls, version):
         # print logo
-        print(logo, flush=True)
+        print(logo.format(f"v{version}"), flush=True)
 
         try:
             with cls.init() as menu:
@@ -452,7 +452,9 @@ class KAIKOMenu:
         logger.print(
             f"profiles directory: {logger.emph(self.user.profiles_dir.as_uri())}"
         )
-        logger.print(f"beatmaps directory: {logger.emph(self.user.beatmaps_dir.as_uri())}")
+        logger.print(
+            f"beatmaps directory: {logger.emph(self.user.beatmaps_dir.as_uri())}"
+        )
         logger.print(f"cache directory: {logger.emph(self.user.cache_dir.as_uri())}")
 
     @cmd.function_command
