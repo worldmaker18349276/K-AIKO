@@ -62,6 +62,10 @@ class KAIKOUser:
     def beatmaps_dir(self):
         return self.data_dir / "beatmaps"
 
+    @property
+    def resources_dir(self):
+        return self.data_dir / "resources"
+
     def is_prepared(self):
         if not self.data_dir.exists():
             return False
@@ -73,6 +77,9 @@ class KAIKOUser:
             return False
 
         if not self.beatmaps_dir.exists():
+            return False
+
+        if not self.resources_dir.exists():
             return False
 
         return True
@@ -87,6 +94,7 @@ class KAIKOUser:
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.profiles_dir.mkdir(parents=True, exist_ok=True)
         self.beatmaps_dir.mkdir(parents=True, exist_ok=True)
+        self.resources_dir.mkdir(parents=True, exist_ok=True)
 
         logger.print(
             f"[data/] Your data will be stored in {logger.emph(self.data_dir.as_uri())}"
@@ -102,6 +110,10 @@ class KAIKOUser:
             f"[data/] Remove beatmaps directory {logger.emph(self.beatmaps_dir.as_uri())}..."
         )
         shutil.rmtree(str(self.beatmaps_dir))
+        logger.print(
+            f"[data/] Remove resources directory {logger.emph(self.resources_dir.as_uri())}..."
+        )
+        shutil.rmtree(str(self.resources_dir))
         logger.print(
             f"[data/] Remove data directory {logger.emph(self.data_dir.as_uri())}..."
         )
@@ -455,6 +467,9 @@ class KAIKOMenu:
         logger.print(
             f"beatmaps directory: {logger.emph(self.user.beatmaps_dir.as_uri())}"
         )
+        logger.print(
+            f"resources directory: {logger.emph(self.user.resources_dir.as_uri())}"
+        )
         logger.print(f"cache directory: {logger.emph(self.user.cache_dir.as_uri())}")
 
     @cmd.function_command
@@ -617,7 +632,7 @@ class KAIKOPlay:
 
             score, devices_settings = yield from beatmap.play(
                 manager,
-                self.user.data_dir,
+                self.user.resources_dir,
                 self.user.cache_dir,
                 self.start,
                 devices_settings,
@@ -681,7 +696,7 @@ class KAIKOLoop:
 
             score, devices_settings = yield from beatmap.play(
                 manager,
-                self.user.data_dir,
+                self.user.resources_dir,
                 self.user.cache_dir,
                 None,
                 devices_settings,

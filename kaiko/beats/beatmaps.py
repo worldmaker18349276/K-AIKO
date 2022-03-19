@@ -1469,7 +1469,7 @@ class Beatmap:
     def play(
         self,
         manager,
-        data_dir,
+        resources_dir,
         cache_dir,
         start_time,
         devices_settings,
@@ -1492,7 +1492,7 @@ class Beatmap:
         try:
             yield from dn.create_task(
                 dn.chain(
-                    self.load_resources(samplerate, nchannels, data_dir),
+                    self.load_resources(samplerate, nchannels, resources_dir),
                     self.prepare_events(rich),
                 ),
             ).join()
@@ -1745,14 +1745,14 @@ class Beatmap:
         )
 
     @dn.datanode
-    def load_resources(self, output_samplerate, output_nchannels, data_dir):
+    def load_resources(self, output_samplerate, output_nchannels, resources_dir):
         r"""Load resources to `audionode` and `resources`.
 
         Parameters
         ----------
         output_samplerate : int
         output_channels : int
-        data_dir : Path
+        resources_dir : Path
         """
 
         if self.path is not None and self.audio.path is not None:
@@ -1775,7 +1775,7 @@ class Beatmap:
 
         for name, path in self.settings.resources.items():
             if isinstance(path, Path):
-                sound_path = data_dir / path
+                sound_path = resources_dir / path
                 try:
                     resource = yield from aud.load_sound(
                         sound_path,
