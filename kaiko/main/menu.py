@@ -43,12 +43,13 @@ logo = """
 class KAIKOUser:
     username: str
     root: Path
+    current: Path
 
     @classmethod
     def create(cls):
         username = getpass.getuser()
         root = Path("~/.local/share/K-AIKO").expanduser()
-        return cls(username, root)
+        return cls(username, root, Path("."))
 
     @property
     def cache_dir(self):
@@ -118,6 +119,50 @@ class KAIKOUser:
             f"[data/] Remove root directory {logger.emph(self.root.as_uri())}..."
         )
         shutil.rmtree(str(self.root))
+
+    def cd(self, path, logger):
+        try:
+            abspath = (self.root / self.current / path).resolve(strict=True)
+        except Exception:
+            with logger.warn():
+                logger.print(traceback.format_exc(), end="", markup=False)
+
+        if not abspath.exists():
+            logger.print("[warn]no such directory[/]")
+            return
+        if not abspath.is_relative_to(self.root):
+            logger.print("[warn]out of root directory[/]")
+            return
+        if not abspath.is_dir():
+            logger.print("[warn]is not directory[/]")
+            return
+
+        self.current = abspath.relative_to(self.root)
+
+    def ls(self, logger):
+        abspath = self.root / self.current
+        for abschild in abspath.iterdir():
+            child = abschild.relative_to(abspath)
+            logger.print(str(child), markup=False)
+
+    def get(self, path, logger):
+        try:
+            abspath = (self.root / self.current / path).resolve(strict=True)
+        except Exception:
+            with logger.warn():
+                logger.print(traceback.format_exc(), end="", markup=False)
+
+        if not abspath.exists():
+            logger.print("[warn]no such file[/]")
+            return
+        if not abspath.is_relative_to(self.root):
+            logger.print("[warn]out of root directory[/]")
+            return
+        if not abspath.is_file():
+            logger.print("[warn]is not file[/]")
+            return
+
+        return abspath
 
 
 class KAIKOMenu:
@@ -317,6 +362,27 @@ class KAIKOMenu:
     def settings(self):
         r"""Current settings."""
         return self.profiles.current
+
+    # file system
+
+    @cmd.function_command
+    def cd(self, path):
+        self.user.cd(path, self.logger)
+
+    @cmd.function_command
+    def ls(self):
+        self.user.ls(self.logger)
+
+    @cmd.function_command
+    def cat(self, path):
+        abspath = self.user.get(path, self.logger)
+        code = self.logger.format_code(abspath.read_text(), title=str(self.user.current / path))
+        self.logger.print(code)
+
+    @cd.arg_parser("path")
+    @cat.arg_parser("path")
+    def _cd_path_parser(self):
+        return cmd.PathParser(self.user.root / self.user.current)
 
     # beatmaps
 
