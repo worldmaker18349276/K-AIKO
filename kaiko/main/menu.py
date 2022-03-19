@@ -40,7 +40,7 @@ logo = """
 
 
 @dataclasses.dataclass
-class KAIKOUser:
+class KAIKOWorkspace:
     username: str
     root: Path
     current: Path
@@ -168,21 +168,21 @@ class KAIKOUser:
 class KAIKOMenu:
     update_interval = 0.01
 
-    def __init__(self, profiles, user, manager, logger):
+    def __init__(self, profiles, workspace, manager, logger):
         r"""Constructor.
 
         Parameters
         ----------
         profiles : ProfileManager
-        user : KAIKOUser
+        workspace : KAIKOWorkspace
         manager : PyAudio
         logger : loggers.Logger
         """
         self.profiles = profiles
-        self.user = user
+        self.workspace = workspace
         self.manager = manager
         self.logger = logger
-        self.beatmap_manager = BeatmapManager(user.beatmaps_dir, logger)
+        self.beatmap_manager = BeatmapManager(workspace.beatmaps_dir, logger)
         self.bgm_controller = KAIKOBGMController(
             logger, self.beatmap_manager, lambda: self.profiles.current.devices.mixer
         )
@@ -212,11 +212,11 @@ class KAIKOMenu:
         logger = log.Logger()
 
         # load user data
-        user = KAIKOUser.create()
-        user.prepare(logger)
+        workspace = KAIKOWorkspace.create()
+        workspace.prepare(logger)
 
         # load profiles
-        profiles = ProfileManager(user.profiles_dir, logger)
+        profiles = ProfileManager(workspace.profiles_dir, logger)
         profiles.on_change(
             lambda settings: logger.recompile_style(
                 terminal_settings=settings.devices.terminal,
@@ -236,7 +236,7 @@ class KAIKOMenu:
         logger.print()
 
         with prepare_pyaudio(logger) as manager:
-            yield cls(profiles, user, manager, logger)
+            yield cls(profiles, workspace, manager, logger)
 
     @dn.datanode
     def run(self):
@@ -303,7 +303,7 @@ class KAIKOMenu:
             self,
             preview_handler,
             self.logger,
-            self.user.cache_dir,
+            self.workspace.cache_dir,
             lambda: self.profiles.current.shell,
             lambda: self.profiles.current.devices,
         )
@@ -367,22 +367,24 @@ class KAIKOMenu:
 
     @cmd.function_command
     def cd(self, path):
-        self.user.cd(path, self.logger)
+        self.workspace.cd(path, self.logger)
 
     @cmd.function_command
     def ls(self):
-        self.user.ls(self.logger)
+        self.workspace.ls(self.logger)
 
     @cmd.function_command
     def cat(self, path):
-        abspath = self.user.get(path, self.logger)
-        code = self.logger.format_code(abspath.read_text(), title=str(self.user.current / path))
+        abspath = self.workspace.get(path, self.logger)
+        code = self.logger.format_code(
+            abspath.read_text(), title=str(self.workspace.current / path)
+        )
         self.logger.print(code)
 
     @cd.arg_parser("path")
     @cat.arg_parser("path")
     def _cd_path_parser(self):
-        return cmd.PathParser(self.user.root / self.user.current)
+        return cmd.PathParser(self.workspace.root / self.workspace.current)
 
     # beatmaps
 
@@ -403,8 +405,8 @@ class KAIKOMenu:
             return
 
         return KAIKOPlay(
-            self.user,
-            self.user.beatmaps_dir / beatmap,
+            self.workspace,
+            self.workspace.beatmaps_dir / beatmap,
             start,
             self.profiles,
             self.logger,
@@ -424,7 +426,7 @@ class KAIKOMenu:
             pattern,
             tempo,
             offset,
-            self.user,
+            self.workspace,
             self.profiles,
             self.logger,
         )
@@ -525,18 +527,18 @@ class KAIKOMenu:
         """
         logger = self.logger
 
-        logger.print(f"username: {logger.emph(self.user.username)}")
-        logger.print(f"root directory: {logger.emph(self.user.root.as_uri())}")
+        logger.print(f"username: {logger.emph(self.workspace.username)}")
+        logger.print(f"root directory: {logger.emph(self.workspace.root.as_uri())}")
         logger.print(
-            f"profiles directory: {logger.emph(self.user.profiles_dir.as_uri())}"
+            f"profiles directory: {logger.emph(self.workspace.profiles_dir.as_uri())}"
         )
         logger.print(
-            f"beatmaps directory: {logger.emph(self.user.beatmaps_dir.as_uri())}"
+            f"beatmaps directory: {logger.emph(self.workspace.beatmaps_dir.as_uri())}"
         )
         logger.print(
-            f"resources directory: {logger.emph(self.user.resources_dir.as_uri())}"
+            f"resources directory: {logger.emph(self.workspace.resources_dir.as_uri())}"
         )
-        logger.print(f"cache directory: {logger.emph(self.user.cache_dir.as_uri())}")
+        logger.print(f"cache directory: {logger.emph(self.workspace.cache_dir.as_uri())}")
 
     @cmd.function_command
     def gen(self, waveform):
@@ -626,7 +628,7 @@ class KAIKOMenu:
 
         yes = yield from logger.ask("Do you really want to do that?", False).join()
         if yes:
-            self.user.remove(logger)
+            self.workspace.remove(logger)
             logger.print("Good luck~")
             raise KeyboardInterrupt
 
@@ -669,8 +671,8 @@ class WaveformTest:
 
 
 class KAIKOPlay:
-    def __init__(self, user, filepath, start, profiles, logger):
-        self.user = user
+    def __init__(self, workspace, filepath, start, profiles, logger):
+        self.workspace = workspace
         self.filepath = filepath
         self.start = start
         self.profiles = profiles
@@ -698,8 +700,8 @@ class KAIKOPlay:
 
             score, devices_settings = yield from beatmap.play(
                 manager,
-                self.user.resources_dir,
-                self.user.cache_dir,
+                self.workspace.resources_dir,
+                self.workspace.cache_dir,
                 self.start,
                 devices_settings,
                 gameplay_settings,
@@ -730,11 +732,11 @@ class KAIKOPlay:
 
 
 class KAIKOLoop:
-    def __init__(self, pattern, tempo, offset, user, profiles, logger):
+    def __init__(self, pattern, tempo, offset, workspace, profiles, logger):
         self.pattern = pattern
         self.tempo = tempo
         self.offset = offset
-        self.user = user
+        self.workspace = workspace
         self.profiles = profiles
         self.logger = logger
 
@@ -762,8 +764,8 @@ class KAIKOLoop:
 
             score, devices_settings = yield from beatmap.play(
                 manager,
-                self.user.resources_dir,
-                self.user.cache_dir,
+                self.workspace.resources_dir,
+                self.workspace.cache_dir,
                 None,
                 devices_settings,
                 gameplay_settings,
