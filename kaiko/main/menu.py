@@ -12,6 +12,7 @@ from ..utils import datanodes as dn
 from ..utils import commands as cmd
 from ..devices import loggers as log
 from ..devices import terminals as term
+from ..devices import audios as aud
 from ..devices import engines
 from ..beats import beatshell
 from ..beats import beatmaps
@@ -140,10 +141,36 @@ class KAIKOWorkspace:
         self.current = abspath.relative_to(self.root)
 
     def ls(self, logger):
+        normal = "{}"
+        dir = "[weight=bold][color=blue]{}[/][/]"
+        py = "[weight=bold][color=green]{}[/][/]"
+        beatmap = "[weight=bold][color=magenta]{}[/][/]"
+        sound = "[weight=bold][color=cyan]{}[/][/]"
+        hidden = "[weight=dim]{}[/]"
+
         abspath = self.root / self.current
         for abschild in abspath.iterdir():
-            child = abschild.relative_to(abspath)
-            logger.print(str(child), markup=False)
+            child = str(abschild.relative_to(abspath))
+            if abschild.is_dir():
+                child = os.path.join(child, "")
+            if abschild.is_symlink():
+                child = child + "@"
+
+            if child.startswith("."):
+                child = hidden.format(logger.escape(child))
+            elif abschild.is_dir():
+                child = dir.format(logger.escape(child))
+            elif abschild.is_file():
+                if abschild.suffix == ".py":
+                    child = py.format(logger.escape(child))
+                elif abschild.suffix in [".ka", ".kaiko", ".osu"]:
+                    child = beatmap.format(logger.escape(child))
+                elif abschild.suffix in [".wav", ".mp3", ".mp4", ".m4a", ".ogg"]:
+                    child = sound.format(logger.escape(child))
+                else:
+                    child = normal.format(logger.escape(child))
+
+            logger.print(child)
 
     def get(self, path, logger):
         try:
