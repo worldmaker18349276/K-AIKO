@@ -262,19 +262,22 @@ class OptionParser(ArgumentParser):
 class PathParser(ArgumentParser):
     r"""Parse a file path."""
 
-    def __init__(self, root=".", default=inspect.Parameter.empty, desc=None):
+    def __init__(self, root=".", all=False, default=inspect.Parameter.empty, desc=None):
         r"""Contructor.
 
         Parameters
         ----------
         root : str, optional
             The root of path.
+        all : bool, optional
+            The show all or not, default is false.
         default : any, optional
             The default value of this argument.
         desc : str, optional
             The description of this argument.
         """
         self.root = root
+        self.all = all
         self.default = default
         self._desc = desc or "It should be a path"
 
@@ -326,11 +329,11 @@ class PathParser(ArgumentParser):
         if not os.path.isdir(parentpath):
             return suggestions
 
-        names = fit(
-            suffix,
-            [name for name in os.listdir(parentpath) if not name.startswith(".")],
-        )
+        names = fit(suffix, os.listdir(parentpath))
         for name in names:
+            if not self.all and name.startswith("."):
+                continue
+
             subpath = os.path.join(parentpath, name)
             sugg = os.path.join(prefix, name)
 

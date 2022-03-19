@@ -515,7 +515,7 @@ class KAIKOMenu:
     @cd.arg_parser("path")
     @cat.arg_parser("path")
     def _cd_path_parser(self):
-        return cmd.PathParser(self.workspace.root / self.workspace.current)
+        return cmd.PathParser(self.workspace.root / self.workspace.current, all=True)
 
     @cmd.function_command
     def me(self):
