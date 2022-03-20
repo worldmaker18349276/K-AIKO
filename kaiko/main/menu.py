@@ -141,35 +141,40 @@ class KAIKOWorkspace:
         self.current = abspath.relative_to(self.root)
 
     def ls(self, logger):
-        normal = "{}"
-        dir = "[weight=bold][color=blue]{}[/][/]"
+        hidden = "[weight=dim]{}[/]"
+        link = "[weight=bold][color=cyan]{}[/][/]@"
+        dir = "[weight=bold][color=blue]{}[/][/]/"
         py = "[weight=bold][color=green]{}[/][/]"
         beatmap = "[weight=bold][color=magenta]{}[/][/]"
-        sound = "[weight=bold][color=cyan]{}[/][/]"
-        hidden = "[weight=dim]{}[/]"
+        sound = "[color=magenta]{}[/]"
+        normal = "{}"
+        other = "{}"
 
         abspath = self.root / self.current
         for abschild in abspath.iterdir():
-            child = str(abschild.relative_to(abspath))
+            child = logger.escape(str(abschild.relative_to(abspath)))
 
             if child.startswith("."):
-                child = hidden.format(logger.escape(child))
+                child = hidden.format(child)
+
+            elif abschild.is_symlink():
+                child = link.format(child)
+
             elif abschild.is_dir():
-                child = dir.format(logger.escape(child))
+                child = dir.format(child)
+
             elif abschild.is_file():
                 if abschild.suffix == ".py":
-                    child = py.format(logger.escape(child))
+                    child = py.format(child)
                 elif abschild.suffix in [".ka", ".kaiko", ".osu"]:
-                    child = beatmap.format(logger.escape(child))
+                    child = beatmap.format(child)
                 elif abschild.suffix in [".wav", ".mp3", ".mp4", ".m4a", ".ogg"]:
-                    child = sound.format(logger.escape(child))
+                    child = sound.format(child)
                 else:
-                    child = normal.format(logger.escape(child))
+                    child = normal.format(child)
 
-            if abschild.is_dir():
-                child = child + "/"
-            if abschild.is_symlink():
-                child = child + "@"
+            else:
+                child = other.format(child)
 
             logger.print(child)
 

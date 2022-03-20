@@ -266,7 +266,6 @@ class PathParser(ArgumentParser):
         self,
         root=".",
         type="all",
-        hidden=False,
         default=inspect.Parameter.empty,
         desc=None,
     ):
