@@ -262,22 +262,32 @@ class OptionParser(ArgumentParser):
 class PathParser(ArgumentParser):
     r"""Parse a file path."""
 
-    def __init__(self, root=".", all=False, default=inspect.Parameter.empty, desc=None):
+    def __init__(
+        self,
+        root=".",
+        type="all",
+        hidden=False,
+        default=inspect.Parameter.empty,
+        desc=None,
+    ):
         r"""Contructor.
 
         Parameters
         ----------
         root : str, optional
             The root of path.
-        all : bool, optional
-            The show all or not, default is false.
+        dir : bool, optional
+            The parse directory or not, default is true.
+        type : str, optional
+            The parse file type, which should be one of `"file"`, `"dir"`,
+            `"all"`, default is `"all"`.
         default : any, optional
             The default value of this argument.
         desc : str, optional
             The description of this argument.
         """
         self.root = root
-        self.all = all
+        self.type = type
         self.default = default
         self._desc = desc or "It should be a path"
 
@@ -296,6 +306,16 @@ class PathParser(ArgumentParser):
                 "Path does not exist" + ("\n" + desc if desc is not None else "")
             )
 
+        if self.type not in ["dir", "all"] and os.path.isdir(exists):
+            raise CommandParseError(
+                "Not a directory" + ("\n" + desc if desc is not None else "")
+            )
+
+        if self.type not in ["file", "all"] and os.path.isfile(exists):
+            raise CommandParseError(
+                "Not a file" + ("\n" + desc if desc is not None else "")
+            )
+
         return Path(token)
 
     def suggest(self, token):
@@ -312,36 +332,33 @@ class PathParser(ArgumentParser):
         except ValueError:
             return suggestions
 
-        if is_file:
+        if is_file and self.type in ["file", "all"]:
             suggestions.append((token or ".") + "\000")
-            return suggestions
 
-        # separate parent and partial name
-        if is_dir:
+        # prevent from   a/b/c/.  ->  a/b/c/./
+        if is_dir and self.type in ["dir", "all"] and os.path.basename(token) != ".":
             suggestions.append(os.path.join(token or ".", "") + "\000")
-            prefix, suffix = token, ""
-        else:
-            prefix, suffix = os.path.split(token)
 
-        # explore directory
-        parentpath = os.path.join(self.root, prefix or ".")
-
+        # separate parent and partial child name
+        parent, child = os.path.split(token)
+        parentpath = os.path.join(self.root, parent or ".")
         if not os.path.isdir(parentpath):
             return suggestions
 
-        names = fit(suffix, os.listdir(parentpath))
+        names = fit(child, os.listdir(parentpath))
         for name in names:
-            if not self.all and name.startswith("."):
+            # only suggest hidden files when starting with .
+            if not child.startswith(".") and name.startswith("."):
                 continue
 
             subpath = os.path.join(parentpath, name)
-            sugg = os.path.join(prefix, name)
+            sugg = os.path.join(parent, name)
 
             if os.path.isdir(subpath):
                 sugg = os.path.join(sugg, "")
                 suggestions.append(sugg)
 
-            elif os.path.isfile(subpath):
+            elif os.path.isfile(subpath) and self.type in ["file", "all"]:
                 suggestions.append(sugg + "\000")
 
         return suggestions
