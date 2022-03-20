@@ -121,6 +121,21 @@ class KAIKOWorkspace:
         )
         shutil.rmtree(str(self.root))
 
+    def print_banner(self, profile, logger):
+        username = logger.escape(self.username)
+        profile = logger.escape(profile)
+        path = str(self.current)
+        if path == ".":
+            path = ""
+        path = logger.escape(path)
+
+        template = (
+            "[color=bright_black][[[color=magenta]♜ [weight=bold]{username}[/][/]"
+            "/[color=blue]⚙ [weight=bold]{profile}[/][/]]][/]"
+            " [color=cyan]⛩ [weight=bold]/{path}[/][/]"
+        )
+        logger.print(template.format(username=username, profile=profile, path=path))
+
     def cd(self, path, logger):
         try:
             abspath = (self.root / self.current / path).resolve(strict=True)
@@ -342,6 +357,8 @@ class KAIKOMenu:
             lambda: self.profiles.current.devices,
         )
         while True:
+            self.workspace.print_banner(self.profiles.current_name, self.logger)
+
             # parse command
             yield from input.prompt().join()
 
