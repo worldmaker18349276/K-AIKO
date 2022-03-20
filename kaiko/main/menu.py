@@ -151,10 +151,6 @@ class KAIKOWorkspace:
         abspath = self.root / self.current
         for abschild in abspath.iterdir():
             child = str(abschild.relative_to(abspath))
-            if abschild.is_dir():
-                child = os.path.join(child, "")
-            if abschild.is_symlink():
-                child = child + "@"
 
             if child.startswith("."):
                 child = hidden.format(logger.escape(child))
@@ -169,6 +165,11 @@ class KAIKOWorkspace:
                     child = sound.format(logger.escape(child))
                 else:
                     child = normal.format(logger.escape(child))
+
+            if abschild.is_dir():
+                child = child + "/"
+            if abschild.is_symlink():
+                child = child + "@"
 
             logger.print(child)
 
