@@ -407,6 +407,42 @@ class DevicesCommand:
         finally:
             logger.print()
 
+    @cmd.function_command
+    def test_color(self):
+        """[rich]Test colors.
+
+        usage: [cmd]devices[/] [cmd]test_color[/]
+        """
+
+        template = "[color={}]██[/]"
+        palette = [
+            [
+                "black",
+                "red",
+                "green",
+                "yellow",
+                "blue",
+                "magenta",
+                "cyan",
+                "white",
+            ],
+            [
+                "bright_black",
+                "bright_red",
+                "bright_green",
+                "bright_yellow",
+                "bright_blue",
+                "bright_magenta",
+                "bright_cyan",
+                "bright_white",
+            ],
+        ]
+        self.logger.print("print standard color palette:")
+        self.logger.print(
+            "".join(map(template.format, palette[0])) + "\n"
+            + "".join(map(template.format, palette[1]))
+        )
+
     # terminal
 
     @cmd.function_command
