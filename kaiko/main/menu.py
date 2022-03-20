@@ -535,8 +535,15 @@ class KAIKOMenu:
     @cmd.function_command
     def cat(self, path):
         abspath = self.workspace.get(path, self.logger)
+
+        try:
+            content = abspath.read_text()
+        except UnicodeDecodeError:
+            self.logger.print("[warn]Cannot read binary file.[/]")
+            return
+
         code = self.logger.format_code(
-            abspath.read_text(), title=str(self.workspace.current / path)
+            content, title=str(self.workspace.current / path)
         )
         self.logger.print(code)
 
