@@ -138,7 +138,8 @@ class KAIKOWorkspace:
             logger.print("[warn]is not directory[/]")
             return
 
-        self.current = abspath.relative_to(self.root)
+        # don't resolve symlink
+        self.current = Path(os.path.normpath(str(self.current / path)))
 
     def ls(self, logger):
         hidden = "[weight=dim]{}[/]"
