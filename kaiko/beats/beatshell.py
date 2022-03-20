@@ -1873,7 +1873,7 @@ class BeatStroke:
 
         def handler(args):
             _, _, key, code = args
-            if key not in keys and not key.isprintable():
+            if key not in keys and not code.isprintable():
                 self.input.unknown_key(key)
 
         return handler
