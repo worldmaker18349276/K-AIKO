@@ -438,8 +438,7 @@ class BeatshellWidgetBuilder:
 
 
 BeatshellIconWidgetSettings = Union[
-    PatternsWidgetSettings,
-    beatwidgets.MonitorWidgetSettings,
+    PatternsWidgetSettings, beatwidgets.MonitorWidgetSettings,
 ]
 
 
@@ -786,13 +785,7 @@ class BeatInput:
         tempo = shell_settings.prompt.tempo
         metronome = engines.Metronome(t0, tempo)
 
-        prompt = BeatPrompt(
-            stroke,
-            self,
-            shell_settings,
-            self.logger.rich,
-            metronome,
-        )
+        prompt = BeatPrompt(stroke, self, shell_settings, self.logger.rich, metronome)
 
         widget_builder = BeatshellWidgetBuilder(prompt, renderer)
 

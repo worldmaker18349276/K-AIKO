@@ -32,31 +32,13 @@ class SightWidgetSettings(cfg.Configurable):
         The sustain time of performance hint.
     """
     performances_appearances: List[Tuple[str, str]] = [
-        (
-            "[dx=2/][color=bright_magenta]⟫[/]",
-            "[dx=-1/][color=bright_magenta]⟪[/]",
-        ),
-        (
-            "[dx=2/][color=bright_magenta]⟩[/]",
-            "[dx=-1/][color=bright_magenta]⟨[/]",
-        ),
-        (
-            "[dx=2/][color=bright_magenta]›[/]",
-            "[dx=-1/][color=bright_magenta]‹[/]",
-        ),
+        ("[dx=2/][color=bright_magenta]⟫[/]", "[dx=-1/][color=bright_magenta]⟪[/]"),
+        ("[dx=2/][color=bright_magenta]⟩[/]", "[dx=-1/][color=bright_magenta]⟨[/]"),
+        ("[dx=2/][color=bright_magenta]›[/]", "[dx=-1/][color=bright_magenta]‹[/]"),
         ("", ""),
-        (
-            "[dx=-1/][color=bright_magenta]‹[/]",
-            "[dx=2/][color=bright_magenta]›[/]",
-        ),
-        (
-            "[dx=-1/][color=bright_magenta]⟨[/]",
-            "[dx=2/][color=bright_magenta]⟩[/]",
-        ),
-        (
-            "[dx=-1/][color=bright_magenta]⟪[/]",
-            "[dx=2/][color=bright_magenta]⟫[/]",
-        ),
+        ("[dx=-1/][color=bright_magenta]‹[/]", "[dx=2/][color=bright_magenta]›[/]"),
+        ("[dx=-1/][color=bright_magenta]⟨[/]", "[dx=2/][color=bright_magenta]⟩[/]"),
+        ("[dx=-1/][color=bright_magenta]⟪[/]", "[dx=2/][color=bright_magenta]⟫[/]"),
     ]
     performance_sustain_time: float = 0.1
 
@@ -207,14 +189,7 @@ class BeatbarSettings(cfg.Configurable):
 
 class Beatbar:
     def __init__(
-        self,
-        mixer,
-        detector,
-        renderer,
-        controller,
-        bar_shift,
-        bar_flip,
-        settings,
+        self, mixer, detector, renderer, controller, bar_shift, bar_flip, settings,
     ):
         self.settings = settings
 

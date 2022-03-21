@@ -974,10 +974,7 @@ class Controller:
 
     @staticmethod
     def _timer_node(clock, init_time, update_interval):
-        return dn.pipe(
-            dn.time(0.0),
-            clock.clock(init_time, 1),
-        )
+        return dn.pipe(dn.time(0.0), clock.clock(init_time, 1))
 
     @classmethod
     def create(cls, settings, term_settings, init_time=0.0):

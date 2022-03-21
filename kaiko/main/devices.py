@@ -416,16 +416,7 @@ class DevicesCommand:
 
         template = "[color={}]██[/]"
         palette = [
-            [
-                "black",
-                "red",
-                "green",
-                "yellow",
-                "blue",
-                "magenta",
-                "cyan",
-                "white",
-            ],
+            ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"],
             [
                 "bright_black",
                 "bright_red",
@@ -439,7 +430,8 @@ class DevicesCommand:
         ]
         self.logger.print("print standard color palette:")
         self.logger.print(
-            "".join(map(template.format, palette[0])) + "\n"
+            "".join(map(template.format, palette[0]))
+            + "\n"
             + "".join(map(template.format, palette[1]))
         )
 

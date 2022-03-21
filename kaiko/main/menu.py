@@ -451,12 +451,7 @@ class KAIKOMenu:
         """
 
         return KAIKOLoop(
-            pattern,
-            tempo,
-            offset,
-            self.workspace,
-            self.profiles,
-            self.logger,
+            pattern, tempo, offset, self.workspace, self.profiles, self.logger,
         )
 
     @loop.arg_parser("pattern")

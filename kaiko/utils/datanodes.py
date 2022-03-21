@@ -536,8 +536,9 @@ def onset_strength(df):
     curr = yield
     prev = numpy.zeros_like(curr)
     while True:
-        prev, curr = curr, (
-            yield numpy.mean(numpy.maximum(0.0, curr - prev).sum(axis=0)) * df
+        prev, curr = (
+            curr,
+            (yield numpy.mean(numpy.maximum(0.0, curr - prev).sum(axis=0)) * df),
         )
 
 
@@ -1099,6 +1100,7 @@ def parse_minsec(s):
         return None
     min, sec = s.split(":", 1) if ":" in s else ("0", s)
     return int(min) * 60 + float(sec)
+
 
 @dataclasses.dataclass
 class Waveform:

@@ -208,11 +208,7 @@ class Logger:
         if bottom:
             y = shutil.get_terminal_size().lines - 1
             markup = mu.Group((markup, mu.Move(x=0, y=y)))
-        print(
-            self.renderer.render(markup.expand()),
-            end="",
-            flush=flush,
-        )
+        print(self.renderer.render(markup.expand()), end="", flush=flush)
 
     def format_code(self, content, marked=None, title=None, is_changed=False):
         total_width = 80

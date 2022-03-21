@@ -263,11 +263,7 @@ class PathParser(ArgumentParser):
     r"""Parse a file path."""
 
     def __init__(
-        self,
-        root=".",
-        type="all",
-        default=inspect.Parameter.empty,
-        desc=None,
+        self, root=".", type="all", default=inspect.Parameter.empty, desc=None,
     ):
         r"""Contructor.
 
@@ -696,8 +692,9 @@ class FunctionCommandParser(CommandParser):
 
             value = parser.parse(token)
             bound = {**self.bound, name: value}
-            return TOKEN_TYPE.ARGUMENT, FunctionCommandParser(
-                self.func, args, self.kwargs, bound
+            return (
+                TOKEN_TYPE.ARGUMENT,
+                FunctionCommandParser(self.func, args, self.kwargs, bound),
             )
 
         # parse keyword arguments
@@ -713,8 +710,9 @@ class FunctionCommandParser(CommandParser):
                 )
 
             args = OrderedDict([(name, parser_func)])
-            return TOKEN_TYPE.KEYWORD, FunctionCommandParser(
-                self.func, args, kwargs, self.bound
+            return (
+                TOKEN_TYPE.KEYWORD,
+                FunctionCommandParser(self.func, args, kwargs, self.bound),
             )
 
         # rest

@@ -1112,9 +1112,7 @@ class BeatbarWidgetBuilder:
                 ],
             )
             return beatbar.SightWidget(grade_getter, widget_settings).load(
-                self.rich,
-                self.beatbar.detector,
-                self.beatbar.renderer.settings,
+                self.rich, self.beatbar.detector, self.beatbar.renderer.settings,
             )
         else:
             raise TypeError
@@ -1557,10 +1555,7 @@ class Beatmap:
 
         devices_settings = devices_settings.copy()
         settings_changed = Beatmap.register_controllers(
-            playfield,
-            event_clock,
-            devices_settings,
-            gameplay_settings.controls,
+            playfield, event_clock, devices_settings, gameplay_settings.controls,
         )
 
         # play music
@@ -1797,8 +1792,7 @@ class Beatmap:
                 waveform_max_time = 30.0
                 try:
                     node = path.generate(
-                        samplerate=output_samplerate,
-                        channels=output_nchannels,
+                        samplerate=output_samplerate, channels=output_nchannels,
                     )
 
                     resource = []
@@ -1884,10 +1878,7 @@ class Beatmap:
         events_iter = iter(events)
         event = next(events_iter, None)
 
-        timer = dn.pipe(
-            dn.count(0.0, 1 / tickrate),
-            clock.clock(start_time, 1),
-        )
+        timer = dn.pipe(dn.count(0.0, 1 / tickrate), clock.clock(start_time, 1))
 
         with timer:
             yield

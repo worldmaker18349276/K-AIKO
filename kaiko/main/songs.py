@@ -39,7 +39,9 @@ class BeatmapManager:
         logger = self.logger
         beatmaps_dir = self.beatmaps_dir
 
-        logger.print(f"[data/] Load beatmaps from {logger.emph(beatmaps_dir.as_uri())}...")
+        logger.print(
+            f"[data/] Load beatmaps from {logger.emph(beatmaps_dir.as_uri())}..."
+        )
 
         for file in beatmaps_dir.iterdir():
             if file.is_file() and file.suffix == ".osz":

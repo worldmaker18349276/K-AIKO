@@ -60,9 +60,7 @@ mstr_parser = (
 )
 
 rmstr_parser = (
-    pc.regex(
-        r'r"""(?=\n)(' r'(?!""")[^\\\x00]' r"|\\[^\x00]" r')*(?<=\n)"""',
-    )
+    pc.regex(r'r"""(?=\n)(' r'(?!""")[^\\\x00]' r"|\\[^\x00]" r')*(?<=\n)"""')
     .map(ast.literal_eval)
     .desc("raw triple quoted string")
 )
