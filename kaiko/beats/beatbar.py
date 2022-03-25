@@ -149,35 +149,35 @@ class SightWidget:
 class BeatbarSettings(cfg.Configurable):
     @cfg.subconfig
     class layout(cfg.Configurable):
-        r"""
+        """
         Fields
         ------
         icon_width : int
-            The width of icon.
+            [rich]The width of icon.
 
-            ..code::
-
-                 ⣠⣴⣤⣿⣤⣦ [[00000/00400]]       □  ⛶     □                 ■   [[11.3%|00:09]]
-                ^^^^^^^^
-                  here
+            [color=bright_magenta] ⣠⣴⣤⣿⣤⣦ [/][color=bright_blue][[00000/00400]][/]       \
+[color=bright_cyan]□ [/] [color=bright_magenta]⛶ [/]    [color=bright_cyan]□ [/]                \
+[color=bright_blue]■ [/]  [color=bright_blue][[11.3%|00:09]][/]
+            ^^^^^^^^
+              here
 
         header_width : int
-            The width of header.
+            [rich]The width of header.
 
-            ..code::
-
-                 ⣠⣴⣤⣿⣤⣦ [[00000/00400]]       □  ⛶     □                 ■   [[11.3%|00:09]]
-                        ^^^^^^^^^^^^^
-                            here
+            [color=bright_magenta] ⣠⣴⣤⣿⣤⣦ [/][color=bright_blue][[00000/00400]][/]       \
+[color=bright_cyan]□ [/] [color=bright_magenta]⛶ [/]    [color=bright_cyan]□ [/]                \
+[color=bright_blue]■ [/]  [color=bright_blue][[11.3%|00:09]][/]
+                    ^^^^^^^^^^^^^
+                        here
 
         footer_width : int
-            The width of footer.
+            [rich]The width of footer.
 
-            ..code::
-
-                 ⣠⣴⣤⣿⣤⣦ [[00000/00400]]       □  ⛶     □                 ■   [[11.3%|00:09]]
-                                                                           ^^^^^^^^^^^^^
-                                                                                here
+            [color=bright_magenta] ⣠⣴⣤⣿⣤⣦ [/][color=bright_blue][[00000/00400]][/]       \
+[color=bright_cyan]□ [/] [color=bright_magenta]⛶ [/]    [color=bright_cyan]□ [/]                \
+[color=bright_blue]■ [/]  [color=bright_blue][[11.3%|00:09]][/]
+                                                                       ^^^^^^^^^^^^^
+                                                                            here
 
         """
         icon_width: int = 8
