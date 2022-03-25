@@ -1264,7 +1264,7 @@ class RichRenderer:
                 if x + 1 < width and buffer[x + 1] == "":
                     buffer[x + 1] = " "
                 buffer[x] = (
-                    ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}\x1b[m"
+                    ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}{self.default_ansi_code}"
                 )
                 x += 1
 
@@ -1275,7 +1275,7 @@ class RichRenderer:
                 if x_ + 1 < width and buffer[x_ + 1] == "":
                     buffer[x_ + 1] = " "
                 buffer[x] = (
-                    ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}\x1b[m"
+                    ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}{self.default_ansi_code}"
                 )
                 buffer[x_] = ""
                 x += 2
