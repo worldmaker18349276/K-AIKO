@@ -489,14 +489,14 @@ class SGR(Pair):
         return ";".join(map(str, self.attr))
 
     @property
-    def ansi_delimiters(self):
+    def ansi_code(self):
         if self.attr:
-            return f"\x1b[{';'.join(map(str, self.attr))}m", "\x1b[m"
+            return f"\x1b[{';'.join(map(str, self.attr))}m"
         else:
-            return None, None
+            return ""
 
     def __str__(self):
-        return self.ansi_delimiters[0] or ""
+        return self.ansi_code
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1051,6 +1051,16 @@ class RichParser:
 class RichTextRenderer:
     def __init__(self, unicode_version="auto"):
         self.unicode_version = unicode_version
+        self.reset_default()
+
+    def add_default(self, *attrs):
+        for attr in attrs:
+            if not isinstance(attr, SGR):
+                raise TypeError(f"Invalid markup for default attribute: {type(attr)}")
+            self.default_ansi_code += attr.ansi_code
+
+    def reset_default(self):
+        self.default_ansi_code = Reset((), "on").expand().ansi_code
 
     def clear_line(self):
         return Group((Clear(ClearRegion.line), CR()))
@@ -1076,7 +1086,8 @@ class RichTextRenderer:
             yield markup.ansi_code
 
         elif isinstance(markup, SGR):
-            open, close = markup.ansi_delimiters
+            open = markup.ansi_code
+            close = open and self.default_ansi_code
 
             if open:
                 yield open
@@ -1119,7 +1130,8 @@ class RichTextRenderer:
                 )
 
         elif isinstance(markup, SGR):
-            open, close = markup.ansi_delimiters
+            open = markup.ansi_code
+            close = open and self.default_ansi_code
 
             if open:
                 print(open)
@@ -1185,7 +1197,8 @@ class RichTextRenderer:
             return pos
 
         elif isinstance(markup, SGR):
-            open, close = markup.ansi_delimiters
+            open = markup.ansi_code
+            close = open and self.default_ansi_code
 
             if open:
                 yield open
@@ -1228,6 +1241,16 @@ def clamp(ran, mask):
 class RichBarRenderer:
     def __init__(self, unicode_version="auto"):
         self.unicode_version = unicode_version
+        self.reset_default()
+
+    def add_default(self, *attrs):
+        for attr in attrs:
+            if not isinstance(attr, SGR):
+                raise TypeError(f"Invalid markup for default attribute: {type(attr)}")
+            self.default_ansi_code += attr.ansi_code
+
+    def reset_default(self):
+        self.default_ansi_code = Reset((), "on").expand().ansi_code
 
     def _render_text(self, buffer, string, x, width, xmask, attrs):
         start = xmask.start
