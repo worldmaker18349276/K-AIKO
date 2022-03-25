@@ -647,8 +647,8 @@ class BeatInput:
         The root command parser for beatshell.
     preview_handler : function
         A function to preview beatmap.
-    logger : loggers.Logger
-        The logger.
+    rich : markups.RichParser
+        The rich parser.
     cache_dir : Path
         The directory of cache data.
     history_path : Path
@@ -695,7 +695,7 @@ class BeatInput:
         self,
         promptable,
         preview_handler,
-        logger,
+        rich,
         cache_dir,
         shell_settings_getter=BeatShellSettings,
         devices_settings_getter=engines.DevicesSettings,
@@ -707,7 +707,7 @@ class BeatInput:
         promptable : object
             The root command.
         preview_handler : function
-        logger : loggers.Logger
+        rich : markups.RichParser
         cache_dir : Path
             The directory of cache data.
         shell_settings_getter : BeatShellSettings
@@ -717,7 +717,7 @@ class BeatInput:
         """
         self.command = cmd.RootCommandParser(promptable)
         self.preview_handler = preview_handler
-        self.logger = logger
+        self.rich = rich
         self.cache_dir = cache_dir
         self._shell_settings_getter = shell_settings_getter
         self._devices_settings_getter = devices_settings_getter
@@ -785,7 +785,7 @@ class BeatInput:
         tempo = shell_settings.prompt.tempo
         metronome = engines.Metronome(t0, tempo)
 
-        prompt = BeatPrompt(stroke, self, shell_settings, self.logger.rich, metronome)
+        prompt = BeatPrompt(stroke, self, shell_settings, self.rich, metronome)
 
         widget_builder = BeatshellWidgetBuilder(prompt, renderer)
 

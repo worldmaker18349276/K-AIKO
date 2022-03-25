@@ -351,7 +351,7 @@ class KAIKOMenu:
         input = beatshell.BeatInput(
             self,
             preview_handler,
-            self.logger,
+            self.logger.rich,
             self.workspace.cache_dir,
             lambda: self.profiles.current.shell,
             lambda: self.profiles.current.devices,
