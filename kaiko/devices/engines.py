@@ -706,12 +706,11 @@ def to_range(start, stop, width):
 class RichBar:
     def __init__(self, terminal_settings):
         self.markups = []
-        self.rich_renderer = mu.RichBarRenderer(terminal_settings.unicode_version)
 
     def add_markup(self, markup, mask=slice(None, None), shift=0):
         self.markups.append((markup, mask, shift))
 
-    def draw(self, width):
+    def draw(self, width, renderer):
         buffer = [" "] * width
         xran = range(width)
 
@@ -723,7 +722,7 @@ class RichBar:
             else:
                 x = shift + mask.start + width
 
-            self.rich_renderer._render(
+            renderer._render_bar(
                 buffer, markup, x=x, width=width, xmask=xran[mask], attrs=()
             )
 
@@ -771,7 +770,7 @@ class Renderer:
     def _render_node(bus, clock, settings, term_settings, init_time):
         framerate = settings.display_framerate
 
-        rich_renderer = mu.RichTextRenderer(term_settings.unicode_version)
+        rich_renderer = mu.RichRenderer(term_settings.unicode_version)
         clear_line = rich_renderer.render(rich_renderer.clear_line().expand())
         clear_below = rich_renderer.render(rich_renderer.clear_below().expand())
         width = 0
@@ -791,7 +790,7 @@ class Renderer:
                     view, msgs, logs = bus.send(((view, msgs, logs), time, width))
                 except StopIteration:
                     return
-                view_str = view.draw(width)
+                view_str = view.draw(width, rich_renderer)
 
                 logs_str = (
                     rich_renderer.render(mu.Group(tuple(logs))) + "\r" if logs else ""
@@ -820,7 +819,7 @@ class Renderer:
     def _resize_node(render_node, settings, term_settings):
         resize_delay = settings.resize_delay
 
-        rich_renderer = mu.RichTextRenderer(term_settings.unicode_version)
+        rich_renderer = mu.RichRenderer(term_settings.unicode_version)
         clear_line = rich_renderer.render(rich_renderer.clear_line().expand())
         clear_screen = rich_renderer.render(rich_renderer.clear_screen().expand())
         size_node = term.terminal_size()

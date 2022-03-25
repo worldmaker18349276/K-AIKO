@@ -116,7 +116,7 @@ class Logger:
         self.rich = mu.RichParser(
             terminal_settings.unicode_version, terminal_settings.color_support
         )
-        self.renderer = mu.RichTextRenderer(terminal_settings.unicode_version)
+        self.renderer = mu.RichRenderer(terminal_settings.unicode_version)
 
         self.rich.add_single_template("data", logger_settings.data_icon)
         self.rich.add_single_template("info", logger_settings.info_icon)

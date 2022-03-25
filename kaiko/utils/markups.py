@@ -1048,7 +1048,7 @@ class RichParser:
         return width
 
 
-class RichTextRenderer:
+class RichRenderer:
     def __init__(self, unicode_version="auto"):
         self.unicode_version = unicode_version
         self.reset_default()
@@ -1231,28 +1231,7 @@ class RichTextRenderer:
             markup = _restore_pos(markup, size, pos, wrap)
         return "".join(markup)
 
-
-def clamp(ran, mask):
-    start = min(max(mask.start, ran.start), mask.stop)
-    stop = max(min(mask.stop, ran.stop), mask.start)
-    return range(start, stop)
-
-
-class RichBarRenderer:
-    def __init__(self, unicode_version="auto"):
-        self.unicode_version = unicode_version
-        self.reset_default()
-
-    def add_default(self, *attrs):
-        for attr in attrs:
-            if not isinstance(attr, SGR):
-                raise TypeError(f"Invalid markup for default attribute: {type(attr)}")
-            self.default_ansi_code += attr.ansi_code
-
-    def reset_default(self):
-        self.default_ansi_code = Reset((), "on").expand().ansi_code
-
-    def _render_text(self, buffer, string, x, width, xmask, attrs):
+    def _render_bar_text(self, buffer, string, x, width, xmask, attrs):
         start = xmask.start
         stop = xmask.stop
         for ch in string:
@@ -1300,19 +1279,19 @@ class RichBarRenderer:
 
         return x
 
-    def _render(self, buffer, markup, x, width, xmask, attrs):
+    def _render_bar(self, buffer, markup, x, width, xmask, attrs):
         if isinstance(markup, Text):
-            return self._render_text(buffer, markup.string, x, width, xmask, attrs)
+            return self._render_bar_text(buffer, markup.string, x, width, xmask, attrs)
 
         elif isinstance(markup, Group):
             for child in markup.children:
-                x = self._render(buffer, child, x, width, xmask, attrs)
+                x = self._render_bar(buffer, child, x, width, xmask, attrs)
             return x
 
         elif isinstance(markup, SGR):
             attrs = (*attrs, *markup.attr)
             for child in markup.children:
-                x = self._render(buffer, child, x, width, xmask, attrs)
+                x = self._render_bar(buffer, child, x, width, xmask, attrs)
             return x
 
         elif isinstance(markup, X):
@@ -1324,19 +1303,25 @@ class RichBarRenderer:
         elif isinstance(markup, Restore):
             x0 = x
             for child in markup.children:
-                x = self._render(buffer, child, x, width, xmask, attrs)
+                x = self._render_bar(buffer, child, x, width, xmask, attrs)
             return x0
 
         elif isinstance(markup, Mask):
             xmask = clamp(range(width)[markup.mask], xmask)
             for child in markup.children:
-                x = self._render(buffer, child, x, width, xmask, attrs)
+                x = self._render_bar(buffer, child, x, width, xmask, attrs)
             return x
 
         else:
             raise TypeError(f"unknown markup type: {type(markup)}")
 
-    def render(self, width, markup):
+    def render_bar(self, width, markup):
         buffer = [" "] * width
-        self._render(buffer, markup, 0, width, range(width), ())
+        self._render_bar(buffer, markup, 0, width, range(width), ())
         return "".join(buffer).rstrip()
+
+
+def clamp(ran, mask):
+    start = min(max(mask.start, ran.start), mask.stop)
+    stop = max(min(mask.stop, ran.stop), mask.start)
+    return range(start, stop)
