@@ -144,53 +144,44 @@ class KAIKOWorkspace:
                 logger.print(traceback.format_exc(), end="", markup=False)
 
         if not abspath.exists():
-            logger.print("[warn]no such directory[/]")
+            logger.print("[warn]No such directory[/]")
             return
         if not abspath.is_relative_to(self.root):
-            logger.print("[warn]out of root directory[/]")
+            logger.print("[warn]Out of root directory[/]")
             return
         if not abspath.is_dir():
-            logger.print("[warn]is not directory[/]")
+            logger.print("[warn]Is not a directory[/]")
             return
 
         # don't resolve symlink
         self.current = Path(os.path.normpath(str(self.current / path)))
 
     def ls(self, logger):
-        hidden = "[weight=dim]{}[/]"
-        link = "[weight=bold][color=cyan]{}[/][/]@"
-        dir = "[weight=bold][color=blue]{}[/][/]/"
-        py = "[weight=bold][color=green]{}[/][/]"
-        beatmap = "[weight=bold][color=magenta]{}[/][/]"
-        sound = "[color=magenta]{}[/]"
-        normal = "{}"
-        other = "{}"
-
         abspath = self.root / self.current
         for abschild in abspath.iterdir():
             child = logger.escape(str(abschild.relative_to(abspath)))
 
             if child.startswith("."):
-                child = hidden.format(child)
+                child = f"[file_hidden]{child}[/]"
 
             elif abschild.is_symlink():
-                child = link.format(child)
+                child = f"[file_link]{child}[/]"
 
             elif abschild.is_dir():
-                child = dir.format(child)
+                child = f"[file_dir]{child}[/]"
 
             elif abschild.is_file():
                 if abschild.suffix == ".py":
-                    child = py.format(child)
+                    child = f"[file_py]{child}[/]"
                 elif abschild.suffix in [".ka", ".kaiko", ".osu"]:
-                    child = beatmap.format(child)
+                    child = f"[file_beatmap]{child}[/]"
                 elif abschild.suffix in [".wav", ".mp3", ".mp4", ".m4a", ".ogg"]:
-                    child = sound.format(child)
+                    child = f"[file_sound]{child}[/]"
                 else:
-                    child = normal.format(child)
+                    child = f"[file_normal]{child}[/]"
 
             else:
-                child = other.format(child)
+                child = f"[file_other]{child}[/]"
 
             logger.print(child)
 
@@ -202,13 +193,13 @@ class KAIKOWorkspace:
                 logger.print(traceback.format_exc(), end="", markup=False)
 
         if not abspath.exists():
-            logger.print("[warn]no such file[/]")
+            logger.print("[warn]No such file[/]")
             return
         if not abspath.is_relative_to(self.root):
-            logger.print("[warn]out of root directory[/]")
+            logger.print("[warn]Out of root directory[/]")
             return
         if not abspath.is_file():
-            logger.print("[warn]is not file[/]")
+            logger.print("[warn]Is not a file[/]")
             return
 
         return abspath
