@@ -1049,18 +1049,21 @@ class RichParser:
 
 
 class RichRenderer:
+    _reset_ansi_code = Reset((), "on").expand().ansi_code
+
     def __init__(self, unicode_version="auto"):
         self.unicode_version = unicode_version
-        self.reset_default()
+        self.set_default()
 
-    def add_default(self, *attrs):
-        for attr in attrs:
-            if not isinstance(attr, SGR):
-                raise TypeError(f"Invalid markup for default attribute: {type(attr)}")
-            self.default_ansi_code += attr.ansi_code
-
-    def reset_default(self):
-        self.default_ansi_code = Reset((), "on").expand().ansi_code
+    def set_default(self, attr=Slot()):
+        code = self._reset_ansi_code
+        child = attr
+        while not isinstance(child, Slot):
+            if not isinstance(child, SGR) or len(child.children) != 1:
+                raise TypeError(f"Invalid markup for default attribute: {attr.represent()}")
+            code += child.ansi_code
+            child = child.children[0]
+        self.default_ansi_code = code
 
     def clear_line(self):
         return Group((Clear(ClearRegion.line), CR()))
