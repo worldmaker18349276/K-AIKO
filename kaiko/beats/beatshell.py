@@ -505,8 +505,7 @@ class BeatShellSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        t0 : float
-        tempo : float
+        t0 : float tempo : float
 
         icon_width : int
             The text width of icon.
@@ -514,6 +513,10 @@ class BeatShellSettings(cfg.Configurable):
             The text width of marker.
         input_margin : int
             The width of margin of input field.
+
+        banner : str
+            The format string of banner markup with fields: `username`,
+            `profile`, `path`.
 
         icons : BeatShellIconWidgetSettings
             The appearances of icon.
@@ -528,6 +531,12 @@ class BeatShellSettings(cfg.Configurable):
         icon_width: int = 5
         marker_width: int = 2
         input_margin: int = 3
+
+        banner: str = (
+            "[color=bright_black][[[color=magenta]♜ [weight=bold]{username}[/][/]"
+            "/[color=blue]⚙ [weight=bold]{profile}[/][/]]][/]"
+            " [color=cyan]⛩ [weight=bold]/{path}[/][/]"
+        )
 
         icons: BeatshellIconWidgetSettings = PatternsWidgetSettings()
         marker: MarkerWidgetSettings = MarkerWidgetSettings()

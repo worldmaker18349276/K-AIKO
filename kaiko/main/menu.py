@@ -248,12 +248,8 @@ class KAIKOMenu:
             path = ""
         path = self.logger.escape(path)
 
-        template = (
-            "[color=bright_black][[[color=magenta]♜ [weight=bold]{username}[/][/]"
-            "/[color=blue]⚙ [weight=bold]{profile}[/][/]]][/]"
-            " [color=cyan]⛩ [weight=bold]/{path}[/][/]"
-        )
-        self.logger.print(template.format(username=username, profile=profile, path=path))
+        banner = self.settings.shell.prompt.banner
+        self.logger.print(banner.format(username=username, profile=profile, path=path))
 
     # beatmaps
 
