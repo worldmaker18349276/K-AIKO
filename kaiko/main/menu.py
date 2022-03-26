@@ -1,10 +1,10 @@
 import sys
 import os
-import contextlib
 import traceback
 import shutil
 import pkgutil
 from pathlib import Path
+from .. import __version__
 from ..utils import markups as mu
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
@@ -41,6 +41,7 @@ logo = """
 
 class KAIKOMenu:
     update_interval = 0.01
+    version = __version__
 
     def __init__(self, profiles, workspace, manager, logger):
         r"""Constructor.
@@ -62,13 +63,12 @@ class KAIKOMenu:
         )
 
     @classmethod
-    def main(cls, version):
+    def main(cls):
         # print logo
-        print(logo.format(f"v{version}"), flush=True)
+        print(logo.format(f"v{cls.version}"), flush=True)
 
         try:
-            with cls.init() as menu:
-                menu.run().exhaust(dt=cls.update_interval, interruptible=True)
+            cls.init_and_run().exhaust(dt=cls.update_interval, interruptible=True)
 
         except KeyboardInterrupt:
             pass
@@ -80,12 +80,12 @@ class KAIKOMenu:
             print(f"\x1b[m", end="")
 
     @classmethod
-    @contextlib.contextmanager
-    def init(cls):
-        r"""Initialize KAIKOMenu within a context manager."""
+    @dn.datanode
+    def init_and_run(cls):
+        r"""Initialize KAIKOMenu and run."""
         logger = log.Logger()
 
-        # load user data
+        # load workspace
         workspace = FileManager.create()
         workspace.prepare(logger)
 
@@ -105,12 +105,36 @@ class KAIKOMenu:
             if not succ:
                 raise RuntimeError("Fail to load profile")
 
+        if not sys.stdout.isatty():
+            raise RuntimeError("please connect to interactive terminal device.")
+
+        # deterimine unicode version
+        if (
+            profiles.current.devices.terminal.unicode_version == "auto"
+            and "UNICODE_VERSION" not in os.environ
+        ):
+            version = yield from determine_unicode_version(logger).join()
+            if version is not None:
+                os.environ["UNICODE_VERSION"] = version
+                profiles.current.devices.terminal.unicode_version = version
+                profiles.set_as_changed()
+            logger.print()
+
+        # fit screen size
+        size = shutil.get_terminal_size()
+        width = profiles.current.devices.terminal.best_screen_size
+        if size.columns < width:
+            logger.print("[hint/] Your screen size seems too small.")
+
+            yield from fit_screen(logger, profiles.current.devices.terminal).join()
+
         # load PyAudio
         logger.print("[info/] Load PyAudio...")
         logger.print()
 
         with prepare_pyaudio(logger) as manager:
-            yield cls(profiles, workspace, manager, logger)
+            menu = cls(profiles, workspace, manager, logger)
+            yield from menu.run().join()
 
     @dn.datanode
     def run(self):
@@ -118,29 +142,6 @@ class KAIKOMenu:
         logger = self.logger
 
         yield
-
-        if not sys.stdout.isatty():
-            raise RuntimeError("please connect to interactive terminal device.")
-
-        # deterimine unicode version
-        if (
-            self.settings.devices.terminal.unicode_version == "auto"
-            and "UNICODE_VERSION" not in os.environ
-        ):
-            version = yield from determine_unicode_version(logger).join()
-            if version is not None:
-                os.environ["UNICODE_VERSION"] = version
-                self.settings.devices.terminal.unicode_version = version
-                self.profiles.set_as_changed()
-            logger.print()
-
-        # fit screen size
-        size = shutil.get_terminal_size()
-        width = self.settings.devices.terminal.best_screen_size
-        if size.columns < width:
-            logger.print("[hint/] Your screen size seems too small.")
-
-            yield from fit_screen(logger, self.settings.devices.terminal).join()
 
         # load beatmaps
         self.reload()

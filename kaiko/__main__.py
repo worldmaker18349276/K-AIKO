@@ -1,9 +1,8 @@
-from . import __version__
 from .main.menu import KAIKOMenu
 
 
 def main():
-    KAIKOMenu.main(__version__)
+    KAIKOMenu.main()
 
 
 if __name__ == "__main__":
