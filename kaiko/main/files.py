@@ -122,7 +122,7 @@ class FileManager:
                 child = f"[file_dir]{child}[/]"
 
             elif abschild.is_file():
-                if abschild.suffix == ".py":
+                if abschild.suffix in [".py", ".kaiko-profile"]:
                     child = f"[file_script]{child}[/]"
                 elif abschild.suffix in [".ka", ".kaiko", ".osu"]:
                     child = f"[file_beatmap]{child}[/]"

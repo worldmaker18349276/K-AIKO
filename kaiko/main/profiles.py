@@ -60,7 +60,7 @@ class ProfileManager:
     """
 
     default_meta = ".default-profile"
-    extension = ".py"
+    extension = ".kaiko-profile"
     settings_name = "settings"
     config_type = KAIKOSettings
 

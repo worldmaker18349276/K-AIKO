@@ -255,6 +255,7 @@ class KAIKOMenu:
             profile=self.logger.rich.parse(profile),
             path=self.logger.rich.parse(path),
         )
+        self.logger.print()
         self.logger.print(banner)
 
     # beatmaps
