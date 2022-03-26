@@ -123,7 +123,7 @@ class FileManager:
 
             elif abschild.is_file():
                 if abschild.suffix == ".py":
-                    child = f"[file_py]{child}[/]"
+                    child = f"[file_script]{child}[/]"
                 elif abschild.suffix in [".ka", ".kaiko", ".osu"]:
                     child = f"[file_beatmap]{child}[/]"
                 elif abschild.suffix in [".wav", ".mp3", ".mp4", ".m4a", ".ogg"]:

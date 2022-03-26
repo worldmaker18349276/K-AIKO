@@ -114,8 +114,8 @@ class LoggerSettings(cfg.Configurable):
             The template for symlink.
         dir : str
             The template for directory.
-        py : str
-            The template for python file.
+        script : str
+            The template for script file.
         beatmap : str
             The template for beatmap file.
         sound : str
@@ -128,7 +128,7 @@ class LoggerSettings(cfg.Configurable):
         hidden: str = "• [weight=dim][slot/][/]"
         link: str = "• [weight=bold][color=cyan][slot/][/][/]@"
         dir: str = "• [weight=bold][color=blue][slot/][/][/]/"
-        py: str = "• [weight=bold][color=green][slot/][/][/]"
+        script: str = "• [weight=bold][color=green][slot/][/][/]"
         beatmap: str = "• [weight=bold][color=magenta][slot/][/][/]"
         sound: str = "• [color=magenta][slot/][/]"
         normal: str = "• [slot/]"
@@ -194,7 +194,7 @@ class Logger:
         self.rich.add_pair_template("file_hidden", logger_settings.files.hidden)
         self.rich.add_pair_template("file_link", logger_settings.files.link)
         self.rich.add_pair_template("file_dir", logger_settings.files.dir)
-        self.rich.add_pair_template("file_py", logger_settings.files.py)
+        self.rich.add_pair_template("file_script", logger_settings.files.script)
         self.rich.add_pair_template("file_beatmap", logger_settings.files.beatmap)
         self.rich.add_pair_template("file_sound", logger_settings.files.sound)
         self.rich.add_pair_template("file_normal", logger_settings.files.normal)
