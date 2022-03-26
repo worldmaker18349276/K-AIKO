@@ -377,7 +377,7 @@ class DevicesCommand:
 
         logger.print(f"[hint/] Press {logger.emph(exit_key)} to end test.")
         logger.print()
-        logger.print("[[ <time>  ]] [emph]<keyname>[/] (<keycode>)", end="\r")
+        logger.print("[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r")
 
         stop_event = threading.Event()
 
@@ -385,9 +385,9 @@ class DevicesCommand:
             _, time, keyname, keycode = arg
             logger.clear_line()
             logger.print(
-                f"[[{time:07.3f} s]] {logger.emph(keyname)} ({logger.escape(repr(keycode))})"
+                f"[[{time:07.3f} s]] {logger.emph(keyname)} '{logger.escape(keycode)}'"
             )
-            logger.print("[[ <time>  ]] [emph]<keyname>[/] (<keycode>)", end="\r")
+            logger.print("[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r")
 
         controller_task, controller = engines.Controller.create(
             self.profiles.current.devices.controller,

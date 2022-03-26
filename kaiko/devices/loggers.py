@@ -32,6 +32,9 @@ class LoggerSettings(cfg.Configurable):
         The template of verb block log.
     warn_block : str
         The template of warn block log.
+
+    codepoint : str
+        The template of codepoint representation
     """
     data_icon: str = "[color=bright_green][wide=🖿/][/]"
     info_icon: str = "[color=bright_blue][wide=🛠/][/]"
@@ -43,6 +46,8 @@ class LoggerSettings(cfg.Configurable):
 
     verb_block: str = f"[weight=dim]{'╌'*80}\n[slot/]{'╌'*80}\n[/]"
     warn_block: str = f"[color=red]{'═'*80}\n[slot/]{'═'*80}\n[/]"
+
+    codepoint: str = "[underline=on][slot/][/]"
 
     @cfg.subconfig
     class syntax(cfg.Configurable):
@@ -156,6 +161,8 @@ class Logger:
         self.rich.add_pair_template("emph", logger_settings.emph)
         self.rich.add_pair_template("warn", logger_settings.warn)
 
+        self.rich.add_pair_template("codepoint", logger_settings.codepoint)
+
         self.rich.add_pair_template("unknown", logger_settings.shell.token_unknown)
         self.rich.add_pair_template(
             "unfinished", logger_settings.shell.token_unfinished
@@ -221,8 +228,25 @@ class Logger:
         finally:
             self.level = level
 
+    def backslashreplace(self, ch):
+        r = hex(ord(ch))[2:]
+        if len(r) <= 2:
+            r = rf"\x{r:0>2}"
+        elif len(r) <= 4:
+            r = rf"\u{r:0>4}"
+        elif len(r) <= 8:
+            r = rf"\U{r:0>8}"
+        else:
+            raise ValueError(ch)
+        return f"[codepoint]{r}[/]"
+
     def escape(self, text):
-        return mu.escape(text)
+        text = mu.escape(text)
+        text = "".join(
+            ch if ch.isprintable() else self.backslashreplace(ch)
+            for ch in text
+        )
+        return text
 
     def emph(self, text):
         return f"[emph]{self.escape(text)}[/]"
