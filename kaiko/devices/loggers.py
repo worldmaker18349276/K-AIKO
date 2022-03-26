@@ -120,14 +120,14 @@ class LoggerSettings(cfg.Configurable):
         other : str
             The template for other file.
         """
-        hidden: str = "[weight=dim][slot/][/]"
-        link: str = "[weight=bold][color=cyan][slot/][/][/]@"
-        dir: str = "[weight=bold][color=blue][slot/][/][/]/"
-        py: str = "[weight=bold][color=green][slot/][/][/]"
-        beatmap: str = "[weight=bold][color=magenta][slot/][/][/]"
-        sound: str = "[color=magenta][slot/][/]"
-        normal: str = "[slot/]"
-        other: str = "[slot/]"
+        hidden: str = "• [weight=dim][slot/][/]"
+        link: str = "• [weight=bold][color=cyan][slot/][/][/]@"
+        dir: str = "• [weight=bold][color=blue][slot/][/][/]/"
+        py: str = "• [weight=bold][color=green][slot/][/][/]"
+        beatmap: str = "• [weight=bold][color=magenta][slot/][/][/]"
+        sound: str = "• [color=magenta][slot/][/]"
+        normal: str = "• [slot/]"
+        other: str = "• [slot/]"
 
 
 class Logger:
