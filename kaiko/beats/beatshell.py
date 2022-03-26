@@ -171,8 +171,6 @@ def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
         if compreply != "" and " " not in compreply:
             # use backslash if there is no whitespace
             raw = re.sub(r"([ \\'])", r"\\\1", compreply)
-        elif partial:
-            raw = "'" + compreply.replace("'", r"'\''")
         elif compreply == "":
             raw = "''"
         else:
