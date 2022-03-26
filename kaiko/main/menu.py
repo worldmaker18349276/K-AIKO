@@ -248,8 +248,14 @@ class KAIKOMenu:
             path = ""
         path = self.logger.escape(path)
 
-        banner = self.settings.shell.prompt.banner
-        self.logger.print(banner.format(username=username, profile=profile, path=path))
+        banner = self.logger.rich.parse(self.settings.shell.prompt.banner, slotted=True)
+        banner = mu.replace_slot(
+            banner,
+            username=self.logger.rich.parse(username),
+            profile=self.logger.rich.parse(profile),
+            path=self.logger.rich.parse(path),
+        )
+        self.logger.print(banner)
 
     # beatmaps
 

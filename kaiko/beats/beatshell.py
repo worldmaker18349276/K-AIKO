@@ -515,8 +515,7 @@ class BeatShellSettings(cfg.Configurable):
             The width of margin of input field.
 
         banner : str
-            The format string of banner markup with fields: `username`,
-            `profile`, `path`.
+            The template of banner with slots: `username`, `profile`, `path`.
 
         icons : BeatShellIconWidgetSettings
             The appearances of icon.
@@ -533,9 +532,9 @@ class BeatShellSettings(cfg.Configurable):
         input_margin: int = 3
 
         banner: str = (
-            "[color=bright_black][[[color=magenta]♜ [weight=bold]{username}[/][/]"
-            "/[color=blue]⚙ [weight=bold]{profile}[/][/]]][/]"
-            " [color=cyan]⛩ [weight=bold]/{path}[/][/]"
+            "[color=bright_black][[[color=magenta]♜ [weight=bold][slot=username/][/][/]"
+            "/[color=blue]⚙ [weight=bold][slot=profile/][/][/]]][/]"
+            " [color=cyan]⛩ [weight=bold]/[slot=path/][/][/]"
         )
 
         icons: BeatshellIconWidgetSettings = PatternsWidgetSettings()

@@ -240,16 +240,17 @@ class SingleTemplate(Single):
 @dataclasses.dataclass(frozen=True)
 class Slot(Single):
     name = "slot"
+    id: str = ""
 
     @classmethod
     def parse(cls, param):
-        if param is not None:
-            raise MarkupParseError(f"no parameter is needed for tag [{cls.name}/]")
-        return ()
+        if param is None:
+            param = ""
+        return (param,)
 
     @property
     def param(self):
-        return None
+        return (self.id,)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -271,17 +272,15 @@ class PairTemplate(Pair):
         return replace_slot(self._template, Group(self.children)).expand()
 
 
-def replace_slot(template, markup):
-    injected = False
-
-    def inject_once(slot):
-        nonlocal injected
-        if injected:
-            return Group([])
-        injected = True
-        return markup
-
-    return template.traverse(Slot, inject_once)
+def replace_slot(template, *args, **kwargs):
+    args = list(args)
+    kwargs = dict(kwargs)
+    def inject(slot):
+        if slot.id == "":
+            return args.pop(0) if args else Group([])
+        else:
+            return kwargs.pop(slot.id) if slot.id in kwargs else Group([])
+    return template.traverse(Slot, inject)
 
 
 def make_single_template(name, template, tags, props={}):
