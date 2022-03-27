@@ -110,6 +110,8 @@ class LoggerSettings(cfg.Configurable):
         ------
         item : str
             The template for file item.
+        unknown : str
+            The template for unknown file.
 
         dir : str
             The template for directory.
@@ -125,6 +127,7 @@ class LoggerSettings(cfg.Configurable):
             The template for other file.
         """
         item: str = "• [slot/]"
+        unknown: str = "[weight=dim][slot/][/]"
 
         dir: str = "[weight=bold][color=blue][slot/][/][/]/"
         script: str = "[weight=bold][color=green][slot/][/][/]"
@@ -191,6 +194,7 @@ class Logger:
         self.rich.add_pair_template("py_attribute", logger_settings.syntax.py_attribute)
 
         self.rich.add_pair_template("file_item", logger_settings.files.item)
+        self.rich.add_pair_template("file_unknown", logger_settings.files.unknown)
         self.rich.add_pair_template("file_dir", logger_settings.files.dir)
         self.rich.add_pair_template("file_script", logger_settings.files.script)
         self.rich.add_pair_template("file_beatmap", logger_settings.files.beatmap)

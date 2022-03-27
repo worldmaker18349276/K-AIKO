@@ -12,6 +12,19 @@ class FileManager:
     root: Path
     current: Path
 
+    structure = {
+        "beatmaps": {
+            "*": { "**": True },
+            "*.osz": True,
+        },
+        "profiles": {
+            "*.kaiko-profile": True,
+            ".default-profile": True,
+        },
+        "resources": { "**": True },
+        "cache": { "**": True },
+    }
+
     @classmethod
     def create(cls):
         username = getpass.getuser()
@@ -87,6 +100,35 @@ class FileManager:
         )
         shutil.rmtree(str(self.root))
 
+    def is_known(self, abspath):
+        abspath = abspath.resolve(strict=True)
+
+        if not abspath.is_relative_to(self.root):
+            return False
+
+        if not abspath.exists():
+            return False
+
+        def go(parent=self.root, children=self.structure):
+            if abspath.is_dir() and abspath.match(str(parent)):
+                return True
+            for name, subtree in children.items():
+                if isinstance(subtree, dict):
+                    if go(parent / name, subtree):
+                        return True
+                elif name == "**":
+                    for parentpath in [abspath, *abspath.parents]:
+                        if parentpath.match(str(parent / "*")):
+                            return subtree == True or subtree(abspath)
+                        if parentpath == self.root:
+                            break
+                else:
+                    if abspath.is_file() and abspath.match(str(parent / name)):
+                        return subtree == True or subtree(abspath)
+            return False
+
+        return go()
+
     def cd(self, path, logger):
         try:
             abspath = (self.root / self.current / path).resolve(strict=True)
@@ -109,7 +151,9 @@ class FileManager:
         self.current = Path(os.path.normpath(str(self.current / path)))
 
     def ls(self, logger):
-        for child in (self.root / self.current).iterdir():
+        current = (self.root / self.current).resolve()
+        current_known = self.is_known(current)
+        for child in current.iterdir():
             name = logger.escape(child.name)
 
             if child.is_dir():
@@ -128,6 +172,8 @@ class FileManager:
             else:
                 name = f"[file_other]{name}[/]"
 
+            if current_known and not self.is_known(child):
+                name = f"[file_unknown]{name}[/]"
             name = f"[file_item]{name}[/]"
             logger.print(name)
 
