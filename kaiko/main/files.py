@@ -93,6 +93,7 @@ class FileManager:
         except Exception:
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
+            return
 
         if not abspath.exists():
             logger.print("[warn]No such directory[/]")
