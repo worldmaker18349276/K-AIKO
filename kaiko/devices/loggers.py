@@ -108,10 +108,9 @@ class LoggerSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        hidden : str
-            The template for hidden file.
-        link : str
-            The template for symlink.
+        item : str
+            The template for file item.
+
         dir : str
             The template for directory.
         script : str
@@ -125,14 +124,14 @@ class LoggerSettings(cfg.Configurable):
         other : str
             The template for other file.
         """
-        hidden: str = "• [weight=dim][slot/][/]"
-        link: str = "• [weight=bold][color=cyan][slot/][/][/]@"
-        dir: str = "• [weight=bold][color=blue][slot/][/][/]/"
-        script: str = "• [weight=bold][color=green][slot/][/][/]"
-        beatmap: str = "• [weight=bold][color=magenta][slot/][/][/]"
-        sound: str = "• [color=magenta][slot/][/]"
-        normal: str = "• [slot/]"
-        other: str = "• [slot/]"
+        item: str = "• [slot/]"
+
+        dir: str = "[weight=bold][color=blue][slot/][/][/]/"
+        script: str = "[weight=bold][color=green][slot/][/][/]"
+        beatmap: str = "[weight=bold][color=magenta][slot/][/][/]"
+        sound: str = "[color=magenta][slot/][/]"
+        normal: str = "[slot/]"
+        other: str = "[slot/]"
 
 
 class Logger:
@@ -191,8 +190,7 @@ class Logger:
         self.rich.add_pair_template("py_class", logger_settings.syntax.py_class)
         self.rich.add_pair_template("py_attribute", logger_settings.syntax.py_attribute)
 
-        self.rich.add_pair_template("file_hidden", logger_settings.files.hidden)
-        self.rich.add_pair_template("file_link", logger_settings.files.link)
+        self.rich.add_pair_template("file_item", logger_settings.files.item)
         self.rich.add_pair_template("file_dir", logger_settings.files.dir)
         self.rich.add_pair_template("file_script", logger_settings.files.script)
         self.rich.add_pair_template("file_beatmap", logger_settings.files.beatmap)

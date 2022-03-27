@@ -108,33 +108,27 @@ class FileManager:
         self.current = Path(os.path.normpath(str(self.current / path)))
 
     def ls(self, logger):
-        abspath = self.root / self.current
-        for abschild in abspath.iterdir():
-            child = logger.escape(str(abschild.relative_to(abspath)))
+        for child in (self.root / self.current).iterdir():
+            name = logger.escape(child.name)
 
-            if child.startswith("."):
-                child = f"[file_hidden]{child}[/]"
+            if child.is_dir():
+                name = f"[file_dir]{name}[/]"
 
-            elif abschild.is_symlink():
-                child = f"[file_link]{child}[/]"
-
-            elif abschild.is_dir():
-                child = f"[file_dir]{child}[/]"
-
-            elif abschild.is_file():
-                if abschild.suffix in [".py", ".kaiko-profile"]:
-                    child = f"[file_script]{child}[/]"
-                elif abschild.suffix in [".ka", ".kaiko", ".osu"]:
-                    child = f"[file_beatmap]{child}[/]"
-                elif abschild.suffix in [".wav", ".mp3", ".mp4", ".m4a", ".ogg"]:
-                    child = f"[file_sound]{child}[/]"
+            elif child.is_file():
+                if child.suffix in [".py", ".kaiko-profile"]:
+                    name = f"[file_script]{name}[/]"
+                elif child.suffix in [".ka", ".kaiko", ".osu"]:
+                    name = f"[file_beatmap]{name}[/]"
+                elif child.suffix in [".wav", ".mp3", ".mp4", ".m4a", ".ogg"]:
+                    name = f"[file_sound]{name}[/]"
                 else:
-                    child = f"[file_normal]{child}[/]"
+                    name = f"[file_normal]{name}[/]"
 
             else:
-                child = f"[file_other]{child}[/]"
+                name = f"[file_other]{name}[/]"
 
-            logger.print(child)
+            name = f"[file_item]{name}[/]"
+            logger.print(name)
 
     def get(self, path, logger):
         try:
