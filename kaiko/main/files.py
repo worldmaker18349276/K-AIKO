@@ -100,8 +100,8 @@ class FileManager:
         )
         shutil.rmtree(str(self.root))
 
-    def is_known(self, abspath):
-        abspath = abspath.resolve(strict=True)
+    def is_known(self, path):
+        abspath = path.resolve(strict=True)
 
         if not abspath.is_relative_to(self.root):
             return False
@@ -110,21 +110,21 @@ class FileManager:
             return False
 
         def go(parent=self.root, children=self.structure):
-            if abspath.is_dir() and abspath.match(str(parent)):
+            if abspath.is_dir() and path.match(str(parent)):
                 return True
             for name, subtree in children.items():
                 if isinstance(subtree, dict):
                     if go(parent / name, subtree):
                         return True
                 elif name == "**":
-                    for parentpath in [abspath, *abspath.parents]:
+                    for parentpath in [path, *path.parents]:
                         if parentpath.match(str(parent / "*")):
-                            return subtree == True or subtree(abspath)
+                            return subtree == True or subtree(path)
                         if parentpath == self.root:
                             break
                 else:
-                    if abspath.is_file() and abspath.match(str(parent / name)):
-                        return subtree == True or subtree(abspath)
+                    if abspath.is_file() and path.match(str(parent / name)):
+                        return subtree == True or subtree(path)
             return False
 
         return go()
@@ -151,9 +151,7 @@ class FileManager:
         self.current = Path(os.path.normpath(str(self.current / path)))
 
     def ls(self, logger):
-        current = (self.root / self.current).resolve()
-        current_known = self.is_known(current)
-        for child in current.iterdir():
+        for child in (self.root / self.current).resolve().iterdir():
             name = logger.escape(child.name)
 
             if child.is_dir():
@@ -172,7 +170,7 @@ class FileManager:
             else:
                 name = f"[file_other]{name}[/]"
 
-            if current_known and not self.is_known(child):
+            if not self.is_known(self.root / self.current / child.name):
                 name = f"[file_unknown]{name}[/]"
             name = f"[file_item]{name}[/]"
             logger.print(name)
