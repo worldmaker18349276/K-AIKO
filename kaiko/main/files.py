@@ -13,16 +13,16 @@ class FileManager:
     current: Path
 
     structure = {
-        "beatmaps": {
+        "Beatmaps": {
             "*": { "**": True },
             "*.osz": True,
         },
-        "profiles": {
+        "Profiles": {
             "*.kaiko-profile": True,
             ".default-profile": True,
         },
-        "resources": { "**": True },
-        "cache": { "**": True },
+        "Resources": { "**": True },
+        "Cache": { "**": True },
     }
 
     @classmethod
@@ -33,19 +33,19 @@ class FileManager:
 
     @property
     def cache_dir(self):
-        return self.root / "cache"
+        return self.root / "Cache"
 
     @property
     def profiles_dir(self):
-        return self.root / "profiles"
+        return self.root / "Profiles"
 
     @property
     def beatmaps_dir(self):
-        return self.root / "beatmaps"
+        return self.root / "Beatmaps"
 
     @property
     def resources_dir(self):
-        return self.root / "resources"
+        return self.root / "Resources"
 
     def is_prepared(self):
         if not self.root.exists():
@@ -101,7 +101,10 @@ class FileManager:
         shutil.rmtree(str(self.root))
 
     def is_known(self, path):
-        abspath = path.resolve(strict=True)
+        try:
+            abspath = path.resolve(strict=True)
+        except Exception:
+            return False
 
         if not abspath.is_relative_to(self.root):
             return False
@@ -133,6 +136,7 @@ class FileManager:
         try:
             abspath = (self.root / self.current / path).resolve(strict=True)
         except Exception:
+            logger.print("[warn]Filed to resolve path[/]")
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
             return
