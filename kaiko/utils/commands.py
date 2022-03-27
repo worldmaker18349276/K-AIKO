@@ -290,8 +290,9 @@ class PathParser(ArgumentParser):
         return self._desc
 
     def parse(self, token):
+        path = os.path.join(self.root, token or ".")
         try:
-            exists = os.path.exists(os.path.join(self.root, token or "."))
+            exists = os.path.lexists(path)
         except ValueError:
             exists = False
 
@@ -301,12 +302,14 @@ class PathParser(ArgumentParser):
                 "Path does not exist" + ("\n" + desc if desc is not None else "")
             )
 
-        if self.type not in ["dir", "all"] and os.path.isdir(exists):
+        if self.type in ["dir", "all"] and not os.path.isdir(path):
+            desc = self.desc()
             raise CommandParseError(
                 "Not a directory" + ("\n" + desc if desc is not None else "")
             )
 
-        if self.type not in ["file", "all"] and os.path.isfile(exists):
+        if self.type in ["file", "all"] and not os.path.isfile(path):
+            desc = self.desc()
             raise CommandParseError(
                 "Not a file" + ("\n" + desc if desc is not None else "")
             )
