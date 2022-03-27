@@ -248,15 +248,43 @@ class KAIKOMenu:
             path = ""
         path = self.logger.escape(path)
 
-        banner = self.logger.rich.parse(self.settings.shell.prompt.banner, slotted=True)
-        banner = mu.replace_slot(
-            banner,
-            username=self.logger.rich.parse(username),
-            profile=self.logger.rich.parse(profile),
-            path=self.logger.rich.parse(path),
+        profile_is_changed = self.profiles.is_changed()
+        path_is_known = self.workspace.is_known(self.workspace.root / self.workspace.current)
+
+        user_markup = self.settings.shell.banner.user
+        user_markup = self.logger.rich.parse(user_markup, slotted=True)
+        user_markup = mu.replace_slot(
+            user_markup,
+            user_name=self.logger.rich.parse(username),
         )
+
+        profile_markup = self.settings.shell.banner.profile
+        profile_markup = profile_markup[0] if not profile_is_changed else profile_markup[1]
+        profile_markup = self.logger.rich.parse(profile_markup, slotted=True)
+        profile_markup = mu.replace_slot(
+            profile_markup,
+            profile_name=self.logger.rich.parse(profile),
+        )
+
+        path_markup = self.settings.shell.banner.path
+        path_markup = path_markup[0] if path_is_known else path_markup[1]
+        path_markup = self.logger.rich.parse(path_markup, slotted=True)
+        path_markup = mu.replace_slot(
+            path_markup,
+            current_path=self.logger.rich.parse(path),
+        )
+
+        banner_markup = self.settings.shell.banner.banner
+        banner_markup = self.logger.rich.parse(banner_markup, slotted=True)
+        banner_markup = mu.replace_slot(
+            banner_markup,
+            user=user_markup,
+            profile=profile_markup,
+            path=path_markup,
+        )
+
         self.logger.print()
-        self.logger.print(banner)
+        self.logger.print(banner_markup)
 
     # beatmaps
 

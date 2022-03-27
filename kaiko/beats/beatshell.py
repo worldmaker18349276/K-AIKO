@@ -512,9 +512,6 @@ class BeatShellSettings(cfg.Configurable):
         input_margin : int
             The width of margin of input field.
 
-        banner : str
-            The template of banner with slots: `username`, `profile`, `path`.
-
         icons : BeatShellIconWidgetSettings
             The appearances of icon.
         marker : MarkerWidgetSettings
@@ -529,15 +526,45 @@ class BeatShellSettings(cfg.Configurable):
         marker_width: int = 2
         input_margin: int = 3
 
-        banner: str = (
-            "[color=bright_black][[[color=magenta]♜ [weight=bold][slot=username/][/][/]"
-            "/[color=blue]⚙ [weight=bold][slot=profile/][/][/]]][/]"
-            " [color=cyan]⛩ [weight=bold]/[slot=path/][/][/]"
-        )
-
         icons: BeatshellIconWidgetSettings = PatternsWidgetSettings()
         marker: MarkerWidgetSettings = MarkerWidgetSettings()
         caret: CaretWidgetSettings = CaretWidgetSettings()
+
+    @cfg.subconfig
+    class banner(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        banner : str
+            The template of banner with slots: `user`, `profile`, `path`.
+
+        user : str
+            The template of user with slots: `user_name`.
+        profile : tuple of str and str
+            The templates of profile with slots: `profile_name`, the second is
+            for changed profile.
+        path : tuple of str and str
+            The templates of path with slots: `current_path`, the second is for
+            unknown path.
+        """
+
+        banner: str = (
+            "[color=bright_black][[[/]"
+            "[slot=user/]"
+            "[color=bright_black]/[/]"
+            "[slot=profile/]"
+            "[color=bright_black]]][/]"
+            " [slot=path/]"
+        )
+        user: str = "[color=magenta]♜ [weight=bold][slot=user_name/][/][/]"
+        profile: Tuple[str, str] = (
+            "[color=blue]⚙ [weight=bold][slot=profile_name/][/][/]",
+            "[color=blue]⚙ [weight=bold][slot=profile_name/][/][/]*",
+        )
+        path: Tuple[str, str] = (
+            "[color=cyan]⛩ [weight=bold]/[slot=current_path/][/][/]",
+            "[color=cyan]⛩ [weight=dim]/[slot=current_path/][/][/]",
+        )
 
     @cfg.subconfig
     class text(cfg.Configurable):
