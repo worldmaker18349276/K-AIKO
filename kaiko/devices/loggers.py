@@ -245,7 +245,9 @@ class Logger:
     def escape(self, text):
         text = mu.escape(text)
         text = "".join(
-            ch if ch.isprintable() else self.backslashreplace(ch)
+            ch
+            if ch.isprintable() or ch in ["\n", "\t"]
+            else self.backslashreplace(ch)
             for ch in text
         )
         return text
