@@ -13,16 +13,28 @@ class FileManager:
     current: Path
 
     structure = {
+        ".": "(The workspace of KAIKO)",
         "Beatmaps": {
-            "*": { "**": True },
-            "*.osz": True,
+            ".": "(The place to hold your beatmaps)",
+            "*": {
+                ".": "(The beatmapset of a song)",
+                "**": "(The inner file of this beatmapset)",
+            },
+            "*.osz": "(The compressed beatmapset file)",
         },
         "Profiles": {
-            "*.kaiko-profile": True,
-            ".default-profile": True,
+            ".": "(The place to manage your profiles)",
+            "*.kaiko-profile": "(Your custom profile)",
+            ".default-profile": "(The file of default profile name)",
         },
-        "Resources": { "**": True },
-        "Cache": { "**": True },
+        "Resources": {
+            ".": "(The place to store some resources of KAIKO)",
+            "**": "(The resource file)",
+        },
+        "Cache": {
+            ".": "(The place to cache some data for better exprience)",
+            "**": "(The cache data)",
+        },
     }
 
     @classmethod
@@ -100,35 +112,39 @@ class FileManager:
         )
         shutil.rmtree(str(self.root))
 
-    def is_known(self, path):
+    def get_desc(self, path):
         try:
             abspath = path.resolve(strict=True)
         except Exception:
-            return False
+            return None
 
         if not abspath.is_relative_to(self.root):
-            return False
+            return None
 
         if not abspath.exists():
-            return False
+            return None
 
         def go(parent=self.root, children=self.structure):
             if abspath.is_dir() and path.match(str(parent)):
-                return True
+                this = children["."]
+                return this if isinstance(this, str) else this(path)
             for name, subtree in children.items():
+                if name == ".":
+                    continue
                 if isinstance(subtree, dict):
-                    if go(parent / name, subtree):
-                        return True
+                    res = go(parent / name, subtree)
+                    if res is not None:
+                        return res
                 elif name == "**":
                     for parentpath in [path, *path.parents]:
                         if parentpath.match(str(parent / "*")):
-                            return subtree == True or subtree(path)
+                            return subtree if isinstance(subtree, str) else subtree(path)
                         if parentpath == self.root:
                             break
                 else:
                     if abspath.is_file() and path.match(str(parent / name)):
-                        return subtree == True or subtree(path)
-            return False
+                        return subtree if isinstance(subtree, str) else subtree(path)
+            return None
 
         return go()
 
@@ -174,8 +190,11 @@ class FileManager:
             else:
                 name = f"[file_other]{name}[/]"
 
-            if not self.is_known(self.root / self.current / child.name):
+            desc = self.get_desc(self.root / self.current / child.name)
+            if desc is None:
                 name = f"[file_unknown]{name}[/]"
+            else:
+                name = f"{name}[file_desc]{desc}[/]"
             name = f"[file_item]{name}[/]"
             logger.print(name)
 

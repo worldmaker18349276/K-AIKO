@@ -249,7 +249,7 @@ class KAIKOMenu:
         path = self.logger.escape(path)
 
         profile_is_changed = self.profiles.is_changed()
-        path_is_known = self.workspace.is_known(self.workspace.root / self.workspace.current)
+        path_is_known = self.workspace.get_desc(self.workspace.root / self.workspace.current) is not None
 
         user_markup = self.settings.shell.banner.user
         user_markup = self.logger.rich.parse(user_markup, slotted=True)
