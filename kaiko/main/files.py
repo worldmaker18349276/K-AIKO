@@ -18,10 +18,13 @@ class FileManager:
         "Beatmaps": {
             ".": "(The place to hold your beatmaps)",
             "*": {
-                ".": "(The beatmapset of a song)",
-                "**": "(The inner file of this beatmapset)",
+                ".": "(Beatmapset of a song)",
+                "*.kaiko": "(Beatmap file in kaiko format)",
+                "*.ka": "(Beatmap file in kaiko format)",
+                "*.osu": "(Beatmap file in osu format)",
+                "**": "(Inner file of this beatmapset)",
             },
-            "*.osz": "(The compressed beatmapset file)",
+            "*.osz": "(Compressed beatmapset file)",
         },
         "Profiles": {
             ".": "(The place to manage your profiles)",
@@ -30,11 +33,12 @@ class FileManager:
         },
         "Resources": {
             ".": "(The place to store some resources of KAIKO)",
-            "**": "(The resource file)",
+            "**": "(Resource file)",
         },
         "Cache": {
             ".": "(The place to cache some data for better exprience)",
-            "**": "(The cache data)",
+            ".beatshell-history": "(The command history)",
+            "**": "(Cache data)",
         },
     }
 

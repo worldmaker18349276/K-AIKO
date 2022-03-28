@@ -774,7 +774,7 @@ class BeatInput:
 
     @property
     def history_path(self):
-        return self.cache_dir / ".beatshell_history"
+        return self.cache_dir / ".beatshell-history"
 
     @property
     def shell_settings(self):
