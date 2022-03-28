@@ -2,6 +2,7 @@ import os
 import dataclasses
 import traceback
 import getpass
+import glob
 import shutil
 from pathlib import Path
 
@@ -124,29 +125,66 @@ class FileManager:
         if not abspath.exists():
             return None
 
-        def go(parent=self.root, children=self.structure):
-            if abspath.is_dir() and path.match(str(parent)):
-                this = children["."]
-                return this if isinstance(this, str) else this(path)
-            for name, subtree in children.items():
-                if name == ".":
-                    continue
-                if isinstance(subtree, dict):
-                    res = go(parent / name, subtree)
-                    if res is not None:
-                        return res
-                elif name == "**":
-                    for parentpath in [path, *path.parents]:
-                        if parentpath.match(str(parent / "*")):
-                            return subtree if isinstance(subtree, str) else subtree(path)
-                        if parentpath == self.root:
-                            break
-                else:
-                    if abspath.is_file() and path.match(str(parent / name)):
-                        return subtree if isinstance(subtree, str) else subtree(path)
-            return None
+        route = [abspath, *abspath.parents]
+        route = route[route.index(self.root)::-1]
 
-        return go()
+        desc = None
+        tree = {glob.escape(str(self.root)): self.structure}
+        for current_path in route:
+            current_relpath = current_path.relative_to(self.root)
+
+            if not isinstance(tree, dict):
+                return None
+
+            for pattern, subtree in tree.items():
+                if pattern == ".":
+                    continue
+
+                elif pattern == "**":
+                    # get description
+                    desc_func = subtree
+                    desc = (
+                        desc_func
+                        if desc_func is None or isinstance(desc_func, str)
+                        else desc_func(path)
+                    )
+                    return desc
+
+                else:
+                    if not current_path.match(pattern):
+                        continue
+
+                    # check file type
+                    type_func = (
+                        Path.is_dir
+                        if isinstance(subtree, dict)
+                        else Path.is_file
+                    )
+                    if not type_func(current_path):
+                        continue
+
+                    # get description
+                    desc_func = (
+                        subtree["."]
+                        if isinstance(subtree, dict)
+                        else subtree
+                    )
+                    desc = (
+                        desc_func
+                        if desc_func is None or isinstance(desc_func, str)
+                        else desc_func(current_relpath)
+                    )
+                    if desc is None:
+                        continue
+
+                    tree = subtree
+                    break
+
+            else:
+                return None
+
+        else:
+            return desc
 
     def cd(self, path, logger):
         try:
