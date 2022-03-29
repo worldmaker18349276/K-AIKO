@@ -166,19 +166,6 @@ class BeatmapManager:
     def make_parser(self):
         return BeatmapParser(self, self.logger)
 
-    def print_tree(self, logger):
-        beatmapsets = self._beatmaps.items()
-        for i, (path, beatmapset) in enumerate(beatmapsets):
-            prefix = "└── " if i == len(beatmapsets) - 1 else "├── "
-            logger.print(prefix + logger.emph(str(path)))
-
-            preprefix = "    " if i == len(beatmapsets) - 1 else "│   "
-            for j, beatmap in enumerate(beatmapset):
-                prefix = "└── " if j == len(beatmapset) - 1 else "├── "
-                logger.print(
-                    preprefix + prefix + logger.escape(str(beatmap.relative_to(path)))
-                )
-
 
 class BeatmapParser(cmd.TreeParser):
     def __init__(self, beatmap_manager, logger):

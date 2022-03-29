@@ -382,17 +382,6 @@ class KAIKOMenu:
     def _remove_beatmap_parser(self):
         return self.beatmap_manager.make_parser()
 
-    @cmd.function_command
-    def list(self):
-        """[rich]List your beatmaps.
-
-        usage: [cmd]list[/]
-        """
-        if not self.beatmap_manager.is_uptodate():
-            self.reload()
-
-        self.beatmap_manager.print_tree(self.logger)
-
     @cmd.subcommand
     def bgm(self):
         """Subcommand to control background music."""
