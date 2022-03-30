@@ -435,6 +435,55 @@ class DevicesCommand:
             + "".join(map(template.format, palette[1]))
         )
 
+    @cmd.function_command
+    def test_waveform(self, waveform):
+        """[rich]Test to waveform generater.
+
+        usage: [cmd]devices[/] [cmd]test_waveform[/] [arg]{waveform}[/]
+                                        ╱
+                                 The function of
+                                 output waveform.
+        """
+        settings = self.profiles.current.devices.mixer
+        return WaveformTest(waveform, self.logger, settings)
+
+    @test_waveform.arg_parser("waveform")
+    def _test_waveform_waveform_parser(self):
+        return cmd.RawParser(desc="It should be an expression of waveform.")
+
+    @cmd.function_command
+    def test_logger(self, message, markup=True):
+        """[rich]Print something.
+
+        usage: [cmd]devices[/] [cmd]test_logger[/] [arg]{message}[/] [[[kw]--markup[/] [arg]{MARKUP}[/]]]
+                                      ╱                    ╲
+                            text, the message               ╲
+                             to be printed.          bool, use markup or not;
+                                                        default is True.
+        """
+
+        try:
+            self.logger.print(message, markup=markup)
+        except mu.MarkupParseError as e:
+            self.logger.print(f"[warn]{self.logger.escape(str(e))}[/]")
+
+    @test_logger.arg_parser("message")
+    def _test_logger_message_parser(self):
+        return cmd.RawParser(
+            desc="It should be some text, indicating the message to be printed."
+        )
+
+    @test_logger.arg_parser("markup")
+    def _test_logger_escape_parser(self, message):
+        return cmd.LiteralParser(
+            bool,
+            default=False,
+            desc="It should be bool,"
+            " indicating whether to use markup;"
+            " the default is False.",
+        )
+
+
     # terminal
 
     @cmd.function_command
@@ -712,3 +761,42 @@ class MicTest:
 
         finally:
             self.logger.print()
+
+
+class WaveformTest:
+    def __init__(self, waveform, logger, mixer_settings):
+        self.waveform = waveform
+        self.logger = logger
+        self.mixer_settings = mixer_settings
+
+    def execute(self, manager):
+        self.logger.print("[info/] Compile waveform...")
+
+        try:
+            node = dn.Waveform(self.waveform).generate(
+                self.mixer_settings.output_samplerate,
+                self.mixer_settings.output_channels,
+                self.mixer_settings.output_buffer_length,
+            )
+
+        except:
+            self.logger.print("[warn]Fail to compile waveform.[/]")
+            with self.logger.warn():
+                self.logger.print(traceback.format_exc(), end="", markup=False)
+            return dn.DataNode.wrap([])
+
+        self.logger.print("[hint/] Press any key to end test.")
+        mixer_task, mixer = engines.Mixer.create(self.mixer_settings, manager)
+        mixer.play(node)
+
+        @dn.datanode
+        def exit_any():
+            keycode = None
+            while keycode is None:
+                _, keycode = yield
+
+        exit_task = term.inkey(exit_any())
+
+        return dn.pipe(mixer_task, exit_task)
+
+

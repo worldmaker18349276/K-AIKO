@@ -9,9 +9,6 @@ from ..utils import markups as mu
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
 from ..devices import loggers as log
-from ..devices import terminals as term
-from ..devices import audios as aud
-from ..devices import engines
 from ..beats import beatshell
 from ..beats import beatmaps
 from ..beats import beatsheets
@@ -435,54 +432,6 @@ class KAIKOMenu:
         return cmd.PathParser(self.workspace.root / self.workspace.current, type="file")
 
     @cmd.function_command
-    def gen(self, waveform):
-        """[rich]Generate sound.
-
-        usage: [cmd]gen[/] [arg]{waveform}[/]
-                      ╱
-               The function of
-               output waveform.
-        """
-        settings = self.profiles.current.devices.mixer
-        return WaveformTest(waveform, self.logger, settings)
-
-    @gen.arg_parser("waveform")
-    def _gen_waveform_parser(self):
-        return cmd.RawParser(desc="It should be an expression of waveform.")
-
-    @cmd.function_command
-    def print(self, message, markup=True):
-        """[rich]Print something.
-
-        usage: [cmd]print[/] [arg]{message}[/] [[[kw]--markup[/] [arg]{MARKUP}[/]]]
-                        ╱                    ╲
-              text, the message               ╲
-               to be printed.          bool, use markup or not;
-                                          default is True.
-        """
-
-        try:
-            self.logger.print(message, markup=markup)
-        except mu.MarkupParseError as e:
-            self.logger.print(f"[warn]{self.logger.escape(str(e))}[/]")
-
-    @print.arg_parser("message")
-    def _print_message_parser(self):
-        return cmd.RawParser(
-            desc="It should be some text," " indicating the message to be printed."
-        )
-
-    @print.arg_parser("markup")
-    def _print_escape_parser(self, message):
-        return cmd.LiteralParser(
-            bool,
-            default=False,
-            desc="It should be bool,"
-            " indicating whether to use markup;"
-            " the default is False.",
-        )
-
-    @cmd.function_command
     def clean(self, bottom: bool = False):
         """[rich]Clean screen.
 
@@ -525,43 +474,6 @@ class KAIKOMenu:
             self.workspace.remove(logger)
             logger.print("Good luck~")
             raise KeyboardInterrupt
-
-
-class WaveformTest:
-    def __init__(self, waveform, logger, mixer_settings):
-        self.waveform = waveform
-        self.logger = logger
-        self.mixer_settings = mixer_settings
-
-    def execute(self, manager):
-        self.logger.print("[info/] Compile waveform...")
-
-        try:
-            node = dn.Waveform(self.waveform).generate(
-                self.mixer_settings.output_samplerate,
-                self.mixer_settings.output_channels,
-                self.mixer_settings.output_buffer_length,
-            )
-
-        except:
-            self.logger.print("[warn]Fail to compile waveform.[/]")
-            with self.logger.warn():
-                self.logger.print(traceback.format_exc(), end="", markup=False)
-            return dn.DataNode.wrap([])
-
-        self.logger.print("[hint/] Press any key to end test.")
-        mixer_task, mixer = engines.Mixer.create(self.mixer_settings, manager)
-        mixer.play(node)
-
-        @dn.datanode
-        def exit_any():
-            keycode = None
-            while keycode is None:
-                _, keycode = yield
-
-        exit_task = term.inkey(exit_any())
-
-        return dn.pipe(mixer_task, exit_task)
 
 
 class KAIKOPlay:
