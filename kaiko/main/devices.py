@@ -172,6 +172,18 @@ class DevicesCommand:
         logger.print(f"unicode version: {uni}")
         logger.print(f"  terminal size: {size.columns}×{size.lines}")
 
+        template = "[color={}]██[/]"
+        palette = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
+
+        logger.print()
+        logger.print("color palette:")
+        logger.print(
+            " "
+            + "".join(map(template.format, palette))
+            + "\n "
+            + "".join(map(template.format, map("bright_".__add__, palette)))
+        )
+
         logger.print()
 
         aud.print_pyaudio_info(self.manager)
@@ -406,34 +418,6 @@ class DevicesCommand:
                     yield
         finally:
             logger.print()
-
-    @cmd.function_command
-    def test_color(self):
-        """[rich]Test colors.
-
-        usage: [cmd]devices[/] [cmd]test_color[/]
-        """
-
-        template = "[color={}]██[/]"
-        palette = [
-            ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"],
-            [
-                "bright_black",
-                "bright_red",
-                "bright_green",
-                "bright_yellow",
-                "bright_blue",
-                "bright_magenta",
-                "bright_cyan",
-                "bright_white",
-            ],
-        ]
-        self.logger.print("print standard color palette:")
-        self.logger.print(
-            "".join(map(template.format, palette[0]))
-            + "\n"
-            + "".join(map(template.format, palette[1]))
-        )
 
     @cmd.function_command
     def test_waveform(self, waveform):
