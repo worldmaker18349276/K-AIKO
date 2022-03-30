@@ -435,29 +435,6 @@ class KAIKOMenu:
         return cmd.PathParser(self.workspace.root / self.workspace.current, type="file")
 
     @cmd.function_command
-    def me(self):
-        """[rich]About user.
-
-        usage: [cmd]me[/]
-        """
-        logger = self.logger
-
-        logger.print(f"username: {logger.emph(self.workspace.username)}")
-        logger.print(f"root directory: {logger.emph(self.workspace.root.as_uri())}")
-        logger.print(
-            f"profiles directory: {logger.emph(self.workspace.profiles_dir.as_uri())}"
-        )
-        logger.print(
-            f"beatmaps directory: {logger.emph(self.workspace.beatmaps_dir.as_uri())}"
-        )
-        logger.print(
-            f"resources directory: {logger.emph(self.workspace.resources_dir.as_uri())}"
-        )
-        logger.print(
-            f"cache directory: {logger.emph(self.workspace.cache_dir.as_uri())}"
-        )
-
-    @cmd.function_command
     def gen(self, waveform):
         """[rich]Generate sound.
 
