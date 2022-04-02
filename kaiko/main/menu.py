@@ -192,8 +192,8 @@ class KAIKOMenu:
                 self.logger.print(f"[warn]{self.logger.escape(str(result.error))}[/]")
 
             elif isinstance(result, beatshell.CompleteResult):
-                input.new_session()
                 yield from self.execute(result.command).join()
+                input.new_session()
 
             else:
                 assert False
@@ -284,7 +284,10 @@ class KAIKOMenu:
         self.logger.print(banner_markup)
 
     def get_commands(self):
-        return cmd.SubCommandParser(RootCommand(self), BeatmapCommand(self))
+        commands = []
+        if self.workspace.root / self.workspace.current == self.workspace.beatmaps_dir:
+            commands.append(BeatmapCommand(self))
+        return cmd.SubCommandParser(*commands, RootCommand(self))
 
 
 class BeatmapCommand:
