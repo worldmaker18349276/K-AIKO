@@ -1170,7 +1170,7 @@ class RichRenderer:
                 else:
                     w = wcwidth.wcwidth(ch, self.unicode_version)
                     if w == -1:
-                        raise ValueError(f"unprintable character: {repr(ch)}")
+                        raise ValueError(f"non-printable character: {repr(ch)}")
                     x += w
                     if wrap and x > size.columns:
                         y += 1

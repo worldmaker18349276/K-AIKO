@@ -153,14 +153,14 @@ class KAIKOMenu:
         bgm_task = self.bgm_controller.execute(self.manager)
 
         # tips
-        confirm_key = self.settings.shell.input.confirm_key
-        help_key = self.settings.shell.input.help_key
-        tab_key, _, _ = self.settings.shell.input.autocomplete_keys
+        confirm_key = logger.emph(self.settings.shell.input.confirm_key, type="all")
+        help_key = logger.emph(self.settings.shell.input.help_key, type="all")
+        tab_key = logger.emph(self.settings.shell.input.autocomplete_keys[0], type="all")
         logger.print(
-            f"[hint/] Type command and press {logger.emph(confirm_key)} to execute."
+            f"[hint/] Type command and press {confirm_key} to execute."
         )
-        logger.print(f"[hint/] Use {logger.emph(tab_key)} to autocomplete command.")
-        logger.print(f"[hint/] If you need help, press {logger.emph(help_key)}.")
+        logger.print(f"[hint/] Use {tab_key} to autocomplete command.")
+        logger.print(f"[hint/] If you need help, press {help_key}.")
         logger.print()
 
         # prompt
@@ -238,12 +238,12 @@ class KAIKOMenu:
         return self.profiles.current
 
     def print_banner(self):
-        username = self.logger.escape(self.workspace.username)
-        profile = self.logger.escape(self.profiles.current_name)
+        username = self.logger.escape(self.workspace.username, type="all")
+        profile = self.logger.escape(self.profiles.current_name, type="all")
         path = str(self.workspace.current)
         if path == ".":
             path = ""
-        path = self.logger.escape(path)
+        path = self.logger.escape(path, type="all")
 
         profile_is_changed = self.profiles.is_changed()
         path_is_known = self.workspace.get_desc(self.workspace.root / self.workspace.current) is not None
@@ -502,8 +502,9 @@ class KAIKOPlay:
             beatmap = beatsheets.read(str(self.filepath))
 
         except beatsheets.BeatmapParseError:
+            filepath = logger.escape(str(self.filepath), type="all")
             logger.print(
-                f"[warn]Failed to read beatmap {logger.escape(str(self.filepath))}[/]"
+                f"[warn]Failed to read beatmap {filepath}[/]"
             )
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)

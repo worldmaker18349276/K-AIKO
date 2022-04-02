@@ -78,11 +78,11 @@ class BeatmapManager:
         beatmaps_dir = self.beatmaps_dir
 
         if not path.exists():
-            logger.print(f"[warn]File not found: {logger.escape(str(path))}[/]")
+            logger.print(f"[warn]File not found: {logger.escape(str(path), type='all')}[/]")
             return
         if not path.is_file() and not path.is_dir():
             logger.print(
-                f"[warn]Not a file or directory: {logger.escape(str(path))}[/]"
+                f"[warn]Not a file or directory: {logger.escape(str(path), type='all')}[/]"
             )
             return
 
@@ -95,7 +95,7 @@ class BeatmapManager:
             distpath = beatmaps_dir / f"{path.stem} ({n}){path.suffix}"
         if n != 1:
             logger.print(
-                f"[data/] Name conflict! Rename to {logger.emph(distpath.name)}"
+                f"[data/] Name conflict! Rename to {logger.emph(distpath.name, type='all')}"
             )
 
         if path.is_file():
@@ -127,7 +127,7 @@ class BeatmapManager:
 
         else:
             logger.print(
-                f"[warn]Not a beatmap or beatmapset: {logger.escape(str(path))}[/]"
+                f"[warn]Not a beatmap or beatmapset: {logger.escape(str(path), type='all')}[/]"
             )
 
     def is_beatmapset(self, path):
@@ -513,7 +513,7 @@ class BGMCommand:
             return
 
         logger.print("will play:")
-        logger.print(logger.emph(str(song.relpath)))
+        logger.print(logger.emph(str(song.relpath), type="all"))
         self.bgm_controller.play(song)
 
     @cmd.function_command
@@ -537,7 +537,7 @@ class BGMCommand:
                 return
 
             self.logger.print("will play:")
-            self.logger.print(self.logger.emph(str(song.relpath)))
+            self.logger.print(self.logger.emph(str(song.relpath), type="all"))
             self.bgm_controller.play(song)
 
     @cmd.function_command
@@ -562,7 +562,7 @@ class BGMCommand:
             return
 
         logger.print("will play:")
-        logger.print(logger.emph(str(song.relpath)))
+        logger.print(logger.emph(str(song.relpath), type="all"))
         self.bgm_controller.play(song, start)
 
     @play.arg_parser("beatmap")
@@ -582,10 +582,10 @@ class BGMCommand:
         current = self.bgm_controller.current_action
         if isinstance(current, PlayBGM):
             self.logger.print("now playing:")
-            self.logger.print(self.logger.emph(str(current.song.relpath)))
+            self.logger.print(self.logger.emph(str(current.song.relpath), type="all"))
         elif isinstance(current, PreviewSong):
             self.logger.print("now previewing:")
-            self.logger.print(self.logger.emph(str(current.song.relpath)))
+            self.logger.print(self.logger.emph(str(current.song.relpath), type="all"))
         elif current is None:
             self.logger.print("no song")
         else:

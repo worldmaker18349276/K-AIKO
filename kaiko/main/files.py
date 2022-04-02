@@ -229,7 +229,7 @@ class FileManager:
 
     def ls(self, logger):
         for child in (self.root / self.current).resolve().iterdir():
-            name = logger.escape(child.name)
+            name = logger.escape(child.name, type="all")
 
             if child.is_dir():
                 name = f"[file_dir]{name}[/]"

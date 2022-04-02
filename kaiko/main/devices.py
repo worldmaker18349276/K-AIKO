@@ -387,7 +387,7 @@ class DevicesCommand:
         logger = self.logger
         exit_key = "Esc"
 
-        logger.print(f"[hint/] Press {logger.emph(exit_key)} to end test.")
+        logger.print(f"[hint/] Press {logger.emph(exit_key, type='all')} to end test.")
         logger.print()
         logger.print("[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r")
 
@@ -395,12 +395,11 @@ class DevicesCommand:
 
         def handler(arg):
             _, time, keyname, keycode = arg
-            keycode = logger.escape(keycode)
-            keycode = keycode.replace("\n", logger.backslashreplace("\n"))
-            keycode = keycode.replace("\t", logger.backslashreplace("\t"))
+            keyname = logger.emph(keyname, type="all")
+            keycode = logger.escape(keycode, type="all")
             logger.clear_line()
             logger.print(
-                f"[[{time:07.3f} s]] {logger.emph(keyname)} '{keycode}'"
+                f"[[{time:07.3f} s]] {keyname} '{keycode}'"
             )
             logger.print("[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r")
 

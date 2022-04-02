@@ -179,7 +179,7 @@ class ProfileManager:
         logger = self.logger
 
         logger.print(
-            f"[data/] Set {logger.emph(self.current_name)} as the default profile..."
+            f"[data/] Set {logger.emph(self.current_name, type='all')} as the default profile..."
         )
 
         if not self.path.exists():
@@ -303,7 +303,7 @@ class ProfileManager:
             name = self.default_name
 
         if name not in self.profiles:
-            logger.print(f"[warn]No such profile: {logger.emph(name)}[/]")
+            logger.print(f"[warn]No such profile: {logger.emph(name, type='all')}[/]")
             return False
 
         old_name = self.current_name
@@ -333,16 +333,16 @@ class ProfileManager:
         logger.print("Make new profile...")
 
         if clone is not None and clone not in self.profiles:
-            logger.print(f"[warn]No such profile: {logger.emph(clone)}[/]")
+            logger.print(f"[warn]No such profile: {logger.emph(clone, type='all')}[/]")
             return False
 
         if isinstance(name, str) and (not name.isprintable() or "/" in name):
-            logger.print(f"[warn]Invalid profile name: {logger.emph(name)}[/]")
+            logger.print(f"[warn]Invalid profile name: {logger.emph(name, type='all')}[/]")
             return False
 
         if name in self.profiles:
             logger.print(
-                f"[warn]This profile name {logger.emph(name)} already exists.[/]"
+                f"[warn]This profile name {logger.emph(name, type='all')} already exists.[/]"
             )
             return False
 
@@ -352,7 +352,7 @@ class ProfileManager:
             while name in self.profiles:
                 n += 1
                 name = f"new profile ({str(n)})"
-            logger.print(f"Create profile with name {logger.emph(name)}.")
+            logger.print(f"Create profile with name {logger.emph(name, type='all')}.")
 
         if clone is None:
             self.current_name = name
@@ -388,7 +388,7 @@ class ProfileManager:
         logger.print(f"[data/] Delete profile {logger.emph(target_path.as_uri())}...")
 
         if name not in self.profiles:
-            logger.print(f"[warn]No such profile: {logger.emph(name)}[/]")
+            logger.print(f"[warn]No such profile: {logger.emph(name, type='all')}[/]")
             return False
 
         if target_path.exists():
@@ -426,12 +426,12 @@ class ProfileManager:
         logger.print(f"[data/] Rename profile {current_name} to {target_name}...")
 
         if not name.isprintable() or "/" in name:
-            logger.print(f"[warn]Invalid profile name: {logger.emph(name)}[/]")
+            logger.print(f"[warn]Invalid profile name: {logger.emph(name, type='all')}[/]")
             return False
 
         if name in self.profiles:
             logger.print(
-                f"[warn]This profile name {logger.emph(name)} already exists.[/]"
+                f"[warn]This profile name {logger.emph(name, type='all')} already exists.[/]"
             )
             return False
 
@@ -575,7 +575,7 @@ class ProfilesCommand:
 
         # open editor
         if not exists(editor):
-            self.logger.print(f"[warn]Unknown editor: {self.logger.escape(editor)}[/]")
+            self.logger.print(f"[warn]Unknown editor: {self.logger.escape(editor, type='all')}[/]")
             return
 
         self.logger.print(f"[data/] Editing...")
@@ -651,7 +651,7 @@ class ProfilesCommand:
                 note += " (default)"
             if profile == self.profiles.current_name:
                 note += " (current)"
-            logger.print(logger.emph(profile + self.profiles.extension) + note)
+            logger.print(logger.emph(profile + self.profiles.extension, type="all") + note)
 
     @cmd.function_command
     def reload(self):

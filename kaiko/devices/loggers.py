@@ -236,6 +236,8 @@ class Logger:
             self.level = level
 
     def backslashreplace(self, ch):
+        if ch in "\a\r\n\t\b\v\f":
+            return f"[codepoint]{repr(ch)[1:-1]}[/]"
         r = hex(ord(ch))[2:]
         if len(r) <= 2:
             r = rf"\x{r:0>2}"
@@ -247,18 +249,32 @@ class Logger:
             raise ValueError(ch)
         return f"[codepoint]{r}[/]"
 
-    def escape(self, text):
-        text = mu.escape(text)
-        text = "".join(
-            ch
-            if ch.isprintable() or ch in ["\n", "\t"]
-            else self.backslashreplace(ch)
-            for ch in text
-        )
-        return text
+    def escape(self, text, type="plain"):
+        if type == "plain":
+            text = mu.escape(text)
+            text = "".join(
+                ch
+                if ch.isprintable() or ch in ["\n", "\t"]
+                else self.backslashreplace(ch)
+                for ch in text
+            )
+            return text
 
-    def emph(self, text):
-        return f"[emph]{self.escape(text)}[/]"
+        elif type == "all":
+            text = mu.escape(text)
+            text = "".join(
+                ch
+                if ch.isprintable()
+                else self.backslashreplace(ch)
+                for ch in text
+            )
+            return text
+
+        else:
+            raise ValueError
+
+    def emph(self, text, type="plain"):
+        return f"[emph]{self.escape(text, type=type)}[/]"
 
     def print(self, msg="", end="\n", flush=False, markup=True):
         if not markup:
@@ -291,17 +307,17 @@ class Logger:
         if title is not None:
             change_mark = "*" if is_changed else ""
             res.append(f"[weight=dim]{'─'*n}────{'─'*(max(0, total_width-n-4))}[/]")
-            res.append(f" [emph]{self.escape(title)}[/]{change_mark}")
+            res.append(f" {self.emph(title, type='all')}{change_mark}")
         res.append(f"[weight=dim]{'─'*n}──┬─{'─'*(max(0, total_width-n-4))}[/]")
         for i, line in enumerate(lines):
             if marked and marked[0] == i:
                 line = (
-                    self.escape(line[: marked[1]])
+                    self.escape(line[: marked[1]], type="all")
                     + "[color=red]◊[/]"
-                    + self.escape(line[marked[1] :])
+                    + self.escape(line[marked[1] :], type="all")
                 )
             else:
-                line = self.escape(line)
+                line = self.escape(line, type="all")
             res.append(
                 f" [weight=dim]{i+1:>{n}d}[/] [weight=dim]│[/] [color=bright_white]{line}[/]"
             )
@@ -317,23 +333,24 @@ class Logger:
         if title is not None:
             change_mark = "*" if is_changed else ""
             res.append(f"[weight=dim]{'─'*n}────{'─'*(max(0, total_width-n-4))}[/]")
-            res.append(f" [emph]{self.escape(title)}[/]{change_mark}")
+            res.append(f" {self.emph(title, type='all')}{change_mark}")
         res.append(f"[weight=dim]{'─'*n}──┬─{'─'*(max(0, total_width-n-4))}[/]")
         i = 0
         for line in lines:
+            ln = self.escape(line[2:], type="all")
             if line.startswith("  "):
                 res.append(
-                    f" [weight=dim]{i+1:>{n}d}[/] [weight=dim]│[/] [color=bright_white]{self.escape(line[2:])}[/]"
+                    f" [weight=dim]{i+1:>{n}d}[/] [weight=dim]│[/] [color=bright_white]{ln}[/]"
                 )
                 i += 1
             elif line.startswith("+ "):
                 res.append(
-                    f" [color=bright_blue]{i+1:>{n}d}[/] [weight=dim]│[/] [color=bright_blue]{self.escape(line[2:])}[/]"
+                    f" [color=bright_blue]{i+1:>{n}d}[/] [weight=dim]│[/] [color=bright_blue]{ln}[/]"
                 )
                 i += 1
             elif line.startswith("- "):
                 res.append(
-                    f" [color=bright_red]{'-':>{n}s}[/] [weight=dim]│[/] [color=bright_red]{self.escape(line[2:])}[/]"
+                    f" [color=bright_red]{'-':>{n}s}[/] [weight=dim]│[/] [color=bright_red]{ln}[/]"
                 )
             elif line.startswith("? "):
                 pass
@@ -343,13 +360,13 @@ class Logger:
     def format_dict(self, data, show_border=True):
         total_width = 80
         if any(self.rich.widthof(k) < 0 for k in data.keys()):
-            raise ValueError("contain unprintable key")
+            raise ValueError("contain non-printable key")
         width = max((self.rich.widthof(k) for k in data.keys()), default=0)
         res = []
         for k, v in data.items():
-            key = " " * (width - self.rich.widthof(k)) + mu.escape(k)
-            value = mu.escape(v)
-            res.append(f"{key} [weight=dim]│[/] [emph]{value}[/]")
+            key = mu.escape(k)
+            value = self.escape(v)
+            res.append(f"{key: >{width}} [weight=dim]│[/] [emph]{value}[/]")
         if show_border:
             border = f"[weight=dim]{'─'*total_width}[/]"
             res.insert(0, border)

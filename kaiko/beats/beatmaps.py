@@ -1725,18 +1725,18 @@ class Beatmap:
         knock_keys = settings.controls.knock_delay_adjust_keys
         energy_keys = settings.controls.knock_energy_adjust_keys
         logger.print(
-            f"[hint/] Press {logger.emph(pause_key)} to pause/resume the game."
+            f"[hint/] Press {logger.emph(pause_key, type='all')} to pause/resume the game."
         )
-        logger.print(f"[hint/] Press {logger.emph(skip_key)} to skip time.")
-        logger.print(f"[hint/] Press {logger.emph(stop_key)} to end the game.")
+        logger.print(f"[hint/] Press {logger.emph(skip_key, type='all')} to skip time.")
+        logger.print(f"[hint/] Press {logger.emph(stop_key, type='all')} to end the game.")
         logger.print(
-            f"[hint/] Use {logger.emph(display_keys[0])} and {logger.emph(display_keys[1])} to adjust display delay."
-        )
-        logger.print(
-            f"[hint/] Use {logger.emph(knock_keys[0])} and {logger.emph(knock_keys[1])} to adjust hit delay."
+            f"[hint/] Use {logger.emph(display_keys[0], type='all')} and {logger.emph(display_keys[1], type='all')} to adjust display delay."
         )
         logger.print(
-            f"[hint/] Use {logger.emph(energy_keys[0])} and {logger.emph(energy_keys[1])} to adjust hit strength."
+            f"[hint/] Use {logger.emph(knock_keys[0], type='all')} and {logger.emph(knock_keys[1], type='all')} to adjust hit delay."
+        )
+        logger.print(
+            f"[hint/] Use {logger.emph(energy_keys[0], type='all')} and {logger.emph(energy_keys[1], type='all')} to adjust hit strength."
         )
 
     @dn.datanode
