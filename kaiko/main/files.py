@@ -35,6 +35,9 @@ class FileManager:
             ".": "(The place to store some resources of KAIKO)",
             "**": "(Resource file)",
         },
+        "Devices": {
+            ".": "(The place to manage your devices)",
+        },
         "Cache": {
             ".": "(The place to cache some data for better exprience)",
             ".beatshell-history": "(The command history)",
@@ -64,6 +67,10 @@ class FileManager:
     def resources_dir(self):
         return self.root / "Resources"
 
+    @property
+    def devices_dir(self):
+        return self.root / "Devices"
+
     def is_prepared(self):
         if not self.root.exists():
             return False
@@ -80,6 +87,9 @@ class FileManager:
         if not self.resources_dir.exists():
             return False
 
+        if not self.devices_dir.exists():
+            return False
+
         return True
 
     def prepare(self, logger):
@@ -93,6 +103,7 @@ class FileManager:
         self.profiles_dir.mkdir(parents=True, exist_ok=True)
         self.beatmaps_dir.mkdir(parents=True, exist_ok=True)
         self.resources_dir.mkdir(parents=True, exist_ok=True)
+        self.devices_dir.mkdir(parents=True, exist_ok=True)
 
         logger.print(
             f"[data/] Your data will be stored in {logger.emph(self.root.as_uri())}"
@@ -112,6 +123,10 @@ class FileManager:
             f"[data/] Remove resources directory {logger.emph(self.resources_dir.as_uri())}..."
         )
         shutil.rmtree(str(self.resources_dir))
+        logger.print(
+            f"[data/] Remove devices directory {logger.emph(self.resources_dir.as_uri())}..."
+        )
+        shutil.rmtree(str(self.devices_dir))
         logger.print(
             f"[data/] Remove root directory {logger.emph(self.root.as_uri())}..."
         )
