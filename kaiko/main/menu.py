@@ -285,9 +285,102 @@ class KAIKOMenu:
 
     def get_commands(self):
         commands = []
-        if self.workspace.root / self.workspace.current == self.workspace.beatmaps_dir:
+        if self.workspace.current == Path("Beatmaps/"):
             commands.append(BeatmapCommand(self))
+        if self.workspace.current == Path("Devices/"):
+            commands.append(DevicesCommand(self.profiles, self.logger, self.manager))
+        if self.workspace.current == Path("Profiles/"):
+            commands.append(ProfilesCommand(self.profiles, self.logger))
         return cmd.SubCommandParser(*commands, RootCommand(self))
+
+
+class RootCommand:
+    def __init__(self, menu):
+        self.menu = menu
+
+    # system
+
+    @cmd.function_command
+    def cd(self, path):
+        self.menu.workspace.cd(path, self.menu.logger)
+
+    @cmd.function_command
+    def ls(self):
+        self.menu.workspace.ls(self.menu.logger)
+
+    @cmd.function_command
+    def cat(self, path):
+        abspath = self.menu.workspace.get(path, self.menu.logger)
+
+        try:
+            content = abspath.read_text()
+        except UnicodeDecodeError:
+            self.menu.logger.print("[warn]Cannot read binary file.[/]")
+            return
+
+        code = self.menu.logger.format_code(
+            content, title=str(self.menu.workspace.current / path)
+        )
+        self.menu.logger.print(code)
+
+    @cd.arg_parser("path")
+    def _cd_path_parser(self):
+        return cmd.PathParser(self.menu.workspace.root / self.menu.workspace.current, type="dir")
+
+    @cat.arg_parser("path")
+    def _cat_path_parser(self):
+        return cmd.PathParser(self.menu.workspace.root / self.menu.workspace.current, type="file")
+
+    @cmd.function_command
+    def clean(self, bottom: bool = False):
+        """[rich]Clean screen.
+
+        usage: [cmd]clean[/] [[[kw]--bottom[/] [arg]{BOTTOM}[/]]]
+                                   ╲
+                          bool, move to bottom or
+                           not; default is False.
+        """
+        self.menu.logger.clear(bottom)
+
+    @cmd.function_command
+    @dn.datanode
+    def bye(self):
+        """[rich]Close K-AIKO.
+
+        usage: [cmd]bye[/]
+        """
+        if self.menu.profiles.is_changed():
+            yes = yield from self.menu.logger.ask(
+                "Exit without saving current configuration?"
+            ).join()
+            if not yes:
+                return
+        self.menu.logger.print("Bye~")
+        raise KeyboardInterrupt
+
+    @cmd.function_command
+    @dn.datanode
+    def bye_forever(self):
+        """[rich]Clean up all your data and close K-AIKO.
+
+        usage: [cmd]bye_forever[/]
+        """
+        logger = self.menu.logger
+
+        logger.print("This command will clean up all your data.")
+
+        yes = yield from logger.ask("Do you really want to do that?", False).join()
+        if yes:
+            self.menu.workspace.remove(logger)
+            logger.print("Good luck~")
+            raise KeyboardInterrupt
+
+    # bgm
+
+    @cmd.subcommand
+    def bgm(self):
+        """Subcommand to control background music."""
+        return BGMCommand(self.menu.bgm_controller, self.menu.beatmap_manager, self.menu.logger)
 
 
 class BeatmapCommand:
@@ -389,108 +482,6 @@ class BeatmapCommand:
     @remove.arg_parser("beatmap")
     def _remove_beatmap_parser(self):
         return self.menu.beatmap_manager.make_parser()
-
-class RootCommand:
-    def __init__(self, menu):
-        self.menu = menu
-
-    # bgm
-
-    @cmd.subcommand
-    def bgm(self):
-        """Subcommand to control background music."""
-        return BGMCommand(self.menu.bgm_controller, self.menu.beatmap_manager, self.menu.logger)
-
-    # devices
-
-    @cmd.subcommand
-    def devices(self):
-        """Subcommand to manage devices."""
-        return DevicesCommand(self.menu.profiles, self.menu.logger, self.menu.manager)
-
-    # profiles
-
-    @cmd.subcommand
-    def profiles(self):
-        """Subcommand to manage profiles and configurations."""
-        return ProfilesCommand(self.menu.profiles, self.menu.logger)
-
-    # system
-
-    @cmd.function_command
-    def cd(self, path):
-        self.menu.workspace.cd(path, self.menu.logger)
-
-    @cmd.function_command
-    def ls(self):
-        self.menu.workspace.ls(self.menu.logger)
-
-    @cmd.function_command
-    def cat(self, path):
-        abspath = self.menu.workspace.get(path, self.menu.logger)
-
-        try:
-            content = abspath.read_text()
-        except UnicodeDecodeError:
-            self.menu.logger.print("[warn]Cannot read binary file.[/]")
-            return
-
-        code = self.menu.logger.format_code(
-            content, title=str(self.menu.workspace.current / path)
-        )
-        self.menu.logger.print(code)
-
-    @cd.arg_parser("path")
-    def _cd_path_parser(self):
-        return cmd.PathParser(self.menu.workspace.root / self.menu.workspace.current, type="dir")
-
-    @cat.arg_parser("path")
-    def _cat_path_parser(self):
-        return cmd.PathParser(self.menu.workspace.root / self.menu.workspace.current, type="file")
-
-    @cmd.function_command
-    def clean(self, bottom: bool = False):
-        """[rich]Clean screen.
-
-        usage: [cmd]clean[/] [[[kw]--bottom[/] [arg]{BOTTOM}[/]]]
-                                   ╲
-                          bool, move to bottom or
-                           not; default is False.
-        """
-        self.menu.logger.clear(bottom)
-
-    @cmd.function_command
-    @dn.datanode
-    def bye(self):
-        """[rich]Close K-AIKO.
-
-        usage: [cmd]bye[/]
-        """
-        if self.menu.profiles.is_changed():
-            yes = yield from self.menu.logger.ask(
-                "Exit without saving current configuration?"
-            ).join()
-            if not yes:
-                return
-        self.menu.logger.print("Bye~")
-        raise KeyboardInterrupt
-
-    @cmd.function_command
-    @dn.datanode
-    def bye_forever(self):
-        """[rich]Clean up all your data and close K-AIKO.
-
-        usage: [cmd]bye_forever[/]
-        """
-        logger = self.menu.logger
-
-        logger.print("This command will clean up all your data.")
-
-        yes = yield from logger.ask("Do you really want to do that?", False).join()
-        if yes:
-            self.menu.workspace.remove(logger)
-            logger.print("Good luck~")
-            raise KeyboardInterrupt
 
 
 class KAIKOPlay:

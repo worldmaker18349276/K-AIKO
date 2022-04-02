@@ -482,10 +482,10 @@ class ProfilesCommand:
     def show(self, diff: bool = False):
         """[rich]Show the current configuration.
 
-        usage: [cmd]profiles[/] [cmd]show[/] [[[kw]--diff[/] [arg]{DIFF}[/]]]
-                                        ╲
-                                 bool, highlight
-                                 changes or not.
+        usage: [cmd]show[/] [[[kw]--diff[/] [arg]{DIFF}[/]]]
+                               ╲
+                        bool, highlight
+                        changes or not.
         """
         text = self.profiles.format()
         is_changed = self.profiles.is_changed()
@@ -513,9 +513,9 @@ class ProfilesCommand:
     def has(self, field):
         """[rich]Check whether this field is set in the configuration.
 
-        usage: [cmd]profiles[/] [cmd]has[/] [arg]{field}[/]
-                              ╱
-                       The field name.
+        usage: [cmd]has[/] [arg]{field}[/]
+                     ╱
+              The field name.
         """
         return self.profiles.has(field)
 
@@ -523,9 +523,9 @@ class ProfilesCommand:
     def get(self, field):
         """[rich]Get the value of this field in the configuration.
 
-        usage: [cmd]profiles[/] [cmd]get[/] [arg]{field}[/]
-                              ╱
-                       The field name.
+        usage: [cmd]get[/] [arg]{field}[/]
+                     ╱
+              The field name.
         """
         if not self.profiles.has(field) and not self.profiles.has_default(field):
             self.logger.print(f"[warn]No value for field {'.'.join(field)}[/]")
@@ -536,9 +536,9 @@ class ProfilesCommand:
     def set(self, field, value):
         """[rich]Set this field in the configuration.
 
-        usage: [cmd]profiles[/] [cmd]set[/] [arg]{field}[/] [arg]{value}[/]
-                              ╱         ╲
-                     The field name.   The value.
+        usage: [cmd]set[/] [arg]{field}[/] [arg]{value}[/]
+                     ╱         ╲
+            The field name.   The value.
         """
         self.profiles.set(field, value)
         self.profiles.set_as_changed()
@@ -547,9 +547,9 @@ class ProfilesCommand:
     def unset(self, field):
         """[rich]Unset this field in the configuration.
 
-        usage: [cmd]profiles[/] [cmd]unset[/] [arg]{field}[/]
-                                ╱
-                         The field name.
+        usage: [cmd]unset[/] [arg]{field}[/]
+                       ╱
+                The field name.
         """
         self.profiles.unset(field)
         self.profiles.set_as_changed()
@@ -559,7 +559,7 @@ class ProfilesCommand:
     def edit(self):
         """[rich]Edit the configuration by external editor.
 
-        usage: [cmd]profiles[/] [cmd]edit[/]
+        usage: [cmd]edit[/]
         """
         title = self.profiles.get_title()
 
@@ -638,7 +638,7 @@ class ProfilesCommand:
     def list(self):
         """[rich]Show all profiles.
 
-        usage: [cmd]profiles[/] [cmd]list[/]
+        usage: [cmd]list[/]
         """
         logger = self.logger
 
@@ -657,7 +657,7 @@ class ProfilesCommand:
     def reload(self):
         """[rich]Reload the configuration.
 
-        usage: [cmd]profiles[/] [cmd]reload[/]
+        usage: [cmd]reload[/]
         """
         logger = self.logger
 
@@ -670,7 +670,7 @@ class ProfilesCommand:
     def save(self):
         """[rich]Save the configuration.
 
-        usage: [cmd]profiles[/] [cmd]save[/]
+        usage: [cmd]save[/]
         """
         logger = self.logger
 
@@ -683,7 +683,7 @@ class ProfilesCommand:
     def set_default(self):
         """[rich]Set the current profile as default.
 
-        usage: [cmd]profiles[/] [cmd]set_default[/]
+        usage: [cmd]set_default[/]
         """
         if not self.profiles.is_uptodate():
             self.profiles.update()
@@ -694,9 +694,9 @@ class ProfilesCommand:
     def use(self, profile):
         """[rich]Change the current profile.
 
-        usage: [cmd]profiles[/] [cmd]use[/] [arg]{profile}[/]
-                                ╱
-                       The profile name.
+        usage: [cmd]use[/] [arg]{profile}[/]
+                       ╱
+              The profile name.
         """
 
         if not self.profiles.is_uptodate():
@@ -708,9 +708,9 @@ class ProfilesCommand:
     def rename(self, profile):
         """[rich]Rename the current profile.
 
-        usage: [cmd]profiles[/] [cmd]rename[/] [arg]{profile}[/]
-                                  ╱
-                        The profile name.
+        usage: [cmd]rename[/] [arg]{profile}[/]
+                         ╱
+               The profile name.
         """
         if not self.profiles.is_uptodate():
             self.profiles.update()
@@ -721,9 +721,9 @@ class ProfilesCommand:
     def new(self, profile, clone=None):
         """[rich]Make a new profile.
 
-        usage: [cmd]profiles[/] [cmd]new[/] [arg]{profile}[/] [[[kw]--clone[/] [arg]{PROFILE}[/]]]
-                                ╱                    ╲
-                       The profile name.      The profile to be cloned.
+        usage: [cmd]new[/] [arg]{profile}[/] [[[kw]--clone[/] [arg]{PROFILE}[/]]]
+                       ╱                    ╲
+              The profile name.      The profile to be cloned.
         """
         if not self.profiles.is_uptodate():
             self.profiles.update()
@@ -734,9 +734,9 @@ class ProfilesCommand:
     def delete(self, profile):
         """[rich]Delete a profile.
 
-        usage: [cmd]profiles[/] [cmd]delete[/] [arg]{profile}[/]
-                                  ╱
-                         The profile name.
+        usage: [cmd]delete[/] [arg]{profile}[/]
+                         ╱
+                The profile name.
         """
         if not self.profiles.is_uptodate():
             self.profiles.update()

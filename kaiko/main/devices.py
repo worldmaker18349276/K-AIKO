@@ -157,7 +157,7 @@ class DevicesCommand:
     def show(self):
         """[rich]Show your device configuration.
 
-        usage: [cmd]devices[/] [cmd]show[/]
+        usage: [cmd]show[/]
         """
 
         logger = self.logger
@@ -214,11 +214,11 @@ class DevicesCommand:
     def test_mic(self, device):
         """[rich]Test audio input.
 
-        usage: [cmd]devices[/] [cmd]test_mic[/] [arg]{device}[/]
-                                  ╱
-                        The index of input
-                         device, -1 is the
-                          default device.
+        usage: [cmd]test_mic[/] [arg]{device}[/]
+                          ╱
+                The index of input
+                 device, -1 is the
+                  default device.
         """
         return MicTest(device, self.logger)
 
@@ -226,11 +226,11 @@ class DevicesCommand:
     def test_speaker(self, device):
         """[rich]Test audio output.
 
-        usage: [cmd]devices[/] [cmd]test_speaker[/] [arg]{device}[/]
-                                      ╱
-                            The index of output
-                             device, -1 is the
-                              default device.
+        usage: [cmd]test_speaker[/] [arg]{device}[/]
+                              ╱
+                    The index of output
+                     device, -1 is the
+                      default device.
         """
         return SpeakerTest(device, self.logger)
 
@@ -238,14 +238,14 @@ class DevicesCommand:
     def set_mic(self, device, rate=None, ch=None, len=None, fmt=None):
         """[rich]Configure audio input.
 
-                                          The sample rate        The buffer length
-                                         of recorded sound.       of input device.
-                                                  ╲                         ╲
-        usage: [cmd]devices[/] [cmd]set_mic[/] [arg]{device}[/] [[[kw]--rate[/] [arg]{RATE}[/]]] [[[kw]--ch[/] [arg]{CH}[/]]] [[[kw]--len[/] [arg]{LEN}[/]]] [[[kw]--fmt[/] [arg]{FMT}[/]]]
-                                 ╱                             ╱                          ╱
-                       The index of input           The channel of audio         The data format
-                        device, -1 is the            input: 1 for mono,         of recorded sound.
-                         default device.               2 for stereo.
+                                  The sample rate        The buffer length
+                                 of recorded sound.       of input device.
+                                          ╲                         ╲
+        usage: [cmd]set_mic[/] [arg]{device}[/] [[[kw]--rate[/] [arg]{RATE}[/]]] [[[kw]--ch[/] [arg]{CH}[/]]] [[[kw]--len[/] [arg]{LEN}[/]]] [[[kw]--fmt[/] [arg]{FMT}[/]]]
+                         ╱                             ╱                          ╱
+               The index of input           The channel of audio         The data format
+                device, -1 is the            input: 1 for mono,         of recorded sound.
+                 default device.               2 for stereo.
         """
         logger = self.logger
 
@@ -288,14 +288,14 @@ class DevicesCommand:
     def set_speaker(self, device, rate=None, ch=None, len=None, fmt=None):
         """[rich]Configure audio output.
 
-                                              The sample rate        The buffer length
-                                              of played sound.       of output device.
-                                                      ╲                         ╲
-        usage: [cmd]devices[/] [cmd]set_speaker[/] [arg]{device}[/] [[[kw]--rate[/] [arg]{RATE}[/]]] [[[kw]--ch[/] [arg]{CH}[/]]] [[[kw]--len[/] [arg]{LEN}[/]]] [[[kw]--fmt[/] [arg]{FMT}[/]]]
-                                     ╱                             ╱                          ╱
-                           The index of output          The channel of audio         The data format
-                            device, -1 is the           output: 1 for mono,          of played sound.
-                             default device.               2 for stereo.
+                                      The sample rate        The buffer length
+                                      of played sound.       of output device.
+                                              ╲                         ╲
+        usage: [cmd]set_speaker[/] [arg]{device}[/] [[[kw]--rate[/] [arg]{RATE}[/]]] [[[kw]--ch[/] [arg]{CH}[/]]] [[[kw]--len[/] [arg]{LEN}[/]]] [[[kw]--fmt[/] [arg]{FMT}[/]]]
+                             ╱                             ╱                          ╱
+                   The index of output          The channel of audio         The data format
+                    device, -1 is the           output: 1 for mono,          of played sound.
+                     default device.               2 for stereo.
         """
         logger = self.logger
 
@@ -371,7 +371,7 @@ class DevicesCommand:
     def test_knock(self):
         """[rich]Test knock detection.
 
-        usage: [cmd]devices[/] [cmd]test_knock[/]
+        usage: [cmd]test_knock[/]
         """
         settings = self.profiles.current.devices.detector
         return KnockTest(settings, self.logger)
@@ -381,7 +381,7 @@ class DevicesCommand:
     def test_keyboard(self):
         """[rich]Test your keyboard.
 
-        usage: [cmd]devices[/] [cmd]test_keyboard[/]
+        usage: [cmd]test_keyboard[/]
         """
 
         logger = self.logger
@@ -423,10 +423,10 @@ class DevicesCommand:
     def test_waveform(self, waveform):
         """[rich]Test to waveform generater.
 
-        usage: [cmd]devices[/] [cmd]test_waveform[/] [arg]{waveform}[/]
-                                        ╱
-                                 The function of
-                                 output waveform.
+        usage: [cmd]test_waveform[/] [arg]{waveform}[/]
+                                ╱
+                         The function of
+                         output waveform.
         """
         settings = self.profiles.current.devices.mixer
         return WaveformTest(waveform, self.logger, settings)
@@ -439,11 +439,11 @@ class DevicesCommand:
     def test_logger(self, message, markup=True):
         """[rich]Print something.
 
-        usage: [cmd]devices[/] [cmd]test_logger[/] [arg]{message}[/] [[[kw]--markup[/] [arg]{MARKUP}[/]]]
-                                      ╱                    ╲
-                            text, the message               ╲
-                             to be printed.          bool, use markup or not;
-                                                        default is True.
+        usage: [cmd]test_logger[/] [arg]{message}[/] [[[kw]--markup[/] [arg]{MARKUP}[/]]]
+                              ╱                    ╲
+                    text, the message               ╲
+                     to be printed.          bool, use markup or not;
+                                                default is True.
         """
 
         try:
@@ -474,7 +474,7 @@ class DevicesCommand:
     def fit_screen(self):
         """[rich]Fit your terminal screen.
 
-        usage: [cmd]devices[/] [cmd]fit_screen[/]
+        usage: [cmd]fit_screen[/]
         """
 
         return fit_screen(self.logger, self.profiles.current.devices.terminal)
@@ -484,7 +484,7 @@ class DevicesCommand:
     def ucs_detect(self):
         """[rich]Determines the unicode version of your terminal.
 
-        usage: [cmd]devices[/] [cmd]ucs_detect[/]
+        usage: [cmd]ucs_detect[/]
         """
 
         version = yield from determine_unicode_version(self.logger).join()
