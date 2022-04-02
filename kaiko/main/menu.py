@@ -284,10 +284,10 @@ class KAIKOMenu:
         self.logger.print(banner_markup)
 
     def get_commands(self):
-        return cmd.SubCommandParser(RootCommand(self))
+        return cmd.SubCommandParser(RootCommand(self), BeatmapCommand(self))
 
 
-class RootCommand:
+class BeatmapCommand:
     def __init__(self, menu):
         self.menu = menu
 
@@ -386,6 +386,10 @@ class RootCommand:
     @remove.arg_parser("beatmap")
     def _remove_beatmap_parser(self):
         return self.menu.beatmap_manager.make_parser()
+
+class RootCommand:
+    def __init__(self, menu):
+        self.menu = menu
 
     # bgm
 

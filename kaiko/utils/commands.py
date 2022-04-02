@@ -888,20 +888,21 @@ class FunctionCommandParser(CommandParser):
 class SubCommandParser(CommandParser):
     r"""Command parser for subcommands."""
 
-    def __init__(self, parent):
+    def __init__(self, *parents):
         r"""Constructor.
 
         Parameters
         ----------
-        parent : object
-            The object with fields with command descriptors.
+        parents : list of object
+            The objects with fields with command descriptors.
         """
-        self.parent = parent
-        self.fields = [
-            k
+        self.parents = parents
+        self.fields = {
+            k: parent
+            for parent in self.parents
             for k, v in type(parent).__dict__.items()
             if isinstance(v, CommandDescriptor)
-        ]
+        }
 
     def finish(self):
         desc = self.desc()
@@ -911,22 +912,26 @@ class SubCommandParser(CommandParser):
     def parse(self, token):
         if token not in self.fields:
             msg = "Unknown command"
-            raise CommandParseError(msg, token, self.fields)
+            raise CommandParseError(msg, token, self.fields.keys())
 
-        field = getcmd(self.parent, token)
+        parent = self.fields[token]
+        field = getcmd(parent, token)
         if not isinstance(field, CommandParser):
             raise CommandParseError("Not a command")
 
         return TOKEN_TYPE.COMMAND, field
 
     def suggest(self, token):
-        return [val + "\000" for val in fit(token, self.fields)]
+        return [val + "\000" for val in fit(token, self.fields.keys())]
 
     def desc(self):
         return None
 
     def info(self, token):
-        return getcmddesc(self.parent, token)
+        if token not in self.fields:
+            return None
+        parent = self.fields[token]
+        return getcmddesc(parent, token)
 
 
 def getcmd(obj, name):
