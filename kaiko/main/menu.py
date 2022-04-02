@@ -188,10 +188,11 @@ class KAIKOMenu:
             # execute result
             result = input.result
             if isinstance(result, beatshell.ErrorResult):
-                input.prev_session()
                 self.logger.print(f"[warn]{self.logger.escape(str(result.error))}[/]")
+                input.prev_session()
 
             elif isinstance(result, beatshell.CompleteResult):
+                input.record_command()
                 yield from self.execute(result.command).join()
                 input.new_session()
 

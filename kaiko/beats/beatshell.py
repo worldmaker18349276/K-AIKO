@@ -772,7 +772,7 @@ class BeatInput:
         self.state = "FIN"
         self.lock = threading.RLock()
         self.modified_event = 0
-        self.new_session(False)
+        self.new_session()
 
     @property
     def history_path(self):
@@ -843,18 +843,9 @@ class BeatInput:
 
     @locked
     @onstate("FIN")
-    def new_session(self, record_current=True):
+    def new_session(self):
         r"""Start a new session of input.
-
-        Parameters
-        ----------
-        record_current : bool, optional
-            Recording current input state.
         """
-        if record_current:
-            command = "".join(self.buffer).strip()
-            self.write_history(command)
-
         self.command = self.promptable()
 
         self.buffers = self.read_history()
@@ -868,6 +859,10 @@ class BeatInput:
         self.cancel_hint()
         self.clear_result()
         self.state = "EDIT"
+
+    def record_command(self):
+        command = "".join(self.buffer).strip()
+        self.write_history(command)
 
     def write_history(self, command):
         self.history_path.touch()
