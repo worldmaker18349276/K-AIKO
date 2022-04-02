@@ -395,9 +395,12 @@ class DevicesCommand:
 
         def handler(arg):
             _, time, keyname, keycode = arg
+            keycode = logger.escape(keycode)
+            keycode = keycode.replace("\n", logger.backslashreplace("\n"))
+            keycode = keycode.replace("\t", logger.backslashreplace("\t"))
             logger.clear_line()
             logger.print(
-                f"[[{time:07.3f} s]] {logger.emph(keyname)} '{logger.escape(keycode)}'"
+                f"[[{time:07.3f} s]] {logger.emph(keyname)} '{keycode}'"
             )
             logger.print("[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r")
 
