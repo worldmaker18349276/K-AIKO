@@ -141,7 +141,7 @@ class KAIKOMenu:
         yield
 
         # load beatmaps
-        self.reload()
+        self.beatmap_manager.reload()
 
         # execute given command
         if len(sys.argv) > 1:
@@ -172,7 +172,7 @@ class KAIKOMenu:
         r"""Start REPL."""
         preview_handler = self.bgm_controller.preview_handler
         input = beatshell.BeatInput(
-            self,
+            self.get_commands,
             preview_handler,
             self.logger.rich,
             self.workspace.cache_dir,
@@ -283,6 +283,14 @@ class KAIKOMenu:
         self.logger.print()
         self.logger.print(banner_markup)
 
+    def get_commands(self):
+        return cmd.SubCommandParser(RootCommand(self))
+
+
+class RootCommand:
+    def __init__(self, menu):
+        self.menu = menu
+
     # beatmaps
 
     @cmd.function_command
@@ -297,16 +305,16 @@ class KAIKOMenu:
         beatmaps folder can be accessed.
         """
 
-        if not self.beatmap_manager.is_beatmap(beatmap):
-            self.logger.print("[warn]Not a beatmap.[/]")
+        if not self.menu.beatmap_manager.is_beatmap(beatmap):
+            self.menu.logger.print("[warn]Not a beatmap.[/]")
             return
 
         return KAIKOPlay(
-            self.workspace,
-            self.workspace.beatmaps_dir / beatmap,
+            self.menu.workspace,
+            self.menu.workspace.beatmaps_dir / beatmap,
             start,
-            self.profiles,
-            self.logger,
+            self.menu.profiles,
+            self.menu.logger,
         )
 
     @cmd.function_command
@@ -320,7 +328,7 @@ class KAIKOMenu:
         """
 
         return KAIKOLoop(
-            pattern, tempo, offset, self.workspace, self.profiles, self.logger,
+            pattern, tempo, offset, self.menu.workspace, self.menu.profiles, self.menu.logger,
         )
 
     @loop.arg_parser("pattern")
@@ -331,7 +339,7 @@ class KAIKOMenu:
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        return self.beatmap_manager.make_parser()
+        return self.menu.beatmap_manager.make_parser()
 
     @play.arg_parser("start")
     def _play_start_parser(self, beatmap):
@@ -343,7 +351,7 @@ class KAIKOMenu:
 
         usage: [cmd]reload[/]
         """
-        self.beatmap_manager.reload()
+        self.menu.beatmap_manager.reload()
 
     @cmd.function_command
     def add(self, beatmap):
@@ -357,7 +365,7 @@ class KAIKOMenu:
            the terminal to paste its path.
         """
 
-        self.beatmap_manager.add(beatmap)
+        self.menu.beatmap_manager.add(beatmap)
 
     @add.arg_parser("beatmap")
     def _add_beatmap_parser(self):
@@ -373,63 +381,65 @@ class KAIKOMenu:
                beatmap you want to remove.
         """
 
-        self.beatmap_manager.remove(beatmap)
+        self.menu.beatmap_manager.remove(beatmap)
 
     @remove.arg_parser("beatmap")
     def _remove_beatmap_parser(self):
-        return self.beatmap_manager.make_parser()
+        return self.menu.beatmap_manager.make_parser()
+
+    # bgm
 
     @cmd.subcommand
     def bgm(self):
         """Subcommand to control background music."""
-        return BGMCommand(self.bgm_controller, self.beatmap_manager, self.logger)
+        return BGMCommand(self.menu.bgm_controller, self.menu.beatmap_manager, self.menu.logger)
 
     # devices
 
     @cmd.subcommand
     def devices(self):
         """Subcommand to manage devices."""
-        return DevicesCommand(self.profiles, self.logger, self.manager)
+        return DevicesCommand(self.menu.profiles, self.menu.logger, self.menu.manager)
 
     # profiles
 
     @cmd.subcommand
     def profiles(self):
         """Subcommand to manage profiles and configurations."""
-        return ProfilesCommand(self.profiles, self.logger)
+        return ProfilesCommand(self.menu.profiles, self.menu.logger)
 
     # system
 
     @cmd.function_command
     def cd(self, path):
-        self.workspace.cd(path, self.logger)
+        self.menu.workspace.cd(path, self.menu.logger)
 
     @cmd.function_command
     def ls(self):
-        self.workspace.ls(self.logger)
+        self.menu.workspace.ls(self.menu.logger)
 
     @cmd.function_command
     def cat(self, path):
-        abspath = self.workspace.get(path, self.logger)
+        abspath = self.menu.workspace.get(path, self.menu.logger)
 
         try:
             content = abspath.read_text()
         except UnicodeDecodeError:
-            self.logger.print("[warn]Cannot read binary file.[/]")
+            self.menu.logger.print("[warn]Cannot read binary file.[/]")
             return
 
-        code = self.logger.format_code(
-            content, title=str(self.workspace.current / path)
+        code = self.menu.logger.format_code(
+            content, title=str(self.menu.workspace.current / path)
         )
-        self.logger.print(code)
+        self.menu.logger.print(code)
 
     @cd.arg_parser("path")
     def _cd_path_parser(self):
-        return cmd.PathParser(self.workspace.root / self.workspace.current, type="dir")
+        return cmd.PathParser(self.menu.workspace.root / self.menu.workspace.current, type="dir")
 
     @cat.arg_parser("path")
     def _cat_path_parser(self):
-        return cmd.PathParser(self.workspace.root / self.workspace.current, type="file")
+        return cmd.PathParser(self.menu.workspace.root / self.menu.workspace.current, type="file")
 
     @cmd.function_command
     def clean(self, bottom: bool = False):
@@ -440,7 +450,7 @@ class KAIKOMenu:
                           bool, move to bottom or
                            not; default is False.
         """
-        self.logger.clear(bottom)
+        self.menu.logger.clear(bottom)
 
     @cmd.function_command
     @dn.datanode
@@ -449,13 +459,13 @@ class KAIKOMenu:
 
         usage: [cmd]bye[/]
         """
-        if self.profiles.is_changed():
-            yes = yield from self.logger.ask(
+        if self.menu.profiles.is_changed():
+            yes = yield from self.menu.logger.ask(
                 "Exit without saving current configuration?"
             ).join()
             if not yes:
                 return
-        self.logger.print("Bye~")
+        self.menu.logger.print("Bye~")
         raise KeyboardInterrupt
 
     @cmd.function_command
@@ -465,13 +475,13 @@ class KAIKOMenu:
 
         usage: [cmd]bye_forever[/]
         """
-        logger = self.logger
+        logger = self.menu.logger
 
         logger.print("This command will clean up all your data.")
 
         yes = yield from logger.ask("Do you really want to do that?", False).join()
         if yes:
-            self.workspace.remove(logger)
+            self.menu.workspace.remove(logger)
             logger.print("Good luck~")
             raise KeyboardInterrupt
 

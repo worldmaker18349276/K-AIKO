@@ -676,7 +676,9 @@ class BeatInput:
 
     Attributes
     ----------
-    command : commands.RootCommandParser
+    promptable : function
+        The function to produce command parser for beatshell.
+    command : commands.CommandParser
         The root command parser for beatshell.
     preview_handler : function
         A function to preview beatmap.
@@ -737,8 +739,8 @@ class BeatInput:
 
         Parameters
         ----------
-        promptable : object
-            The root command.
+        promptable : function
+            The function to produce command parser.
         preview_handler : function
         rich : markups.RichParser
         cache_dir : Path
@@ -748,7 +750,7 @@ class BeatInput:
         devices_settings_getter : engines.DevicesSettings
             The settings getter of devices.
         """
-        self.command = cmd.RootCommandParser(promptable)
+        self.promptable = promptable
         self.preview_handler = preview_handler
         self.rich = rich
         self.cache_dir = cache_dir
@@ -852,6 +854,8 @@ class BeatInput:
         if record_current:
             command = "".join(self.buffer).strip()
             self.write_history(command)
+
+        self.command = self.promptable()
 
         self.buffers = self.read_history()
         self.buffers.append([])
