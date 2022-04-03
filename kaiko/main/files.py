@@ -224,8 +224,15 @@ class FileManager:
             logger.print("[warn]Is not a directory[/]")
             return
 
+        if not path.is_absolute():
+            currpath = self.current / path
+        elif path.is_relative_to(self.root):
+            currpath = path.relative_to(self.root)
+        else:
+            currpath = abspath.relative_to(self.root)
+
         # don't resolve symlink
-        self.current = Path(os.path.normpath(str(self.current / path)))
+        self.current = Path(os.path.normpath(str(currpath)))
 
     def ls(self, logger):
         for child in (self.root / self.current).resolve().iterdir():
