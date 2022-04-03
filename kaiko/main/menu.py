@@ -246,6 +246,7 @@ class KAIKOMenu:
         path = str(self.workspace.current)
         if path == ".":
             path = ""
+        path = os.path.join("$KAIKO", path)
         path = self.logger.escape(path, type="all")
 
         profile_is_changed = self.profiles.is_changed()

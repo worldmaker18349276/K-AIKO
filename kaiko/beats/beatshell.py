@@ -562,8 +562,8 @@ class BeatShellSettings(cfg.Configurable):
             "[color=blue]⚙ [weight=bold][slot=profile_name/][/][/]*",
         )
         path: Tuple[str, str] = (
-            "[color=cyan]⛩ [weight=bold]/[slot=current_path/][/][/]",
-            "[color=cyan]⛩ [weight=dim]/[slot=current_path/][/][/]",
+            "[color=cyan]⛩ [weight=bold][slot=current_path/][/][/]",
+            "[color=cyan]⛩ [weight=dim][slot=current_path/][/][/]",
         )
 
     @cfg.subconfig
