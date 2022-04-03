@@ -302,16 +302,22 @@ class PathParser(ArgumentParser):
                 "Path does not exist" + ("\n" + desc if desc is not None else "")
             )
 
-        if self.type in ["dir", "all"] and not os.path.isdir(path):
+        if self.type == "dir" and not os.path.isdir(path):
             desc = self.desc()
             raise CommandParseError(
                 "Not a directory" + ("\n" + desc if desc is not None else "")
             )
 
-        if self.type in ["file", "all"] and not os.path.isfile(path):
+        if self.type == "file" and not os.path.isfile(path):
             desc = self.desc()
             raise CommandParseError(
                 "Not a file" + ("\n" + desc if desc is not None else "")
+            )
+
+        if self.type == "all" and not os.path.isdir(path) and not os.path.isfile(path):
+            desc = self.desc()
+            raise CommandParseError(
+                "Not a directory or a file" + ("\n" + desc if desc is not None else "")
             )
 
         return Path(token)
