@@ -541,12 +541,23 @@ class KAIKOBGMController:
         self._action_queue.put(StopPreview())
 
     def preview_handler(self, token):
-        path = token and Path(token)
-        song = path and self.beatmap_manager.get_song(path)
-        if song is not None:
-            self.preview(song)
-        else:
+        if token is None:
             self.stop_preview()
+            return
+
+        path = Path(token)
+
+        if not self.beatmap_manager.is_beatmap(path):
+            self.stop_preview()
+            return
+
+        song = self.beatmap_manager.get_song(path)
+
+        if song is None:
+            self.stop_preview()
+            return
+
+        self.preview(song)
 
 
 class BGMCommand:
