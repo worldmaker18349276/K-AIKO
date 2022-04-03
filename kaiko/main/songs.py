@@ -163,39 +163,81 @@ class BeatmapManager:
         songs = [self.get_song(path) for path in self._beatmaps.keys()]
         return [song for song in songs if song is not None]
 
-    def make_parser(self):
-        return BeatmapParser(self, self.logger)
+    def make_parser(self, root=".", type="file"):
+        return BeatmapParser(root, type, self, self.logger)
 
 
-class BeatmapParser(cmd.TreeParser):
-    def __init__(self, beatmap_manager, logger):
-        super().__init__(BeatmapParser.make_tree(beatmap_manager._beatmaps))
+class BeatmapParser(cmd.PathParser):
+    def __init__(self, root, type, beatmap_manager, logger):
+        super().__init__(root, type=type, desc="It should be a path to the beatmap file")
         self.beatmap_manager = beatmap_manager
         self.logger = logger
 
-    @staticmethod
-    def make_tree(beatmapsets):
-        tree = {}
-        for beatmapset_path, beatmapset in beatmapsets.items():
-            subtree = {}
-            subtree[""] = Path
-            for beatmap_path in beatmapset:
-                subtree[str(beatmap_path.relative_to(beatmapset_path))] = Path
-            tree[os.path.join(str(beatmapset_path), "")] = subtree
-        return tree
+    def parse(self, token):
+        path = super().parse(token)
+        path = Path(self.root) / path
+
+        try:
+            path = path.resolve(strict=True)
+        except:
+            raise cmd.CommandParseError(f"Failed to resolve path: {path!s}")
+
+        if not path.is_relative_to(self.beatmap_manager.beatmaps_dir):
+            desc = self.desc()
+            raise cmd.CommandParseError(
+                "Out of beatmaps directory" + ("\n" + desc if desc is not None else "")
+            )
+
+        path = path.relative_to(self.beatmap_manager.beatmaps_dir)
+        is_beatmapset = self.beatmap_manager.is_beatmapset(path)
+        is_beatmap = self.beatmap_manager.is_beatmap(path)
+
+        if self.type == "dir" and not is_beatmapset:
+            desc = self.desc()
+            raise cmd.CommandParseError(
+                "Not a beatmapset" + ("\n" + desc if desc is not None else "")
+            )
+
+        if self.type == "file" and not is_beatmap:
+            desc = self.desc()
+            raise cmd.CommandParseError(
+                "Not a beatmap file" + ("\n" + desc if desc is not None else "")
+            )
+
+        if self.type == "all" and not is_beatmapset and not is_beatmap:
+            desc = self.desc()
+            raise cmd.CommandParseError(
+                "Not a beatmapset or a beatmap file" + ("\n" + desc if desc is not None else "")
+            )
+
+        return path
 
     def info(self, token):
-        path = Path(token)
+        path = Path(self.root) / (token or ".")
 
-        if self.beatmap_manager.is_beatmap(path):
-            beatmap = self.beatmap_manager.get_beatmap_metadata(path)
-            if beatmap is None or not beatmap.info.strip():
-                return None
-            data = dict(
-                tuple(line.split(":", maxsplit=1))
-                for line in beatmap.info.strip().splitlines()
-            )
-            return "[rich]" + self.logger.format_dict(data, show_border=False)
+        try:
+            path = path.resolve(strict=True)
+        except:
+            return None
+
+        if not path.is_relative_to(self.beatmap_manager.beatmaps_dir):
+            return None
+
+        path = path.relative_to(self.beatmap_manager.beatmaps_dir)
+
+        if not self.beatmap_manager.is_beatmap(path):
+            return None
+
+        beatmap = self.beatmap_manager.get_beatmap_metadata(path)
+
+        if beatmap is None or not beatmap.info.strip():
+            return None
+
+        data = dict(
+            tuple(line.split(":", maxsplit=1))
+            for line in beatmap.info.strip().splitlines()
+        )
+        return "[rich]" + self.logger.format_dict(data, show_border=False)
 
 
 @dataclasses.dataclass(frozen=True)
