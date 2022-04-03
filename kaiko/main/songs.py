@@ -169,9 +169,27 @@ class BeatmapManager:
 
 class BeatmapParser(cmd.PathParser):
     def __init__(self, root, type, beatmap_manager, logger):
-        super().__init__(root, type=type, desc="It should be a path to the beatmap file")
+        super().__init__(root, type=type, desc="It should be a path to the beatmap file", filter=self.is_beatmap)
         self.beatmap_manager = beatmap_manager
         self.logger = logger
+
+    def is_beatmap(self, path):
+        path = Path(path)
+
+        try:
+            path = path.resolve(strict=True)
+        except:
+            return False
+
+        if not path.is_relative_to(self.beatmap_manager.beatmaps_dir):
+            return False
+
+        path = path.relative_to(self.beatmap_manager.beatmaps_dir)
+
+        return (
+            self.beatmap_manager.is_beatmapset(path)
+            or self.beatmap_manager.is_beatmap(path)
+        )
 
     def parse(self, token):
         path = super().parse(token)

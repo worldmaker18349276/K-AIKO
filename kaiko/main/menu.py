@@ -436,7 +436,8 @@ class BeatmapCommand:
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        return self.menu.beatmap_manager.make_parser()
+        current = self.menu.workspace.root / self.menu.workspace.current
+        return self.menu.beatmap_manager.make_parser(current, type="file")
 
     @play.arg_parser("start")
     def _play_start_parser(self, beatmap):
@@ -482,7 +483,8 @@ class BeatmapCommand:
 
     @remove.arg_parser("beatmap")
     def _remove_beatmap_parser(self):
-        return self.menu.beatmap_manager.make_parser()
+        current = self.menu.workspace.root / self.menu.workspace.current
+        return self.menu.beatmap_manager.make_parser(current, type="all")
 
 
 class KAIKOPlay:

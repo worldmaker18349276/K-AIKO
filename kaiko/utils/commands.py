@@ -263,7 +263,12 @@ class PathParser(ArgumentParser):
     r"""Parse a file path."""
 
     def __init__(
-        self, root=".", type="all", default=inspect.Parameter.empty, desc=None,
+        self,
+        root=".",
+        type="all",
+        default=inspect.Parameter.empty,
+        desc=None,
+        filter=lambda _: True,
     ):
         r"""Contructor.
 
@@ -280,11 +285,15 @@ class PathParser(ArgumentParser):
             The default value of this argument.
         desc : str, optional
             The description of this argument.
+        filter : function, optional
+            The filter function for the valid path, the argument is absolute
+            path in the str type.
         """
         self.root = root
         self.type = type
         self.default = default
         self._desc = desc or "It should be a path"
+        self.filter = filter
 
     def desc(self):
         return self._desc
@@ -302,22 +311,31 @@ class PathParser(ArgumentParser):
                 "Path does not exist" + ("\n" + desc if desc is not None else "")
             )
 
-        if self.type == "dir" and not os.path.isdir(path):
+        isdir = os.path.isdir(path)
+        isfile = os.path.isfile(path)
+
+        if self.type == "dir" and not isdir:
             desc = self.desc()
             raise CommandParseError(
                 "Not a directory" + ("\n" + desc if desc is not None else "")
             )
 
-        if self.type == "file" and not os.path.isfile(path):
+        if self.type == "file" and not isfile:
             desc = self.desc()
             raise CommandParseError(
                 "Not a file" + ("\n" + desc if desc is not None else "")
             )
 
-        if self.type == "all" and not os.path.isdir(path) and not os.path.isfile(path):
+        if self.type == "all" and not isdir and not isfile:
             desc = self.desc()
             raise CommandParseError(
                 "Not a directory or a file" + ("\n" + desc if desc is not None else "")
+            )
+
+        if not self.filter(path):
+            desc = self.desc()
+            raise CommandParseError(
+                "Not a valid file type" + ("\n" + desc if desc is not None else "")
             )
 
         return Path(token)
@@ -336,11 +354,11 @@ class PathParser(ArgumentParser):
         except ValueError:
             return suggestions
 
-        if is_file and self.type in ["file", "all"]:
+        if is_file and self.type in ["file", "all"] and self.filter(currpath):
             suggestions.append((token or ".") + "\000")
 
         # prevent from   a/b/c/.  ->  a/b/c/./
-        if is_dir and self.type in ["dir", "all"] and os.path.basename(token) != ".":
+        if is_dir and self.type in ["dir", "all"] and os.path.basename(token) != "." and self.filter(currpath):
             suggestions.append(os.path.join(token or ".", "") + "\000")
 
         # separate parent and partial child name
@@ -362,7 +380,7 @@ class PathParser(ArgumentParser):
                 sugg = os.path.join(sugg, "")
                 suggestions.append(sugg)
 
-            elif os.path.isfile(subpath) and self.type in ["file", "all"]:
+            elif os.path.isfile(subpath) and self.type in ["file", "all"] and self.filter(subpath):
                 suggestions.append(sugg + "\000")
 
         return suggestions
