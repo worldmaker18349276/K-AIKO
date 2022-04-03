@@ -133,6 +133,7 @@ class FileManager:
         shutil.rmtree(str(self.root))
 
     def get_desc(self, path):
+        path = Path(os.path.expandvars(os.path.expanduser(path)))
         try:
             abspath = path.resolve(strict=True)
         except Exception:
@@ -206,6 +207,7 @@ class FileManager:
             return desc
 
     def cd(self, path, logger):
+        path = Path(os.path.expandvars(os.path.expanduser(path)))
         try:
             abspath = (self.root / self.current / path).resolve(strict=True)
         except Exception:

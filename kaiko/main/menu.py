@@ -86,6 +86,8 @@ class KAIKOMenu:
         workspace = FileManager.create()
         workspace.prepare(logger)
 
+        os.environ["KAIKO"] = str(workspace.root)
+
         # load profiles
         profiles = ProfileManager(workspace.profiles_dir, logger)
         profiles.on_change(

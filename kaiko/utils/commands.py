@@ -298,8 +298,16 @@ class PathParser(ArgumentParser):
     def desc(self):
         return self._desc
 
+    def expand(self, path, root=None):
+        if root is None:
+            root = self.root
+        path = os.path.expanduser(path)
+        path = os.path.expandvars(path)
+        path = os.path.join(root, path or ".")
+        return path
+
     def parse(self, token):
-        path = os.path.join(self.root, token or ".")
+        path = self.expand(token)
         try:
             exists = os.path.lexists(path)
         except ValueError:
@@ -347,7 +355,7 @@ class PathParser(ArgumentParser):
             suggestions.append(str(self.default) + "\000")
 
         # check path
-        currpath = os.path.join(self.root, token or ".")
+        currpath = self.expand(token)
         try:
             is_dir = os.path.isdir(currpath)
             is_file = os.path.isfile(currpath)
@@ -362,10 +370,14 @@ class PathParser(ArgumentParser):
             suggestions.append(os.path.join(token or ".", "") + "\000")
 
         # separate parent and partial child name
-        parent, child = os.path.split(token)
-        parentpath = os.path.join(self.root, parent or ".")
-        if not os.path.isdir(parentpath):
-            return suggestions
+        if is_dir:
+            parent, child = token, ""
+            parentpath = currpath
+        else:
+            parent, child = os.path.split(token)
+            parentpath = self.expand(parent)
+            if not os.path.isdir(parentpath):
+                return suggestions
 
         names = fit(child, os.listdir(parentpath))
         for name in names:
