@@ -684,7 +684,7 @@ class CommandParser:
         """
         raise NotImplementedError
 
-    def build(self, tokens):
+    def build_command(self, tokens):
         r"""Directly build a command from the given tokens.
 
         Parameters
