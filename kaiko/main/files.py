@@ -132,31 +132,32 @@ class FileManager:
         )
         shutil.rmtree(str(self.root))
 
-    def get_desc(self, path):
+    def get_desc(self, path, ret_ind=False):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
         try:
             abspath = path.resolve(strict=True)
         except Exception:
-            return None
+            return None if not ret_ind else ((), None)
 
         if not abspath.is_relative_to(self.root):
-            return None
+            return None if not ret_ind else ((), None)
 
         if not abspath.exists():
-            return None
+            return None if not ret_ind else ((), None)
 
         route = [abspath, *abspath.parents]
         route = route[route.index(self.root)::-1]
 
         desc = None
+        index = ()
         tree = {glob.escape(str(self.root)): self.structure}
         for current_path in route:
             current_relpath = current_path.relative_to(self.root)
 
             if not isinstance(tree, dict):
-                return None
+                return None if not ret_ind else ((), None)
 
-            for pattern, subtree in tree.items():
+            for i, (pattern, subtree) in enumerate(tree.items()):
                 if pattern == ".":
                     continue
 
@@ -168,7 +169,8 @@ class FileManager:
                         if desc_func is None or isinstance(desc_func, str)
                         else desc_func(path)
                     )
-                    return desc
+                    index = (*index, i)
+                    return desc if not ret_ind else (index, desc)
 
                 else:
                     if not current_path.match(pattern):
@@ -198,13 +200,14 @@ class FileManager:
                         continue
 
                     tree = subtree
+                    index = (*index, i)
                     break
 
             else:
-                return None
+                return None if not ret_ind else ((), None)
 
         else:
-            return desc
+            return desc if not ret_ind else (index, desc)
 
     def cd(self, path, logger):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
@@ -237,6 +240,7 @@ class FileManager:
         self.current = Path(os.path.normpath(str(currpath)))
 
     def ls(self, logger):
+        res = []
         for child in (self.root / self.current).resolve().iterdir():
             if child.is_symlink():
                 name = logger.escape(str(child.readlink()), type="all")
@@ -263,12 +267,19 @@ class FileManager:
                 linkname = logger.escape(child.name, type="all")
                 name = f"[file_link]{linkname}[/]{name}"
 
-            desc = self.get_desc(self.root / self.current / child.name)
+            ind, desc = self.get_desc(self.root / self.current / child.name, ret_ind=True)
             if desc is None:
                 name = f"[file_unknown]{name}[/]"
+                ind = (float("inf"),)
             else:
                 name = f"{name}[file_desc]{desc}[/]"
             name = f"[file_item]{name}[/]"
+
+            res.append((ind, name))
+
+        res = sorted(res, key=lambda e: e[0])
+
+        for _, name in res:
             logger.print(name)
 
     def get(self, path, logger):
