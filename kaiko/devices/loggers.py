@@ -136,6 +136,7 @@ class LoggerSettings(cfg.Configurable):
         script: str = "[weight=bold][color=green][slot/][/][/]"
         beatmap: str = "[weight=bold][color=magenta][slot/][/][/]"
         sound: str = "[color=magenta][slot/][/]"
+        link: str = "[color=cyan][slot/][/] -> "
         normal: str = "[slot/]"
         other: str = "[slot/]"
 
@@ -204,6 +205,7 @@ class Logger:
         self.rich.add_pair_template("file_script", logger_settings.files.script)
         self.rich.add_pair_template("file_beatmap", logger_settings.files.beatmap)
         self.rich.add_pair_template("file_sound", logger_settings.files.sound)
+        self.rich.add_pair_template("file_link", logger_settings.files.link)
         self.rich.add_pair_template("file_normal", logger_settings.files.normal)
         self.rich.add_pair_template("file_other", logger_settings.files.other)
 

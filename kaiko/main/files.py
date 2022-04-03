@@ -238,7 +238,10 @@ class FileManager:
 
     def ls(self, logger):
         for child in (self.root / self.current).resolve().iterdir():
-            name = logger.escape(child.name, type="all")
+            if child.is_symlink():
+                name = logger.escape(str(child.readlink()), type="all")
+            else:
+                name = logger.escape(child.name, type="all")
 
             if child.is_dir():
                 name = f"[file_dir]{name}[/]"
@@ -255,6 +258,10 @@ class FileManager:
 
             else:
                 name = f"[file_other]{name}[/]"
+
+            if child.is_symlink():
+                linkname = logger.escape(child.name, type="all")
+                name = f"[file_link]{linkname}[/]{name}"
 
             desc = self.get_desc(self.root / self.current / child.name)
             if desc is None:
