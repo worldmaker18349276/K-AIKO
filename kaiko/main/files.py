@@ -275,16 +275,24 @@ class FileManager:
 
             if desc is None:
                 name = f"[file_unknown]{name}[/]"
+                desc = ""
             else:
-                name = f"{name}[file_desc]{desc}[/]"
+                desc = f"[file_desc]{desc}[/]"
             name = f"[file_item]{name}[/]"
 
-            res.append((ordering_key, name))
+            name = logger.rich.parse(name)
+            width = logger.rich.widthof(name)
+            desc = logger.rich.parse(desc)
+
+            res.append((ordering_key, width, name, desc))
 
         res = sorted(res, key=lambda e: e[0])
+        max_width = max(width for _, width, _, _ in res)
 
-        for _, name in res:
-            logger.print(name)
+        for _, width, name, desc in res:
+            padding = " "*(max_width - width) if width != -1 else " "
+            logger.print(name, end=padding)
+            logger.print(desc, end="\n")
 
     def get(self, path, logger):
         try:

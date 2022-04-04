@@ -1038,13 +1038,33 @@ class RichParser:
         return tag
 
     def widthof(self, text):
-        width = 0
-        for ch in text:
-            w = wcwidth.wcwidth(ch, self.unicode_version)
-            if w == -1:
+        if isinstance(text, Markup):
+            if isinstance(text, Text):
+                return self.widthof(text.string)
+
+            elif isinstance(text, (CSI, ControlCharacter)):
                 return -1
-            width += w
-        return width
+
+            elif isinstance(text, (Group, SGR)):
+                width = 0
+                for child in text.children:
+                    w = self.widthof(child)
+                    if w == -1:
+                        return -1
+                    width += w
+                return width
+
+            else:
+                raise TypeError(f"unknown markup type: {type(markup)}")
+
+        else:
+            width = 0
+            for ch in text:
+                w = wcwidth.wcwidth(ch, self.unicode_version)
+                if w == -1:
+                    return -1
+                width += w
+            return width
 
 
 class RichRenderer:

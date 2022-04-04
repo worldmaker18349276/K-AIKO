@@ -130,7 +130,7 @@ class LoggerSettings(cfg.Configurable):
         """
         item: str = "• [slot/]"
         unknown: str = "[weight=dim][slot/][/]"
-        desc: str = "\t[weight=dim][slot/][/]"
+        desc: str = "  [weight=dim][slot/][/]"
 
         dir: str = "[weight=bold][color=blue][slot/][/][/]/"
         script: str = "[weight=bold][color=green][slot/][/][/]"
