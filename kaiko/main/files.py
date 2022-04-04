@@ -133,17 +133,20 @@ class FileManager:
         shutil.rmtree(str(self.root))
 
     def get_desc(self, path, ret_ind=False):
+        if not ret_ind:
+            return self.get_desc(path, ret_ind=True)[1]
+
         path = Path(os.path.expandvars(os.path.expanduser(path)))
         try:
             abspath = path.resolve(strict=True)
         except Exception:
-            return None if not ret_ind else ((), None)
+            return (), None
 
         if not abspath.is_relative_to(self.root):
-            return None if not ret_ind else ((), None)
+            return (), None
 
         if not abspath.exists():
-            return None if not ret_ind else ((), None)
+            return (), None
 
         route = [abspath, *abspath.parents]
         route = route[route.index(self.root)::-1]
@@ -155,7 +158,7 @@ class FileManager:
             current_relpath = current_path.relative_to(self.root)
 
             if not isinstance(tree, dict):
-                return None if not ret_ind else ((), None)
+                return (), None
 
             for i, (pattern, subtree) in enumerate(tree.items()):
                 if pattern == ".":
@@ -170,7 +173,7 @@ class FileManager:
                         else desc_func(path)
                     )
                     index = (*index, i)
-                    return desc if not ret_ind else (index, desc)
+                    return index, desc
 
                 else:
                     if not current_path.match(pattern):
@@ -204,10 +207,10 @@ class FileManager:
                     break
 
             else:
-                return None if not ret_ind else ((), None)
+                return (), None
 
         else:
-            return desc if not ret_ind else (index, desc)
+            return index, desc
 
     def cd(self, path, logger):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
@@ -268,14 +271,15 @@ class FileManager:
                 name = f"[file_link]{linkname}[/]{name}"
 
             ind, desc = self.get_desc(self.root / self.current / child.name, ret_ind=True)
+            ordering_key = (desc is None, ind, child.is_symlink(), not child.is_dir(), child.suffix, child.stem)
+
             if desc is None:
                 name = f"[file_unknown]{name}[/]"
-                ind = (float("inf"),)
             else:
                 name = f"{name}[file_desc]{desc}[/]"
             name = f"[file_item]{name}[/]"
 
-            res.append((ind, name))
+            res.append((ordering_key, name))
 
         res = sorted(res, key=lambda e: e[0])
 
