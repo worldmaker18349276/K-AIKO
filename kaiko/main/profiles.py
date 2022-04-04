@@ -64,12 +64,12 @@ class ProfileManager:
     settings_name = "settings"
     config_type = KAIKOSettings
 
-    def __init__(self, path, logger):
-        if isinstance(path, str):
-            path = Path(path)
+    def __init__(self, profiles_dir, logger):
+        if isinstance(profiles_dir, str):
+            profiles_dir = Path(profiles_dir)
 
         self.logger = logger
-        self.path = path
+        self.profiles_dir = profiles_dir
         self.profiles = []
         self.default_name = None
         self.current_name = None
@@ -110,12 +110,12 @@ class ProfileManager:
     # profiles management
 
     def is_uptodate(self):
-        if not self.path.exists():
+        if not self.profiles_dir.exists():
             return False
-        return self._profiles_mtime == os.stat(str(self.path)).st_mtime
+        return self._profiles_mtime == os.stat(str(self.profiles_dir)).st_mtime
 
     def is_changed(self):
-        current_path = self.path / (self.current_name + self.extension)
+        current_path = self.profiles_dir / (self.current_name + self.extension)
         if not current_path.exists():
             return True
         return self._current_mtime != os.stat(str(current_path)).st_mtime
@@ -136,22 +136,22 @@ class ProfileManager:
 
         logger.print("[data/] Update profiles...")
 
-        if not self.path.exists():
+        if not self.profiles_dir.exists():
             logger.print(
-                f"[warn]The profile directory doesn't exist: {logger.emph(self.path.as_uri())}[/]"
+                f"[warn]The profile directory doesn't exist: {logger.emph(self.profiles_dir.as_uri())}[/]"
             )
             return False
 
-        if not self.path.is_dir():
+        if not self.profiles_dir.is_dir():
             logger.print(
-                f"[warn]Wrong file type for profile directory: {logger.emph(self.path.as_uri())}[/]"
+                f"[warn]Wrong file type for profile directory: {logger.emph(self.profiles_dir.as_uri())}[/]"
             )
             return False
 
-        profiles_mtime = os.stat(str(self.path)).st_mtime
+        profiles_mtime = os.stat(str(self.profiles_dir)).st_mtime
 
         # update default_name
-        default_meta_path = self.path / self.default_meta
+        default_meta_path = self.profiles_dir / self.default_meta
         if default_meta_path.exists():
             if not default_meta_path.is_file():
                 logger.print(
@@ -163,7 +163,7 @@ class ProfileManager:
         # update profiles
         self.profiles = [
             subpath.stem
-            for subpath in self.path.iterdir()
+            for subpath in self.profiles_dir.iterdir()
             if subpath.suffix == self.extension
         ]
         self._profiles_mtime = profiles_mtime
@@ -182,13 +182,13 @@ class ProfileManager:
             f"[data/] Set {logger.emph(self.current_name, type='all')} as the default profile..."
         )
 
-        if not self.path.exists():
+        if not self.profiles_dir.exists():
             logger.print(
-                f"[warn]No such profile directory: {logger.emph(self.path.as_uri())}[/]"
+                f"[warn]No such profile directory: {logger.emph(self.profiles_dir.as_uri())}[/]"
             )
             return False
 
-        default_meta_path = self.path / self.default_meta
+        default_meta_path = self.profiles_dir / self.default_meta
         if default_meta_path.exists() and not default_meta_path.is_file():
             logger.print(
                 f"[warn]Wrong file type for default profile: {logger.emph(default_meta_path.as_uri())}[/]"
@@ -209,14 +209,14 @@ class ProfileManager:
         """
         logger = self.logger
 
-        current_path = self.path / (self.current_name + self.extension)
+        current_path = self.profiles_dir / (self.current_name + self.extension)
         logger.print(
             f"[data/] Save configuration to {logger.emph(current_path.as_uri())}..."
         )
 
-        if not self.path.exists():
+        if not self.profiles_dir.exists():
             logger.print(
-                f"[warn]The profile directory doesn't exist: {logger.emph(self.path.as_uri())}[/]"
+                f"[warn]The profile directory doesn't exist: {logger.emph(self.profiles_dir.as_uri())}[/]"
             )
             return False
 
@@ -249,7 +249,7 @@ class ProfileManager:
         """
         logger = self.logger
 
-        current_path = self.path / (self.current_name + self.extension)
+        current_path = self.profiles_dir / (self.current_name + self.extension)
         logger.print(
             f"[data/] Load configuration from {logger.emph(current_path.as_uri())}..."
         )
@@ -384,7 +384,7 @@ class ProfileManager:
         """
         logger = self.logger
 
-        target_path = self.path / (name + self.extension)
+        target_path = self.profiles_dir / (name + self.extension)
         logger.print(f"[data/] Delete profile {logger.emph(target_path.as_uri())}...")
 
         if name not in self.profiles:
@@ -419,8 +419,8 @@ class ProfileManager:
         if self.current_name == name:
             return True
 
-        current_path = self.path / (self.current_name + self.extension)
-        target_path = self.path / (name + self.extension)
+        current_path = self.profiles_dir / (self.current_name + self.extension)
+        target_path = self.profiles_dir / (name + self.extension)
         current_name = logger.emph(current_path.as_uri())
         target_name = logger.emph(target_path.as_uri())
         logger.print(f"[data/] Rename profile {current_name} to {target_name}...")
@@ -492,7 +492,7 @@ class ProfilesCommand:
         title = self.profiles.get_title()
 
         if diff:
-            current_path = self.profiles.path / (
+            current_path = self.profiles.profiles_dir / (
                 self.profiles.current_name + self.profiles.extension
             )
             if not current_path.exists() or not current_path.is_file():

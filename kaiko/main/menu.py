@@ -40,23 +40,23 @@ class KAIKOMenu:
     update_interval = 0.01
     version = __version__
 
-    def __init__(self, profiles, workspace, manager, logger):
+    def __init__(self, profiles_manager, file_manager, manager, logger):
         r"""Constructor.
 
         Parameters
         ----------
-        profiles : ProfileManager
-        workspace : FileManager
+        profiles_manager : ProfileManager
+        file_manager : FileManager
         manager : PyAudio
         logger : loggers.Logger
         """
-        self.profiles = profiles
-        self.workspace = workspace
+        self.profiles_manager = profiles_manager
+        self.file_manager = file_manager
         self.manager = manager
         self.logger = logger
-        self.beatmap_manager = BeatmapManager(workspace.beatmaps_dir, logger)
+        self.beatmap_manager = BeatmapManager(file_manager.beatmaps_dir, logger)
         self.bgm_controller = KAIKOBGMController(
-            logger, self.beatmap_manager, lambda: self.profiles.current.devices.mixer
+            logger, self.beatmap_manager, lambda: self.profiles_manager.current.devices.mixer
         )
 
     @classmethod
@@ -83,24 +83,24 @@ class KAIKOMenu:
         logger = log.Logger()
 
         # load workspace
-        workspace = FileManager.create()
-        workspace.prepare(logger)
+        file_manager = FileManager.create()
+        file_manager.prepare(logger)
 
-        os.environ["KAIKO"] = str(workspace.root)
+        os.environ["KAIKO"] = str(file_manager.root)
 
         # load profiles
-        profiles = ProfileManager(workspace.profiles_dir, logger)
-        profiles.on_change(
+        profiles_manager = ProfileManager(file_manager.profiles_dir, logger)
+        profiles_manager.on_change(
             lambda settings: logger.recompile_style(
                 terminal_settings=settings.devices.terminal,
                 logger_settings=settings.devices.logger,
             )
         )
-        profiles.update()
+        profiles_manager.update()
 
-        succ = profiles.use()
+        succ = profiles_manager.use()
         if not succ:
-            succ = profiles.new()
+            succ = profiles_manager.new()
             if not succ:
                 raise RuntimeError("Fail to load profile")
 
@@ -109,30 +109,30 @@ class KAIKOMenu:
 
         # deterimine unicode version
         if (
-            profiles.current.devices.terminal.unicode_version == "auto"
+            profiles_manager.current.devices.terminal.unicode_version == "auto"
             and "UNICODE_VERSION" not in os.environ
         ):
             version = yield from determine_unicode_version(logger).join()
             if version is not None:
                 os.environ["UNICODE_VERSION"] = version
-                profiles.current.devices.terminal.unicode_version = version
-                profiles.set_as_changed()
+                profiles_manager.current.devices.terminal.unicode_version = version
+                profiles_manager.set_as_changed()
             logger.print()
 
         # fit screen size
         size = shutil.get_terminal_size()
-        width = profiles.current.devices.terminal.best_screen_size
+        width = profiles_manager.current.devices.terminal.best_screen_size
         if size.columns < width:
             logger.print("[hint/] Your screen size seems too small.")
 
-            yield from fit_screen(logger, profiles.current.devices.terminal).join()
+            yield from fit_screen(logger, profiles_manager.current.devices.terminal).join()
 
         # load PyAudio
         logger.print("[info/] Load PyAudio...")
         logger.print()
 
         with prepare_pyaudio(logger) as manager:
-            menu = cls(profiles, workspace, manager, logger)
+            menu = cls(profiles_manager, file_manager, manager, logger)
             yield from menu.run().join()
 
     @dn.datanode
@@ -177,9 +177,9 @@ class KAIKOMenu:
             self.get_commands,
             preview_handler,
             self.logger.rich,
-            self.workspace.cache_dir,
-            lambda: self.profiles.current.shell,
-            lambda: self.profiles.current.devices,
+            self.file_manager.cache_dir,
+            lambda: self.profiles_manager.current.shell,
+            lambda: self.profiles_manager.current.devices,
         )
         while True:
             self.print_banner()
@@ -238,19 +238,19 @@ class KAIKOMenu:
     @property
     def settings(self):
         r"""Current settings."""
-        return self.profiles.current
+        return self.profiles_manager.current
 
     def print_banner(self):
-        username = self.logger.escape(self.workspace.username, type="all")
-        profile = self.logger.escape(self.profiles.current_name, type="all")
-        path = str(self.workspace.current)
+        username = self.logger.escape(self.file_manager.username, type="all")
+        profile = self.logger.escape(self.profiles_manager.current_name, type="all")
+        path = str(self.file_manager.current)
         if path == ".":
             path = ""
         path = os.path.join("$KAIKO", path)
         path = self.logger.escape(path, type="all")
 
-        profile_is_changed = self.profiles.is_changed()
-        path_is_known = self.workspace.get_desc(self.workspace.root / self.workspace.current) is not None
+        profile_is_changed = self.profiles_manager.is_changed()
+        path_is_known = self.file_manager.get_desc(self.file_manager.root / self.file_manager.current) is not None
 
         user_markup = self.settings.shell.banner.user
         user_markup = self.logger.rich.parse(user_markup, slotted=True)
@@ -289,12 +289,12 @@ class KAIKOMenu:
 
     def get_commands(self):
         commands = []
-        if self.workspace.current == Path("Beatmaps/"):
+        if self.file_manager.current == Path("Beatmaps/"):
             commands.append(BeatmapCommand(self))
-        if self.workspace.current == Path("Devices/"):
-            commands.append(DevicesCommand(self.profiles, self.logger, self.manager))
-        if self.workspace.current == Path("Profiles/"):
-            commands.append(ProfilesCommand(self.profiles, self.logger))
+        if self.file_manager.current == Path("Devices/"):
+            commands.append(DevicesCommand(self.profiles_manager, self.logger, self.manager))
+        if self.file_manager.current == Path("Profiles/"):
+            commands.append(ProfilesCommand(self.profiles_manager, self.logger))
         return cmd.SubCommandParser(*commands, RootCommand(self))
 
 
@@ -306,15 +306,15 @@ class RootCommand:
 
     @cmd.function_command
     def cd(self, path):
-        self.menu.workspace.cd(path, self.menu.logger)
+        self.menu.file_manager.cd(path, self.menu.logger)
 
     @cmd.function_command
     def ls(self):
-        self.menu.workspace.ls(self.menu.logger)
+        self.menu.file_manager.ls(self.menu.logger)
 
     @cmd.function_command
     def cat(self, path):
-        abspath = self.menu.workspace.get(path, self.menu.logger)
+        abspath = self.menu.file_manager.get(path, self.menu.logger)
 
         try:
             content = abspath.read_text()
@@ -323,17 +323,17 @@ class RootCommand:
             return
 
         code = self.menu.logger.format_code(
-            content, title=str(self.menu.workspace.current / path)
+            content, title=str(self.menu.file_manager.current / path)
         )
         self.menu.logger.print(code)
 
     @cd.arg_parser("path")
     def _cd_path_parser(self):
-        return cmd.PathParser(self.menu.workspace.root / self.menu.workspace.current, type="dir")
+        return cmd.PathParser(self.menu.file_manager.root / self.menu.file_manager.current, type="dir")
 
     @cat.arg_parser("path")
     def _cat_path_parser(self):
-        return cmd.PathParser(self.menu.workspace.root / self.menu.workspace.current, type="file")
+        return cmd.PathParser(self.menu.file_manager.root / self.menu.file_manager.current, type="file")
 
     @cmd.function_command
     def clean(self, bottom: bool = False):
@@ -353,7 +353,7 @@ class RootCommand:
 
         usage: [cmd]bye[/]
         """
-        if self.menu.profiles.is_changed():
+        if self.menu.profiles_manager.is_changed():
             yes = yield from self.menu.logger.ask(
                 "Exit without saving current configuration?"
             ).join()
@@ -375,7 +375,7 @@ class RootCommand:
 
         yes = yield from logger.ask("Do you really want to do that?", False).join()
         if yes:
-            self.menu.workspace.remove(logger)
+            self.menu.file_manager.remove(logger)
             logger.print("Good luck~")
             raise KeyboardInterrupt
 
@@ -410,10 +410,10 @@ class BeatmapCommand:
             return
 
         return KAIKOPlay(
-            self.menu.workspace,
-            self.menu.workspace.beatmaps_dir / beatmap,
+            self.menu.file_manager,
+            self.menu.file_manager.beatmaps_dir / beatmap,
             start,
-            self.menu.profiles,
+            self.menu.profiles_manager,
             self.menu.logger,
         )
 
@@ -428,7 +428,7 @@ class BeatmapCommand:
         """
 
         return KAIKOLoop(
-            pattern, tempo, offset, self.menu.workspace, self.menu.profiles, self.menu.logger,
+            pattern, tempo, offset, self.menu.file_manager, self.menu.profiles_manager, self.menu.logger,
         )
 
     @loop.arg_parser("pattern")
@@ -439,7 +439,7 @@ class BeatmapCommand:
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        current = self.menu.workspace.root / self.menu.workspace.current
+        current = self.menu.file_manager.root / self.menu.file_manager.current
         return self.menu.beatmap_manager.make_parser(current, type="file")
 
     @play.arg_parser("start")
@@ -486,23 +486,23 @@ class BeatmapCommand:
 
     @remove.arg_parser("beatmap")
     def _remove_beatmap_parser(self):
-        current = self.menu.workspace.root / self.menu.workspace.current
+        current = self.menu.file_manager.root / self.menu.file_manager.current
         return self.menu.beatmap_manager.make_parser(current, type="all")
 
 
 class KAIKOPlay:
-    def __init__(self, workspace, filepath, start, profiles, logger):
-        self.workspace = workspace
+    def __init__(self, file_manager, filepath, start, profiles_manager, logger):
+        self.file_manager = file_manager
         self.filepath = filepath
         self.start = start
-        self.profiles = profiles
+        self.profiles_manager = profiles_manager
         self.logger = logger
 
     @dn.datanode
     def execute(self, manager):
         logger = self.logger
-        devices_settings = self.profiles.current.devices
-        gameplay_settings = self.profiles.current.gameplay
+        devices_settings = self.profiles_manager.current.devices
+        gameplay_settings = self.profiles_manager.current.gameplay
 
         try:
             beatmap = beatsheets.read(str(self.filepath))
@@ -521,8 +521,8 @@ class KAIKOPlay:
 
             score, devices_settings = yield from beatmap.play(
                 manager,
-                self.workspace.resources_dir,
-                self.workspace.cache_dir,
+                self.file_manager.resources_dir,
+                self.file_manager.cache_dir,
                 self.start,
                 devices_settings,
                 gameplay_settings,
@@ -540,11 +540,11 @@ class KAIKOPlay:
                 ).join()
                 if yes:
                     logger.print("[data/] Update device settings...")
-                    title = self.profiles.get_title()
-                    old = self.profiles.format()
-                    self.profiles.current.devices = devices_settings
-                    self.profiles.set_as_changed()
-                    new = self.profiles.format()
+                    title = self.profiles_manager.get_title()
+                    old = self.profiles_manager.format()
+                    self.profiles_manager.current.devices = devices_settings
+                    self.profiles_manager.set_as_changed()
+                    new = self.profiles_manager.format()
 
                     self.logger.print(f"[data/] Your changes")
                     logger.print(
@@ -553,19 +553,19 @@ class KAIKOPlay:
 
 
 class KAIKOLoop:
-    def __init__(self, pattern, tempo, offset, workspace, profiles, logger):
+    def __init__(self, pattern, tempo, offset, file_manager, profiles_manager, logger):
         self.pattern = pattern
         self.tempo = tempo
         self.offset = offset
-        self.workspace = workspace
-        self.profiles = profiles
+        self.file_manager = file_manager
+        self.profiles_manager = profiles_manager
         self.logger = logger
 
     @dn.datanode
     def execute(self, manager):
         logger = self.logger
-        devices_settings = self.profiles.current.devices
-        gameplay_settings = self.profiles.current.gameplay
+        devices_settings = self.profiles_manager.current.devices
+        gameplay_settings = self.profiles_manager.current.gameplay
 
         try:
             track, width = beatmaps.BeatTrack.parse(self.pattern, ret_width=True)
@@ -585,8 +585,8 @@ class KAIKOLoop:
 
             score, devices_settings = yield from beatmap.play(
                 manager,
-                self.workspace.resources_dir,
-                self.workspace.cache_dir,
+                self.file_manager.resources_dir,
+                self.file_manager.cache_dir,
                 None,
                 devices_settings,
                 gameplay_settings,
@@ -604,11 +604,11 @@ class KAIKOLoop:
                 ).join()
                 if yes:
                     logger.print("[data/] Update device settings...")
-                    title = self.profiles.get_title()
-                    old = self.profiles.format()
-                    self.profiles.current.devices = devices_settings
-                    self.profiles.set_as_changed()
-                    new = self.profiles.format()
+                    title = self.profiles_manager.get_title()
+                    old = self.profiles_manager.format()
+                    self.profiles_manager.current.devices = devices_settings
+                    self.profiles_manager.set_as_changed()
+                    new = self.profiles_manager.format()
 
                     self.logger.print(f"[data/] Your changes")
                     logger.print(
