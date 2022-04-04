@@ -169,11 +169,12 @@ class BeatmapManager:
 
 class BeatmapParser(cmd.PathParser):
     def __init__(self, root, type, beatmap_manager, logger):
-        super().__init__(root, type=type, desc="It should be a path to the beatmap file", filter=self.is_beatmap)
+        desc = "It should be a path to the beatmap file"
+        super().__init__(root, type=type, desc=desc, filter=self.filter)
         self.beatmap_manager = beatmap_manager
         self.logger = logger
 
-    def is_beatmap(self, path):
+    def filter(self, path):
         path = Path(path)
 
         try:
