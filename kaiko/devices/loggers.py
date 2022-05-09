@@ -34,7 +34,7 @@ class LoggerSettings(cfg.Configurable):
         The template of warn block log.
 
     codepoint : str
-        The template of codepoint representation
+        The template of codepoint representation.
     """
     data_icon: str = "[color=bright_green][wide=🖿/][/]"
     info_icon: str = "[color=bright_blue][wide=🛠/][/]"
