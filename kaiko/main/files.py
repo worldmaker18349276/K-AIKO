@@ -287,7 +287,7 @@ class FileManager:
             res.append((ordering_key, width, name, desc))
 
         res = sorted(res, key=lambda e: e[0])
-        max_width = max(width for _, width, _, _ in res)
+        max_width = max((width for _, width, _, _ in res), default=0)
 
         for _, width, name, desc in res:
             padding = " "*(max_width - width) if width != -1 else " "
