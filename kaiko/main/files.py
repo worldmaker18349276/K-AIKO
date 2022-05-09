@@ -151,12 +151,10 @@ class FileManager:
         route = [abspath, *abspath.parents]
         route = route[route.index(self.root)::-1]
 
-        desc = None
+        desc_func = None
         index = ()
         tree = {glob.escape(str(self.root)): self.structure}
         for current_path in route:
-            current_relpath = current_path.relative_to(self.root)
-
             if not isinstance(tree, dict):
                 return (), None
 
@@ -165,52 +163,46 @@ class FileManager:
                     continue
 
                 elif pattern == "**":
-                    # get description
                     desc_func = subtree
-                    desc = (
-                        desc_func
-                        if desc_func is None or isinstance(desc_func, str)
-                        else desc_func(path)
-                    )
-                    index = (*index, i)
-                    return index, desc
+                    curr_index = i
+                    break
 
-                else:
+                elif isinstance(subtree, dict):
+                    if not Path.is_dir(current_path):
+                        continue
+
                     if not current_path.match(pattern):
                         continue
 
-                    # check file type
-                    type_func = (
-                        Path.is_dir
-                        if isinstance(subtree, dict)
-                        else Path.is_file
-                    )
-                    if not type_func(current_path):
+                    desc_func = subtree["."]
+                    curr_index = i
+                    break
+
+                else:
+                    if not Path.is_file(current_path):
                         continue
 
-                    # get description
-                    desc_func = (
-                        subtree["."]
-                        if isinstance(subtree, dict)
-                        else subtree
-                    )
-                    desc = (
-                        desc_func
-                        if desc_func is None or isinstance(desc_func, str)
-                        else desc_func(current_relpath)
-                    )
-                    if desc is None:
+                    if not current_path.match(pattern):
                         continue
 
-                    tree = subtree
-                    index = (*index, i)
+                    desc_func = subtree
+                    curr_index = i
                     break
 
             else:
-                return (), None
+                desc_func = None
+                curr_index = None
+                continue
 
-        else:
-            return index, desc
+            tree = subtree
+            index = (*index, curr_index)
+
+        desc = (
+            desc_func
+            if desc_func is None or isinstance(desc_func, str)
+            else desc_func(path.relative_to(self.root))
+        )
+        return index, desc
 
     def cd(self, path, logger):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
