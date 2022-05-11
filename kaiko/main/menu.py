@@ -327,7 +327,9 @@ class KAIKOMenu:
             commands.append(DevicesCommand(self.profiles_manager, self.logger, self.manager))
         if self.file_manager.current == Path("Profiles/"):
             commands.append(ProfilesCommand(self.profiles_manager, self.logger))
-        return cmd.SubCommandParser(*commands, RootCommand(self))
+        commands.append(BGMCommand(self.bgm_controller, self.beatmap_manager, self.logger))
+        commands.append(RootCommand(self))
+        return cmd.SubCommandParser(*commands)
 
 
 class RootCommand:
@@ -410,11 +412,4 @@ class RootCommand:
             self.menu.file_manager.remove(logger)
             logger.print("Good luck~")
             raise KeyboardInterrupt
-
-    # bgm
-
-    @cmd.subcommand
-    def bgm(self):
-        """Subcommand to control background music."""
-        return BGMCommand(self.menu.bgm_controller, self.menu.beatmap_manager, self.menu.logger)
 

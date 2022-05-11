@@ -563,6 +563,16 @@ class KAIKOBGMController:
 
 class BGMCommand:
     def __init__(self, bgm_controller, beatmap_manager, logger):
+        self.subcommand = BGMSubCommand(bgm_controller, beatmap_manager, logger)
+
+    @cmd.subcommand
+    def bgm(self):
+        """Subcommand to control background music."""
+        return self.subcommand
+
+
+class BGMSubCommand:
+    def __init__(self, bgm_controller, beatmap_manager, logger):
         self.bgm_controller = bgm_controller
         self.beatmap_manager = beatmap_manager
         self.logger = logger
