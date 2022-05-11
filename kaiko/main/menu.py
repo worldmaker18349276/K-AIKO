@@ -40,6 +40,38 @@ class KAIKOMenu:
     update_interval = 0.01
     version = __version__
 
+    structure = {
+        ".": "(The workspace of KAIKO)",
+        "Beatmaps": {
+            ".": "(The place to hold your beatmaps)",
+            "*": {
+                ".": "(Beatmapset of a song)",
+                "*.kaiko": "(Beatmap file in kaiko format)",
+                "*.ka": "(Beatmap file in kaiko format)",
+                "*.osu": "(Beatmap file in osu format)",
+                "**": "(Inner file of this beatmapset)",
+            },
+            "*.osz": "(Compressed beatmapset file)",
+        },
+        "Profiles": {
+            ".": "(The place to manage your profiles)",
+            "*.kaiko-profile": "(Your custom profile)",
+            ".default-profile": "(The file of default profile name)",
+        },
+        "Resources": {
+            ".": "(The place to store some resources of KAIKO)",
+            "**": "(Resource file)",
+        },
+        "Devices": {
+            ".": "(The place to manage your devices)",
+        },
+        "Cache": {
+            ".": "(The place to cache some data for better exprience)",
+            ".beatshell-history": "(The command history)",
+            "**": "(Cache data)",
+        },
+    }
+
     def __init__(self, profiles_manager, file_manager, manager, logger):
         r"""Constructor.
 
@@ -83,7 +115,7 @@ class KAIKOMenu:
         logger = log.Logger()
 
         # load workspace
-        file_manager = FileManager.create()
+        file_manager = FileManager.create(cls.structure)
         file_manager.prepare(logger)
 
         os.environ["KAIKO"] = str(file_manager.root)

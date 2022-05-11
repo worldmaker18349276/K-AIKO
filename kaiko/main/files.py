@@ -12,44 +12,13 @@ class FileManager:
     username: str
     root: Path
     current: Path
-
-    structure = {
-        ".": "(The workspace of KAIKO)",
-        "Beatmaps": {
-            ".": "(The place to hold your beatmaps)",
-            "*": {
-                ".": "(Beatmapset of a song)",
-                "*.kaiko": "(Beatmap file in kaiko format)",
-                "*.ka": "(Beatmap file in kaiko format)",
-                "*.osu": "(Beatmap file in osu format)",
-                "**": "(Inner file of this beatmapset)",
-            },
-            "*.osz": "(Compressed beatmapset file)",
-        },
-        "Profiles": {
-            ".": "(The place to manage your profiles)",
-            "*.kaiko-profile": "(Your custom profile)",
-            ".default-profile": "(The file of default profile name)",
-        },
-        "Resources": {
-            ".": "(The place to store some resources of KAIKO)",
-            "**": "(Resource file)",
-        },
-        "Devices": {
-            ".": "(The place to manage your devices)",
-        },
-        "Cache": {
-            ".": "(The place to cache some data for better exprience)",
-            ".beatshell-history": "(The command history)",
-            "**": "(Cache data)",
-        },
-    }
+    structure: dict
 
     @classmethod
-    def create(cls):
+    def create(cls, structure):
         username = getpass.getuser()
         root = Path("~/.local/share/K-AIKO").expanduser()
-        return cls(username, root, Path("."))
+        return cls(username, root, Path("."), structure)
 
     @property
     def cache_dir(self):
