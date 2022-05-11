@@ -676,9 +676,9 @@ class BeatInput:
 
     Attributes
     ----------
-    promptable : function
+    command_parser_getter : function
         The function to produce command parser for beatshell.
-    command : commands.CommandParser
+    command_parser : commands.CommandParser
         The root command parser for beatshell.
     preview_handler : function
         A function to preview beatmap.
@@ -728,7 +728,7 @@ class BeatInput:
 
     def __init__(
         self,
-        promptable,
+        command_parser_getter,
         preview_handler,
         rich,
         cache_dir,
@@ -739,7 +739,7 @@ class BeatInput:
 
         Parameters
         ----------
-        promptable : function
+        command_parser_getter : function
             The function to produce command parser.
         preview_handler : function
         rich : markups.RichParser
@@ -750,7 +750,7 @@ class BeatInput:
         devices_settings_getter : engines.DevicesSettings
             The settings getter of devices.
         """
-        self.promptable = promptable
+        self.command_parser_getter = command_parser_getter
         self.preview_handler = preview_handler
         self.rich = rich
         self.cache_dir = cache_dir
@@ -846,7 +846,7 @@ class BeatInput:
     def new_session(self):
         r"""Start a new session of input.
         """
-        self.command = self.promptable()
+        self.command_parser = self.command_parser_getter()
 
         self.buffers = self.read_history()
         self.buffers.append([])
@@ -929,7 +929,7 @@ class BeatInput:
 
             tokens.append((token, mask, quotes))
 
-        types, _ = self.command.parse_command(token for token, _, _ in tokens)
+        types, _ = self.command_parser.parse_command(token for token, _, _ in tokens)
         types.extend([None] * (len(tokens) - len(types)))
         self.tokens = [
             (token, type, mask, quotes)
@@ -1553,7 +1553,7 @@ class BeatInput:
         parents = [token for token, _, _, _ in self.tokens[:index]]
 
         if token_type is None:
-            msg = self.command.desc_command(parents)
+            msg = self.command_parser.desc_command(parents)
             if msg is None:
                 self.cancel_hint()
                 return False
@@ -1562,7 +1562,7 @@ class BeatInput:
             return True
 
         else:
-            msg = self.command.info_command(parents, target)
+            msg = self.command_parser.info_command(parents, target)
             if msg is None:
                 self.cancel_hint()
                 return False
@@ -1623,7 +1623,7 @@ class BeatInput:
         elif self.lex_state == SHLEXER_STATE.QUOTED:
             res, index = ShellSyntaxError("No closing quotation"), len(self.tokens) - 1
         else:
-            types, res = self.command.parse_command(
+            types, res = self.command_parser.parse_command(
                 token for token, _, _, _ in self.tokens
             )
             index = len(types)
@@ -1701,7 +1701,7 @@ class BeatInput:
             # generate suggestions
             suggestions = [
                 shlexer_quoting(sugg)
-                for sugg in self.command.suggest_command(parents, target)
+                for sugg in self.command_parser.suggest_command(parents, target)
             ]
             sugg_index = len(suggestions) if action == -1 else -1
 
@@ -1717,7 +1717,7 @@ class BeatInput:
                 target, target_type, _, _ = self.tokens[token_index]
                 if target_type is None:
                     return False
-                msg = self.command.info_command(parents, target)
+                msg = self.command_parser.info_command(parents, target)
                 if msg is None:
                     return False
                 hint = InfoHint(msg)
@@ -1775,7 +1775,7 @@ class BeatInput:
         if target_type is None:
             msg = ""
         else:
-            msg = self.command.info_command(parents, target) or ""
+            msg = self.command_parser.info_command(parents, target) or ""
         self.set_hint(
             SuggestionsHint(suggestions, sugg_index, msg), self.tab_state.token_index
         )
@@ -1800,7 +1800,7 @@ class BeatInput:
             if target_type is None:
                 self.cancel_hint()
                 return True
-            msg = self.command.info_command(parents, target)
+            msg = self.command_parser.info_command(parents, target)
             if msg is None:
                 self.cancel_hint()
                 return True
