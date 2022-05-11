@@ -178,10 +178,12 @@ class KAIKOMenu:
         self.beatmap_manager.reload()
 
         # execute given command
-        if len(sys.argv) > 1:
-            command = self.get_commands().build_command(sys.argv[1:])
+        if len(sys.argv) > 2 and sys.argv[1] == "-c":
+            command = self.get_commands().build_command(sys.argv[2:])
             yield from self.execute(command).join()
             return
+        elif len(sys.argv) != 1:
+            raise ValueError("unknown arguments: " + " ".join(sys.argv[1:]))
 
         # load bgm
         bgm_task = self.bgm_controller.execute(self.manager)
