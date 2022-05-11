@@ -179,7 +179,7 @@ class KAIKOMenu:
 
         # execute given command
         if len(sys.argv) > 1:
-            command = cmd.RootCommandParser(self).build_command(sys.argv[1:])
+            command = self.get_commands().build_command(sys.argv[1:])
             yield from self.execute(command).join()
             return
 
