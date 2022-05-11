@@ -5,6 +5,8 @@ import getpass
 import glob
 import shutil
 from pathlib import Path
+from ..utils import datanodes as dn
+from ..utils import commands as cmd
 
 
 @dataclasses.dataclass
@@ -273,3 +275,84 @@ class FileManager:
             return
 
         return abspath
+
+
+class FilesCommand:
+    def __init__(self, menu):
+        self.menu = menu
+
+    @cmd.function_command
+    def cd(self, path):
+        self.menu.file_manager.cd(path, self.menu.logger)
+
+    @cmd.function_command
+    def ls(self):
+        self.menu.file_manager.ls(self.menu.logger)
+
+    @cmd.function_command
+    def cat(self, path):
+        abspath = self.menu.file_manager.get(path, self.menu.logger)
+
+        try:
+            content = abspath.read_text()
+        except UnicodeDecodeError:
+            self.menu.logger.print("[warn]Cannot read binary file.[/]")
+            return
+
+        code = self.menu.logger.format_code(
+            content, title=str(self.menu.file_manager.current / path)
+        )
+        self.menu.logger.print(code)
+
+    @cd.arg_parser("path")
+    def _cd_path_parser(self):
+        return cmd.PathParser(self.menu.file_manager.root / self.menu.file_manager.current, type="dir")
+
+    @cat.arg_parser("path")
+    def _cat_path_parser(self):
+        return cmd.PathParser(self.menu.file_manager.root / self.menu.file_manager.current, type="file")
+
+    @cmd.function_command
+    def clean(self, bottom: bool = False):
+        """[rich]Clean screen.
+
+        usage: [cmd]clean[/] [[[kw]--bottom[/] [arg]{BOTTOM}[/]]]
+                                   ╲
+                          bool, move to bottom or
+                           not; default is False.
+        """
+        self.menu.logger.clear(bottom)
+
+    @cmd.function_command
+    @dn.datanode
+    def bye(self):
+        """[rich]Close K-AIKO.
+
+        usage: [cmd]bye[/]
+        """
+        if self.menu.profiles_manager.is_changed():
+            yes = yield from self.menu.logger.ask(
+                "Exit without saving current configuration?"
+            ).join()
+            if not yes:
+                return
+        self.menu.logger.print("Bye~")
+        raise KeyboardInterrupt
+
+    @cmd.function_command
+    @dn.datanode
+    def bye_forever(self):
+        """[rich]Clean up all your data and close K-AIKO.
+
+        usage: [cmd]bye_forever[/]
+        """
+        logger = self.menu.logger
+
+        logger.print("This command will clean up all your data.")
+
+        yes = yield from logger.ask("Do you really want to do that?", False).join()
+        if yes:
+            self.menu.file_manager.remove(logger)
+            logger.print("Good luck~")
+            raise KeyboardInterrupt
+
