@@ -13,6 +13,7 @@ from ..beats import beatshell
 from ..beats import beatmaps
 from ..beats import beatsheets
 from .files import FileManager
+from .settings import KAIKOSettings
 from .profiles import ProfileManager, ProfilesCommand
 from .songs import BeatmapManager, KAIKOBGMController, BGMCommand
 from .devices import (
@@ -121,7 +122,7 @@ class KAIKOMenu:
         os.environ["KAIKO"] = str(file_manager.root)
 
         # load profiles
-        profiles_manager = ProfileManager(file_manager.profiles_dir, logger)
+        profiles_manager = ProfileManager(KAIKOSettings, file_manager.profiles_dir, logger)
         profiles_manager.on_change(
             lambda settings: logger.recompile_style(
                 terminal_settings=settings.devices.terminal,

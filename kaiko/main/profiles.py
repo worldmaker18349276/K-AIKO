@@ -7,15 +7,6 @@ from ..utils import config as cfg
 from ..utils import parsec as pc
 from ..utils import commands as cmd
 from ..utils import datanodes as dn
-from ..devices import engines
-from ..beats import beatshell
-from ..beats import beatmaps
-
-
-class KAIKOSettings(cfg.Configurable):
-    devices = cfg.subconfig(engines.DevicesSettings)
-    shell = cfg.subconfig(beatshell.BeatShellSettings)
-    gameplay = cfg.subconfig(beatmaps.GameplaySettings)
 
 
 def exists(program):
@@ -46,6 +37,8 @@ class ProfileManager:
 
     Attributes
     ----------
+    config_type : cfg.Configurable
+        The configuration type to manage.
     logger : loggers.Logger
     path : Path
         The path of profiles directory.
@@ -62,12 +55,12 @@ class ProfileManager:
     default_meta = ".default-profile"
     extension = ".kaiko-profile"
     settings_name = "settings"
-    config_type = KAIKOSettings
 
-    def __init__(self, profiles_dir, logger):
+    def __init__(self, config_type, profiles_dir, logger):
         if isinstance(profiles_dir, str):
             profiles_dir = Path(profiles_dir)
 
+        self.config_type = config_type
         self.logger = logger
         self.profiles_dir = profiles_dir
         self.profiles = []
