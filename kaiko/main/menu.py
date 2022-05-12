@@ -179,7 +179,7 @@ class KAIKOMenu:
 
         # execute given command
         if len(sys.argv) > 2 and sys.argv[1] == "-c":
-            command = self.get_commands().build_command(sys.argv[2:])
+            command = self.get_command_parser().build_command(sys.argv[2:])
             yield from self.execute(command).join()
             return
         elif len(sys.argv) != 1:
@@ -208,7 +208,7 @@ class KAIKOMenu:
         r"""Start REPL."""
         preview_handler = self.bgm_controller.preview_handler
         input = beatshell.BeatInput(
-            self.get_commands,
+            self.get_command_parser,
             preview_handler,
             self.logger.rich,
             self.file_manager.cache_dir,
@@ -321,15 +321,15 @@ class KAIKOMenu:
         self.logger.print()
         self.logger.print(banner_markup)
 
-    def get_commands(self):
-        commands = []
+    def get_command_parser(self):
+        commands = {}
         if self.file_manager.current == Path("Beatmaps/"):
-            commands.append(PlayCommand(self))
+            commands["play"] = PlayCommand(self)
         if self.file_manager.current == Path("Devices/"):
-            commands.append(DevicesCommand(self.profiles_manager, self.logger, self.manager))
+            commands["devices"] = DevicesCommand(self.profiles_manager, self.logger, self.manager)
         if self.file_manager.current == Path("Profiles/"):
-            commands.append(ProfilesCommand(self.profiles_manager, self.logger))
-        commands.append(BGMCommand(self.bgm_controller, self.beatmap_manager, self.logger))
-        commands.append(FilesCommand(self))
-        return cmd.SubCommandParser(*commands)
+            commands["profiles"] = ProfilesCommand(self.profiles_manager, self.logger)
+        commands["bgm"] = BGMCommand(self.bgm_controller, self.beatmap_manager, self.logger)
+        commands["files"] = FilesCommand(self)
+        return cmd.RootCommandParser(**commands)
 

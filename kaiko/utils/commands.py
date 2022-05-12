@@ -924,18 +924,64 @@ class FunctionCommandParser(CommandParser):
 class SubCommandParser(CommandParser):
     r"""Command parser for subcommands."""
 
-    def __init__(self, *parents):
+    def __init__(self, parent):
         r"""Constructor.
 
         Parameters
         ----------
-        parents : list of object
+        parent : object
+            The object with fields with command descriptors.
+        """
+        self.parent = parent
+        self.fields = [
+            k
+            for k, v in type(parent).__dict__.items()
+            if isinstance(v, CommandDescriptor)
+        ]
+
+    def finish(self):
+        desc = self.desc()
+        msg = "Unfinished command" + ("\n" + desc if desc is not None else "")
+        raise CommandUnfinishError(msg)
+
+    def parse(self, token):
+        if token not in self.fields:
+            msg = "Unknown command"
+            raise CommandParseError(msg, token, self.fields)
+
+        field = getcmd(self.parent, token)
+        if not isinstance(field, CommandParser):
+            raise CommandParseError("Not a command")
+
+        return TOKEN_TYPE.COMMAND, field
+
+    def suggest(self, token):
+        return [val + "\000" for val in fit(token, self.fields)]
+
+    def desc(self):
+        return None
+
+    def info(self, token):
+        if token not in self.fields:
+            return None
+        return getcmddesc(self.parent, token)
+
+
+class RootCommandParser(CommandParser):
+    r"""Command parser for root commands."""
+
+    def __init__(self, **parents):
+        r"""Constructor.
+
+        Parameters
+        ----------
+        parents : dict of object
             The objects with fields with command descriptors.
         """
         self.parents = parents
         self.fields = {
-            k: parent
-            for parent in self.parents
+            k: group
+            for group, parent in self.parents.items()
             for k, v in type(parent).__dict__.items()
             if isinstance(v, CommandDescriptor)
         }
@@ -950,7 +996,8 @@ class SubCommandParser(CommandParser):
             msg = "Unknown command"
             raise CommandParseError(msg, token, self.fields.keys())
 
-        parent = self.fields[token]
+        group = self.fields[token]
+        parent = self.parents[group]
         field = getcmd(parent, token)
         if not isinstance(field, CommandParser):
             raise CommandParseError("Not a command")
@@ -966,7 +1013,8 @@ class SubCommandParser(CommandParser):
     def info(self, token):
         if token not in self.fields:
             return None
-        parent = self.fields[token]
+        group = self.fields[token]
+        parent = self.parents[group]
         return getcmddesc(parent, token)
 
 
