@@ -678,7 +678,7 @@ class BeatInput:
     ----------
     command_parser_getter : function
         The function to produce command parser for beatshell.
-    command_parser : commands.CommandParser
+    command_parser : commands.RootCommandParser
         The root command parser for beatshell.
     preview_handler : function
         A function to preview beatmap.
@@ -692,7 +692,7 @@ class BeatInput:
         The shell settings.
     devices_settings : DevicesSettings
         The devices settings.
-    prev_command : str or None
+    prev_command : tuple of str and str or None
         The previous command.
     buffers : list of list of str
         The editable buffers of input history.
@@ -708,6 +708,8 @@ class BeatInput:
         The tokens info, which is a list of tuple `(token, type, mask, quotes)`,
         where `type` is cmd.TOKEN_TYPE or None, and the rest are the same as the
         values yielded by `shlexer_tokenize`.
+    command_group : str or None
+        The group name of parsed command.
     lex_state : SHLEXER_STATE
         The shlexer state.
     highlighted : int or None
@@ -763,6 +765,7 @@ class BeatInput:
         self.pos = 0
         self.typeahead = ""
         self.tokens = []
+        self.command_group = None
         self.lex_state = SHLEXER_STATE.SPACED
         self.highlighted = None
         self.hint_state = None
@@ -862,30 +865,34 @@ class BeatInput:
 
     def record_command(self):
         command = "".join(self.buffer).strip()
-        self.write_history(command)
+        self.write_history(self.command_group, command)
 
-    def write_history(self, command):
+    def write_history(self, command_group, command):
         self.history_path.touch()
-        if command and command != self.prev_command:
-            open(self.history_path, "a").write("\n" + command)
+        if command and command_group and (command_group, command) != self.prev_command:
+            open(self.history_path, "a").write(f"\n[{command_group}] {command}")
             self.prev_command = command
 
     def read_history(self):
         history_size = self.shell_settings.input.history_size
         trim_len = 10
 
+        groups = self.command_parser.get_all_groups()
+        pattern = re.compile(r"\[(%s)\] (.+)" % "|".join(re.escape(group) for group in groups))
+
         buffers = []
         self.history_path.touch()
+        self.prev_command = None
         for command in open(self.history_path):
             command = command.strip()
-            if command:
-                buffers.append(command)
+            match = pattern.fullmatch(command)
+            if match:
+                self.prev_command = (match.group(1), match.group(2))
+                buffers.append(self.prev_command[1])
             if len(buffers) - history_size > trim_len:
                 del buffers[:trim_len]
 
-        buffers = [list(command) for command in buffers[-history_size:]]
-        self.prev_command = "".join(buffers[-1]) if buffers else None
-        return buffers
+        return [list(command) for command in buffers[-history_size:]]
 
     @locked
     @onstate("FIN")
@@ -935,6 +942,7 @@ class BeatInput:
             (token, type, mask, quotes)
             for (token, mask, quotes), type in zip(tokens, types)
         ]
+        self.command_group = self.command_parser.get_group(tokens[0][0]) if tokens else None
         self.modified_counter += 1
         return True
 

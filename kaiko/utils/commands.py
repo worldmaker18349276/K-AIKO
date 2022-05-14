@@ -986,6 +986,12 @@ class RootCommandParser(CommandParser):
             if isinstance(v, CommandDescriptor)
         }
 
+    def get_all_groups(self):
+        return list(self.parents.keys())
+
+    def get_group(self, token):
+        return self.fields.get(token, None)
+
     def finish(self):
         desc = self.desc()
         msg = "Unfinished command" + ("\n" + desc if desc is not None else "")
