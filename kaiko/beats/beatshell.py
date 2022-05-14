@@ -720,6 +720,77 @@ class HistoryManager:
         return [list(command) for command in buffers[-read_size:]]
 
 
+class ShellSyntaxAnalyzer:
+    r"""Input editor for beatshell.
+
+    Attributes
+    ----------
+    parser : commands.RootCommandParser
+        The root command parser for beatshell.
+    tokens : list of ShToken
+        The parsed tokens.
+    lex_state : SHLEXER_STATE
+        The shlexer state.
+    group : str or None
+        The group name of parsed command.
+    result : object or cmd.CommandParseError or cmd.CommandUnfinishError
+        The command object or the error.
+    length : int
+        The parsed length of tokens.
+    """
+
+    def __init__(self, parser):
+        self.parser = parser
+        self.tokens = []
+        self.lex_state = SHLEXER_STATE.SPACED
+        self.group = None
+        self.result = None
+        self.length = 0
+
+    def update_parser(self, parser):
+        self.parser = parser
+
+    def parse(self, buffer):
+        tokenizer = shlexer_tokenize(buffer)
+
+        tokens = []
+        while True:
+            try:
+                token = next(tokenizer)
+            except StopIteration as e:
+                self.lex_state = e.value
+                break
+
+            tokens.append(token)
+
+        types, result = self.parser.parse_command(token.string for token in tokens)
+        self.result = result
+        self.length = len(types)
+
+        types.extend([None] * (len(tokens) - len(types)))
+        self.tokens = [
+            dataclasses.replace(token, type=type)
+            for token, type in zip(tokens, types)
+        ]
+        self.group = self.parser.get_group(self.tokens[0].string) if self.tokens else None
+
+    def get_all_groups(self):
+        return self.parser.get_all_groups()
+
+    def desc(self, length):
+        parents = [token.string for token in self.tokens[:length]]
+        return self.parser.desc_command(parents)
+
+    def info(self, length):
+        parents = [token.string for token in self.tokens[:length-1]]
+        target = self.tokens[length-1].string
+        return self.parser.info_command(parents, target)
+
+    def suggest(self, length, target):
+        parents = [token.string for token in self.tokens[:length]]
+        return self.parser.suggest_command(parents, target)
+
+
 class BeatInput:
     r"""Input editor for beatshell.
 
@@ -727,8 +798,8 @@ class BeatInput:
     ----------
     command_parser_getter : function
         The function to produce command parser for beatshell.
-    command_parser : commands.RootCommandParser
-        The root command parser for beatshell.
+    syntax_analyzer : ShellSyntaxAnalyzer
+        The syntax analyzer.
     preview_handler : function
         A function to preview beatmap.
     rich : markups.RichParser
@@ -751,12 +822,6 @@ class BeatInput:
         The caret position of input.
     typeahead : str
         The type ahead of input.
-    tokens : list of ShToken
-        The parsed tokens.
-    command_group : str or None
-        The group name of parsed command.
-    lex_state : SHLEXER_STATE
-        The shlexer state.
     highlighted : int or None
         The index of highlighted token.
     tab_state : TabState or None
@@ -798,6 +863,7 @@ class BeatInput:
             The settings getter of devices.
         """
         self.command_parser_getter = command_parser_getter
+        self.syntax_analyzer = ShellSyntaxAnalyzer(None)
         self.preview_handler = preview_handler
         self.rich = rich
         self.cache_dir = cache_dir
@@ -809,9 +875,6 @@ class BeatInput:
         self.buffer = self.buffers[0]
         self.pos = 0
         self.typeahead = ""
-        self.tokens = []
-        self.command_group = None
-        self.lex_state = SHLEXER_STATE.SPACED
         self.highlighted = None
         self.hint_state = None
         self.popup = queue.Queue()
@@ -890,9 +953,9 @@ class BeatInput:
     def new_session(self):
         r"""Start a new session of input.
         """
-        self.command_parser = self.command_parser_getter()
+        self.syntax_analyzer.update_parser(self.command_parser_getter())
 
-        groups = self.command_parser.get_all_groups()
+        groups = self.syntax_analyzer.get_all_groups()
         history_size = self.shell_settings.input.history_size
         self.buffers = self.history.read_history(groups, history_size)
         self.buffers.append([])
@@ -908,7 +971,7 @@ class BeatInput:
 
     def record_command(self):
         command = "".join(self.buffer).strip()
-        self.history.write_history(self.command_group, command)
+        self.history.write_history(self.syntax_analyzer.group, command)
 
     @locked
     @onstate("FIN")
@@ -940,25 +1003,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        tokenizer = shlexer_tokenize(self.buffer)
-
-        tokens = []
-        while True:
-            try:
-                token = next(tokenizer)
-            except StopIteration as e:
-                self.lex_state = e.value
-                break
-
-            tokens.append(token)
-
-        types, _ = self.command_parser.parse_command(token.string for token in tokens)
-        types.extend([None] * (len(tokens) - len(types)))
-        self.tokens = [
-            dataclasses.replace(token, type=type)
-            for token, type in zip(tokens, types)
-        ]
-        self.command_group = self.command_parser.get_group(self.tokens[0].string) if self.tokens else None
+        self.syntax_analyzer.parse(self.buffer)
         self.modified_counter += 1
         return True
 
@@ -979,12 +1024,12 @@ class BeatInput:
             self.typeahead = ""
             return False
 
-        if self.lex_state == SHLEXER_STATE.SPACED:
-            parents = [token.string for token in self.tokens]
+        if self.syntax_analyzer.lex_state == SHLEXER_STATE.SPACED:
+            parents = [token.string for token in self.syntax_analyzer.tokens]
             target = ""
         else:
-            parents = [token.string for token in self.tokens[:-1]]
-            target = self.tokens[-1].string
+            parents = [token.string for token in self.syntax_analyzer.tokens[:-1]]
+            target = self.syntax_analyzer.tokens[-1].string
 
         # search history
         length = len(self.buffer)
@@ -1056,13 +1101,13 @@ class BeatInput:
         self.highlighted = index
         if isinstance(hint, DescHint):
             msg_tokens = (
-                [token.string for token in self.tokens[:index]]
+                [token.string for token in self.syntax_analyzer.tokens[:index]]
                 if index is not None
                 else None
             )
         elif isinstance(hint, (InfoHint, SuggestionsHint)):
             msg_tokens = (
-                [token.string for token in self.tokens[: index + 1]]
+                [token.string for token in self.syntax_analyzer.tokens[: index + 1]]
                 if index is not None
                 else None
             )
@@ -1106,19 +1151,19 @@ class BeatInput:
         if self.hint_state.tokens is None:
             return self.cancel_hint()
 
-        if self.highlighted is not None and self.highlighted >= len(self.tokens):
+        if self.highlighted is not None and self.highlighted >= len(self.syntax_analyzer.tokens):
             return self.cancel_hint()
 
-        if len(self.hint_state.tokens) > len(self.tokens):
+        if len(self.hint_state.tokens) > len(self.syntax_analyzer.tokens):
             return self.cancel_hint()
 
-        for token, (token_, _, _, _) in zip(self.hint_state.tokens, self.tokens):
-            if token != token_:
+        for token_string, token in zip(self.hint_state.tokens, self.syntax_analyzer.tokens):
+            if token_srting != token.string:
                 return self.cancel_hint()
 
         if (
             isinstance(self.hint_state.hint, DescHint)
-            and self.tokens[len(self.hint_state.tokens) - 1].type is not None
+            and self.syntax_analyzer.tokens[len(self.hint_state.tokens) - 1].type is not None
         ):
             return self.cancel_hint()
 
@@ -1141,7 +1186,7 @@ class BeatInput:
             self.preview_handler(None)
         elif len(self.hint_state.tokens) != 2:
             self.preview_handler(None)
-        elif self.hint_state.tokens.string != "play":
+        elif self.hint_state.tokens != "play":
             self.preview_handler(None)
         else:
             self.preview_handler(self.hint_state.tokens[1])
@@ -1318,10 +1363,10 @@ class BeatInput:
         succ : bool
         """
         if index is not None:
-            token = self.tokens[index]
+            token = self.syntax_analyzer.tokens[index]
             return self.delete_range(token.mask.start, token.mask.stop)
 
-        for token in reversed(self.tokens):
+        for token in reversed(self.syntax_analyzer.tokens):
             if token.mask.start <= self.pos:
                 return self.delete_range(token.mask.start, max(self.pos, token.mask.stop))
         else:
@@ -1342,10 +1387,10 @@ class BeatInput:
         succ : bool
         """
         if index is not None:
-            token = self.tokens[index]
+            token = self.syntax_analyzer.tokens[index]
             return self.delete_range(token.mask.start, token.mask.stop)
 
-        for token in self.tokens:
+        for token in self.syntax_analyzer.tokens:
             if self.pos <= token.mask.stop:
                 return self.delete_range(min(self.pos, token.mask.start), token.mask.stop)
         else:
@@ -1564,7 +1609,7 @@ class BeatInput:
         """
         if index is None:
             # find the token on the caret
-            for index, token in enumerate(self.tokens):
+            for index, token in enumerate(self.syntax_analyzer.tokens):
                 if token.mask.start <= self.pos <= token.mask.stop:
                     break
             else:
@@ -1573,12 +1618,10 @@ class BeatInput:
                     self.cancel_hint()
                 return False
 
-        target = self.tokens[index].string
-        target_type = self.tokens[index].type
-        parents = [token.string for token in self.tokens[:index]]
+        target_type = self.syntax_analyzer.tokens[index].type
 
         if target_type is None:
-            msg = self.command_parser.desc_command(parents)
+            msg = self.syntax_analyzer.desc(index)
             if msg is None:
                 self.cancel_hint()
                 return False
@@ -1587,7 +1630,7 @@ class BeatInput:
             return True
 
         else:
-            msg = self.command_parser.info_command(parents, target)
+            msg = self.syntax_analyzer.info(index+1)
             if msg is None:
                 self.cancel_hint()
                 return False
@@ -1607,7 +1650,7 @@ class BeatInput:
         succ : bool
         """
         # find the token before the caret
-        for index, token in reversed(list(enumerate(self.tokens))):
+        for index, token in reversed(list(enumerate(self.syntax_analyzer.tokens))):
             if token.mask.start <= self.pos:
                 break
         else:
@@ -1638,20 +1681,17 @@ class BeatInput:
         """
         self.cancel_hint()
 
-        if len(self.tokens) == 0:
+        if not self.syntax_analyzer.tokens:
             self.set_result(CompleteResult(lambda: None))
             self.finish()
             return True
 
-        if self.lex_state == SHLEXER_STATE.BACKSLASHED:
-            res, index = ShellSyntaxError("No escaped character"), len(self.tokens) - 1
-        elif self.lex_state == SHLEXER_STATE.QUOTED:
-            res, index = ShellSyntaxError("No closing quotation"), len(self.tokens) - 1
+        if self.syntax_analyzer.lex_state == SHLEXER_STATE.BACKSLASHED:
+            res, index = ShellSyntaxError("No escaped character"), len(self.syntax_analyzer.tokens) - 1
+        elif self.syntax_analyzer.lex_state == SHLEXER_STATE.QUOTED:
+            res, index = ShellSyntaxError("No closing quotation"), len(self.syntax_analyzer.tokens) - 1
         else:
-            types, res = self.command_parser.parse_command(
-                token.string for token in self.tokens
-            )
-            index = len(types)
+            res, index = self.syntax_analyzer.result, self.syntax_analyzer.length
 
         if isinstance(res, cmd.CommandUnfinishError):
             self.set_result(ErrorResult(res))
@@ -1711,22 +1751,21 @@ class BeatInput:
             self.cancel_typeahead()
 
             # find the token to autocomplete
-            parents = []
+            token_index = 0
             target = ""
             selection = slice(self.pos, self.pos)
-            for token in self.tokens:
+            for token in self.syntax_analyzer.tokens:
                 start, stop, _ = token.mask.indices(len(self.buffer))
                 if stop < self.pos:
-                    parents.append(token.string)
+                    token_index += 1
                 if start <= self.pos <= stop:
                     target = token.string
                     selection = token.mask
-            token_index = len(parents)
 
             # generate suggestions
             suggestions = [
                 shlexer_quoting(sugg)
-                for sugg in self.command_parser.suggest_command(parents, target)
+                for sugg in self.syntax_analyzer.suggest(token_index, target)
             ]
             sugg_index = len(suggestions) if action == -1 else -1
 
@@ -1739,11 +1778,10 @@ class BeatInput:
                 self.buffer[selection] = suggestions[0]
                 self.pos = selection.start + len(suggestions[0])
                 self.update_buffer()
-                target = self.tokens[token_index].string
-                target_type = self.tokens[token_index].type
+                target_type = self.syntax_analyzer.tokens[token_index].type
                 if target_type is None:
                     return False
-                msg = self.command_parser.info_command(parents, target)
+                msg = self.syntax_analyzer.info(token_index + 1)
                 if msg is None:
                     return False
                 hint = InfoHint(msg)
@@ -1794,15 +1832,11 @@ class BeatInput:
         self.tab_state.selection = slice(selection.start, self.pos)
 
         self.update_buffer()
-        parents = [
-            token.string for token in self.tokens[: self.tab_state.token_index]
-        ]
-        target = self.tokens[self.tab_state.token_index].string
-        target_type = self.tokens[self.tab_state.token_index].type
+        target_type = self.syntax_analyzer.tokens[self.tab_state.token_index].type
         if target_type is None:
             msg = ""
         else:
-            msg = self.command_parser.info_command(parents, target) or ""
+            msg = self.syntax_analyzer.info(self.tab_state.token_index + 1) or ""
         self.set_hint(
             SuggestionsHint(suggestions, sugg_index, msg), self.tab_state.token_index
         )
@@ -1822,13 +1856,11 @@ class BeatInput:
             token_index = self.tab_state.token_index
             self.tab_state = None
 
-            parents = [token.string for token in self.tokens[:token_index]]
-            target = self.tokens[token_index].string
-            target_type = self.tokens[token_index].type
+            target_type = self.syntax_analyzer.tokens[token_index].type
             if target_type is None:
                 self.cancel_hint()
                 return True
-            msg = self.command_parser.info_command(parents, target)
+            msg = self.syntax_analyzer.info(token_index+1)
             if msg is None:
                 self.cancel_hint()
                 return True
@@ -2015,7 +2047,7 @@ class BeatPrompt:
                 if self.input.modified_counter != self.modified_counter:
                     self.modified_counter = self.input.modified_counter
                     self.buffer = list(self.input.buffer)
-                    self.tokens = list(self.input.tokens)
+                    self.tokens = list(self.input.syntax_analyzer.tokens)
                 self.pos = self.input.pos
                 self.highlighted = self.input.highlighted
 
