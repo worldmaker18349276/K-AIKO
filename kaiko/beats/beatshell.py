@@ -21,6 +21,28 @@ class SHLEXER_STATE(Enum):
     QUOTED = "'"
 
 
+@dataclasses.dataclass(frozen=True)
+class ShToken:
+    r"""The token of shell-like grammar.
+
+    Attributes
+    ----------
+    string : str
+        The tokenized string.
+    type : cmd.TOKEN_TYPE or None
+        The type of token.
+    mask : slice
+        The position of this token.
+    quotes : list of int
+        The indices of all backslashes and quotation marks used for escaping.
+        The token is equal to
+        `''.join(raw[i] for i in range(*slice.indices(len(raw))) if i not in quotes)`.
+    """
+    string: str
+    type: Optional[cmd.TOKEN_TYPE]
+    mask: slice
+    quotes: List[int]
+
 def shlexer_tokenize(raw):
     r"""Tokenizer for shell-like grammar.
 
@@ -43,14 +65,8 @@ def shlexer_tokenize(raw):
 
     Yields
     ------
-    token : str
-        The tokenized string.
-    mask : slice
-        The position of this token.
-    quotes : list of int
-        The indices of all backslashes and quotation marks used for escaping.
-        The token is equal to
-        `''.join(raw[i] for i in range(*slice.indices(len(raw))) if i not in quotes)`.
+    token: ShToken
+        the parsed token.
 
     Returns
     -------
@@ -81,7 +97,7 @@ def shlexer_tokenize(raw):
         while True:
             if char == SPACE:
                 # end parsing token
-                yield "".join(token), slice(start, index), quotes
+                yield ShToken("".join(token), None, slice(start, index), quotes)
                 break
 
             elif char == BACKSLASH:
@@ -91,7 +107,7 @@ def shlexer_tokenize(raw):
                 try:
                     index, char = next(raw)
                 except StopIteration:
-                    yield "".join(token), slice(start, length), quotes
+                    yield ShToken("".join(token), None, slice(start, length), quotes)
                     return SHLEXER_STATE.BACKSLASHED
 
                 token.append(char)
@@ -104,7 +120,7 @@ def shlexer_tokenize(raw):
                     try:
                         index, char = next(raw)
                     except StopIteration:
-                        yield "".join(token), slice(start, length), quotes
+                        yield ShToken("".join(token), None, slice(start, length), quotes)
                         return SHLEXER_STATE.QUOTED
 
                     if char == QUOTE:
@@ -120,7 +136,7 @@ def shlexer_tokenize(raw):
             try:
                 index, char = next(raw)
             except StopIteration:
-                yield "".join(token), slice(start, length), quotes
+                yield ShToken("".join(token), None, slice(start, length), quotes)
                 return SHLEXER_STATE.PLAIN
 
 
@@ -188,12 +204,12 @@ def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
 
 
 def shlexer_markup(buffer, tokens, typeahead, tags):
-    r"""Markup shlex.
+    r"""Markup shell-like grammar.
 
     Parameters
     ----------
     buffer : list of str
-    tokens : list
+    tokens : list of ShToken
     typeahead : str
 
     Returns
@@ -222,14 +238,14 @@ def shlexer_markup(buffer, tokens, typeahead, tags):
     if not typeahead:
         buffer.append(" ")
 
-    for _, type, mask, quotes in tokens:
+    for token in tokens:
         # markup whitespace
-        for index in range(mask.start, mask.stop):
+        for index in range(token.mask.start, token.mask.stop):
             if buffer[index] == " ":
                 buffer[index] = tags["ws"]()
 
         # markup escape
-        for index in quotes:
+        for index in token.quotes:
             if buffer[index] == "'":
                 buffer[index] = tags["qt"]()
             elif buffer[index] == "\\":
@@ -239,23 +255,23 @@ def shlexer_markup(buffer, tokens, typeahead, tags):
 
     markup_children = []
     prev_index = 0
-    for n, (_, type, mask, _) in enumerate(tokens):
+    for n, token in enumerate(tokens):
         # markup delimiter
-        markup_children.append(mu.Group(_wrap(buffer[prev_index : mask.start])))
-        prev_index = mask.stop
+        markup_children.append(mu.Group(_wrap(buffer[prev_index : token.mask.start])))
+        prev_index = token.mask.stop
 
         # markup token
-        if type is None:
-            if mask.stop == length:
-                markup_children.append(tags["unfinished"](_wrap(buffer[mask])))
+        if token.type is None:
+            if token.mask.stop == length:
+                markup_children.append(tags["unfinished"](_wrap(buffer[token.mask])))
             else:
-                markup_children.append(tags["unknown"](_wrap(buffer[mask])))
-        elif type is cmd.TOKEN_TYPE.COMMAND:
-            markup_children.append(tags["cmd"](_wrap(buffer[mask])))
-        elif type is cmd.TOKEN_TYPE.KEYWORD:
-            markup_children.append(tags["kw"](_wrap(buffer[mask])))
-        elif type is cmd.TOKEN_TYPE.ARGUMENT:
-            markup_children.append(tags["arg"](_wrap(buffer[mask])))
+                markup_children.append(tags["unknown"](_wrap(buffer[token.mask])))
+        elif token.type is cmd.TOKEN_TYPE.COMMAND:
+            markup_children.append(tags["cmd"](_wrap(buffer[token.mask])))
+        elif token.type is cmd.TOKEN_TYPE.KEYWORD:
+            markup_children.append(tags["kw"](_wrap(buffer[token.mask])))
+        elif token.type is cmd.TOKEN_TYPE.ARGUMENT:
+            markup_children.append(tags["arg"](_wrap(buffer[token.mask])))
         else:
             assert False
 
@@ -735,10 +751,8 @@ class BeatInput:
         The caret position of input.
     typeahead : str
         The type ahead of input.
-    tokens : list
-        The tokens info, which is a list of tuple `(token, type, mask, quotes)`,
-        where `type` is cmd.TOKEN_TYPE or None, and the rest are the same as the
-        values yielded by `shlexer_tokenize`.
+    tokens : list of ShToken
+        The parsed tokens.
     command_group : str or None
         The group name of parsed command.
     lex_state : SHLEXER_STATE
@@ -931,20 +945,20 @@ class BeatInput:
         tokens = []
         while True:
             try:
-                token, mask, quotes = next(tokenizer)
+                token = next(tokenizer)
             except StopIteration as e:
                 self.lex_state = e.value
                 break
 
-            tokens.append((token, mask, quotes))
+            tokens.append(token)
 
-        types, _ = self.command_parser.parse_command(token for token, _, _ in tokens)
+        types, _ = self.command_parser.parse_command(token.string for token in tokens)
         types.extend([None] * (len(tokens) - len(types)))
         self.tokens = [
-            (token, type, mask, quotes)
-            for (token, mask, quotes), type in zip(tokens, types)
+            dataclasses.replace(token, type=type)
+            for token, type in zip(tokens, types)
         ]
-        self.command_group = self.command_parser.get_group(tokens[0][0]) if tokens else None
+        self.command_group = self.command_parser.get_group(self.tokens[0].string) if self.tokens else None
         self.modified_counter += 1
         return True
 
@@ -966,11 +980,11 @@ class BeatInput:
             return False
 
         if self.lex_state == SHLEXER_STATE.SPACED:
-            parents = [token for token, _, _, _ in self.tokens]
+            parents = [token.string for token in self.tokens]
             target = ""
         else:
-            parents = [token for token, _, _, _ in self.tokens[:-1]]
-            target, _, _, _ = self.tokens[-1]
+            parents = [token.string for token in self.tokens[:-1]]
+            target = self.tokens[-1].string
 
         # search history
         length = len(self.buffer)
@@ -1042,13 +1056,13 @@ class BeatInput:
         self.highlighted = index
         if isinstance(hint, DescHint):
             msg_tokens = (
-                [token for token, _, _, _ in self.tokens[:index]]
+                [token.string for token in self.tokens[:index]]
                 if index is not None
                 else None
             )
         elif isinstance(hint, (InfoHint, SuggestionsHint)):
             msg_tokens = (
-                [token for token, _, _, _ in self.tokens[: index + 1]]
+                [token.string for token in self.tokens[: index + 1]]
                 if index is not None
                 else None
             )
@@ -1104,7 +1118,7 @@ class BeatInput:
 
         if (
             isinstance(self.hint_state.hint, DescHint)
-            and self.tokens[len(self.hint_state.tokens) - 1][1] is not None
+            and self.tokens[len(self.hint_state.tokens) - 1].type is not None
         ):
             return self.cancel_hint()
 
@@ -1127,7 +1141,7 @@ class BeatInput:
             self.preview_handler(None)
         elif len(self.hint_state.tokens) != 2:
             self.preview_handler(None)
-        elif self.hint_state.tokens[0] != "play":
+        elif self.hint_state.tokens.string != "play":
             self.preview_handler(None)
         else:
             self.preview_handler(self.hint_state.tokens[1])
@@ -1304,12 +1318,12 @@ class BeatInput:
         succ : bool
         """
         if index is not None:
-            _, _, slic, _ = self.tokens[index]
-            return self.delete_range(slic.start, slic.stop)
+            token = self.tokens[index]
+            return self.delete_range(token.mask.start, token.mask.stop)
 
-        for _, _, slic, _ in reversed(self.tokens):
-            if slic.start <= self.pos:
-                return self.delete_range(slic.start, max(self.pos, slic.stop))
+        for token in reversed(self.tokens):
+            if token.mask.start <= self.pos:
+                return self.delete_range(token.mask.start, max(self.pos, token.mask.stop))
         else:
             # find nothing
             return self.delete_range(0, self.pos)
@@ -1328,12 +1342,12 @@ class BeatInput:
         succ : bool
         """
         if index is not None:
-            _, _, slic, _ = self.tokens[index]
-            return self.delete_range(slic.start, slic.stop)
+            token = self.tokens[index]
+            return self.delete_range(token.mask.start, token.mask.stop)
 
-        for _, _, slic, _ in self.tokens:
-            if self.pos <= slic.stop:
-                return self.delete_range(min(self.pos, slic.start), slic.stop)
+        for token in self.tokens:
+            if self.pos <= token.mask.stop:
+                return self.delete_range(min(self.pos, token.mask.start), token.mask.stop)
         else:
             # find nothing
             return self.delete_range(self.pos, None)
@@ -1550,8 +1564,8 @@ class BeatInput:
         """
         if index is None:
             # find the token on the caret
-            for index, (_, _, slic, _) in enumerate(self.tokens):
-                if slic.start <= self.pos <= slic.stop:
+            for index, token in enumerate(self.tokens):
+                if token.mask.start <= self.pos <= token.mask.stop:
                     break
             else:
                 # find nothing
@@ -1559,10 +1573,11 @@ class BeatInput:
                     self.cancel_hint()
                 return False
 
-        target, token_type, _, _ = self.tokens[index]
-        parents = [token for token, _, _, _ in self.tokens[:index]]
+        target = self.tokens[index].string
+        target_type = self.tokens[index].type
+        parents = [token.string for token in self.tokens[:index]]
 
-        if token_type is None:
+        if target_type is None:
             msg = self.command_parser.desc_command(parents)
             if msg is None:
                 self.cancel_hint()
@@ -1592,8 +1607,8 @@ class BeatInput:
         succ : bool
         """
         # find the token before the caret
-        for index, (_, _, slic, _) in reversed(list(enumerate(self.tokens))):
-            if slic.start <= self.pos:
+        for index, token in reversed(list(enumerate(self.tokens))):
+            if token.mask.start <= self.pos:
                 break
         else:
             return False
@@ -1634,7 +1649,7 @@ class BeatInput:
             res, index = ShellSyntaxError("No closing quotation"), len(self.tokens) - 1
         else:
             types, res = self.command_parser.parse_command(
-                token for token, _, _, _ in self.tokens
+                token.string for token in self.tokens
             )
             index = len(types)
 
@@ -1699,13 +1714,13 @@ class BeatInput:
             parents = []
             target = ""
             selection = slice(self.pos, self.pos)
-            for token, _, mask, _ in self.tokens:
-                start, stop, _ = mask.indices(len(self.buffer))
+            for token in self.tokens:
+                start, stop, _ = token.mask.indices(len(self.buffer))
                 if stop < self.pos:
-                    parents.append(token)
+                    parents.append(token.string)
                 if start <= self.pos <= stop:
-                    target = token
-                    selection = mask
+                    target = token.string
+                    selection = token.mask
             token_index = len(parents)
 
             # generate suggestions
@@ -1724,7 +1739,8 @@ class BeatInput:
                 self.buffer[selection] = suggestions[0]
                 self.pos = selection.start + len(suggestions[0])
                 self.update_buffer()
-                target, target_type, _, _ = self.tokens[token_index]
+                target = self.tokens[token_index].string
+                target_type = self.tokens[token_index].type
                 if target_type is None:
                     return False
                 msg = self.command_parser.info_command(parents, target)
@@ -1779,9 +1795,10 @@ class BeatInput:
 
         self.update_buffer()
         parents = [
-            token for token, _, _, _ in self.tokens[: self.tab_state.token_index]
+            token.string for token in self.tokens[: self.tab_state.token_index]
         ]
-        target, target_type, _, _ = self.tokens[self.tab_state.token_index]
+        target = self.tokens[self.tab_state.token_index].string
+        target_type = self.tokens[self.tab_state.token_index].type
         if target_type is None:
             msg = ""
         else:
@@ -1805,8 +1822,9 @@ class BeatInput:
             token_index = self.tab_state.token_index
             self.tab_state = None
 
-            parents = [token for token, _, _, _ in self.tokens[:token_index]]
-            target, target_type, _, _ = self.tokens[token_index]
+            parents = [token.string for token in self.tokens[:token_index]]
+            target = self.tokens[token_index].string
+            target_type = self.tokens[token_index].type
             if target_type is None:
                 self.cancel_hint()
                 return True
