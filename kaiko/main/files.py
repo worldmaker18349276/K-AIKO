@@ -343,3 +343,16 @@ class FilesCommand:
             logger.print("Good luck~")
             raise KeyboardInterrupt
 
+
+def CdCommand(menu):
+    def make_command(name):
+        return cmd.function_command(lambda self: self.menu.file_manager.cd(name, self.menu.logger))
+
+    attrs = {}
+    attrs["menu"] = menu
+    attrs[".."] = make_command("..")
+    for child in (menu.file_manager.root / menu.file_manager.current).resolve().iterdir():
+        if child.is_dir():
+            attrs[child.name + "/"] = make_command(child.name)
+
+    return type("CdCommand", (object,), attrs)()

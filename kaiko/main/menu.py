@@ -10,7 +10,7 @@ from ..utils import datanodes as dn
 from ..utils import commands as cmd
 from ..devices import loggers as log
 from ..beats import beatshell
-from .files import FileManager, FilesCommand
+from .files import FileManager, FilesCommand, CdCommand
 from .settings import KAIKOSettings
 from .profiles import ProfileManager, ProfilesCommand
 from .songs import BeatmapManager, KAIKOBGMController, BGMCommand
@@ -372,5 +372,6 @@ class KAIKOMenu:
             commands["profiles"] = ProfilesCommand(self.profiles_manager, self.logger)
         commands["bgm"] = BGMCommand(self.bgm_controller, self.beatmap_manager, self.logger)
         commands["files"] = FilesCommand(self)
+        commands["cd"] = CdCommand(self)
         return cmd.RootCommandParser(**commands)
 
