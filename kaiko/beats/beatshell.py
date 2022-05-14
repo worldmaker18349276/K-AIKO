@@ -4,6 +4,7 @@ import re
 import threading
 import queue
 from typing import Optional, List, Tuple, Dict, Callable, Union
+from pathlib import Path
 import dataclasses
 from ..utils import datanodes as dn
 from ..utils import config as cfg
@@ -671,6 +672,38 @@ def locked(func):
     return locked_func
 
 
+@dataclasses.dataclass
+class HistoryManager:
+    history_path: Path
+    latest_command: Optional[Tuple[str, str]] = None
+
+    def write_history(self, command_group, command):
+        self.history_path.touch()
+        command = command.strip()
+        if command and command_group and (command_group, command) != self.latest_command:
+            open(self.history_path, "a").write(f"\n[{command_group}] {command}")
+            self.latest_command = command
+
+    def read_history(self, command_groups, read_size):
+        trim_len = 10
+
+        pattern = re.compile(r"\[(%s)\] (.+)" % "|".join(re.escape(group) for group in command_groups))
+
+        buffers = []
+        self.history_path.touch()
+        self.latest_command = None
+        for command in open(self.history_path):
+            command = command.strip()
+            match = pattern.fullmatch(command)
+            if match:
+                self.latest_command = (match.group(1), match.group(2))
+                buffers.append(self.latest_command[1])
+            if len(buffers) - read_size > trim_len:
+                del buffers[:trim_len]
+
+        return [list(command) for command in buffers[-read_size:]]
+
+
 class BeatInput:
     r"""Input editor for beatshell.
 
@@ -686,14 +719,12 @@ class BeatInput:
         The rich parser.
     cache_dir : Path
         The directory of cache data.
-    history_path : Path
-        The path of input history.
+    history : HistoryManager
+        The input history manager.
     shell_settings : BeatShellSettings
         The shell settings.
     devices_settings : DevicesSettings
         The devices settings.
-    prev_command : tuple of str and str or None
-        The previous command.
     buffers : list of list of str
         The editable buffers of input history.
     buffer_index : int
@@ -758,7 +789,7 @@ class BeatInput:
         self.cache_dir = cache_dir
         self._shell_settings_getter = shell_settings_getter
         self._devices_settings_getter = devices_settings_getter
-        self.prev_command = None
+        self.history = HistoryManager(self.cache_dir / ".beatshell-history")
         self.buffers = [[]]
         self.buffer_index = -1
         self.buffer = self.buffers[0]
@@ -776,10 +807,6 @@ class BeatInput:
         self.lock = threading.RLock()
         self.modified_counter = 0
         self.new_session()
-
-    @property
-    def history_path(self):
-        return self.cache_dir / ".beatshell-history"
 
     @property
     def shell_settings(self):
@@ -851,7 +878,9 @@ class BeatInput:
         """
         self.command_parser = self.command_parser_getter()
 
-        self.buffers = self.read_history()
+        groups = self.command_parser.get_all_groups()
+        history_size = self.shell_settings.input.history_size
+        self.buffers = self.history.read_history(groups, history_size)
         self.buffers.append([])
         self.buffer_index = -1
 
@@ -865,34 +894,7 @@ class BeatInput:
 
     def record_command(self):
         command = "".join(self.buffer).strip()
-        self.write_history(self.command_group, command)
-
-    def write_history(self, command_group, command):
-        self.history_path.touch()
-        if command and command_group and (command_group, command) != self.prev_command:
-            open(self.history_path, "a").write(f"\n[{command_group}] {command}")
-            self.prev_command = command
-
-    def read_history(self):
-        history_size = self.shell_settings.input.history_size
-        trim_len = 10
-
-        groups = self.command_parser.get_all_groups()
-        pattern = re.compile(r"\[(%s)\] (.+)" % "|".join(re.escape(group) for group in groups))
-
-        buffers = []
-        self.history_path.touch()
-        self.prev_command = None
-        for command in open(self.history_path):
-            command = command.strip()
-            match = pattern.fullmatch(command)
-            if match:
-                self.prev_command = (match.group(1), match.group(2))
-                buffers.append(self.prev_command[1])
-            if len(buffers) - history_size > trim_len:
-                del buffers[:trim_len]
-
-        return [list(command) for command in buffers[-history_size:]]
+        self.history.write_history(self.command_group, command)
 
     @locked
     @onstate("FIN")
