@@ -72,6 +72,26 @@ class KAIKOMenu:
         },
     }
 
+    initializer = {
+        ".": None,
+        "Beatmaps": {
+            ".": None,
+        },
+        "Profiles": {
+            ".": None,
+        },
+        "Resources": {
+            ".": None,
+        },
+        "Devices": {
+            ".": None,
+        },
+        "Cache": {
+            ".": None,
+            ".beatshell-history": None,
+        },
+    }
+
     def __init__(self, profiles_manager, file_manager, manager, logger):
         r"""Constructor.
 
@@ -86,7 +106,7 @@ class KAIKOMenu:
         self.file_manager = file_manager
         self.manager = manager
         self.logger = logger
-        self.beatmap_manager = BeatmapManager(file_manager.beatmaps_dir, logger)
+        self.beatmap_manager = BeatmapManager(self.beatmaps_dir, logger)
         self.bgm_controller = KAIKOBGMController(
             logger, self.beatmap_manager, lambda: self.profiles_manager.current.devices.mixer
         )
@@ -115,13 +135,14 @@ class KAIKOMenu:
         logger = log.Logger()
 
         # load workspace
-        file_manager = FileManager.create(cls.structure)
+        file_manager = FileManager.create(cls.structure, cls.initializer)
         file_manager.prepare(logger)
 
         os.environ["KAIKO"] = str(file_manager.root)
 
         # load profiles
-        profiles_manager = ProfileManager(KAIKOSettings, file_manager.profiles_dir, logger)
+        profiles_dir = file_manager.root / "Profiles"
+        profiles_manager = ProfileManager(KAIKOSettings, profiles_dir, logger)
         profiles_manager.on_change(
             lambda settings: logger.recompile_style(
                 terminal_settings=settings.devices.terminal,
@@ -211,7 +232,7 @@ class KAIKOMenu:
             self.get_command_parser,
             preview_handler,
             self.logger.rich,
-            self.file_manager.cache_dir,
+            self.cache_dir,
             lambda: self.profiles_manager.current.shell,
             lambda: self.profiles_manager.current.devices,
         )
@@ -273,6 +294,26 @@ class KAIKOMenu:
     def settings(self):
         r"""Current settings."""
         return self.profiles_manager.current
+
+    @property
+    def cache_dir(self):
+        return self.file_manager.root / "Cache"
+
+    @property
+    def profiles_dir(self):
+        return self.file_manager.root / "Profiles"
+
+    @property
+    def beatmaps_dir(self):
+        return self.file_manager.root / "Beatmaps"
+
+    @property
+    def resources_dir(self):
+        return self.file_manager.root / "Resources"
+
+    @property
+    def devices_dir(self):
+        return self.file_manager.root / "Devices"
 
     def print_banner(self):
         username = self.logger.escape(self.file_manager.username, type="all")

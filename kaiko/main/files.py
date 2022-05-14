@@ -15,53 +15,38 @@ class FileManager:
     root: Path
     current: Path
     structure: dict
+    initializer: dict
 
     @classmethod
-    def create(cls, structure):
+    def create(cls, structure, initializer):
         username = getpass.getuser()
         root = Path("~/.local/share/K-AIKO").expanduser()
-        return cls(username, root, Path("."), structure)
-
-    @property
-    def cache_dir(self):
-        return self.root / "Cache"
-
-    @property
-    def profiles_dir(self):
-        return self.root / "Profiles"
-
-    @property
-    def beatmaps_dir(self):
-        return self.root / "Beatmaps"
-
-    @property
-    def resources_dir(self):
-        return self.root / "Resources"
-
-    @property
-    def devices_dir(self):
-        return self.root / "Devices"
+        return cls(username, root, Path("."), structure, initializer)
 
     def is_prepared(self):
         if not self.root.exists():
             return False
 
-        if not self.cache_dir.exists():
-            return False
+        def go(path, tree):
+            for key, value in tree.items():
+                if key == ".":
+                    continue
 
-        if not self.profiles_dir.exists():
-            return False
+                subpath = path / key
 
-        if not self.beatmaps_dir.exists():
-            return False
+                if not subpath.exists():
+                    return False
 
-        if not self.resources_dir.exists():
-            return False
+                if isinstance(value, dict):
+                    if not subpath.is_dir():
+                        return False
+                    if not go(subpath, value):
+                        return False
+                else:
+                    if not subpath.is_file():
+                        return False
 
-        if not self.devices_dir.exists():
-            return False
-
-        return True
+        return go(self.root, self.initializer)
 
     def prepare(self, logger):
         if self.is_prepared():
@@ -69,12 +54,33 @@ class FileManager:
 
         # start up
         logger.print("[data/] Prepare your profile...")
-        self.root.mkdir(parents=True, exist_ok=True)
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
-        self.profiles_dir.mkdir(parents=True, exist_ok=True)
-        self.beatmaps_dir.mkdir(parents=True, exist_ok=True)
-        self.resources_dir.mkdir(parents=True, exist_ok=True)
-        self.devices_dir.mkdir(parents=True, exist_ok=True)
+
+        if not self.root.exists():
+            self.root.mkdir()
+            init = self.initializer.get(".", None)
+            if init:
+                init(self.root)
+
+        def go(path, tree):
+            for key, value in tree.items():
+                if key == ".":
+                    continue
+
+                subpath = path / key
+
+                if not subpath.exists():
+                    if isinstance(value, dict):
+                        subpath.mkdir()
+                        init = value.get(".", None)
+                        if init:
+                            init(subpath)
+                        go(subpath, value)
+                    else:
+                        subpath.touch()
+                        if value:
+                            value(subpath)
+
+        go(self.root, self.initializer)
 
         logger.print(
             f"[data/] Your data will be stored in {logger.emph(self.root.as_uri())}"
@@ -82,25 +88,6 @@ class FileManager:
         logger.print(flush=True)
 
     def remove(self, logger):
-        logger.print(
-            f"[data/] Remove profiles directory {logger.emph(self.profiles_dir.as_uri())}..."
-        )
-        shutil.rmtree(str(self.profiles_dir))
-        logger.print(
-            f"[data/] Remove beatmaps directory {logger.emph(self.beatmaps_dir.as_uri())}..."
-        )
-        shutil.rmtree(str(self.beatmaps_dir))
-        logger.print(
-            f"[data/] Remove resources directory {logger.emph(self.resources_dir.as_uri())}..."
-        )
-        shutil.rmtree(str(self.resources_dir))
-        logger.print(
-            f"[data/] Remove devices directory {logger.emph(self.resources_dir.as_uri())}..."
-        )
-        shutil.rmtree(str(self.devices_dir))
-        logger.print(
-            f"[data/] Remove root directory {logger.emph(self.root.as_uri())}..."
-        )
         shutil.rmtree(str(self.root))
 
     def get_desc(self, path, ret_ind=False):

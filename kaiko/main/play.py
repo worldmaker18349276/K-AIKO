@@ -29,8 +29,9 @@ class PlayCommand:
             return
 
         return KAIKOPlay(
-            self.menu.file_manager,
-            self.menu.file_manager.beatmaps_dir / beatmap,
+            self.menu.resources_dir,
+            self.menu.cache_dir,
+            self.menu.beatmaps_dir / beatmap,
             start,
             self.menu.profiles_manager,
             self.menu.logger,
@@ -47,7 +48,7 @@ class PlayCommand:
         """
 
         return KAIKOLoop(
-            pattern, tempo, offset, self.menu.file_manager, self.menu.profiles_manager, self.menu.logger,
+            pattern, tempo, offset, self.menu.resources_dir, self.menu.cache_dir, self.menu.profiles_manager, self.menu.logger,
         )
 
     @loop.arg_parser("pattern")
@@ -110,8 +111,9 @@ class PlayCommand:
 
 
 class KAIKOPlay:
-    def __init__(self, file_manager, filepath, start, profiles_manager, logger):
-        self.file_manager = file_manager
+    def __init__(self, resources_dir, cache_dir, filepath, start, profiles_manager, logger):
+        self.resources_dir = resources_dir
+        self.cache_dir = cache_dir
         self.filepath = filepath
         self.start = start
         self.profiles_manager = profiles_manager
@@ -140,8 +142,8 @@ class KAIKOPlay:
 
             score, devices_settings = yield from beatmap.play(
                 manager,
-                self.file_manager.resources_dir,
-                self.file_manager.cache_dir,
+                self.resources_dir,
+                self.cache_dir,
                 self.start,
                 devices_settings,
                 gameplay_settings,
@@ -172,11 +174,12 @@ class KAIKOPlay:
 
 
 class KAIKOLoop:
-    def __init__(self, pattern, tempo, offset, file_manager, profiles_manager, logger):
+    def __init__(self, pattern, tempo, offset, resources_dir, cache_dir, profiles_manager, logger):
         self.pattern = pattern
         self.tempo = tempo
         self.offset = offset
-        self.file_manager = file_manager
+        self.resources_dir = resources_dir
+        self.cache_dir = cache_dir
         self.profiles_manager = profiles_manager
         self.logger = logger
 
@@ -204,8 +207,8 @@ class KAIKOLoop:
 
             score, devices_settings = yield from beatmap.play(
                 manager,
-                self.file_manager.resources_dir,
-                self.file_manager.cache_dir,
+                self.resources_dir,
+                self.cache_dir,
                 None,
                 devices_settings,
                 gameplay_settings,
