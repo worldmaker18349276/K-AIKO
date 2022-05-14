@@ -722,7 +722,7 @@ class BeatInput:
         The result of input.
     state : str
         The input state.
-    modified_event : int
+    modified_counter : int
         The event counter for modifying buffer.
     """
 
@@ -771,7 +771,7 @@ class BeatInput:
         self.tab_state = None
         self.state = "FIN"
         self.lock = threading.RLock()
-        self.modified_event = 0
+        self.modified_counter = 0
         self.new_session()
 
     @property
@@ -935,7 +935,7 @@ class BeatInput:
             (token, type, mask, quotes)
             for (token, mask, quotes), type in zip(tokens, types)
         ]
-        self.modified_event += 1
+        self.modified_counter += 1
         return True
 
     @locked
@@ -1941,7 +1941,7 @@ class BeatPrompt:
         self.key_pressed_time = 0.0
 
         # input state
-        self.modified_event = None
+        self.modified_counter = None
         self.buffer = []
         self.tokens = []
         self.pos = 0
@@ -1984,8 +1984,8 @@ class BeatPrompt:
         while True:
             # extract input state
             with self.input.lock:
-                if self.input.modified_event != self.modified_event:
-                    self.modified_event = self.input.modified_event
+                if self.input.modified_counter != self.modified_counter:
+                    self.modified_counter = self.input.modified_counter
                     self.buffer = list(self.input.buffer)
                     self.tokens = list(self.input.tokens)
                 self.pos = self.input.pos
