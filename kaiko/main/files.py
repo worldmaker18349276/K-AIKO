@@ -15,9 +15,6 @@ class InvalidFileOperation(Exception):
 
 
 class WildCardDescriptor:
-    def __init__(self, parent):
-        self.parent = parent
-
     def desc(self, path):
         return type(self).__doc__
 
@@ -40,15 +37,13 @@ class FileDescriptor(WildCardDescriptor):
 
 
 class DirDescriptor(WildCardDescriptor):
-    def __init__(self, parent):
-        super().__init__(parent)
-
+    def __init__(self):
         for name, child in type(self).__dict__.items():
             if isinstance(child, DirChildField):
                 self.__dict__[name] = DirChild(
                     child.pattern,
                     child.is_required,
-                    child.descriptor_type(self),
+                    child.descriptor_type(),
                 )
 
     def children(self):

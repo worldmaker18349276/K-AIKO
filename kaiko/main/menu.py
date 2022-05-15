@@ -154,7 +154,7 @@ class KAIKOMenu:
         logger = log.Logger()
 
         # load workspace
-        file_manager = FileManager.create(RootDescriptor(None))
+        file_manager = FileManager.create(RootDescriptor())
         file_manager.prepare(logger)
 
         os.environ["KAIKO"] = str(file_manager.root)
