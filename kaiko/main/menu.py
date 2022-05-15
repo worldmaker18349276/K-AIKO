@@ -10,7 +10,7 @@ from ..utils import datanodes as dn
 from ..utils import commands as cmd
 from ..devices import loggers as log
 from ..beats import beatshell
-from .files import FileManager, FilesCommand, CdCommand, FileDescriptor, DirDescriptor, WildCardDescriptor, child
+from .files import FileManager, FilesCommand, CdCommand, FileDescriptor, DirDescriptor, WildCardDescriptor, as_child
 from .settings import KAIKOSettings
 from .profiles import ProfileManager, ProfilesCommand
 from .songs import BeatmapManager, KAIKOBGMController, BGMCommand
@@ -39,70 +39,70 @@ logo = """
 class RootDescriptor(DirDescriptor):
     "(The workspace of KAIKO)"
 
-    @child("Beatmaps", is_required=True)
+    @as_child("Beatmaps", is_required=True)
     class Beatmaps(DirDescriptor):
         "(The place to hold your beatmaps)"
 
-        @child("*")
+        @as_child("*")
         class BeatmapSet(DirDescriptor):
             "(Beatmapset of a song)"
 
-            @child("*.kaiko")
+            @as_child("*.kaiko")
             class BeatmapKAIKO(FileDescriptor):
                 "(Beatmap file in kaiko format)"
 
-            @child("*.ka")
+            @as_child("*.ka")
             class BeatmapKA(FileDescriptor):
                 "(Beatmap file in kaiko format)"
 
-            @child("*.osu")
+            @as_child("*.osu")
             class BeatmapOSU(FileDescriptor):
                 "(Beatmap file in osu format)"
 
-            @child("**")
+            @as_child("**")
             class InnerFile(WildCardDescriptor):
                 "(Inner file of this beatmapset)"
 
-        @child("*.osz")
+        @as_child("*.osz")
         class BeamapZip(FileDescriptor):
             "(Compressed beatmapset file)"
 
-    @child("Profiles", is_required=True)
+    @as_child("Profiles", is_required=True)
     class Profiles(DirDescriptor):
         "(The place to manage your profiles)"
 
-        @child("*.kaiko-profile")
+        @as_child("*.kaiko-profile")
         class Profile(FileDescriptor):
             "(Your custom profile)"
 
-        @child(".default-profile")
+        @as_child(".default-profile")
         class Default(FileDescriptor):
             "(The file of default profile name)"
 
-    @child("Resources", is_required=True)
+    @as_child("Resources", is_required=True)
     class Resources(DirDescriptor):
         "(The place to store some resources of KAIKO)"
 
-        @child("**")
+        @as_child("**")
         class Resource(WildCardDescriptor):
             "(Resource file)"
 
-    @child("Devices", is_required=True)
+    @as_child("Devices", is_required=True)
     class Devices(DirDescriptor):
         "(The place to manage your devices)"
 
         def init(self, path):
             path.mkdir()
 
-    @child("Cache", is_required=True)
+    @as_child("Cache", is_required=True)
     class Cache(DirDescriptor):
         "(The place to cache some data for better exprience)"
 
-        @child(".beatshell-history", is_required=True)
+        @as_child(".beatshell-history", is_required=True)
         class BeatShellHistory(FileDescriptor):
             "(The command history)"
 
-        @child("**")
+        @as_child("**")
         class CacheData(WildCardDescriptor):
             "(Cache data)"
 

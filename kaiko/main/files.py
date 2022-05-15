@@ -77,7 +77,7 @@ class DirChildField:
     descriptor_type: type
 
 
-def child(pattern, is_required=False):
+def as_child(pattern, is_required=False):
     if is_required:
         if not re.fullmatch(r"([^/?*[]|\[\?]|\[\*]|\[\[])*", pattern):
             raise ValueError(f"invalid pattern: {pattern}")
