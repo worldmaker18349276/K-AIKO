@@ -299,13 +299,11 @@ class FileManager:
             ind, descriptor = self.glob(child_path)
             desc = descriptor.desc(child_path) if descriptor is not None else None
 
-            ordering_key = (desc is None, ind, child.is_symlink(), not child.is_dir(), child.suffix, child.stem)
+            ordering_key = (descriptor is None, ind, child.is_symlink(), not child.is_dir(), child.suffix, child.stem)
 
-            if desc is None:
+            if descriptor is None:
                 name = f"[file_unknown]{name}[/]"
-                desc = ""
-            else:
-                desc = f"[file_desc]{desc}[/]"
+            desc = f"[file_desc]{desc}[/]" if desc is not None else ""
             name = f"[file_item]{name}[/]"
 
             name = logger.rich.parse(name)
