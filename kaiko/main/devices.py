@@ -11,6 +11,7 @@ from ..utils import commands as cmd
 from ..devices import terminals as term
 from ..devices import audios as aud
 from ..devices import engines
+from .files import DirDescriptor
 
 
 @contextlib.contextmanager
@@ -143,6 +144,10 @@ def determine_unicode_version(logger):
         logger.print(f"[emph]UNICODE_VERSION={version}; export UNICODE_VERSION[/]")
 
     return version
+
+
+class DevicesDirDescriptor(DirDescriptor):
+    "(The place to manage your devices)"
 
 
 class DevicesCommand:

@@ -7,6 +7,7 @@ from ..utils import config as cfg
 from ..utils import parsec as pc
 from ..utils import commands as cmd
 from ..utils import datanodes as dn
+from .files import FileDescriptor, DirDescriptor, as_child
 
 
 def exists(program):
@@ -30,6 +31,18 @@ def edit(text, editor, suffix=""):
         yield from dn.subprocess_task([editor, file.name]).join()
 
         return open(file.name, mode="r").read()
+
+
+class ProfilesDirDescriptor(DirDescriptor):
+    "(The place to manage your profiles)"
+
+    @as_child("*.kaiko-profile")
+    class Profile(FileDescriptor):
+        "(Your custom profile)"
+
+    @as_child(".default-profile")
+    class Default(FileDescriptor):
+        "(The file of default profile name)"
 
 
 class ProfileManager:

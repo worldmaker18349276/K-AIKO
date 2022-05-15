@@ -16,6 +16,7 @@ from ..devices import audios as aud
 from ..devices import engines
 from ..beats import beatmaps
 from ..beats import beatsheets
+from .files import FileDescriptor, DirDescriptor, WildCardDescriptor, as_child
 
 
 def format_info(info, logger):
@@ -23,6 +24,34 @@ def format_info(info, logger):
         tuple(line.split(":", maxsplit=1)) for line in info.strip().splitlines()
     )
     return logger.format_dict(data)
+
+
+class BeatmapsDirDescriptor(DirDescriptor):
+    "(The place to hold your beatmaps)"
+
+    @as_child("*")
+    class BeatmapSet(DirDescriptor):
+        "(Beatmapset of a song)"
+
+        @as_child("*.kaiko")
+        class BeatmapKAIKO(FileDescriptor):
+            "(Beatmap file in kaiko format)"
+
+        @as_child("*.ka")
+        class BeatmapKA(FileDescriptor):
+            "(Beatmap file in kaiko format)"
+
+        @as_child("*.osu")
+        class BeatmapOSU(FileDescriptor):
+            "(Beatmap file in osu format)"
+
+        @as_child("**")
+        class InnerFile(WildCardDescriptor):
+            "(Inner file of this beatmapset)"
+
+    @as_child("*.osz")
+    class BeamapZip(FileDescriptor):
+        "(Compressed beatmapset file)"
 
 
 class BeatmapManager:

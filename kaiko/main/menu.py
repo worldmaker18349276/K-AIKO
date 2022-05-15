@@ -12,12 +12,13 @@ from ..devices import loggers as log
 from ..beats import beatshell
 from .files import FileManager, FilesCommand, CdCommand, FileDescriptor, DirDescriptor, WildCardDescriptor, as_child
 from .settings import KAIKOSettings
-from .profiles import ProfileManager, ProfilesCommand
-from .songs import BeatmapManager, KAIKOBGMController, BGMCommand
+from .profiles import ProfileManager, ProfilesCommand, ProfilesDirDescriptor
+from .songs import BeatmapManager, KAIKOBGMController, BGMCommand, BeatmapsDirDescriptor
 from .play import PlayCommand
 from .devices import (
     prepare_pyaudio,
     DevicesCommand,
+    DevicesDirDescriptor,
     determine_unicode_version,
     fit_screen,
 )
@@ -36,48 +37,12 @@ logo = """
 """
 
 
-class RootDescriptor(DirDescriptor):
+class RootDirDescriptor(DirDescriptor):
     "(The workspace of KAIKO)"
 
-    @as_child("Beatmaps", is_required=True)
-    class Beatmaps(DirDescriptor):
-        "(The place to hold your beatmaps)"
+    Beatmaps = as_child("Beatmaps", is_required=True)(BeatmapsDirDescriptor)
 
-        @as_child("*")
-        class BeatmapSet(DirDescriptor):
-            "(Beatmapset of a song)"
-
-            @as_child("*.kaiko")
-            class BeatmapKAIKO(FileDescriptor):
-                "(Beatmap file in kaiko format)"
-
-            @as_child("*.ka")
-            class BeatmapKA(FileDescriptor):
-                "(Beatmap file in kaiko format)"
-
-            @as_child("*.osu")
-            class BeatmapOSU(FileDescriptor):
-                "(Beatmap file in osu format)"
-
-            @as_child("**")
-            class InnerFile(WildCardDescriptor):
-                "(Inner file of this beatmapset)"
-
-        @as_child("*.osz")
-        class BeamapZip(FileDescriptor):
-            "(Compressed beatmapset file)"
-
-    @as_child("Profiles", is_required=True)
-    class Profiles(DirDescriptor):
-        "(The place to manage your profiles)"
-
-        @as_child("*.kaiko-profile")
-        class Profile(FileDescriptor):
-            "(Your custom profile)"
-
-        @as_child(".default-profile")
-        class Default(FileDescriptor):
-            "(The file of default profile name)"
+    Profiles = as_child("Profiles", is_required=True)(ProfilesDirDescriptor)
 
     @as_child("Resources", is_required=True)
     class Resources(DirDescriptor):
@@ -87,12 +52,7 @@ class RootDescriptor(DirDescriptor):
         class Resource(WildCardDescriptor):
             "(Resource file)"
 
-    @as_child("Devices", is_required=True)
-    class Devices(DirDescriptor):
-        "(The place to manage your devices)"
-
-        def init(self, path):
-            path.mkdir()
+    Devices = as_child("Devices", is_required=True)(DevicesDirDescriptor)
 
     @as_child("Cache", is_required=True)
     class Cache(DirDescriptor):
@@ -154,7 +114,7 @@ class KAIKOMenu:
         logger = log.Logger()
 
         # load workspace
-        file_manager = FileManager.create(RootDescriptor())
+        file_manager = FileManager.create(RootDirDescriptor())
         file_manager.prepare(logger)
 
         os.environ["KAIKO"] = str(file_manager.root)
