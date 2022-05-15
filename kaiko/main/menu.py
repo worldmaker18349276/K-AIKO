@@ -40,11 +40,19 @@ logo = """
 class RootDirDescriptor(DirDescriptor):
     "(The workspace of KAIKO)"
 
-    Beatmaps = as_child("Beatmaps", is_required=True)(BeatmapsDirDescriptor)
+    beatmaps_name = "Beatmaps"
+    profiles_name = "Profiles"
+    devices_name = "Devices"
+    resources_name = "Resources"
+    cache_name = "Cache"
 
-    Profiles = as_child("Profiles", is_required=True)(ProfilesDirDescriptor)
+    Beatmaps = as_child(beatmaps_name, is_required=True)(BeatmapsDirDescriptor)
 
-    @as_child("Resources", is_required=True)
+    Profiles = as_child(profiles_name, is_required=True)(ProfilesDirDescriptor)
+
+    Devices = as_child(devices_name, is_required=True)(DevicesDirDescriptor)
+
+    @as_child(resources_name, is_required=True)
     class Resources(DirDescriptor):
         "(The place to store some resources of KAIKO)"
 
@@ -52,9 +60,7 @@ class RootDirDescriptor(DirDescriptor):
         class Resource(WildCardDescriptor):
             "(Resource file)"
 
-    Devices = as_child("Devices", is_required=True)(DevicesDirDescriptor)
-
-    @as_child("Cache", is_required=True)
+    @as_child(cache_name, is_required=True)
     class Cache(DirDescriptor):
         "(The place to cache some data for better exprience)"
 
@@ -120,7 +126,7 @@ class KAIKOMenu:
         os.environ["KAIKO"] = str(file_manager.root)
 
         # load profiles
-        profiles_dir = file_manager.root / "Profiles"
+        profiles_dir = file_manager.root / file_manager.structure.profiles_name
         profiles_manager = ProfileManager(KAIKOSettings, profiles_dir, logger)
         profiles_manager.on_change(
             lambda settings: logger.recompile_style(
@@ -276,23 +282,23 @@ class KAIKOMenu:
 
     @property
     def cache_dir(self):
-        return self.file_manager.root / "Cache"
+        return self.file_manager.root / self.file_manager.structure.cache_name
 
     @property
     def profiles_dir(self):
-        return self.file_manager.root / "Profiles"
+        return self.file_manager.root / self.file_manager.structure.profiles_name
 
     @property
     def beatmaps_dir(self):
-        return self.file_manager.root / "Beatmaps"
+        return self.file_manager.root / self.file_manager.structure.beatmaps_name
 
     @property
     def resources_dir(self):
-        return self.file_manager.root / "Resources"
+        return self.file_manager.root / self.file_manager.structure.resources_name
 
     @property
     def devices_dir(self):
-        return self.file_manager.root / "Devices"
+        return self.file_manager.root / self.file_manager.structure.devices_name
 
     def print_banner(self):
         username = self.logger.escape(self.file_manager.username, type="all")
