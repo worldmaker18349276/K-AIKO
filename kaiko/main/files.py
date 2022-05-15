@@ -3,10 +3,108 @@ import dataclasses
 import traceback
 import getpass
 import glob
+import re
 import shutil
 from pathlib import Path
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
+
+
+class InvalidFileOperation(Exception):
+    pass
+
+
+class WildCardDescriptor:
+    def __init__(self, parent):
+        self.parent = parent
+
+    def desc(self, path):
+        return type(self).__doc__
+
+    def info(self, path):
+        return None
+
+    def mk(self, path):
+        raise InvalidFileOperation
+
+    def rm(self, path):
+        raise InvalidFileOperation
+
+    def show(self, indent=0):
+        return "[any] " + (type(self).__doc__ or "")
+
+
+class FileDescriptor(WildCardDescriptor):
+    def show(self, indent=0):
+        return "[file] " + (type(self).__doc__ or "")
+
+
+class DirDescriptor(WildCardDescriptor):
+    def __init__(self, parent):
+        super().__init__(parent)
+
+        for name, child in type(self).__dict__.items():
+            if isinstance(child, DirChildField):
+                self.__dict__[name] = DirChild(
+                    child.pattern,
+                    child.is_required,
+                    child.descriptor_type(self),
+                )
+
+    def children(self):
+        for child in self.__dict__.values():
+            if isinstance(child, DirChild):
+                yield child
+
+    def show(self, indent=0):
+        return "[dir] " + (type(cls).__doc__ or "") + "".join(
+            "\n" + "  " * (indent+1) + child.pattern + ": " + child.descriptor.show(indent+1)
+            for child in self.children()
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class DirChild:
+    pattern: str
+    is_required: bool
+    descriptor: WildCardDescriptor
+
+
+@dataclasses.dataclass(frozen=True)
+class DirChildField:
+    pattern: str
+    is_required: bool
+    descriptor_type: type
+
+
+def child(pattern, is_required=False):
+    if is_required:
+        if not re.fullmatch(r"([^/?*[]|\[\?]|\[\*]|\[\[])*", pattern):
+            raise ValueError(f"invalid pattern: {pattern}")
+
+        def child_decorator(descriptor_type):
+            if not issubclass(descriptor_type, (FileDescriptor, DirDescriptor)):
+                raise TypeError(f"invalid file descriptor: {descriptor_type}")
+            return DirChildField(pattern, is_required, descriptor_type)
+
+        return child_decorator
+
+    else:
+        if not re.fullmatch(r"[^/]*", pattern):
+            raise ValueError(f"invalid pattern: {pattern}")
+
+        def child_decorator(descriptor_type):
+            if not issubclass(descriptor_type, WildCardDescriptor):
+                raise TypeError(f"invalid file descriptor: {descriptor_type}")
+            return DirChildField(pattern, is_required, descriptor_type)
+
+        return child_decorator
+
+
+def unescape_glob(pattern):
+    if not re.fullmatch(r"([^/?*[]|\[\?]|\[\*]|\[\[])*", pattern):
+        raise ValueError(f"invalid pattern: {pattern}")
+    return pattern.replace("[?]", "?").replace("[*]", "*").replace("[[]", "[")
 
 
 @dataclasses.dataclass
@@ -14,39 +112,37 @@ class FileManager:
     username: str
     root: Path
     current: Path
-    structure: dict
-    initializer: dict
+    structure: DirDescriptor
 
     @classmethod
-    def create(cls, structure, initializer):
+    def create(cls, structure):
         username = getpass.getuser()
         root = Path("~/.local/share/K-AIKO").expanduser()
-        return cls(username, root, Path("."), structure, initializer)
+        return cls(username, root, Path("."), structure)
 
     def is_prepared(self):
+        def go(path, tree):
+            for child in tree.children():
+                if child.is_required:
+                    subpath = path / unescape_glob(child.pattern)
+                    if not subpath.exists():
+                        return False
+
+                    if isinstance(child.descriptor, DirDescriptor):
+                        if not subpath.is_dir():
+                            raise ValueError(f"bad file structure: {subpath!s} should be a directory")
+                        if not go(subpath, child.descriptor):
+                            return False
+                    elif isinstance(child.descriptor, FileDescriptor):
+                        if not subpath.is_file():
+                            raise ValueError(f"bad file structure: {subpath!s} should be a file")
+                    else:
+                        raise TypeError(child.descriptor)
+
         if not self.root.exists():
             return False
 
-        def go(path, tree):
-            for key, value in tree.items():
-                if key == ".":
-                    continue
-
-                subpath = path / key
-
-                if not subpath.exists():
-                    return False
-
-                if isinstance(value, dict):
-                    if not subpath.is_dir():
-                        return False
-                    if not go(subpath, value):
-                        return False
-                else:
-                    if not subpath.is_file():
-                        return False
-
-        return go(self.root, self.initializer)
+        return go(self.root, self.structure)
 
     def prepare(self, logger):
         if self.is_prepared():
@@ -55,32 +151,25 @@ class FileManager:
         # start up
         logger.print("[data/] Prepare your profile...")
 
+        def go(path, tree):
+            for child in tree.children():
+                if child.is_required:
+                    subpath = path / unescape_glob(child.pattern)
+
+                    if isinstance(child.descriptor, DirDescriptor):
+                        if not subpath.exists():
+                            subpath.mkdir()
+                        go(subpath, child.descriptor)
+                    elif isinstance(child.descriptor, FileDescriptor):
+                        if not subpath.exists():
+                            subpath.touch()
+                    else:
+                        raise TypeError(child.descriptor)
+
         if not self.root.exists():
             self.root.mkdir()
-            init = self.initializer.get(".", None)
-            if init:
-                init(self.root)
 
-        def go(path, tree):
-            for key, value in tree.items():
-                if key == ".":
-                    continue
-
-                subpath = path / key
-
-                if not subpath.exists():
-                    if isinstance(value, dict):
-                        subpath.mkdir()
-                        init = value.get(".", None)
-                        if init:
-                            init(subpath)
-                        go(subpath, value)
-                    else:
-                        subpath.touch()
-                        if value:
-                            value(subpath)
-
-        go(self.root, self.initializer)
+        go(self.root, self.structure)
 
         logger.print(
             f"[data/] Your data will be stored in {logger.emph(self.root.as_uri())}"
@@ -107,59 +196,44 @@ class FileManager:
             return (), None
 
         route = [abspath, *abspath.parents]
-        route = route[route.index(self.root)::-1]
+        route = route[route.index(self.root)::-1][1:]
 
         desc_func = None
         index = ()
-        tree = {glob.escape(str(self.root)): self.structure}
+        tree = self.structure
         for current_path in route:
-            if not isinstance(tree, dict):
+            if not isinstance(tree, DirDescriptor):
                 return (), None
 
-            for i, (pattern, subtree) in enumerate(tree.items()):
-                if pattern == ".":
-                    continue
+            for i, child in enumerate(tree.children()):
+                if child.pattern == "**":
+                    current_path = path
 
-                elif pattern == "**":
-                    desc_func = subtree
-                    curr_index = i
-                    break
-
-                elif isinstance(subtree, dict):
+                if isinstance(child.descriptor, DirDescriptor):
                     if not Path.is_dir(current_path):
                         continue
-
-                    if not current_path.match(pattern):
-                        continue
-
-                    desc_func = subtree["."]
-                    curr_index = i
-                    break
-
-                else:
+                elif isinstance(child.descriptor, FileDescriptor):
                     if not Path.is_file(current_path):
                         continue
+                elif isinstance(child.descriptor, WildCardDescriptor):
+                    pass
+                else:
+                    raise TypeError
 
-                    if not current_path.match(pattern):
-                        continue
+                if child.pattern == "**":
+                    index = (*index, i)
+                    desc = child.descriptor.desc(path)
+                    return index, desc
 
-                    desc_func = subtree
-                    curr_index = i
+                if current_path.match(child.pattern):
+                    index = (*index, i)
+                    tree = child.descriptor
                     break
 
             else:
-                desc_func = None
-                curr_index = None
-                continue
+                return (), None
 
-            tree = subtree
-            index = (*index, curr_index)
-
-        desc = (
-            desc_func
-            if desc_func is None or isinstance(desc_func, str)
-            else desc_func(path.relative_to(self.root))
-        )
+        desc = tree.desc(path)
         return index, desc
 
     def cd(self, path, logger):
