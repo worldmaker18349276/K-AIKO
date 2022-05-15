@@ -178,6 +178,13 @@ class FileManager:
         if not ret_ind:
             return self.get_desc(path, ret_ind=True)[1]
 
+        index, descriptor = self.glob(path)
+        if descriptor is None:
+            return (), None
+
+        return index, descriptor.desc(path)
+
+    def glob(self, path):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
         try:
             abspath = path.resolve(strict=True)
@@ -228,8 +235,7 @@ class FileManager:
             else:
                 return (), None
 
-        desc = tree.desc(path)
-        return index, desc
+        return index, tree
 
     def cd(self, path, logger):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
@@ -289,7 +295,10 @@ class FileManager:
                 linkname = logger.escape(child.name, type="all")
                 name = f"[file_link]{linkname}[/]{name}"
 
-            ind, desc = self.get_desc(self.root / self.current / child.name, ret_ind=True)
+            child_path = self.root / self.current / child.name
+            ind, descriptor = self.glob(child_path)
+            desc = descriptor.desc(child_path) if descriptor is not None else None
+
             ordering_key = (desc is None, ind, child.is_symlink(), not child.is_dir(), child.suffix, child.stem)
 
             if desc is None:
