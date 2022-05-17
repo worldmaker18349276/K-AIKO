@@ -1,14 +1,37 @@
 import traceback
 from pathlib import Path
+from ..devices import loggers as log
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
 from ..beats import beatmaps
 from ..beats import beatsheets
+from .files import FileManager
+from .profiles import ProfileManager
+from .songs import BeatmapManager
 
 
 class PlayCommand:
-    def __init__(self, menu):
-        self.menu = menu
+    def __init__(self, provider, resources_dir, cache_dir, beatmaps_dir):
+        self.provider = provider
+        self.resources_dir = resources_dir
+        self.cache_dir = cache_dir
+        self.beatmaps_dir = beatmaps_dir
+
+    @property
+    def logger(self):
+        return self.provider.get(log.Logger)
+
+    @property
+    def profiles_manager(self):
+        return self.provider.get(ProfileManager)
+
+    @property
+    def file_manager(self):
+        return self.provider.get(FileManager)
+
+    @property
+    def beatmap_manager(self):
+        return self.provider.get(BeatmapManager)
 
     # beatmaps
 
@@ -24,17 +47,17 @@ class PlayCommand:
         beatmaps folder can be accessed.
         """
 
-        if not self.menu.beatmap_manager.is_beatmap(beatmap):
-            self.menu.logger.print("[warn]Not a beatmap.[/]")
+        if not self.beatmap_manager.is_beatmap(beatmap):
+            self.logger.print("[warn]Not a beatmap.[/]")
             return
 
         return KAIKOPlay(
-            self.menu.resources_dir,
-            self.menu.cache_dir,
-            self.menu.beatmaps_dir / beatmap,
+            self.resources_dir,
+            self.cache_dir,
+            self.beatmaps_dir / beatmap,
             start,
-            self.menu.profiles_manager,
-            self.menu.logger,
+            self.profiles_manager,
+            self.logger,
         )
 
     @cmd.function_command
@@ -48,7 +71,7 @@ class PlayCommand:
         """
 
         return KAIKOLoop(
-            pattern, tempo, offset, self.menu.resources_dir, self.menu.cache_dir, self.menu.profiles_manager, self.menu.logger,
+            pattern, tempo, offset, self.resources_dir, self.cache_dir, self.profiles_manager, self.logger,
         )
 
     @loop.arg_parser("pattern")
@@ -59,8 +82,8 @@ class PlayCommand:
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        current = self.menu.file_manager.root / self.menu.file_manager.current
-        return self.menu.beatmap_manager.make_parser(current, type="file")
+        current = self.file_manager.root / self.file_manager.current
+        return self.beatmap_manager.make_parser(current, type="file")
 
     @play.arg_parser("start")
     def _play_start_parser(self, beatmap):
@@ -72,7 +95,7 @@ class PlayCommand:
 
         usage: [cmd]reload[/]
         """
-        self.menu.beatmap_manager.reload()
+        self.beatmap_manager.reload()
 
     @cmd.function_command
     def add(self, beatmap):
@@ -86,7 +109,7 @@ class PlayCommand:
            the terminal to paste its path.
         """
 
-        self.menu.beatmap_manager.add(beatmap)
+        self.beatmap_manager.add(beatmap)
 
     @add.arg_parser("beatmap")
     def _add_beatmap_parser(self):
@@ -102,12 +125,12 @@ class PlayCommand:
                beatmap you want to remove.
         """
 
-        self.menu.beatmap_manager.remove(beatmap)
+        self.beatmap_manager.remove(beatmap)
 
     @remove.arg_parser("beatmap")
     def _remove_beatmap_parser(self):
-        current = self.menu.file_manager.root / self.menu.file_manager.current
-        return self.menu.beatmap_manager.make_parser(current, type="all")
+        current = self.file_manager.root / self.file_manager.current
+        return self.beatmap_manager.make_parser(current, type="all")
 
 
 class KAIKOPlay:

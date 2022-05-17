@@ -385,7 +385,7 @@ class KAIKOMenu:
     def get_command_parser(self):
         commands = {}
         if self.file_manager.current == Path("Beatmaps/"):
-            commands["play"] = PlayCommand(self)
+            commands["play"] = PlayCommand(self, self.resources_dir, self.cache_dir, self.beatmaps_dir)
         if self.file_manager.current == Path("Devices/"):
             commands["devices"] = DevicesCommand(self)
         if self.file_manager.current == Path("Profiles/"):
