@@ -128,19 +128,19 @@ class KAIKOMenu:
         os.environ["KAIKO"] = str(file_manager.root)
 
         # load profiles
-        profiles_manager = ProfileManager(KAIKOSettings, menu.profiles_dir, logger)
+        profiles_manager = ProfileManager(KAIKOSettings, menu.profiles_dir)
         profiles_manager.on_change(
             lambda settings: logger.recompile_style(
                 terminal_settings=settings.devices.terminal,
                 logger_settings=settings.devices.logger,
             )
         )
-        profiles_manager.update()
+        profiles_manager.update(logger)
         menu.set(profiles_manager)
 
-        succ = profiles_manager.use()
+        succ = profiles_manager.use(logger)
         if not succ:
-            succ = profiles_manager.new()
+            succ = profiles_manager.new(logger)
             if not succ:
                 raise RuntimeError("Fail to load profile")
 
@@ -389,7 +389,7 @@ class KAIKOMenu:
         if self.file_manager.current == Path("Devices/"):
             commands["devices"] = DevicesCommand(self.profiles_manager, self.logger, self.manager)
         if self.file_manager.current == Path("Profiles/"):
-            commands["profiles"] = ProfilesCommand(self.profiles_manager, self.logger)
+            commands["profiles"] = ProfilesCommand(self)
         commands["bgm"] = BGMCommand(self.bgm_controller, self.beatmap_manager, self.logger)
         commands["files"] = FilesCommand(self)
         commands["cd"] = CdCommand(self)

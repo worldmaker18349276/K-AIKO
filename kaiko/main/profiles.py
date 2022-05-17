@@ -3,6 +3,7 @@ import traceback
 import tempfile
 import subprocess
 from pathlib import Path
+from ..devices import loggers as log
 from ..utils import config as cfg
 from ..utils import parsec as pc
 from ..utils import commands as cmd
@@ -52,7 +53,6 @@ class ProfileManager:
     ----------
     config_type : cfg.Configurable
         The configuration type to manage.
-    logger : loggers.Logger
     path : Path
         The path of profiles directory.
     profiles : list of str
@@ -69,12 +69,11 @@ class ProfileManager:
     extension = ".kaiko-profile"
     settings_name = "settings"
 
-    def __init__(self, config_type, profiles_dir, logger):
+    def __init__(self, config_type, profiles_dir):
         if isinstance(profiles_dir, str):
             profiles_dir = Path(profiles_dir)
 
         self.config_type = config_type
-        self.logger = logger
         self.profiles_dir = profiles_dir
         self.profiles = []
         self.default_name = None
@@ -131,15 +130,17 @@ class ProfileManager:
         for on_change_handler in self.on_change_handlers:
             on_change_handler(self.current)
 
-    def update(self):
+    def update(self, logger):
         """Update the list of profiles.
+
+        Parameters
+        ----------
+        logger : log.Logger
 
         Returns
         -------
         succ : bool
         """
-        logger = self.logger
-
         logger.print("[data/] Update profiles...")
 
         if not self.profiles_dir.exists():
@@ -175,15 +176,17 @@ class ProfileManager:
         self._profiles_mtime = profiles_mtime
         return True
 
-    def set_default(self):
+    def set_default(self, logger):
         """Set the current profile as default.
+
+        Parameters
+        ----------
+        logger : log.Logger
 
         Returns
         -------
         succ : bool
         """
-        logger = self.logger
-
         logger.print(
             f"[data/] Set {logger.emph(self.current_name, type='all')} as the default profile..."
         )
@@ -206,15 +209,17 @@ class ProfileManager:
 
         return True
 
-    def save(self):
+    def save(self, logger):
         """Save the current configuration.
+
+        Parameters
+        ----------
+        logger : log.Logger
 
         Returns
         -------
         succ : bool
         """
-        logger = self.logger
-
         current_path = self.profiles_dir / (self.current_name + self.extension)
         logger.print(
             f"[data/] Save configuration to {logger.emph(current_path.as_uri())}..."
@@ -243,18 +248,20 @@ class ProfileManager:
             return False
 
         self._current_mtime = os.stat(str(current_path)).st_mtime
-        self.update()
+        self.update(logger)
         return True
 
-    def load(self):
+    def load(self, logger):
         """Load the current profile.
+
+        Parameters
+        ----------
+        logger : log.Logger
 
         Returns
         -------
         succ : bool
         """
-        logger = self.logger
-
         current_path = self.profiles_dir / (self.current_name + self.extension)
         logger.print(
             f"[data/] Load configuration from {logger.emph(current_path.as_uri())}..."
@@ -287,11 +294,12 @@ class ProfileManager:
         self._current_mtime = current_mtime
         return True
 
-    def use(self, name=None):
+    def use(self, logger, name=None):
         """change the current profile.
 
         Parameters
         ----------
+        logger : log.Logger
         name : str, optional
             The name of profile, or None for default.
 
@@ -299,8 +307,6 @@ class ProfileManager:
         -------
         succ : bool
         """
-        logger = self.logger
-
         if name is None:
             if self.default_name is None:
                 logger.print("[warn]No default profile[/]")
@@ -314,17 +320,18 @@ class ProfileManager:
 
         old_name = self.current_name
         self.current_name = name
-        succ = self.load()
+        succ = self.load(logger)
         if not succ:
             self.current_name = old_name
             return False
         return True
 
-    def new(self, name=None, clone=None):
+    def new(self, logger, name=None, clone=None):
         """make a new profile.
 
         Parameters
         ----------
+        logger : log.Logger
         name : str, optional
             The name of profile.
         clone : str, optional
@@ -334,8 +341,6 @@ class ProfileManager:
         -------
         succ : bool
         """
-        logger = self.logger
-
         logger.print("Make new profile...")
 
         if clone is not None and clone not in self.profiles:
@@ -368,7 +373,7 @@ class ProfileManager:
         else:
             old_name = self.current_name
             self.current_name = clone
-            succ = self.load()
+            succ = self.load(logger)
             if not succ:
                 self.current_name = old_name
                 return False
@@ -376,11 +381,12 @@ class ProfileManager:
 
         return True
 
-    def delete(self, name):
+    def delete(self, logger, name):
         """Delete a profile.
 
         Parameters
         ----------
+        logger : log.Logger
         name : str
             The name of profile to delete.
 
@@ -388,8 +394,6 @@ class ProfileManager:
         -------
         succ : bool
         """
-        logger = self.logger
-
         target_path = self.profiles_dir / (name + self.extension)
         logger.print(f"[data/] Delete profile {logger.emph(target_path.as_uri())}...")
 
@@ -408,11 +412,12 @@ class ProfileManager:
         self.profiles.remove(name)
         return True
 
-    def rename(self, name):
+    def rename(self, logger, name):
         """Rename the current profile.
 
         Parameters
         ----------
+        logger : log.Logger
         name : str
             The new name of profile.
 
@@ -420,8 +425,6 @@ class ProfileManager:
         -------
         succ : bool
         """
-        logger = self.logger
-
         if self.current_name == name:
             return True
 
@@ -478,9 +481,16 @@ class FieldParser(cmd.TreeParser):
 
 
 class ProfilesCommand:
-    def __init__(self, profiles, logger):
-        self.profiles = profiles
-        self.logger = logger
+    def __init__(self, provider):
+        self.provider = provider
+
+    @property
+    def profiles_manager(self):
+        return self.provider.get(ProfileManager)
+
+    @property
+    def logger(self):
+        return self.provider.get(log.Logger)
 
     # configuration
 
@@ -493,13 +503,13 @@ class ProfilesCommand:
                         bool, highlight
                         changes or not.
         """
-        text = self.profiles.format()
-        is_changed = self.profiles.is_changed()
-        title = self.profiles.get_title()
+        text = self.profiles_manager.format()
+        is_changed = self.profiles_manager.is_changed()
+        title = self.profiles_manager.get_title()
 
         if diff:
-            current_path = self.profiles.profiles_dir / (
-                self.profiles.current_name + self.profiles.extension
+            current_path = self.profiles_manager.profiles_dir / (
+                self.profiles_manager.current_name + self.profiles_manager.extension
             )
             if not current_path.exists() or not current_path.is_file():
                 old = ""
@@ -523,7 +533,7 @@ class ProfilesCommand:
                      ╱
               The field name.
         """
-        return self.profiles.has(field)
+        return self.profiles_manager.has(field)
 
     @cmd.function_command
     def get(self, field):
@@ -533,10 +543,10 @@ class ProfilesCommand:
                      ╱
               The field name.
         """
-        if not self.profiles.has(field) and not self.profiles.has_default(field):
+        if not self.profiles_manager.has(field) and not self.profiles_manager.has_default(field):
             self.logger.print(f"[warn]No value for field {'.'.join(field)}[/]")
             return
-        return self.profiles.get(field)
+        return self.profiles_manager.get(field)
 
     @cmd.function_command
     def set(self, field, value):
@@ -546,8 +556,8 @@ class ProfilesCommand:
                      ╱         ╲
             The field name.   The value.
         """
-        self.profiles.set(field, value)
-        self.profiles.set_as_changed()
+        self.profiles_manager.set(field, value)
+        self.profiles_manager.set_as_changed()
 
     @cmd.function_command
     def unset(self, field):
@@ -557,8 +567,8 @@ class ProfilesCommand:
                        ╱
                 The field name.
         """
-        self.profiles.unset(field)
-        self.profiles.set_as_changed()
+        self.profiles_manager.unset(field)
+        self.profiles_manager.set_as_changed()
 
     @cmd.function_command
     @dn.datanode
@@ -567,14 +577,14 @@ class ProfilesCommand:
 
         usage: [cmd]edit[/]
         """
-        title = self.profiles.get_title()
+        title = self.profiles_manager.get_title()
 
-        editor = self.profiles.current.devices.terminal.editor
+        editor = self.profiles_manager.current.devices.terminal.editor
 
         text = cfg.format(
-            self.profiles.config_type,
-            self.profiles.current,
-            self.profiles.settings_name,
+            self.profiles_manager.config_type,
+            self.profiles_manager.current,
+            self.profiles_manager.settings_name,
         )
 
         yield
@@ -591,7 +601,7 @@ class ProfilesCommand:
         # parse result
         try:
             res = cfg.parse(
-                self.profiles.config_type, edited_text, self.profiles.settings_name
+                self.profiles_manager.config_type, edited_text, self.profiles_manager.settings_name
             )
 
         except pc.ParseError as error:
@@ -622,20 +632,20 @@ class ProfilesCommand:
                 )
             )
 
-            self.profiles.current = res
-            self.profiles.set_as_changed()
+            self.profiles_manager.current = res
+            self.profiles_manager.set_as_changed()
 
     @get.arg_parser("field")
     @has.arg_parser("field")
     @unset.arg_parser("field")
     @set.arg_parser("field")
     def _field_parser(self):
-        return FieldParser(self.profiles.config_type)
+        return FieldParser(self.profiles_manager.config_type)
 
     @set.arg_parser("value")
     def _set_value_parser(self, field):
-        annotation = self.profiles.config_type.get_field_type(field)
-        default = self.profiles.get(field)
+        annotation = self.profiles_manager.config_type.get_field_type(field)
+        default = self.profiles_manager.get(field)
         return cmd.LiteralParser(annotation, default)
 
     # profiles
@@ -648,16 +658,16 @@ class ProfilesCommand:
         """
         logger = self.logger
 
-        if not self.profiles.is_uptodate():
-            self.profiles.update()
+        if not self.profiles_manager.is_uptodate():
+            self.profiles_manager.update(logger)
 
-        for profile in self.profiles.profiles:
+        for profile in self.profiles_manager.profiles:
             note = ""
-            if profile == self.profiles.default_name:
+            if profile == self.profiles_manager.default_name:
                 note += " (default)"
-            if profile == self.profiles.current_name:
+            if profile == self.profiles_manager.current_name:
                 note += " (current)"
-            logger.print(logger.emph(profile + self.profiles.extension, type="all") + note)
+            logger.print(logger.emph(profile + self.profiles_manager.extension, type="all") + note)
 
     @cmd.function_command
     def reload(self):
@@ -665,12 +675,10 @@ class ProfilesCommand:
 
         usage: [cmd]reload[/]
         """
-        logger = self.logger
+        if not self.profiles_manager.is_uptodate():
+            self.profiles_manager.update(self.logger)
 
-        if not self.profiles.is_uptodate():
-            self.profiles.update()
-
-        self.profiles.load()
+        self.profiles_manager.load(self.logger)
 
     @cmd.function_command
     def save(self):
@@ -678,12 +686,10 @@ class ProfilesCommand:
 
         usage: [cmd]save[/]
         """
-        logger = self.logger
+        if not self.profiles_manager.is_uptodate():
+            self.profiles_manager.update(self.logger)
 
-        if not self.profiles.is_uptodate():
-            self.profiles.update()
-
-        self.profiles.save()
+        self.profiles_manager.save(self.logger)
 
     @cmd.function_command
     def set_default(self):
@@ -691,10 +697,10 @@ class ProfilesCommand:
 
         usage: [cmd]set_default[/]
         """
-        if not self.profiles.is_uptodate():
-            self.profiles.update()
+        if not self.profiles_manager.is_uptodate():
+            self.profiles_manager.update(self.logger)
 
-        self.profiles.set_default()
+        self.profiles_manager.set_default(self.logger)
 
     @cmd.function_command
     def use(self, profile):
@@ -704,11 +710,10 @@ class ProfilesCommand:
                        ╱
               The profile name.
         """
+        if not self.profiles_manager.is_uptodate():
+            self.profiles_manager.update(self.logger)
 
-        if not self.profiles.is_uptodate():
-            self.profiles.update()
-
-        self.profiles.use(profile)
+        self.profiles_manager.use(self.logger, profile)
 
     @cmd.function_command
     def rename(self, profile):
@@ -718,10 +723,10 @@ class ProfilesCommand:
                          ╱
                The profile name.
         """
-        if not self.profiles.is_uptodate():
-            self.profiles.update()
+        if not self.profiles_manager.is_uptodate():
+            self.profiles_manager.update(self.logger)
 
-        self.profiles.rename(profile)
+        self.profiles_manager.rename(self.logger, profile)
 
     @cmd.function_command
     def new(self, profile, clone=None):
@@ -731,10 +736,10 @@ class ProfilesCommand:
                        ╱                    ╲
               The profile name.      The profile to be cloned.
         """
-        if not self.profiles.is_uptodate():
-            self.profiles.update()
+        if not self.profiles_manager.is_uptodate():
+            self.profiles_manager.update(self.logger)
 
-        self.profiles.new(profile, clone)
+        self.profiles_manager.new(self.logger, profile, clone)
 
     @cmd.function_command
     def delete(self, profile):
@@ -744,10 +749,10 @@ class ProfilesCommand:
                          ╱
                 The profile name.
         """
-        if not self.profiles.is_uptodate():
-            self.profiles.update()
+        if not self.profiles_manager.is_uptodate():
+            self.profiles_manager.update(self.logger)
 
-        self.profiles.delete(profile)
+        self.profiles_manager.delete(self.logger, profile)
 
     @rename.arg_parser("profile")
     @new.arg_parser("profile")
@@ -759,6 +764,6 @@ class ProfilesCommand:
     @delete.arg_parser("profile")
     def _old_profile_parser(self, *_, **__):
         return cmd.OptionParser(
-            self.profiles.profiles,
+            self.profiles_manager.profiles,
             desc="It should be the name of the profile that exists in the configuration.",
         )
