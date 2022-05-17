@@ -37,13 +37,15 @@ class FileDescriptor(WildCardDescriptor):
 
 
 class DirDescriptor(WildCardDescriptor):
-    def __init__(self):
+    def __init__(self, provider):
+        super().__init__(provider)
+
         for name, child in type(self).__dict__.items():
             if isinstance(child, DirChildField):
                 self.__dict__[name] = DirChild(
                     child.pattern,
                     child.is_required,
-                    child.descriptor_type(),
+                    child.descriptor_type(provider),
                 )
 
     def children(self):
@@ -178,24 +180,24 @@ class FileManager:
         if not ret_ind:
             return self.get_desc(path, ret_ind=True)[1]
 
-        index, descriptor = self.glob(path)
+        index, expanded_path, descriptor = self.glob(path)
         if descriptor is None:
             return (), None
 
-        return index, descriptor.desc(path)
+        return index, descriptor.desc(expanded_path)
 
     def glob(self, path):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
         try:
             abspath = path.resolve(strict=True)
         except Exception:
-            return (), None
+            return (), None, None
 
         if not abspath.is_relative_to(self.root):
-            return (), None
+            return (), None, None
 
         if not abspath.exists():
-            return (), None
+            return (), None, None
 
         route = [abspath, *abspath.parents]
         route = route[route.index(self.root)::-1][1:]
@@ -205,7 +207,7 @@ class FileManager:
         tree = self.structure
         for current_path in route:
             if not isinstance(tree, DirDescriptor):
-                return (), None
+                return (), None, None
 
             for i, child in enumerate(tree.children()):
                 if child.pattern == "**":
@@ -224,8 +226,7 @@ class FileManager:
 
                 if child.pattern == "**":
                     index = (*index, i)
-                    desc = child.descriptor.desc(path)
-                    return index, desc
+                    return index, path, child.descriptor
 
                 if current_path.match(child.pattern):
                     index = (*index, i)
@@ -233,9 +234,9 @@ class FileManager:
                     break
 
             else:
-                return (), None
+                return (), None, None
 
-        return index, tree
+        return index, path, tree
 
     def cd(self, path, logger):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
@@ -295,9 +296,8 @@ class FileManager:
                 linkname = logger.escape(child.name, type="all")
                 name = f"[file_link]{linkname}[/]{name}"
 
-            child_path = self.root / self.current / child.name
-            ind, descriptor = self.glob(child_path)
-            desc = descriptor.desc(child_path) if descriptor is not None else None
+            ind, path, descriptor = self.glob(self.root / self.current / child.name)
+            desc = descriptor.desc(path) if descriptor is not None else None
 
             ordering_key = (descriptor is None, ind, child.is_symlink(), not child.is_dir(), child.suffix, child.stem)
 
