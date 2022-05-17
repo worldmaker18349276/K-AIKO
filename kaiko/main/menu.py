@@ -17,6 +17,7 @@ from .songs import BeatmapManager, KAIKOBGMController, BGMCommand, BeatmapsDirDe
 from .play import PlayCommand
 from .devices import (
     prepare_pyaudio,
+    PyAudio,
     DevicesCommand,
     DevicesDirDescriptor,
     determine_unicode_version,
@@ -77,24 +78,20 @@ class KAIKOMenu:
     update_interval = 0.01
     version = __version__
 
-    def __init__(self, profiles_manager, file_manager, manager, logger):
-        r"""Constructor.
+    def __init__(self):
+        self.services_provider = {}
 
-        Parameters
-        ----------
-        profiles_manager : ProfileManager
-        file_manager : FileManager
-        manager : PyAudio
-        logger : loggers.Logger
-        """
-        self.profiles_manager = profiles_manager
-        self.file_manager = file_manager
-        self.manager = manager
-        self.logger = logger
-        self.beatmap_manager = BeatmapManager(self.beatmaps_dir, logger)
-        self.bgm_controller = KAIKOBGMController(
-            logger, self.beatmap_manager, lambda: self.profiles_manager.current.devices.mixer
-        )
+    def get(self, type):
+        if type in self.services_provider:
+            return self.services_provider[type]
+        else:
+            raise ServiceError(f"Service not found: {type}")
+
+    def set(self, obj):
+        if type(obj) in self.services_provider:
+            raise ServiceError(f"Service already set: {type}")
+        else:
+            self.services_provider[type(obj)] = obj
 
     @classmethod
     def main(cls):
@@ -117,17 +114,21 @@ class KAIKOMenu:
     @dn.datanode
     def init_and_run(cls):
         r"""Initialize KAIKOMenu and run."""
+        menu = cls()
+
+        # logger
         logger = log.Logger()
+        menu.set(logger)
 
         # load workspace
-        file_manager = FileManager.create(RootDirDescriptor())
+        file_manager = FileManager.create(RootDirDescriptor(menu))
         file_manager.prepare(logger)
+        menu.set(file_manager)
 
         os.environ["KAIKO"] = str(file_manager.root)
 
         # load profiles
-        profiles_dir = file_manager.root / file_manager.structure.profiles_name
-        profiles_manager = ProfileManager(KAIKOSettings, profiles_dir, logger)
+        profiles_manager = ProfileManager(KAIKOSettings, menu.profiles_dir, logger)
         profiles_manager.on_change(
             lambda settings: logger.recompile_style(
                 terminal_settings=settings.devices.terminal,
@@ -135,6 +136,7 @@ class KAIKOMenu:
             )
         )
         profiles_manager.update()
+        menu.set(profiles_manager)
 
         succ = profiles_manager.use()
         if not succ:
@@ -170,7 +172,16 @@ class KAIKOMenu:
         logger.print()
 
         with prepare_pyaudio(logger) as manager:
-            menu = cls(profiles_manager, file_manager, manager, logger)
+            menu.set(manager)
+
+            beatmap_manager = BeatmapManager(menu.beatmaps_dir, logger)
+            menu.set(beatmap_manager)
+
+            bgm_controller = KAIKOBGMController(
+                logger, beatmap_manager, lambda: menu.profiles_manager.current.devices.mixer
+            )
+            menu.set(bgm_controller)
+
             yield from menu.run().join()
 
     @dn.datanode
@@ -274,6 +285,30 @@ class KAIKOMenu:
         except Exception:
             with self.logger.warn():
                 self.logger.print(traceback.format_exc(), end="", markup=False)
+
+    @property
+    def profiles_manager(self):
+        return self.get(ProfileManager)
+
+    @property
+    def file_manager(self):
+        return self.get(FileManager)
+
+    @property
+    def logger(self):
+        return self.get(log.Logger)
+
+    @property
+    def manager(self):
+        return self.get(PyAudio)
+
+    @property
+    def beatmap_manager(self):
+        return self.get(BeatmapManager)
+
+    @property
+    def bgm_controller(self):
+        return self.get(KAIKOBGMController)
 
     @property
     def settings(self):

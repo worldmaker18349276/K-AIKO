@@ -15,6 +15,16 @@ class InvalidFileOperation(Exception):
 
 
 class WildCardDescriptor:
+    def __init__(self, provider):
+        """Constructor of file descriptor.
+
+        Parameters
+        ----------
+        provider : object with methods set and get
+            The service provider to perform operation.
+        """
+        self.provider = provider
+
     def desc(self, path):
         return type(self).__doc__
 

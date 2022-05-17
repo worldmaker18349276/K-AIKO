@@ -12,6 +12,7 @@ from ..devices import terminals as term
 from ..devices import audios as aud
 from ..devices import engines
 from .files import DirDescriptor
+from pyaudio import PyAudio
 
 
 @contextlib.contextmanager
