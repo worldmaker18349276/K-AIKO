@@ -387,7 +387,7 @@ class KAIKOMenu:
         if self.file_manager.current == Path("Beatmaps/"):
             commands["play"] = PlayCommand(self)
         if self.file_manager.current == Path("Devices/"):
-            commands["devices"] = DevicesCommand(self.profiles_manager, self.logger, self.manager)
+            commands["devices"] = DevicesCommand(self)
         if self.file_manager.current == Path("Profiles/"):
             commands["profiles"] = ProfilesCommand(self)
         commands["bgm"] = BGMCommand(self.bgm_controller, self.beatmap_manager, self.logger)
