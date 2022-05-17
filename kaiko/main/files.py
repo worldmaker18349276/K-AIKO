@@ -6,6 +6,7 @@ import glob
 import re
 import shutil
 from pathlib import Path
+from ..devices import loggers as log
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
 
@@ -351,39 +352,50 @@ class FileManager:
 
 
 class FilesCommand:
-    def __init__(self, menu):
-        self.menu = menu
+    def __init__(self, provider):
+        self.provider = provider
+
+    @property
+    def file_manager(self):
+        return self.provider.get(FileManager)
+
+    @property
+    def logger(self):
+        return self.provider.get(log.Logger)
 
     @cmd.function_command
     def cd(self, path):
-        self.menu.file_manager.cd(path, self.menu.logger)
+        self.file_manager.cd(path, self.logger)
 
     @cmd.function_command
     def ls(self):
-        self.menu.file_manager.ls(self.menu.logger)
+        self.file_manager.ls(self.logger)
 
     @cmd.function_command
     def cat(self, path):
-        abspath = self.menu.file_manager.get(path, self.menu.logger)
+        file_manager = self.file_manager
+        logger = self.logger
+
+        abspath = file_manager.get(path, logger)
 
         try:
             content = abspath.read_text()
         except UnicodeDecodeError:
-            self.menu.logger.print("[warn]Cannot read binary file.[/]")
+            logger.print("[warn]Cannot read binary file.[/]")
             return
 
-        code = self.menu.logger.format_code(
-            content, title=str(self.menu.file_manager.current / path)
+        code = logger.format_code(
+            content, title=str(file_manager.current / path)
         )
-        self.menu.logger.print(code)
+        logger.print(code)
 
     @cd.arg_parser("path")
     def _cd_path_parser(self):
-        return cmd.PathParser(self.menu.file_manager.root / self.menu.file_manager.current, type="dir")
+        return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="dir")
 
     @cat.arg_parser("path")
     def _cat_path_parser(self):
-        return cmd.PathParser(self.menu.file_manager.root / self.menu.file_manager.current, type="file")
+        return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="file")
 
     @cmd.function_command
     def clean(self, bottom: bool = False):
@@ -394,7 +406,7 @@ class FilesCommand:
                           bool, move to bottom or
                            not; default is False.
         """
-        self.menu.logger.clear(bottom)
+        self.logger.clear(bottom)
 
     @cmd.function_command
     @dn.datanode
@@ -403,13 +415,13 @@ class FilesCommand:
 
         usage: [cmd]bye[/]
         """
-        if self.menu.profiles_manager.is_changed():
-            yes = yield from self.menu.logger.ask(
+        if self.profiles_manager.is_changed():
+            yes = yield from self.logger.ask(
                 "Exit without saving current configuration?"
             ).join()
             if not yes:
                 return
-        self.menu.logger.print("Bye~")
+        self.logger.print("Bye~")
         raise KeyboardInterrupt
 
     @cmd.function_command
@@ -419,25 +431,27 @@ class FilesCommand:
 
         usage: [cmd]bye_forever[/]
         """
-        logger = self.menu.logger
+        logger = self.logger
 
         logger.print("This command will clean up all your data.")
 
         yes = yield from logger.ask("Do you really want to do that?", False).join()
         if yes:
-            self.menu.file_manager.remove(logger)
+            self.file_manager.remove(logger)
             logger.print("Good luck~")
             raise KeyboardInterrupt
 
 
-def CdCommand(menu):
+def CdCommand(provider):
     def make_command(name):
-        return cmd.function_command(lambda self: self.menu.file_manager.cd(name, self.menu.logger))
+        return cmd.function_command(
+            lambda self: self.provider.get(FileManager).cd(name, self.provider.get(log.Logger))
+        )
 
     attrs = {}
-    attrs["menu"] = menu
+    attrs["provider"] = provider
     attrs[".."] = make_command("..")
-    for child in (menu.file_manager.root / menu.file_manager.current).resolve().iterdir():
+    for child in (provider.file_manager.root / provider.file_manager.current).resolve().iterdir():
         if child.is_dir():
             attrs[child.name + "/"] = make_command(child.name)
 
