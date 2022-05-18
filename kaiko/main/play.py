@@ -133,6 +133,32 @@ class PlayCommand:
         return self.beatmap_manager.make_parser(current, type="all")
 
 
+def print_hints(logger, settings):
+    pause_key = settings.controls.pause_key
+    skip_key = settings.controls.skip_key
+    stop_key = settings.controls.stop_key
+    display_keys = settings.controls.display_delay_adjust_keys
+    knock_keys = settings.controls.knock_delay_adjust_keys
+    energy_keys = settings.controls.knock_energy_adjust_keys
+    logger.print(
+        f"[hint/] Press {logger.emph(pause_key, type='all')} to pause/resume the game."
+    )
+    logger.print(f"[hint/] Press {logger.emph(skip_key, type='all')} to skip time.")
+    logger.print(f"[hint/] Press {logger.emph(stop_key, type='all')} to end the game.")
+    logger.print(
+        f"[hint/] Use {logger.emph(display_keys[0], type='all')} and "
+        f"{logger.emph(display_keys[1], type='all')} to adjust display delay."
+    )
+    logger.print(
+        f"[hint/] Use {logger.emph(knock_keys[0], type='all')} and "
+        f"{logger.emph(knock_keys[1], type='all')} to adjust hit delay."
+    )
+    logger.print(
+        f"[hint/] Use {logger.emph(energy_keys[0], type='all')} and "
+        f"{logger.emph(energy_keys[1], type='all')} to adjust hit strength."
+    )
+
+
 class KAIKOPlay:
     def __init__(self, resources_dir, cache_dir, filepath, start, profiles_manager, logger):
         self.resources_dir = resources_dir
@@ -160,7 +186,7 @@ class KAIKOPlay:
                 logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
-            beatmap.print_hints(logger, gameplay_settings)
+            print_hints(logger, gameplay_settings)
             logger.print()
 
             score, devices_settings = yield from beatmap.play(
@@ -225,7 +251,7 @@ class KAIKOLoop:
                 tempo=self.tempo, offset=self.offset, width=width, track=track
             )
 
-            beatmap.print_hints(logger, gameplay_settings)
+            print_hints(logger, gameplay_settings)
             logger.print()
 
             score, devices_settings = yield from beatmap.play(

@@ -1716,29 +1716,6 @@ class Beatmap:
 
         return settings_changed
 
-    @staticmethod
-    def print_hints(logger, settings):
-        pause_key = settings.controls.pause_key
-        skip_key = settings.controls.skip_key
-        stop_key = settings.controls.stop_key
-        display_keys = settings.controls.display_delay_adjust_keys
-        knock_keys = settings.controls.knock_delay_adjust_keys
-        energy_keys = settings.controls.knock_energy_adjust_keys
-        logger.print(
-            f"[hint/] Press {logger.emph(pause_key, type='all')} to pause/resume the game."
-        )
-        logger.print(f"[hint/] Press {logger.emph(skip_key, type='all')} to skip time.")
-        logger.print(f"[hint/] Press {logger.emph(stop_key, type='all')} to end the game.")
-        logger.print(
-            f"[hint/] Use {logger.emph(display_keys[0], type='all')} and {logger.emph(display_keys[1], type='all')} to adjust display delay."
-        )
-        logger.print(
-            f"[hint/] Use {logger.emph(knock_keys[0], type='all')} and {logger.emph(knock_keys[1], type='all')} to adjust hit delay."
-        )
-        logger.print(
-            f"[hint/] Use {logger.emph(energy_keys[0], type='all')} and {logger.emph(energy_keys[1], type='all')} to adjust hit strength."
-        )
-
     @dn.datanode
     def load_resources(self, output_samplerate, output_nchannels, resources_dir):
         r"""Load resources to `audionode` and `resources`.
