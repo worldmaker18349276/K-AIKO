@@ -6,9 +6,9 @@ import glob
 import re
 import shutil
 from pathlib import Path
-from ..devices import loggers as log
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
+from .loggers import Logger
 
 
 class InvalidFileOperation(Exception):
@@ -361,7 +361,7 @@ class FilesCommand:
 
     @property
     def logger(self):
-        return self.provider.get(log.Logger)
+        return self.provider.get(Logger)
 
     @cmd.function_command
     def cd(self, path):
@@ -445,7 +445,7 @@ class FilesCommand:
 def CdCommand(provider):
     def make_command(name):
         return cmd.function_command(
-            lambda self: self.provider.get(FileManager).cd(name, self.provider.get(log.Logger))
+            lambda self: self.provider.get(FileManager).cd(name, self.provider.get(Logger))
         )
 
     attrs = {}

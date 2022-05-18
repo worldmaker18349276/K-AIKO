@@ -3,11 +3,11 @@ import traceback
 import tempfile
 import subprocess
 from pathlib import Path
-from ..devices import loggers as log
 from ..utils import config as cfg
 from ..utils import parsec as pc
 from ..utils import commands as cmd
 from ..utils import datanodes as dn
+from .loggers import Logger
 from .files import FileDescriptor, DirDescriptor, as_child
 
 
@@ -135,7 +135,7 @@ class ProfileManager:
 
         Parameters
         ----------
-        logger : log.Logger
+        logger : loggers.Logger
 
         Returns
         -------
@@ -181,7 +181,7 @@ class ProfileManager:
 
         Parameters
         ----------
-        logger : log.Logger
+        logger : loggers.Logger
 
         Returns
         -------
@@ -214,7 +214,7 @@ class ProfileManager:
 
         Parameters
         ----------
-        logger : log.Logger
+        logger : loggers.Logger
 
         Returns
         -------
@@ -256,7 +256,7 @@ class ProfileManager:
 
         Parameters
         ----------
-        logger : log.Logger
+        logger : loggers.Logger
 
         Returns
         -------
@@ -299,7 +299,7 @@ class ProfileManager:
 
         Parameters
         ----------
-        logger : log.Logger
+        logger : loggers.Logger
         name : str, optional
             The name of profile, or None for default.
 
@@ -331,7 +331,7 @@ class ProfileManager:
 
         Parameters
         ----------
-        logger : log.Logger
+        logger : loggers.Logger
         name : str, optional
             The name of profile.
         clone : str, optional
@@ -386,7 +386,7 @@ class ProfileManager:
 
         Parameters
         ----------
-        logger : log.Logger
+        logger : loggers.Logger
         name : str
             The name of profile to delete.
 
@@ -417,7 +417,7 @@ class ProfileManager:
 
         Parameters
         ----------
-        logger : log.Logger
+        logger : loggers.Logger
         name : str
             The new name of profile.
 
@@ -490,7 +490,7 @@ class ProfilesCommand:
 
     @property
     def logger(self):
-        return self.provider.get(log.Logger)
+        return self.provider.get(Logger)
 
     # configuration
 

@@ -9,7 +9,6 @@ from ..utils import datanodes as dn
 from ..utils import markups as mu
 from . import terminals as term
 from . import audios as aud
-from . import loggers as log
 
 
 class Monitor:
@@ -1055,4 +1054,3 @@ class DevicesSettings(cfg.Configurable):
     renderer = cfg.subconfig(RendererSettings)
     controller = cfg.subconfig(ControllerSettings)
     terminal = cfg.subconfig(term.TerminalSettings)
-    logger = cfg.subconfig(log.LoggerSettings)

@@ -8,10 +8,10 @@ from .. import __version__
 from ..utils import markups as mu
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
-from ..devices import loggers as log
 from ..beats import beatshell
 from .files import FileManager, FilesCommand, CdCommand, FileDescriptor, DirDescriptor, WildCardDescriptor, as_child
 from .settings import KAIKOSettings
+from .loggers import Logger
 from .profiles import ProfileManager, ProfilesCommand, ProfilesDirDescriptor
 from .songs import BeatmapManager, KAIKOBGMController, BGMCommand, BeatmapsDirDescriptor
 from .play import PlayCommand
@@ -117,7 +117,7 @@ class KAIKOMenu:
         menu = cls()
 
         # logger
-        logger = log.Logger()
+        logger = Logger()
         menu.set(logger)
 
         # load workspace
@@ -132,7 +132,7 @@ class KAIKOMenu:
         profiles_manager.on_change(
             lambda settings: logger.recompile_style(
                 terminal_settings=settings.devices.terminal,
-                logger_settings=settings.devices.logger,
+                logger_settings=settings.logger,
             )
         )
         profiles_manager.update(logger)
@@ -296,7 +296,7 @@ class KAIKOMenu:
 
     @property
     def logger(self):
-        return self.get(log.Logger)
+        return self.get(Logger)
 
     @property
     def manager(self):

@@ -6,12 +6,12 @@ import traceback
 import contextlib
 import threading
 import queue
-from ..devices import loggers as log
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
 from ..devices import terminals as term
 from ..devices import audios as aud
 from ..devices import engines
+from .loggers import Logger
 from .files import DirDescriptor
 from .profiles import ProfileManager
 from pyaudio import PyAudio
@@ -159,7 +159,7 @@ class DevicesCommand:
 
     @property
     def logger(self):
-        return self.provider.get(log.Logger)
+        return self.provider.get(Logger)
 
     @property
     def manager(self):

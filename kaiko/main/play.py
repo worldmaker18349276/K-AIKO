@@ -1,10 +1,10 @@
 import traceback
 from pathlib import Path
-from ..devices import loggers as log
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
 from ..beats import beatmaps
 from ..beats import beatsheets
+from .loggers import Logger
 from .files import FileManager
 from .profiles import ProfileManager
 from .songs import BeatmapManager
@@ -19,7 +19,7 @@ class PlayCommand:
 
     @property
     def logger(self):
-        return self.provider.get(log.Logger)
+        return self.provider.get(Logger)
 
     @property
     def profiles_manager(self):
