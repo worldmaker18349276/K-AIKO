@@ -178,7 +178,7 @@ class KAIKOMenu:
             menu.set(beatmap_manager)
 
             bgm_controller = BGMController(
-                logger, beatmap_manager, lambda: menu.profiles_manager.current.devices.mixer
+                beatmap_manager, lambda: menu.profiles_manager.current.devices.mixer
             )
             menu.set(bgm_controller)
 
@@ -390,7 +390,7 @@ class KAIKOMenu:
             commands["devices"] = DevicesCommand(self)
         if self.file_manager.current == Path("Profiles/"):
             commands["profiles"] = ProfilesCommand(self)
-        commands["bgm"] = BGMCommand(self.bgm_controller, self.beatmap_manager, self.logger)
+        commands["bgm"] = BGMCommand(self)
         commands["files"] = FilesCommand(self)
         commands["cd"] = CdCommand(self)
         return cmd.RootCommandParser(**commands)

@@ -11,7 +11,8 @@ from ..utils import datanodes as dn
 from ..devices import audios as aud
 from ..devices import engines
 from ..beats import beatsheets
-from .play import Song
+from .loggers import Logger
+from .play import BeatmapManager, Song
 
 
 class BGMAction:
@@ -130,12 +131,11 @@ class BGMController:
     preview_duration = 30.0
 
     def __init__(
-        self, logger, beatmap_manager, mixer_settings_getter=engines.MixerSettings
+        self, beatmap_manager, mixer_settings_getter=engines.MixerSettings
     ):
-        self._mixer_settings_getter = mixer_settings_getter
-        self.logger = logger
-        self._action_queue = queue.Queue()
         self.beatmap_manager = beatmap_manager
+        self._mixer_settings_getter = mixer_settings_getter
+        self._action_queue = queue.Queue()
         self.is_bgm_on = False
         self.current_action = None
 
@@ -298,8 +298,8 @@ class BGMController:
 
 
 class BGMCommand:
-    def __init__(self, bgm_controller, beatmap_manager, logger):
-        self.subcommand = BGMSubCommand(bgm_controller, beatmap_manager, logger)
+    def __init__(self, provider):
+        self.subcommand = BGMSubCommand(provider)
 
     @cmd.subcommand
     def bgm(self):
@@ -308,10 +308,20 @@ class BGMCommand:
 
 
 class BGMSubCommand:
-    def __init__(self, bgm_controller, beatmap_manager, logger):
-        self.bgm_controller = bgm_controller
-        self.beatmap_manager = beatmap_manager
-        self.logger = logger
+    def __init__(self, provider):
+        self.provider = provider
+
+    @property
+    def bgm_controller(self):
+        return self.provider.get(BGMController)
+
+    @property
+    def beatmap_manager(self):
+        return self.provider.get(BeatmapManager)
+
+    @property
+    def logger(self):
+        return self.provider.get(Logger)
 
     @cmd.function_command
     def on(self):
