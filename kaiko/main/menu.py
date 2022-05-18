@@ -13,7 +13,8 @@ from .files import FileManager, FilesCommand, CdCommand, FileDescriptor, DirDesc
 from .settings import KAIKOSettings
 from .loggers import Logger
 from .profiles import ProfileManager, ProfilesCommand, ProfilesDirDescriptor
-from .songs import BeatmapManager, KAIKOBGMController, BGMCommand, BeatmapsDirDescriptor
+from .songs import BeatmapManager, BeatmapsDirDescriptor
+from .bgm import BGMController, BGMCommand
 from .play import PlayCommand
 from .devices import (
     prepare_pyaudio,
@@ -177,7 +178,7 @@ class KAIKOMenu:
             beatmap_manager = BeatmapManager(menu.beatmaps_dir, logger)
             menu.set(beatmap_manager)
 
-            bgm_controller = KAIKOBGMController(
+            bgm_controller = BGMController(
                 logger, beatmap_manager, lambda: menu.profiles_manager.current.devices.mixer
             )
             menu.set(bgm_controller)
@@ -308,7 +309,7 @@ class KAIKOMenu:
 
     @property
     def bgm_controller(self):
-        return self.get(KAIKOBGMController)
+        return self.get(BGMController)
 
     @property
     def settings(self):
