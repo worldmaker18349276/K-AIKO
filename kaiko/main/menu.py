@@ -13,9 +13,8 @@ from .files import FileManager, FilesCommand, CdCommand, FileDescriptor, DirDesc
 from .settings import KAIKOSettings
 from .loggers import Logger
 from .profiles import ProfileManager, ProfilesCommand, ProfilesDirDescriptor
-from .songs import BeatmapManager, BeatmapsDirDescriptor
+from .play import BeatmapManager, BeatmapsDirDescriptor, PlayCommand
 from .bgm import BGMController, BGMCommand
-from .play import PlayCommand
 from .devices import (
     prepare_pyaudio,
     PyAudio,

@@ -11,7 +11,7 @@ from ..utils import datanodes as dn
 from ..devices import audios as aud
 from ..devices import engines
 from ..beats import beatsheets
-from .songs import Song
+from .play import Song
 
 
 class BGMAction:
