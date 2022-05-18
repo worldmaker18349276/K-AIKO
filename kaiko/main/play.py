@@ -298,11 +298,10 @@ class Song:
 
 
 class PlayCommand:
-    def __init__(self, provider, resources_dir, cache_dir, beatmaps_dir):
+    def __init__(self, provider, resources_dir, cache_dir):
         self.provider = provider
         self.resources_dir = resources_dir
         self.cache_dir = cache_dir
-        self.beatmaps_dir = beatmaps_dir
 
     @property
     def logger(self):
@@ -341,7 +340,7 @@ class PlayCommand:
         return KAIKOPlay(
             self.resources_dir,
             self.cache_dir,
-            self.beatmaps_dir / beatmap,
+            self.beatmap_manager.beatmaps_dir / beatmap,
             start,
             self.profiles_manager,
             self.logger,
