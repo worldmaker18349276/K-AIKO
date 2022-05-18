@@ -175,7 +175,7 @@ class KAIKOMenu:
         with prepare_pyaudio(logger) as manager:
             menu.set(manager)
 
-            beatmap_manager = BeatmapManager(menu.beatmaps_dir, logger)
+            beatmap_manager = BeatmapManager(menu.beatmaps_dir)
             menu.set(beatmap_manager)
 
             bgm_controller = BGMController(
@@ -193,7 +193,7 @@ class KAIKOMenu:
         yield
 
         # load beatmaps
-        self.beatmap_manager.reload()
+        self.beatmap_manager.reload(logger)
 
         # execute given command
         if len(sys.argv) > 2 and sys.argv[1] == "-c":

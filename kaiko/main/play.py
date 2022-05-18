@@ -83,7 +83,7 @@ class PlayCommand:
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
         current = self.file_manager.root / self.file_manager.current
-        return self.beatmap_manager.make_parser(current, type="file")
+        return self.beatmap_manager.make_parser(self.logger, current, type="file")
 
     @play.arg_parser("start")
     def _play_start_parser(self, beatmap):
@@ -95,7 +95,7 @@ class PlayCommand:
 
         usage: [cmd]reload[/]
         """
-        self.beatmap_manager.reload()
+        self.beatmap_manager.reload(self.logger)
 
     @cmd.function_command
     def add(self, beatmap):
@@ -109,7 +109,7 @@ class PlayCommand:
            the terminal to paste its path.
         """
 
-        self.beatmap_manager.add(beatmap)
+        self.beatmap_manager.add(self.logger, beatmap)
 
     @add.arg_parser("beatmap")
     def _add_beatmap_parser(self):
@@ -125,12 +125,12 @@ class PlayCommand:
                beatmap you want to remove.
         """
 
-        self.beatmap_manager.remove(beatmap)
+        self.beatmap_manager.remove(self.logger, beatmap)
 
     @remove.arg_parser("beatmap")
     def _remove_beatmap_parser(self):
         current = self.file_manager.root / self.file_manager.current
-        return self.beatmap_manager.make_parser(current, type="all")
+        return self.beatmap_manager.make_parser(self.logger, current, type="all")
 
 
 def print_hints(logger, settings):

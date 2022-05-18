@@ -385,7 +385,7 @@ class BGMSubCommand:
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        return self.beatmap_manager.make_parser()
+        return self.beatmap_manager.make_parser(self.logger)
 
     @play.arg_parser("start")
     def _play_start_parser(self, beatmap):

@@ -45,17 +45,48 @@ class BeatmapsDirDescriptor(DirDescriptor):
 
 
 class BeatmapManager:
-    def __init__(self, beatmaps_dir, logger):
+    def __init__(self, beatmaps_dir):
         self.beatmaps_dir = beatmaps_dir
-        self.logger = logger
         self._beatmaps = {}
         self._beatmaps_mtime = None
 
     def is_uptodate(self):
         return self._beatmaps_mtime == os.stat(str(self.beatmaps_dir)).st_mtime
 
-    def reload(self):
-        logger = self.logger
+    def is_beatmapset(self, path):
+        return path in self._beatmaps
+
+    def is_beatmap(self, path):
+        return path.parent in self._beatmaps and path in self._beatmaps[path.parent]
+
+    def get_beatmap_metadata(self, path):
+        if not self.is_beatmap(path):
+            raise ValueError(f"Not a beatmap: {str(path)}")
+
+        filepath = self.beatmaps_dir / path
+        try:
+            beatmap = beatsheets.read(str(filepath), metadata_only=True)
+        except beatsheets.BeatmapParseError:
+            return None
+        else:
+            return beatmap
+
+    def get_song(self, path):
+        if self.is_beatmapset(path):
+            if not self._beatmaps[path]:
+                return None
+            path = self._beatmaps[path][0]
+
+        beatmap = self.get_beatmap_metadata(path)
+        if beatmap is None or beatmap.audio is None or beatmap.audio.path is None:
+            return None
+        return Song(self.beatmaps_dir / path.parent, beatmap.audio)
+
+    def get_songs(self):
+        songs = [self.get_song(path) for path in self._beatmaps.keys()]
+        return [song for song in songs if song is not None]
+
+    def reload(self, logger):
         beatmaps_dir = self.beatmaps_dir
 
         logger.print(
@@ -92,8 +123,7 @@ class BeatmapManager:
         logger.print(flush=True)
         self._beatmaps_mtime = beatmaps_mtime
 
-    def add(self, path):
-        logger = self.logger
+    def add(self, logger, path):
         beatmaps_dir = self.beatmaps_dir
 
         if not path.exists():
@@ -122,10 +152,9 @@ class BeatmapManager:
         elif path.is_dir():
             shutil.copytree(str(path), str(distpath))
 
-        self.reload()
+        self.reload(logger)
 
-    def remove(self, path):
-        logger = self.logger
+    def remove(self, logger, path):
         beatmaps_dir = self.beatmaps_dir
 
         if self.is_beatmap(path):
@@ -134,7 +163,7 @@ class BeatmapManager:
                 f"[data/] Remove the beatmap at {logger.emph(beatmap_path.as_uri())}..."
             )
             beatmap_path.unlink()
-            self.reload()
+            self.reload(logger)
 
         elif self.is_beatmapset(path):
             beatmapset_path = beatmaps_dir / path
@@ -142,48 +171,15 @@ class BeatmapManager:
                 f"[data/] Remove the beatmapset at {logger.emph(beatmapset_path.as_uri())}..."
             )
             shutil.rmtree(str(beatmapset_path))
-            self.reload()
+            self.reload(logger)
 
         else:
             logger.print(
                 f"[warn]Not a beatmap or beatmapset: {logger.escape(str(path), type='all')}[/]"
             )
 
-    def is_beatmapset(self, path):
-        return path in self._beatmaps
-
-    def is_beatmap(self, path):
-        return path.parent in self._beatmaps and path in self._beatmaps[path.parent]
-
-    def get_beatmap_metadata(self, path):
-        if not self.is_beatmap(path):
-            raise ValueError(f"Not a beatmap: {str(path)}")
-
-        filepath = self.beatmaps_dir / path
-        try:
-            beatmap = beatsheets.read(str(filepath), metadata_only=True)
-        except beatsheets.BeatmapParseError:
-            return None
-        else:
-            return beatmap
-
-    def get_song(self, path):
-        if self.is_beatmapset(path):
-            if not self._beatmaps[path]:
-                return None
-            path = self._beatmaps[path][0]
-
-        beatmap = self.get_beatmap_metadata(path)
-        if beatmap is None or beatmap.audio is None or beatmap.audio.path is None:
-            return None
-        return Song(self.beatmaps_dir / path.parent, beatmap.audio)
-
-    def get_songs(self):
-        songs = [self.get_song(path) for path in self._beatmaps.keys()]
-        return [song for song in songs if song is not None]
-
-    def make_parser(self, root=".", type="file"):
-        return BeatmapParser(root, type, self, self.logger)
+    def make_parser(self, logger, root=".", type="file"):
+        return BeatmapParser(root, type, self, logger)
 
 
 class BeatmapParser(cmd.PathParser):
