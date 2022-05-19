@@ -352,8 +352,9 @@ class FileManager:
 
 
 class FilesCommand:
-    def __init__(self, provider):
+    def __init__(self, provider, profile_is_changed=False):
         self.provider = provider
+        self.profile_is_changed = profile_is_changed
 
     @property
     def file_manager(self):
@@ -415,7 +416,7 @@ class FilesCommand:
 
         usage: [cmd]bye[/]
         """
-        if self.profile_manager.is_changed():
+        if self.profile_is_changed:
             yes = yield from self.logger.ask(
                 "Exit without saving current configuration?"
             ).join()

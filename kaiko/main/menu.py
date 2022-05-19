@@ -364,7 +364,7 @@ class KAIKOMenu:
         if self.file_manager.current == Path("Profiles/"):
             commands["profiles"] = ProfilesCommand(self)
         commands["bgm"] = BGMCommand(self)
-        commands["files"] = FilesCommand(self)
+        commands["files"] = FilesCommand(self, self.profile_manager.is_changed())
         commands["cd"] = CdCommand(self)
         return cmd.RootCommandParser(**commands)
 
