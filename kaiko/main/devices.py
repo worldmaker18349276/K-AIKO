@@ -27,30 +27,30 @@ class DeviceManager:
 
     @classmethod
     @dn.datanode
-    def initialize(cls, logger, profiles_manager):
+    def initialize(cls, logger, profile_manager):
         # check tty
         if not sys.stdout.isatty():
             raise RuntimeError("please connect to interactive terminal device.")
 
         # deterimine unicode version
         if (
-            profiles_manager.current.devices.terminal.unicode_version == "auto"
+            profile_manager.current.devices.terminal.unicode_version == "auto"
             and "UNICODE_VERSION" not in os.environ
         ):
             version = yield from cls.determine_unicode_version(logger).join()
             if version is not None:
                 os.environ["UNICODE_VERSION"] = version
-                profiles_manager.current.devices.terminal.unicode_version = version
-                profiles_manager.set_as_changed()
+                profile_manager.current.devices.terminal.unicode_version = version
+                profile_manager.set_as_changed()
             logger.print()
 
         # fit screen size
         size = shutil.get_terminal_size()
-        width = profiles_manager.current.devices.terminal.best_screen_size
+        width = profile_manager.current.devices.terminal.best_screen_size
         if size.columns < width:
             logger.print("[hint/] Your screen size seems too small.")
 
-            yield from cls.fit_screen(logger, profiles_manager.current.devices.terminal).join()
+            yield from cls.fit_screen(logger, profile_manager.current.devices.terminal).join()
 
         # load PyAudio
         @contextlib.contextmanager
@@ -204,20 +204,20 @@ class DevicesCommand:
         return self.provider.get(Logger)
 
     @property
-    def devices_manager(self):
+    def device_manager(self):
         return self.provider.get(DeviceManager)
 
     @property
     def audio_manager(self):
-        return self.devices_manager.audio_manager
+        return self.device_manager.audio_manager
 
     @property
-    def profiles_manager(self):
+    def profile_manager(self):
         return self.provider.get(ProfileManager)
 
     @property
     def settings(self):
-        return self.profiles_manager.current
+        return self.profile_manager.current
 
     # audio
 
@@ -350,7 +350,7 @@ class DevicesCommand:
                 self.settings.devices.detector.input_buffer_length = len
             if fmt is not None:
                 self.settings.devices.detector.input_format = fmt
-            self.profiles_manager.set_as_changed()
+            self.profile_manager.set_as_changed()
 
     @cmd.function_command
     def set_speaker(self, device, rate=None, ch=None, len=None, fmt=None):
@@ -400,7 +400,7 @@ class DevicesCommand:
                 self.settings.devices.mixer.output_buffer_length = len
             if fmt is not None:
                 self.settings.devices.mixer.output_format = fmt
-            self.profiles_manager.set_as_changed()
+            self.profile_manager.set_as_changed()
 
     @test_mic.arg_parser("device")
     @set_mic.arg_parser("device")
@@ -547,7 +547,7 @@ class DevicesCommand:
         usage: [cmd]fit_screen[/]
         """
 
-        return self.devices_manager.fit_screen(self.logger, self.settings.devices.terminal)
+        return self.device_manager.fit_screen(self.logger, self.settings.devices.terminal)
 
     @cmd.function_command
     @dn.datanode
@@ -557,11 +557,11 @@ class DevicesCommand:
         usage: [cmd]ucs_detect[/]
         """
 
-        version = yield from self.devices_manager.determine_unicode_version(self.logger).join()
+        version = yield from self.device_manager.determine_unicode_version(self.logger).join()
         if version is not None:
             os.environ["UNICODE_VERSION"] = version
             self.settings.devices.terminal.unicode_version = version
-            self.profiles_manager.set_as_changed()
+            self.profile_manager.set_as_changed()
 
 
 class KnockTest:

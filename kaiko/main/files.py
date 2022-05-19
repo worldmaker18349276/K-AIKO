@@ -415,7 +415,7 @@ class FilesCommand:
 
         usage: [cmd]bye[/]
         """
-        if self.profiles_manager.is_changed():
+        if self.profile_manager.is_changed():
             yes = yield from self.logger.ask(
                 "Exit without saving current configuration?"
             ).join()

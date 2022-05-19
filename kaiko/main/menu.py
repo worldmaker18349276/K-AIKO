@@ -125,33 +125,33 @@ class KAIKOMenu:
         os.environ["KAIKO"] = str(file_manager.root)
 
         # load profiles
-        profiles_manager = ProfileManager(KAIKOSettings, menu.profiles_dir)
-        profiles_manager.on_change(
+        profile_manager = ProfileManager(KAIKOSettings, menu.profiles_dir)
+        profile_manager.on_change(
             lambda settings: logger.recompile_style(
                 terminal_settings=settings.devices.terminal,
                 logger_settings=settings.logger,
             )
         )
-        profiles_manager.update(logger)
-        menu.set(profiles_manager)
+        profile_manager.update(logger)
+        menu.set(profile_manager)
 
-        succ = profiles_manager.use(logger)
+        succ = profile_manager.use(logger)
         if not succ:
-            succ = profiles_manager.new(logger)
+            succ = profile_manager.new(logger)
             if not succ:
                 raise RuntimeError("Fail to load profile")
 
         # load devices
-        devices_ctxt = yield from DeviceManager.initialize(logger, profiles_manager).join()
+        devices_ctxt = yield from DeviceManager.initialize(logger, profile_manager).join()
 
-        with devices_ctxt as devices_manager:
-            menu.set(devices_manager)
+        with devices_ctxt as device_manager:
+            menu.set(device_manager)
 
             beatmap_manager = BeatmapManager(menu.beatmaps_dir)
             menu.set(beatmap_manager)
 
             bgm_controller = BGMController(
-                beatmap_manager, lambda: menu.profiles_manager.current.devices.mixer
+                beatmap_manager, lambda: menu.profile_manager.current.devices.mixer
             )
             menu.set(bgm_controller)
 
@@ -176,7 +176,7 @@ class KAIKOMenu:
             raise ValueError("unknown arguments: " + " ".join(sys.argv[1:]))
 
         # load bgm
-        bgm_task = self.bgm_controller.execute(self.devices_manager.audio_manager)
+        bgm_task = self.bgm_controller.execute(self.device_manager.audio_manager)
 
         # tips
         confirm_key = logger.emph(self.settings.shell.input.confirm_key, type="all")
@@ -202,8 +202,8 @@ class KAIKOMenu:
             preview_handler,
             self.logger.rich,
             self.cache_dir,
-            lambda: self.profiles_manager.current.shell,
-            lambda: self.profiles_manager.current.devices,
+            lambda: self.profile_manager.current.shell,
+            lambda: self.profile_manager.current.devices,
         )
         while True:
             self.print_banner()
@@ -244,7 +244,7 @@ class KAIKOMenu:
             if hasattr(result, "execute"):
                 is_bgm_on = self.bgm_controller.is_bgm_on
                 self.bgm_controller.stop()
-                yield from result.execute(self.devices_manager.audio_manager).join()
+                yield from result.execute(self.device_manager.audio_manager).join()
                 if is_bgm_on:
                     self.bgm_controller.play()
 
@@ -260,7 +260,7 @@ class KAIKOMenu:
                 self.logger.print(traceback.format_exc(), end="", markup=False)
 
     @property
-    def profiles_manager(self):
+    def profile_manager(self):
         return self.get(ProfileManager)
 
     @property
@@ -272,7 +272,7 @@ class KAIKOMenu:
         return self.get(Logger)
 
     @property
-    def devices_manager(self):
+    def device_manager(self):
         return self.get(DeviceManager)
 
     @property
@@ -286,7 +286,7 @@ class KAIKOMenu:
     @property
     def settings(self):
         r"""Current settings."""
-        return self.profiles_manager.current
+        return self.profile_manager.current
 
     @property
     def cache_dir(self):
@@ -310,14 +310,14 @@ class KAIKOMenu:
 
     def print_banner(self):
         username = self.logger.escape(self.file_manager.username, type="all")
-        profile = self.logger.escape(self.profiles_manager.current_name, type="all")
+        profile = self.logger.escape(self.profile_manager.current_name, type="all")
         path = str(self.file_manager.current)
         if path == ".":
             path = ""
         path = os.path.join("$KAIKO", path)
         path = self.logger.escape(path, type="all")
 
-        profile_is_changed = self.profiles_manager.is_changed()
+        profile_is_changed = self.profile_manager.is_changed()
         path_is_known = self.file_manager.get_desc(self.file_manager.root / self.file_manager.current) is not None
 
         user_markup = self.settings.shell.banner.user

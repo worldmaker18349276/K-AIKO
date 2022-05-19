@@ -308,7 +308,7 @@ class PlayCommand:
         return self.provider.get(Logger)
 
     @property
-    def profiles_manager(self):
+    def profile_manager(self):
         return self.provider.get(ProfileManager)
 
     @property
@@ -342,7 +342,7 @@ class PlayCommand:
             self.cache_dir,
             self.beatmap_manager.beatmaps_dir / beatmap,
             start,
-            self.profiles_manager,
+            self.profile_manager,
             self.logger,
         )
 
@@ -357,7 +357,7 @@ class PlayCommand:
         """
 
         return KAIKOLoop(
-            pattern, tempo, offset, self.resources_dir, self.cache_dir, self.profiles_manager, self.logger,
+            pattern, tempo, offset, self.resources_dir, self.cache_dir, self.profile_manager, self.logger,
         )
 
     @loop.arg_parser("pattern")
@@ -446,19 +446,19 @@ def print_hints(logger, settings):
 
 
 class KAIKOPlay:
-    def __init__(self, resources_dir, cache_dir, filepath, start, profiles_manager, logger):
+    def __init__(self, resources_dir, cache_dir, filepath, start, profile_manager, logger):
         self.resources_dir = resources_dir
         self.cache_dir = cache_dir
         self.filepath = filepath
         self.start = start
-        self.profiles_manager = profiles_manager
+        self.profile_manager = profile_manager
         self.logger = logger
 
     @dn.datanode
     def execute(self, manager):
         logger = self.logger
-        devices_settings = self.profiles_manager.current.devices
-        gameplay_settings = self.profiles_manager.current.gameplay
+        devices_settings = self.profile_manager.current.devices
+        gameplay_settings = self.profile_manager.current.gameplay
 
         try:
             beatmap = beatsheets.read(str(self.filepath))
@@ -496,11 +496,11 @@ class KAIKOPlay:
                 ).join()
                 if yes:
                     logger.print("[data/] Update device settings...")
-                    title = self.profiles_manager.get_title()
-                    old = self.profiles_manager.format()
-                    self.profiles_manager.current.devices = devices_settings
-                    self.profiles_manager.set_as_changed()
-                    new = self.profiles_manager.format()
+                    title = self.profile_manager.get_title()
+                    old = self.profile_manager.format()
+                    self.profile_manager.current.devices = devices_settings
+                    self.profile_manager.set_as_changed()
+                    new = self.profile_manager.format()
 
                     self.logger.print(f"[data/] Your changes")
                     logger.print(
@@ -509,20 +509,20 @@ class KAIKOPlay:
 
 
 class KAIKOLoop:
-    def __init__(self, pattern, tempo, offset, resources_dir, cache_dir, profiles_manager, logger):
+    def __init__(self, pattern, tempo, offset, resources_dir, cache_dir, profile_manager, logger):
         self.pattern = pattern
         self.tempo = tempo
         self.offset = offset
         self.resources_dir = resources_dir
         self.cache_dir = cache_dir
-        self.profiles_manager = profiles_manager
+        self.profile_manager = profile_manager
         self.logger = logger
 
     @dn.datanode
     def execute(self, manager):
         logger = self.logger
-        devices_settings = self.profiles_manager.current.devices
-        gameplay_settings = self.profiles_manager.current.gameplay
+        devices_settings = self.profile_manager.current.devices
+        gameplay_settings = self.profile_manager.current.gameplay
 
         try:
             track, width = beatmaps.BeatTrack.parse(self.pattern, ret_width=True)
@@ -561,11 +561,11 @@ class KAIKOLoop:
                 ).join()
                 if yes:
                     logger.print("[data/] Update device settings...")
-                    title = self.profiles_manager.get_title()
-                    old = self.profiles_manager.format()
-                    self.profiles_manager.current.devices = devices_settings
-                    self.profiles_manager.set_as_changed()
-                    new = self.profiles_manager.format()
+                    title = self.profile_manager.get_title()
+                    old = self.profile_manager.format()
+                    self.profile_manager.current.devices = devices_settings
+                    self.profile_manager.set_as_changed()
+                    new = self.profile_manager.format()
 
                     self.logger.print(f"[data/] Your changes")
                     logger.print(
