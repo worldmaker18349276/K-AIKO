@@ -16,12 +16,9 @@ from .profiles import ProfileManager, ProfilesCommand, ProfilesDirDescriptor
 from .play import BeatmapManager, BeatmapsDirDescriptor, PlayCommand
 from .bgm import BGMController, BGMCommand
 from .devices import (
-    prepare_pyaudio,
-    PyAudio,
+    DeviceManager,
     DevicesCommand,
     DevicesDirDescriptor,
-    determine_unicode_version,
-    fit_screen,
 )
 
 
@@ -144,35 +141,11 @@ class KAIKOMenu:
             if not succ:
                 raise RuntimeError("Fail to load profile")
 
-        if not sys.stdout.isatty():
-            raise RuntimeError("please connect to interactive terminal device.")
+        # load devices
+        devices_ctxt = yield from DeviceManager.initialize(logger, profiles_manager).join()
 
-        # deterimine unicode version
-        if (
-            profiles_manager.current.devices.terminal.unicode_version == "auto"
-            and "UNICODE_VERSION" not in os.environ
-        ):
-            version = yield from determine_unicode_version(logger).join()
-            if version is not None:
-                os.environ["UNICODE_VERSION"] = version
-                profiles_manager.current.devices.terminal.unicode_version = version
-                profiles_manager.set_as_changed()
-            logger.print()
-
-        # fit screen size
-        size = shutil.get_terminal_size()
-        width = profiles_manager.current.devices.terminal.best_screen_size
-        if size.columns < width:
-            logger.print("[hint/] Your screen size seems too small.")
-
-            yield from fit_screen(logger, profiles_manager.current.devices.terminal).join()
-
-        # load PyAudio
-        logger.print("[info/] Load PyAudio...")
-        logger.print()
-
-        with prepare_pyaudio(logger) as manager:
-            menu.set(manager)
+        with devices_ctxt as devices_manager:
+            menu.set(devices_manager)
 
             beatmap_manager = BeatmapManager(menu.beatmaps_dir)
             menu.set(beatmap_manager)
@@ -203,7 +176,7 @@ class KAIKOMenu:
             raise ValueError("unknown arguments: " + " ".join(sys.argv[1:]))
 
         # load bgm
-        bgm_task = self.bgm_controller.execute(self.manager)
+        bgm_task = self.bgm_controller.execute(self.devices_manager.audio_manager)
 
         # tips
         confirm_key = logger.emph(self.settings.shell.input.confirm_key, type="all")
@@ -257,7 +230,7 @@ class KAIKOMenu:
         r"""Execute a command.
 
         If it returns executable object (an object has method `execute`), call
-        `result.execute(manager)`; if it returns a DataNode, exhaust it;
+        `result.execute(audio_manager)`; if it returns a DataNode, exhaust it;
         otherwise, print repr of result.
 
         Parameters
@@ -271,7 +244,7 @@ class KAIKOMenu:
             if hasattr(result, "execute"):
                 is_bgm_on = self.bgm_controller.is_bgm_on
                 self.bgm_controller.stop()
-                yield from result.execute(self.manager).join()
+                yield from result.execute(self.devices_manager.audio_manager).join()
                 if is_bgm_on:
                     self.bgm_controller.play()
 
@@ -299,8 +272,8 @@ class KAIKOMenu:
         return self.get(Logger)
 
     @property
-    def manager(self):
-        return self.get(PyAudio)
+    def devices_manager(self):
+        return self.get(DeviceManager)
 
     @property
     def beatmap_manager(self):

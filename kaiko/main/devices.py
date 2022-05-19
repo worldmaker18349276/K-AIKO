@@ -17,141 +17,183 @@ from .profiles import ProfileManager
 from pyaudio import PyAudio
 
 
-@contextlib.contextmanager
-def prepare_pyaudio(logger):
-    r"""Prepare PyAudio and print out some information.
-
-    Loading PyAudio will cause PortAudio to print something to the terminal,
-    which cannot be turned off by PyAudio, so why not print more information to
-    make it more hacky.
-
-    Parameters
-    ----------
-    logger : loggers.Logger
-
-    Yields
-    ------
-    manager : PyAudio
-    """
-
-    verb_ctxt = logger.verb()
-    verb_ctxt.__enter__()
-    hit_except = False
-    has_exited = False
-
-    try:
-        with aud.create_manager() as manager:
-            logger.print()
-
-            aud.print_pyaudio_info(manager)
-            verb_ctxt.__exit__(None, None, None)
-            has_exited = True
-
-            logger.print()
-            yield manager
-
-    except:
-        if has_exited:
-            raise
-        hit_except = True
-        if not verb_ctxt.__exit__(*sys.exc_info()):
-            raise
-
-    finally:
-        if not has_exited and not hit_except:
-            verb_ctxt.__exit__(None, None, None)
-
-
-def fit_screen(logger, terminal_settings):
-    r"""Guide user to adjust screen size.
-
-    Parameters
-    ----------
-    logger : loggers.Logger
-    terminal_settings : terminals.TerminalSettings
-
-    Returns
-    -------
-    fit_task : datanodes.DataNode
-        The datanode to manage this process.
-    """
-    width = terminal_settings.best_screen_size
-    delay = terminal_settings.adjust_screen_delay
-
-    skip_event = threading.Event()
-
-    skip = term.inkey(lambda a: skip_event.set() if a[1] == "\x1b" else None)
-
-    @dn.datanode
-    def fit():
-        size = yield
-        current_width = 0
-
-        t = time.perf_counter()
-
-        logger.print(f"Can you adjust the width to (or bigger than) {width}?")
-        logger.print("Or [emph]Esc[/] to skip this process.")
-        logger.print("You can try to fit the line below.")
-        logger.print("━" * width, flush=True)
-
-        while current_width < width or time.perf_counter() < t + delay:
-            if skip_event.is_set():
-                logger.print()
-                break
-
-            if current_width != size.columns:
-                current_width = size.columns
-                t = time.perf_counter()
-                if current_width < width - 5:
-                    hint = "(too small!)"
-                elif current_width < width:
-                    hint = "(very close!)"
-                elif current_width == width:
-                    hint = "(perfect!)"
-                else:
-                    hint = "(great!)"
-                logger.clear_line()
-                logger.print(
-                    f"Current width: {current_width} {hint}", end="", flush=True
-                )
-
-            size = yield
-
-        else:
-            logger.print()
-            logger.print("Thanks!")
-
-        logger.print("You can adjust the screen size at any time.\n", flush=True)
-
-        # sleep
-        t = time.perf_counter()
-        while time.perf_counter() < t + delay:
-            yield
-
-    return dn.pipe(skip, term.terminal_size(), fit())
-
-
-@dn.datanode
-def determine_unicode_version(logger):
-    logger.print("[info/] Determine unicode version...")
-
-    with logger.verb():
-        version = yield from term.ucs_detect().join()
-
-    if version is None:
-        logger.print("[warn]Fail to determine unicode version[/]")
-
-    else:
-        logger.print(f"Your unicode version is [emph]{version}[/]")
-        logger.print("[hint/] You can put this command into your settings file:")
-        logger.print(f"[emph]UNICODE_VERSION={version}; export UNICODE_VERSION[/]")
-
-    return version
-
-
 class DevicesDirDescriptor(DirDescriptor):
     "(The place to manage your devices)"
 
+
+class DeviceManager:
+    def __init__(self, audio_manager):
+        self.audio_manager = audio_manager
+
+    @classmethod
+    @dn.datanode
+    def initialize(cls, logger, profiles_manager):
+        # check tty
+        if not sys.stdout.isatty():
+            raise RuntimeError("please connect to interactive terminal device.")
+
+        # deterimine unicode version
+        if (
+            profiles_manager.current.devices.terminal.unicode_version == "auto"
+            and "UNICODE_VERSION" not in os.environ
+        ):
+            version = yield from cls.determine_unicode_version(logger).join()
+            if version is not None:
+                os.environ["UNICODE_VERSION"] = version
+                profiles_manager.current.devices.terminal.unicode_version = version
+                profiles_manager.set_as_changed()
+            logger.print()
+
+        # fit screen size
+        size = shutil.get_terminal_size()
+        width = profiles_manager.current.devices.terminal.best_screen_size
+        if size.columns < width:
+            logger.print("[hint/] Your screen size seems too small.")
+
+            yield from cls.fit_screen(logger, profiles_manager.current.devices.terminal).join()
+
+        # load PyAudio
+        @contextlib.contextmanager
+        def ctxt():
+            logger.print("[info/] Load PyAudio...")
+            logger.print()
+
+            with cls.prepare_pyaudio(logger) as audio_manager:
+                yield cls(audio_manager)
+
+        return ctxt()
+
+    @staticmethod
+    @contextlib.contextmanager
+    def prepare_pyaudio(logger):
+        r"""Prepare PyAudio and print out some information.
+
+        Loading PyAudio will cause PortAudio to print something to the terminal,
+        which cannot be turned off by PyAudio, so why not print more information to
+        make it more hacky.
+
+        Parameters
+        ----------
+        logger : loggers.Logger
+
+        Yields
+        ------
+        audio_manager : PyAudio
+        """
+
+        verb_ctxt = logger.verb()
+        verb_ctxt.__enter__()
+        hit_except = False
+        has_exited = False
+
+        try:
+            with aud.create_manager() as audio_manager:
+                logger.print()
+
+                aud.print_pyaudio_info(audio_manager)
+                verb_ctxt.__exit__(None, None, None)
+                has_exited = True
+
+                logger.print()
+                yield audio_manager
+
+        except:
+            if has_exited:
+                raise
+            hit_except = True
+            if not verb_ctxt.__exit__(*sys.exc_info()):
+                raise
+
+        finally:
+            if not has_exited and not hit_except:
+                verb_ctxt.__exit__(None, None, None)
+
+    @staticmethod
+    def fit_screen(logger, terminal_settings):
+        r"""Guide user to adjust screen size.
+
+        Parameters
+        ----------
+        logger : loggers.Logger
+        terminal_settings : terminals.TerminalSettings
+
+        Returns
+        -------
+        fit_task : datanodes.DataNode
+            The datanode to manage this process.
+        """
+        width = terminal_settings.best_screen_size
+        delay = terminal_settings.adjust_screen_delay
+
+        skip_event = threading.Event()
+
+        skip = term.inkey(lambda a: skip_event.set() if a[1] == "\x1b" else None)
+
+        @dn.datanode
+        def fit():
+            size = yield
+            current_width = 0
+
+            t = time.perf_counter()
+
+            logger.print(f"Can you adjust the width to (or bigger than) {width}?")
+            logger.print("Or [emph]Esc[/] to skip this process.")
+            logger.print("You can try to fit the line below.")
+            logger.print("━" * width, flush=True)
+
+            while current_width < width or time.perf_counter() < t + delay:
+                if skip_event.is_set():
+                    logger.print()
+                    break
+
+                if current_width != size.columns:
+                    current_width = size.columns
+                    t = time.perf_counter()
+                    if current_width < width - 5:
+                        hint = "(too small!)"
+                    elif current_width < width:
+                        hint = "(very close!)"
+                    elif current_width == width:
+                        hint = "(perfect!)"
+                    else:
+                        hint = "(great!)"
+                    logger.clear_line()
+                    logger.print(
+                        f"Current width: {current_width} {hint}", end="", flush=True
+                    )
+
+                size = yield
+
+            else:
+                logger.print()
+                logger.print("Thanks!")
+
+            logger.print("You can adjust the screen size at any time.\n", flush=True)
+
+            # sleep
+            t = time.perf_counter()
+            while time.perf_counter() < t + delay:
+                yield
+
+        return dn.pipe(skip, term.terminal_size(), fit())
+
+    @staticmethod
+    @dn.datanode
+    def determine_unicode_version(logger):
+        logger.print("[info/] Determine unicode version...")
+
+        with logger.verb():
+            version = yield from term.ucs_detect().join()
+
+        if version is None:
+            logger.print("[warn]Fail to determine unicode version[/]")
+
+        else:
+            logger.print(f"Your unicode version is [emph]{version}[/]")
+            logger.print("[hint/] You can put this command into your settings file:")
+            logger.print(f"[emph]UNICODE_VERSION={version}; export UNICODE_VERSION[/]")
+
+        return version
 
 class DevicesCommand:
     def __init__(self, provider):
@@ -162,8 +204,12 @@ class DevicesCommand:
         return self.provider.get(Logger)
 
     @property
-    def manager(self):
-        return self.provider.get(PyAudio)
+    def devices_manager(self):
+        return self.provider.get(DeviceManager)
+
+    @property
+    def audio_manager(self):
+        return self.devices_manager.audio_manager
 
     @property
     def profiles_manager(self):
@@ -208,7 +254,7 @@ class DevicesCommand:
 
         logger.print()
 
-        aud.print_pyaudio_info(self.manager)
+        aud.print_pyaudio_info(self.audio_manager)
 
         logger.print()
 
@@ -285,7 +331,7 @@ class DevicesCommand:
         try:
             logger.print("Validate input device...")
             aud.validate_input_device(
-                self.manager, device, pa_samplerate, pa_channels, pa_format
+                self.audio_manager, device, pa_samplerate, pa_channels, pa_format
             )
             logger.print("Success!")
 
@@ -335,7 +381,7 @@ class DevicesCommand:
         try:
             logger.print("Validate output device...")
             aud.validate_output_device(
-                self.manager, device, pa_samplerate, pa_channels, pa_format
+                self.audio_manager, device, pa_samplerate, pa_channels, pa_format
             )
             logger.print("Success!")
 
@@ -359,12 +405,12 @@ class DevicesCommand:
     @test_mic.arg_parser("device")
     @set_mic.arg_parser("device")
     def _set_mic_device_parser(self):
-        return PyAudioDeviceParser(self.manager, True)
+        return PyAudioDeviceParser(self.audio_manager, True)
 
     @test_speaker.arg_parser("device")
     @set_speaker.arg_parser("device")
     def _set_speaker_device_parser(self):
-        return PyAudioDeviceParser(self.manager, False)
+        return PyAudioDeviceParser(self.audio_manager, False)
 
     @set_mic.arg_parser("rate")
     @set_speaker.arg_parser("rate")
@@ -501,7 +547,7 @@ class DevicesCommand:
         usage: [cmd]fit_screen[/]
         """
 
-        return fit_screen(self.logger, self.settings.devices.terminal)
+        return self.devices_manager.fit_screen(self.logger, self.settings.devices.terminal)
 
     @cmd.function_command
     @dn.datanode
@@ -511,7 +557,7 @@ class DevicesCommand:
         usage: [cmd]ucs_detect[/]
         """
 
-        version = yield from determine_unicode_version(self.logger).join()
+        version = yield from self.devices_manager.determine_unicode_version(self.logger).join()
         if version is not None:
             os.environ["UNICODE_VERSION"] = version
             self.settings.devices.terminal.unicode_version = version
@@ -524,11 +570,11 @@ class KnockTest:
         self.logger = logger
         self.hit_queue = queue.Queue()
 
-    def execute(self, manager):
+    def execute(self, audio_manager):
         self.logger.print("[hint/] Press any key to end test.")
         self.logger.print()
 
-        detector_task, detector = engines.Detector.create(self.settings, manager)
+        detector_task, detector = engines.Detector.create(self.settings, audio_manager)
         detector.add_listener(self.hit_listener())
 
         @dn.datanode
@@ -577,11 +623,11 @@ class KnockTest:
 
 
 class PyAudioDeviceParser(cmd.ArgumentParser):
-    def __init__(self, manager, is_input):
-        self.manager = manager
+    def __init__(self, audio_manager, is_input):
+        self.audio_manager = audio_manager
         self.is_input = is_input
         self.options = ["-1"]
-        for index in range(manager.get_device_count()):
+        for index in range(audio_manager.get_device_count()):
             self.options.append(str(index))
 
     def parse(self, token):
@@ -596,14 +642,14 @@ class PyAudioDeviceParser(cmd.ArgumentParser):
         value = int(token)
         if value == -1:
             if self.is_input:
-                value = self.manager.get_default_input_device_info()["index"]
+                value = self.audio_manager.get_default_input_device_info()["index"]
             else:
-                value = self.manager.get_default_output_device_info()["index"]
+                value = self.audio_manager.get_default_output_device_info()["index"]
 
-        device_info = self.manager.get_device_info_by_index(value)
+        device_info = self.audio_manager.get_device_info_by_index(value)
 
         name = device_info["name"]
-        api = self.manager.get_host_api_info_by_index(device_info["hostApi"])["name"]
+        api = self.audio_manager.get_host_api_info_by_index(device_info["hostApi"])["name"]
         freq = device_info["defaultSampleRate"] / 1000
         ch_in = device_info["maxInputChannels"]
         ch_out = device_info["maxOutputChannels"]
@@ -620,12 +666,12 @@ class SpeakerTest:
         self.tempo = tempo
         self.delay = delay
 
-    def execute(self, manager):
+    def execute(self, audio_manager):
         device = self.device
 
         if device == -1:
-            device = manager.get_default_output_device_info()["index"]
-        device_info = manager.get_device_info_by_index(device)
+            device = audio_manager.get_default_output_device_info()["index"]
+        device_info = audio_manager.get_device_info_by_index(device)
 
         samplerate = int(device_info["defaultSampleRate"])
         nchannels = min(device_info["maxOutputChannels"], 2)
@@ -633,7 +679,7 @@ class SpeakerTest:
 
         try:
             self.logger.print("Validate output device...")
-            aud.validate_output_device(manager, device, samplerate, nchannels, format)
+            aud.validate_output_device(audio_manager, device, samplerate, nchannels, format)
             self.logger.print("Success!")
 
         except:
@@ -643,17 +689,17 @@ class SpeakerTest:
             return dn.DataNode.wrap([])
 
         else:
-            info = PyAudioDeviceParser(manager, False).info(str(device))
+            info = PyAudioDeviceParser(audio_manager, False).info(str(device))
             self.logger.print(f"Test output device {self.logger.emph(info)}...")
-            return self.test_speaker(manager, device, samplerate, nchannels)
+            return self.test_speaker(audio_manager, device, samplerate, nchannels)
 
-    def test_speaker(self, manager, device, samplerate, nchannels):
+    def test_speaker(self, audio_manager, device, samplerate, nchannels):
         settings = engines.MixerSettings()
         settings.output_device = device
         settings.output_samplerate = samplerate
         settings.output_channels = nchannels
 
-        mixer_task, mixer = engines.Mixer.create(settings, manager)
+        mixer_task, mixer = engines.Mixer.create(settings, audio_manager)
 
         dt = 60.0 / self.tempo
         t0 = self.delay
@@ -689,12 +735,12 @@ class MicTest:
         self.width = width
         self.decay_time = decay_time
 
-    def execute(self, manager):
+    def execute(self, audio_manager):
         device = self.device
 
         if device == -1:
-            device = manager.get_default_input_device_info()["index"]
-        device_info = manager.get_device_info_by_index(device)
+            device = audio_manager.get_default_input_device_info()["index"]
+        device_info = audio_manager.get_device_info_by_index(device)
 
         samplerate = int(device_info["defaultSampleRate"])
         channels = 1
@@ -703,7 +749,7 @@ class MicTest:
 
         try:
             self.logger.print("Validate input device...")
-            aud.validate_input_device(manager, device, samplerate, channels, format)
+            aud.validate_input_device(audio_manager, device, samplerate, channels, format)
             self.logger.print("Success!")
 
         except:
@@ -713,12 +759,12 @@ class MicTest:
             return dn.DataNode.wrap([])
 
         else:
-            info = PyAudioDeviceParser(manager, True).info(str(device))
+            info = PyAudioDeviceParser(audio_manager, True).info(str(device))
             self.logger.print(f"Test input device {self.logger.emph(info)}...")
-            return self.test_mic(manager, device, samplerate)
+            return self.test_mic(audio_manager, device, samplerate)
 
     @dn.datanode
-    def test_mic(self, manager, device, samplerate):
+    def test_mic(self, audio_manager, device, samplerate):
         channels = 1
         buffer_length = engines.DetectorSettings.input_buffer_length
         format = engines.DetectorSettings.input_format
@@ -733,7 +779,7 @@ class MicTest:
 
         exit_task = term.inkey(exit_any())
         mic_task = aud.record(
-            manager,
+            audio_manager,
             vol,
             samplerate=samplerate,
             buffer_shape=(buffer_length, channels),
@@ -777,7 +823,7 @@ class WaveformTest:
         self.logger = logger
         self.mixer_settings = mixer_settings
 
-    def execute(self, manager):
+    def execute(self, audio_manager):
         self.logger.print("[info/] Compile waveform...")
 
         try:
@@ -794,7 +840,7 @@ class WaveformTest:
             return dn.DataNode.wrap([])
 
         self.logger.print("[hint/] Press any key to end test.")
-        mixer_task, mixer = engines.Mixer.create(self.mixer_settings, manager)
+        mixer_task, mixer = engines.Mixer.create(self.mixer_settings, audio_manager)
         mixer.play(node)
 
         @dn.datanode
