@@ -1186,7 +1186,7 @@ class BeatInput:
             self.preview_handler(None)
         elif len(self.hint_state.tokens) != 2:
             self.preview_handler(None)
-        elif self.hint_state.tokens != "play":
+        elif self.hint_state.tokens[0] != "play":
             self.preview_handler(None)
         else:
             self.preview_handler(self.hint_state.tokens[1])
