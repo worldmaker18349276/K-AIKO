@@ -151,7 +151,7 @@ class KAIKOMenu:
             menu.set(beatmap_manager)
 
             bgm_controller = BGMController(
-                beatmap_manager, lambda: menu.profile_manager.current.devices.mixer
+                beatmap_manager, lambda: menu.settings.devices.mixer
             )
             menu.set(bgm_controller)
 
@@ -178,17 +178,6 @@ class KAIKOMenu:
         # load bgm
         bgm_task = self.bgm_controller.execute(self.device_manager.audio_manager)
 
-        # tips
-        confirm_key = logger.emph(self.settings.shell.input.confirm_key, type="all")
-        help_key = logger.emph(self.settings.shell.input.help_key, type="all")
-        tab_key = logger.emph(self.settings.shell.input.autocomplete_keys[0], type="all")
-        logger.print(
-            f"[hint/] Type command and press {confirm_key} to execute."
-        )
-        logger.print(f"[hint/] Use {tab_key} to autocomplete command.")
-        logger.print(f"[hint/] If you need help, press {help_key}.")
-        logger.print()
-
         # prompt
         repl_task = self.repl()
         yield from dn.pipe(repl_task, bgm_task).join()
@@ -202,9 +191,11 @@ class KAIKOMenu:
             preview_handler,
             self.logger.rich,
             self.cache_dir,
-            lambda: self.profile_manager.current.shell,
-            lambda: self.profile_manager.current.devices,
+            lambda: self.settings.shell,
+            lambda: self.settings.devices,
         )
+
+        self.print_tips()
         while True:
             self.print_banner()
 
@@ -308,43 +299,63 @@ class KAIKOMenu:
     def devices_dir(self):
         return self.file_manager.root / self.file_manager.structure.devices_name
 
+    def print_tips(self):
+        logger = self.logger
+
+        input_settings = self.settings.shell.input
+
+        confirm_key = logger.emph(input_settings.confirm_key, type="all")
+        help_key = logger.emph(input_settings.help_key, type="all")
+        tab_key = logger.emph(input_settings.autocomplete_keys[0], type="all")
+
+        logger.print(f"[hint/] Type command and press {confirm_key} to execute.")
+        logger.print(f"[hint/] Use {tab_key} to autocomplete command.")
+        logger.print(f"[hint/] If you need help, press {help_key}.")
+        logger.print()
+
     def print_banner(self):
-        username = self.logger.escape(self.file_manager.username, type="all")
-        profile = self.logger.escape(self.profile_manager.current_name, type="all")
+        logger = self.logger
+
+        username = self.file_manager.username
+        current_name = self.profile_manager.current_name
         path = str(self.file_manager.current)
         if path == ".":
             path = ""
         path = os.path.join("$KAIKO", path)
-        path = self.logger.escape(path, type="all")
-
         profile_is_changed = self.profile_manager.is_changed()
         path_is_known = self.file_manager.get_desc(self.file_manager.root / self.file_manager.current) is not None
 
-        user_markup = self.settings.shell.banner.user
-        user_markup = self.logger.rich.parse(user_markup, slotted=True)
+        banner_settings = self.settings.shell.banner
+
+        username = logger.escape(username, type="all")
+        profile = logger.escape(current_name, type="all")
+        path = logger.escape(path, type="all")
+
+        user_markup = banner_settings.user
+        user_markup = logger.rich.parse(user_markup, slotted=True)
         user_markup = mu.replace_slot(
             user_markup,
-            user_name=self.logger.rich.parse(username),
+            user_name=logger.rich.parse(username),
         )
 
-        profile_markup = self.settings.shell.banner.profile
+        profile_markup = banner_settings.profile
         profile_markup = profile_markup[0] if not profile_is_changed else profile_markup[1]
-        profile_markup = self.logger.rich.parse(profile_markup, slotted=True)
+        profile_markup = logger.rich.parse(profile_markup, slotted=True)
         profile_markup = mu.replace_slot(
             profile_markup,
-            profile_name=self.logger.rich.parse(profile),
+            profile_name=logger.rich.parse(profile),
         )
 
-        path_markup = self.settings.shell.banner.path
+        path_markup = banner_settings.path
         path_markup = path_markup[0] if path_is_known else path_markup[1]
-        path_markup = self.logger.rich.parse(path_markup, slotted=True)
+        path_markup = logger.rich.parse(path_markup, slotted=True)
         path_markup = mu.replace_slot(
             path_markup,
-            current_path=self.logger.rich.parse(path),
+            current_path=logger.rich.parse(path),
         )
 
-        banner_markup = self.settings.shell.banner.banner
-        banner_markup = self.logger.rich.parse(banner_markup, slotted=True)
+        banner_markup = banner_settings.banner
+        banner_markup = logger.rich.parse(banner_markup, slotted=True)
         banner_markup = mu.replace_slot(
             banner_markup,
             user=user_markup,
@@ -352,8 +363,8 @@ class KAIKOMenu:
             path=path_markup,
         )
 
-        self.logger.print()
-        self.logger.print(banner_markup)
+        logger.print()
+        logger.print(banner_markup)
 
     def get_command_parser(self):
         commands = {}
