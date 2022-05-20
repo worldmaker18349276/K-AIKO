@@ -491,19 +491,29 @@ class DevicesCommand:
 
     @cmd.function_command
     def test_waveform(self, waveform):
-        """[rich]Test to waveform generater.
+        """[rich]Test waveform generater.
+
+        It accepts a small set of python expressions with some additional
+        properties: use template `{shape:arg}` to generate some common waveforms;
+        use hashtag `#effect:arg1,arg2,...` to post-process the generated waveform.
 
         usage: [cmd]test_waveform[/] [arg]{waveform}[/]
                                 ╱
                          The function of
                          output waveform.
+
+        Available templates: sine, square, triangle, sawtooth, square_duty
+        Available hashtags: tspan, clip, bandpass, gammatone
         """
         settings = self.settings.devices.mixer
         return WaveformTest(waveform, self.logger, settings)
 
     @test_waveform.arg_parser("waveform")
     def _test_waveform_waveform_parser(self):
-        return cmd.RawParser(desc="It should be an expression of waveform.")
+        return cmd.RawParser(
+            default="2**(-abs({sawtooth:t}+1)/0.02)*{sine:t*1000.0}",
+            desc="It should be an expression of waveform."
+        )
 
     @cmd.function_command
     def test_logger(self, message, markup=True):

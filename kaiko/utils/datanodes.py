@@ -1055,7 +1055,7 @@ def waveform(expr, samplerate=44100, channels=1, chunk_length=1024, variables=No
         square=square_wave_template,
         triangle=triangle_wave_template,
         sawtooth=sawtooth_wave_template,
-        square_dirty=square_dirty_wave_template,
+        square_duty=square_duty_wave_template,
     )
 
     dt = chunk_length / samplerate
@@ -1092,7 +1092,7 @@ sine_wave_template = Template("(sin(({})*pi2))")
 square_wave_template = Template("(where(({})%1<0.5,1,-1))")
 triangle_wave_template = Template("(arcsin(sin(({})*pi2))/pi*2)")
 sawtooth_wave_template = Template("((({})+0.5)%1*2-1)")
-square_dirty_wave_template = Template("(where(([{0}][0])%1<[{0}][1],1,-1))")
+square_duty_wave_template = Template("(where(([{0}][0])%1<[{0}][1],1,-1))")
 
 
 def parse_minsec(s):
