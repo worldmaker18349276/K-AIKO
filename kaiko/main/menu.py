@@ -5,6 +5,7 @@ import shutil
 import pkgutil
 from pathlib import Path
 from .. import __version__
+from ..utils.providers import Provider
 from ..utils import markups as mu
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
@@ -76,19 +77,7 @@ class KAIKOMenu:
     version = __version__
 
     def __init__(self):
-        self.services_provider = {}
-
-    def get(self, type):
-        if type in self.services_provider:
-            return self.services_provider[type]
-        else:
-            raise ServiceError(f"Service not found: {type}")
-
-    def set(self, obj):
-        if type(obj) in self.services_provider:
-            raise ServiceError(f"Service already set: {type}")
-        else:
-            self.services_provider[type(obj)] = obj
+        self.provider = Provider()
 
     @classmethod
     def main(cls):
@@ -115,17 +104,19 @@ class KAIKOMenu:
 
         # logger
         logger = Logger()
-        menu.set(logger)
+        menu.provider.set(logger)
 
         # load workspace
-        file_manager = FileManager.create(RootDirDescriptor(menu))
+        file_manager = FileManager.create(RootDirDescriptor(menu.provider))
         file_manager.prepare(logger)
-        menu.set(file_manager)
+        menu.provider.set(file_manager)
 
         os.environ["KAIKO"] = str(file_manager.root)
 
         # load profiles
         profile_manager = ProfileManager(KAIKOSettings, menu.profiles_dir)
+        menu.provider.set(profile_manager)
+
         profile_manager.on_change(
             lambda settings: logger.recompile_style(
                 terminal_settings=settings.devices.terminal,
@@ -133,7 +124,6 @@ class KAIKOMenu:
             )
         )
         profile_manager.update(logger)
-        menu.set(profile_manager)
 
         succ = profile_manager.use(logger)
         if not succ:
@@ -141,19 +131,21 @@ class KAIKOMenu:
             if not succ:
                 raise RuntimeError("Fail to load profile")
 
+        logger.print(flush=True)
+
         # load devices
         devices_ctxt = yield from DeviceManager.initialize(logger, profile_manager).join()
 
         with devices_ctxt as device_manager:
-            menu.set(device_manager)
+            menu.provider.set(device_manager)
 
             beatmap_manager = BeatmapManager(menu.beatmaps_dir)
-            menu.set(beatmap_manager)
+            menu.provider.set(beatmap_manager)
 
             bgm_controller = BGMController(
                 beatmap_manager, lambda: menu.settings.devices.mixer
             )
-            menu.set(bgm_controller)
+            menu.provider.set(bgm_controller)
 
             yield from menu.run().join()
 
@@ -252,27 +244,27 @@ class KAIKOMenu:
 
     @property
     def profile_manager(self):
-        return self.get(ProfileManager)
+        return self.provider.get(ProfileManager)
 
     @property
     def file_manager(self):
-        return self.get(FileManager)
+        return self.provider.get(FileManager)
 
     @property
     def logger(self):
-        return self.get(Logger)
+        return self.provider.get(Logger)
 
     @property
     def device_manager(self):
-        return self.get(DeviceManager)
+        return self.provider.get(DeviceManager)
 
     @property
     def beatmap_manager(self):
-        return self.get(BeatmapManager)
+        return self.provider.get(BeatmapManager)
 
     @property
     def bgm_controller(self):
-        return self.get(BGMController)
+        return self.provider.get(BGMController)
 
     @property
     def settings(self):
@@ -369,13 +361,13 @@ class KAIKOMenu:
     def get_command_parser(self):
         commands = {}
         if self.file_manager.current == Path("Beatmaps/"):
-            commands["play"] = PlayCommand(self, self.resources_dir, self.cache_dir)
+            commands["play"] = PlayCommand(self.provider, self.resources_dir, self.cache_dir)
         if self.file_manager.current == Path("Devices/"):
-            commands["devices"] = DevicesCommand(self)
+            commands["devices"] = DevicesCommand(self.provider)
         if self.file_manager.current == Path("Profiles/"):
-            commands["profiles"] = ProfilesCommand(self)
-        commands["bgm"] = BGMCommand(self)
-        commands["files"] = FilesCommand(self, self.profile_manager.is_changed())
-        commands["cd"] = CdCommand(self)
+            commands["profiles"] = ProfilesCommand(self.provider)
+        commands["bgm"] = BGMCommand(self.provider)
+        commands["files"] = FilesCommand(self.provider, self.profile_manager.is_changed())
+        commands["cd"] = CdCommand(self.provider)
         return cmd.RootCommandParser(**commands)
 

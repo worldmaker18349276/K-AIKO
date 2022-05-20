@@ -61,7 +61,11 @@ class SightWidget:
         self.grade_getter = dn.DataNode.wrap(grade_getter)
         self.settings = settings
 
-    def load(self, rich, detector, renderer_settings):
+    def load(self, provider):
+        rich = provider.get(mu.RichParser)
+        detector = provider.get(engines.Detector)
+        renderer = provider.get(engines.Renderer)
+
         perf_appearances = [
             (
                 rich.parse(f"[restore]{appearance1}[/]"),
@@ -77,7 +81,7 @@ class SightWidget:
         hit_decay_time = self.settings.hit_decay_time
         hit_sustain_time = self.settings.hit_sustain_time
         perf_sustain_time = self.settings.performance_sustain_time
-        framerate = renderer_settings.display_framerate
+        framerate = renderer.settings.display_framerate
 
         new_hits = queue.Queue()
 

@@ -460,7 +460,8 @@ def CdCommand(provider):
     attrs = {}
     attrs["provider"] = provider
     attrs[".."] = make_command("..")
-    for child in (provider.file_manager.root / provider.file_manager.current).resolve().iterdir():
+    file_manager = provider.get(FileManager)
+    for child in (file_manager.root / file_manager.current).resolve().iterdir():
         if child.is_dir():
             attrs[child.name + "/"] = make_command(child.name)
 

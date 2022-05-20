@@ -6,6 +6,7 @@ import queue
 from typing import Optional, List, Tuple, Dict, Callable, Union
 from pathlib import Path
 import dataclasses
+from ..utils.providers import Provider
 from ..utils import datanodes as dn
 from ..utils import config as cfg
 from ..utils import markups as mu
@@ -323,7 +324,9 @@ class PatternsWidget:
         self.metronome = metronome
         self.settings = settings
 
-    def load(self, rich):
+    def load(self, provider):
+        rich = provider.get(mu.RichParser)
+
         patterns = self.settings.patterns
 
         markuped_patterns = [rich.parse(pattern) for pattern in patterns]
@@ -367,7 +370,9 @@ class CaretWidget:
         self.metronome = metronome
         self.settings = settings
 
-    def load(self, rich):
+    def load(self, provider):
+        rich = provider.get(mu.RichParser)
+
         caret_blink_ratio = self.settings.blink_ratio
         normal = rich.parse(self.settings.normal_appearance, slotted=True)
         blinking = rich.parse(self.settings.blinking_appearance, slotted=True)
@@ -411,7 +416,9 @@ class MarkerWidget:
         self.metronome = metronome
         self.settings = settings
 
-    def load(self, rich):
+    def load(self, provider):
+        rich = provider.get(mu.RichParser)
+
         blink_ratio = self.settings.blink_ratio
         normal = rich.parse(self.settings.normal_appearance)
         blinking = rich.parse(self.settings.blinking_appearance)
@@ -435,30 +442,20 @@ class BeatshellWidgetFactory:
 
     def __init__(self, prompt, renderer):
         self.prompt = prompt
-        self.renderer = renderer
+
+        self.provider = Provider()
+        self.provider.set(prompt.rich)
+        self.provider.set(renderer)
 
     def create(self, widget_settings):
         if isinstance(widget_settings, BeatshellWidgetFactory.monitor):
-            if widget_settings.target == beatwidgets.MonitorTarget.mixer:
-                return beatwidgets.MonitorWidget(None, widget_settings).load()
-            elif widget_settings.target == beatwidgets.MonitorTarget.detector:
-                return beatwidgets.MonitorWidget(None, widget_settings).load()
-            elif widget_settings.target == beatwidgets.MonitorTarget.renderer:
-                return beatwidgets.MonitorWidget(self.renderer, widget_settings).load()
-            else:
-                assert False
+            return beatwidgets.MonitorWidget(widget_settings).load(self.provider)
         elif isinstance(widget_settings, BeatshellWidgetFactory.patterns):
-            return PatternsWidget(self.prompt.metronome, widget_settings).load(
-                self.prompt.rich
-            )
+            return PatternsWidget(self.prompt.metronome, widget_settings).load(self.provider)
         elif isinstance(widget_settings, BeatshellWidgetFactory.marker):
-            return MarkerWidget(self.prompt.metronome, widget_settings).load(
-                self.prompt.rich
-            )
+            return MarkerWidget(self.prompt.metronome, widget_settings).load(self.provider)
         elif isinstance(widget_settings, BeatshellWidgetFactory.caret):
-            return CaretWidget(self.prompt.metronome, widget_settings).load(
-                self.prompt.rich
-            )
+            return CaretWidget(self.prompt.metronome, widget_settings).load(self.provider)
         else:
             raise TypeError
 

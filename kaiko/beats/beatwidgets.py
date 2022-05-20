@@ -137,7 +137,10 @@ class SpectrumWidget:
 
         return draw()
 
-    def load(self, rich, mixer):
+    def load(self, provider):
+        rich = provider.get(mu.RichParser)
+        mixer = provider.get(engines.Mixer)
+
         spec_width = self.settings.spec_width
         samplerate = mixer.settings.output_samplerate
         nchannels = mixer.settings.output_channels
@@ -182,7 +185,10 @@ class VolumeIndicatorWidget:
         self.volume = 0.0
         self.settings = settings
 
-    def load(self, rich, mixer):
+    def load(self, provider):
+        rich = provider.get(mu.RichParser)
+        mixer = provider.get(engines.Mixer)
+
         vol_decay_time = self.settings.vol_decay_time
         buffer_length = mixer.settings.output_buffer_length
         samplerate = mixer.settings.output_samplerate
@@ -241,11 +247,15 @@ class KnockMeterWidget:
             if detected:
                 self.strength = strength
 
-    def load(self, rich, detector, renderer_settings):
+    def load(self, provider):
+        rich = provider.get(mu.RichParser)
+        detector = provider.get(engines.Detector)
+        renderer = provider.get(engines.Renderer)
+
         ticks = " ▏▎▍▌▋▊▉█"
         nticks = len(ticks) - 1
         decay_time = self.settings.decay_time
-        display_framerate = renderer_settings.display_framerate
+        display_framerate = renderer.settings.display_framerate
         decay = 1.0 / display_framerate / decay_time
 
         template = rich.parse(self.settings.template, slotted=True)
@@ -318,11 +328,14 @@ class AccuracyMeterWidget:
 
                 time, ran = yield res
 
-    def load(self, rich, renderer_settings):
+    def load(self, provider):
+        rich = provider.get(mu.RichParser)
+        renderer = provider.get(engines.Renderer)
+
         meter_width = self.settings.meter_width
         meter_decay_time = self.settings.meter_decay_time
         meter_radius = self.settings.meter_radius
-        display_framerate = renderer_settings.display_framerate
+        display_framerate = renderer.settings.display_framerate
         decay = 1 / display_framerate / meter_decay_time
 
         length = meter_width * 2
@@ -359,14 +372,22 @@ class MonitorWidgetSettings:
 
 
 class MonitorWidget:
-    def __init__(self, target, settings):
-        self.target = target
+    def __init__(self, settings):
         self.settings = settings
 
-    def load(self):
+    def load(self, provider):
+        if self.settings.target == MonitorTarget.mixer:
+            target = provider.get(engines.Mixer)
+        elif self.settings.target == MonitorTarget.detector:
+            target = provider.get(engines.Detector)
+        elif self.settings.target == MonitorTarget.renderer:
+            target = provider.get(engines.Renderer)
+        else:
+            raise TypeError
+
         ticks = " ▏▎▍▌▋▊▉█"
         ticks_len = len(ticks)
-        monitor = self.target.monitor if self.target is not None else None
+        monitor = target.monitor if target is not None else None
 
         def widget_func(arg):
             time, ran = arg
@@ -434,7 +455,9 @@ class ScoreWidget:
 
                 time, ran = yield res
 
-    def load(self, rich):
+    def load(self, provider):
+        rich = provider.get(mu.RichParser)
+
         template = rich.parse(self.settings.template, slotted=True)
 
         return self.widget_node(template)
@@ -492,7 +515,9 @@ class ProgressWidget:
 
                 time, ran = yield res
 
-    def load(self, rich):
+    def load(self, provider):
+        rich = provider.get(mu.RichParser)
+
         template = rich.parse(self.settings.template, slotted=True)
 
         return self.widget_node(template)
