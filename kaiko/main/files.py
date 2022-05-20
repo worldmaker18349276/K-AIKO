@@ -128,32 +128,38 @@ class FileManager:
         root = Path("~/.local/share/K-AIKO").expanduser()
         return cls(username, root, Path("."), structure)
 
-    def is_prepared(self):
+    def check_is_prepared(self, logger):
         def go(path, tree):
             for child in tree.children():
                 if child.is_required:
                     subpath = path / unescape_glob(child.pattern)
-                    if not subpath.exists():
-                        return False
 
                     if isinstance(child.descriptor, DirDescriptor):
+                        if not subpath.exists():
+                            logger.print(f"[data/] There is a missing directory [emph]{subpath!s}[/].")
+                            return False
                         if not subpath.is_dir():
                             raise ValueError(f"bad file structure: {subpath!s} should be a directory")
                         if not go(subpath, child.descriptor):
                             return False
                     elif isinstance(child.descriptor, FileDescriptor):
+                        if not subpath.exists():
+                            logger.print(f"[data/] There is a missing file [emph]{subpath!s}[/].")
+                            return False
                         if not subpath.is_file():
                             raise ValueError(f"bad file structure: {subpath!s} should be a file")
                     else:
                         raise TypeError(child.descriptor)
+            return True
 
         if not self.root.exists():
+            logger.print(f"[data/] The workspace [emph]{self.root!s}[/] is missing.")
             return False
 
         return go(self.root, self.structure)
 
     def prepare(self, logger):
-        if self.is_prepared():
+        if self.check_is_prepared(logger):
             return
 
         # start up
@@ -166,22 +172,24 @@ class FileManager:
 
                     if isinstance(child.descriptor, DirDescriptor):
                         if not subpath.exists():
+                            logger.print(f"[data/] Create directory [emph]{subpath!s}[/]...")
                             subpath.mkdir()
                         go(subpath, child.descriptor)
                     elif isinstance(child.descriptor, FileDescriptor):
                         if not subpath.exists():
+                            logger.print(f"[data/] Create file [emph]{subpath!s}[/]...")
                             subpath.touch()
                     else:
                         raise TypeError(child.descriptor)
 
         if not self.root.exists():
             self.root.mkdir()
+            logger.print(
+                f"[data/] Your data will be stored in {logger.emph(self.root.as_uri())}"
+            )
 
         go(self.root, self.structure)
 
-        logger.print(
-            f"[data/] Your data will be stored in {logger.emph(self.root.as_uri())}"
-        )
         logger.print(flush=True)
 
     def remove(self, logger):
