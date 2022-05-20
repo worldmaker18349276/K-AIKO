@@ -395,9 +395,9 @@ class OneshotTarget(Target):
     ----------
     sound : datanodes.DataNode or None
         The sound of the auditory cue of this target.
-    approach_appearance : tuple of str and str
+    approach_appearance : tuple of markups.Markup and markups.Markup
         The appearance of approaching target.
-    wrong_appearance : tuple of str and str
+    wrong_appearance : tuple of markups.Markup and markups.Markup
         The appearance of wrong-shot target.
 
     Methods
