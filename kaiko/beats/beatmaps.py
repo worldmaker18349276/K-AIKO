@@ -1039,7 +1039,7 @@ def observe(stack):
 
 
 # widgets
-class BeatbarWidgetBuilder:
+class BeatbarWidgetFactory:
     spectrum = beatwidgets.SpectrumWidgetSettings
     volume_indicator = beatwidgets.VolumeIndicatorWidgetSettings
     knock_meter = beatwidgets.KnockMeterWidgetSettings
@@ -1055,26 +1055,26 @@ class BeatbarWidgetBuilder:
         self.beatbar = beatbar
 
     def create(self, widget_settings):
-        if isinstance(widget_settings, BeatbarWidgetBuilder.spectrum):
+        if isinstance(widget_settings, BeatbarWidgetFactory.spectrum):
             return beatwidgets.SpectrumWidget(widget_settings).load(
                 self.rich, self.beatbar.mixer
             )
-        elif isinstance(widget_settings, BeatbarWidgetBuilder.volume_indicator):
+        elif isinstance(widget_settings, BeatbarWidgetFactory.volume_indicator):
             return beatwidgets.VolumeIndicatorWidget(widget_settings).load(
                 self.rich, self.beatbar.mixer
             )
-        elif isinstance(widget_settings, BeatbarWidgetBuilder.knock_meter):
+        elif isinstance(widget_settings, BeatbarWidgetFactory.knock_meter):
             return beatwidgets.KnockMeterWidget(widget_settings).load(
                 self.rich, self.beatbar.detector, self.beatbar.renderer.settings
             )
-        elif isinstance(widget_settings, BeatbarWidgetBuilder.accuracy_meter):
+        elif isinstance(widget_settings, BeatbarWidgetFactory.accuracy_meter):
             accuracy_getter = dn.pipe(
                 observe(self.state.perfs), lambda perfs: [perf.err for perf in perfs]
             )
             return beatwidgets.AccuracyMeterWidget(
                 accuracy_getter, widget_settings
             ).load(self.rich, self.beatbar.renderer.settings)
-        elif isinstance(widget_settings, BeatbarWidgetBuilder.monitor):
+        elif isinstance(widget_settings, BeatbarWidgetFactory.monitor):
             if widget_settings.target == beatwidgets.MonitorTarget.mixer:
                 return beatwidgets.MonitorWidget(
                     self.beatbar.mixer, widget_settings
@@ -1089,12 +1089,12 @@ class BeatbarWidgetBuilder:
                 ).load()
             else:
                 assert False
-        elif isinstance(widget_settings, BeatbarWidgetBuilder.score):
+        elif isinstance(widget_settings, BeatbarWidgetFactory.score):
             score_getter = lambda _: (self.state.score, self.state.full_score)
             return beatwidgets.ScoreWidget(score_getter, widget_settings).load(
                 self.rich
             )
-        elif isinstance(widget_settings, BeatbarWidgetBuilder.progress):
+        elif isinstance(widget_settings, BeatbarWidgetFactory.progress):
             progress_getter = lambda _: (
                 self.state.finished_subjects / self.state.total_subjects
                 if self.state.total_subjects > 0
@@ -1104,7 +1104,7 @@ class BeatbarWidgetBuilder:
             return beatwidgets.ProgressWidget(
                 progress_getter, time_getter, widget_settings
             ).load(self.rich)
-        elif isinstance(widget_settings, BeatbarWidgetBuilder.sight):
+        elif isinstance(widget_settings, BeatbarWidgetFactory.sight):
             grade_getter = dn.pipe(
                 observe(self.state.perfs),
                 lambda perfs: [
@@ -1142,9 +1142,9 @@ class BeatbarWidgetSettings(cfg.Configurable):
     footer_widget : BeatbarFooterWidgetSettings
         The widget on the footer.
     """
-    icon_widget: BeatbarIconWidgetSettings = BeatbarWidgetBuilder.spectrum()
-    header_widget: BeatbarHeaderWidgetSettings = BeatbarWidgetBuilder.score()
-    footer_widget: BeatbarFooterWidgetSettings = BeatbarWidgetBuilder.progress()
+    icon_widget: BeatbarIconWidgetSettings = BeatbarWidgetFactory.spectrum()
+    header_widget: BeatbarHeaderWidgetSettings = BeatbarWidgetFactory.score()
+    footer_widget: BeatbarFooterWidgetSettings = BeatbarWidgetFactory.progress()
 
 
 # beatmap
@@ -1537,16 +1537,16 @@ class Beatmap:
             gameplay_settings.playfield,
         )
 
-        widget_builder = BeatbarWidgetBuilder(score, rich, playfield)
+        widget_factory = BeatbarWidgetFactory(score, rich, playfield)
 
-        playfield.icon = widget_builder.create(gameplay_settings.widgets.icon_widget)
-        playfield.header = widget_builder.create(
+        playfield.icon = widget_factory.create(gameplay_settings.widgets.icon_widget)
+        playfield.header = widget_factory.create(
             gameplay_settings.widgets.header_widget
         )
-        playfield.footer = widget_builder.create(
+        playfield.footer = widget_factory.create(
             gameplay_settings.widgets.footer_widget
         )
-        playfield.sight = widget_builder.create(gameplay_settings.playfield.sight)
+        playfield.sight = widget_factory.create(gameplay_settings.playfield.sight)
 
         yield from playfield.load().join()
 

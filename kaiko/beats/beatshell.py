@@ -211,6 +211,17 @@ def shlexer_markup(buffer, tokens, typeahead, tags):
     buffer : list of str
     tokens : list of ShToken
     typeahead : str
+    tags : dict
+        The dictionary of tags:
+        "ws" maps to whitespace tag;
+        "qt" maps to quotation tag;
+        "bs" maps to backspace tag;
+        "cmd" maps to command tag;
+        "kw" maps to keyword tag;
+        "arg" maps to argument tag;
+        "unfinished" map to unfinished tag;
+        "unknown" map to unknown tag;
+        "typeahead" map to typeahead tag.
 
     Returns
     -------
@@ -416,7 +427,7 @@ class MarkerWidget:
         return marker_func
 
 
-class BeatshellWidgetBuilder:
+class BeatshellWidgetFactory:
     monitor = beatwidgets.MonitorWidgetSettings
     patterns = PatternsWidgetSettings
     marker = MarkerWidgetSettings
@@ -427,7 +438,7 @@ class BeatshellWidgetBuilder:
         self.renderer = renderer
 
     def create(self, widget_settings):
-        if isinstance(widget_settings, BeatshellWidgetBuilder.monitor):
+        if isinstance(widget_settings, BeatshellWidgetFactory.monitor):
             if widget_settings.target == beatwidgets.MonitorTarget.mixer:
                 return beatwidgets.MonitorWidget(None, widget_settings).load()
             elif widget_settings.target == beatwidgets.MonitorTarget.detector:
@@ -436,15 +447,15 @@ class BeatshellWidgetBuilder:
                 return beatwidgets.MonitorWidget(self.renderer, widget_settings).load()
             else:
                 assert False
-        elif isinstance(widget_settings, BeatshellWidgetBuilder.patterns):
+        elif isinstance(widget_settings, BeatshellWidgetFactory.patterns):
             return PatternsWidget(self.prompt.metronome, widget_settings).load(
                 self.prompt.rich
             )
-        elif isinstance(widget_settings, BeatshellWidgetBuilder.marker):
+        elif isinstance(widget_settings, BeatshellWidgetFactory.marker):
             return MarkerWidget(self.prompt.metronome, widget_settings).load(
                 self.prompt.rich
             )
-        elif isinstance(widget_settings, BeatshellWidgetBuilder.caret):
+        elif isinstance(widget_settings, BeatshellWidgetFactory.caret):
             return CaretWidget(self.prompt.metronome, widget_settings).load(
                 self.prompt.rich
             )
@@ -481,7 +492,7 @@ class BeatShellSettings(cfg.Configurable):
             The keymap of beatshell. The key of dict is the keystroke, and the
             value of dict is the action to activate. The format of action is
             just like a normal python code: `input.insert_typeahead() or
-            input.move_right()`. The syntax are::
+            input.move_right()`. The syntax is::
 
                 <function> ::= "input." /(?!_)\w+/ "()"
                 <operator> ::= " | " | " & " | " and " | " or "
@@ -520,7 +531,8 @@ class BeatShellSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        t0 : float tempo : float
+        t0 : float
+        tempo : float
 
         icon_width : int
             The text width of icon.
@@ -929,11 +941,11 @@ class BeatInput:
 
         prompt = BeatPrompt(stroke, self, shell_settings, self.rich, metronome)
 
-        widget_builder = BeatshellWidgetBuilder(prompt, renderer)
+        widget_factory = BeatshellWidgetFactory(prompt, renderer)
 
-        prompt.icon = widget_builder.create(shell_settings.prompt.icons)
-        prompt.marker = widget_builder.create(shell_settings.prompt.marker)
-        prompt.caret = widget_builder.create(shell_settings.prompt.caret)
+        prompt.icon = widget_factory.create(shell_settings.prompt.icons)
+        prompt.marker = widget_factory.create(shell_settings.prompt.marker)
+        prompt.caret = widget_factory.create(shell_settings.prompt.caret)
 
         # execute
         stroke.register(controller)
