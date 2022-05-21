@@ -243,17 +243,17 @@ class Flip(Event):
 
     @dn.datanode
     def _node(self, playfield):
-        time, width = yield
+        time, ran = yield
 
         while time < self.time:
-            time, width = yield
+            time, ran = yield
 
         if self.flip is None:
             playfield.bar_flip = not playfield.bar_flip
         else:
             playfield.bar_flip = self.flip
 
-        time, width = yield
+        time, ran = yield
 
 
 @dataclasses.dataclass
@@ -286,10 +286,10 @@ class Shift(Event):
 
     @dn.datanode
     def _node(self, playfield):
-        time, width = yield
+        time, ran = yield
 
         while time < self.time:
-            time, width = yield
+            time, ran = yield
 
         shift0 = playfield.bar_shift
         speed = (
@@ -300,11 +300,11 @@ class Shift(Event):
 
         while time < self.end:
             playfield.bar_shift = shift0 + speed * (time - self.time)
-            time, width = yield
+            time, ran = yield
 
         playfield.bar_shift = self.shift
 
-        time, width = yield
+        time, ran = yield
 
 
 # targets
