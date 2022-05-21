@@ -2033,9 +2033,11 @@ class BeatPrompt:
         marker_width = self.settings.prompt.marker_width
         input_margin = self.settings.prompt.input_margin
 
-        icon_mask = slice(None, icon_width)
-        marker_mask = slice(icon_width, icon_width + marker_width)
-        input_mask = slice(icon_width + marker_width, None)
+        [
+            icon_mask,
+            marker_mask,
+            input_mask,
+        ] = beatwidgets.layout([icon_width, marker_width, -1])
 
         renderer.add_drawer(self.state_updater(), zindex=())
         renderer.add_drawer(self.update_metronome(), zindex=(0,))

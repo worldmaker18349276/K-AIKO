@@ -5,6 +5,7 @@ from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..utils import markups as mu
 from ..devices import engines
+from .beatwidgets import layout
 
 
 class SightWidgetSettings(cfg.Configurable):
@@ -218,14 +219,17 @@ class Beatbar:
         header_width = layout_settings.header_width
         footer_width = layout_settings.footer_width
 
-        self.icon_mask = slice(None, icon_width)
-        self.header_mask = slice(icon_width, icon_width + header_width)
-        self.content_mask = slice(
-            icon_width + header_width, -footer_width if footer_width > 0 else None
-        )
-        self.footer_mask = (
-            slice(-footer_width, None) if footer_width > 0 else slice(0, 0)
-        )
+        [
+            icon_mask,
+            header_mask,
+            content_mask,
+            footer_mask,
+        ] = layout([icon_width, header_width, -1, footer_width])
+
+        self.icon_mask = icon_mask
+        self.header_mask = header_mask
+        self.content_mask = content_mask
+        self.footer_mask = footer_mask
 
         self.icon = icon
         self.header = header

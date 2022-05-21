@@ -59,6 +59,31 @@ def pc_format(value, width):
         return f"{value:>{width}.0%}" if value == 1 else f"{value:>{width}.{width-4}%}"
 
 
+def layout(widths):
+    if -1 not in widths:
+        return layout([*widths, -1])[:-1]
+
+    slices = [slice(0, 0) for _ in widths]
+
+    i = widths.index(-1)
+
+    right = 0
+    for j, width in enumerate(widths[:i]):
+        left_ = right
+        right += width
+        slices[j] = slice(left_, right)
+
+    left = 0
+    for j, width in enumerate(widths[:i:-1]):
+        right_ = left
+        left -= width
+        slices[-1-j] = slice(left, None if left != right_ == 0 else right_)
+
+    slices[i] = slice(right, None if left == 0 else left)
+
+    return slices
+
+
 # widgets
 @dataclasses.dataclass
 class SpectrumWidgetSettings:
