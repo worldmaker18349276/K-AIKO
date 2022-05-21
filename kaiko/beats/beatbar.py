@@ -250,8 +250,8 @@ class Beatbar:
         self.sight_scheduler = Scheduler(default=self.sight)
         self.draw_content(0.0, self.sight_scheduler, zindex=(2,))
 
-        bar_node = self._bar_node(self.content_pipeline, self.content_mask)
-        self.renderer.add_drawer(bar_node, zindex=(0,))
+        bar_node = self._bar_node(self.content_pipeline)
+        self.renderer.add_texts(bar_node, xmask=self.content_mask, zindex=(0,))
         self.renderer.add_texts(self.icon, xmask=self.icon_mask, zindex=(1,))
         self.renderer.add_texts(self.header, xmask=self.header_mask, zindex=(2,))
         self.renderer.add_texts(self.footer, xmask=self.footer_mask, zindex=(3,))
@@ -261,21 +261,16 @@ class Beatbar:
 
     @staticmethod
     @dn.datanode
-    def _bar_node(pipeline, xmask):
+    def _bar_node(pipeline):
         with pipeline:
-            (view, msg, logs), time, width = yield
+            time, xran = yield
             while True:
-                xran = engines.to_range(xmask.start, xmask.stop, width)
-
                 try:
                     contents = pipeline.send(([], time, xran))
                 except StopIteration:
                     return
 
-                for text, shift in contents:
-                    view.add_markup(text, xmask, shift=shift)
-
-                (view, msg, logs), time, width = yield (view, msg, logs)
+                time, xran = yield contents
 
     @dn.datanode
     def _content_node(self, pos_node, text_node, start, duration):
@@ -311,7 +306,7 @@ class Beatbar:
                     text = text[flip]
                 if text is not None:
                     index = round(index)
-                    contents.append((text, index))
+                    contents.append((index, text))
 
                 contents, time, ran = yield contents
 
@@ -351,7 +346,7 @@ class Beatbar:
 
                 if text is not None:
                     index = round(index)
-                    contents.append((text, index))
+                    contents.append((index, text))
 
                 contents, time, ran = yield contents
 
