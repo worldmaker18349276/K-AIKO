@@ -1153,7 +1153,7 @@ def collect(node):
 
 
 # others
-class DataBus(DataNode):
+class DynamicPipeline(DataNode):
     """Chaining given data nodes dynamically.
 
     Receives

@@ -309,21 +309,21 @@ class MixerSettings(cfg.Configurable):
 
 
 class Mixer:
-    def __init__(self, effects_bus, clock, settings, monitor):
-        self.effects_bus = effects_bus
+    def __init__(self, effects_pipeline, clock, settings, monitor):
+        self.effects_pipeline = effects_pipeline
         self.clock = clock
         self.settings = settings
         self.monitor = monitor
 
     @staticmethod
-    def get_task(bus, clock, settings, manager, init_time, monitor):
+    def get_task(pipeline, clock, settings, manager, init_time, monitor):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
         format = settings.output_format
         device = settings.output_device
 
-        output_node = Mixer._mix_node(bus, clock, settings, init_time)
+        output_node = Mixer._mix_node(pipeline, clock, settings, init_time)
         if monitor:
             output_node = monitor.monitoring(output_node)
 
@@ -338,20 +338,20 @@ class Mixer:
 
     @staticmethod
     @dn.datanode
-    def _mix_node(bus, clock, settings, init_time):
+    def _mix_node(pipeline, clock, settings, init_time):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
 
         timer = Mixer._timer_node(clock, init_time, buffer_length, samplerate, settings)
 
-        with timer, bus:
+        with timer, pipeline:
             yield
             while True:
                 data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
                 try:
                     slices_map = timer.send(None)
-                    data = bus.send((data, slices_map))
+                    data = pipeline.send((data, slices_map))
                 except StopIteration:
                     return
                 yield data
@@ -373,16 +373,16 @@ class Mixer:
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
 
-        bus = dn.DataBus()
+        pipeline = dn.DynamicPipeline()
         clock = Clock()
-        task = cls.get_task(bus, clock, settings, manager, init_time, monitor)
-        return task, cls(bus, clock, settings, monitor)
+        task = cls.get_task(pipeline, clock, settings, manager, init_time, monitor)
+        return task, cls(pipeline, clock, settings, monitor)
 
     def add_effect(self, node, zindex=(0,)):
-        return self.effects_bus.add_node(node, zindex=zindex)
+        return self.effects_pipeline.add_node(node, zindex=zindex)
 
     def remove_effect(self, key):
-        return self.effects_bus.remove_node(key)
+        return self.effects_pipeline.remove_node(key)
 
     @dn.datanode
     def tmask(self, node, time):
@@ -546,15 +546,15 @@ class DetectorSettings(cfg.Configurable):
 
 
 class Detector:
-    def __init__(self, listeners_bus, clock, knock_energy, settings, monitor):
-        self.listeners_bus = listeners_bus
+    def __init__(self, listeners_pipeline, clock, knock_energy, settings, monitor):
+        self.listeners_pipeline = listeners_pipeline
         self.clock = clock
         self.knock_energy = knock_energy
         self.settings = settings
         self.monitor = monitor
 
     @staticmethod
-    def get_task(bus, clock, knock_energy, settings, manager, init_time, monitor):
+    def get_task(pipeline, clock, knock_energy, settings, manager, init_time, monitor):
         samplerate = settings.input_samplerate
         buffer_length = settings.input_buffer_length
         nchannels = settings.input_channels
@@ -565,7 +565,7 @@ class Detector:
         hop_length = round(samplerate * time_res)
 
         input_node = Detector._detect_node(
-            bus, clock, knock_energy, init_time, settings
+            pipeline, clock, knock_energy, init_time, settings
         )
         if buffer_length != hop_length:
             input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
@@ -583,7 +583,7 @@ class Detector:
 
     @staticmethod
     @dn.datanode
-    def _detect_node(bus, clock, knock_energy, init_time, settings):
+    def _detect_node(pipeline, clock, knock_energy, init_time, settings):
         samplerate = settings.input_samplerate
 
         time_res = settings.detect.time_res
@@ -624,7 +624,7 @@ class Detector:
             ),
         )
 
-        with bus, timer, onset, picker:
+        with pipeline, timer, onset, picker:
             data = yield
             while True:
                 try:
@@ -632,7 +632,7 @@ class Detector:
                     detected, strength = picker.send(strength)
                     time, ratio = timer.send(None)
                     normalized_strength = strength / knock_energy.get()
-                    bus.send((None, time, ratio, normalized_strength, detected))
+                    pipeline.send((None, time, ratio, normalized_strength, detected))
                 except StopIteration:
                     return
                 data = yield
@@ -646,19 +646,19 @@ class Detector:
 
     @classmethod
     def create(cls, settings, manager, init_time=0.0, monitor=None):
-        bus = dn.DataBus()
+        pipeline = dn.DynamicPipeline()
         knock_energy = AsyncAdditiveValue(settings.knock_energy)
         clock = Clock()
         task = cls.get_task(
-            bus, clock, knock_energy, settings, manager, init_time, monitor
+            pipeline, clock, knock_energy, settings, manager, init_time, monitor
         )
-        return task, cls(bus, clock, knock_energy, settings, monitor)
+        return task, cls(pipeline, clock, knock_energy, settings, monitor)
 
     def add_listener(self, node):
-        return self.listeners_bus.add_node(node, (0,))
+        return self.listeners_pipeline.add_node(node, (0,))
 
     def remove_listener(self, key):
-        self.listeners_bus.remove_node(key)
+        self.listeners_pipeline.remove_node(key)
 
     def on_hit(self, func, time=None, duration=None):
         return self.add_listener(self._hit_listener(func, time, duration))
@@ -745,18 +745,18 @@ class RendererSettings(cfg.Configurable):
 
 
 class Renderer:
-    def __init__(self, drawers_bus, clock, settings, monitor):
-        self.drawers_bus = drawers_bus
+    def __init__(self, drawers_pipeline, clock, settings, monitor):
+        self.drawers_pipeline = drawers_pipeline
         self.clock = clock
         self.settings = settings
         self.monitor = monitor
 
     @staticmethod
-    def get_task(bus, clock, settings, term_settings, init_time, monitor):
+    def get_task(pipeline, clock, settings, term_settings, init_time, monitor):
         framerate = settings.display_framerate
 
         display_node = Renderer._resize_node(
-            Renderer._render_node(bus, clock, settings, term_settings, init_time),
+            Renderer._render_node(pipeline, clock, settings, term_settings, init_time),
             settings,
             term_settings,
         )
@@ -766,7 +766,7 @@ class Renderer:
 
     @staticmethod
     @dn.datanode
-    def _render_node(bus, clock, settings, term_settings, init_time):
+    def _render_node(pipeline, clock, settings, term_settings, init_time):
         framerate = settings.display_framerate
 
         rich_renderer = mu.RichRenderer(term_settings.unicode_version)
@@ -779,14 +779,14 @@ class Renderer:
 
         timer = Renderer._timer_node(clock, init_time, framerate, settings)
 
-        with timer, bus:
+        with timer, pipeline:
             shown, resized, size = yield
             while True:
                 width = size.columns
                 view = RichBar(term_settings)
                 try:
                     time, ratio = timer.send(None)
-                    view, msgs, logs = bus.send(((view, msgs, logs), time, width))
+                    view, msgs, logs = pipeline.send(((view, msgs, logs), time, width))
                 except StopIteration:
                     return
                 view_str = view.draw(width, rich_renderer)
@@ -863,16 +863,16 @@ class Renderer:
 
     @classmethod
     def create(cls, settings, term_settings, init_time=0.0, monitor=None):
-        bus = dn.DataBus()
+        pipeline = dn.DynamicPipeline()
         clock = Clock()
-        task = cls.get_task(bus, clock, settings, term_settings, init_time, monitor)
-        return task, cls(bus, clock, settings, monitor)
+        task = cls.get_task(pipeline, clock, settings, term_settings, init_time, monitor)
+        return task, cls(pipeline, clock, settings, monitor)
 
     def add_drawer(self, node, zindex=(0,)):
-        return self.drawers_bus.add_node(node, zindex=zindex)
+        return self.drawers_pipeline.add_node(node, zindex=zindex)
 
     def remove_drawer(self, key):
-        self.drawers_bus.remove_node(key)
+        self.drawers_pipeline.remove_node(key)
 
     def add_log(self, msg, zindex=(0,)):
         return self.add_drawer(self._log_drawer(msg), zindex)
@@ -930,26 +930,26 @@ class ControllerSettings(cfg.Configurable):
 
 
 class Controller:
-    def __init__(self, handlers_bus, clock, settings):
-        self.handlers_bus = handlers_bus
+    def __init__(self, handlers_pipeline, clock, settings):
+        self.handlers_pipeline = handlers_pipeline
         self.clock = clock
         self.settings = settings
 
     @staticmethod
-    def get_task(bus, clock, settings, term_settings, init_time):
+    def get_task(pipeline, clock, settings, term_settings, init_time):
         return term.inkey(
-            Controller._control_node(bus, clock, settings, term_settings, init_time),
+            Controller._control_node(pipeline, clock, settings, term_settings, init_time),
             dt=settings.update_interval,
         )
 
     @staticmethod
     @dn.datanode
-    def _control_node(bus, clock, settings, term_settings, init_time):
+    def _control_node(pipeline, clock, settings, term_settings, init_time):
         keycodes = term_settings.keycodes
 
         timer = Controller._timer_node(clock, init_time, settings.update_interval)
 
-        with timer, bus:
+        with timer, pipeline:
             while True:
                 _, keycode = yield
 
@@ -966,7 +966,7 @@ class Controller:
 
                 try:
                     time, ratio = timer.send(None)
-                    bus.send((None, time, keyname, keycode))
+                    pipeline.send((None, time, keyname, keycode))
                 except StopIteration:
                     return
 
@@ -976,16 +976,16 @@ class Controller:
 
     @classmethod
     def create(cls, settings, term_settings, init_time=0.0):
-        bus = dn.DataBus()
+        pipeline = dn.DynamicPipeline()
         clock = Clock()
-        task = cls.get_task(bus, clock, settings, term_settings, init_time)
-        return task, cls(bus, clock, settings)
+        task = cls.get_task(pipeline, clock, settings, term_settings, init_time)
+        return task, cls(pipeline, clock, settings)
 
     def add_handler(self, node, keyname=None):
-        return self.handlers_bus.add_node(self._filter_node(node, keyname), (0,))
+        return self.handlers_pipeline.add_node(self._filter_node(node, keyname), (0,))
 
     def remove_handler(self, key):
-        self.handlers_bus.remove_node(key)
+        self.handlers_pipeline.remove_node(key)
 
     @dn.datanode
     def _filter_node(self, node, name):
