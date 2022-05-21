@@ -335,7 +335,8 @@ class PatternsWidget:
             time, ran = arg
             beat = self.metronome.beat(time)
             ind = int(beat * len(markuped_patterns) // 1) % len(markuped_patterns)
-            return markuped_patterns[ind]
+            res = markuped_patterns[ind]
+            return [(0, res)]
 
         return patterns_func
 
@@ -420,8 +421,8 @@ class MarkerWidget:
         rich = provider.get(mu.RichParser)
 
         blink_ratio = self.settings.blink_ratio
-        normal = rich.parse(self.settings.normal_appearance)
-        blinking = rich.parse(self.settings.blinking_appearance)
+        normal = [(0, rich.parse(self.settings.normal_appearance))]
+        blinking = [(0, rich.parse(self.settings.blinking_appearance))]
 
         def marker_func(arg):
             time, ran = arg
@@ -2043,11 +2044,11 @@ class BeatPrompt:
         renderer.add_drawer(self.update_metronome(), zindex=(0,))
         renderer.add_drawer(self.adjust_input_offset(), zindex=(0,))
         renderer.add_drawer(self.hint_handler(), zindex=(1,))
-        renderer.add_text(self.text_handler(), input_mask, zindex=(1,))
-        renderer.add_text(*self.get_left_ellipsis_func(input_mask), zindex=(1, 10))
-        renderer.add_text(*self.get_right_ellipsis_func(input_mask), zindex=(1, 10))
-        renderer.add_text(self.icon, icon_mask, zindex=(2,))
-        renderer.add_text(self.marker, marker_mask, zindex=(3,))
+        renderer.add_texts(self.text_handler(), input_mask, zindex=(1,))
+        renderer.add_texts(*self.get_left_ellipsis_func(input_mask), zindex=(1, 10))
+        renderer.add_texts(*self.get_right_ellipsis_func(input_mask), zindex=(1, 10))
+        renderer.add_texts(self.icon, icon_mask, zindex=(2,))
+        renderer.add_texts(self.marker, marker_mask, zindex=(3,))
 
     @dn.datanode
     def state_updater(self):
@@ -2261,12 +2262,11 @@ class BeatPrompt:
                     caret = None
 
                 markup = caret_node.send((markup, caret))
-                markup = mu.Group((mu.DX(dx=-self.input_offset), markup))
 
-                time, ran = yield markup
+                time, ran = yield [(-self.input_offset, markup)]
 
     def get_left_ellipsis_func(self, input_mask):
-        ellipsis = mu.Text("…")
+        ellipsis = [(0, mu.Text("…"))]
         width = 1
 
         if input_mask.start is None:
@@ -2277,12 +2277,12 @@ class BeatPrompt:
             left_ellipsis_stop = None
         left_ellipsis_mask = slice(input_mask.start, left_ellipsis_stop)
 
-        left_ellipsis_func = lambda arg: (ellipsis if self.left_overflow else None)
+        left_ellipsis_func = lambda arg: (ellipsis if self.left_overflow else [])
 
         return left_ellipsis_func, left_ellipsis_mask
 
     def get_right_ellipsis_func(self, input_mask):
-        ellipsis = mu.Text("…")
+        ellipsis = [(0, mu.Text("…"))]
         width = 1
 
         if input_mask.stop is None:
@@ -2293,7 +2293,7 @@ class BeatPrompt:
             right_ellipsis_start = None
         right_ellipsis_mask = slice(right_ellipsis_start, input_mask.stop)
 
-        right_ellipsis_func = lambda arg: (ellipsis if self.right_overflow else None)
+        right_ellipsis_func = lambda arg: (ellipsis if self.right_overflow else [])
 
         return right_ellipsis_func, right_ellipsis_mask
 

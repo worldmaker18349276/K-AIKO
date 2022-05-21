@@ -880,8 +880,8 @@ class Renderer:
     def add_message(self, msg, zindex=(0,)):
         return self.add_drawer(self._msg_drawer(msg), zindex)
 
-    def add_text(self, text_node, xmask=slice(None, None), zindex=(0,)):
-        return self.add_drawer(self._text_drawer(text_node, xmask), zindex)
+    def add_texts(self, texts_node, xmask=slice(None, None), zindex=(0,)):
+        return self.add_drawer(self._texts_drawer(texts_node, xmask), zindex)
 
     @staticmethod
     @dn.datanode
@@ -899,7 +899,7 @@ class Renderer:
 
     @staticmethod
     @dn.datanode
-    def _text_drawer(text_node, xmask=slice(None, None)):
+    def _texts_drawer(text_node, xmask=slice(None, None)):
         text_node = dn.DataNode.wrap(text_node)
         with text_node:
             (view, msg, logs), time, width = yield
@@ -907,12 +907,12 @@ class Renderer:
                 xran = to_range(xmask.start, xmask.stop, width)
 
                 try:
-                    text = text_node.send((time, xran))
+                    texts = text_node.send((time, xran))
                 except StopIteration:
                     return
 
-                if text is not None:
-                    view.add_markup(text, xmask)
+                for shift, text in texts:
+                    view.add_markup(text, xmask, shift=shift)
 
                 (view, msg, logs), time, width = yield (view, msg, logs)
 

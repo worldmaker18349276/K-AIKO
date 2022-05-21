@@ -252,9 +252,9 @@ class Beatbar:
 
         bar_node = self._bar_node(self.content_pipeline, self.content_mask)
         self.renderer.add_drawer(bar_node, zindex=(0,))
-        self.renderer.add_text(self.icon, xmask=self.icon_mask, zindex=(1,))
-        self.renderer.add_text(self.header, xmask=self.header_mask, zindex=(2,))
-        self.renderer.add_text(self.footer, xmask=self.footer_mask, zindex=(3,))
+        self.renderer.add_texts(self.icon, xmask=self.icon_mask, zindex=(1,))
+        self.renderer.add_texts(self.header, xmask=self.header_mask, zindex=(2,))
+        self.renderer.add_texts(self.footer, xmask=self.footer_mask, zindex=(3,))
 
         yield
         return

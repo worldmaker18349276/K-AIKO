@@ -186,7 +186,8 @@ class SpectrumWidget:
             time, ran = arg
             width = len(ran)
             text = mu.Text(f"{self.spectrum:^{width}.{width}s}")
-            return mu.replace_slot(template, text)
+            res = mu.replace_slot(template, text)
+            return [(0, res)]
 
         return widget_func
 
@@ -240,7 +241,8 @@ class VolumeIndicatorWidget:
             time, ran = arg
             width = len(ran)
             text = mu.Text("▮" * int(self.volume * width))
-            return mu.replace_slot(template, text)
+            res = mu.replace_slot(template, text)
+            return [(0, res)]
 
         return widget_func
 
@@ -298,7 +300,8 @@ class KnockMeterWidget:
                     for i in range(length)
                 )
             )
-            return mu.replace_slot(template, text)
+            res = mu.replace_slot(template, text)
+            return [(0, res)]
 
         return knock_func
 
@@ -351,7 +354,7 @@ class AccuracyMeterWidget:
                     )
                 )
 
-                time, ran = yield res
+                time, ran = yield [(0, res)]
 
     def load(self, provider):
         rich = provider.get(mu.RichParser)
@@ -417,17 +420,18 @@ class MonitorWidget:
         def widget_func(arg):
             time, ran = arg
             if monitor is None:
-                return mu.Text("")
+                return []
             if monitor.eff is None:
-                return mu.Text("")
+                return []
             width = len(ran)
             level = int(monitor.eff * width * (ticks_len - 1))
-            return mu.Text(
+            res = mu.Text(
                 "".join(
                     ticks[max(0, min(ticks_len - 1, level - i * (ticks_len - 1)))]
                     for i in range(width)
                 )
             )
+            return [(0, res)]
 
         return widget_func
 
@@ -461,24 +465,24 @@ class ScoreWidget:
                 width = len(ran)
 
                 if width == 0:
-                    return mu.Text("")
-                if width == 1:
-                    return mu.replace_slot(template, mu.Text("|"))
-                if width == 2:
-                    return mu.replace_slot(template, mu.Text("[]"))
-                if width <= 7:
+                    res = mu.Text("")
+                elif width == 1:
+                    res = mu.replace_slot(template, mu.Text("|"))
+                elif width == 2:
+                    res = mu.replace_slot(template, mu.Text("[]"))
+                elif width <= 7:
                     score_str = uint_format(score, width - 2, True)
-                    return mu.replace_slot(template, mu.Text(f"[{score_str}]"))
+                    res = mu.replace_slot(template, mu.Text(f"[{score_str}]"))
+                else:
+                    w1 = max((width - 3) // 2, 5)
+                    w2 = (width - 3) - w1
+                    score_str = uint_format(score, w1, True)
+                    full_score_str = uint_format(full_score, w2, True)
+                    res = mu.replace_slot(
+                        template, mu.Text(f"[{score_str}/{full_score_str}]")
+                    )
 
-                w1 = max((width - 3) // 2, 5)
-                w2 = (width - 3) - w1
-                score_str = uint_format(score, w1, True)
-                full_score_str = uint_format(full_score, w2, True)
-                res = mu.replace_slot(
-                    template, mu.Text(f"[{score_str}/{full_score_str}]")
-                )
-
-                time, ran = yield res
+                time, ran = yield [(0, res)]
 
     def load(self, provider):
         rich = provider.get(mu.RichParser)
@@ -523,22 +527,22 @@ class ProgressWidget:
                 width = len(ran)
 
                 if width == 0:
-                    return mu.Text("")
-                if width == 1:
-                    return mu.replace_slot(template, mu.Text("|"))
-                if width == 2:
-                    return mu.replace_slot(template, mu.Text("[]"))
-                if width <= 7:
+                    res = mu.Text("")
+                elif width == 1:
+                    res = mu.replace_slot(template, mu.Text("|"))
+                elif width == 2:
+                    res = mu.replace_slot(template, mu.Text("[]"))
+                elif width <= 7:
                     progress_str = pc_format(progress, width - 2)
-                    return mu.replace_slot(template, mu.Text(f"[{progress_str}]"))
+                    res = mu.replace_slot(template, mu.Text(f"[{progress_str}]"))
+                else:
+                    w1 = max((width - 3) // 2, 5)
+                    w2 = (width - 3) - w1
+                    progress_str = pc_format(progress, w1)
+                    time_str = time_format(time, w2)
+                    res = mu.replace_slot(template, mu.Text(f"[{progress_str}/{time_str}]"))
 
-                w1 = max((width - 3) // 2, 5)
-                w2 = (width - 3) - w1
-                progress_str = pc_format(progress, w1)
-                time_str = time_format(time, w2)
-                res = mu.replace_slot(template, mu.Text(f"[{progress_str}/{time_str}]"))
-
-                time, ran = yield res
+                time, ran = yield [(0, res)]
 
     def load(self, provider):
         rich = provider.get(mu.RichParser)
