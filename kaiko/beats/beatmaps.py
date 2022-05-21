@@ -1668,31 +1668,39 @@ class Beatmap:
             time_node = dn.time()
             with time_node:
                 while True:
-                    _, _, keyname, keycode = yield
+                    yield
                     time = time_node.send(None)
-                    if keyname == pause_key:
-                        if paused:
-                            playfield.mixer.clock.resume(time + control_delay)
-                            playfield.detector.clock.resume(time + control_delay)
-                            playfield.renderer.clock.resume(time + control_delay)
-                            playfield.controller.clock.resume(time + control_delay)
-                            event_clock.resume(time + control_delay)
-                            paused = False
-                        else:
-                            playfield.mixer.clock.pause(time + control_delay)
-                            playfield.detector.clock.pause(time + control_delay)
-                            playfield.renderer.clock.pause(time + control_delay)
-                            playfield.controller.clock.pause(time + control_delay)
-                            event_clock.pause(time + control_delay)
-                            paused = True
-                    if keyname == skip_key:
-                        playfield.mixer.clock.skip(time + control_delay, skip_time)
-                        playfield.detector.clock.skip(time + control_delay, skip_time)
-                        playfield.renderer.clock.skip(time + control_delay, skip_time)
-                        playfield.controller.clock.skip(time + control_delay, skip_time)
-                        event_clock.skip(time + control_delay, skip_time)
+                    if paused:
+                        playfield.mixer.clock.resume(time + control_delay)
+                        playfield.detector.clock.resume(time + control_delay)
+                        playfield.renderer.clock.resume(time + control_delay)
+                        playfield.controller.clock.resume(time + control_delay)
+                        event_clock.resume(time + control_delay)
+                        paused = False
+                    else:
+                        playfield.mixer.clock.pause(time + control_delay)
+                        playfield.detector.clock.pause(time + control_delay)
+                        playfield.renderer.clock.pause(time + control_delay)
+                        playfield.controller.clock.pause(time + control_delay)
+                        event_clock.pause(time + control_delay)
+                        paused = True
 
-        playfield.controller.handlers_bus.add_node(pause_node(), (0,))
+        playfield.controller.add_handler(pause_node(), pause_key)
+
+        @dn.datanode
+        def skip_node():
+            time_node = dn.time()
+            with time_node:
+                while True:
+                    yield
+                    time = time_node.send(None)
+                    playfield.mixer.clock.skip(time + control_delay, skip_time)
+                    playfield.detector.clock.skip(time + control_delay, skip_time)
+                    playfield.renderer.clock.skip(time + control_delay, skip_time)
+                    playfield.controller.clock.skip(time + control_delay, skip_time)
+                    event_clock.skip(time + control_delay, skip_time)
+
+        playfield.controller.add_handler(skip_node(), skip_key)
 
         return settings_changed
 
