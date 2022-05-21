@@ -1050,14 +1050,14 @@ class BeatbarWidgetFactory:
     monitor = beatwidgets.MonitorWidgetSettings
     sight = beatbar.SightWidgetSettings
 
-    def __init__(self, state, rich, beatbar):
+    def __init__(self, state, rich, mixer, detector, renderer):
         self.state = state
 
         self.provider = Provider()
         self.provider.set(rich)
-        self.provider.set(beatbar.mixer)
-        self.provider.set(beatbar.detector)
-        self.provider.set(beatbar.renderer)
+        self.provider.set(mixer)
+        self.provider.set(detector)
+        self.provider.set(renderer)
 
     def create(self, widget_settings):
         if isinstance(widget_settings, BeatbarWidgetFactory.spectrum):
@@ -1115,16 +1115,16 @@ class BeatbarWidgetSettings(cfg.Configurable):
     r"""
     Fields
     ------
-    icon_widget : BeatbarIconWidgetSettings
+    icon : BeatbarIconWidgetSettings
         The widget on the icon.
-    header_widget : BeatbarHeaderWidgetSettings
+    header : BeatbarHeaderWidgetSettings
         The widget on the header.
-    footer_widget : BeatbarFooterWidgetSettings
+    footer : BeatbarFooterWidgetSettings
         The widget on the footer.
     """
-    icon_widget: BeatbarIconWidgetSettings = BeatbarWidgetFactory.spectrum()
-    header_widget: BeatbarHeaderWidgetSettings = BeatbarWidgetFactory.score()
-    footer_widget: BeatbarFooterWidgetSettings = BeatbarWidgetFactory.progress()
+    icon: BeatbarIconWidgetSettings = BeatbarWidgetFactory.spectrum()
+    header: BeatbarHeaderWidgetSettings = BeatbarWidgetFactory.score()
+    footer: BeatbarFooterWidgetSettings = BeatbarWidgetFactory.progress()
 
 
 # beatmap
@@ -1305,7 +1305,11 @@ class BeatmapSettings(cfg.Configurable):
 class GameplaySettings(cfg.Configurable):
     debug_monitor: bool = False
 
-    playfield = cfg.subconfig(beatbar.BeatbarSettings)
+    @cfg.subconfig
+    class playfield(cfg.Configurable):
+        layout = cfg.subconfig(beatbar.BeatbarLayoutSettings)
+        sight = cfg.subconfig(beatbar.SightWidgetSettings)
+        widgets = cfg.subconfig(BeatbarWidgetSettings)
 
     @cfg.subconfig
     class controls(cfg.Configurable):
@@ -1363,8 +1367,6 @@ class GameplaySettings(cfg.Configurable):
         display_delay_adjust_step: float = 0.001
         knock_delay_adjust_step: float = 0.001
         knock_energy_adjust_step: float = 0.0001
-
-    widgets = cfg.subconfig(BeatbarWidgetSettings)
 
 
 @dataclasses.dataclass
@@ -1506,27 +1508,27 @@ class Beatmap:
             devices_settings.controller, devices_settings.terminal, self.start_time
         )
 
-        # make beatbar
+        # build playfield
+        widget_factory = BeatbarWidgetFactory(score, rich, mixer, detector, renderer)
+
+        icon = widget_factory.create(gameplay_settings.playfield.widgets.icon)
+        header = widget_factory.create(gameplay_settings.playfield.widgets.header)
+        footer = widget_factory.create(gameplay_settings.playfield.widgets.footer)
+        sight = widget_factory.create(gameplay_settings.playfield.sight)
+
         playfield = beatbar.Beatbar(
             mixer,
             detector,
             renderer,
             controller,
+            icon,
+            header,
+            footer,
+            sight,
             self.playfield_state.bar_shift,
             self.playfield_state.bar_flip,
-            gameplay_settings.playfield,
+            gameplay_settings.playfield.layout,
         )
-
-        widget_factory = BeatbarWidgetFactory(score, rich, playfield)
-
-        playfield.icon = widget_factory.create(gameplay_settings.widgets.icon_widget)
-        playfield.header = widget_factory.create(
-            gameplay_settings.widgets.header_widget
-        )
-        playfield.footer = widget_factory.create(
-            gameplay_settings.widgets.footer_widget
-        )
-        playfield.sight = widget_factory.create(gameplay_settings.playfield.sight)
 
         yield from playfield.load().join()
 

@@ -150,52 +150,59 @@ class SightWidget:
 
 
 # beatbar
-class BeatbarSettings(cfg.Configurable):
-    @cfg.subconfig
-    class layout(cfg.Configurable):
-        """
-        Fields
-        ------
-        icon_width : int
-            [rich]The width of icon.
+class BeatbarLayoutSettings(cfg.Configurable):
+    """
+    Fields
+    ------
+    icon_width : int
+        [rich]The width of icon.
 
-            [color=bright_magenta] ⣠⣴⣤⣿⣤⣦ [/][color=bright_blue][[00000/00400]][/]       \
+        [color=bright_magenta] ⣠⣴⣤⣿⣤⣦ [/][color=bright_blue][[00000/00400]][/]       \
 [color=bright_cyan]□ [/] [color=bright_magenta]⛶ [/]    [color=bright_cyan]□ [/]                \
 [color=bright_blue]■ [/]  [color=bright_blue][[11.3%|00:09]][/]
-            ^^^^^^^^
-              here
+        ^^^^^^^^
+          here
 
-        header_width : int
-            [rich]The width of header.
+    header_width : int
+        [rich]The width of header.
 
-            [color=bright_magenta] ⣠⣴⣤⣿⣤⣦ [/][color=bright_blue][[00000/00400]][/]       \
+        [color=bright_magenta] ⣠⣴⣤⣿⣤⣦ [/][color=bright_blue][[00000/00400]][/]       \
 [color=bright_cyan]□ [/] [color=bright_magenta]⛶ [/]    [color=bright_cyan]□ [/]                \
 [color=bright_blue]■ [/]  [color=bright_blue][[11.3%|00:09]][/]
-                    ^^^^^^^^^^^^^
-                        here
+                ^^^^^^^^^^^^^
+                    here
 
-        footer_width : int
-            [rich]The width of footer.
+    footer_width : int
+        [rich]The width of footer.
 
-            [color=bright_magenta] ⣠⣴⣤⣿⣤⣦ [/][color=bright_blue][[00000/00400]][/]       \
+        [color=bright_magenta] ⣠⣴⣤⣿⣤⣦ [/][color=bright_blue][[00000/00400]][/]       \
 [color=bright_cyan]□ [/] [color=bright_magenta]⛶ [/]    [color=bright_cyan]□ [/]                \
 [color=bright_blue]■ [/]  [color=bright_blue][[11.3%|00:09]][/]
-                                                                       ^^^^^^^^^^^^^
-                                                                            here
+                                                                   ^^^^^^^^^^^^^
+                                                                        here
 
-        """
-        icon_width: int = 8
-        header_width: int = 13
-        footer_width: int = 13
-
-    sight = cfg.subconfig(SightWidgetSettings)
+    """
+    icon_width: int = 8
+    header_width: int = 13
+    footer_width: int = 13
 
 
 class Beatbar:
     def __init__(
-        self, mixer, detector, renderer, controller, bar_shift, bar_flip, settings,
+        self,
+        mixer,
+        detector,
+        renderer,
+        controller,
+        icon,
+        header,
+        footer,
+        sight,
+        bar_shift,
+        bar_flip,
+        layout_settings,
     ):
-        self.settings = settings
+        self.layout_settings = layout_settings
 
         self.mixer = mixer
         self.detector = detector
@@ -207,9 +214,9 @@ class Beatbar:
         self.bar_flip = bar_flip
 
         # layout
-        icon_width = settings.layout.icon_width
-        header_width = settings.layout.header_width
-        footer_width = settings.layout.footer_width
+        icon_width = layout_settings.icon_width
+        header_width = layout_settings.header_width
+        footer_width = layout_settings.footer_width
 
         self.icon_mask = slice(None, icon_width)
         self.header_mask = slice(icon_width, icon_width + header_width)
@@ -220,10 +227,10 @@ class Beatbar:
             slice(-footer_width, None) if footer_width > 0 else slice(0, 0)
         )
 
-        self.icon = lambda arg: mu.Group(())
-        self.header = lambda arg: mu.Group(())
-        self.footer = lambda arg: mu.Group(())
-        self.sight = lambda arg: mu.Group(())
+        self.icon = icon
+        self.header = header
+        self.footer = footer
+        self.sight = sight
 
     @dn.datanode
     def load(self):
