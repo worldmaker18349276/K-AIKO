@@ -713,7 +713,7 @@ class HistoryManager:
     def read_history(self, command_groups, read_size):
         trim_len = 10
 
-        pattern = re.compile(r"\[(%s)\] (.+)" % "|".join(re.escape(group) for group in command_groups))
+        pattern = re.compile(r"\[(\w+)\] (.+)")
 
         buffers = []
         self.history_path.touch()
@@ -723,7 +723,8 @@ class HistoryManager:
             match = pattern.fullmatch(command)
             if match:
                 self.latest_command = (match.group(1), match.group(2))
-                buffers.append(self.latest_command[1])
+                if match.group(1) in command_groups and (not buffers or buffers[-1] != match.group(2)):
+                    buffers.append(match.group(2))
             if len(buffers) - read_size > trim_len:
                 del buffers[:trim_len]
 
