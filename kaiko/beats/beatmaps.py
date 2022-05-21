@@ -13,7 +13,7 @@ from ..utils import markups as mu
 from ..devices import audios as aud
 from ..devices import engines
 from . import beatwidgets
-from . import beatbar
+from . import beatbars
 from . import beatpatterns
 
 
@@ -118,10 +118,10 @@ class Event:
         mutable dictionary, which can be used to transfer parameters between
         events. The context of each track is different, so event cannot affect
         each others between tracks.
-    register(state, playfield)
+    register(state, beatbar)
         Schedule handlers for this event. `state` is the game state of beatmap,
-        `playfield` is an instance of `beatbar.Beatbar`, which controls the
-        whole gameplay.
+        `beatbar` is an instance of `beatbars.Beatbar`, which controls the
+        scrolling bar of the game.
     """
 
     beat: Fraction = Fraction(0, 1)
@@ -135,7 +135,7 @@ class Event:
 # scripts
 @dataclasses.dataclass
 class Text(Event):
-    r"""An event that displays text on the playfield. The text will move to the
+    r"""An event that displays text on the beatbar. The text will move to the
     left at a constant speed.
 
     Fields
@@ -167,9 +167,9 @@ class Text(Event):
     def pos(self, time):
         return (self.time - time) * 0.5 * self.speed
 
-    def register(self, state, playfield):
+    def register(self, state, beatbar):
         if self.text is not None:
-            playfield.draw_content(
+            beatbar.draw_content(
                 self.pos,
                 mu.Text(self.text),
                 zindex=self.zindex,
@@ -180,7 +180,7 @@ class Text(Event):
 
 @dataclasses.dataclass
 class Title(Event):
-    r"""An event that displays title on the playfield. The text will be placed
+    r"""An event that displays title on the beatbar. The text will be placed
     at the specific position.
 
     Fields
@@ -206,9 +206,9 @@ class Title(Event):
         self.lifespan = (self.time, self.end)
         self.zindex = (10, -self.time)
 
-    def register(self, state, playfield):
+    def register(self, state, beatbar):
         if self.text is not None:
-            playfield.draw_title(
+            beatbar.draw_title(
                 self.pos,
                 mu.Text(self.text),
                 zindex=self.zindex,
@@ -219,7 +219,7 @@ class Title(Event):
 
 @dataclasses.dataclass
 class Flip(Event):
-    r"""An event that flips the scrolling bar of the playfield.
+    r"""An event that flips the direction of the beatbar.
 
     Fields
     ------
@@ -238,27 +238,27 @@ class Flip(Event):
         self.time = beatmap.metronome.time(self.beat)
         self.lifespan = (self.time, self.time)
 
-    def register(self, state, playfield):
-        playfield.on_before_render(self._node(playfield))
+    def register(self, state, beatbar):
+        beatbar.on_before_render(self._node(beatbar))
 
     @dn.datanode
-    def _node(self, playfield):
+    def _node(self, beatbar):
         time, ran = yield
 
         while time < self.time:
             time, ran = yield
 
         if self.flip is None:
-            playfield.bar_flip = not playfield.bar_flip
+            beatbar.bar_flip = not beatbar.bar_flip
         else:
-            playfield.bar_flip = self.flip
+            beatbar.bar_flip = self.flip
 
         time, ran = yield
 
 
 @dataclasses.dataclass
 class Shift(Event):
-    r"""An event that shifts the scrolling bar of the playfield.
+    r"""An event that shifts the shift of the beatbar.
 
     Fields
     ------
@@ -281,17 +281,17 @@ class Shift(Event):
         self.end = beatmap.metronome.time(self.beat + self.span)
         self.lifespan = (self.time, self.end)
 
-    def register(self, state, playfield):
-        playfield.on_before_render(self._node(playfield))
+    def register(self, state, beatbar):
+        beatbar.on_before_render(self._node(beatbar))
 
     @dn.datanode
-    def _node(self, playfield):
+    def _node(self, beatbar):
         time, ran = yield
 
         while time < self.time:
             time, ran = yield
 
-        shift0 = playfield.bar_shift
+        shift0 = beatbar.bar_shift
         speed = (
             (self.shift - shift0) / (self.end - self.time)
             if self.end != self.time
@@ -299,10 +299,10 @@ class Shift(Event):
         )
 
         while time < self.end:
-            playfield.bar_shift = shift0 + speed * (time - self.time)
+            beatbar.bar_shift = shift0 + speed * (time - self.time)
             time, ran = yield
 
-        playfield.bar_shift = self.shift
+        beatbar.bar_shift = self.shift
 
         time, ran = yield
 
@@ -332,38 +332,38 @@ class Target(Event):
 
     Methods
     -------
-    approach(state, playfield)
+    approach(state, beatbar)
         Register handlers for approaching effect of this target. The hit handler
         and increasing progress bar will be managed automatically.
-    hit(state, playfield, time, strength)
+    hit(state, beatbar, time, strength)
         Deal with the hit event on this target.
-    finish(state, playfield)
+    finish(state, beatbar)
         Finish this target.
     """
 
     is_subject = True
 
     @dn.datanode
-    def listen(self, state, playfield):
+    def listen(self, state, beatbar):
         try:
             while True:
                 time, strength = yield
-                self.hit(state, playfield, time, strength)
+                self.hit(state, beatbar, time, strength)
                 if self.is_finished:
                     break
         except GeneratorExit:
             if not self.is_finished:
-                self.finish(state, playfield)
+                self.finish(state, beatbar)
         finally:
             state.add_finished()
 
     def zindex(self):
         return (0, not self.is_finished, -self.range[0])
 
-    def register(self, state, playfield):
-        self.approach(state, playfield)
-        playfield.listen(
-            self.listen(state, playfield),
+    def register(self, state, beatbar):
+        self.approach(state, beatbar)
+        beatbar.listen(
+            self.listen(state, beatbar),
             start=self.range[0],
             duration=self.range[1] - self.range[0],
         )
@@ -403,7 +403,7 @@ class OneshotTarget(Target):
 
     Methods
     -------
-    hit(state, playfield, time, strength)
+    hit(state, beatbar, time, strength)
     """
 
     has_length = False
@@ -442,27 +442,27 @@ class OneshotTarget(Target):
     def is_finished(self):
         return self.perf is not None
 
-    def approach(self, state, playfield):
+    def approach(self, state, beatbar):
         if self.sound is not None:
-            playfield.play(self.sound, time=self.time, volume=self.volume)
+            beatbar.play(self.sound, time=self.time, volume=self.volume)
 
-        playfield.draw_content(
+        beatbar.draw_content(
             self.pos,
             self.appearance,
             zindex=self.zindex,
             start=self.lifespan[0],
             duration=self.lifespan[1] - self.lifespan[0],
         )
-        playfield.reset_sight(start=self.range[0])
+        beatbar.reset_sight(start=self.range[0])
 
-    def hit(self, state, playfield, time, strength, is_correct_key=True):
+    def hit(self, state, beatbar, time, strength, is_correct_key=True):
         perf = Performance.judge(
             self.performance_tolerance, self.time, time, is_correct_key
         )
         state.add_perf(perf)
-        self.finish(state, playfield, perf)
+        self.finish(state, beatbar, perf)
 
-    def finish(self, state, playfield, perf=None):
+    def finish(self, state, beatbar, perf=None):
         if perf is None:
             perf = Performance.judge(self.performance_tolerance, self.time)
         self.perf = perf
@@ -519,8 +519,8 @@ class Soft(OneshotTarget):
 
         super().prepare(beatmap, rich, context)
 
-    def hit(self, state, playfield, time, strength):
-        super().hit(state, playfield, time, strength, strength < self.threshold)
+    def hit(self, state, beatbar, time, strength):
+        super().hit(state, beatbar, time, strength, strength < self.threshold)
 
 
 @dataclasses.dataclass
@@ -572,8 +572,8 @@ class Loud(OneshotTarget):
 
         super().prepare(beatmap, rich, context)
 
-    def hit(self, state, playfield, time, strength):
-        super().hit(state, playfield, time, strength, strength >= self.threshold)
+    def hit(self, state, beatbar, time, strength):
+        super().hit(state, beatbar, time, strength, strength >= self.threshold)
 
 
 class IncrGroup:
@@ -679,10 +679,10 @@ class Incr(OneshotTarget):
             + numpy.log10(0.2 + 0.8 * (self.count - 1) / group_obj.total) * 20
         )
 
-    def hit(self, state, playfield, time, strength):
+    def hit(self, state, beatbar, time, strength):
         group_obj = self.groups[self.group]
         threshold = max(0.0, min(1.0, group_obj.threshold + self.incr_threshold))
-        super().hit(state, playfield, time, strength, strength >= threshold)
+        super().hit(state, beatbar, time, strength, strength >= threshold)
         group_obj.hit(strength)
 
 
@@ -759,22 +759,22 @@ class Roll(Target):
             else (mu.Text(""), mu.Text(""))
         )
 
-    def approach(self, state, playfield):
+    def approach(self, state, beatbar):
         for i, time in enumerate(self.times):
             if self.sound is not None:
-                playfield.play(
+                beatbar.play(
                     dn.DataNode.wrap(self.sound), time=time, volume=self.volume
                 )
-            playfield.draw_content(
+            beatbar.draw_content(
                 self.pos_of(i),
                 self.appearance_of(i),
                 zindex=self.zindex,
                 start=self.lifespan[0],
                 duration=self.lifespan[1] - self.lifespan[0],
             )
-        playfield.reset_sight(start=self.range[0])
+        beatbar.reset_sight(start=self.range[0])
 
-    def hit(self, state, playfield, time, strength):
+    def hit(self, state, beatbar, time, strength):
         self.roll += 1
 
         if self.roll <= self.number:
@@ -787,9 +787,9 @@ class Roll(Target):
             self.score += self.rock_score
 
         if self.roll == self.number:
-            self.finish(state, playfield)
+            self.finish(state, beatbar)
 
-    def finish(self, state, playfield):
+    def finish(self, state, beatbar):
         self.is_finished = True
         state.add_full_score(self.full_score)
 
@@ -874,25 +874,25 @@ class Spin(Target):
         else:
             return (mu.Text(""), mu.Text(""))
 
-    def approach(self, state, playfield):
+    def approach(self, state, beatbar):
         for time in self.times:
             if self.sound is not None:
-                playfield.play(self.sound, time=time, volume=self.volume)
+                beatbar.play(self.sound, time=time, volume=self.volume)
 
-        playfield.draw_content(
+        beatbar.draw_content(
             self.pos,
             self.appearance,
             zindex=self.zindex,
             start=self.lifespan[0],
             duration=self.lifespan[1] - self.lifespan[0],
         )
-        playfield.draw_sight(
+        beatbar.draw_sight(
             (mu.Text(""), mu.Text("")),
             start=self.range[0],
             duration=self.range[1] - self.range[0],
         )
 
-    def hit(self, state, playfield, time, strength):
+    def hit(self, state, beatbar, time, strength):
         self.charge = min(self.charge + min(1.0, strength), self.capacity)
 
         current_score = int(self.full_score * self.charge / self.capacity)
@@ -900,9 +900,9 @@ class Spin(Target):
         self.score = current_score
 
         if self.charge == self.capacity:
-            self.finish(state, playfield)
+            self.finish(state, beatbar)
 
-    def finish(self, state, playfield):
+    def finish(self, state, beatbar):
         self.is_finished = True
         state.add_full_score(self.full_score)
 
@@ -917,7 +917,7 @@ class Spin(Target):
             appearance = self.finishing_appearance
             if self.speed < 0:
                 appearance = appearance[::-1]
-            playfield.draw_sight(appearance, duration=self.finish_sustain_time)
+            beatbar.draw_sight(appearance, duration=self.finish_sustain_time)
 
 
 # performance
@@ -1048,7 +1048,7 @@ class BeatbarWidgetFactory:
     progress = beatwidgets.ProgressWidgetSettings
     accuracy_meter = beatwidgets.AccuracyMeterWidgetSettings
     monitor = beatwidgets.MonitorWidgetSettings
-    sight = beatbar.SightWidgetSettings
+    sight = beatbars.SightWidgetSettings
 
     def __init__(self, state, rich, mixer, detector, renderer):
         self.state = state
@@ -1093,7 +1093,7 @@ class BeatbarWidgetFactory:
                     perf.grade.shift for perf in perfs if perf.grade.shift is not None
                 ],
             )
-            return beatbar.SightWidget(grade_getter, widget_settings).load(self.provider)
+            return beatbars.SightWidget(grade_getter, widget_settings).load(self.provider)
         else:
             raise TypeError
 
@@ -1339,7 +1339,7 @@ class GameplaySettings(cfg.Configurable):
     @cfg.subconfig
     class playfield(cfg.Configurable):
         layout = cfg.subconfig(BeatbarLayoutSettings)
-        sight = cfg.subconfig(beatbar.SightWidgetSettings)
+        sight = cfg.subconfig(beatbars.SightWidgetSettings)
         widgets = cfg.subconfig(BeatbarWidgetSettings)
 
     @cfg.subconfig
@@ -1408,7 +1408,7 @@ class BeatmapAudio:
 
 
 @dataclasses.dataclass
-class PlayfieldState:
+class BeatbarState:
     bar_shift: float = 0.1
     bar_flip: bool = False
 
@@ -1451,7 +1451,7 @@ class Beatmap:
         info=None,
         audio=None,
         metronome=None,
-        playfield_state=None,
+        beatbar_state=None,
         tracks=None,
         settings=None,
     ):
@@ -1463,8 +1463,8 @@ class Beatmap:
             if metronome is not None
             else engines.Metronome(offset=0.0, tempo=120.0)
         )
-        self.playfield_state = (
-            playfield_state if playfield_state is not None else PlayfieldState()
+        self.beatbar_state = (
+            beatbar_state if beatbar_state is not None else BeatbarState()
         )
         self.tracks = tracks if tracks is not None else {}
         self.settings = settings if settings is not None else BeatmapSettings()
@@ -1547,17 +1547,17 @@ class Beatmap:
         footer = widget_factory.create(gameplay_settings.playfield.widgets.footer)
         sight = widget_factory.create(gameplay_settings.playfield.sight)
 
-        playfield = beatbar.Beatbar(
+        beatbar = beatbars.Beatbar(
             mixer,
             detector,
             renderer,
             controller,
             sight,
-            self.playfield_state.bar_shift,
-            self.playfield_state.bar_flip,
+            self.beatbar_state.bar_shift,
+            self.beatbar_state.bar_flip,
         )
 
-        playfield_node = playfield.load()
+        beatbar_node = beatbar.load()
 
         # layout
         icon_width = gameplay_settings.playfield.layout.icon_width
@@ -1571,7 +1571,7 @@ class Beatmap:
             footer_mask,
         ] = beatwidgets.layout([icon_width, header_width, -1, footer_width])
 
-        renderer.add_texts(playfield_node, xmask=content_mask, zindex=(0,))
+        renderer.add_texts(beatbar_node, xmask=content_mask, zindex=(0,))
         renderer.add_texts(icon, xmask=icon_mask, zindex=(1,))
         renderer.add_texts(header, xmask=header_mask, zindex=(2,))
         renderer.add_texts(footer, xmask=footer_mask, zindex=(3,))
@@ -1592,13 +1592,13 @@ class Beatmap:
 
         # play music
         if self.audionode is not None:
-            playfield.play(self.audionode, time=0.0, zindex=(-3,))
+            mixer.play(self.audionode, time=0.0, zindex=(-3,))
 
         # game loop
         updater = self.update_events(
             self.events,
             score,
-            playfield,
+            beatbar,
             self.start_time,
             self.end_time,
             tickrate,
@@ -1890,7 +1890,7 @@ class Beatmap:
         self,
         events,
         state,
-        playfield,
+        beatbar,
         start_time,
         end_time,
         tickrate,
@@ -1915,7 +1915,7 @@ class Beatmap:
                     return
 
                 while event is not None and event.lifespan[0] - prepare_time <= time:
-                    event.register(state, playfield)
+                    event.register(state, beatbar)
                     event = next(events_iter, None)
 
                 state.time = time
