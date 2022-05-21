@@ -5,7 +5,6 @@ from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..utils import markups as mu
 from ..devices import engines
-from .beatwidgets import layout
 
 
 class SightWidgetSettings(cfg.Configurable):
@@ -151,43 +150,6 @@ class SightWidget:
 
 
 # beatbar
-class BeatbarLayoutSettings(cfg.Configurable):
-    """
-    Fields
-    ------
-    icon_width : int
-        [rich]The width of icon.
-
-        [color=bright_magenta] ⣠⣴⣤⣿⣤⣦ [/][color=bright_blue][[00000/00400]][/]       \
-[color=bright_cyan]□ [/] [color=bright_magenta]⛶ [/]    [color=bright_cyan]□ [/]                \
-[color=bright_blue]■ [/]  [color=bright_blue][[11.3%|00:09]][/]
-        ^^^^^^^^
-          here
-
-    header_width : int
-        [rich]The width of header.
-
-        [color=bright_magenta] ⣠⣴⣤⣿⣤⣦ [/][color=bright_blue][[00000/00400]][/]       \
-[color=bright_cyan]□ [/] [color=bright_magenta]⛶ [/]    [color=bright_cyan]□ [/]                \
-[color=bright_blue]■ [/]  [color=bright_blue][[11.3%|00:09]][/]
-                ^^^^^^^^^^^^^
-                    here
-
-    footer_width : int
-        [rich]The width of footer.
-
-        [color=bright_magenta] ⣠⣴⣤⣿⣤⣦ [/][color=bright_blue][[00000/00400]][/]       \
-[color=bright_cyan]□ [/] [color=bright_magenta]⛶ [/]    [color=bright_cyan]□ [/]                \
-[color=bright_blue]■ [/]  [color=bright_blue][[11.3%|00:09]][/]
-                                                                   ^^^^^^^^^^^^^
-                                                                        here
-
-    """
-    icon_width: int = 8
-    header_width: int = 13
-    footer_width: int = 13
-
-
 class Beatbar:
     def __init__(
         self,
@@ -195,50 +157,23 @@ class Beatbar:
         detector,
         renderer,
         controller,
-        icon,
-        header,
-        footer,
         sight,
         bar_shift,
         bar_flip,
-        layout_settings,
     ):
-        self.layout_settings = layout_settings
-
         self.mixer = mixer
         self.detector = detector
         self.renderer = renderer
         self.controller = controller
 
+        self.sight = sight
+
         # initialize game state
         self.bar_shift = bar_shift
         self.bar_flip = bar_flip
 
-        # layout
-        icon_width = layout_settings.icon_width
-        header_width = layout_settings.header_width
-        footer_width = layout_settings.footer_width
+        self.bar_pipeline = dn.DynamicPipeline()
 
-        [
-            icon_mask,
-            header_mask,
-            content_mask,
-            footer_mask,
-        ] = layout([icon_width, header_width, -1, footer_width])
-
-        self.icon_mask = icon_mask
-        self.header_mask = header_mask
-        self.content_mask = content_mask
-        self.footer_mask = footer_mask
-
-        self.icon = icon
-        self.header = header
-        self.footer = footer
-        self.sight = sight
-
-        self.content_pipeline = dn.DynamicPipeline()
-
-    @dn.datanode
     def load(self):
         # hit handler
         self.target_queue = queue.Queue()
@@ -250,14 +185,7 @@ class Beatbar:
         self.sight_scheduler = Scheduler(default=self.sight)
         self.draw_content(0.0, self.sight_scheduler, zindex=(2,))
 
-        bar_node = self._bar_node(self.content_pipeline)
-        self.renderer.add_texts(bar_node, xmask=self.content_mask, zindex=(0,))
-        self.renderer.add_texts(self.icon, xmask=self.icon_mask, zindex=(1,))
-        self.renderer.add_texts(self.header, xmask=self.header_mask, zindex=(2,))
-        self.renderer.add_texts(self.footer, xmask=self.footer_mask, zindex=(3,))
-
-        yield
-        return
+        return self._bar_node(self.bar_pipeline)
 
     @staticmethod
     @dn.datanode
@@ -266,22 +194,22 @@ class Beatbar:
             time, xran = yield
             while True:
                 try:
-                    contents = pipeline.send(([], time, xran))
+                    texts = pipeline.send(([], time, xran))
                 except StopIteration:
                     return
 
-                time, xran = yield contents
+                time, xran = yield texts
 
     @dn.datanode
     def _content_node(self, pos_node, text_node, start, duration):
         with pos_node, text_node:
-            contents, time, ran = yield
+            texts, time, ran = yield
 
             if start is None:
                 start = time
 
             while time < start:
-                contents, time, ran = yield contents
+                texts, time, ran = yield texts
 
             while duration is None or time < start + duration:
                 try:
@@ -297,18 +225,19 @@ class Beatbar:
                 if flip:
                     pos = 1 - pos
 
-                index = pos * max(0, len(ran) - 1)
-                if not math.isfinite(index):
-                    contents, time, ran = yield contents
-                    continue
-
                 if isinstance(text, tuple):
                     text = text[flip]
+
+                index = pos * max(0, len(ran) - 1)
+                if not math.isfinite(index):
+                    texts, time, ran = yield texts
+                    continue
+
                 if text is not None:
                     index = round(index)
-                    contents.append((index, text))
+                    texts.append((index, text))
 
-                contents, time, ran = yield contents
+                texts, time, ran = yield texts
 
     def draw_content(self, pos, text, start=None, duration=None, zindex=(0,)):
         pos_node = dn.DataNode.wrap(
@@ -319,18 +248,18 @@ class Beatbar:
         )
 
         node = self._content_node(pos_node, text_node, start, duration)
-        return self.content_pipeline.add_node(node, zindex=zindex)
+        return self.bar_pipeline.add_node(node, zindex=zindex)
 
     @dn.datanode
     def _title_node(self, pos_node, text_node, start, duration):
         with pos_node, text_node:
-            contents, time, ran = yield
+            texts, time, ran = yield
 
             if start is None:
                 start = time
 
             while time < start:
-                contents, time, ran = yield contents
+                texts, time, ran = yield texts
 
             while duration is None or time < start + duration:
                 try:
@@ -341,14 +270,14 @@ class Beatbar:
 
                 index = pos * max(0, len(ran) - 1)
                 if not math.isfinite(index):
-                    contents, time, ran = yield contents
+                    texts, time, ran = yield texts
                     continue
 
                 if text is not None:
                     index = round(index)
-                    contents.append((index, text))
+                    texts.append((index, text))
 
-                contents, time, ran = yield contents
+                texts, time, ran = yield texts
 
     def draw_title(self, pos, text, start=None, duration=None, zindex=(10,)):
         pos_node = dn.DataNode.wrap(
@@ -359,14 +288,14 @@ class Beatbar:
         )
 
         node = self._title_node(pos_node, text_node, start, duration)
-        return self.content_pipeline.add_node(node, zindex=zindex)
+        return self.bar_pipeline.add_node(node, zindex=zindex)
 
     def remove_content_drawer(self, key):
-        self.content_pipeline.remove_node(key)
+        self.bar_pipeline.remove_node(key)
 
     def on_before_render(self, node):
         node = dn.pipe(dn.branch(lambda a: a[1:], node), lambda a: a[0])
-        return self.content_pipeline.add_node(node, zindex=(0,))
+        return self.bar_pipeline.add_node(node, zindex=(0,))
 
     @staticmethod
     @dn.datanode

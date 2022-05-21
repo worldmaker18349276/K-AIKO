@@ -1127,6 +1127,37 @@ class BeatbarWidgetSettings(cfg.Configurable):
     footer: BeatbarFooterWidgetSettings = BeatbarWidgetFactory.progress()
 
 
+class BeatbarLayoutSettings(cfg.Configurable):
+    """
+    Fields
+    ------
+    icon_width : int
+        [rich]The width of icon.
+
+        [color=bright_magenta] ⣠⣴⣤⣿⣤⣦ [/][color=bright_blue][[00000/00400]][/]       [color=bright_cyan]□ [/] [color=bright_magenta]⛶ [/]    [color=bright_cyan]□ [/]                [color=bright_blue]■ [/]  [color=bright_blue][[11.3%|00:09]][/]
+        ^^^^^^^^
+          here
+
+    header_width : int
+        [rich]The width of header.
+
+        [color=bright_magenta] ⣠⣴⣤⣿⣤⣦ [/][color=bright_blue][[00000/00400]][/]       [color=bright_cyan]□ [/] [color=bright_magenta]⛶ [/]    [color=bright_cyan]□ [/]                [color=bright_blue]■ [/]  [color=bright_blue][[11.3%|00:09]][/]
+                ^^^^^^^^^^^^^
+                    here
+
+    footer_width : int
+        [rich]The width of footer.
+
+        [color=bright_magenta] ⣠⣴⣤⣿⣤⣦ [/][color=bright_blue][[00000/00400]][/]       [color=bright_cyan]□ [/] [color=bright_magenta]⛶ [/]    [color=bright_cyan]□ [/]                [color=bright_blue]■ [/]  [color=bright_blue][[11.3%|00:09]][/]
+                                                                   ^^^^^^^^^^^^^
+                                                                        here
+
+    """
+    icon_width: int = 8
+    header_width: int = 13
+    footer_width: int = 13
+
+
 # beatmap
 class BeatmapSettings(cfg.Configurable):
     r"""
@@ -1307,7 +1338,7 @@ class GameplaySettings(cfg.Configurable):
 
     @cfg.subconfig
     class playfield(cfg.Configurable):
-        layout = cfg.subconfig(beatbar.BeatbarLayoutSettings)
+        layout = cfg.subconfig(BeatbarLayoutSettings)
         sight = cfg.subconfig(beatbar.SightWidgetSettings)
         widgets = cfg.subconfig(BeatbarWidgetSettings)
 
@@ -1521,16 +1552,29 @@ class Beatmap:
             detector,
             renderer,
             controller,
-            icon,
-            header,
-            footer,
             sight,
             self.playfield_state.bar_shift,
             self.playfield_state.bar_flip,
-            gameplay_settings.playfield.layout,
         )
 
-        yield from playfield.load().join()
+        playfield_node = playfield.load()
+
+        # layout
+        icon_width = gameplay_settings.playfield.layout.icon_width
+        header_width = gameplay_settings.playfield.layout.header_width
+        footer_width = gameplay_settings.playfield.layout.footer_width
+
+        [
+            icon_mask,
+            header_mask,
+            content_mask,
+            footer_mask,
+        ] = beatwidgets.layout([icon_width, header_width, -1, footer_width])
+
+        renderer.add_texts(playfield_node, xmask=content_mask, zindex=(0,))
+        renderer.add_texts(icon, xmask=icon_mask, zindex=(1,))
+        renderer.add_texts(header, xmask=header_mask, zindex=(2,))
+        renderer.add_texts(footer, xmask=footer_mask, zindex=(3,))
 
         # handler
         event_clock = engines.Clock()
