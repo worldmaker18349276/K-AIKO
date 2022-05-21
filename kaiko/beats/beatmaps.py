@@ -1546,7 +1546,7 @@ class Beatmap:
 
         # play music
         if self.audionode is not None:
-            playfield.mixer.play(self.audionode, time=0.0, zindex=(-3,))
+            playfield.play(self.audionode, time=0.0, zindex=(-3,))
 
         # game loop
         updater = self.update_events(
