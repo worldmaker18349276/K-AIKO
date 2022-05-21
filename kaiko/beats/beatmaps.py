@@ -1407,12 +1407,6 @@ class BeatmapAudio:
     preview: float = 0.0
 
 
-@dataclasses.dataclass
-class BeatbarState:
-    bar_shift: float = 0.1
-    bar_flip: bool = False
-
-
 class BeatTrack:
     _notations = {
         "x": Soft,
@@ -1464,7 +1458,7 @@ class Beatmap:
             else engines.Metronome(offset=0.0, tempo=120.0)
         )
         self.beatbar_state = (
-            beatbar_state if beatbar_state is not None else BeatbarState()
+            beatbar_state if beatbar_state is not None else beatbars.BeatbarState()
         )
         self.tracks = tracks if tracks is not None else {}
         self.settings = settings if settings is not None else BeatmapSettings()
@@ -1553,8 +1547,7 @@ class Beatmap:
             renderer,
             controller,
             sight,
-            self.beatbar_state.bar_shift,
-            self.beatbar_state.bar_flip,
+            self.beatbar_state,
         )
 
         beatbar_node = beatbar.load()
