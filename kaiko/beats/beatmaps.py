@@ -1002,14 +1002,14 @@ class Performance:
         return self.descriptions[self.grade]
 
 
+@dataclasses.dataclass
 class BeatmapScore:
-    def __init__(self):
-        self.total_subjects = 0
-        self.finished_subjects = 0
-        self.full_score = 0
-        self.score = 0
-        self.perfs = []
-        self.time = 0.0
+    total_subjects: int = 0
+    finished_subjects: int = 0
+    full_score: int = 0
+    score: int = 0
+    perfs: List[Performance] = dataclasses.field(default_factory=lambda: [])
+    time: float = 0.0
 
     def set_total_subjects(self, total_subjects):
         self.total_subjects = total_subjects
