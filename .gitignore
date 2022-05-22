@@ -4,3 +4,7 @@ envs*
 build
 dist
 K_AIKO.egg-info
+.study
+.vscode
+mypy.ini
+workspace.code-workspace
