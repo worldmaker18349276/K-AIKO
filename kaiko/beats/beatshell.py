@@ -2046,66 +2046,73 @@ class BeatPrompt:
         renderer.add_drawer(self.hint_handler(), zindex=(1,))
 
         # render text box
-        ellipsis = [(0, mu.Text("…"))]
+        textbox_pipeline = dn.DynamicPipeline()
+        renderer.add_texts(self.textbox_node(textbox_pipeline), input_mask, zindex=(0,))
+
+        ellipsis = mu.Text("…")
         ellipsis_width = 1
 
-        if input_mask.start is None:
-            left_ellipsis_stop = ellipsis_width
-        elif input_mask.start >= 0 or input_mask.start + ellipsis_width < 0:
-            left_ellipsis_stop = input_mask.start + ellipsis_width
-        else:
-            left_ellipsis_stop = None
-        left_ellipsis_mask = slice(input_mask.start, left_ellipsis_stop)
-        left_ellipsis_func = lambda arg: (ellipsis if self.left_overflow else [])
+        def left_ellipsis_func(arg):
+            texts, time, ran = arg
+            if self.left_overflow:
+                texts.append((0, ellipsis))
+            return texts
 
-        if input_mask.stop is None:
-            right_ellipsis_start = -ellipsis_width
-        elif input_mask.stop < 0 or input_mask.stop - ellipsis_width >= 0:
-            right_ellipsis_start = input_mask.stop - ellipsis_width
-        else:
-            right_ellipsis_start = None
-        right_ellipsis_mask = slice(right_ellipsis_start, input_mask.stop)
-        right_ellipsis_func = lambda arg: (ellipsis if self.right_overflow else [])
+        def right_ellipsis_func(arg):
+            texts, time, ran = arg
+            if self.right_overflow:
+                texts.append((len(ran) - ellipsis_width, ellipsis))
+            return texts
 
-        renderer.add_texts(self.state_updater(), zindex=())
-        renderer.add_texts(self.update_metronome(), zindex=(0,))
-        renderer.add_texts(self.adjust_input_offset(input_margin), input_mask, zindex=(0,))
-        renderer.add_texts(left_ellipsis_func, left_ellipsis_mask, zindex=(1, 10))
-        renderer.add_texts(right_ellipsis_func, right_ellipsis_mask, zindex=(1, 10))
+        textbox_pipeline.add_node(self.update_state, zindex=())
+        textbox_pipeline.add_node(self.stop(), zindex=())
+        textbox_pipeline.add_node(self.update_metronome(), zindex=(0,))
+        textbox_pipeline.add_node(self.adjust_input_offset(input_margin), zindex=(0,))
+        textbox_pipeline.add_node(left_ellipsis_func, zindex=(2,))
+        textbox_pipeline.add_node(right_ellipsis_func, zindex=(2,))
 
         # render content
-        renderer.add_texts(self.text_handler(), input_mask, zindex=(1,))
+        textbox_pipeline.add_node(self.text_handler(), zindex=(1,))
 
     @dn.datanode
-    def state_updater(self):
-        yield
+    def textbox_node(self, pipeline):
+        time, ran = yield
+        with pipeline:
+            while True:
+                texts = pipeline.send(([], time, ran))
+                time, ran = yield texts
+
+    def update_state(self, arg):
+        with self.input.lock:
+            if self.input.modified_counter != self.modified_counter:
+                self.modified_counter = self.input.modified_counter
+                self.buffer = list(self.input.buffer)
+                self.tokens = list(self.input.semantic_analyzer.tokens)
+            self.pos = self.input.pos
+            self.highlighted = self.input.highlighted
+
+            self.typeahead = self.input.typeahead
+            self.clean = self.input.result is not None
+            self.hint = (
+                self.input.hint_state.hint
+                if self.input.hint_state is not None
+                else None
+            )
+            self.popup = []
+            while True:
+                try:
+                    msg = self.input.popup.get(False)
+                except queue.Empty:
+                    break
+                self.popup.append(msg)
+            self.state = self.input.state
+        return arg[0]
+
+    @dn.datanode
+    def stop(self):
+        texts, time, ran = yield
         while True:
-            # extract input state
-            with self.input.lock:
-                if self.input.modified_counter != self.modified_counter:
-                    self.modified_counter = self.input.modified_counter
-                    self.buffer = list(self.input.buffer)
-                    self.tokens = list(self.input.semantic_analyzer.tokens)
-                self.pos = self.input.pos
-                self.highlighted = self.input.highlighted
-
-                self.typeahead = self.input.typeahead
-                self.clean = self.input.result is not None
-                self.hint = (
-                    self.input.hint_state.hint
-                    if self.input.hint_state is not None
-                    else None
-                )
-                self.popup = []
-                while True:
-                    try:
-                        msg = self.input.popup.get(False)
-                    except queue.Empty:
-                        break
-                    self.popup.append(msg)
-                self.state = self.input.state
-
-            yield []
+            texts, time, ran = yield texts
 
             # fin
             if self.state == "FIN" and not self.fin_event.is_set():
@@ -2113,7 +2120,7 @@ class BeatPrompt:
 
     @dn.datanode
     def update_metronome(self):
-        time, ran = yield
+        texts, time, ran = yield
         key_event = self.stroke.key_event
         self.key_pressed_time = time - 100.0
 
@@ -2121,7 +2128,7 @@ class BeatPrompt:
             if self.stroke.key_event != key_event:
                 key_event = self.stroke.key_event
                 self.key_pressed_time = time
-            time, ran = yield []
+            texts, time, ran = yield texts
 
     def input_geometry(self, buffer, typeahead, pos):
         text_width = self.rich.widthof(buffer)
@@ -2139,7 +2146,7 @@ class BeatPrompt:
         geo_node = starcache(self.input_geometry, geo_key)
 
         with geo_node:
-            time, ran = yield
+            texts, time, ran = yield
             while True:
                 typeahead = self.typeahead if not self.clean else ""
                 text_width, typeahead_width, caret_dis = geo_node.send(
@@ -2169,7 +2176,7 @@ class BeatPrompt:
                     text_width + typeahead_width - self.input_offset > input_width - 1
                 )
 
-                time, ran = yield []
+                texts, time, ran = yield texts
 
     def markup_syntax(self, buffer, tokens, typeahead):
         r"""Markup syntax of input text.
@@ -2270,7 +2277,7 @@ class BeatPrompt:
         caret_node = starcache(self.render_caret)
 
         with syntax_node, dec_node, caret_node, caret_widget:
-            time, ran = yield
+            texts, time, ran = yield
             while True:
                 typeahead = self.typeahead if not self.clean else ""
 
@@ -2283,7 +2290,8 @@ class BeatPrompt:
 
                 markup = caret_node.send((markup, caret))
 
-                time, ran = yield [(-self.input_offset, markup)]
+                texts.append((-self.input_offset, markup))
+                texts, time, ran = yield texts
 
     def markup_hint(self, msgs, hint):
         r"""Render hint.
