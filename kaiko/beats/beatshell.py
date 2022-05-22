@@ -2041,19 +2041,44 @@ class BeatPrompt:
             input_mask,
         ] = beatwidgets.layout([icon_width, marker_width, -1])
 
-        renderer.add_drawer(self.state_updater(), zindex=())
-        renderer.add_drawer(self.update_metronome(), zindex=(0,))
-        renderer.add_drawer(self.adjust_input_offset(), zindex=(0,))
-        renderer.add_drawer(self.hint_handler(), zindex=(1,))
-        renderer.add_texts(self.text_handler(), input_mask, zindex=(1,))
-        renderer.add_texts(*self.get_left_ellipsis_func(input_mask), zindex=(1, 10))
-        renderer.add_texts(*self.get_right_ellipsis_func(input_mask), zindex=(1, 10))
         renderer.add_texts(self.icon, icon_mask, zindex=(2,))
         renderer.add_texts(self.marker, marker_mask, zindex=(3,))
+        renderer.add_drawer(self.hint_handler(), zindex=(1,))
+
+        # render text box
+        ellipsis = [(0, mu.Text("…"))]
+        ellipsis_width = 1
+
+        if input_mask.start is None:
+            left_ellipsis_stop = ellipsis_width
+        elif input_mask.start >= 0 or input_mask.start + ellipsis_width < 0:
+            left_ellipsis_stop = input_mask.start + ellipsis_width
+        else:
+            left_ellipsis_stop = None
+        left_ellipsis_mask = slice(input_mask.start, left_ellipsis_stop)
+        left_ellipsis_func = lambda arg: (ellipsis if self.left_overflow else [])
+
+        if input_mask.stop is None:
+            right_ellipsis_start = -ellipsis_width
+        elif input_mask.stop < 0 or input_mask.stop - ellipsis_width >= 0:
+            right_ellipsis_start = input_mask.stop - ellipsis_width
+        else:
+            right_ellipsis_start = None
+        right_ellipsis_mask = slice(right_ellipsis_start, input_mask.stop)
+        right_ellipsis_func = lambda arg: (ellipsis if self.right_overflow else [])
+
+        renderer.add_texts(self.state_updater(), zindex=())
+        renderer.add_texts(self.update_metronome(), zindex=(0,))
+        renderer.add_texts(self.adjust_input_offset(input_margin), input_mask, zindex=(0,))
+        renderer.add_texts(left_ellipsis_func, left_ellipsis_mask, zindex=(1, 10))
+        renderer.add_texts(right_ellipsis_func, right_ellipsis_mask, zindex=(1, 10))
+
+        # render content
+        renderer.add_texts(self.text_handler(), input_mask, zindex=(1,))
 
     @dn.datanode
     def state_updater(self):
-        (view, msgs, logs), time, width = yield
+        yield
         while True:
             # extract input state
             with self.input.lock:
@@ -2080,7 +2105,7 @@ class BeatPrompt:
                     self.popup.append(msg)
                 self.state = self.input.state
 
-            (view, msgs, logs), time, width = yield (view, msgs, logs)
+            yield []
 
             # fin
             if self.state == "FIN" and not self.fin_event.is_set():
@@ -2088,7 +2113,7 @@ class BeatPrompt:
 
     @dn.datanode
     def update_metronome(self):
-        (view, msgs, logs), time, width = yield
+        time, ran = yield
         key_event = self.stroke.key_event
         self.key_pressed_time = time - 100.0
 
@@ -2096,7 +2121,7 @@ class BeatPrompt:
             if self.stroke.key_event != key_event:
                 key_event = self.stroke.key_event
                 self.key_pressed_time = time
-            (view, msgs, logs), time, width = yield (view, msgs, logs)
+            time, ran = yield []
 
     def input_geometry(self, buffer, typeahead, pos):
         text_width = self.rich.widthof(buffer)
@@ -2105,13 +2130,7 @@ class BeatPrompt:
         return text_width, typeahead_width, caret_dis
 
     @dn.datanode
-    def adjust_input_offset(self):
-        icon_width = self.settings.prompt.icon_width
-        marker_width = self.settings.prompt.marker_width
-        input_margin = self.settings.prompt.input_margin
-
-        input_mask = slice(icon_width + marker_width, None)
-
+    def adjust_input_offset(self, input_margin):
         self.input_offset = 0
         self.left_overflow = False
         self.right_overflow = False
@@ -2120,13 +2139,13 @@ class BeatPrompt:
         geo_node = starcache(self.input_geometry, geo_key)
 
         with geo_node:
-            (view, msgs, logs), time, width = yield
+            time, ran = yield
             while True:
                 typeahead = self.typeahead if not self.clean else ""
                 text_width, typeahead_width, caret_dis = geo_node.send(
                     (self.buffer, typeahead, self.pos)
                 )
-                input_width = len(range(width)[input_mask])
+                input_width = len(ran)
 
                 # adjust input offset
                 if text_width - self.input_offset < input_width - 1 - input_margin:
@@ -2150,7 +2169,7 @@ class BeatPrompt:
                     text_width + typeahead_width - self.input_offset > input_width - 1
                 )
 
-                (view, msgs, logs), time, width = yield (view, msgs, logs)
+                time, ran = yield []
 
     def markup_syntax(self, buffer, tokens, typeahead):
         r"""Markup syntax of input text.
@@ -2265,38 +2284,6 @@ class BeatPrompt:
                 markup = caret_node.send((markup, caret))
 
                 time, ran = yield [(-self.input_offset, markup)]
-
-    def get_left_ellipsis_func(self, input_mask):
-        ellipsis = [(0, mu.Text("…"))]
-        width = 1
-
-        if input_mask.start is None:
-            left_ellipsis_stop = width
-        elif input_mask.start >= 0 or input_mask.start + width < 0:
-            left_ellipsis_stop = input_mask.start + width
-        else:
-            left_ellipsis_stop = None
-        left_ellipsis_mask = slice(input_mask.start, left_ellipsis_stop)
-
-        left_ellipsis_func = lambda arg: (ellipsis if self.left_overflow else [])
-
-        return left_ellipsis_func, left_ellipsis_mask
-
-    def get_right_ellipsis_func(self, input_mask):
-        ellipsis = [(0, mu.Text("…"))]
-        width = 1
-
-        if input_mask.stop is None:
-            right_ellipsis_start = -width
-        elif input_mask.stop < 0 or input_mask.stop - width >= 0:
-            right_ellipsis_start = input_mask.stop - width
-        else:
-            right_ellipsis_start = None
-        right_ellipsis_mask = slice(right_ellipsis_start, input_mask.stop)
-
-        right_ellipsis_func = lambda arg: (ellipsis if self.right_overflow else [])
-
-        return right_ellipsis_func, right_ellipsis_mask
 
     def markup_hint(self, msgs, hint):
         r"""Render hint.
