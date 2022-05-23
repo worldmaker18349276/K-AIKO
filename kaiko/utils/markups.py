@@ -1055,7 +1055,7 @@ class RichParser:
                 return width
 
             else:
-                raise TypeError(f"unknown markup type: {type(markup)}")
+                raise TypeError(f"unknown markup type: {type(text)}")
 
         else:
             width = 0
