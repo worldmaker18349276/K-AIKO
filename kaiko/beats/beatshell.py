@@ -944,8 +944,8 @@ class BeatInput:
         marker = widget_factory.create(shell_settings.prompt.marker)
 
         state = ViewState(self, stroke, metronome)
-        textbox = Textbox(self.rich, state, caret, shell_settings)
-        msgbox = Msgbox(self.rich, state, shell_settings)
+        textbox = TextBox(self.rich, state, caret, shell_settings)
+        msgbox = MsgBox(self.rich, state, shell_settings)
         prompt = BeatPrompt(state, textbox, msgbox, icon, marker, shell_settings)
 
         # execute
@@ -2090,7 +2090,7 @@ class ViewState:
                 self.fin_event.set()
 
 
-class Msgbox:
+class MsgBox:
     def __init__(self, rich, state, settings):
         r"""Constructor.
 
@@ -2234,7 +2234,7 @@ class Msgbox:
         return logs
 
 
-class Textbox:
+class TextBox:
     def __init__(self, rich, state, caret, settings):
         r"""Constructor.
 
@@ -2242,6 +2242,7 @@ class Textbox:
         ----------
         rich : markups.RichParser
         state : ViewState
+        caret : CaretWidget
         settings : BeatShellSettings
         """
         self.rich = rich
@@ -2253,28 +2254,11 @@ class Textbox:
 
     def load(self):
         input_margin = self.settings.prompt.input_margin
+        ellipses = ("…", "…")
 
-        ellipsis = mu.Text("…")
-        ellipsis_width = 1
-
-        def left_ellipsis_func(arg):
-            texts, time, ran = arg
-            if self.left_overflow:
-                texts.append((0, ellipsis))
-            return texts
-
-        def right_ellipsis_func(arg):
-            texts, time, ran = arg
-            if self.right_overflow:
-                texts.append((len(ran) - ellipsis_width, ellipsis))
-            return texts
-
-        self.textbox_pipeline.add_node(self.adjust_input_offset(input_margin), zindex=(0,))
-        self.textbox_pipeline.add_node(left_ellipsis_func, zindex=(2,))
-        self.textbox_pipeline.add_node(right_ellipsis_func, zindex=(2,))
-
-        # render content
+        self.textbox_pipeline.add_node(self.adjust_text_offset(input_margin), zindex=(0,))
         self.textbox_pipeline.add_node(self.text_handler(), zindex=(1,))
+        self.textbox_pipeline.add_node(self.overflow_handler(ellipses), zindex=(2,))
 
         return self.textbox_node(self.textbox_pipeline)
 
@@ -2287,20 +2271,35 @@ class Textbox:
                 texts = pipeline.send(([], time, ran))
                 time, ran = yield texts
 
-    def input_geometry(self, buffer, typeahead, pos):
+    @dn.datanode
+    def overflow_handler(self, ellipses):
+        left_ellipsis = self.rich.parse(ellipses[0])
+        left_ellipsis_width = self.rich.widthof(ellipses[0])
+        right_ellipsis = self.rich.parse(ellipses[1])
+        right_ellipsis_width = self.rich.widthof(ellipses[1])
+
+        texts, time, ran = yield
+        while True:
+            if self.left_overflow:
+                texts.append((0, left_ellipsis))
+            if self.right_overflow:
+                texts.append((len(ran) - right_ellipsis_width, right_ellipsis))
+            texts, time, ran = yield texts
+
+    def text_geometry(self, buffer, typeahead, pos):
         text_width = self.rich.widthof(buffer)
         typeahead_width = self.rich.widthof(typeahead)
         caret_dis = self.rich.widthof(buffer[:pos])
         return text_width, typeahead_width, caret_dis
 
     @dn.datanode
-    def adjust_input_offset(self, input_margin):
-        self.input_offset = 0
+    def adjust_text_offset(self, text_margin):
+        self.text_offset = 0
         self.left_overflow = False
         self.right_overflow = False
 
         geo_key = lambda buffer, typeahead, pos: (id(buffer), typeahead, pos)
-        geo_node = starcache(self.input_geometry, geo_key)
+        geo_node = starcache(self.text_geometry, geo_key)
 
         with geo_node:
             texts, time, ran = yield
@@ -2309,28 +2308,28 @@ class Textbox:
                 text_width, typeahead_width, caret_dis = geo_node.send(
                     (self.state.buffer, typeahead, self.state.pos)
                 )
-                input_width = len(ran)
+                box_width = len(ran)
 
-                # adjust input offset
-                if text_width - self.input_offset < input_width - 1 - input_margin:
+                # adjust text offset
+                if text_width - self.text_offset < box_width - 1 - text_margin:
                     # from: ......[....I...    ]
                     #   to: ...[.......I... ]
-                    self.input_offset = max(
-                        0, text_width - input_width + 1 + input_margin
+                    self.text_offset = max(
+                        0, text_width - box_width + 1 + text_margin
                     )
-                if caret_dis - self.input_offset >= input_width - input_margin:
+                if caret_dis - self.text_offset >= box_width - text_margin:
                     # from: ...[............]..I....
                     #   to: ........[..........I.]..
-                    self.input_offset = caret_dis - input_width + input_margin + 1
-                elif caret_dis - self.input_offset - input_margin < 0:
+                    self.text_offset = caret_dis - box_width + text_margin + 1
+                elif caret_dis - self.text_offset - text_margin < 0:
                     # from: .....I...[............]...
                     #   to: ...[.I..........].........
-                    self.input_offset = max(caret_dis - input_margin, 0)
+                    self.text_offset = max(caret_dis - text_margin, 0)
 
                 # determine overflow
-                self.left_overflow = self.input_offset > 0
+                self.left_overflow = self.text_offset > 0
                 self.right_overflow = (
-                    text_width + typeahead_width - self.input_offset > input_width - 1
+                    text_width + typeahead_width - self.text_offset > box_width - 1
                 )
 
                 texts, time, ran = yield texts
@@ -2341,7 +2340,7 @@ class Textbox:
         Parameters
         ----------
         buffer : list of str
-        tokens : list
+        tokens : list of ShToken
         typeahead : str
 
         Returns
@@ -2447,6 +2446,6 @@ class Textbox:
 
                 markup = caret_node.send((markup, caret))
 
-                texts.append((-self.input_offset, markup))
+                texts.append((-self.text_offset, markup))
                 texts, time, ran = yield texts
 
