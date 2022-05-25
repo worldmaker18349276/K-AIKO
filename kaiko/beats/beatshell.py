@@ -342,7 +342,7 @@ class PatternsWidget:
 
 
 @dataclasses.dataclass(frozen=True)
-class CaretPlaceholder(mu.Pair):
+class Caret(mu.Pair):
     name = "caret"
 
 
@@ -2334,7 +2334,7 @@ class TextBox:
 
                 texts, time, ran = yield texts
 
-    def markup_syntax(self, buffer, tokens, typeahead):
+    def render_grammar(self, buffer, tokens, typeahead, pos, highlighted):
         r"""Markup syntax of input text.
 
         Parameters
@@ -2342,109 +2342,142 @@ class TextBox:
         buffer : list of str
         tokens : list of ShToken
         typeahead : str
+        pos : int
+        highlighted : int
 
         Returns
         -------
         markup : markups.Markup
             The syntax highlighted input text.
         """
+        tags = dict(self.rich.tags)
+        tags["caret"] = Caret
 
-        # markup tokens
-        return shlexer_markup(buffer, tokens, typeahead, self.rich.tags)
-
-    def decorate_tokens(self, markup, pos, highlighted, clean):
-        # markup caret
-        i = 0
-        for n, token in enumerate(markup.children):
-            for m, subword in enumerate(token.children):
-                l = len(subword.string) if isinstance(subword, mu.Text) else 1
-                if pos >= i + l:
-                    i += l
-                    continue
-
-                if isinstance(subword, mu.Text):
-                    subwords = (
-                        mu.Text(subword.string[: pos - i]),
-                        CaretPlaceholder((mu.Text(subword.string[pos - i]),)),
-                        mu.Text(subword.string[pos - i + 1 :]),
-                    )
+        def _wrap(buffer):
+            res = [""]
+            for ch in buffer:
+                if isinstance(ch, str) and isinstance(res[-1], str):
+                    res[-1] = res[-1] + ch
                 else:
-                    subwords = (CaretPlaceholder((subword,)),)
+                    res.append(ch)
+            if not res[0]:
+                res.pop(0)
+            return tuple(mu.Text(e) if isinstance(e, str) else e for e in res)
 
-                token = dataclasses.replace(
-                    token,
-                    children=token.children[:m] + subwords + token.children[m + 1 :],
-                )
-                markup = dataclasses.replace(
-                    markup,
-                    children=markup.children[:n] + (token,) + markup.children[n + 1 :],
-                )
-                break
+        length = len(buffer)
+        buffer = list(buffer)
+
+        for token in tokens:
+            # markup whitespace
+            for index in range(token.mask.start, token.mask.stop):
+                if buffer[index] == " ":
+                    buffer[index] = tags["ws"]()
+
+            # markup escape
+            for index in token.quotes:
+                if buffer[index] == "'":
+                    buffer[index] = tags["qt"]()
+                elif buffer[index] == "\\":
+                    buffer[index] = tags["bs"]()
+                else:
+                    assert False
+
+        # markup caret
+        if pos != length:
+            buffer[pos] = tags["caret"](_wrap([buffer[pos]]))
+
+        res = []
+        prev_index = 0
+        for n, token in enumerate(tokens):
+            # markup delimiter
+            delimiter_markup = mu.Group(_wrap(buffer[prev_index : token.mask.start]))
+            res.append(delimiter_markup)
+            prev_index = token.mask.stop
+
+            # markup token
+            token_markup = mu.Group(_wrap(buffer[token.mask]))
+            if token.type is None:
+                if token.mask.stop == length:
+                    token_markup = tags["unfinished"](token_markup.children)
+                else:
+                    token_markup = tags["unknown"](token_markup.children)
+            elif token.type is cmd.TOKEN_TYPE.COMMAND:
+                token_markup = tags["cmd"](token_markup.children)
+            elif token.type is cmd.TOKEN_TYPE.KEYWORD:
+                token_markup = tags["kw"](token_markup.children)
+            elif token.type is cmd.TOKEN_TYPE.ARGUMENT:
+                token_markup = tags["arg"](token_markup.children)
             else:
-                continue
-            break
+                assert False
 
-        # unfinished -> unknown
-        if clean and len(markup.children) >= 3:
-            n = -3
-            token = markup.children[n]
-            if isinstance(token, self.rich.tags["unfinished"]):
-                token = self.rich.tags["unknown"](token.children)
-                markup = dataclasses.replace(
-                    markup,
-                    children=markup.children[:n] + (token,) + markup.children[n + 1 :],
-                )
+            # markup highlight
+            if n == highlighted:
+                token_markup = tags["highlight"]((token_markup,))
 
-        # highlight
-        if highlighted is not None:
-            n = highlighted * 2 + 1
-            token = markup.children[n]
-            token = self.rich.tags["highlight"]((token,))
-            markup = dataclasses.replace(
-                markup,
-                children=markup.children[:n] + (token,) + markup.children[n + 1 :],
+            res.append(token_markup)
+
+        else:
+            delimiter_markup = mu.Group(_wrap(buffer[prev_index:]))
+            res.append(delimiter_markup)
+
+        # markup typeahead
+        if pos != length:
+            typeahead_markup = tags["typeahead"]((mu.Text(typeahead),))
+        elif not typeahead:
+            typeahead_markup = tags["caret"]((mu.Text(" "),))
+        else:
+            typeahead_markup = tags["typeahead"]((tags["caret"]((mu.Text(typeahead[0]),)), mu.Text(typeahead[1:])))
+        res.append(typeahead_markup)
+
+        return mu.Group(tuple(res))
+
+    def render_caret(self, markup, caret, clean):
+        if clean:
+            markup = markup.traverse(
+                self.rich.tags["unfinished"],
+                lambda m: self.rich.tags["unknown"](m.children),
             )
+
+        if caret is not None and not clean:
+            markup = markup.traverse(
+                Caret, lambda m: mu.replace_slot(caret, mu.Group(m.children))
+            )
+        else:
+            markup = markup.traverse(Caret, lambda m: mu.Group(m.children))
 
         markup = markup.expand()
         return markup
 
-    def render_caret(self, markup, caret):
-        if caret is not None:
-            return markup.traverse(
-                CaretPlaceholder, lambda m: mu.replace_slot(caret, mu.Group(m.children))
-            )
-        else:
-            return markup.traverse(CaretPlaceholder, lambda m: mu.Group(m.children))
-
     @dn.datanode
     def text_handler(self):
-        syntax_key = lambda buffer, tokens, typeahead: (id(buffer), typeahead)
-        syntax_node = starcache(self.markup_syntax, syntax_key)
-
-        dec_key = lambda markup, pos, highlighted, clean: (
-            id(markup),
+        syntax_key = lambda buffer, tokens, typeahead, pos, highlighted: (
+            id(buffer),
+            typeahead,
             pos,
             highlighted,
-            clean,
         )
-        dec_node = starcache(self.decorate_tokens, dec_key)
+        grammar_node = starcache(self.render_grammar, syntax_key)
 
-        caret_widget = dn.DataNode.wrap(self.caret)
+        caret_widget_node = dn.DataNode.wrap(self.caret)
         caret_node = starcache(self.render_caret)
 
-        with syntax_node, dec_node, caret_node, caret_widget:
+        with grammar_node, caret_node, caret_widget_node:
             texts, time, ran = yield
             while True:
                 typeahead = self.state.typeahead if not self.state.clean else ""
 
-                markup = syntax_node.send((self.state.buffer, self.state.tokens, typeahead))
-                markup = dec_node.send((markup, self.state.pos, self.state.highlighted, self.state.clean))
+                markup = grammar_node.send(
+                    (
+                        self.state.buffer,
+                        self.state.tokens,
+                        typeahead,
+                        self.state.pos,
+                        self.state.highlighted,
+                    )
+                )
 
-                caret = caret_widget.send((time, self.state.key_pressed_time))
-                if self.state.clean:
-                    caret = None
-
-                markup = caret_node.send((markup, caret))
+                caret = caret_widget_node.send((time, self.state.key_pressed_time))
+                markup = caret_node.send((markup, caret, self.state.clean))
 
                 texts.append((-self.text_offset, markup))
                 texts, time, ran = yield texts
