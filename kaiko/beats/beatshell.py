@@ -2253,12 +2253,7 @@ class TextBox:
         self.textbox_pipeline = dn.DynamicPipeline()
 
     def load(self):
-        input_margin = self.settings.prompt.input_margin
-        ellipses = ("…", "…")
-
-        self.textbox_pipeline.add_node(self.adjust_text_offset(input_margin), zindex=(0,))
-        self.textbox_pipeline.add_node(self.text_handler(), zindex=(1,))
-        self.textbox_pipeline.add_node(self.overflow_handler(ellipses), zindex=(2,))
+        self.textbox_pipeline.add_node(self.text_handler(), zindex=(0,))
 
         return self.textbox_node(self.textbox_pipeline)
 
@@ -2271,6 +2266,59 @@ class TextBox:
                 texts = pipeline.send(([], time, ran))
                 time, ran = yield texts
 
+    def text_geometry(self, markup, is_in_caret=False, res=(0, None)):
+        if isinstance(markup, mu.Text):
+            w = self.rich.widthof(markup.string)
+            if w == -1:
+                raise TypeError(f"invalid text: {markup.string!r}")
+            res0 = res[0] + w
+            res1 = slice(res[1].start, res[1].stop + w) if is_in_caret else res[1]
+            return res0, res1
+
+        elif isinstance(markup, (mu.Group, mu.SGR)):
+            for child in markup.children:
+                res = self.text_geometry(child, res=res)
+            return res
+
+        elif isinstance(markup, Caret):
+            res = (res[0], slice(res[0], res[0]))
+            for child in markup.children:
+                res = self.text_geometry(child, is_in_caret=True, res=res)
+            return res
+
+        elif isinstance(markup, (mu.CSI, mu.ControlCharacter)):
+            raise TypeError(f"invalid markup type: {type(markup)}")
+
+        else:
+            raise TypeError(f"unknown markup type: {type(markup)}")
+
+    @dn.datanode
+    def adjust_text_offset(self, left_text_margin, right_text_margin):
+        self.text_offset = 0
+        self.left_overflow = False
+        self.right_overflow = False
+
+        while True:
+            text_width, caret_slice, box_width = yield
+
+            # adjust text offset
+            if text_width - self.text_offset < box_width - right_text_margin:
+                # from: ......[....I...    ]
+                #   to: ...[.......I... ]
+                self.text_offset = max(0, text_width - box_width + right_text_margin)
+            if caret_slice.stop - self.text_offset > box_width - right_text_margin:
+                # from: ...[............]..I....
+                #   to: ........[..........I.]..
+                self.text_offset = caret_slice.stop - box_width + right_text_margin
+            elif caret_slice.start - self.text_offset < left_text_margin:
+                # from: .....I...[............]...
+                #   to: ...[.I..........].........
+                self.text_offset = max(caret_slice.start - left_text_margin, 0)
+
+            # determine overflow
+            self.left_overflow = self.text_offset > 0
+            self.right_overflow = text_width - self.text_offset > box_width
+
     @dn.datanode
     def overflow_handler(self, ellipses):
         left_ellipsis = self.rich.parse(ellipses[0])
@@ -2278,61 +2326,14 @@ class TextBox:
         right_ellipsis = self.rich.parse(ellipses[1])
         right_ellipsis_width = self.rich.widthof(ellipses[1])
 
-        texts, time, ran = yield
+        box_width = yield
         while True:
+            res = []
             if self.left_overflow:
-                texts.append((0, left_ellipsis))
+                res.append((0, left_ellipsis))
             if self.right_overflow:
-                texts.append((len(ran) - right_ellipsis_width, right_ellipsis))
-            texts, time, ran = yield texts
-
-    def text_geometry(self, buffer, typeahead, pos):
-        text_width = self.rich.widthof(buffer)
-        typeahead_width = self.rich.widthof(typeahead)
-        caret_dis = self.rich.widthof(buffer[:pos])
-        return text_width, typeahead_width, caret_dis
-
-    @dn.datanode
-    def adjust_text_offset(self, text_margin):
-        self.text_offset = 0
-        self.left_overflow = False
-        self.right_overflow = False
-
-        geo_key = lambda buffer, typeahead, pos: (id(buffer), typeahead, pos)
-        geo_node = starcache(self.text_geometry, geo_key)
-
-        with geo_node:
-            texts, time, ran = yield
-            while True:
-                typeahead = self.state.typeahead if not self.state.clean else ""
-                text_width, typeahead_width, caret_dis = geo_node.send(
-                    (self.state.buffer, typeahead, self.state.pos)
-                )
-                box_width = len(ran)
-
-                # adjust text offset
-                if text_width - self.text_offset < box_width - 1 - text_margin:
-                    # from: ......[....I...    ]
-                    #   to: ...[.......I... ]
-                    self.text_offset = max(
-                        0, text_width - box_width + 1 + text_margin
-                    )
-                if caret_dis - self.text_offset >= box_width - text_margin:
-                    # from: ...[............]..I....
-                    #   to: ........[..........I.]..
-                    self.text_offset = caret_dis - box_width + text_margin + 1
-                elif caret_dis - self.text_offset - text_margin < 0:
-                    # from: .....I...[............]...
-                    #   to: ...[.I..........].........
-                    self.text_offset = max(caret_dis - text_margin, 0)
-
-                # determine overflow
-                self.left_overflow = self.text_offset > 0
-                self.right_overflow = (
-                    text_width + typeahead_width - self.text_offset > box_width - 1
-                )
-
-                texts, time, ran = yield texts
+                res.append((box_width - right_ellipsis_width, right_ellipsis))
+            box_width = yield res
 
     def render_grammar(self, buffer, tokens, typeahead, pos, highlighted):
         r"""Markup syntax of input text.
@@ -2438,6 +2439,10 @@ class TextBox:
                 lambda m: self.rich.tags["unknown"](m.children),
             )
 
+        markup = markup.expand()
+
+        text_width, caret_slice = self.text_geometry(markup)
+
         if caret is not None and not clean:
             markup = markup.traverse(
                 Caret, lambda m: mu.replace_slot(caret, mu.Group(m.children))
@@ -2446,22 +2451,30 @@ class TextBox:
             markup = markup.traverse(Caret, lambda m: mu.Group(m.children))
 
         markup = markup.expand()
-        return markup
+        return markup, text_width, caret_slice
 
     @dn.datanode
     def text_handler(self):
-        syntax_key = lambda buffer, tokens, typeahead, pos, highlighted: (
+        grammar_key = lambda buffer, tokens, typeahead, pos, highlighted: (
             id(buffer),
             typeahead,
             pos,
             highlighted,
         )
-        grammar_node = starcache(self.render_grammar, syntax_key)
+        grammar_node = starcache(self.render_grammar, grammar_key)
 
         caret_widget_node = dn.DataNode.wrap(self.caret)
         caret_node = starcache(self.render_caret)
 
-        with grammar_node, caret_node, caret_widget_node:
+        input_margin = self.settings.prompt.input_margin
+        ellipses = ("…", "…")
+
+        left_input_margin = max(input_margin, self.rich.widthof(ellipses[0]))
+        right_input_margin = max(input_margin, self.rich.widthof(ellipses[1]))
+        offset_node = self.adjust_text_offset(left_input_margin, right_input_margin)
+        overflow_node = self.overflow_handler(ellipses)
+
+        with grammar_node, caret_node, caret_widget_node, offset_node, overflow_node:
             texts, time, ran = yield
             while True:
                 typeahead = self.state.typeahead if not self.state.clean else ""
@@ -2477,8 +2490,13 @@ class TextBox:
                 )
 
                 caret = caret_widget_node.send((time, self.state.key_pressed_time))
-                markup = caret_node.send((markup, caret, self.state.clean))
+                markup, total_width, caret_slice = caret_node.send((markup, caret, self.state.clean))
+
+                box_width = len(ran)
+                offset_node.send((total_width, caret_slice, box_width))
+                overflow_markups = overflow_node.send(box_width)
 
                 texts.append((-self.text_offset, markup))
+                texts.extend(overflow_markups)
                 texts, time, ran = yield texts
 
