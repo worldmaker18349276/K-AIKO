@@ -944,8 +944,8 @@ class BeatInput:
         marker = widget_factory.create(shell_settings.prompt.marker)
 
         state = ViewState(self, self.rich, stroke, metronome)
-        textbox = TextBox(self.rich, state, caret, shell_settings)
-        msgbox = MsgBox(self.rich, state, shell_settings)
+        textbox = TextBox(self.rich, caret, shell_settings)
+        msgbox = MsgBox(self.rich, shell_settings)
         prompt = BeatPrompt(state, textbox, msgbox, icon, marker, shell_settings)
 
         # execute
@@ -2018,7 +2018,7 @@ class BeatPrompt:
         renderer.add_texts(self.icon, icon_mask, zindex=(2,))
         renderer.add_texts(self.marker, marker_mask, zindex=(3,))
         renderer.add_texts(self.textbox.load(self.state.render_text()), input_mask, zindex=(0,))
-        renderer.add_drawer(self.msgbox.load(), zindex=(1,))
+        renderer.add_drawer(self.msgbox.load(self.state.render_msg()), zindex=(1,))
 
 
 class ViewState:
@@ -2109,7 +2109,7 @@ class ViewState:
         yield
         with grammar_node:
             while True:
-                yield grammar_node.send(
+                markup = grammar_node.send(
                     (
                         tags,
                         self.buffer,
@@ -2120,6 +2120,7 @@ class ViewState:
                         self.clean,
                     )
                 )
+                yield markup, self.key_pressed_time
 
     @staticmethod
     def _render_grammar(tags, buffer, tokens, typeahead, pos, highlighted, clean):
@@ -2200,30 +2201,35 @@ class ViewState:
         markup = markup.expand()
         return markup
 
+    @dn.datanode
+    def render_msg(self):
+        yield
+        while True:
+            yield (self.hint, self.popup)
+
 
 class MsgBox:
-    def __init__(self, rich, state, settings):
+    def __init__(self, rich, settings):
         r"""Constructor.
 
         Parameters
         ----------
         rich : markups.RichParser
-        state : ViewState
         settings : BeatShellSettings
         """
         self.rich = rich
-        self.state = state
         self.settings = settings
 
     @dn.datanode
-    def load(self):
+    def load(self, state_node):
         hint_node = starcache(self.markup_hint, lambda msgs, hint: hint)
-        popup_node = starcache(self.markup_popup, lambda logs, popup: popup)
-        with hint_node, popup_node:
+        popup_node = starcache(self.markup_popup)
+        with state_node, hint_node, popup_node:
             (view, msgs, logs), time, width = yield
             while True:
-                msgs = hint_node.send((msgs, self.state.hint))
-                logs = popup_node.send((logs, self.state.popup))
+                hint, popup = state_node.send()
+                hint_node.send((msgs, hint))
+                logs.extend(popup_node.send((popup,)))
                 (view, msgs, logs), time, width = yield (view, msgs, logs)
 
     def markup_hint(self, msgs, hint):
@@ -2311,17 +2317,17 @@ class MsgBox:
 
         return msgs
 
-    def markup_popup(self, logs, popup):
+    def markup_popup(self, popup):
         r"""Render popup.
 
         Parameters
         ----------
-        logs : list of Markup
-            The rendered popup.
         popup : list of DescHint or InfoHint
         """
         desc = self.rich.parse(self.settings.text.desc_message, slotted=True)
         info = self.rich.parse(self.settings.text.info_message, slotted=True)
+
+        logs = []
 
         # draw popup
         for hint in popup:
@@ -2346,23 +2352,18 @@ class MsgBox:
 
 
 class TextBox:
-    def __init__(self, rich, state, caret, settings):
+    def __init__(self, rich, caret, settings):
         r"""Constructor.
 
         Parameters
         ----------
         rich : markups.RichParser
-        state : ViewState
         caret : CaretWidget
         settings : BeatShellSettings
         """
         self.rich = rich
-        self.state = state
         self.caret = caret
         self.settings = settings
-
-    def load(self, text):
-        return self.text_handler(text)
 
     def text_geometry(self, markup, is_in_caret=False, res=(0, None)):
         if isinstance(markup, mu.Text):
@@ -2452,7 +2453,7 @@ class TextBox:
         return markup, text_width, caret_slice
 
     @dn.datanode
-    def text_handler(self, text_node):
+    def load(self, text_node):
         caret_widget_node = dn.DataNode.wrap(self.caret)
         caret_node = starcache(self.render_caret)
 
@@ -2467,9 +2468,9 @@ class TextBox:
         with text_node, caret_node, caret_widget_node, offset_node, overflow_node:
             time, ran = yield
             while True:
-                markup = text_node.send()
+                markup, key_pressed_time = text_node.send()
 
-                caret = caret_widget_node.send((time, self.state.key_pressed_time))
+                caret = caret_widget_node.send((time, key_pressed_time))
                 markup, total_width, caret_slice = caret_node.send((markup, caret))
 
                 box_width = len(ran)
