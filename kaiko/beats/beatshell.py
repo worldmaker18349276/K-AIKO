@@ -943,10 +943,11 @@ class BeatInput:
         icon = widget_factory.create(shell_settings.prompt.icons)
         marker = widget_factory.create(shell_settings.prompt.marker)
 
-        state = ViewState(self, self.rich, stroke, metronome)
+        state = ViewState(self, stroke)
+        text_renderer = TextRenderer(self.rich)
+        msg_renderer = MsgRenderer(self.rich, shell_settings)
         textbox = TextBox(self.rich, caret, shell_settings)
-        msgbox = MsgBox(self.rich, shell_settings)
-        prompt = BeatPrompt(state, textbox, msgbox, icon, marker, shell_settings)
+        prompt = BeatPrompt(state, text_renderer, msg_renderer, textbox, icon, marker, shell_settings)
 
         # execute
         stroke.register(controller)
@@ -1995,10 +1996,11 @@ def starcache(func, key_func=lambda *a: a):
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
-    def __init__(self, state, textbox, msgbox, icon, marker, settings):
+    def __init__(self, state, text_renderer, msg_renderer, textbox, icon, marker, settings):
         self.state = state
+        self.text_renderer = text_renderer
+        self.msg_renderer = msg_renderer
         self.textbox = textbox
-        self.msgbox = msgbox
         self.icon = icon
         self.marker = marker
         self.settings = settings
@@ -2017,25 +2019,21 @@ class BeatPrompt:
         renderer.add_drawer(self.state.load(), zindex=())
         renderer.add_texts(self.icon, icon_mask, zindex=(2,))
         renderer.add_texts(self.marker, marker_mask, zindex=(3,))
-        renderer.add_texts(self.textbox.load(self.state.render_text()), input_mask, zindex=(0,))
-        renderer.add_drawer(self.msgbox.load(self.state.render_msg()), zindex=(1,))
+        renderer.add_texts(self.textbox.load(self.text_renderer.render_text(self.state)), input_mask, zindex=(0,))
+        renderer.add_drawer(self.msg_renderer.render_msg(self.state), zindex=(1,))
 
 
 class ViewState:
-    def __init__(self, input, rich, stroke, metronome):
+    def __init__(self, input, stroke):
         r"""Constructor.
 
         Parameters
         ----------
         input : BeatInput
-        rich : RichParser
         stroke : BeatStroke
-        metronome : engines.Metronome
         """
-        self.rich = rich
         self.input = input
         self.stroke = stroke
-        self.metronome = metronome
 
         # input state
         self.fin_event = threading.Event()
@@ -2091,36 +2089,10 @@ class ViewState:
             if self.state == "FIN" and not self.fin_event.is_set():
                 self.fin_event.set()
 
-    @dn.datanode
-    def render_text(self):
-        tags = dict(self.rich.tags)
-        tags["caret"] = Caret
 
-        def grammar_key(tags, buffer, tokens, typeahead, pos, highlighted, clean):
-            return (
-                id(buffer),
-                typeahead,
-                pos,
-                highlighted,
-                clean,
-            )
-        grammar_node = starcache(self._render_grammar, grammar_key)
-
-        yield
-        with grammar_node:
-            while True:
-                markup = grammar_node.send(
-                    (
-                        tags,
-                        self.buffer,
-                        self.tokens,
-                        self.typeahead if not self.clean else "",
-                        self.pos,
-                        self.highlighted,
-                        self.clean,
-                    )
-                )
-                yield markup, self.key_pressed_time
+class TextRenderer:
+    def __init__(self, rich):
+        self.rich = rich
 
     @staticmethod
     def _render_grammar(tags, buffer, tokens, typeahead, pos, highlighted, clean):
@@ -2202,13 +2174,38 @@ class ViewState:
         return markup
 
     @dn.datanode
-    def render_msg(self):
+    def render_text(self, state):
+        tags = dict(self.rich.tags)
+        tags["caret"] = Caret
+
+        def grammar_key(tags, buffer, tokens, typeahead, pos, highlighted, clean):
+            return (
+                buffer,
+                typeahead,
+                pos,
+                highlighted,
+                clean,
+            )
+        grammar_node = starcache(self._render_grammar, grammar_key)
+
         yield
-        while True:
-            yield (self.hint, self.popup)
+        with grammar_node:
+            while True:
+                markup = grammar_node.send(
+                    (
+                        tags,
+                        state.buffer,
+                        state.tokens,
+                        state.typeahead if not state.clean else "",
+                        state.pos,
+                        state.highlighted,
+                        state.clean,
+                    )
+                )
+                yield markup, state.key_pressed_time
 
 
-class MsgBox:
+class MsgRenderer:
     def __init__(self, rich, settings):
         r"""Constructor.
 
@@ -2221,18 +2218,17 @@ class MsgBox:
         self.settings = settings
 
     @dn.datanode
-    def load(self, state_node):
-        hint_node = starcache(self.markup_hint, lambda msgs, hint: hint)
-        popup_node = starcache(self.markup_popup)
-        with state_node, hint_node, popup_node:
+    def render_msg(self, state):
+        hint_node = starcache(self.render_hint, lambda msgs, hint: hint)
+        popup_node = starcache(self.render_popup)
+        with hint_node, popup_node:
             (view, msgs, logs), time, width = yield
             while True:
-                hint, popup = state_node.send()
-                hint_node.send((msgs, hint))
-                logs.extend(popup_node.send((popup,)))
+                hint_node.send((msgs, state.hint))
+                logs.extend(popup_node.send((state.popup,)))
                 (view, msgs, logs), time, width = yield (view, msgs, logs)
 
-    def markup_hint(self, msgs, hint):
+    def render_hint(self, msgs, hint):
         r"""Render hint.
 
         Parameters
@@ -2317,7 +2313,7 @@ class MsgBox:
 
         return msgs
 
-    def markup_popup(self, popup):
+    def render_popup(self, popup):
         r"""Render popup.
 
         Parameters
