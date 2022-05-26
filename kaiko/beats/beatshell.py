@@ -943,7 +943,7 @@ class BeatInput:
         icon = widget_factory.create(shell_settings.prompt.icons)
         marker = widget_factory.create(shell_settings.prompt.marker)
 
-        state = ViewState(self, stroke, metronome)
+        state = ViewState(self, self.rich, stroke, metronome)
         textbox = TextBox(self.rich, state, caret, shell_settings)
         msgbox = MsgBox(self.rich, state, shell_settings)
         prompt = BeatPrompt(state, textbox, msgbox, icon, marker, shell_settings)
@@ -2017,20 +2017,22 @@ class BeatPrompt:
         renderer.add_drawer(self.state.load(), zindex=())
         renderer.add_texts(self.icon, icon_mask, zindex=(2,))
         renderer.add_texts(self.marker, marker_mask, zindex=(3,))
-        renderer.add_texts(self.textbox.load(), input_mask, zindex=(0,))
+        renderer.add_texts(self.textbox.load(self.state.render_text()), input_mask, zindex=(0,))
         renderer.add_drawer(self.msgbox.load(), zindex=(1,))
 
 
 class ViewState:
-    def __init__(self, input, stroke, metronome):
+    def __init__(self, input, rich, stroke, metronome):
         r"""Constructor.
 
         Parameters
         ----------
         input : BeatInput
+        rich : RichParser
         stroke : BeatStroke
         metronome : engines.Metronome
         """
+        self.rich = rich
         self.input = input
         self.stroke = stroke
         self.metronome = metronome
@@ -2088,6 +2090,115 @@ class ViewState:
             # fin
             if self.state == "FIN" and not self.fin_event.is_set():
                 self.fin_event.set()
+
+    @dn.datanode
+    def render_text(self):
+        tags = dict(self.rich.tags)
+        tags["caret"] = Caret
+
+        def grammar_key(tags, buffer, tokens, typeahead, pos, highlighted, clean):
+            return (
+                id(buffer),
+                typeahead,
+                pos,
+                highlighted,
+                clean,
+            )
+        grammar_node = starcache(self._render_grammar, grammar_key)
+
+        yield
+        with grammar_node:
+            while True:
+                yield grammar_node.send(
+                    (
+                        tags,
+                        self.buffer,
+                        self.tokens,
+                        self.typeahead if not self.clean else "",
+                        self.pos,
+                        self.highlighted,
+                        self.clean,
+                    )
+                )
+
+    @staticmethod
+    def _render_grammar(tags, buffer, tokens, typeahead, pos, highlighted, clean):
+        def _wrap(buffer):
+            res = [""]
+            for ch in buffer:
+                if isinstance(ch, str) and isinstance(res[-1], str):
+                    res[-1] = res[-1] + ch
+                else:
+                    res.append(ch)
+            if not res[0]:
+                res.pop(0)
+            return tuple(mu.Text(e) if isinstance(e, str) else e for e in res)
+
+        length = len(buffer)
+        buffer = list(buffer)
+
+        for token in tokens:
+            # markup whitespace
+            for index in range(token.mask.start, token.mask.stop):
+                if buffer[index] == " ":
+                    buffer[index] = tags["ws"]()
+
+            # markup escape
+            for index in token.quotes:
+                if buffer[index] == "'":
+                    buffer[index] = tags["qt"]()
+                elif buffer[index] == "\\":
+                    buffer[index] = tags["bs"]()
+                else:
+                    assert False
+
+        # markup caret, typeahead
+        typeahead_markup = tags["typeahead"]((mu.Text(typeahead),))
+        if not clean:
+            if pos != length:
+                buffer[pos] = tags["caret"](_wrap([buffer[pos]]))
+            elif not typeahead:
+                typeahead_markup = tags["caret"]((mu.Text(" "),))
+            else:
+                typeahead_markup = tags["typeahead"]((tags["caret"]((mu.Text(typeahead[0]),)), mu.Text(typeahead[1:])))
+
+        res = []
+        prev_index = 0
+        for n, token in enumerate(tokens):
+            # markup delimiter
+            delimiter_markup = mu.Group(_wrap(buffer[prev_index : token.mask.start]))
+            res.append(delimiter_markup)
+            prev_index = token.mask.stop
+
+            # markup token
+            token_markup = mu.Group(_wrap(buffer[token.mask]))
+            if token.type is None:
+                if not clean and token.mask.stop == length:
+                    token_markup = tags["unfinished"](token_markup.children)
+                else:
+                    token_markup = tags["unknown"](token_markup.children)
+            elif token.type is cmd.TOKEN_TYPE.COMMAND:
+                token_markup = tags["cmd"](token_markup.children)
+            elif token.type is cmd.TOKEN_TYPE.KEYWORD:
+                token_markup = tags["kw"](token_markup.children)
+            elif token.type is cmd.TOKEN_TYPE.ARGUMENT:
+                token_markup = tags["arg"](token_markup.children)
+            else:
+                assert False
+
+            # markup highlight
+            if n == highlighted:
+                token_markup = tags["highlight"]((token_markup,))
+
+            res.append(token_markup)
+
+        else:
+            delimiter_markup = mu.Group(_wrap(buffer[prev_index:]))
+            res.append(delimiter_markup)
+
+        markup = mu.Group((*res, typeahead_markup))
+        markup = markup.expand()
+        return markup
 
 
 class MsgBox:
@@ -2250,21 +2361,8 @@ class TextBox:
         self.caret = caret
         self.settings = settings
 
-        self.textbox_pipeline = dn.DynamicPipeline()
-
-    def load(self):
-        self.textbox_pipeline.add_node(self.text_handler(), zindex=(0,))
-
-        return self.textbox_node(self.textbox_pipeline)
-
-    @staticmethod
-    @dn.datanode
-    def textbox_node(pipeline):
-        time, ran = yield
-        with pipeline:
-            while True:
-                texts = pipeline.send(([], time, ran))
-                time, ran = yield texts
+    def load(self, text):
+        return self.text_handler(text)
 
     def text_geometry(self, markup, is_in_caret=False, res=(0, None)):
         if isinstance(markup, mu.Text):
@@ -2301,6 +2399,11 @@ class TextBox:
         while True:
             text_width, caret_slice, box_width = yield
 
+            if caret_slice is None:
+                self.left_overflow = False
+                self.right_overflow = False
+                continue
+
             # adjust text offset
             if text_width - self.text_offset < box_width - right_text_margin:
                 # from: ......[....I...    ]
@@ -2335,115 +2438,10 @@ class TextBox:
                 res.append((box_width - right_ellipsis_width, right_ellipsis))
             box_width = yield res
 
-    def render_grammar(self, buffer, tokens, typeahead, pos, highlighted):
-        r"""Markup syntax of input text.
-
-        Parameters
-        ----------
-        buffer : list of str
-        tokens : list of ShToken
-        typeahead : str
-        pos : int
-        highlighted : int
-
-        Returns
-        -------
-        markup : markups.Markup
-            The syntax highlighted input text.
-        """
-        tags = dict(self.rich.tags)
-        tags["caret"] = Caret
-
-        def _wrap(buffer):
-            res = [""]
-            for ch in buffer:
-                if isinstance(ch, str) and isinstance(res[-1], str):
-                    res[-1] = res[-1] + ch
-                else:
-                    res.append(ch)
-            if not res[0]:
-                res.pop(0)
-            return tuple(mu.Text(e) if isinstance(e, str) else e for e in res)
-
-        length = len(buffer)
-        buffer = list(buffer)
-
-        for token in tokens:
-            # markup whitespace
-            for index in range(token.mask.start, token.mask.stop):
-                if buffer[index] == " ":
-                    buffer[index] = tags["ws"]()
-
-            # markup escape
-            for index in token.quotes:
-                if buffer[index] == "'":
-                    buffer[index] = tags["qt"]()
-                elif buffer[index] == "\\":
-                    buffer[index] = tags["bs"]()
-                else:
-                    assert False
-
-        # markup caret
-        if pos != length:
-            buffer[pos] = tags["caret"](_wrap([buffer[pos]]))
-
-        res = []
-        prev_index = 0
-        for n, token in enumerate(tokens):
-            # markup delimiter
-            delimiter_markup = mu.Group(_wrap(buffer[prev_index : token.mask.start]))
-            res.append(delimiter_markup)
-            prev_index = token.mask.stop
-
-            # markup token
-            token_markup = mu.Group(_wrap(buffer[token.mask]))
-            if token.type is None:
-                if token.mask.stop == length:
-                    token_markup = tags["unfinished"](token_markup.children)
-                else:
-                    token_markup = tags["unknown"](token_markup.children)
-            elif token.type is cmd.TOKEN_TYPE.COMMAND:
-                token_markup = tags["cmd"](token_markup.children)
-            elif token.type is cmd.TOKEN_TYPE.KEYWORD:
-                token_markup = tags["kw"](token_markup.children)
-            elif token.type is cmd.TOKEN_TYPE.ARGUMENT:
-                token_markup = tags["arg"](token_markup.children)
-            else:
-                assert False
-
-            # markup highlight
-            if n == highlighted:
-                token_markup = tags["highlight"]((token_markup,))
-
-            res.append(token_markup)
-
-        else:
-            delimiter_markup = mu.Group(_wrap(buffer[prev_index:]))
-            res.append(delimiter_markup)
-
-        # markup typeahead
-        if pos != length:
-            typeahead_markup = tags["typeahead"]((mu.Text(typeahead),))
-        elif not typeahead:
-            typeahead_markup = tags["caret"]((mu.Text(" "),))
-        else:
-            typeahead_markup = tags["typeahead"]((tags["caret"]((mu.Text(typeahead[0]),)), mu.Text(typeahead[1:])))
-        res.append(typeahead_markup)
-
-        return mu.Group(tuple(res))
-
-    def render_caret(self, markup, caret, clean):
-        if clean:
-            markup = markup.traverse(
-                self.rich.tags["unfinished"],
-                lambda m: self.rich.tags["unknown"](m.children),
-            )
-
-        markup = markup.expand()
-
+    def render_caret(self, markup, caret):
         text_width, caret_slice = self.text_geometry(markup)
 
-        if caret is not None and not clean:
+        if caret is not None:
             markup = markup.traverse(
                 Caret, lambda m: mu.replace_slot(caret, mu.Group(m.children))
             )
@@ -2454,15 +2452,7 @@ class TextBox:
         return markup, text_width, caret_slice
 
     @dn.datanode
-    def text_handler(self):
-        grammar_key = lambda buffer, tokens, typeahead, pos, highlighted: (
-            id(buffer),
-            typeahead,
-            pos,
-            highlighted,
-        )
-        grammar_node = starcache(self.render_grammar, grammar_key)
-
+    def text_handler(self, text_node):
         caret_widget_node = dn.DataNode.wrap(self.caret)
         caret_node = starcache(self.render_caret)
 
@@ -2474,29 +2464,17 @@ class TextBox:
         offset_node = self.adjust_text_offset(left_input_margin, right_input_margin)
         overflow_node = self.overflow_handler(ellipses)
 
-        with grammar_node, caret_node, caret_widget_node, offset_node, overflow_node:
-            texts, time, ran = yield
+        with text_node, caret_node, caret_widget_node, offset_node, overflow_node:
+            time, ran = yield
             while True:
-                typeahead = self.state.typeahead if not self.state.clean else ""
-
-                markup = grammar_node.send(
-                    (
-                        self.state.buffer,
-                        self.state.tokens,
-                        typeahead,
-                        self.state.pos,
-                        self.state.highlighted,
-                    )
-                )
+                markup = text_node.send()
 
                 caret = caret_widget_node.send((time, self.state.key_pressed_time))
-                markup, total_width, caret_slice = caret_node.send((markup, caret, self.state.clean))
+                markup, total_width, caret_slice = caret_node.send((markup, caret))
 
                 box_width = len(ran)
                 offset_node.send((total_width, caret_slice, box_width))
                 overflow_markups = overflow_node.send(box_width)
 
-                texts.append((-self.text_offset, markup))
-                texts.extend(overflow_markups)
-                texts, time, ran = yield texts
+                time, ran = yield [(-self.text_offset, markup), *overflow_markups]
 
