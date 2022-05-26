@@ -846,6 +846,8 @@ class BeatInput:
         The input state.
     modified_counter : int
         The event counter for modifying buffer.
+    key_pressed_counter : int
+        The event counter for key pressing.
     """
 
     def __init__(
@@ -893,6 +895,7 @@ class BeatInput:
         self.state = "FIN"
         self.lock = threading.RLock()
         self.modified_counter = 0
+        self.key_pressed_counter = 0
         self.new_session()
 
     @property
@@ -943,7 +946,7 @@ class BeatInput:
         icon = widget_factory.create(shell_settings.prompt.icons)
         marker = widget_factory.create(shell_settings.prompt.marker)
 
-        state = ViewState(self, stroke)
+        state = ViewState(self)
         text_renderer = TextRenderer(self.rich)
         msg_renderer = MsgRenderer(self.rich, shell_settings)
         textbox = TextBox(self.rich, caret, shell_settings)
@@ -1895,7 +1898,6 @@ class BeatStroke:
     def __init__(self, input, settings):
         self.input = input
         self.settings = settings
-        self.key_event = 0
 
     def register(self, controller):
         r"""Register handler to the given controller.
@@ -1922,7 +1924,7 @@ class BeatStroke:
 
     def keypress_handler(self):
         def keypress(_):
-            self.key_event += 1
+            self.input.key_pressed_counter += 1
 
         return keypress
 
@@ -2024,16 +2026,14 @@ class BeatPrompt:
 
 
 class ViewState:
-    def __init__(self, input, stroke):
+    def __init__(self, input):
         r"""Constructor.
 
         Parameters
         ----------
         input : BeatInput
-        stroke : BeatStroke
         """
         self.input = input
-        self.stroke = stroke
 
         # input state
         self.fin_event = threading.Event()
@@ -2050,8 +2050,8 @@ class ViewState:
     @dn.datanode
     def load(self):
         modified_counter = None
+        key_pressed_counter = None
         res, time, width = yield
-        key_event = self.stroke.key_event
         self.key_pressed_time = time - 100.0
 
         while True:
@@ -2079,9 +2079,9 @@ class ViewState:
                     self.popup.append(msg)
                 self.state = self.input.state
 
-            if self.stroke.key_event != key_event:
-                key_event = self.stroke.key_event
-                self.key_pressed_time = time
+                if self.input.key_pressed_counter != key_pressed_counter:
+                    key_pressed_counter = self.input.key_pressed_counter
+                    self.key_pressed_time = time
 
             res, time, width = yield res
 
