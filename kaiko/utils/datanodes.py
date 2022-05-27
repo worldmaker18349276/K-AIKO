@@ -427,6 +427,44 @@ def merge(*nodes):
                 return
 
 
+# functional nodes
+@datanode
+def cache(node, key=lambda a: a):
+    node = DataNode.wrap(node)
+    with node:
+        data = yield
+        kee = key(data)
+        value = node.send(data)
+
+        while True:
+            data = yield value
+            kee_ = key(data)
+            if kee == kee_:
+                continue
+            kee = kee_
+            value = node.send(data)
+
+
+def map(func, **kw):
+    func = functools.partial(func, **kw)
+    return DataNode.from_func(func)
+
+
+def starmap(func, **kw):
+    func = functools.partial(func, **kw)
+    return DataNode.from_func(lambda args: func(*args))
+
+
+def cachemap(func, key=lambda a: a, **kw):
+    func = functools.partial(func, **kw)
+    return cache(func, key=key)
+
+
+def starcachemap(func, key=lambda *a: a, **kw):
+    func = functools.partial(func, **kw)
+    return cache(lambda args: func(*args), key=lambda args: key(*args))
+
+
 # signal analysis
 @datanode
 def frame(win_length, hop_length):

@@ -1892,23 +1892,6 @@ class BeatStroke:
         return handler
 
 
-@dn.datanode
-def starcache(func, key_func=lambda *a: a, **kw):
-    func = functools.partial(func, **kw)
-
-    data = yield
-    key = key_func(*data)
-    value = func(*data)
-
-    while True:
-        data = yield value
-        key_ = key_func(*data)
-        if key == key_:
-            continue
-        key = key_
-        value = func(*data)
-
-
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
@@ -2117,7 +2100,7 @@ class TextRenderer:
                 highlighted,
                 clean,
             )
-        grammar_node = starcache(self._render_grammar, grammar_key)
+        grammar_node = dn.starcachemap(self._render_grammar, key=grammar_key)
 
         with grammar_node:
             yield
@@ -2163,16 +2146,16 @@ class MsgRenderer:
         desc = self.rich.parse(self.settings.desc_message, slotted=True)
         info = self.rich.parse(self.settings.info_message, slotted=True)
 
-        render_hint = starcache(
+        render_hint = dn.starcachemap(
             self.render_hint,
-            lambda msgs, hint: hint,
+            key=lambda msgs, hint: hint,
             message_max_lines=message_max_lines,
             sugg_lines=sugg_lines,
             sugg_items=sugg_items,
             desc=desc,
             info=info,
         )
-        render_popup = starcache(self.render_popup, desc=desc, info=info)
+        render_popup = dn.starcachemap(self.render_popup, desc=desc, info=info)
 
         with render_hint, render_popup:
             (view, msgs, logs), time, width = yield
@@ -2396,8 +2379,8 @@ class TextBox:
         right_input_margin = max(margins[1], right_ellipsis_width)
 
         caret_widget = dn.DataNode.wrap(self.caret_widget)
-        text_geometry = starcache(self.text_geometry)
-        render_caret = starcache(self.render_caret)
+        text_geometry = dn.starcachemap(self.text_geometry)
+        render_caret = dn.starcachemap(self.render_caret)
 
         adjust_offset = self.adjust_offset(left_input_margin, right_input_margin)
         draw_ellipses = self.draw_ellipses(left_ellipsis, right_ellipsis, right_ellipsis_width)
