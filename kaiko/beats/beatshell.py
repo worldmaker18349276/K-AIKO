@@ -204,98 +204,6 @@ def shlexer_quoting(compreply, state=SHLEXER_STATE.SPACED):
     return raw if partial else raw + " "
 
 
-def shlexer_markup(buffer, tokens, typeahead, tags):
-    r"""Markup shell-like grammar.
-
-    Parameters
-    ----------
-    buffer : list of str
-    tokens : list of ShToken
-    typeahead : str
-    tags : dict
-        The dictionary of tags:
-        "ws" maps to whitespace tag;
-        "qt" maps to quotation tag;
-        "bs" maps to backspace tag;
-        "cmd" maps to command tag;
-        "kw" maps to keyword tag;
-        "arg" maps to argument tag;
-        "unfinished" map to unfinished tag;
-        "unknown" map to unknown tag;
-        "typeahead" map to typeahead tag.
-
-    Returns
-    -------
-    markup : markups.Markup
-        The rendered input text.
-    """
-    # result  ::=  Delimiters + Token + Delimiters + ... + Delimiters + Typeahead
-    # Delimiters  ::=  Group[QuasiText]
-    # Token  ::=  Unknown[QuasiText] | Command[QuasiText] | Keyword[QuasiText] | Argument[QuasiText]
-    # QuasiText  ::=  Text | Whitespace | Quotation | Backslash
-
-    def _wrap(buffer):
-        res = [""]
-        for ch in buffer:
-            if isinstance(ch, str) and isinstance(res[-1], str):
-                res[-1] = res[-1] + ch
-            else:
-                res.append(ch)
-        if not res[0]:
-            res.pop(0)
-        return tuple(mu.Text(e) if isinstance(e, str) else e for e in res)
-
-    length = len(buffer)
-    buffer = list(buffer)
-    if not typeahead:
-        buffer.append(" ")
-
-    for token in tokens:
-        # markup whitespace
-        for index in range(token.mask.start, token.mask.stop):
-            if buffer[index] == " ":
-                buffer[index] = tags["ws"]()
-
-        # markup escape
-        for index in token.quotes:
-            if buffer[index] == "'":
-                buffer[index] = tags["qt"]()
-            elif buffer[index] == "\\":
-                buffer[index] = tags["bs"]()
-            else:
-                assert False
-
-    markup_children = []
-    prev_index = 0
-    for n, token in enumerate(tokens):
-        # markup delimiter
-        markup_children.append(mu.Group(_wrap(buffer[prev_index : token.mask.start])))
-        prev_index = token.mask.stop
-
-        # markup token
-        if token.type is None:
-            if token.mask.stop == length:
-                markup_children.append(tags["unfinished"](_wrap(buffer[token.mask])))
-            else:
-                markup_children.append(tags["unknown"](_wrap(buffer[token.mask])))
-        elif token.type is cmd.TOKEN_TYPE.COMMAND:
-            markup_children.append(tags["cmd"](_wrap(buffer[token.mask])))
-        elif token.type is cmd.TOKEN_TYPE.KEYWORD:
-            markup_children.append(tags["kw"](_wrap(buffer[token.mask])))
-        elif token.type is cmd.TOKEN_TYPE.ARGUMENT:
-            markup_children.append(tags["arg"](_wrap(buffer[token.mask])))
-        else:
-            assert False
-
-    else:
-        markup_children.append(mu.Group(_wrap(buffer[prev_index:])))
-
-        # markup typeahead
-        markup_children.append(tags["typeahead"]((mu.Text(typeahead),)))
-
-    return mu.Group(tuple(markup_children))
-
-
 # widgets
 @dataclasses.dataclass
 class PatternsWidgetSettings:
@@ -379,20 +287,27 @@ class CaretWidget:
         blinking = rich.parse(self.settings.blinking_appearance, slotted=True)
         highlighted = rich.parse(self.settings.highlighted_appearance, slotted=True)
 
-        def caret_node(arg):
-            time, key_pressed_time = arg
-            beat = metronome.beat(time)
-            key_pressed_beat = metronome.beat(key_pressed_time) // -1 * -1
-            # don't blink while key pressing
-            if beat < key_pressed_beat or beat % 1 < caret_blink_ratio:
-                if beat % 4 < 1:
-                    return highlighted
-                else:
-                    return blinking
-            else:
-                return normal
+        @dn.datanode
+        def caret_node():
+            time, key_pressed = yield
+            key_pressed_beat = 0
+            while True:
+                beat = metronome.beat(time)
 
-        return caret_node
+                # don't blink while key pressing
+                if beat < key_pressed_beat or beat % 1 < caret_blink_ratio:
+                    if beat % 4 < 1:
+                        res = highlighted
+                    else:
+                        res = blinking
+                else:
+                    res = normal
+
+                time, key_pressed = yield res
+                if key_pressed:
+                    key_pressed_beat = metronome.beat(time) // -1 * -1
+
+        return caret_node()
 
 
 @dataclasses.dataclass
@@ -467,6 +382,24 @@ BeatshellIconWidgetSettings = Union[
 
 # shell
 class BeatShellSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    preview_song : bool
+        Whether to preview the song when selected.
+
+    history_size : int
+        The maximum history size.
+
+    debug_monitor : bool
+        Whether to monitor renderer.
+    """
+    preview_song: bool = True
+
+    history_size: int = 500
+
+    debug_monitor: bool = False
+
     @cfg.subconfig
     class input(cfg.Configurable):
         r"""
@@ -478,12 +411,6 @@ class BeatShellSettings(cfg.Configurable):
             The key for help.
         autocomplete_keys : tuple of str and str and str
             The keys for finding the next, previous and canceling suggestions.
-
-        preview_song : bool
-            Whether to preview the song when selected.
-
-        history_size : int
-            The maximum history size.
 
         keymap : dict from str to str
             The keymap of beatshell. The key of dict is the keystroke, and the
@@ -499,10 +426,6 @@ class BeatShellSettings(cfg.Configurable):
         confirm_key: str = "Enter"
         help_key: str = "Alt_Enter"
         autocomplete_keys: Tuple[str, str, str] = ("Tab", "Shift_Tab", "Esc")
-
-        preview_song: bool = True
-
-        history_size: int = 500
 
         keymap: Dict[str, str] = {
             "Backspace": "input.backspace()",
@@ -535,8 +458,10 @@ class BeatShellSettings(cfg.Configurable):
             The text width of icon.
         marker_width : int
             The text width of marker.
-        input_margin : int
-            The width of margin of input field.
+        input_margins : tuple of int and int
+            The width of left/right margin of text box.
+        overflow_ellipses : tuple of str and str
+            Texts to display when overflowing left/right.
 
         icons : BeatShellIconWidgetSettings
             The appearances of icon.
@@ -550,7 +475,8 @@ class BeatShellSettings(cfg.Configurable):
 
         icon_width: int = 5
         marker_width: int = 2
-        input_margin: int = 3
+        input_margins: Tuple[int, int] = (3, 3)
+        overflow_ellipses: Tuple[str, str] = ("…", "…")
 
         icons: BeatshellIconWidgetSettings = PatternsWidgetSettings()
         marker: MarkerWidgetSettings = MarkerWidgetSettings()
@@ -615,8 +541,6 @@ class BeatShellSettings(cfg.Configurable):
 
         suggestions_lines: int = 8
         suggestion_items: Tuple[str, str] = ("• [slot/]", "• [invert][slot/][/]")
-
-    debug_monitor: bool = False
 
 
 class Hint:
@@ -850,6 +774,9 @@ class BeatInput:
         The event counter for key pressing.
     """
 
+    history_file_path = ".beatshell-history"
+    monitor_file_path = "monitor/prompt.csv"
+
     def __init__(
         self,
         command_parser_getter,
@@ -881,7 +808,7 @@ class BeatInput:
         self.cache_dir = cache_dir
         self._shell_settings_getter = shell_settings_getter
         self._devices_settings_getter = devices_settings_getter
-        self.history = HistoryManager(self.cache_dir / ".beatshell-history")
+        self.history = HistoryManager(self.cache_dir / self.history_file_path)
         self.buffers = [[]]
         self.buffer_index = -1
         self.buffer = self.buffers[0]
@@ -921,7 +848,7 @@ class BeatInput:
         # engines
         debug_monitor = shell_settings.debug_monitor
         renderer_monitor = (
-            engines.Monitor(self.cache_dir / "monitor" / "prompt.csv")
+            engines.Monitor(self.cache_dir / self.monitor_file_path)
             if debug_monitor
             else None
         )
@@ -958,7 +885,7 @@ class BeatInput:
         self.semantic_analyzer.update_parser(self.command_parser_getter())
 
         groups = self.semantic_analyzer.get_all_groups()
-        history_size = self.shell_settings.input.history_size
+        history_size = self.shell_settings.history_size
         self.buffers = self.history.read_history(groups, history_size)
         self.buffers.append([])
         self.buffer_index = -1
@@ -1173,7 +1100,7 @@ class BeatInput:
 
     @locked
     def update_preview(self):
-        if not self.shell_settings.input.preview_song:
+        if not self.shell_settings.preview_song:
             return
         if self.hint_state is None:
             self.preview_handler(None)
@@ -1966,7 +1893,9 @@ class BeatStroke:
 
 
 @dn.datanode
-def starcache(func, key_func=lambda *a: a):
+def starcache(func, key_func=lambda *a: a, **kw):
+    func = functools.partial(func, **kw)
+
     data = yield
     key = key_func(*data)
     value = func(*data)
@@ -2003,13 +1932,17 @@ class BeatPrompt:
 
         state = ViewState(self.input)
         text_renderer = TextRenderer(self.rich)
-        msg_renderer = MsgRenderer(self.rich, self.settings)
-        textbox = TextBox(self.rich, caret, self.settings)
+        msg_renderer = MsgRenderer(self.rich, self.settings.text)
+        textbox = TextBox(
+            self.rich,
+            caret,
+            self.settings.prompt.input_margins,
+            self.settings.prompt.overflow_ellipses,
+        )
 
         # layout
         icon_width = self.settings.prompt.icon_width
         marker_width = self.settings.prompt.marker_width
-        input_margin = self.settings.prompt.input_margin
 
         [
             icon_mask,
@@ -2036,7 +1969,7 @@ class ViewState:
         self.input = input
 
         # input state
-        self.key_pressed_time = 0.0
+        self.key_pressed = False
         self.buffer = []
         self.tokens = []
         self.pos = 0
@@ -2051,7 +1984,7 @@ class ViewState:
         modified_counter = None
         key_pressed_counter = None
         res, time, width = yield
-        self.key_pressed_time = time - 100.0
+        self.key_pressed = False
 
         while True:
             with self.input.lock:
@@ -2078,9 +2011,8 @@ class ViewState:
                     self.popup.append(msg)
                 self.state = self.input.state
 
-                if self.input.key_pressed_counter != key_pressed_counter:
-                    key_pressed_counter = self.input.key_pressed_counter
-                    self.key_pressed_time = time
+                self.key_pressed = self.input.key_pressed_counter != key_pressed_counter
+                key_pressed_counter = self.input.key_pressed_counter
 
             res, time, width = yield res
 
@@ -2187,8 +2119,8 @@ class TextRenderer:
             )
         grammar_node = starcache(self._render_grammar, grammar_key)
 
-        yield
         with grammar_node:
+            yield
             while True:
                 markup = grammar_node.send(
                     (
@@ -2201,7 +2133,7 @@ class TextRenderer:
                         state.clean,
                     )
                 )
-                yield markup, state.key_pressed_time
+                yield markup, state.key_pressed
 
 
 class MsgRenderer:
@@ -2211,44 +2143,54 @@ class MsgRenderer:
         Parameters
         ----------
         rich : markups.RichParser
-        settings : BeatShellSettings
+        settings : BeatShellSettings.text
         """
         self.rich = rich
         self.settings = settings
 
     @dn.datanode
     def render_msg(self, state):
-        hint_node = starcache(self.render_hint, lambda msgs, hint: hint)
-        popup_node = starcache(self.render_popup)
-        with hint_node, popup_node:
-            (view, msgs, logs), time, width = yield
-            while True:
-                hint_node.send((msgs, state.hint))
-                logs.extend(popup_node.send((state.popup,)))
-                (view, msgs, logs), time, width = yield (view, msgs, logs)
+        message_max_lines = self.settings.message_max_lines
 
-    def render_hint(self, msgs, hint):
-        r"""Render hint.
-
-        Parameters
-        ----------
-        msgs : list of Markup
-            The rendered hint.
-        hint : Hint
-        """
-        message_max_lines = self.settings.text.message_max_lines
-
-        sugg_lines = self.settings.text.suggestions_lines
-        sugg_items = self.settings.text.suggestion_items
+        sugg_lines = self.settings.suggestions_lines
+        sugg_items = self.settings.suggestion_items
 
         sugg_items = (
             self.rich.parse(sugg_items[0], slotted=True),
             self.rich.parse(sugg_items[1], slotted=True),
         )
 
-        desc = self.rich.parse(self.settings.text.desc_message, slotted=True)
-        info = self.rich.parse(self.settings.text.info_message, slotted=True)
+        desc = self.rich.parse(self.settings.desc_message, slotted=True)
+        info = self.rich.parse(self.settings.info_message, slotted=True)
 
+        render_hint = starcache(
+            self.render_hint,
+            lambda msgs, hint: hint,
+            message_max_lines=message_max_lines,
+            sugg_lines=sugg_lines,
+            sugg_items=sugg_items,
+            desc=desc,
+            info=info,
+        )
+        render_popup = starcache(self.render_popup, desc=desc, info=info)
+
+        with render_hint, render_popup:
+            (view, msgs, logs), time, width = yield
+            while True:
+                render_hint.send((msgs, state.hint))
+                logs.extend(render_popup.send((state.popup,)))
+                (view, msgs, logs), time, width = yield (view, msgs, logs)
+
+    def render_hint(
+        self,
+        msgs,
+        hint,
+        message_max_lines,
+        sugg_lines,
+        sugg_items,
+        desc,
+        info,
+    ):
         msgs.clear()
 
         # draw hint
@@ -2312,16 +2254,7 @@ class MsgRenderer:
 
         return msgs
 
-    def render_popup(self, popup):
-        r"""Render popup.
-
-        Parameters
-        ----------
-        popup : list of DescHint or InfoHint
-        """
-        desc = self.rich.parse(self.settings.text.desc_message, slotted=True)
-        info = self.rich.parse(self.settings.text.info_message, slotted=True)
-
+    def render_popup(self, popup, desc, info):
         logs = []
 
         # draw popup
@@ -2347,38 +2280,44 @@ class MsgRenderer:
 
 
 class TextBox:
-    def __init__(self, rich, caret, settings):
+    def __init__(self, rich, caret_widget, margins, ellipses):
         r"""Constructor.
 
         Parameters
         ----------
         rich : markups.RichParser
-        caret : CaretWidget
-        settings : BeatShellSettings
+        caret_widget : dn.DataNode
+        margins : tuple of int and int
+        ellipses : tuple of str and str
         """
         self.rich = rich
-        self.caret = caret
-        self.settings = settings
+        self.caret_widget = caret_widget
+        self.margins = margins
+        self.ellipses = ellipses
 
-    def text_geometry(self, markup, is_in_caret=False, res=(0, None)):
+    def text_geometry(self, markup, text_width=0, caret_masks=()):
         if isinstance(markup, mu.Text):
             w = self.rich.widthof(markup.string)
             if w == -1:
                 raise TypeError(f"invalid text: {markup.string!r}")
-            res0 = res[0] + w
-            res1 = slice(res[1].start, res[1].stop + w) if is_in_caret else res[1]
-            return res0, res1
+            text_width += w
+            return text_width, caret_masks
 
         elif isinstance(markup, (mu.Group, mu.SGR)):
+            res = text_width, caret_masks
             for child in markup.children:
-                res = self.text_geometry(child, res=res)
+                res = self.text_geometry(child, *res)
             return res
 
         elif isinstance(markup, Caret):
-            res = (res[0], slice(res[0], res[0]))
+            start = text_width
+            res = text_width, caret_masks
             for child in markup.children:
-                res = self.text_geometry(child, is_in_caret=True, res=res)
-            return res
+                res = self.text_geometry(child, *res)
+            text_width, caret_masks = res
+            stop = text_width
+            caret_masks = (*caret_masks, slice(start, stop))
+            return text_width, caret_masks
 
         elif isinstance(markup, (mu.CSI, mu.ControlCharacter)):
             raise TypeError(f"invalid markup type: {type(markup)}")
@@ -2387,44 +2326,40 @@ class TextBox:
             raise TypeError(f"unknown markup type: {type(markup)}")
 
     @dn.datanode
-    def adjust_text_offset(self, left_text_margin, right_text_margin):
+    def adjust_offset(self, left_text_margin, right_text_margin):
         self.text_offset = 0
         self.left_overflow = False
         self.right_overflow = False
 
         while True:
-            text_width, caret_slice, box_width = yield
+            text_width, caret_masks, box_width = yield
 
-            if caret_slice is None:
-                self.left_overflow = False
-                self.right_overflow = False
-                continue
-
-            # adjust text offset
+            # trim empty space
             if text_width - self.text_offset < box_width - right_text_margin:
                 # from: ......[....I...    ]
                 #   to: ...[.......I... ]
                 self.text_offset = max(0, text_width - box_width + right_text_margin)
-            if caret_slice.stop - self.text_offset > box_width - right_text_margin:
+
+            # reveal the rightmost caret
+            caret_stop = max((caret_slice.stop for caret_slice in caret_masks), default=float("-inf"))
+            if caret_stop - self.text_offset > box_width - right_text_margin:
                 # from: ...[............]..I....
                 #   to: ........[..........I.]..
-                self.text_offset = caret_slice.stop - box_width + right_text_margin
-            elif caret_slice.start - self.text_offset < left_text_margin:
+                self.text_offset = caret_stop - box_width + right_text_margin
+
+            # reveal the leftmost caret
+            caret_start = min((caret_slice.start for caret_slice in caret_masks), default=float("inf"))
+            if caret_start - self.text_offset < left_text_margin:
                 # from: .....I...[............]...
                 #   to: ...[.I..........].........
-                self.text_offset = max(caret_slice.start - left_text_margin, 0)
+                self.text_offset = max(caret_start - left_text_margin, 0)
 
             # determine overflow
             self.left_overflow = self.text_offset > 0
             self.right_overflow = text_width - self.text_offset > box_width
 
     @dn.datanode
-    def overflow_handler(self, ellipses):
-        left_ellipsis = self.rich.parse(ellipses[0])
-        left_ellipsis_width = self.rich.widthof(ellipses[0])
-        right_ellipsis = self.rich.parse(ellipses[1])
-        right_ellipsis_width = self.rich.widthof(ellipses[1])
-
+    def draw_ellipses(self, left_ellipsis, right_ellipsis, right_ellipsis_width):
         box_width = yield
         while True:
             res = []
@@ -2434,43 +2369,51 @@ class TextBox:
                 res.append((box_width - right_ellipsis_width, right_ellipsis))
             box_width = yield res
 
-    def render_caret(self, markup, caret):
-        text_width, caret_slice = self.text_geometry(markup)
-
-        if caret is not None:
+    def render_caret(self, markup, caret_template):
+        if caret_template is not None:
             markup = markup.traverse(
-                Caret, lambda m: mu.replace_slot(caret, mu.Group(m.children))
+                Caret, lambda m: mu.replace_slot(caret_template, mu.Group(m.children))
             )
         else:
             markup = markup.traverse(Caret, lambda m: mu.Group(m.children))
 
-        markup = markup.expand()
-        return markup, text_width, caret_slice
+        return markup.expand()
 
     @dn.datanode
     def load(self, text_node):
-        caret_widget_node = dn.DataNode.wrap(self.caret)
-        caret_node = starcache(self.render_caret)
+        margins = self.margins
+        ellipses = self.ellipses
 
-        input_margin = self.settings.prompt.input_margin
-        ellipses = ("…", "…")
+        left_ellipsis = self.rich.parse(ellipses[0])
+        left_ellipsis_width = self.rich.widthof(left_ellipsis)
+        right_ellipsis = self.rich.parse(ellipses[1])
+        right_ellipsis_width = self.rich.widthof(right_ellipsis)
 
-        left_input_margin = max(input_margin, self.rich.widthof(ellipses[0]))
-        right_input_margin = max(input_margin, self.rich.widthof(ellipses[1]))
-        offset_node = self.adjust_text_offset(left_input_margin, right_input_margin)
-        overflow_node = self.overflow_handler(ellipses)
+        if left_ellipsis_width == -1 or right_ellipsis_width == -1:
+            raise ValueError(f"invalid ellipsis: {ellipses!r}")
 
-        with text_node, caret_node, caret_widget_node, offset_node, overflow_node:
+        left_input_margin = max(margins[0], left_ellipsis_width)
+        right_input_margin = max(margins[1], right_ellipsis_width)
+
+        caret_widget = dn.DataNode.wrap(self.caret_widget)
+        text_geometry = starcache(self.text_geometry)
+        render_caret = starcache(self.render_caret)
+
+        adjust_offset = self.adjust_offset(left_input_margin, right_input_margin)
+        draw_ellipses = self.draw_ellipses(left_ellipsis, right_ellipsis, right_ellipsis_width)
+
+        with text_node, text_geometry, caret_widget, render_caret, adjust_offset, draw_ellipses:
             time, ran = yield
             while True:
-                markup, key_pressed_time = text_node.send()
+                markup, key_pressed = text_node.send()
+                text_width, caret_masks = text_geometry.send((markup,))
 
-                caret = caret_widget_node.send((time, key_pressed_time))
-                markup, total_width, caret_slice = caret_node.send((markup, caret))
+                caret_template = caret_widget.send((time, key_pressed))
+                markup = render_caret.send((markup, caret_template))
 
                 box_width = len(ran)
-                offset_node.send((total_width, caret_slice, box_width))
-                overflow_markups = overflow_node.send(box_width)
+                adjust_offset.send((text_width, caret_masks, box_width))
+                ellipses_res = draw_ellipses.send(box_width)
 
-                time, ran = yield [(-self.text_offset, markup), *overflow_markups]
+                time, ran = yield [(-self.text_offset, markup), *ellipses_res]
 
