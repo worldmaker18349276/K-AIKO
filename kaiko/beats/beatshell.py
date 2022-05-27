@@ -933,26 +933,11 @@ class BeatInput:
             devices_settings.terminal,
             monitor=renderer_monitor,
         )
+
+        # handlers
         stroke = BeatStroke(self, shell_settings.input)
+        prompt = BeatPrompt(self, self.rich, shell_settings)
 
-        # prompt
-        t0 = shell_settings.prompt.t0
-        tempo = shell_settings.prompt.tempo
-        metronome = engines.Metronome(t0, tempo)
-
-        widget_factory = BeatshellWidgetFactory(self.rich, renderer, metronome)
-
-        caret = widget_factory.create(shell_settings.prompt.caret)
-        icon = widget_factory.create(shell_settings.prompt.icons)
-        marker = widget_factory.create(shell_settings.prompt.marker)
-
-        state = ViewState(self)
-        text_renderer = TextRenderer(self.rich)
-        msg_renderer = MsgRenderer(self.rich, shell_settings)
-        textbox = TextBox(self.rich, caret, shell_settings)
-        prompt = BeatPrompt(state, text_renderer, msg_renderer, textbox, icon, marker, shell_settings)
-
-        # execute
         stroke.register(controller)
         prompt.register(renderer)
 
@@ -963,7 +948,7 @@ class BeatInput:
             while not event.is_set():
                 yield
 
-        yield from dn.pipe(stop_when(state.fin_event), display_task, input_task).join()
+        yield from dn.pipe(stop_when(prompt.fin_event), display_task, input_task).join()
 
     @locked
     @onstate("FIN")
@@ -1998,16 +1983,30 @@ def starcache(func, key_func=lambda *a: a):
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
-    def __init__(self, state, text_renderer, msg_renderer, textbox, icon, marker, settings):
-        self.state = state
-        self.text_renderer = text_renderer
-        self.msg_renderer = msg_renderer
-        self.textbox = textbox
-        self.icon = icon
-        self.marker = marker
+    def __init__(self, input, rich, settings):
+        self.input = input
+        self.rich = rich
         self.settings = settings
+        self.fin_event = threading.Event()
 
     def register(self, renderer):
+        # widgets
+        t0 = self.settings.prompt.t0
+        tempo = self.settings.prompt.tempo
+        metronome = engines.Metronome(t0, tempo)
+
+        widget_factory = BeatshellWidgetFactory(self.rich, renderer, metronome)
+
+        caret = widget_factory.create(self.settings.prompt.caret)
+        icon = widget_factory.create(self.settings.prompt.icons)
+        marker = widget_factory.create(self.settings.prompt.marker)
+
+        state = ViewState(self.input)
+        text_renderer = TextRenderer(self.rich)
+        msg_renderer = MsgRenderer(self.rich, self.settings)
+        textbox = TextBox(self.rich, caret, self.settings)
+
+        # layout
         icon_width = self.settings.prompt.icon_width
         marker_width = self.settings.prompt.marker_width
         input_margin = self.settings.prompt.input_margin
@@ -2018,11 +2017,12 @@ class BeatPrompt:
             input_mask,
         ] = beatwidgets.layout([icon_width, marker_width, -1])
 
-        renderer.add_drawer(self.state.load(), zindex=())
-        renderer.add_texts(self.icon, icon_mask, zindex=(2,))
-        renderer.add_texts(self.marker, marker_mask, zindex=(3,))
-        renderer.add_texts(self.textbox.load(self.text_renderer.render_text(self.state)), input_mask, zindex=(0,))
-        renderer.add_drawer(self.msg_renderer.render_msg(self.state), zindex=(1,))
+        # register
+        renderer.add_drawer(state.load(self.fin_event), zindex=())
+        renderer.add_texts(icon, icon_mask, zindex=(2,))
+        renderer.add_texts(marker, marker_mask, zindex=(3,))
+        renderer.add_texts(textbox.load(text_renderer.render_text(state)), input_mask, zindex=(0,))
+        renderer.add_drawer(msg_renderer.render_msg(state), zindex=(1,))
 
 
 class ViewState:
@@ -2036,7 +2036,6 @@ class ViewState:
         self.input = input
 
         # input state
-        self.fin_event = threading.Event()
         self.key_pressed_time = 0.0
         self.buffer = []
         self.tokens = []
@@ -2048,7 +2047,7 @@ class ViewState:
         self.state = "EDIT"
 
     @dn.datanode
-    def load(self):
+    def load(self, fin_event):
         modified_counter = None
         key_pressed_counter = None
         res, time, width = yield
@@ -2086,8 +2085,8 @@ class ViewState:
             res, time, width = yield res
 
             # fin
-            if self.state == "FIN" and not self.fin_event.is_set():
-                self.fin_event.set()
+            if self.state == "FIN" and not fin_event.is_set():
+                fin_event.set()
 
 
 class TextRenderer:
