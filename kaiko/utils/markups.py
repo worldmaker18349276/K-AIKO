@@ -164,6 +164,39 @@ class Group(Markup):
         return traverse_children(self, markup_type, func, strategy=strategy)
 
 
+def join(contents):
+    r"""Join string and markup.
+
+    Parameters
+    ----------
+    contents : iterable of str and Markup
+
+    Returns
+    -------
+    result : Group
+    """
+    if isinstance(contents, str):
+        contents = [contents]
+
+    def join_iter(contents):
+        curr = ""
+        for content in contents:
+            if isinstance(content, str):
+                curr = curr + content
+            elif isinstance(content, Text):
+                curr = curr + content.string
+            elif isinstance(content, Markup):
+                yield Text(curr)
+                curr = ""
+                yield content
+            else:
+                raise TypeError(content)
+        if curr:
+            yield Text(curr)
+
+    return Group(tuple(join_iter(contents)))
+
+
 class Tag(Markup):
     @classmethod
     def parse(cls, param):

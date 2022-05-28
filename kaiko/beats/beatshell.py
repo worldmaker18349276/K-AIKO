@@ -529,19 +529,24 @@ class BeatShellSettings(cfg.Configurable):
             The markup template for the info message.
         message_max_lines : int
             The maximum number of lines of the message.
+        message_overflow_ellipsis : str
+            Texts to display when overflowing.
 
         suggestions_lines : int
             The maximum number of lines of the suggestions.
         suggestion_items : tuple of str and str
             The markup templates for the unselected/selected suggestion.
+        suggestion_overflow_ellipses : tuple of str and str
+            Texts to display when overflowing top/bottom.
         """
         desc_message: str = "[weight=dim][slot/][/]"
         info_message: str = f"{'─'*80}\n[slot/]\n{'─'*80}"
         message_max_lines: int = 16
+        message_overflow_ellipsis: str = "[weight=dim]…[/]"
 
         suggestions_lines: int = 8
         suggestion_items: Tuple[str, str] = ("• [slot/]", "• [invert][slot/][/]")
-
+        suggestion_overflow_ellipses: Tuple[str, str] = ("[weight=dim]ⵗ[/]", "[weight=dim]ⵗ[/]")
 
 class Hint:
     pass
@@ -1951,7 +1956,11 @@ class ViewState:
         """
         self.input = input
 
-        # input state
+    @dn.datanode
+    def load(self, fin_event):
+        modified_counter = None
+        key_pressed_counter = None
+
         self.key_pressed = False
         self.buffer = []
         self.tokens = []
@@ -1962,12 +1971,7 @@ class ViewState:
         self.hint = None
         self.state = "EDIT"
 
-    @dn.datanode
-    def load(self, fin_event):
-        modified_counter = None
-        key_pressed_counter = None
         res, time, width = yield
-        self.key_pressed = False
 
         while True:
             with self.input.lock:
@@ -2004,23 +2008,32 @@ class ViewState:
                 fin_event.set()
 
 
+@dataclasses.dataclass(frozen=True)
+class ByAddress:
+    value: object
+
+    def __eq__(self, other):
+        if not isinstance(other, ByAddress):
+            return False
+        return self.value is other.value
+
+
 class TextRenderer:
     def __init__(self, rich):
         self.rich = rich
 
     @staticmethod
-    def _render_grammar(tags, buffer, tokens, typeahead, pos, highlighted, clean):
-        def _wrap(buffer):
-            res = [""]
-            for ch in buffer:
-                if isinstance(ch, str) and isinstance(res[-1], str):
-                    res[-1] = res[-1] + ch
-                else:
-                    res.append(ch)
-            if not res[0]:
-                res.pop(0)
-            return tuple(mu.Text(e) if isinstance(e, str) else e for e in res)
+    def _render_grammar_key(buffer, tokens, typeahead, pos, highlighted, clean):
+        return (
+            ByAddress(buffer),
+            typeahead,
+            pos,
+            highlighted,
+            clean,
+        )
 
+    @staticmethod
+    def render_grammar(buffer, tokens, typeahead, pos, highlighted, clean, tags):
         length = len(buffer)
         buffer = list(buffer)
 
@@ -2040,25 +2053,30 @@ class TextRenderer:
                     assert False
 
         # markup caret, typeahead
-        typeahead_markup = tags["typeahead"]((mu.Text(typeahead),))
+        if clean:
+            typeahead = ""
+
+        if pos == length and not typeahead:
+            buffer.append(" ")
+
         if not clean:
-            if pos != length:
-                buffer[pos] = tags["caret"](_wrap([buffer[pos]]))
-            elif not typeahead:
-                typeahead_markup = tags["caret"]((mu.Text(" "),))
+            if pos < len(buffer):
+                buffer[pos] = tags["caret"](mu.join([buffer[pos]]).children)
             else:
-                typeahead_markup = tags["typeahead"]((tags["caret"]((mu.Text(typeahead[0]),)), mu.Text(typeahead[1:])))
+                typeahead = tags["caret"](mu.join(typeahead[0]).children), typeahead[1:]
+
+        typeahead_markup = tags["typeahead"](mu.join(typeahead).children)
 
         res = []
         prev_index = 0
         for n, token in enumerate(tokens):
             # markup delimiter
-            delimiter_markup = mu.Group(_wrap(buffer[prev_index : token.mask.start]))
+            delimiter_markup = mu.join(buffer[prev_index : token.mask.start])
             res.append(delimiter_markup)
             prev_index = token.mask.stop
 
             # markup token
-            token_markup = mu.Group(_wrap(buffer[token.mask]))
+            token_markup = mu.join(buffer[token.mask])
             if token.type is None:
                 if not clean and token.mask.stop == length:
                     token_markup = tags["unfinished"](token_markup.children)
@@ -2080,7 +2098,7 @@ class TextRenderer:
             res.append(token_markup)
 
         else:
-            delimiter_markup = mu.Group(_wrap(buffer[prev_index:]))
+            delimiter_markup = mu.join(buffer[prev_index:])
             res.append(delimiter_markup)
 
         markup = mu.Group((*res, typeahead_markup))
@@ -2092,25 +2110,16 @@ class TextRenderer:
         tags = dict(self.rich.tags)
         tags["caret"] = Caret
 
-        def grammar_key(tags, buffer, tokens, typeahead, pos, highlighted, clean):
-            return (
-                buffer,
-                typeahead,
-                pos,
-                highlighted,
-                clean,
-            )
-        grammar_node = dn.starcachemap(self._render_grammar, key=grammar_key)
+        render_grammar = dn.starcachemap(self.render_grammar, key=self._render_grammar_key, tags=tags)
 
-        with grammar_node:
+        with render_grammar:
             yield
             while True:
-                markup = grammar_node.send(
+                markup = render_grammar.send(
                     (
-                        tags,
                         state.buffer,
                         state.tokens,
-                        state.typeahead if not state.clean else "",
+                        state.typeahead,
                         state.pos,
                         state.highlighted,
                         state.clean,
@@ -2134,9 +2143,25 @@ class MsgRenderer:
     @dn.datanode
     def render_msg(self, state):
         message_max_lines = self.settings.message_max_lines
-
         sugg_lines = self.settings.suggestions_lines
         sugg_items = self.settings.suggestion_items
+
+        message_overflow_ellipsis = self.settings.message_overflow_ellipsis
+        suggestion_overflow_ellipses = self.settings.suggestion_overflow_ellipses
+
+        msg_ellipsis = self.rich.parse(message_overflow_ellipsis)
+        msg_ellipsis_width = self.rich.widthof(msg_ellipsis)
+
+        if msg_ellipsis_width == -1:
+            raise ValueError(f"invalid ellipsis: {message_overflow_ellipsis!r}")
+
+        sugg_top_ellipsis = self.rich.parse(suggestion_overflow_ellipses[0])
+        sugg_top_ellipsis_width = self.rich.widthof(sugg_top_ellipsis)
+        sugg_bottom_ellipsis = self.rich.parse(suggestion_overflow_ellipses[1])
+        sugg_bottom_ellipsis_width = self.rich.widthof(sugg_bottom_ellipsis)
+
+        if sugg_top_ellipsis_width == -1 or sugg_bottom_ellipsis_width == -1:
+            raise ValueError(f"invalid ellipsis: {suggestion_overflow_ellipses!r}")
 
         sugg_items = (
             self.rich.parse(sugg_items[0], slotted=True),
@@ -2150,8 +2175,10 @@ class MsgRenderer:
             self.render_hint,
             key=lambda msgs, hint: hint,
             message_max_lines=message_max_lines,
+            msg_ellipsis=msg_ellipsis,
             sugg_lines=sugg_lines,
             sugg_items=sugg_items,
+            sugg_ellipses=(sugg_top_ellipsis, sugg_bottom_ellipsis),
             desc=desc,
             info=info,
         )
@@ -2168,9 +2195,12 @@ class MsgRenderer:
         self,
         msgs,
         hint,
+        *,
         message_max_lines,
+        msg_ellipsis,
         sugg_lines,
         sugg_items,
+        sugg_ellipses,
         desc,
         info,
     ):
@@ -2188,18 +2218,23 @@ class MsgRenderer:
             def trim_lines(text):
                 nonlocal lines
                 if lines >= message_max_lines:
-                    return ""
-                res_string = []
-                for ch in text.string:
-                    if ch == "\n":
-                        lines += 1
-                    res_string.append(ch)
-                    if lines == message_max_lines:
-                        res_string.append("…")
-                        break
-                return mu.Text("".join(res_string))
+                    return mu.Text("")
 
-            msg = msg.traverse(mu.Text, trim_lines)
+                if isinstance(text, mu.Newline):
+                    lines += 1
+                    if lines == message_max_lines:
+                        return mu.Group((text, msg_ellipsis))
+
+                else:
+                    for i, ch in enumerate(text.string):
+                        if ch == "\n":
+                            lines += 1
+                        if lines == message_max_lines:
+                            return mu.Group((mu.Text(text.string[:i+1]), msg_ellipsis))
+
+                return text
+
+            msg = msg.traverse((mu.Text, mu.Newline), trim_lines)
 
             if isinstance(hint, DescHint):
                 msg = mu.replace_slot(desc, msg)
@@ -2213,23 +2248,28 @@ class MsgRenderer:
             sugg_start = hint.selected // sugg_lines * sugg_lines
             sugg_end = sugg_start + sugg_lines
             suggs = hint.suggestions[sugg_start:sugg_end]
-            if sugg_start > 0:
-                msgs.append(mu.Text("…\n"))
+
+            res = []
             for i, sugg in enumerate(suggs):
                 sugg = mu.Text(sugg)
-                if i == hint.selected - sugg_start:
-                    sugg = mu.replace_slot(sugg_items[1], sugg)
-                else:
-                    sugg = mu.replace_slot(sugg_items[0], sugg)
-                msgs.append(sugg)
+                item = sugg_items[1] if i == hint.selected - sugg_start else sugg_items[0]
+                sugg = mu.replace_slot(item, sugg)
+                res.append(sugg)
                 if i == hint.selected - sugg_start and msg is not None:
-                    msgs.append(mu.Text("\n"))
-                    msgs.append(msg)
-                if i != len(suggs) - 1:
-                    msgs.append(mu.Text("\n"))
+                    res.append(msg)
+
+            if sugg_start > 0:
+                res.insert(0, sugg_ellipses[0])
             if sugg_end < len(hint.suggestions):
-                msgs.append(mu.Text("\n…"))
-            msgs.append(self.rich.parse("\n"))
+                res.append(sugg_ellipses[1])
+
+            nl = mu.Text("\n")
+            is_fst = True
+            for block in res:
+                if not is_fst:
+                    msgs.append(nl)
+                msgs.append(block)
+                is_fst = False
 
         else:
             if msg is not None:
@@ -2237,7 +2277,7 @@ class MsgRenderer:
 
         return msgs
 
-    def render_popup(self, popup, desc, info):
+    def render_popup(self, popup, *, desc, info):
         logs = []
 
         # draw popup
@@ -2308,57 +2348,52 @@ class TextBox:
         else:
             raise TypeError(f"unknown markup type: {type(markup)}")
 
-    @dn.datanode
-    def adjust_offset(self, left_text_margin, right_text_margin):
-        self.text_offset = 0
-        self.left_overflow = False
-        self.right_overflow = False
+    def adjust_offset(self, text_width, caret_masks, box_width, *, left_text_margin, right_text_margin):
+        # trim empty space
+        if text_width - self.text_offset < box_width - right_text_margin:
+            # from: ......[....I...    ]
+            #   to: ...[.......I... ]
+            self.text_offset = max(0, text_width - box_width + right_text_margin)
 
-        while True:
-            text_width, caret_masks, box_width = yield
+        # reveal the rightmost caret
+        caret_stop = max((caret_slice.stop for caret_slice in caret_masks), default=float("-inf"))
+        if caret_stop - self.text_offset > box_width - right_text_margin:
+            # from: ...[............]..I....
+            #   to: ........[..........I.]..
+            self.text_offset = caret_stop - box_width + right_text_margin
 
-            # trim empty space
-            if text_width - self.text_offset < box_width - right_text_margin:
-                # from: ......[....I...    ]
-                #   to: ...[.......I... ]
-                self.text_offset = max(0, text_width - box_width + right_text_margin)
+        # reveal the leftmost caret
+        caret_start = min((caret_slice.start for caret_slice in caret_masks), default=float("inf"))
+        if caret_start - self.text_offset < left_text_margin:
+            # from: .....I...[............]...
+            #   to: ...[.I..........].........
+            self.text_offset = max(caret_start - left_text_margin, 0)
 
-            # reveal the rightmost caret
-            caret_stop = max((caret_slice.stop for caret_slice in caret_masks), default=float("-inf"))
-            if caret_stop - self.text_offset > box_width - right_text_margin:
-                # from: ...[............]..I....
-                #   to: ........[..........I.]..
-                self.text_offset = caret_stop - box_width + right_text_margin
+        # determine overflow
+        self.left_overflow = self.text_offset > 0
+        self.right_overflow = text_width - self.text_offset > box_width
 
-            # reveal the leftmost caret
-            caret_start = min((caret_slice.start for caret_slice in caret_masks), default=float("inf"))
-            if caret_start - self.text_offset < left_text_margin:
-                # from: .....I...[............]...
-                #   to: ...[.I..........].........
-                self.text_offset = max(caret_start - left_text_margin, 0)
-
-            # determine overflow
-            self.left_overflow = self.text_offset > 0
-            self.right_overflow = text_width - self.text_offset > box_width
-
-    @dn.datanode
-    def draw_ellipses(self, left_ellipsis, right_ellipsis, right_ellipsis_width):
-        box_width = yield
-        while True:
-            res = []
-            if self.left_overflow:
-                res.append((0, left_ellipsis))
-            if self.right_overflow:
-                res.append((box_width - right_ellipsis_width, right_ellipsis))
-            box_width = yield res
+    def draw_ellipses(self, box_width, *, left_ellipsis, right_ellipsis, right_ellipsis_width):
+        res = []
+        if self.left_overflow:
+            res.append((0, left_ellipsis))
+        if self.right_overflow:
+            res.append((box_width - right_ellipsis_width, right_ellipsis))
+        return res
 
     def render_caret(self, markup, caret_template):
         if caret_template is not None:
             markup = markup.traverse(
-                Caret, lambda m: mu.replace_slot(caret_template, mu.Group(m.children))
+                Caret,
+                lambda m: mu.replace_slot(caret_template, mu.Group(m.children)),
+                strategy=mu.TraverseStrategy.TopDown,
             )
         else:
-            markup = markup.traverse(Caret, lambda m: mu.Group(m.children))
+            markup = markup.traverse(
+                Caret,
+                lambda m: mu.Group(m.children),
+                strategy=mu.TraverseStrategy.TopDown,
+            )
 
         return markup.expand()
 
@@ -2375,15 +2410,29 @@ class TextBox:
         if left_ellipsis_width == -1 or right_ellipsis_width == -1:
             raise ValueError(f"invalid ellipsis: {ellipses!r}")
 
-        left_input_margin = max(margins[0], left_ellipsis_width)
-        right_input_margin = max(margins[1], right_ellipsis_width)
+        left_text_margin = max(margins[0], left_ellipsis_width)
+        right_text_margin = max(margins[1], right_ellipsis_width)
 
         caret_widget = dn.DataNode.wrap(self.caret_widget)
         text_geometry = dn.starcachemap(self.text_geometry)
         render_caret = dn.starcachemap(self.render_caret)
 
-        adjust_offset = self.adjust_offset(left_input_margin, right_input_margin)
-        draw_ellipses = self.draw_ellipses(left_ellipsis, right_ellipsis, right_ellipsis_width)
+        adjust_offset = dn.starmap(
+            self.adjust_offset,
+            left_text_margin=left_text_margin,
+            right_text_margin=right_text_margin,
+        )
+
+        draw_ellipses = dn.map(
+            self.draw_ellipses,
+            left_ellipsis=left_ellipsis,
+            right_ellipsis=right_ellipsis,
+            right_ellipsis_width=right_ellipsis_width,
+        )
+
+        self.text_offset = 0
+        self.left_overflow = False
+        self.right_overflow = False
 
         with text_node, text_geometry, caret_widget, render_caret, adjust_offset, draw_ellipses:
             time, ran = yield
