@@ -249,67 +249,6 @@ class PatternsWidget:
         return patterns_func
 
 
-@dataclasses.dataclass(frozen=True)
-class Caret(mu.Pair):
-    name = "caret"
-
-
-@dataclasses.dataclass
-class CaretWidgetSettings:
-    r"""
-    Fields
-    ------
-    normal_appearance : str
-        The markup template of the normal-style caret.
-    blinking_appearance : str
-        The markup template of the blinking-style caret.
-    blinking_appearance : str
-        The markup template of the highlighted-style caret.
-    blink_ratio : float
-        The ratio to blink.
-    """
-    normal_appearance: str = "[slot/]"
-    blinking_appearance: str = "[weight=dim][invert][slot/][/][/]"
-    highlighted_appearance: str = "[weight=bold][invert][slot/][/][/]"
-    blink_ratio: float = 0.3
-
-
-class CaretWidget:
-    def __init__(self, settings):
-        self.settings = settings
-
-    def load(self, provider):
-        rich = provider.get(mu.RichParser)
-        metronome = provider.get(engines.Metronome)
-
-        caret_blink_ratio = self.settings.blink_ratio
-        normal = rich.parse(self.settings.normal_appearance, slotted=True)
-        blinking = rich.parse(self.settings.blinking_appearance, slotted=True)
-        highlighted = rich.parse(self.settings.highlighted_appearance, slotted=True)
-
-        @dn.datanode
-        def caret_node():
-            time, key_pressed = yield
-            key_pressed_beat = 0
-            while True:
-                beat = metronome.beat(time)
-
-                # don't blink while key pressing
-                if beat < key_pressed_beat or beat % 1 < caret_blink_ratio:
-                    if beat % 4 < 1:
-                        res = highlighted
-                    else:
-                        res = blinking
-                else:
-                    res = normal
-
-                time, key_pressed = yield res
-                if key_pressed:
-                    key_pressed_beat = metronome.beat(time) // -1 * -1
-
-        return caret_node()
-
-
 @dataclasses.dataclass
 class MarkerWidgetSettings:
     r"""
@@ -354,7 +293,6 @@ class BeatshellWidgetFactory:
     monitor = beatwidgets.MonitorWidgetSettings
     patterns = PatternsWidgetSettings
     marker = MarkerWidgetSettings
-    caret = CaretWidgetSettings
 
     def __init__(self, rich, renderer, metronome):
         self.provider = Provider()
@@ -369,8 +307,6 @@ class BeatshellWidgetFactory:
             return PatternsWidget(widget_settings).load(self.provider)
         elif isinstance(widget_settings, BeatshellWidgetFactory.marker):
             return MarkerWidget(widget_settings).load(self.provider)
-        elif isinstance(widget_settings, BeatshellWidgetFactory.caret):
-            return CaretWidget(widget_settings).load(self.provider)
         else:
             raise TypeError
 
@@ -387,17 +323,13 @@ class BeatShellSettings(cfg.Configurable):
     ------
     preview_song : bool
         Whether to preview the song when selected.
-
     history_size : int
         The maximum history size.
-
     debug_monitor : bool
         Whether to monitor renderer.
     """
     preview_song: bool = True
-
     history_size: int = 500
-
     debug_monitor: bool = False
 
     @cfg.subconfig
@@ -458,29 +390,23 @@ class BeatShellSettings(cfg.Configurable):
             The text width of icon.
         marker_width : int
             The text width of marker.
-        input_margins : tuple of int and int
-            The width of left/right margin of text box.
-        overflow_ellipses : tuple of str and str
-            Texts to display when overflowing left/right.
 
         icons : BeatShellIconWidgetSettings
             The appearances of icon.
         marker : MarkerWidgetSettings
             The appearance of marker.
-        caret : CaretWidgetSettings
-            The appearance of caret.
+        textbox : beatwidgets.TextBoxWidgetSettings
+            The appearance of text box.
         """
         t0: float = 0.0
         tempo: float = 130.0
 
         icon_width: int = 5
         marker_width: int = 2
-        input_margins: Tuple[int, int] = (3, 3)
-        overflow_ellipses: Tuple[str, str] = ("…", "…")
 
         icons: BeatshellIconWidgetSettings = PatternsWidgetSettings()
         marker: MarkerWidgetSettings = MarkerWidgetSettings()
-        caret: CaretWidgetSettings = CaretWidgetSettings()
+        textbox: beatwidgets.TextBoxWidgetSettings = beatwidgets.TextBoxWidgetSettings()
 
     @cfg.subconfig
     class banner(cfg.Configurable):
@@ -1923,19 +1849,17 @@ class BeatPrompt:
 
         widget_factory = BeatshellWidgetFactory(self.rich, renderer, metronome)
 
-        caret = widget_factory.create(self.settings.prompt.caret)
         icon = widget_factory.create(self.settings.prompt.icons)
         marker = widget_factory.create(self.settings.prompt.marker)
 
         state = ViewState(self.input)
         text_renderer = TextRenderer(self.rich, self.settings.text)
         msg_renderer = MsgRenderer(self.rich, self.settings.text)
-        textbox = TextBox(
-            self.rich,
-            caret,
-            self.settings.prompt.input_margins,
-            self.settings.prompt.overflow_ellipses,
-        )
+
+        textbox = beatwidgets.TextBox(
+            lambda: text_renderer.render_text(state),
+            self.settings.prompt.textbox,
+        ).load(widget_factory.provider)
 
         # layout
         icon_width = self.settings.prompt.icon_width
@@ -1951,7 +1875,7 @@ class BeatPrompt:
         renderer.add_drawer(state.load(self.fin_event), zindex=())
         renderer.add_texts(icon, icon_mask, zindex=(2,))
         renderer.add_texts(marker, marker_mask, zindex=(3,))
-        renderer.add_texts(textbox.load(text_renderer.render_text(state)), input_mask, zindex=(0,))
+        renderer.add_texts(textbox, input_mask, zindex=(0,))
         renderer.add_drawer(msg_renderer.render_msg(state), zindex=(1,))
 
 
@@ -2131,7 +2055,7 @@ class TextRenderer:
         render_grammar = dn.starcachemap(
             self.render_grammar,
             key=self._render_grammar_key,
-            caret_markup=Caret,
+            caret_markup=beatwidgets.Caret,
             typeahead_template=typeahead_template,
             highlight_template=highlight_template,
         )
@@ -2324,152 +2248,4 @@ class MsgRenderer:
                 logs.append(msg)
 
         return logs
-
-
-class TextBox:
-    def __init__(self, rich, caret_widget, margins, ellipses):
-        r"""Constructor.
-
-        Parameters
-        ----------
-        rich : markups.RichParser
-        caret_widget : dn.DataNode
-        margins : tuple of int and int
-        ellipses : tuple of str and str
-        """
-        self.rich = rich
-        self.caret_widget = caret_widget
-        self.margins = margins
-        self.ellipses = ellipses
-
-    def text_geometry(self, markup, text_width=0, caret_masks=()):
-        if isinstance(markup, mu.Text):
-            w = self.rich.widthof(markup.string)
-            if w == -1:
-                raise TypeError(f"invalid text: {markup.string!r}")
-            text_width += w
-            return text_width, caret_masks
-
-        elif isinstance(markup, (mu.Group, mu.SGR)):
-            res = text_width, caret_masks
-            for child in markup.children:
-                res = self.text_geometry(child, *res)
-            return res
-
-        elif isinstance(markup, Caret):
-            start = text_width
-            res = text_width, caret_masks
-            for child in markup.children:
-                res = self.text_geometry(child, *res)
-            text_width, caret_masks = res
-            stop = text_width
-            caret_masks = (*caret_masks, slice(start, stop))
-            return text_width, caret_masks
-
-        elif isinstance(markup, (mu.CSI, mu.ControlCharacter)):
-            raise TypeError(f"invalid markup type: {type(markup)}")
-
-        else:
-            raise TypeError(f"unknown markup type: {type(markup)}")
-
-    def adjust_offset(self, text_width, caret_masks, box_width, *, left_text_margin, right_text_margin):
-        # trim empty space
-        if text_width - self.text_offset < box_width - right_text_margin:
-            # from: ......[....I...    ]
-            #   to: ...[.......I... ]
-            self.text_offset = max(0, text_width - box_width + right_text_margin)
-
-        # reveal the rightmost caret
-        caret_stop = max((caret_slice.stop for caret_slice in caret_masks), default=float("-inf"))
-        if caret_stop - self.text_offset > box_width - right_text_margin:
-            # from: ...[............]..I....
-            #   to: ........[..........I.]..
-            self.text_offset = caret_stop - box_width + right_text_margin
-
-        # reveal the leftmost caret
-        caret_start = min((caret_slice.start for caret_slice in caret_masks), default=float("inf"))
-        if caret_start - self.text_offset < left_text_margin:
-            # from: .....I...[............]...
-            #   to: ...[.I..........].........
-            self.text_offset = max(caret_start - left_text_margin, 0)
-
-        # determine overflow
-        self.left_overflow = self.text_offset > 0
-        self.right_overflow = text_width - self.text_offset > box_width
-
-    def draw_ellipses(self, box_width, *, left_ellipsis, right_ellipsis, right_ellipsis_width):
-        res = []
-        if self.left_overflow:
-            res.append((0, left_ellipsis))
-        if self.right_overflow:
-            res.append((box_width - right_ellipsis_width, right_ellipsis))
-        return res
-
-    def render_caret(self, markup, caret_template):
-        if caret_template is not None:
-            markup = markup.traverse(
-                Caret,
-                lambda m: mu.replace_slot(caret_template, mu.Group(m.children)),
-                strategy=mu.TraverseStrategy.TopDown,
-            )
-        else:
-            markup = markup.traverse(
-                Caret,
-                lambda m: mu.Group(m.children),
-                strategy=mu.TraverseStrategy.TopDown,
-            )
-
-        return markup.expand()
-
-    @dn.datanode
-    def load(self, text_node):
-        margins = self.margins
-        ellipses = self.ellipses
-
-        left_ellipsis = self.rich.parse(ellipses[0])
-        left_ellipsis_width = self.rich.widthof(left_ellipsis)
-        right_ellipsis = self.rich.parse(ellipses[1])
-        right_ellipsis_width = self.rich.widthof(right_ellipsis)
-
-        if left_ellipsis_width == -1 or right_ellipsis_width == -1:
-            raise ValueError(f"invalid ellipsis: {ellipses!r}")
-
-        left_text_margin = max(margins[0], left_ellipsis_width)
-        right_text_margin = max(margins[1], right_ellipsis_width)
-
-        caret_widget = dn.DataNode.wrap(self.caret_widget)
-        text_geometry = dn.starcachemap(self.text_geometry)
-        render_caret = dn.starcachemap(self.render_caret)
-
-        adjust_offset = dn.starmap(
-            self.adjust_offset,
-            left_text_margin=left_text_margin,
-            right_text_margin=right_text_margin,
-        )
-
-        draw_ellipses = dn.map(
-            self.draw_ellipses,
-            left_ellipsis=left_ellipsis,
-            right_ellipsis=right_ellipsis,
-            right_ellipsis_width=right_ellipsis_width,
-        )
-
-        self.text_offset = 0
-        self.left_overflow = False
-        self.right_overflow = False
-
-        with text_node, text_geometry, caret_widget, render_caret, adjust_offset, draw_ellipses:
-            time, ran = yield
-            while True:
-                markup, key_pressed = text_node.send()
-                text_width, caret_masks = text_geometry.send((markup,))
-
-                caret_template = caret_widget.send((time, key_pressed))
-                markup = render_caret.send((markup, caret_template))
-
-                box_width = len(ran)
-                adjust_offset.send((text_width, caret_masks, box_width))
-                ellipses_res = draw_ellipses.send(box_width)
-
-                time, ran = yield [(-self.text_offset, markup), *ellipses_res]
 
