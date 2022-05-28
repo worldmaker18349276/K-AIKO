@@ -14,11 +14,11 @@ class LoggerSettings(cfg.Configurable):
     r"""
     Fields
     ------
-    data_icon : str
+    data : str
         The template of data icon.
-    info_icon : str
+    info : str
         The template of info icon.
-    hint_icon : str
+    hint : str
         The template of hint icon.
 
     verb : str
@@ -36,9 +36,9 @@ class LoggerSettings(cfg.Configurable):
     codepoint : str
         The template of codepoint representation.
     """
-    data_icon: str = "[color=bright_green][wide=🖿/][/]"
-    info_icon: str = "[color=bright_blue][wide=🛠/][/]"
-    hint_icon: str = "[color=bright_yellow][wide=🖈/][/]"
+    data: str = "[color=bright_green][wide=🖿/][/]"
+    info: str = "[color=bright_blue][wide=🛠/][/]"
+    hint: str = "[color=bright_yellow][wide=🖈/][/]"
 
     verb: str = f"[weight=dim][slot/][/]"
     warn: str = f"[color=red][slot/][/]"
@@ -50,8 +50,8 @@ class LoggerSettings(cfg.Configurable):
     codepoint: str = "[underline=on][slot/][/]"
 
     @cfg.subconfig
-    class syntax(cfg.Configurable):
-        py_NoneType: str = "[color=bright_cyan][slot/][/]"
+    class python(cfg.Configurable):
+        py_none: str = "[color=bright_cyan][slot/][/]"
         py_ellipsis: str = "[color=bright_cyan][slot/][/]"
         py_bool: str = "[color=bright_cyan][slot/][/]"
         py_int: str = "[color=bright_cyan][slot/][/]"
@@ -69,67 +69,69 @@ class LoggerSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        quotation : str
+        qt : str
             The replacement text for quotation marks.
-        backslash : str
+        bs : str
             The replacement text for backslashes.
-        whitespace : str
+        ws : str
             The replacement text for escaped whitespaces.
 
-        token_unknown : str
+        unk : str
             The markup template for the unknown token.
-        token_command : str
+        cmd : str
             The markup template for the command token.
-        token_keyword : str
+        kw : str
             The markup template for the keyword token.
-        token_argument : str
+        arg : str
             The markup template for the argument token.
         """
-        quotation: str = "[weight=dim]'[/]"
-        backslash: str = "[weight=dim]\\[/]"
-        whitespace: str = "[weight=dim]⌴[/]"
+        qt: str = "[weight=dim]'[/]"
+        bs: str = "[weight=dim]\\[/]"
+        ws: str = "[weight=dim]⌴[/]"
 
-        token_unknown: str = "[color=red][slot/][/]"
-        token_command: str = "[color=bright_blue][slot/][/]"
-        token_keyword: str = "[color=bright_magenta][slot/][/]"
-        token_argument: str = "[color=bright_green][slot/][/]"
+        unk: str = "[color=red][slot/][/]"
+        cmd: str = "[color=bright_blue][slot/][/]"
+        kw: str = "[color=bright_magenta][slot/][/]"
+        arg: str = "[color=bright_green][slot/][/]"
 
     @cfg.subconfig
     class files(cfg.Configurable):
         r"""
         Fields
         ------
-        item : str
+        file_item : str
             The template for file item.
-        unknown : str
+        file_unknown : str
             The template for unknown file.
-        desc : str
+        file_desc : str
             The template for file description.
 
-        dir : str
+        file_dir : str
             The template for directory.
-        script : str
+        file_script : str
             The template for script file.
-        beatmap : str
+        file_beatmap : str
             The template for beatmap file.
-        sound : str
+        file_sound : str
             The template for audio file.
-        normal : str
+        file_link : str
+            The template for link file.
+        file_normal : str
             The template for normal file.
-        other : str
+        file_other : str
             The template for other file.
         """
-        item: str = "• [slot/]"
-        unknown: str = "[weight=dim][slot/][/]"
-        desc: str = "  [weight=dim][slot/][/]"
+        file_item: str = "• [slot/]"
+        file_unknown: str = "[weight=dim][slot/][/]"
+        file_desc: str = "  [weight=dim][slot/][/]"
 
-        dir: str = "[weight=bold][color=blue][slot/][/][/]/"
-        script: str = "[weight=bold][color=green][slot/][/][/]"
-        beatmap: str = "[weight=bold][color=magenta][slot/][/][/]"
-        sound: str = "[color=magenta][slot/][/]"
-        link: str = "[color=cyan][slot/][/] -> "
-        normal: str = "[slot/]"
-        other: str = "[slot/]"
+        file_dir: str = "[weight=bold][color=blue][slot/][/][/]/"
+        file_script: str = "[weight=bold][color=green][slot/][/][/]"
+        file_beatmap: str = "[weight=bold][color=magenta][slot/][/][/]"
+        file_sound: str = "[color=magenta][slot/][/]"
+        file_link: str = "[color=cyan][slot/][/] -> "
+        file_normal: str = "[slot/]"
+        file_other: str = "[slot/]"
 
 
 class Logger:
@@ -151,59 +153,63 @@ class Logger:
         )
         self.renderer = mu.RichRenderer(terminal_settings.unicode_version)
 
-        self.rich.add_single_template("data", logger_settings.data_icon)
-        self.rich.add_single_template("info", logger_settings.info_icon)
-        self.rich.add_single_template("hint", logger_settings.hint_icon)
+        self.rich.add_single_template("data", logger_settings.data)
+        self.rich.add_single_template("info", logger_settings.info)
+        self.rich.add_single_template("hint", logger_settings.hint)
         self.rich.add_pair_template("verb", logger_settings.verb)
         self.rich.add_pair_template("emph", logger_settings.emph)
         self.rich.add_pair_template("warn", logger_settings.warn)
 
+        self.rich.add_pair_template("verb_block", logger_settings.verb_block)
+        self.rich.add_pair_template("warn_block", logger_settings.warn_block)
+
+        self.verb_block = self.rich.parse(logger_settings.verb_block, slotted=True)
+        self.warn_block = self.rich.parse(logger_settings.warn_block, slotted=True)
+
         self.rich.add_pair_template("codepoint", logger_settings.codepoint)
 
-        self.rich.add_pair_template("unk", logger_settings.shell.token_unknown)
-        self.rich.add_pair_template("cmd", logger_settings.shell.token_command)
-        self.rich.add_pair_template("kw", logger_settings.shell.token_keyword)
-        self.rich.add_pair_template("arg", logger_settings.shell.token_argument)
-        self.rich.add_single_template("ws", logger_settings.shell.whitespace)
-        self.rich.add_single_template("qt", logger_settings.shell.quotation)
-        self.rich.add_single_template("bs", logger_settings.shell.backslash)
+        self.rich.add_pair_template("unk", logger_settings.shell.unk)
+        self.rich.add_pair_template("cmd", logger_settings.shell.cmd)
+        self.rich.add_pair_template("kw", logger_settings.shell.kw)
+        self.rich.add_pair_template("arg", logger_settings.shell.arg)
+        self.rich.add_single_template("ws", logger_settings.shell.ws)
+        self.rich.add_single_template("qt", logger_settings.shell.qt)
+        self.rich.add_single_template("bs", logger_settings.shell.bs)
 
-        self.rich.add_pair_template("py_NoneType", logger_settings.syntax.py_NoneType)
-        self.rich.add_pair_template("py_ellipsis", logger_settings.syntax.py_ellipsis)
-        self.rich.add_pair_template("py_bool", logger_settings.syntax.py_bool)
-        self.rich.add_pair_template("py_int", logger_settings.syntax.py_int)
-        self.rich.add_pair_template("py_float", logger_settings.syntax.py_float)
-        self.rich.add_pair_template("py_complex", logger_settings.syntax.py_complex)
-        self.rich.add_pair_template("py_bytes", logger_settings.syntax.py_bytes)
-        self.rich.add_pair_template("py_str", logger_settings.syntax.py_str)
+        self.rich.add_pair_template("py_none", logger_settings.python.py_none)
+        self.rich.add_pair_template("py_ellipsis", logger_settings.python.py_ellipsis)
+        self.rich.add_pair_template("py_bool", logger_settings.python.py_bool)
+        self.rich.add_pair_template("py_int", logger_settings.python.py_int)
+        self.rich.add_pair_template("py_float", logger_settings.python.py_float)
+        self.rich.add_pair_template("py_complex", logger_settings.python.py_complex)
+        self.rich.add_pair_template("py_bytes", logger_settings.python.py_bytes)
+        self.rich.add_pair_template("py_str", logger_settings.python.py_str)
         self.rich.add_pair_template(
-            "py_punctuation", logger_settings.syntax.py_punctuation
+            "py_punctuation", logger_settings.python.py_punctuation
         )
-        self.rich.add_pair_template("py_argument", logger_settings.syntax.py_argument)
-        self.rich.add_pair_template("py_class", logger_settings.syntax.py_class)
-        self.rich.add_pair_template("py_attribute", logger_settings.syntax.py_attribute)
+        self.rich.add_pair_template("py_argument", logger_settings.python.py_argument)
+        self.rich.add_pair_template("py_class", logger_settings.python.py_class)
+        self.rich.add_pair_template("py_attribute", logger_settings.python.py_attribute)
 
-        self.rich.add_pair_template("file_item", logger_settings.files.item)
-        self.rich.add_pair_template("file_unknown", logger_settings.files.unknown)
-        self.rich.add_pair_template("file_desc", logger_settings.files.desc)
+        self.rich.add_pair_template("file_item", logger_settings.files.file_item)
+        self.rich.add_pair_template("file_unknown", logger_settings.files.file_unknown)
+        self.rich.add_pair_template("file_desc", logger_settings.files.file_desc)
 
-        self.rich.add_pair_template("file_dir", logger_settings.files.dir)
-        self.rich.add_pair_template("file_script", logger_settings.files.script)
-        self.rich.add_pair_template("file_beatmap", logger_settings.files.beatmap)
-        self.rich.add_pair_template("file_sound", logger_settings.files.sound)
-        self.rich.add_pair_template("file_link", logger_settings.files.link)
-        self.rich.add_pair_template("file_normal", logger_settings.files.normal)
-        self.rich.add_pair_template("file_other", logger_settings.files.other)
+        self.rich.add_pair_template("file_dir", logger_settings.files.file_dir)
+        self.rich.add_pair_template("file_script", logger_settings.files.file_script)
+        self.rich.add_pair_template("file_beatmap", logger_settings.files.file_beatmap)
+        self.rich.add_pair_template("file_sound", logger_settings.files.file_sound)
+        self.rich.add_pair_template("file_link", logger_settings.files.file_link)
+        self.rich.add_pair_template("file_normal", logger_settings.files.file_normal)
+        self.rich.add_pair_template("file_other", logger_settings.files.file_other)
 
     @contextlib.contextmanager
     def verb(self):
         level = self.level
-        verb_block = self.logger_settings.verb_block
-        template = self.rich.parse(verb_block, slotted=True)
         self.level = 0
         try:
             with self.renderer.render_context(
-                template, lambda text: print(text, end="", flush=True)
+                self.verb_block, lambda text: print(text, end="", flush=True)
             ):
                 yield
         finally:
@@ -212,12 +218,10 @@ class Logger:
     @contextlib.contextmanager
     def warn(self):
         level = self.level
-        warn_block = self.logger_settings.warn_block
-        template = self.rich.parse(warn_block, slotted=True)
         self.level = 2
         try:
             with self.renderer.render_context(
-                template, lambda text: print(text, end="", flush=True)
+                self.warn_block, lambda text: print(text, end="", flush=True)
             ):
                 yield
         finally:
