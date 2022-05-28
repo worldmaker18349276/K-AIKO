@@ -523,6 +523,11 @@ class BeatShellSettings(cfg.Configurable):
         r"""
         Fields
         ------
+        typeahead : str
+            The markup template for the type-ahead.
+        highlight : str
+            The markup template for the highlighted token.
+
         desc_message : str
             The markup template for the desc message.
         info_message : str
@@ -539,6 +544,9 @@ class BeatShellSettings(cfg.Configurable):
         suggestion_overflow_ellipses : tuple of str and str
             Texts to display when overflowing top/bottom.
         """
+        typeahead: str = "[weight=dim][slot/][/]"
+        highlight: str = "[underline][slot/][/]"
+
         desc_message: str = "[weight=dim][slot/][/]"
         info_message: str = f"{'─'*80}\n[slot/]\n{'─'*80}"
         message_max_lines: int = 16
@@ -547,6 +555,7 @@ class BeatShellSettings(cfg.Configurable):
         suggestions_lines: int = 8
         suggestion_items: Tuple[str, str] = ("• [slot/]", "• [invert][slot/][/]")
         suggestion_overflow_ellipses: Tuple[str, str] = ("[weight=dim]ⵗ[/]", "[weight=dim]ⵗ[/]")
+
 
 class Hint:
     pass
@@ -1919,7 +1928,7 @@ class BeatPrompt:
         marker = widget_factory.create(self.settings.prompt.marker)
 
         state = ViewState(self.input)
-        text_renderer = TextRenderer(self.rich)
+        text_renderer = TextRenderer(self.rich, self.settings.text)
         msg_renderer = MsgRenderer(self.rich, self.settings.text)
         textbox = TextBox(
             self.rich,
@@ -2019,8 +2028,9 @@ class ByAddress:
 
 
 class TextRenderer:
-    def __init__(self, rich):
+    def __init__(self, rich, settings):
         self.rich = rich
+        self.settings = settings
 
     @staticmethod
     def _render_grammar_key(buffer, tokens, typeahead, pos, highlighted, clean):
@@ -2033,7 +2043,7 @@ class TextRenderer:
         )
 
     @staticmethod
-    def render_grammar(buffer, tokens, typeahead, pos, highlighted, clean, tags):
+    def render_grammar(buffer, tokens, typeahead, pos, highlighted, clean, tags, typeahead_template, highlight_template):
         length = len(buffer)
         buffer = list(buffer)
 
@@ -2065,7 +2075,7 @@ class TextRenderer:
             else:
                 typeahead = tags["caret"](mu.join(typeahead[0]).children), typeahead[1:]
 
-        typeahead_markup = tags["typeahead"](mu.join(typeahead).children)
+        typeahead_markup = mu.replace_slot(typeahead_template, mu.join(typeahead))
 
         res = []
         prev_index = 0
@@ -2093,7 +2103,7 @@ class TextRenderer:
 
             # markup highlight
             if n == highlighted:
-                token_markup = tags["highlight"]((token_markup,))
+                token_markup = mu.replace_slot(highlight_template, token_markup)
 
             res.append(token_markup)
 
@@ -2109,8 +2119,16 @@ class TextRenderer:
     def render_text(self, state):
         tags = dict(self.rich.tags)
         tags["caret"] = Caret
+        typeahead_template = self.rich.parse(self.settings.typeahead, slotted=True)
+        highlight_template = self.rich.parse(self.settings.highlight, slotted=True)
 
-        render_grammar = dn.starcachemap(self.render_grammar, key=self._render_grammar_key, tags=tags)
+        render_grammar = dn.starcachemap(
+            self.render_grammar,
+            key=self._render_grammar_key,
+            tags=tags,
+            typeahead_template=typeahead_template,
+            highlight_template=highlight_template,
+        )
 
         with render_grammar:
             yield

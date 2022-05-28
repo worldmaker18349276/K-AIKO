@@ -75,8 +75,6 @@ class LoggerSettings(cfg.Configurable):
             The replacement text for backslashes.
         whitespace : str
             The replacement text for escaped whitespaces.
-        typeahead : str
-            The markup template for the type-ahead.
 
         token_unknown : str
             The markup template for the unknown token.
@@ -88,20 +86,16 @@ class LoggerSettings(cfg.Configurable):
             The markup template for the keyword token.
         token_argument : str
             The markup template for the argument token.
-        token_highlight : str
-            The markup template for the highlighted token.
         """
         quotation: str = "[weight=dim]'[/]"
         backslash: str = "[weight=dim]\\[/]"
         whitespace: str = "[weight=dim]⌴[/]"
-        typeahead: str = "[weight=dim][slot/][/]"
 
         token_unknown: str = "[color=red][slot/][/]"
         token_unfinished: str = "[slot/]"
         token_command: str = "[color=bright_blue][slot/][/]"
         token_keyword: str = "[color=bright_magenta][slot/][/]"
         token_argument: str = "[color=bright_green][slot/][/]"
-        token_highlight: str = "[underline][slot/][/]"
 
     @cfg.subconfig
     class files(cfg.Configurable):
@@ -176,11 +170,9 @@ class Logger:
         self.rich.add_pair_template("cmd", logger_settings.shell.token_command)
         self.rich.add_pair_template("kw", logger_settings.shell.token_keyword)
         self.rich.add_pair_template("arg", logger_settings.shell.token_argument)
-        self.rich.add_pair_template("highlight", logger_settings.shell.token_highlight)
         self.rich.add_single_template("ws", logger_settings.shell.whitespace)
         self.rich.add_single_template("qt", logger_settings.shell.quotation)
         self.rich.add_single_template("bs", logger_settings.shell.backslash)
-        self.rich.add_pair_template("typeahead", logger_settings.shell.typeahead)
 
         self.rich.add_pair_template("py_NoneType", logger_settings.syntax.py_NoneType)
         self.rich.add_pair_template("py_ellipsis", logger_settings.syntax.py_ellipsis)
