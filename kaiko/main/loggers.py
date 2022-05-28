@@ -94,45 +94,6 @@ class LoggerSettings(cfg.Configurable):
         kw: str = "[color=bright_magenta][slot/][/]"
         arg: str = "[color=bright_green][slot/][/]"
 
-    @cfg.subconfig
-    class files(cfg.Configurable):
-        r"""
-        Fields
-        ------
-        file_item : str
-            The template for file item.
-        file_unknown : str
-            The template for unknown file.
-        file_desc : str
-            The template for file description.
-
-        file_dir : str
-            The template for directory.
-        file_script : str
-            The template for script file.
-        file_beatmap : str
-            The template for beatmap file.
-        file_sound : str
-            The template for audio file.
-        file_link : str
-            The template for link file.
-        file_normal : str
-            The template for normal file.
-        file_other : str
-            The template for other file.
-        """
-        file_item: str = "• [slot/]"
-        file_unknown: str = "[weight=dim][slot/][/]"
-        file_desc: str = "  [weight=dim][slot/][/]"
-
-        file_dir: str = "[weight=bold][color=blue][slot/][/][/]/"
-        file_script: str = "[weight=bold][color=green][slot/][/][/]"
-        file_beatmap: str = "[weight=bold][color=magenta][slot/][/][/]"
-        file_sound: str = "[color=magenta][slot/][/]"
-        file_link: str = "[color=cyan][slot/][/] -> "
-        file_normal: str = "[slot/]"
-        file_other: str = "[slot/]"
-
 
 class Logger:
     def __init__(self, terminal_settings=None, logger_settings=None):
@@ -190,18 +151,6 @@ class Logger:
         self.rich.add_pair_template("py_argument", logger_settings.python.py_argument)
         self.rich.add_pair_template("py_class", logger_settings.python.py_class)
         self.rich.add_pair_template("py_attribute", logger_settings.python.py_attribute)
-
-        self.rich.add_pair_template("file_item", logger_settings.files.file_item)
-        self.rich.add_pair_template("file_unknown", logger_settings.files.file_unknown)
-        self.rich.add_pair_template("file_desc", logger_settings.files.file_desc)
-
-        self.rich.add_pair_template("file_dir", logger_settings.files.file_dir)
-        self.rich.add_pair_template("file_script", logger_settings.files.file_script)
-        self.rich.add_pair_template("file_beatmap", logger_settings.files.file_beatmap)
-        self.rich.add_pair_template("file_sound", logger_settings.files.file_sound)
-        self.rich.add_pair_template("file_link", logger_settings.files.file_link)
-        self.rich.add_pair_template("file_normal", logger_settings.files.file_normal)
-        self.rich.add_pair_template("file_other", logger_settings.files.file_other)
 
     @contextlib.contextmanager
     def verb(self):

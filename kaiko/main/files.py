@@ -6,6 +6,8 @@ import glob
 import re
 import shutil
 from pathlib import Path
+from ..utils import config as cfg
+from ..utils import markups as mu
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
 from .loggers import Logger
@@ -115,18 +117,64 @@ def unescape_glob(pattern):
     return pattern.replace("[?]", "?").replace("[*]", "*").replace("[[]", "[")
 
 
+class FileManagerSettings(cfg.Configurable):
+    @cfg.subconfig
+    class display(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        file_item : str
+            The template for file item.
+        file_unknown : str
+            The template for unknown file.
+        file_desc : str
+            The template for file description.
+
+        file_dir : str
+            The template for directory.
+        file_script : str
+            The template for script file.
+        file_beatmap : str
+            The template for beatmap file.
+        file_sound : str
+            The template for audio file.
+        file_link : str
+            The template for link file.
+        file_normal : str
+            The template for normal file.
+        file_other : str
+            The template for other file.
+        """
+        file_item: str = "• [slot/]"
+        file_unknown: str = "[weight=dim][slot/][/]"
+        file_desc: str = "  [weight=dim][slot/][/]"
+
+        file_dir: str = "[weight=bold][color=blue][slot/][/][/]/"
+        file_script: str = "[weight=bold][color=green][slot/][/][/]"
+        file_beatmap: str = "[weight=bold][color=magenta][slot/][/][/]"
+        file_sound: str = "[color=magenta][slot/][/]"
+        file_link: str = "[color=cyan][slot=src/][/] -> [slot=dst/]"
+        file_normal: str = "[slot/]"
+        file_other: str = "[slot/]"
+
+
 @dataclasses.dataclass
 class FileManager:
     username: str
     root: Path
     current: Path
     structure: DirDescriptor
+    settings: FileManagerSettings
 
     @classmethod
     def create(cls, structure):
         username = getpass.getuser()
         root = Path("~/.local/share/K-AIKO").expanduser()
-        return cls(username, root, Path("."), structure)
+        settings = FileManagerSettings()
+        return cls(username, root, Path("."), structure, settings)
+
+    def set_settings(self, settings):
+        self.settings = settings
 
     def check_is_prepared(self, logger):
         def go(path, tree):
@@ -288,47 +336,58 @@ class FileManager:
         self.current = Path(os.path.normpath(str(currpath)))
 
     def ls(self, logger):
+        file_item = logger.rich.parse(self.settings.display.file_item, slotted=True)
+        file_unknown = logger.rich.parse(self.settings.display.file_unknown, slotted=True)
+        file_desc = logger.rich.parse(self.settings.display.file_desc, slotted=True)
+        file_dir = logger.rich.parse(self.settings.display.file_dir, slotted=True)
+        file_script = logger.rich.parse(self.settings.display.file_script, slotted=True)
+        file_beatmap = logger.rich.parse(self.settings.display.file_beatmap, slotted=True)
+        file_sound = logger.rich.parse(self.settings.display.file_sound, slotted=True)
+        file_link = logger.rich.parse(self.settings.display.file_link, slotted=True)
+        file_normal = logger.rich.parse(self.settings.display.file_normal, slotted=True)
+        file_other = logger.rich.parse(self.settings.display.file_other, slotted=True)
+
         res = []
         for child in (self.root / self.current).resolve().iterdir():
             if child.is_symlink():
                 name = logger.escape(str(child.readlink()), type="all")
             else:
                 name = logger.escape(child.name, type="all")
+            name = logger.rich.parse(name)
 
             if child.is_dir():
-                name = f"[file_dir]{name}[/]"
+                name = mu.replace_slot(file_dir, name)
 
             elif child.is_file():
                 if child.suffix in [".py", ".kaiko-profile"]:
-                    name = f"[file_script]{name}[/]"
+                    name = mu.replace_slot(file_script, name)
                 elif child.suffix in [".ka", ".kaiko", ".osu"]:
-                    name = f"[file_beatmap]{name}[/]"
+                    name = mu.replace_slot(file_beatmap, name)
                 elif child.suffix in [".wav", ".mp3", ".mp4", ".m4a", ".ogg"]:
-                    name = f"[file_sound]{name}[/]"
+                    name = mu.replace_slot(file_sound, name)
                 else:
-                    name = f"[file_normal]{name}[/]"
+                    name = mu.replace_slot(file_normal, name)
 
             else:
-                name = f"[file_other]{name}[/]"
+                name = mu.replace_slot(file_other, name)
 
             if child.is_symlink():
                 linkname = logger.escape(child.name, type="all")
-                name = f"[file_link]{linkname}[/]{name}"
+                linkname = logger.rich.parse(linkname)
+                name = mu.replace_slot(file_link, src=linkname, dst=name)
 
             ind, path, descriptor = self.glob(self.root / self.current / child.name)
             desc = descriptor.desc(path) if descriptor is not None else None
+            desc = logger.rich.parse(desc) if desc is not None else None
 
             ordering_key = (descriptor is None, ind, child.is_symlink(), not child.is_dir(), child.suffix, child.stem)
 
             if descriptor is None:
-                name = f"[file_unknown]{name}[/]"
-            desc = f"[file_desc]{desc}[/]" if desc is not None else ""
-            name = f"[file_item]{name}[/]"
+                name = mu.replace_slot(file_unknown, name)
+            desc = mu.replace_slot(file_desc, desc) if desc is not None else mu.Text("")
+            name = mu.replace_slot(file_item, name)
 
-            name = logger.rich.parse(name)
             width = logger.rich.widthof(name)
-            desc = logger.rich.parse(desc)
-
             res.append((ordering_key, width, name, desc))
 
         res = sorted(res, key=lambda e: e[0])

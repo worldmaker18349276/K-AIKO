@@ -123,6 +123,9 @@ class KAIKOMenu:
                 logger_settings=settings.logger,
             )
         )
+        profile_manager.on_change(
+            lambda settings: file_manager.set_settings(settings.files)
+        )
         profile_manager.update(logger)
 
         succ = profile_manager.use(logger)
