@@ -94,6 +94,12 @@ def escape(text):
     return text.replace("[", "[[")
 
 
+class TraverseStrategy(enum.Enum):
+    TopMost = "top most"
+    TopDown = "top down"
+    BottomUp = "bottom up"
+
+
 class Markup:
     def _represent(self):
         raise NotImplementedError
@@ -104,7 +110,7 @@ class Markup:
     def expand(self):
         return self
 
-    def traverse(self, markup_type, func):
+    def traverse(self, markup_type, func, strategy=TraverseStrategy.TopMost):
         raise NotImplementedError
 
 
@@ -116,11 +122,29 @@ class Text(Markup):
         for ch in self.string:
             yield ("[[" if ch == "[" else ch)
 
-    def traverse(self, markup_type, func):
+    def traverse(self, markup_type, func, strategy=TraverseStrategy.TopMost):
         if isinstance(self, markup_type):
             return func(self)
         else:
             return self
+
+
+def traverse_children(markup, markup_type, func, strategy=TraverseStrategy.TopMost):
+    if not hasattr(markup, "children"):
+        return markup
+
+    children = []
+    is_modified = False
+    for child in markup.children:
+        child_ = child.traverse(markup_type, func, strategy=strategy)
+        children.append(child_)
+        is_modified = is_modified or child_ is not child
+
+    return (
+        markup
+        if not is_modified
+        else dataclasses.replace(markup, children=tuple(children))
+    )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -136,19 +160,8 @@ class Group(Markup):
             self, children=tuple(child.expand() for child in self.children)
         )
 
-    def traverse(self, markup_type, func):
-        children = []
-        modified = False
-        for child in self.children:
-            child_ = child.traverse(markup_type, func)
-            children.append(child_)
-            modified = modified or child_ is not child
-
-        return (
-            self
-            if not modified
-            else dataclasses.replace(self, children=tuple(children))
-        )
+    def traverse(self, markup_type, func, strategy=TraverseStrategy.TopMost):
+        return traverse_children(self, markup_type, func, strategy=strategy)
 
 
 class Tag(Markup):
@@ -170,7 +183,7 @@ class Single(Tag):
         param_str = f"={param}" if param is not None else ""
         yield f"[{self.name}{param_str}/]"
 
-    def traverse(self, markup_type, func):
+    def traverse(self, markup_type, func, strategy=TraverseStrategy.TopMost):
         if isinstance(self, markup_type):
             return func(self)
         else:
@@ -199,22 +212,21 @@ class Pair(Tag):
             self, children=tuple(child.expand() for child in self.children)
         )
 
-    def traverse(self, markup_type, func):
-        if isinstance(self, markup_type):
-            return func(self)
-        else:
-            children = []
-            modified = False
-            for child in self.children:
-                child_ = child.traverse(markup_type, func)
-                children.append(child_)
-                modified = modified or child_ is not child
+    def traverse(self, markup_type, func, strategy=TraverseStrategy.TopMost):
+        is_target = isinstance(self, markup_type)
 
-            return (
-                self
-                if not modified
-                else dataclasses.replace(self, children=tuple(children))
-            )
+        if is_target and strategy == TraverseStrategy.TopMost:
+            return func(self)
+
+        if is_target and strategy == TraverseStrategy.TopDown:
+            self = func(self)
+
+        self = traverse_children(self, markup_type, func, strategy=strategy)
+
+        if is_target and strategy == TraverseStrategy.BottomUp:
+            self = func(self)
+
+        return self
 
 
 # template
@@ -280,7 +292,7 @@ def replace_slot(template, *args, **kwargs):
             return args.pop(0) if args else Group([])
         else:
             return kwargs.pop(slot.id) if slot.id in kwargs else Group([])
-    return template.traverse(Slot, inject)
+    return template.traverse(Slot, inject, strategy=TraverseStrategy.TopMost)
 
 
 def make_single_template(name, template, tags, props={}):
