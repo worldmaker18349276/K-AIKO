@@ -78,8 +78,6 @@ class LoggerSettings(cfg.Configurable):
 
         token_unknown : str
             The markup template for the unknown token.
-        token_unfinished : str
-            The markup template for the unfinished token.
         token_command : str
             The markup template for the command token.
         token_keyword : str
@@ -92,7 +90,6 @@ class LoggerSettings(cfg.Configurable):
         whitespace: str = "[weight=dim]⌴[/]"
 
         token_unknown: str = "[color=red][slot/][/]"
-        token_unfinished: str = "[slot/]"
         token_command: str = "[color=bright_blue][slot/][/]"
         token_keyword: str = "[color=bright_magenta][slot/][/]"
         token_argument: str = "[color=bright_green][slot/][/]"
@@ -163,10 +160,7 @@ class Logger:
 
         self.rich.add_pair_template("codepoint", logger_settings.codepoint)
 
-        self.rich.add_pair_template("unknown", logger_settings.shell.token_unknown)
-        self.rich.add_pair_template(
-            "unfinished", logger_settings.shell.token_unfinished
-        )
+        self.rich.add_pair_template("unk", logger_settings.shell.token_unknown)
         self.rich.add_pair_template("cmd", logger_settings.shell.token_command)
         self.rich.add_pair_template("kw", logger_settings.shell.token_keyword)
         self.rich.add_pair_template("arg", logger_settings.shell.token_argument)

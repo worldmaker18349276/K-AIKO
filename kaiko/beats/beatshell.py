@@ -2042,8 +2042,18 @@ class TextRenderer:
             clean,
         )
 
-    @staticmethod
-    def render_grammar(buffer, tokens, typeahead, pos, highlighted, clean, tags, typeahead_template, highlight_template):
+    def render_grammar(
+        self,
+        buffer,
+        tokens,
+        typeahead,
+        pos,
+        highlighted,
+        clean,
+        caret_markup,
+        typeahead_template,
+        highlight_template,
+    ):
         length = len(buffer)
         buffer = list(buffer)
 
@@ -2051,14 +2061,14 @@ class TextRenderer:
             # markup whitespace
             for index in range(token.mask.start, token.mask.stop):
                 if buffer[index] == " ":
-                    buffer[index] = tags["ws"]()
+                    buffer[index] = self.rich.tags["ws"]()
 
             # markup escape
             for index in token.quotes:
                 if buffer[index] == "'":
-                    buffer[index] = tags["qt"]()
+                    buffer[index] = self.rich.tags["qt"]()
                 elif buffer[index] == "\\":
-                    buffer[index] = tags["bs"]()
+                    buffer[index] = self.rich.tags["bs"]()
                 else:
                     assert False
 
@@ -2071,9 +2081,9 @@ class TextRenderer:
 
         if not clean:
             if pos < len(buffer):
-                buffer[pos] = tags["caret"](mu.join([buffer[pos]]).children)
+                buffer[pos] = caret_markup(mu.join([buffer[pos]]).children)
             else:
-                typeahead = tags["caret"](mu.join(typeahead[0]).children), typeahead[1:]
+                typeahead = caret_markup(mu.join(typeahead[0]).children), typeahead[1:]
 
         typeahead_markup = mu.replace_slot(typeahead_template, mu.join(typeahead))
 
@@ -2088,16 +2098,14 @@ class TextRenderer:
             # markup token
             token_markup = mu.join(buffer[token.mask])
             if token.type is None:
-                if not clean and token.mask.stop == length:
-                    token_markup = tags["unfinished"](token_markup.children)
-                else:
-                    token_markup = tags["unknown"](token_markup.children)
+                if clean or token.mask.stop != length:
+                    token_markup = self.rich.tags["unk"](token_markup.children)
             elif token.type is cmd.TOKEN_TYPE.COMMAND:
-                token_markup = tags["cmd"](token_markup.children)
+                token_markup = self.rich.tags["cmd"](token_markup.children)
             elif token.type is cmd.TOKEN_TYPE.KEYWORD:
-                token_markup = tags["kw"](token_markup.children)
+                token_markup = self.rich.tags["kw"](token_markup.children)
             elif token.type is cmd.TOKEN_TYPE.ARGUMENT:
-                token_markup = tags["arg"](token_markup.children)
+                token_markup = self.rich.tags["arg"](token_markup.children)
             else:
                 assert False
 
@@ -2117,15 +2125,13 @@ class TextRenderer:
 
     @dn.datanode
     def render_text(self, state):
-        tags = dict(self.rich.tags)
-        tags["caret"] = Caret
         typeahead_template = self.rich.parse(self.settings.typeahead, slotted=True)
         highlight_template = self.rich.parse(self.settings.highlight, slotted=True)
 
         render_grammar = dn.starcachemap(
             self.render_grammar,
             key=self._render_grammar_key,
-            tags=tags,
+            caret_markup=Caret,
             typeahead_template=typeahead_template,
             highlight_template=highlight_template,
         )
