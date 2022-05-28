@@ -446,23 +446,19 @@ def cache(node, key=lambda a: a):
 
 
 def map(func, **kw):
-    func = functools.partial(func, **kw)
-    return DataNode.from_func(func)
+    return DataNode.from_func(lambda arg: func(arg, **kw))
 
 
 def starmap(func, **kw):
-    func = functools.partial(func, **kw)
-    return DataNode.from_func(lambda args: func(*args))
+    return DataNode.from_func(lambda args: func(*args, **kw))
 
 
 def cachemap(func, key=lambda a: a, **kw):
-    func = functools.partial(func, **kw)
-    return cache(func, key=key)
+    return cache(lambda arg: func(arg, **kw), key=key)
 
 
 def starcachemap(func, key=lambda *a: a, **kw):
-    func = functools.partial(func, **kw)
-    return cache(lambda args: func(*args), key=lambda args: key(*args))
+    return cache(lambda args: func(*args, **kw), key=lambda args: key(*args))
 
 
 # signal analysis
