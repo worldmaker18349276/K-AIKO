@@ -15,286 +15,7 @@ from ..devices import engines
 from . import beatwidgets
 
 
-# widgets
-@dataclasses.dataclass
-class PatternsWidgetSettings:
-    r"""
-    Fields
-    ------
-    patterns : list of str
-        The patterns to loop.
-    """
-    patterns: List[str] = dataclasses.field(
-        default_factory=lambda: [
-            "[color=cyan]⠶⠦⣚⠀⠶[/]",
-            "[color=cyan]⢎⣀⡛⠀⠶[/]",
-            "[color=cyan]⢖⣄⠻⠀⠶[/]",
-            "[color=cyan]⠖⠐⡩⠂⠶[/]",
-            "[color=cyan]⠶⠀⡭⠲⠶[/]",
-            "[color=cyan]⠶⠀⣬⠉⡱[/]",
-            "[color=cyan]⠶⠀⣦⠙⠵[/]",
-            "[color=cyan]⠶⠠⣊⠄⠴[/]",
-        ]
-    )
-
-
-class PatternsWidget:
-    def __init__(self, settings):
-        self.settings = settings
-
-    def load(self, provider):
-        rich = provider.get(mu.RichParser)
-        metronome = provider.get(engines.Metronome)
-
-        patterns = self.settings.patterns
-
-        markuped_patterns = [rich.parse(pattern) for pattern in patterns]
-
-        def patterns_func(arg):
-            time, ran = arg
-            beat = metronome.beat(time)
-            ind = int(beat * len(markuped_patterns) // 1) % len(markuped_patterns)
-            res = markuped_patterns[ind]
-            return [(0, res)]
-
-        return patterns_func
-
-
-@dataclasses.dataclass
-class MarkerWidgetSettings:
-    r"""
-    Fields
-    ------
-    normal_appearance : str
-        The appearance of normal-style markers.
-    blinking_appearance : str
-        The appearance of blinking-style markers.
-    blink_ratio : float
-        The ratio to blink.
-    """
-    normal_appearance: str = "❯ "
-    blinking_appearance: str = "[weight=bold]❯ [/]"
-    blink_ratio: float = 0.3
-
-
-class MarkerWidget:
-    def __init__(self, settings):
-        self.settings = settings
-
-    def load(self, provider):
-        rich = provider.get(mu.RichParser)
-        metronome = provider.get(engines.Metronome)
-
-        blink_ratio = self.settings.blink_ratio
-        normal = [(0, rich.parse(self.settings.normal_appearance))]
-        blinking = [(0, rich.parse(self.settings.blinking_appearance))]
-
-        def marker_func(arg):
-            time, ran = arg
-            beat = metronome.beat(time)
-            if beat % 4 < min(1.0, blink_ratio):
-                return blinking
-            else:
-                return normal
-
-        return marker_func
-
-
-class BeatshellWidgetFactory:
-    monitor = beatwidgets.MonitorWidgetSettings
-    patterns = PatternsWidgetSettings
-    marker = MarkerWidgetSettings
-
-    def __init__(self, rich, renderer, metronome):
-        self.provider = Provider()
-        self.provider.set(rich)
-        self.provider.set(renderer)
-        self.provider.set(metronome)
-
-    def create(self, widget_settings):
-        if isinstance(widget_settings, BeatshellWidgetFactory.monitor):
-            return beatwidgets.MonitorWidget(widget_settings).load(self.provider)
-        elif isinstance(widget_settings, BeatshellWidgetFactory.patterns):
-            return PatternsWidget(widget_settings).load(self.provider)
-        elif isinstance(widget_settings, BeatshellWidgetFactory.marker):
-            return MarkerWidget(widget_settings).load(self.provider)
-        else:
-            raise TypeError
-
-
-BeatshellIconWidgetSettings = Union[
-    PatternsWidgetSettings, beatwidgets.MonitorWidgetSettings,
-]
-
-
-# shell
-class BeatShellSettings(cfg.Configurable):
-    r"""
-    Fields
-    ------
-    preview_song : bool
-        Whether to preview the song when selected.
-    history_size : int
-        The maximum history size.
-    debug_monitor : bool
-        Whether to monitor renderer.
-    """
-    preview_song: bool = True
-    history_size: int = 500
-    debug_monitor: bool = False
-
-    @cfg.subconfig
-    class input(cfg.Configurable):
-        r"""
-        Fields
-        ------
-        confirm_key : str
-            The key for confirming input.
-        help_key : str
-            The key for help.
-        autocomplete_keys : tuple of str and str and str
-            The keys for finding the next, previous and canceling suggestions.
-
-        keymap : dict from str to str
-            The keymap of beatshell. The key of dict is the keystroke, and the
-            value of dict is the action to activate. The format of action is
-            just like a normal python code: `input.insert_typeahead() or
-            input.move_right()`. The syntax is::
-
-                <function> ::= "input." /(?!_)\w+/ "()"
-                <operator> ::= " | " | " & " | " and " | " or "
-                <action> ::= (<function> <operator>)* <function>
-
-        """
-        confirm_key: str = "Enter"
-        help_key: str = "Alt_Enter"
-        autocomplete_keys: Tuple[str, str, str] = ("Tab", "Shift_Tab", "Esc")
-
-        keymap: Dict[str, str] = {
-            "Backspace": "input.backspace()",
-            "Alt_Backspace": "input.delete_backward_token()",
-            "Alt_Delete": "input.delete_forward_token()",
-            "Delete": "input.delete()",
-            "Left": "input.move_left()",
-            "Right": "input.insert_typeahead() or input.move_right()",
-            "Up": "input.prev()",
-            "Down": "input.next()",
-            "Home": "input.move_to_start()",
-            "End": "input.move_to_end()",
-            "Ctrl_Left": "input.move_to_word_start()",
-            "Ctrl_Right": "input.move_to_word_end()",
-            "Ctrl_Backspace": "input.delete_to_word_start()",
-            "Ctrl_Delete": "input.delete_to_word_end()",
-            "Esc": "input.cancel_typeahead() | input.cancel_hint()",
-            "'\\x04'": "input.delete() or input.exit_if_empty()",
-        }
-
-    @cfg.subconfig
-    class prompt(cfg.Configurable):
-        r"""
-        Fields
-        ------
-        t0 : float
-        tempo : float
-
-        icon_width : int
-            The text width of icon.
-        marker_width : int
-            The text width of marker.
-
-        icons : BeatShellIconWidgetSettings
-            The appearances of icon.
-        marker : MarkerWidgetSettings
-            The appearance of marker.
-        """
-        t0: float = 0.0
-        tempo: float = 130.0
-
-        icon_width: int = 5
-        marker_width: int = 2
-
-        icons: BeatshellIconWidgetSettings = PatternsWidgetSettings()
-        marker: MarkerWidgetSettings = MarkerWidgetSettings()
-
-        @cfg.subconfig
-        class textbox(cfg.Configurable, beatwidgets.TextBoxWidgetSettings):
-            __doc__ = beatwidgets.TextBoxWidgetSettings.__doc__
-
-    @cfg.subconfig
-    class banner(cfg.Configurable):
-        r"""
-        Fields
-        ------
-        banner : str
-            The template of banner with slots: `user`, `profile`, `path`.
-
-        user : str
-            The template of user with slots: `user_name`.
-        profile : tuple of str and str
-            The templates of profile with slots: `profile_name`, the second is
-            for changed profile.
-        path : tuple of str and str
-            The templates of path with slots: `current_path`, the second is for
-            unknown path.
-        """
-
-        banner: str = (
-            "[color=bright_black][[[/]"
-            "[slot=user/]"
-            "[color=bright_black]/[/]"
-            "[slot=profile/]"
-            "[color=bright_black]]][/]"
-            " [slot=path/]"
-        )
-        user: str = "[color=magenta]♜ [weight=bold][slot=user_name/][/][/]"
-        profile: Tuple[str, str] = (
-            "[color=blue]⚙ [weight=bold][slot=profile_name/][/][/]",
-            "[color=blue]⚙ [weight=bold][slot=profile_name/][/][/]*",
-        )
-        path: Tuple[str, str] = (
-            "[color=cyan]⛩ [weight=bold][slot=current_path/][/][/]",
-            "[color=cyan]⛩ [weight=dim][slot=current_path/][/][/]",
-        )
-
-    @cfg.subconfig
-    class text(cfg.Configurable):
-        r"""
-        Fields
-        ------
-        typeahead : str
-            The markup template for the type-ahead.
-        highlight : str
-            The markup template for the highlighted token.
-
-        desc_message : str
-            The markup template for the desc message.
-        info_message : str
-            The markup template for the info message.
-        message_max_lines : int
-            The maximum number of lines of the message.
-        message_overflow_ellipsis : str
-            Texts to display when overflowing.
-
-        suggestions_lines : int
-            The maximum number of lines of the suggestions.
-        suggestion_items : tuple of str and str
-            The markup templates for the unselected/selected suggestion.
-        suggestion_overflow_ellipses : tuple of str and str
-            Texts to display when overflowing top/bottom.
-        """
-        typeahead: str = "[weight=dim][slot/][/]"
-        highlight: str = "[underline][slot/][/]"
-
-        desc_message: str = "[weight=dim][slot/][/]"
-        info_message: str = f"{'─'*80}\n[slot/]\n{'─'*80}"
-        message_max_lines: int = 16
-        message_overflow_ellipsis: str = "[weight=dim]…[/]"
-
-        suggestions_lines: int = 8
-        suggestion_items: Tuple[str, str] = ("• [slot/]", "• [invert][slot/][/]")
-        suggestion_overflow_ellipses: Tuple[str, str] = ("[weight=dim]ⵗ[/]", "[weight=dim]ⵗ[/]")
-
-
+# input
 class Hint:
     pass
 
@@ -517,11 +238,66 @@ class TextBuffer:
             return slice(self.pos, len(self.buffer))
 
 
+class BeatInputSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    confirm_key : str
+        The key for confirming input.
+    help_key : str
+        The key for help.
+    autocomplete_keys : tuple of str and str and str
+        The keys for finding the next, previous and canceling suggestions.
+
+    keymap : dict from str to str
+        The keymap of beatshell. The key of dict is the keystroke, and the
+        value of dict is the action to activate. The format of action is
+        just like a normal python code: `input.insert_typeahead() or
+        input.move_right()`. The syntax is::
+
+            <function> ::= "input." /(?!_)\w+/ "()"
+            <operator> ::= " | " | " & " | " and " | " or "
+            <action> ::= (<function> <operator>)* <function>
+
+    preview_song : bool
+        Whether to preview the song when selected.
+    history_size : int
+        The maximum history size.
+    """
+    confirm_key: str = "Enter"
+    help_key: str = "Alt_Enter"
+    autocomplete_keys: Tuple[str, str, str] = ("Tab", "Shift_Tab", "Esc")
+
+    keymap: Dict[str, str] = {
+        "Backspace": "input.backspace()",
+        "Alt_Backspace": "input.delete_backward_token()",
+        "Alt_Delete": "input.delete_forward_token()",
+        "Delete": "input.delete()",
+        "Left": "input.move_left()",
+        "Right": "input.insert_typeahead() or input.move_right()",
+        "Up": "input.prev()",
+        "Down": "input.next()",
+        "Home": "input.move_to_start()",
+        "End": "input.move_to_end()",
+        "Ctrl_Left": "input.move_to_word_start()",
+        "Ctrl_Right": "input.move_to_word_end()",
+        "Ctrl_Backspace": "input.delete_to_word_start()",
+        "Ctrl_Delete": "input.delete_to_word_end()",
+        "Esc": "input.cancel_typeahead() | input.cancel_hint()",
+        "'\\x04'": "input.delete() or input.exit_if_empty()",
+    }
+
+    preview_song: bool = True
+    history_size: int = 500
+
+
 class BeatInput:
     r"""Input editor for beatshell.
 
     Attributes
     ----------
+    input_settings : BeatInputSettings
+        The input settings.
     command_parser_getter : function
         The function to produce command parser for beatshell.
     semantic_analyzer : shells.SemanticAnalyzer
@@ -534,10 +310,6 @@ class BeatInput:
         The directory of cache data.
     history : HistoryManager
         The input history manager.
-    shell_settings : BeatShellSettings
-        The shell settings.
-    devices_settings : DevicesSettings
-        The devices settings.
     text_buffer : TextBuffer
         The text buffer of beatshell.
     typeahead : str
@@ -567,8 +339,7 @@ class BeatInput:
         preview_handler,
         rich,
         cache_dir,
-        shell_settings_getter=BeatShellSettings,
-        devices_settings_getter=engines.DevicesSettings,
+        input_settings_getter=BeatInputSettings,
     ):
         r"""Constructor.
 
@@ -580,16 +351,13 @@ class BeatInput:
         rich : markups.RichParser
         cache_dir : Path
             The directory of cache data.
-        shell_settings_getter : BeatShellSettings
-            The settings getter of beatshell.
-        devices_settings_getter : engines.DevicesSettings
-            The settings getter of devices.
+        input_settings_getter : BeatInputSettings
+            The settings getter of input.
         """
         self.rich = rich
 
         self.command_parser_getter = command_parser_getter
-        self._shell_settings_getter = shell_settings_getter
-        self._devices_settings_getter = devices_settings_getter
+        self._input_settings_getter = input_settings_getter
 
         self.semantic_analyzer = sh.SemanticAnalyzer(None)
         self.cache_dir = cache_dir
@@ -611,24 +379,26 @@ class BeatInput:
         self.new_session()
 
     @property
-    def shell_settings(self):
-        return self._shell_settings_getter()
-
-    @property
-    def devices_settings(self):
-        return self._devices_settings_getter()
+    def input_settings(self):
+        return self._input_settings_getter()
 
     @dn.datanode
-    def prompt(self):
+    def prompt(self, shell_settings, devices_settings):
         r"""Start prompt.
+
+        Parameters
+        ----------
+        shell_settings : BeatShellSettings
+            The prompt settings.
+        devices_settings : DevicesSettings
+            The devices settings.
 
         Returns
         -------
         prompt_task : datanodes.DataNode
             The datanode to execute the prompt.
         """
-        shell_settings = self.shell_settings
-        devices_settings = self.devices_settings
+        input_settings = self.input_settings
 
         # engines
         debug_monitor = shell_settings.debug_monitor
@@ -647,7 +417,7 @@ class BeatInput:
         )
 
         # handlers
-        stroke = BeatStroke(self, shell_settings.input)
+        stroke = BeatStroke(self, input_settings)
         prompt = BeatPrompt(self, self.rich, shell_settings)
 
         stroke.register(controller)
@@ -670,7 +440,7 @@ class BeatInput:
         self.semantic_analyzer.update_parser(self.command_parser_getter())
 
         groups = self.semantic_analyzer.get_all_groups()
-        history_size = self.shell_settings.history_size
+        history_size = self.input_settings.history_size
         self.text_buffer = TextBuffer(self.history.read_history(groups, history_size))
 
         self.cancel_typeahead()
@@ -862,7 +632,7 @@ class BeatInput:
 
     @locked
     def update_preview(self):
-        if not self.shell_settings.preview_song:
+        if not self.input_settings.preview_song:
             return
         if self.hint_state is None:
             self.preview_handler(None)
@@ -1617,7 +1387,237 @@ class BeatStroke:
         return handler
 
 
+# widgets
+@dataclasses.dataclass
+class PatternsWidgetSettings:
+    r"""
+    Fields
+    ------
+    patterns : list of str
+        The patterns to loop.
+    """
+    patterns: List[str] = dataclasses.field(
+        default_factory=lambda: [
+            "[color=cyan]⠶⠦⣚⠀⠶[/]",
+            "[color=cyan]⢎⣀⡛⠀⠶[/]",
+            "[color=cyan]⢖⣄⠻⠀⠶[/]",
+            "[color=cyan]⠖⠐⡩⠂⠶[/]",
+            "[color=cyan]⠶⠀⡭⠲⠶[/]",
+            "[color=cyan]⠶⠀⣬⠉⡱[/]",
+            "[color=cyan]⠶⠀⣦⠙⠵[/]",
+            "[color=cyan]⠶⠠⣊⠄⠴[/]",
+        ]
+    )
+
+
+class PatternsWidget:
+    def __init__(self, settings):
+        self.settings = settings
+
+    def load(self, provider):
+        rich = provider.get(mu.RichParser)
+        metronome = provider.get(engines.Metronome)
+
+        patterns = self.settings.patterns
+
+        markuped_patterns = [rich.parse(pattern) for pattern in patterns]
+
+        def patterns_func(arg):
+            time, ran = arg
+            beat = metronome.beat(time)
+            ind = int(beat * len(markuped_patterns) // 1) % len(markuped_patterns)
+            res = markuped_patterns[ind]
+            return [(0, res)]
+
+        return patterns_func
+
+
+@dataclasses.dataclass
+class MarkerWidgetSettings:
+    r"""
+    Fields
+    ------
+    normal_appearance : str
+        The appearance of normal-style markers.
+    blinking_appearance : str
+        The appearance of blinking-style markers.
+    blink_ratio : float
+        The ratio to blink.
+    """
+    normal_appearance: str = "❯ "
+    blinking_appearance: str = "[weight=bold]❯ [/]"
+    blink_ratio: float = 0.3
+
+
+class MarkerWidget:
+    def __init__(self, settings):
+        self.settings = settings
+
+    def load(self, provider):
+        rich = provider.get(mu.RichParser)
+        metronome = provider.get(engines.Metronome)
+
+        blink_ratio = self.settings.blink_ratio
+        normal = [(0, rich.parse(self.settings.normal_appearance))]
+        blinking = [(0, rich.parse(self.settings.blinking_appearance))]
+
+        def marker_func(arg):
+            time, ran = arg
+            beat = metronome.beat(time)
+            if beat % 4 < min(1.0, blink_ratio):
+                return blinking
+            else:
+                return normal
+
+        return marker_func
+
+
+class BeatshellWidgetFactory:
+    monitor = beatwidgets.MonitorWidgetSettings
+    patterns = PatternsWidgetSettings
+    marker = MarkerWidgetSettings
+
+    def __init__(self, rich, renderer, metronome):
+        self.provider = Provider()
+        self.provider.set(rich)
+        self.provider.set(renderer)
+        self.provider.set(metronome)
+
+    def create(self, widget_settings):
+        if isinstance(widget_settings, BeatshellWidgetFactory.monitor):
+            return beatwidgets.MonitorWidget(widget_settings).load(self.provider)
+        elif isinstance(widget_settings, BeatshellWidgetFactory.patterns):
+            return PatternsWidget(widget_settings).load(self.provider)
+        elif isinstance(widget_settings, BeatshellWidgetFactory.marker):
+            return MarkerWidget(widget_settings).load(self.provider)
+        else:
+            raise TypeError
+
+
+BeatshellIconWidgetSettings = Union[
+    PatternsWidgetSettings, beatwidgets.MonitorWidgetSettings,
+]
+
+
 # prompt
+class BeatShellSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    debug_monitor : bool
+        Whether to monitor renderer.
+    """
+
+    debug_monitor: bool = False
+
+    input = cfg.subconfig(BeatInputSettings)
+
+    @cfg.subconfig
+    class prompt(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        t0 : float
+        tempo : float
+
+        icon_width : int
+            The text width of icon.
+        marker_width : int
+            The text width of marker.
+
+        icons : BeatShellIconWidgetSettings
+            The appearances of icon.
+        marker : MarkerWidgetSettings
+            The appearance of marker.
+        """
+        t0: float = 0.0
+        tempo: float = 130.0
+
+        icon_width: int = 5
+        marker_width: int = 2
+
+        icons: BeatshellIconWidgetSettings = PatternsWidgetSettings()
+        marker: MarkerWidgetSettings = MarkerWidgetSettings()
+
+        @cfg.subconfig
+        class textbox(cfg.Configurable, beatwidgets.TextBoxWidgetSettings):
+            __doc__ = beatwidgets.TextBoxWidgetSettings.__doc__
+
+    @cfg.subconfig
+    class banner(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        banner : str
+            The template of banner with slots: `user`, `profile`, `path`.
+
+        user : str
+            The template of user with slots: `user_name`.
+        profile : tuple of str and str
+            The templates of profile with slots: `profile_name`, the second is
+            for changed profile.
+        path : tuple of str and str
+            The templates of path with slots: `current_path`, the second is for
+            unknown path.
+        """
+
+        banner: str = (
+            "[color=bright_black][[[/]"
+            "[slot=user/]"
+            "[color=bright_black]/[/]"
+            "[slot=profile/]"
+            "[color=bright_black]]][/]"
+            " [slot=path/]"
+        )
+        user: str = "[color=magenta]♜ [weight=bold][slot=user_name/][/][/]"
+        profile: Tuple[str, str] = (
+            "[color=blue]⚙ [weight=bold][slot=profile_name/][/][/]",
+            "[color=blue]⚙ [weight=bold][slot=profile_name/][/][/]*",
+        )
+        path: Tuple[str, str] = (
+            "[color=cyan]⛩ [weight=bold][slot=current_path/][/][/]",
+            "[color=cyan]⛩ [weight=dim][slot=current_path/][/][/]",
+        )
+
+    @cfg.subconfig
+    class text(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        typeahead : str
+            The markup template for the type-ahead.
+        highlight : str
+            The markup template for the highlighted token.
+
+        desc_message : str
+            The markup template for the desc message.
+        info_message : str
+            The markup template for the info message.
+        message_max_lines : int
+            The maximum number of lines of the message.
+        message_overflow_ellipsis : str
+            Texts to display when overflowing.
+
+        suggestions_lines : int
+            The maximum number of lines of the suggestions.
+        suggestion_items : tuple of str and str
+            The markup templates for the unselected/selected suggestion.
+        suggestion_overflow_ellipses : tuple of str and str
+            Texts to display when overflowing top/bottom.
+        """
+        typeahead: str = "[weight=dim][slot/][/]"
+        highlight: str = "[underline][slot/][/]"
+
+        desc_message: str = "[weight=dim][slot/][/]"
+        info_message: str = f"{'─'*80}\n[slot/]\n{'─'*80}"
+        message_max_lines: int = 16
+        message_overflow_ellipsis: str = "[weight=dim]…[/]"
+
+        suggestions_lines: int = 8
+        suggestion_items: Tuple[str, str] = ("• [slot/]", "• [invert][slot/][/]")
+        suggestion_overflow_ellipses: Tuple[str, str] = ("[weight=dim]ⵗ[/]", "[weight=dim]ⵗ[/]")
+
+
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 

@@ -186,8 +186,7 @@ class KAIKOMenu:
             preview_handler,
             self.logger.rich,
             self.cache_dir,
-            lambda: self.settings.shell,
-            lambda: self.settings.devices,
+            lambda: self.settings.shell.input,
         )
 
         self.print_tips()
@@ -195,7 +194,7 @@ class KAIKOMenu:
             self.print_banner()
 
             # parse command
-            yield from input.prompt().join()
+            yield from input.prompt(self.settings.shell, self.settings.devices).join()
 
             # execute result
             result = input.result
