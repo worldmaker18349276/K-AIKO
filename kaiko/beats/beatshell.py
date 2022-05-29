@@ -206,8 +206,6 @@ class BeatShellSettings(cfg.Configurable):
             The appearances of icon.
         marker : MarkerWidgetSettings
             The appearance of marker.
-        textbox : beatwidgets.TextBoxWidgetSettings
-            The appearance of text box.
         """
         t0: float = 0.0
         tempo: float = 130.0
@@ -217,7 +215,10 @@ class BeatShellSettings(cfg.Configurable):
 
         icons: BeatshellIconWidgetSettings = PatternsWidgetSettings()
         marker: MarkerWidgetSettings = MarkerWidgetSettings()
-        textbox: beatwidgets.TextBoxWidgetSettings = beatwidgets.TextBoxWidgetSettings()
+
+        @cfg.subconfig
+        class textbox(cfg.Configurable, beatwidgets.TextBoxWidgetSettings):
+            __doc__ = beatwidgets.TextBoxWidgetSettings.__doc__
 
     @cfg.subconfig
     class banner(cfg.Configurable):
@@ -1674,11 +1675,6 @@ class ViewState:
         """
         self.input = input
 
-    @dn.datanode
-    def load(self, fin_event):
-        modified_counter = None
-        key_pressed_counter = None
-
         self.key_pressed = False
         self.buffer = []
         self.tokens = []
@@ -1687,7 +1683,13 @@ class ViewState:
         self.typeahead = ""
         self.clean = False
         self.hint = None
+        self.popup = []
         self.state = "EDIT"
+
+    @dn.datanode
+    def load(self, fin_event):
+        modified_counter = None
+        key_pressed_counter = None
 
         res, time, width = yield
 
