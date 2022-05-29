@@ -321,6 +321,7 @@ class Result:
 
 @dataclasses.dataclass(frozen=True)
 class ErrorResult(Result):
+    index : Optional[int]
     error: Exception
 
 
@@ -540,8 +541,6 @@ class BeatInput:
         The text buffer of beatshell.
     typeahead : str
         The type ahead of input.
-    highlighted : int or None
-        The index of highlighted token.
     tab_state : TabState or None
         The state of autocomplete.
     hint_state : HintState or None
@@ -598,7 +597,6 @@ class BeatInput:
 
         self.text_buffer = TextBuffer([])
         self.typeahead = ""
-        self.highlighted = None
         self.tab_state = None
         self.hint_state = None
 
@@ -677,8 +675,7 @@ class BeatInput:
         self.cancel_typeahead()
         self.update_buffer()
         self.cancel_hint()
-        self.clear_result()
-        self.state = "EDIT"
+        self.start()
 
     def record_command(self):
         command = "".join(self.text_buffer.buffer).strip()
@@ -691,19 +688,37 @@ class BeatInput:
         self.cancel_typeahead()
         self.update_buffer()
         self.cancel_hint()
-        self.clear_result()
-        self.state = "EDIT"
+        self.start()
 
     @locked
     @onstate("EDIT")
-    def finish(self):
+    def finish(self, res):
         r"""Finish this session of input.
+
+        Parameters
+        ----------
+        res : Result
+            The result.
 
         Returns
         -------
         succ : bool
         """
+        self.result = res
         self.state = "FIN"
+        return True
+
+    @locked
+    @onstate("FIN")
+    def start(self):
+        """Start a session of input.
+
+        Returns
+        -------
+        succ : bool
+        """
+        self.result = None
+        self.state = "EDIT"
         return True
 
     @locked
@@ -757,34 +772,6 @@ class BeatInput:
         return True
 
     @locked
-    def set_result(self, res):
-        """Set result.
-        Set result of this session.
-
-        Parameters
-        ----------
-        res : Result
-            The result.
-
-        Returns
-        -------
-        succ : bool
-        """
-        self.result = res
-        return True
-
-    @locked
-    def clear_result(self):
-        """Clear result.
-
-        Returns
-        -------
-        succ : bool
-        """
-        self.result = None
-        return True
-
-    @locked
     def set_hint(self, hint, index=None):
         """Set hint.
 
@@ -817,7 +804,6 @@ class BeatInput:
         else:
             assert False
 
-        self.highlighted = index
         self.hint_state = HintState(index, hint, msg_tokens)
         self.update_preview()
         return True
@@ -834,7 +820,6 @@ class BeatInput:
         """
         if self.hint_state is None:
             return False
-        self.highlighted = None
         self.hint_state = None
         self.update_preview()
         return True
@@ -856,7 +841,7 @@ class BeatInput:
         if self.hint_state.tokens is None:
             return self.cancel_hint()
 
-        if self.highlighted is not None and self.highlighted >= len(self.semantic_analyzer.tokens):
+        if self.hint_state.index is not None and self.hint_state.index >= len(self.semantic_analyzer.tokens):
             return self.cancel_hint()
 
         if len(self.hint_state.tokens) > len(self.semantic_analyzer.tokens):
@@ -1371,8 +1356,7 @@ class BeatInput:
         self.cancel_hint()
 
         if not self.semantic_analyzer.tokens:
-            self.set_result(CompleteResult(lambda: None))
-            self.finish()
+            self.finish(CompleteResult(lambda: None))
             return True
 
         if self.semantic_analyzer.lex_state == sh.SHLEXER_STATE.BACKSLASHED:
@@ -1383,17 +1367,13 @@ class BeatInput:
             res, index = self.semantic_analyzer.result, self.semantic_analyzer.length
 
         if isinstance(res, cmd.CommandUnfinishError):
-            self.set_result(ErrorResult(res))
-            self.finish()
+            self.finish(ErrorResult(None, res))
             return False
         elif isinstance(res, (cmd.CommandParseError, ShellSyntaxError)):
-            self.set_result(ErrorResult(res))
-            self.highlighted = index
-            self.finish()
+            self.finish(ErrorResult(index, res))
             return False
         else:
-            self.set_result(CompleteResult(res))
-            self.finish()
+            self.finish(CompleteResult(res))
             return True
 
     @locked
@@ -1543,8 +1523,7 @@ class BeatInput:
     @locked
     def unknown_key(self, key):
         self.cancel_hint()
-        self.set_result(ErrorResult(ValueError(f"Unknown key: " + key)))
-        self.finish()
+        self.finish(ErrorResult(None, ValueError(f"Unknown key: " + key)))
 
 
 class BeatStroke:
@@ -1717,7 +1696,6 @@ class ViewState:
                     self.buffer = list(self.input.text_buffer.buffer)
                     self.tokens = list(self.input.semantic_analyzer.tokens)
                 self.pos = self.input.text_buffer.pos
-                self.highlighted = self.input.highlighted
 
                 self.typeahead = self.input.typeahead
                 self.clean = self.input.result is not None
@@ -1726,6 +1704,14 @@ class ViewState:
                     if self.input.hint_state is not None
                     else None
                 )
+
+                if isinstance(self.input.result, ErrorResult):
+                    self.highlighted = self.input.result.index
+                elif self.input.hint_state is not None:
+                    self.highlighted = self.input.hint_state.index
+                else:
+                    self.highlighted = None
+
                 self.popup = []
                 while True:
                     try:
