@@ -405,6 +405,116 @@ class HistoryManager:
         return [list(command) for command in buffers[-read_size:]]
 
 
+class TextBuffer:
+    r"""Text buffer for beatshell.
+
+    Attributes
+    ----------
+    buffers : list of list of str
+        The editable buffers of input history.
+    buffer_index : int
+        The negative index of current input buffer.
+    buffer : list of str
+        The buffer of current input.
+    pos : int
+        The caret position of input.
+    """
+
+    def __init__(self, history):
+        self.buffers = history
+        self.buffers.append([])
+        self.buffer_index = -1
+        self.pos = len(self.buffer)
+
+    @property
+    def buffer(self):
+        return self.buffers[self.buffer_index]
+
+    def prev(self):
+        if self.buffer_index == -len(self.buffers):
+            return False
+        self.buffer_index -= 1
+        self.pos = len(self.buffer)
+        return True
+
+    def next(self):
+        if self.buffer_index == -1:
+            return False
+        self.buffer_index += 1
+        self.pos = len(self.buffer)
+        return True
+
+    def replace(self, selection, text):
+        if not all(ch.isprintable() for ch in text):
+            raise ValueError("invalid text to insert: " + repr("".join(text)))
+
+        start, stop, _ = selection.indices(len(self.buffer))
+        self.buffer[selection] = text
+        selection = slice(start, start + len(text))
+        if start <= self.pos < stop:
+            self.pos = selection.stop
+        elif stop <= self.pos:
+            self.pos += selection.stop - stop
+        return selection
+
+    def insert(self, text):
+        text = list(text)
+
+        if len(text) == 0:
+            return False
+
+        while len(text) > 0 and text[0] == "\b":
+            del text[0]
+            del self.buffer[self.pos - 1]
+            self.pos = self.pos - 1
+
+        self.replace(slice(self.pos, self.pos), text)
+        return True
+
+    def backspace(self):
+        if self.pos == 0:
+            return False
+        self.replace(slice(self.pos-1, self.pos), "")
+        return True
+
+    def delete(self):
+        if self.pos >= len(self.buffer):
+            return False
+        self.replace(slice(self.pos, self.pos+1), "")
+        return True
+
+    def delete_all(self):
+        if not self.buffer:
+            return False
+        self.replace(slice(None, None), "")
+        return True
+
+    def move_to(self, pos):
+        pos = (
+            min(max(0, pos), len(self.buffer)) if pos is not None else len(self.buffer)
+        )
+
+        if self.pos == pos:
+            return False
+
+        self.pos = pos
+        return True
+
+    def to_word_start(self):
+        for match in re.finditer(r"\w+|\W+", "".join(self.buffer)):
+            if match.end() >= self.pos:
+                return slice(match.start(), self.pos)
+        else:
+            return slice(0, self.pos)
+
+    def to_word_end(self):
+        for match in re.finditer(r"\w+|\W+", "".join(self.buffer)):
+            if match.end() > self.pos:
+                return slice(self.pos, match.end())
+        else:
+            return slice(self.pos, len(self.buffer))
+
+
 class BeatInput:
     r"""Input editor for beatshell.
 
@@ -426,14 +536,8 @@ class BeatInput:
         The shell settings.
     devices_settings : DevicesSettings
         The devices settings.
-    buffers : list of list of str
-        The editable buffers of input history.
-    buffer_index : int
-        The negative index of current input buffer.
-    buffer : list of str
-        The buffer of current input.
-    pos : int
-        The caret position of input.
+    text_buffer : TextBuffer
+        The text buffer of beatshell.
     typeahead : str
         The type ahead of input.
     highlighted : int or None
@@ -481,28 +585,30 @@ class BeatInput:
         devices_settings_getter : engines.DevicesSettings
             The settings getter of devices.
         """
-        self.command_parser_getter = command_parser_getter
-        self.semantic_analyzer = sh.SemanticAnalyzer(None)
-        self.preview_handler = preview_handler
         self.rich = rich
-        self.cache_dir = cache_dir
+
+        self.command_parser_getter = command_parser_getter
         self._shell_settings_getter = shell_settings_getter
         self._devices_settings_getter = devices_settings_getter
+
+        self.semantic_analyzer = sh.SemanticAnalyzer(None)
+        self.cache_dir = cache_dir
         self.history = HistoryManager(self.cache_dir / self.history_file_path)
-        self.buffers = [[]]
-        self.buffer_index = -1
-        self.buffer = self.buffers[0]
-        self.pos = 0
+        self.preview_handler = preview_handler
+
+        self.text_buffer = TextBuffer([])
         self.typeahead = ""
         self.highlighted = None
-        self.hint_state = None
-        self.popup = queue.Queue()
-        self.result = None
         self.tab_state = None
+        self.hint_state = None
+
         self.state = "FIN"
+        self.result = None
+        self.popup = queue.Queue()
         self.lock = threading.RLock()
         self.modified_counter = 0
         self.key_pressed_counter = 0
+
         self.new_session()
 
     @property
@@ -566,12 +672,8 @@ class BeatInput:
 
         groups = self.semantic_analyzer.get_all_groups()
         history_size = self.shell_settings.history_size
-        self.buffers = self.history.read_history(groups, history_size)
-        self.buffers.append([])
-        self.buffer_index = -1
+        self.text_buffer = TextBuffer(self.history.read_history(groups, history_size))
 
-        self.buffer = self.buffers[self.buffer_index]
-        self.pos = len(self.buffer)
         self.cancel_typeahead()
         self.update_buffer()
         self.cancel_hint()
@@ -579,7 +681,7 @@ class BeatInput:
         self.state = "EDIT"
 
     def record_command(self):
-        command = "".join(self.buffer).strip()
+        command = "".join(self.text_buffer.buffer).strip()
         self.history.write_history(self.semantic_analyzer.group, command)
 
     @locked
@@ -612,7 +714,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        self.semantic_analyzer.parse(self.buffer)
+        self.semantic_analyzer.parse(self.text_buffer.buffer)
         self.modified_counter += 1
         return True
 
@@ -629,22 +731,15 @@ class BeatInput:
             `False` if unable to complete or the caret is not at the end of
             buffer.
         """
-        if self.pos != len(self.buffer):
+        if self.text_buffer.pos != len(self.text_buffer.buffer):
             self.typeahead = ""
             return False
 
-        if self.semantic_analyzer.lex_state == sh.SHLEXER_STATE.SPACED:
-            parents = [token.string for token in self.semantic_analyzer.tokens]
-            target = ""
-        else:
-            parents = [token.string for token in self.semantic_analyzer.tokens[:-1]]
-            target = self.semantic_analyzer.tokens[-1].string
-
         # search history
-        length = len(self.buffer)
-        for buffer in self.buffers[::-1]:
-            if len(buffer) > length and buffer[:length] == self.buffer:
-                self.typeahead = "".join(buffer[length:])
+        pos = self.text_buffer.pos
+        for buffer in reversed(self.text_buffer.buffers):
+            if len(buffer) > pos and buffer[:pos] == self.text_buffer.buffer:
+                self.typeahead = "".join(buffer[pos:])
                 return True
 
         self.typeahead = ""
@@ -707,7 +802,6 @@ class BeatInput:
         -------
         succ : bool
         """
-        self.highlighted = index
         if isinstance(hint, DescHint):
             msg_tokens = (
                 [token.string for token in self.semantic_analyzer.tokens[:index]]
@@ -722,6 +816,8 @@ class BeatInput:
             )
         else:
             assert False
+
+        self.highlighted = index
         self.hint_state = HintState(index, hint, msg_tokens)
         self.update_preview()
         return True
@@ -736,11 +832,11 @@ class BeatInput:
         -------
         succ : bool
         """
-        if self.highlighted is not None:
-            self.highlighted = None
-        if self.hint_state is not None:
-            self.hint_state = None
-            self.update_preview()
+        if self.hint_state is None:
+            return False
+        self.highlighted = None
+        self.hint_state = None
+        self.update_preview()
         return True
 
     @locked
@@ -814,12 +910,13 @@ class BeatInput:
             buffer.
         """
 
-        if self.typeahead == "" or self.pos != len(self.buffer):
+        if self.typeahead == "" or self.text_buffer.pos != len(self.text_buffer.buffer):
             return False
 
-        self.buffer[self.pos : self.pos] = self.typeahead
-        self.pos += len(self.typeahead)
-        self.typeahead = ""
+        selection = slice(self.text_buffer.pos, self.text_buffer.pos)
+        self.text_buffer.replace(selection, self.typeahead)
+
+        self.cancel_typeahead()
         self.update_buffer()
         self.ask_for_hint()
 
@@ -843,23 +940,11 @@ class BeatInput:
         succ : bool
             `False` if buffer isn't changed.
         """
-        text = list(text)
-
-        if len(text) == 0:
+        succ = self.text_buffer.insert(text)
+        if not succ:
             return False
 
-        while len(text) > 0 and text[0] == "\b":
-            del text[0]
-            del self.buffer[self.pos - 1]
-            self.pos = self.pos - 1
-
-        if not all(ch.isprintable() for ch in self.buffer):
-            raise ValueError("invalid text to insert: " + repr("".join(self.buffer)))
-
-        self.buffer[self.pos : self.pos] = text
-        self.pos += len(text)
         self.update_buffer()
-
         self.show_typeahead()
         self.ask_for_hint()
 
@@ -876,11 +961,10 @@ class BeatInput:
         -------
         succ : bool
         """
-        if self.pos == 0:
+        succ = self.text_buffer.backspace()
+        if not succ:
             return False
 
-        self.pos -= 1
-        del self.buffer[self.pos]
         self.update_buffer()
         self.cancel_typeahead()
         self.ask_for_hint(clear=True)
@@ -898,10 +982,10 @@ class BeatInput:
         -------
         succ : bool
         """
-        if self.pos >= len(self.buffer):
+        succ = self.text_buffer.delete()
+        if not succ:
             return False
 
-        del self.buffer[self.pos]
         self.update_buffer()
         self.cancel_typeahead()
         self.ask_for_hint(clear=True)
@@ -917,11 +1001,10 @@ class BeatInput:
         -------
         succ : bool
         """
-        if not self.buffer:
+        succ = self.text_buffer.delete_all()
+        if not succ:
             return False
 
-        del self.buffer[:]
-        self.pos = 0
         self.update_buffer()
         self.cancel_typeahead()
         self.cancel_hint()
@@ -942,21 +1025,37 @@ class BeatInput:
         -------
         succ : bool
         """
-        start = min(max(0, start), len(self.buffer)) if start is not None else 0
-        end = (
-            min(max(0, end), len(self.buffer)) if end is not None else len(self.buffer)
-        )
+        self.text_buffer.replace(slice(start, end), "")
 
-        if start >= end:
-            return False
-
-        del self.buffer[start:end]
-        self.pos = start
         self.update_buffer()
         self.cancel_typeahead()
         self.ask_for_hint(clear=True)
 
         return True
+
+    def _find_token(self, pos=None):
+        pos = pos if pos is not None else self.text_buffer.pos
+        for token in self.semantic_analyzer.tokens:
+            if token.mask.start <= pos <= token.mask.stop:
+                return token
+        else:
+            return None
+
+    def _find_token_before(self, pos=None):
+        pos = pos if pos is not None else self.text_buffer.pos
+        for token in reversed(self.semantic_analyzer.tokens):
+            if token.mask.start <= pos:
+                return token
+        else:
+            return None
+
+    def _find_token_after(self, pos=None):
+        pos = pos if pos is not None else self.text_buffer.pos
+        for token in self.semantic_analyzer.tokens:
+            if pos <= token.mask.stop:
+                return token
+        else:
+            return None
 
     @locked
     @onstate("EDIT")
@@ -975,12 +1074,11 @@ class BeatInput:
             token = self.semantic_analyzer.tokens[index]
             return self.delete_range(token.mask.start, token.mask.stop)
 
-        for token in reversed(self.semantic_analyzer.tokens):
-            if token.mask.start <= self.pos:
-                return self.delete_range(token.mask.start, max(self.pos, token.mask.stop))
+        token = self._find_token_before()
+        if token is None:
+            return self.delete_range(0, self.text_buffer.pos)
         else:
-            # find nothing
-            return self.delete_range(0, self.pos)
+            return self.delete_range(token.mask.start, max(self.text_buffer.pos, token.mask.stop))
 
     @locked
     @onstate("EDIT")
@@ -999,12 +1097,11 @@ class BeatInput:
             token = self.semantic_analyzer.tokens[index]
             return self.delete_range(token.mask.start, token.mask.stop)
 
-        for token in self.semantic_analyzer.tokens:
-            if self.pos <= token.mask.stop:
-                return self.delete_range(min(self.pos, token.mask.start), token.mask.stop)
+        token = self._find_token_after()
+        if token is None:
+            return self.delete_range(self.text_buffer.pos, None)
         else:
-            # find nothing
-            return self.delete_range(self.pos, None)
+            return self.delete_range(min(self.text_buffer.pos, token.mask.start), token.mask.stop)
 
     @locked
     @onstate("EDIT")
@@ -1017,11 +1114,8 @@ class BeatInput:
         -------
         succ : bool
         """
-        for match in re.finditer(r"\w+|\W+", "".join(self.buffer)):
-            if match.end() >= self.pos:
-                return self.delete_range(match.start(), self.pos)
-        else:
-            return self.delete_range(None, self.pos)
+        mask = self.text_buffer.to_word_start()
+        return self.delete_range(mask.start, mask.stop)
 
     @locked
     @onstate("EDIT")
@@ -1034,11 +1128,8 @@ class BeatInput:
         -------
         succ : bool
         """
-        for match in re.finditer(r"\w+|\W+", "".join(self.buffer)):
-            if match.end() > self.pos:
-                return self.delete_range(self.pos, match.end())
-        else:
-            return self.delete_range(self.pos, None)
+        mask = self.text_buffer.to_word_end()
+        return self.delete_range(mask.start, mask.stop)
 
     @locked
     @onstate("EDIT")
@@ -1057,16 +1148,9 @@ class BeatInput:
         -------
         succ : bool
         """
-        pos = (
-            min(max(0, pos), len(self.buffer)) if pos is not None else len(self.buffer)
-        )
+        succ = self.text_buffer.move_to(pos)
         self.cancel_typeahead()
-
-        if self.pos == pos:
-            return False
-
-        self.pos = pos
-        return True
+        return succ
 
     @locked
     @onstate("EDIT")
@@ -1081,7 +1165,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        return self.move_to(self.pos + offset)
+        return self.move_to(self.text_buffer.pos + offset)
 
     @locked
     @onstate("EDIT")
@@ -1136,11 +1220,8 @@ class BeatInput:
         -------
         succ : bool
         """
-        for match in re.finditer(r"\w+|\W+", "".join(self.buffer)):
-            if match.end() >= self.pos:
-                return self.move_to(match.start())
-        else:
-            return self.move_to(0)
+        mask = self.text_buffer.to_word_start()
+        return self.move_to(mask.start)
 
     @locked
     @onstate("EDIT")
@@ -1151,11 +1232,8 @@ class BeatInput:
         -------
         succ : bool
         """
-        for match in re.finditer(r"\w+|\W+", "".join(self.buffer)):
-            if match.end() > self.pos:
-                return self.move_to(match.end())
-        else:
-            return self.move_to(None)
+        mask = self.text_buffer.to_word_end()
+        return self.move_to(mask.stop)
 
     @locked
     @onstate("EDIT")
@@ -1166,12 +1244,10 @@ class BeatInput:
         -------
         succ : bool
         """
-        if self.buffer_index == -len(self.buffers):
+        succ = self.text_buffer.prev()
+        if not succ:
             return False
-        self.buffer_index -= 1
 
-        self.buffer = self.buffers[self.buffer_index]
-        self.pos = len(self.buffer)
         self.update_buffer()
         self.cancel_typeahead()
         self.cancel_hint()
@@ -1187,12 +1263,10 @@ class BeatInput:
         -------
         succ : bool
         """
-        if self.buffer_index == -1:
+        succ = self.text_buffer.next()
+        if not succ:
             return False
-        self.buffer_index += 1
 
-        self.buffer = self.buffers[self.buffer_index]
-        self.pos = len(self.buffer)
         self.update_buffer()
         self.cancel_typeahead()
         self.cancel_hint()
@@ -1201,7 +1275,7 @@ class BeatInput:
 
     @locked
     @onstate("EDIT")
-    def ask_for_hint(self, index=None, clear=False):
+    def ask_for_hint(self, index=None, clear=False, type="all"):
         """Ask some hint for command.
 
         Provide some hint for the command on the caret.
@@ -1210,26 +1284,29 @@ class BeatInput:
         ----------
         index : int
         clear : bool
-            Cancel the current hint if no hint was found.
+            Cancel the current hint if token was not found.
+        type : one of "info", "desc", "all"
+            The type of hint to ask.
 
         Returns
         -------
         succ : bool
         """
         if index is None:
-            # find the token on the caret
-            for index, token in enumerate(self.semantic_analyzer.tokens):
-                if token.mask.start <= self.pos <= token.mask.stop:
-                    break
-            else:
-                # find nothing
+            token = self._find_token()
+            if token is None:
                 if clear:
                     self.cancel_hint()
                 return False
+            else:
+                index = self.semantic_analyzer.tokens.index(token)
 
         target_type = self.semantic_analyzer.tokens[index].type
 
         if target_type is None:
+            if type not in ("all", "desc"):
+                self.cancel_hint()
+                return False
             msg = self.semantic_analyzer.desc(index)
             if msg is None:
                 self.cancel_hint()
@@ -1239,7 +1316,10 @@ class BeatInput:
             return True
 
         else:
-            msg = self.semantic_analyzer.info(index+1)
+            if type not in ("all", "info"):
+                self.cancel_hint()
+                return False
+            msg = self.semantic_analyzer.info(index + 1)
             if msg is None:
                 self.cancel_hint()
                 return False
@@ -1259,11 +1339,11 @@ class BeatInput:
         succ : bool
         """
         # find the token before the caret
-        for index, token in reversed(list(enumerate(self.semantic_analyzer.tokens))):
-            if token.mask.start <= self.pos:
-                break
-        else:
+        token = self._find_token_before()
+        if token is None:
             return False
+        else:
+            index = self.semantic_analyzer.tokens.index(token)
 
         if self.hint_state is None or self.hint_state.index != index:
             self.ask_for_hint(index)
@@ -1324,9 +1404,9 @@ class BeatInput:
         Returns
         -------
         succ : bool
-            `False` if the command is wrong.
+            `False` if unfinished or the command is wrong.
         """
-        if self.buffer:
+        if self.text_buffer.buffer:
             return False
 
         self.insert("bye")
@@ -1350,7 +1430,8 @@ class BeatInput:
         Returns
         -------
         succ : bool
-            `False` for canceling the process.
+            `True` if is in autocompletion cycle.  Note that it will be `False`
+            for no suggestion or one suggestion case.
         """
 
         if self.tab_state is None and action == 0:
@@ -1358,88 +1439,47 @@ class BeatInput:
 
         if self.tab_state is None:
             self.cancel_typeahead()
+            tab_state = self._prepare_tab_state(action)
 
-            # find the token to autocomplete
-            token_index = 0
-            target = ""
-            selection = slice(self.pos, self.pos)
-            for token in self.semantic_analyzer.tokens:
-                start, stop, _ = token.mask.indices(len(self.buffer))
-                if stop < self.pos:
-                    token_index += 1
-                if start <= self.pos <= stop:
-                    target = token.string
-                    selection = token.mask
-
-            # generate suggestions
-            suggestions = [
-                sh.quoting(sugg)
-                for sugg in self.semantic_analyzer.suggest(token_index, target)
-            ]
-            sugg_index = len(suggestions) if action == -1 else -1
-
-            if len(suggestions) == 0:
+            if len(tab_state.suggestions) == 0:
                 # no suggestion
                 return False
 
-            if len(suggestions) == 1:
+            if len(tab_state.suggestions) == 1:
                 # one suggestion -> complete directly
-                self.buffer[selection] = suggestions[0]
-                self.pos = selection.start + len(suggestions[0])
+                self.text_buffer.replace(tab_state.selection, tab_state.suggestions[0])
                 self.update_buffer()
-                target_type = self.semantic_analyzer.tokens[token_index].type
-                if target_type is None:
-                    return False
-                msg = self.semantic_analyzer.info(token_index + 1)
-                if msg is None:
-                    return False
-                hint = InfoHint(msg)
-                self.set_hint(hint, token_index)
+                self.ask_for_hint(tab_state.token_index, type="info")
                 return False
 
-            # tab state
-            original_pos = self.pos
-
-            self.tab_state = TabState(
-                suggestions=suggestions,
-                sugg_index=sugg_index,
-                token_index=token_index,
-                original_token=self.buffer[selection],
-                original_pos=original_pos,
-                selection=selection,
-            )
-
-        sugg_index = self.tab_state.sugg_index
-        selection = self.tab_state.selection
-        suggestions = self.tab_state.suggestions
+            self.tab_state = tab_state
 
         if action == +1:
-            sugg_index += 1
+            self.tab_state.sugg_index += 1
         elif action == -1:
-            sugg_index -= 1
+            self.tab_state.sugg_index -= 1
         elif action == 0:
-            sugg_index = None
+            self.tab_state.sugg_index = None
         else:
             raise ValueError(f"invalid action: {action}")
 
-        if sugg_index not in range(len(suggestions)):
+        if self.tab_state.sugg_index not in range(len(self.tab_state.suggestions)):
             # restore state
-            self.buffer[selection] = self.tab_state.original_token
-            self.pos = self.tab_state.original_pos
+            self.text_buffer.replace(self.tab_state.selection, self.tab_state.original_token)
+            self.text_buffer.move_to(self.tab_state.original_pos)
 
             self.tab_state = None
             self.update_buffer()
             self.cancel_hint()
             return False
 
-        assert sugg_index is not None
-
         # autocomplete selected token
-        self.tab_state.sugg_index = sugg_index
-        self.buffer[selection] = suggestions[sugg_index]
-        self.pos = selection.start + len(suggestions[sugg_index])
-        self.tab_state.selection = slice(selection.start, self.pos)
+        self.tab_state.selection = self.text_buffer.replace(
+            self.tab_state.selection,
+            self.tab_state.suggestions[self.tab_state.sugg_index],
+        )
 
+        # update hint
         self.update_buffer()
         target_type = self.semantic_analyzer.tokens[self.tab_state.token_index].type
         if target_type is None:
@@ -1447,9 +1487,42 @@ class BeatInput:
         else:
             msg = self.semantic_analyzer.info(self.tab_state.token_index + 1) or ""
         self.set_hint(
-            SuggestionsHint(suggestions, sugg_index, msg), self.tab_state.token_index
+            SuggestionsHint(self.tab_state.suggestions, self.tab_state.sugg_index, msg),
+            self.tab_state.token_index,
         )
         return True
+
+    def _prepare_tab_state(self, action=+1):
+        # find the token to autocomplete
+        token = self._find_token()
+        if token is None:
+            token_index = 0
+            target = ""
+            selection = slice(self.text_buffer.pos, self.text_buffer.pos)
+        else:
+            token_index = self.semantic_analyzer.tokens.index(token)
+            target = token.string
+            selection = token.mask
+
+        # generate suggestions
+        suggestions = [
+            sh.quoting(sugg)
+            for sugg in self.semantic_analyzer.suggest(token_index, target)
+        ]
+        sugg_index = len(suggestions) if action == -1 else -1
+
+        # tab state
+        original_pos = self.text_buffer.pos
+        original_token = self.text_buffer.buffer[selection]
+
+        return TabState(
+            suggestions=suggestions,
+            sugg_index=sugg_index,
+            token_index=token_index,
+            original_token=original_token,
+            original_pos=original_pos,
+            selection=selection,
+        )
 
     @locked
     @onstate("EDIT")
@@ -1462,19 +1535,9 @@ class BeatInput:
         """
         if self.tab_state is not None:
             # set hint for complete token
-            token_index = self.tab_state.token_index
+            self.ask_for_hint(self.tab_state.token_index, type="info")
             self.tab_state = None
 
-            target_type = self.semantic_analyzer.tokens[token_index].type
-            if target_type is None:
-                self.cancel_hint()
-                return True
-            msg = self.semantic_analyzer.info(token_index+1)
-            if msg is None:
-                self.cancel_hint()
-                return True
-            hint = InfoHint(msg)
-            self.set_hint(hint, token_index)
         return True
 
     @locked
@@ -1572,6 +1635,7 @@ class BeatStroke:
         return handler
 
 
+# prompt
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
@@ -1650,9 +1714,9 @@ class ViewState:
             with self.input.lock:
                 if self.input.modified_counter != modified_counter:
                     modified_counter = self.input.modified_counter
-                    self.buffer = list(self.input.buffer)
+                    self.buffer = list(self.input.text_buffer.buffer)
                     self.tokens = list(self.input.semantic_analyzer.tokens)
-                self.pos = self.input.pos
+                self.pos = self.input.text_buffer.pos
                 self.highlighted = self.input.highlighted
 
                 self.typeahead = self.input.typeahead
