@@ -1020,19 +1020,19 @@ class BeatInput:
 
     def _find_token(self, pos=None):
         pos = pos if pos is not None else self.text_buffer.pos
-        for token in self.semantic_analyzer.tokens:
+        for index, token in enumerate(self.semantic_analyzer.tokens):
             if token.mask.start <= pos <= token.mask.stop:
-                return token
+                return index, token
         else:
-            return None
+            return None, None
 
     def _find_token_before(self, pos=None):
         pos = pos if pos is not None else self.text_buffer.pos
-        for token in reversed(self.semantic_analyzer.tokens):
+        for index, token in enumerate(reversed(self.semantic_analyzer.tokens)):
             if token.mask.start <= pos:
-                return token
+                return len(self.semantic_analyzer.tokens)-1-index, token
         else:
-            return None
+            return None, None
 
     def _find_token_after(self, pos=None):
         pos = pos if pos is not None else self.text_buffer.pos
@@ -1059,7 +1059,7 @@ class BeatInput:
             token = self.semantic_analyzer.tokens[index]
             return self.delete_range(token.mask.start, token.mask.stop)
 
-        token = self._find_token_before()
+        _, token = self._find_token_before()
         if token is None:
             return self.delete_range(0, self.text_buffer.pos)
         else:
@@ -1082,7 +1082,7 @@ class BeatInput:
             token = self.semantic_analyzer.tokens[index]
             return self.delete_range(token.mask.start, token.mask.stop)
 
-        token = self._find_token_after()
+        _, token = self._find_token_after()
         if token is None:
             return self.delete_range(self.text_buffer.pos, None)
         else:
@@ -1278,13 +1278,11 @@ class BeatInput:
         succ : bool
         """
         if index is None:
-            token = self._find_token()
+            index, token = self._find_token()
             if token is None:
                 if clear:
                     self.cancel_hint()
                 return False
-            else:
-                index = self.semantic_analyzer.tokens.index(token)
 
         target_type = self.semantic_analyzer.tokens[index].type
 
@@ -1324,11 +1322,9 @@ class BeatInput:
         succ : bool
         """
         # find the token before the caret
-        token = self._find_token_before()
+        index, token = self._find_token_before()
         if token is None:
             return False
-        else:
-            index = self.semantic_analyzer.tokens.index(token)
 
         if self.hint_state is None or self.hint_state.index != index:
             self.ask_for_hint(index)
@@ -1474,13 +1470,19 @@ class BeatInput:
 
     def _prepare_tab_state(self, action=+1):
         # find the token to autocomplete
-        token = self._find_token()
+        index, token = self._find_token_before()
         if token is None:
             token_index = 0
             target = ""
             selection = slice(self.text_buffer.pos, self.text_buffer.pos)
+
+        elif token.mask.stop < self.text_buffer.pos:
+            token_index = index + 1
+            target = ""
+            selection = slice(self.text_buffer.pos, self.text_buffer.pos)
+
         else:
-            token_index = self.semantic_analyzer.tokens.index(token)
+            token_index = index
             target = token.string
             selection = token.mask
 
