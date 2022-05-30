@@ -181,12 +181,12 @@ class KAIKOMenu:
     def repl(self):
         r"""Start REPL."""
         preview_handler = self.bgm_controller.preview_handler
-        input = beatshell.BeatInput(
-            self.get_command_parser,
-            preview_handler,
+        prompt = beatshell.BeatPrompt(
             self.logger.rich,
             self.cache_dir,
-            lambda: self.settings.shell.input,
+            self.get_command_parser,
+            lambda: self.settings.shell,
+            preview_handler,
         )
 
         self.print_tips()
@@ -194,18 +194,17 @@ class KAIKOMenu:
             self.print_banner()
 
             # parse command
-            yield from input.prompt(self.settings.shell, self.settings.devices).join()
+            result = yield from prompt.prompt(self.settings.devices).join()
 
             # execute result
-            result = input.result
             if isinstance(result, beatshell.ErrorResult):
                 self.logger.print(f"[warn]{self.logger.escape(str(result.error))}[/]")
-                input.prev_session()
+                prompt.prev_session()
 
             elif isinstance(result, beatshell.CompleteResult):
-                input.record_command()
+                prompt.record_command()
                 yield from self.execute(result.command).join()
-                input.new_session()
+                prompt.new_session()
 
             else:
                 assert False

@@ -302,8 +302,6 @@ class BeatInput:
         The function to produce command parser for beatshell.
     semantic_analyzer : shells.SemanticAnalyzer
         The syntax analyzer.
-    preview_handler : function
-        A function to preview beatmap.
     rich : markups.RichParser
         The rich parser.
     cache_dir : Path
@@ -318,12 +316,14 @@ class BeatInput:
         The state of autocomplete.
     hint_state : HintState or None
         The hint state of input.
-    popup : queue of DescHint or InfoHint
-        The message displayed above the prompt.
     result : Result or None
         The result of input.
     state : str
         The input state.
+    preview_handler : function
+        A function to preview beatmap.
+    popup_handler : function
+        The message displayed above the prompt.
     modified_counter : int
         The event counter for modifying buffer.
     key_pressed_counter : int
@@ -331,12 +331,12 @@ class BeatInput:
     """
 
     history_file_path = ".beatshell-history"
-    monitor_file_path = "monitor/prompt.csv"
 
     def __init__(
         self,
         command_parser_getter,
         preview_handler,
+        popup_handler,
         rich,
         cache_dir,
         input_settings_getter=BeatInputSettings,
@@ -348,6 +348,7 @@ class BeatInput:
         command_parser_getter : function
             The function to produce command parser.
         preview_handler : function
+        popup_handler : function
         rich : markups.RichParser
         cache_dir : Path
             The directory of cache data.
@@ -362,7 +363,6 @@ class BeatInput:
         self.semantic_analyzer = sh.SemanticAnalyzer(None)
         self.cache_dir = cache_dir
         self.history = HistoryManager(self.cache_dir / self.history_file_path)
-        self.preview_handler = preview_handler
 
         self.text_buffer = TextBuffer([])
         self.typeahead = ""
@@ -371,10 +371,12 @@ class BeatInput:
 
         self.state = "FIN"
         self.result = None
-        self.popup = queue.Queue()
         self.lock = threading.RLock()
-        self.modified_counter = 0
+
+        self.preview_handler = preview_handler
+        self.popup_handler = popup_handler
         self.key_pressed_counter = 0
+        self.modified_counter = 0
 
         self.new_session()
 
@@ -382,55 +384,9 @@ class BeatInput:
     def input_settings(self):
         return self._input_settings_getter()
 
-    @dn.datanode
-    def prompt(self, shell_settings, devices_settings):
-        r"""Start prompt.
-
-        Parameters
-        ----------
-        shell_settings : BeatShellSettings
-            The prompt settings.
-        devices_settings : DevicesSettings
-            The devices settings.
-
-        Returns
-        -------
-        prompt_task : datanodes.DataNode
-            The datanode to execute the prompt.
-        """
-        input_settings = self.input_settings
-
-        # engines
-        debug_monitor = shell_settings.debug_monitor
-        renderer_monitor = (
-            engines.Monitor(self.cache_dir / self.monitor_file_path)
-            if debug_monitor
-            else None
-        )
-        input_task, controller = engines.Controller.create(
-            devices_settings.controller, devices_settings.terminal
-        )
-        display_task, renderer = engines.Renderer.create(
-            devices_settings.renderer,
-            devices_settings.terminal,
-            monitor=renderer_monitor,
-        )
-
-        # handlers
-        stroke = BeatStroke(self, input_settings)
-        prompt = BeatPrompt(self, self.rich, shell_settings)
-
+    def _register(self, controller):
+        stroke = BeatStroke(self, self.input_settings)
         stroke.register(controller)
-        prompt.register(renderer)
-
-        @dn.datanode
-        def stop_when(event):
-            yield
-            yield
-            while not event.is_set():
-                yield
-
-        yield from dn.pipe(stop_when(prompt.fin_event), display_task, input_task).join()
 
     @locked
     @onstate("FIN")
@@ -1107,7 +1063,7 @@ class BeatInput:
         if isinstance(hint, SuggestionsHint):
             hint = InfoHint(hint.message)
 
-        self.popup.put(hint)
+        self.popup_handler(hint)
         return True
 
     @locked
@@ -1621,35 +1577,60 @@ class BeatShellSettings(cfg.Configurable):
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
-    def __init__(self, input, rich, settings):
-        self.input = input
+    monitor_file_path = "monitor/prompt.csv"
+
+    def __init__(
+        self,
+        rich,
+        cache_dir,
+        command_parser_getter,
+        shell_settings_getter,
+        preview_handler,
+    ):
         self.rich = rich
-        self.settings = settings
+        self._shell_settings_getter = shell_settings_getter
+        self.cache_dir = cache_dir
+
         self.fin_event = threading.Event()
+        self.popup_queue = queue.Queue()
+
+        self.input = BeatInput(
+            command_parser_getter,
+            preview_handler,
+            lambda hint: self.popup_queue.put(hint),
+            rich,
+            cache_dir,
+            lambda: self._shell_settings_getter().input,
+        )
+
+    @property
+    def settings(self):
+        return self._shell_settings_getter()
 
     def register(self, renderer):
         # widgets
-        t0 = self.settings.prompt.t0
-        tempo = self.settings.prompt.tempo
+        settings = self.settings
+        t0 = settings.prompt.t0
+        tempo = settings.prompt.tempo
         metronome = engines.Metronome(t0, tempo)
 
         widget_factory = BeatshellWidgetFactory(self.rich, renderer, metronome)
 
-        icon = widget_factory.create(self.settings.prompt.icons)
-        marker = widget_factory.create(self.settings.prompt.marker)
+        icon = widget_factory.create(settings.prompt.icons)
+        marker = widget_factory.create(settings.prompt.marker)
 
         state = ViewState(self.input)
-        text_renderer = TextRenderer(self.rich, self.settings.text)
-        msg_renderer = MsgRenderer(self.rich, self.settings.text)
+        text_renderer = TextRenderer(self.rich, settings.text)
+        msg_renderer = MsgRenderer(self.rich, settings.text)
 
         textbox = beatwidgets.TextBox(
             lambda: text_renderer.render_text(state),
-            self.settings.prompt.textbox,
+            settings.prompt.textbox,
         ).load(widget_factory.provider)
 
         # layout
-        icon_width = self.settings.prompt.icon_width
-        marker_width = self.settings.prompt.marker_width
+        icon_width = settings.prompt.icon_width
+        marker_width = settings.prompt.marker_width
 
         [
             icon_mask,
@@ -1662,7 +1643,52 @@ class BeatPrompt:
         renderer.add_texts(icon, icon_mask, zindex=(2,))
         renderer.add_texts(marker, marker_mask, zindex=(3,))
         renderer.add_texts(textbox, input_mask, zindex=(0,))
-        renderer.add_drawer(msg_renderer.render_msg(state), zindex=(1,))
+        renderer.add_drawer(msg_renderer.render_msg(state, self.popup_queue), zindex=(1,))
+
+    @dn.datanode
+    def prompt(self, devices_settings):
+        self.fin_event.clear()
+
+        # engines
+        settings = self.settings
+        debug_monitor = settings.debug_monitor
+        renderer_monitor = (
+            engines.Monitor(self.cache_dir / self.monitor_file_path)
+            if debug_monitor
+            else None
+        )
+        input_task, controller = engines.Controller.create(
+            devices_settings.controller, devices_settings.terminal
+        )
+        display_task, renderer = engines.Renderer.create(
+            devices_settings.renderer,
+            devices_settings.terminal,
+            monitor=renderer_monitor,
+        )
+
+        # handlers
+        self.register(renderer)
+        self.input._register(controller)
+
+        @dn.datanode
+        def stop_when(event):
+            yield
+            yield
+            while not event.is_set():
+                yield
+
+        yield from dn.pipe(stop_when(self.fin_event), display_task, input_task).join()
+
+        return self.input.result
+
+    def prev_session(self):
+        return self.input.prev_session()
+
+    def new_session(self):
+        return self.input.new_session()
+
+    def record_command(self):
+        return self.input.record_command()
 
 
 class ViewState:
@@ -1683,7 +1709,6 @@ class ViewState:
         self.typeahead = ""
         self.clean = False
         self.hint = None
-        self.popup = []
         self.state = "EDIT"
 
     @dn.datanode
@@ -1716,13 +1741,6 @@ class ViewState:
                 else:
                     self.highlighted = None
 
-                self.popup = []
-                while True:
-                    try:
-                        msg = self.input.popup.get(False)
-                    except queue.Empty:
-                        break
-                    self.popup.append(msg)
                 self.state = self.input.state
 
                 self.key_pressed = self.input.key_pressed_counter != key_pressed_counter
@@ -1883,7 +1901,7 @@ class MsgRenderer:
         self.settings = settings
 
     @dn.datanode
-    def render_msg(self, state):
+    def render_msg(self, state, popup):
         message_max_lines = self.settings.message_max_lines
         sugg_lines = self.settings.suggestions_lines
         sugg_items = self.settings.suggestion_items
@@ -1924,13 +1942,12 @@ class MsgRenderer:
             desc=desc,
             info=info,
         )
-        render_popup = dn.starcachemap(self.render_popup, desc=desc, info=info)
 
-        with render_hint, render_popup:
+        with render_hint:
             (view, msgs, logs), time, width = yield
             while True:
                 render_hint.send((msgs, state.hint))
-                logs.extend(render_popup.send((state.popup,)))
+                logs.extend(self.render_popup(popup, desc=desc, info=info))
                 (view, msgs, logs), time, width = yield (view, msgs, logs)
 
     def render_hint(
@@ -2023,7 +2040,12 @@ class MsgRenderer:
         logs = []
 
         # draw popup
-        for hint in popup:
+        while True:
+            try:
+                hint = popup.get(False)
+            except queue.Empty:
+                break
+
             msg = None
             if hint.message:
                 msg = self.rich.parse(hint.message, root_tag=True)
