@@ -193,21 +193,17 @@ class KAIKOMenu:
         while True:
             self.print_banner()
 
-            # parse command
-            result = yield from prompt.prompt(self.settings.devices).join()
+            try:
+                command = yield from prompt.prompt(self.settings.devices).join()
 
-            # execute result
-            if isinstance(result, beatshell.ErrorResult):
-                self.logger.print(f"[warn]{self.logger.escape(str(result.error))}[/]")
+            except beatshell.PromptError as e:
+                self.logger.print(f"[warn]{self.logger.escape(str(e.cause))}[/]")
                 prompt.prev_session()
 
-            elif isinstance(result, beatshell.CompleteResult):
-                prompt.record_command()
-                yield from self.execute(result.command).join()
-                prompt.new_session()
-
             else:
-                assert False
+                prompt.record_command()
+                yield from self.execute(command).join()
+                prompt.new_session()
 
     @dn.datanode
     def execute(self, command):
