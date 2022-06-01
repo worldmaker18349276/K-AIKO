@@ -55,6 +55,134 @@ class HintState:
     tokens: Optional[List[str]]
 
 
+class HintManager:
+    def __init__(self, semantic_analyzer, preview_handler):
+        self.semantic_analyzer = semantic_analyzer
+        self.preview_handler = preview_handler
+        self.popup_queue = queue.Queue()
+        self.hint_state = None
+
+    def get_hint(self):
+        return None if self.hint_state is None else self.hint_state.hint
+
+    def get_hint_location(self):
+        return None if self.hint_state is None else self.hint_state.index
+
+    def add_popup(self, hint):
+        self.popup_queue.put(hint)
+
+    def popup_hint(self):
+        hint = self.hint_state.hint
+        if not hint.message:
+            return False
+        if isinstance(hint, SuggestionsHint):
+            hint = InfoHint(hint.message)
+
+        self.add_popup(hint)
+        return True
+
+    def set_hint(self, hint, index=None):
+        if isinstance(hint, DescHint):
+            msg_tokens = (
+                [token.string for token in self.semantic_analyzer.tokens[:index]]
+                if index is not None
+                else None
+            )
+        elif isinstance(hint, (InfoHint, SuggestionsHint)):
+            msg_tokens = (
+                [token.string for token in self.semantic_analyzer.tokens[: index + 1]]
+                if index is not None
+                else None
+            )
+        else:
+            assert False
+
+        self.hint_state = HintState(index, hint, msg_tokens)
+        self.update_preview()
+        return True
+
+    def cancel_hint(self):
+        if self.hint_state is None:
+            return False
+        self.hint_state = None
+        self.update_preview()
+        return True
+
+    def update_hint(self):
+        if self.hint_state is None:
+            return False
+
+        if self.hint_state.tokens is None:
+            return self.cancel_hint()
+
+        if self.hint_state.index is not None and self.hint_state.index >= len(self.semantic_analyzer.tokens):
+            return self.cancel_hint()
+
+        if len(self.hint_state.tokens) > len(self.semantic_analyzer.tokens):
+            return self.cancel_hint()
+
+        for token_string, token in zip(self.hint_state.tokens, self.semantic_analyzer.tokens):
+            if token_srting != token.string:
+                return self.cancel_hint()
+
+        if (
+            isinstance(self.hint_state.hint, DescHint)
+            and self.semantic_analyzer.tokens[len(self.hint_state.tokens) - 1].type is not None
+        ):
+            return self.cancel_hint()
+
+        return False
+
+    def update_preview(self):
+        if self.hint_state is None:
+            self.preview_handler(None)
+        elif not isinstance(self.hint_state.hint, (InfoHint, SuggestionsHint)):
+            self.preview_handler(None)
+        elif (
+            isinstance(self.hint_state.hint, SuggestionsHint)
+            and not self.hint_state.hint.message
+        ):
+            self.preview_handler(None)
+        elif self.hint_state.tokens is None:
+            self.preview_handler(None)
+        elif len(self.hint_state.tokens) != 2:
+            self.preview_handler(None)
+        elif self.hint_state.tokens[0] != "play":
+            self.preview_handler(None)
+        else:
+            self.preview_handler(self.hint_state.tokens[1])
+
+    def ask_for_hint(self, index, type="all"):
+        if index not in range(len(self.semantic_analyzer.tokens)):
+            return False
+
+        target_type = self.semantic_analyzer.tokens[index].type
+
+        if target_type is None:
+            if type not in ("all", "desc"):
+                self.cancel_hint()
+                return False
+            msg = self.semantic_analyzer.desc(index)
+            if msg is None:
+                self.cancel_hint()
+                return False
+            hint = DescHint(msg)
+            self.set_hint(hint, index)
+            return True
+
+        else:
+            if type not in ("all", "info"):
+                self.cancel_hint()
+                return False
+            msg = self.semantic_analyzer.info(index + 1)
+            if msg is None:
+                self.cancel_hint()
+                return False
+            hint = InfoHint(msg)
+            self.set_hint(hint, index)
+            return True
+
+
 @dataclasses.dataclass
 class TabState:
     suggestions: List[str]
@@ -352,16 +480,11 @@ class BeatInput:
         The type ahead of input.
     tab_state : TabState or None
         The state of autocomplete.
-    hint_state : HintState or None
-        The hint state of input.
-    popup_queue : queue.Queue
-        The message displayed above the prompt.
+    hint_manager : HintManager
     result : Result or None
         The result of input.
     state : str
         The input state.
-    preview_handler : function
-        A function to preview beatmap.
     buffer_modified_counter : int
         The event counter for modifying buffer.
     key_pressed_counter : int
@@ -417,14 +540,15 @@ class BeatInput:
         self.text_buffer = TextBuffer([])
         self.typeahead = ""
         self.tab_state = None
-        self.hint_state = None
-        self.popup_queue = queue.Queue()
+        self.hint_manager = HintManager(
+            self.semantic_analyzer,
+            lambda song: preview_handler(song) if self.input_settings.preview_song else None,
+        )
 
         self.state = "FIN"
         self.result = None
         self.edit_ctxt = ContextDispatcher()
 
-        self.preview_handler = preview_handler
         self.key_pressed_counter = 0
         self.buffer_modified_counter = 0
 
@@ -563,7 +687,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        self.popup_queue.put(hint)
+        self.hint_manager.add_popup(hint)
         return True
 
     @locked
@@ -584,24 +708,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        if isinstance(hint, DescHint):
-            msg_tokens = (
-                [token.string for token in self.semantic_analyzer.tokens[:index]]
-                if index is not None
-                else None
-            )
-        elif isinstance(hint, (InfoHint, SuggestionsHint)):
-            msg_tokens = (
-                [token.string for token in self.semantic_analyzer.tokens[: index + 1]]
-                if index is not None
-                else None
-            )
-        else:
-            assert False
-
-        self.hint_state = HintState(index, hint, msg_tokens)
-        self.update_preview()
-        return True
+        return self.hint_manager.set_hint(hint, index=index)
 
     @locked
     def cancel_hint(self):
@@ -613,11 +720,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        if self.hint_state is None:
-            return False
-        self.hint_state = None
-        self.update_preview()
-        return True
+        return self.hint_manager.cancel_hint()
 
     @locked
     def update_hint(self):
@@ -630,51 +733,7 @@ class BeatInput:
         succ : bool
             `False` if there is no hint or the hint isn't removed.
         """
-        if self.hint_state is None:
-            return False
-
-        if self.hint_state.tokens is None:
-            return self.cancel_hint()
-
-        if self.hint_state.index is not None and self.hint_state.index >= len(self.semantic_analyzer.tokens):
-            return self.cancel_hint()
-
-        if len(self.hint_state.tokens) > len(self.semantic_analyzer.tokens):
-            return self.cancel_hint()
-
-        for token_string, token in zip(self.hint_state.tokens, self.semantic_analyzer.tokens):
-            if token_srting != token.string:
-                return self.cancel_hint()
-
-        if (
-            isinstance(self.hint_state.hint, DescHint)
-            and self.semantic_analyzer.tokens[len(self.hint_state.tokens) - 1].type is not None
-        ):
-            return self.cancel_hint()
-
-        return False
-
-    @locked
-    def update_preview(self):
-        if not self.input_settings.preview_song:
-            return
-        if self.hint_state is None:
-            self.preview_handler(None)
-        elif not isinstance(self.hint_state.hint, (InfoHint, SuggestionsHint)):
-            self.preview_handler(None)
-        elif (
-            isinstance(self.hint_state.hint, SuggestionsHint)
-            and not self.hint_state.hint.message
-        ):
-            self.preview_handler(None)
-        elif self.hint_state.tokens is None:
-            self.preview_handler(None)
-        elif len(self.hint_state.tokens) != 2:
-            self.preview_handler(None)
-        elif self.hint_state.tokens[0] != "play":
-            self.preview_handler(None)
-        else:
-            self.preview_handler(self.hint_state.tokens[1])
+        return self.hint_manager.update_hint()
 
     @locked
     @onstate("EDIT")
@@ -696,8 +755,8 @@ class BeatInput:
         selection = slice(self.text_buffer.pos, self.text_buffer.pos)
         self.text_buffer.replace(selection, self.typeahead)
 
-        self.cancel_typeahead()
         self.update_buffer()
+        self.cancel_typeahead()
         self.ask_for_hint()
 
         return True
@@ -747,7 +806,9 @@ class BeatInput:
 
         self.update_buffer()
         self.cancel_typeahead()
-        self.ask_for_hint(clear=True)
+        succ = self.ask_for_hint()
+        if not succ:
+            self.cancel_hint()
 
         return True
 
@@ -768,7 +829,9 @@ class BeatInput:
 
         self.update_buffer()
         self.cancel_typeahead()
-        self.ask_for_hint(clear=True)
+        succ = self.ask_for_hint()
+        if not succ:
+            self.cancel_hint()
 
         return True
 
@@ -809,33 +872,11 @@ class BeatInput:
 
         self.update_buffer()
         self.cancel_typeahead()
-        self.ask_for_hint(clear=True)
+        succ = self.ask_for_hint()
+        if not succ:
+            self.cancel_hint()
 
         return True
-
-    def _find_token(self, pos=None):
-        pos = pos if pos is not None else self.text_buffer.pos
-        for index, token in enumerate(self.semantic_analyzer.tokens):
-            if token.mask.start <= pos <= token.mask.stop:
-                return index, token
-        else:
-            return None, None
-
-    def _find_token_before(self, pos=None):
-        pos = pos if pos is not None else self.text_buffer.pos
-        for index, token in enumerate(reversed(self.semantic_analyzer.tokens)):
-            if token.mask.start <= pos:
-                return len(self.semantic_analyzer.tokens)-1-index, token
-        else:
-            return None, None
-
-    def _find_token_after(self, pos=None):
-        pos = pos if pos is not None else self.text_buffer.pos
-        for token in self.semantic_analyzer.tokens:
-            if pos <= token.mask.stop:
-                return token
-        else:
-            return None
 
     @locked
     @onstate("EDIT")
@@ -854,7 +895,7 @@ class BeatInput:
             token = self.semantic_analyzer.tokens[index]
             return self.delete_range(token.mask.start, token.mask.stop)
 
-        _, token = self._find_token_before()
+        _, token = self.semantic_analyzer.find_token_before(self.text_buffer.pos)
         if token is None:
             return self.delete_range(0, self.text_buffer.pos)
         else:
@@ -877,7 +918,7 @@ class BeatInput:
             token = self.semantic_analyzer.tokens[index]
             return self.delete_range(token.mask.start, token.mask.stop)
 
-        _, token = self._find_token_after()
+        _, token = self.semantic_analyzer.find_token_after(self.text_buffer.pos)
         if token is None:
             return self.delete_range(self.text_buffer.pos, None)
         else:
@@ -1055,17 +1096,15 @@ class BeatInput:
 
     @locked
     @onstate("EDIT")
-    def ask_for_hint(self, index=None, clear=False, type="all"):
+    def ask_for_hint(self, index=None, type="all"):
         """Ask some hint for command.
 
         Provide some hint for the command on the caret.
 
         Parameters
         ----------
-        index : int
-        clear : bool
-            Cancel the current hint if token was not found.
-        type : one of "info", "desc", "all"
+        index : int, optional
+        type : one of "info", "desc", "all", default is "all"
             The type of hint to ask.
 
         Returns
@@ -1073,37 +1112,9 @@ class BeatInput:
         succ : bool
         """
         if index is None:
-            index, token = self._find_token()
-            if token is None:
-                if clear:
-                    self.cancel_hint()
-                return False
+            index, token = self.semantic_analyzer.find_token_before(self.text_buffer.pos)
 
-        target_type = self.semantic_analyzer.tokens[index].type
-
-        if target_type is None:
-            if type not in ("all", "desc"):
-                self.cancel_hint()
-                return False
-            msg = self.semantic_analyzer.desc(index)
-            if msg is None:
-                self.cancel_hint()
-                return False
-            hint = DescHint(msg)
-            self.set_hint(hint, index)
-            return True
-
-        else:
-            if type not in ("all", "info"):
-                self.cancel_hint()
-                return False
-            msg = self.semantic_analyzer.info(index + 1)
-            if msg is None:
-                self.cancel_hint()
-                return False
-            hint = InfoHint(msg)
-            self.set_hint(hint, index)
-            return True
+        return self.hint_manager.ask_for_hint(index, type=type)
 
     @locked
     @onstate("EDIT")
@@ -1117,22 +1128,15 @@ class BeatInput:
         succ : bool
         """
         # find the token before the caret
-        index, token = self._find_token_before()
+        index, token = self.semantic_analyzer.find_token_before(self.text_buffer.pos)
         if token is None:
             return False
 
-        if self.hint_state is None or self.hint_state.index != index:
+        if self.hint_manager.get_hint_location() != index:
             self.ask_for_hint(index)
             return False
 
-        hint = self.hint_state.hint
-        if not hint.message:
-            return False
-        if isinstance(hint, SuggestionsHint):
-            hint = InfoHint(hint.message)
-
-        self.add_popup(hint)
-        return True
+        return self.hint_manager.popup_hint()
 
     @locked
     @onstate("EDIT")
@@ -1265,7 +1269,7 @@ class BeatInput:
 
     def _prepare_tab_state(self, action=+1):
         # find the token to autocomplete
-        index, token = self._find_token_before()
+        index, token = self.semantic_analyzer.find_token_before(self.text_buffer.pos)
         if token is None:
             token_index = 0
             target = ""

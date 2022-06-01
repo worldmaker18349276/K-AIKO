@@ -407,26 +407,20 @@ class InputView:
 
                 self.typeahead = self.input.typeahead
                 self.clean = self.input.result is not None
-                self.hint = (
-                    self.input.hint_state.hint
-                    if self.input.hint_state is not None
-                    else None
-                )
+                self.hint = self.input.hint_manager.get_hint()
 
                 self.popup = []
                 while True:
                     try:
-                        hint = self.input.popup_queue.get(False)
+                        hint = self.input.hint_manager.popup_queue.get(False)
                     except queue.Empty:
                         break
                     self.popup.append(hint)
 
                 if isinstance(self.input.result, beatinputs.ErrorResult):
                     self.highlighted = self.input.result.index
-                elif self.input.hint_state is not None:
-                    self.highlighted = self.input.hint_state.index
                 else:
-                    self.highlighted = None
+                    self.highlighted = self.input.hint_manager.get_hint_location()
 
                 self.state = self.input.state
 

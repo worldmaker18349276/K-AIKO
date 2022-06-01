@@ -265,4 +265,25 @@ class SemanticAnalyzer:
         parents = [token.string for token in self.tokens[:length]]
         return self.parser.suggest_command(parents, target)
 
+    def find_token(self, pos):
+        for index, token in enumerate(self.tokens):
+            if token.mask.start <= pos <= token.mask.stop:
+                return index, token
+        else:
+            return None, None
+
+    def find_token_before(self, pos):
+        for index, token in enumerate(reversed(self.tokens)):
+            if token.mask.start <= pos:
+                return len(self.tokens)-1-index, token
+        else:
+            return None, None
+
+    def find_token_after(self, pos):
+        for index, token in enumerate(self.tokens):
+            if pos <= token.mask.stop:
+                return index, token
+        else:
+            return None, None
+
 
