@@ -366,7 +366,7 @@ class BeatPrompt:
         return self.input.new_session()
 
     def record_command(self):
-        return self.input.record_command()
+        return self.input._record_command()
 
 
 class InputView:

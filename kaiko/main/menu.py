@@ -201,7 +201,7 @@ class KAIKOMenu:
                 prompt.new_session()
 
             else:
-                prompt._record_command()
+                prompt.record_command()
                 yield from self.execute(command).join()
                 prompt.new_session()
 

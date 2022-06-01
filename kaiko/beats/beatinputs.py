@@ -179,6 +179,107 @@ class TabState:
     selection: slice
 
 
+class AutocompleteManager:
+    def __init__(self, text_buffer, semantic_analyzer):
+        self.tab_state = None
+
+        self.text_buffer = text_buffer
+        self.semantic_analyzer = semantic_analyzer
+
+    def is_in_cycle(self):
+        return self.tab_state is not None
+
+    def prepare_tab_state(self, action=+1):
+        # find the token to autocomplete
+        index, token = self.semantic_analyzer.find_token_before(self.text_buffer.pos)
+        if token is None:
+            token_index = 0
+            target = ""
+            selection = slice(self.text_buffer.pos, self.text_buffer.pos)
+
+        elif token.mask.stop < self.text_buffer.pos:
+            token_index = index + 1
+            target = ""
+            selection = slice(self.text_buffer.pos, self.text_buffer.pos)
+
+        else:
+            token_index = index
+            target = token.string
+            selection = token.mask
+
+        # generate suggestions
+        suggestions = [
+            sh.quoting(sugg)
+            for sugg in self.semantic_analyzer.suggest(token_index, target)
+        ]
+        sugg_index = len(suggestions) if action == -1 else -1
+
+        # tab state
+        original_pos = self.text_buffer.pos
+        original_token = self.text_buffer.buffer[selection]
+
+        return TabState(
+            suggestions=suggestions,
+            sugg_index=sugg_index,
+            token_index=token_index,
+            original_token=original_token,
+            original_pos=original_pos,
+            selection=selection,
+        )
+
+    def autocomplete(self, action=+1):
+        if self.tab_state is None:
+            tab_state = self.prepare_tab_state(action)
+
+            if len(tab_state.suggestions) == 0:
+                # no suggestion
+                return None
+
+            if len(tab_state.suggestions) == 1:
+                # one suggestion -> complete directly
+                self.text_buffer.replace(tab_state.selection, tab_state.suggestions[0])
+                return tab_state.token_index
+
+            self.tab_state = tab_state
+
+        if action == +1:
+            self.tab_state.sugg_index += 1
+        elif action == -1:
+            self.tab_state.sugg_index -= 1
+        else:
+            raise ValueError(f"invalid action: {action}")
+
+        if self.tab_state.sugg_index not in range(len(self.tab_state.suggestions)):
+            self.cancel_autocomplete()
+            return None
+
+        # fill in selected token
+        self.tab_state.selection = self.text_buffer.replace(
+            self.tab_state.selection,
+            self.tab_state.suggestions[self.tab_state.sugg_index],
+        )
+
+        return self.tab_state.token_index
+
+    def make_hint(self, info_hint):
+        msg = info_hint.message if info_hint is not None else ""
+        return SuggestionsHint(self.tab_state.suggestions, self.tab_state.sugg_index, msg)
+
+    def cancel_autocomplete(self):
+        if self.tab_state is None:
+            return
+        self.text_buffer.replace(self.tab_state.selection, self.tab_state.original_token)
+        self.text_buffer.move_to(self.tab_state.original_pos)
+        self.tab_state = None
+
+    def finish_autocomplete(self):
+        if self.tab_state is None:
+            return None
+        index = self.tab_state.token_index
+        self.tab_state = None
+        return index
+
+
 # input
 class Result:
     pass
@@ -248,6 +349,9 @@ class TextBuffer:
     """
 
     def __init__(self, history):
+        self.init(history)
+
+    def init(self, history):
         self.buffers = history
         self.buffers.append([])
         self.buffer_index = -1
@@ -480,9 +584,8 @@ class BeatInput:
         The text buffer of beatshell.
     typeahead : str
         The type ahead of input.
-    tab_state : TabState or None
-        The state of autocomplete.
     hint_manager : HintManager
+    autocomplete_manager : AutocompleteManager
     result : Result or None
         The result of input.
     state : str
@@ -546,6 +649,9 @@ class BeatInput:
             self.semantic_analyzer,
             lambda song: preview_handler(song) if self.input_settings.preview_song else None,
         )
+        self.autocomplete_manager = AutocompleteManager(
+            self.text_buffer, self.semantic_analyzer
+        )
 
         self.state = "FIN"
         self.result = None
@@ -608,7 +714,7 @@ class BeatInput:
 
         groups = self.semantic_analyzer.get_all_groups()
         history_size = self.input_settings.history_size
-        self.text_buffer = TextBuffer(self.history.read_history(groups, history_size))
+        self.text_buffer.init(self.history.read_history(groups, history_size))
 
         self.update_buffer(clear=True)
         self.start()
@@ -1173,18 +1279,11 @@ class BeatInput:
 
     @locked
     @onstate("EDIT")
-    def autocomplete(self, action=+1):
-        """Autocomplete.
+    def forward_autocomplete(self):
+        """Autocomplete forwardly.
 
         Complete the token on the caret, or fill in suggestions if caret is
         located in between.
-
-        Parameters
-        ----------
-        action : +1 or -1 or 0
-            Indicating direction for exploration of suggestions. `+1` for next
-            suggestion; `-1` for previous suggestion; `0` for canceling the
-            process.
 
         Returns
         -------
@@ -1192,101 +1291,41 @@ class BeatInput:
             `True` if is in autocompletion cycle.  Note that it will be `False`
             for no suggestion or one suggestion case.
         """
-
-        if self.tab_state is None and action == 0:
-            return False
-
-        if self.tab_state is None:
-            tab_state = self._prepare_tab_state(action)
-
-            if len(tab_state.suggestions) == 0:
-                # no suggestion
-                return False
-
-            if len(tab_state.suggestions) == 1:
-                # one suggestion -> complete directly
-                self.text_buffer.replace(tab_state.selection, tab_state.suggestions[0])
-                self.update_buffer()
-                self.ask_for_hint(tab_state.token_index, type="info")
-                return False
-
-            self.tab_state = tab_state
-
-        if action == +1:
-            self.tab_state.sugg_index += 1
-        elif action == -1:
-            self.tab_state.sugg_index -= 1
-        elif action == 0:
-            self.tab_state.sugg_index = None
-        else:
-            raise ValueError(f"invalid action: {action}")
-
-        if self.tab_state.sugg_index not in range(len(self.tab_state.suggestions)):
-            # restore state
-            self.text_buffer.replace(self.tab_state.selection, self.tab_state.original_token)
-            self.text_buffer.move_to(self.tab_state.original_pos)
-
-            self.tab_state = None
-            self.update_buffer(clear=True)
-            return False
-
-        # autocomplete selected token
-        self.tab_state.selection = self.text_buffer.replace(
-            self.tab_state.selection,
-            self.tab_state.suggestions[self.tab_state.sugg_index],
-        )
-
-        # update hint
+        index = self.autocomplete_manager.autocomplete(action=+1)
+        is_in_cycle = self.autocomplete_manager.is_in_cycle()
         self.update_buffer(clear=True)
+        if index is not None:
+            self.ask_for_hint(index, type="info")
+        if is_in_cycle:
+            sugg_hint = self.autocomplete_manager.make_hint(self.hint_manager.get_hint())
+            self.hint_manager.set_hint(sugg_hint)
 
-        target_type = self.semantic_analyzer.tokens[self.tab_state.token_index].type
-        if target_type is None:
-            msg = ""
-        else:
-            msg = self.semantic_analyzer.info(self.tab_state.token_index + 1) or ""
-        self.set_hint(
-            SuggestionsHint(self.tab_state.suggestions, self.tab_state.sugg_index, msg),
-            self.tab_state.token_index,
-        )
-        return True
+        return is_in_cycle
 
-    def _prepare_tab_state(self, action=+1):
-        # find the token to autocomplete
-        index, token = self.semantic_analyzer.find_token_before(self.text_buffer.pos)
-        if token is None:
-            token_index = 0
-            target = ""
-            selection = slice(self.text_buffer.pos, self.text_buffer.pos)
+    @locked
+    @onstate("EDIT")
+    def backward_autocomplete(self):
+        """Autocomplete backwardly.
 
-        elif token.mask.stop < self.text_buffer.pos:
-            token_index = index + 1
-            target = ""
-            selection = slice(self.text_buffer.pos, self.text_buffer.pos)
+        Complete the token on the caret backwardly, or fill in suggestions if
+        caret is located in between.
 
-        else:
-            token_index = index
-            target = token.string
-            selection = token.mask
+        Returns
+        -------
+        succ : bool
+            `True` if is in autocompletion cycle.  Note that it will be `False`
+            for no suggestion or one suggestion case.
+        """
+        index = self.autocomplete_manager.autocomplete(action=-1)
+        is_in_cycle = self.autocomplete_manager.is_in_cycle()
+        self.update_buffer(clear=True)
+        if index is not None:
+            self.ask_for_hint(index, type="info")
+        if is_in_cycle:
+            sugg_hint = self.autocomplete_manager.make_hint(self.hint_manager.get_hint())
+            self.hint_manager.set_hint(sugg_hint)
 
-        # generate suggestions
-        suggestions = [
-            sh.quoting(sugg)
-            for sugg in self.semantic_analyzer.suggest(token_index, target)
-        ]
-        sugg_index = len(suggestions) if action == -1 else -1
-
-        # tab state
-        original_pos = self.text_buffer.pos
-        original_token = self.text_buffer.buffer[selection]
-
-        return TabState(
-            suggestions=suggestions,
-            sugg_index=sugg_index,
-            token_index=token_index,
-            original_token=original_token,
-            original_pos=original_pos,
-            selection=selection,
-        )
+        return is_in_cycle
 
     @locked
     @onstate("EDIT")
@@ -1297,11 +1336,22 @@ class BeatInput:
         -------
         succ : bool
         """
-        if self.tab_state is not None:
-            # set hint for complete token
-            self.ask_for_hint(self.tab_state.token_index, type="info")
-            self.tab_state = None
+        index = self.autocomplete_manager.finish_autocomplete()
+        if index is not None:
+            self.ask_for_hint(index, type="info")
+        return True
 
+    @locked
+    @onstate("EDIT")
+    def cancel_autocomplete(self):
+        r"""Cancel autocompletion.
+
+        Returns
+        -------
+        succ : bool
+        """
+        self.autocomplete_manager.cancel_autocomplete()
+        self.update_buffer(clear=True)
         return True
 
     @locked
@@ -1360,11 +1410,11 @@ class BeatStroke:
         def handler(args):
             _, time, keyname, keycode = args
             if keyname == next_key:
-                self.input.autocomplete(+1)
+                self.input.forward_autocomplete()
             elif keyname == prev_key:
-                self.input.autocomplete(-1)
+                self.input.backward_autocomplete()
             elif keyname == cancel_key:
-                self.input.autocomplete(0)
+                self.input.cancel_autocomplete()
             elif keyname != help_key:
                 self.input.finish_autocomplete()
 
