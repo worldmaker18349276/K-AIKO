@@ -11,7 +11,7 @@ from ..utils import config as cfg
 from ..utils import shells as sh
 
 
-# input
+# hint
 class Hint:
     pass
 
@@ -31,21 +31,6 @@ class SuggestionsHint(Hint):
     suggestions: List[str]
     selected: int
     message: str
-
-
-class Result:
-    pass
-
-
-@dataclasses.dataclass(frozen=True)
-class ErrorResult(Result):
-    index : Optional[int]
-    error: Exception
-
-
-@dataclasses.dataclass(frozen=True)
-class CompleteResult(Result):
-    command: Callable
 
 
 @dataclasses.dataclass
@@ -183,6 +168,7 @@ class HintManager:
             return True
 
 
+# autocomplete
 @dataclasses.dataclass
 class TabState:
     suggestions: List[str]
@@ -191,6 +177,22 @@ class TabState:
     original_token: List[str]
     original_pos: int
     selection: slice
+
+
+# input
+class Result:
+    pass
+
+
+@dataclasses.dataclass(frozen=True)
+class ErrorResult(Result):
+    index : Optional[int]
+    error: Exception
+
+
+@dataclasses.dataclass(frozen=True)
+class CompleteResult(Result):
+    command: Callable
 
 
 class ShellSyntaxError(Exception):
@@ -562,34 +564,9 @@ class BeatInput:
         stroke = BeatStroke(self, self.input_settings)
         stroke.register(controller)
 
-    @locked
-    @onstate("FIN")
-    def new_session(self):
-        r"""Start a new session of input.
-        """
-        self.semantic_analyzer.update_parser(self.command_parser_getter())
-
-        groups = self.semantic_analyzer.get_all_groups()
-        history_size = self.input_settings.history_size
-        self.text_buffer = TextBuffer(self.history.read_history(groups, history_size))
-
-        self.cancel_typeahead()
-        self.update_buffer()
-        self.cancel_hint()
-        self.start()
-
-    def record_command(self):
+    def _record_command(self):
         command = "".join(self.text_buffer.buffer).strip()
         self.history.write_history(self.semantic_analyzer.group, command)
-
-    @locked
-    @onstate("FIN")
-    def prev_session(self):
-        r"""Back to previous session of input."""
-        self.cancel_typeahead()
-        self.update_buffer()
-        self.cancel_hint()
-        self.start()
 
     @locked
     @onstate("EDIT")
@@ -623,15 +600,51 @@ class BeatInput:
         return True
 
     @locked
-    def update_buffer(self):
-        """Parse syntax.
+    @onstate("FIN")
+    def new_session(self):
+        r"""Start a new session of input.
+        """
+        self.semantic_analyzer.update_parser(self.command_parser_getter())
+
+        groups = self.semantic_analyzer.get_all_groups()
+        history_size = self.input_settings.history_size
+        self.text_buffer = TextBuffer(self.history.read_history(groups, history_size))
+
+        self.update_buffer(clear=True)
+        self.start()
+
+    @locked
+    @onstate("EDIT")
+    def prev(self):
+        """Previous buffer.
 
         Returns
         -------
         succ : bool
         """
-        self.semantic_analyzer.parse(self.text_buffer.buffer)
-        self.buffer_modified_counter += 1
+        succ = self.text_buffer.prev()
+        if not succ:
+            return False
+
+        self.update_buffer(clear=True)
+
+        return True
+
+    @locked
+    @onstate("EDIT")
+    def next(self):
+        """Next buffer.
+
+        Returns
+        -------
+        succ : bool
+        """
+        succ = self.text_buffer.next()
+        if not succ:
+            return False
+
+        self.update_buffer(clear=True)
+
         return True
 
     @locked
@@ -670,6 +683,30 @@ class BeatInput:
         succ : bool
         """
         self.typeahead = ""
+        return True
+
+    @locked
+    @onstate("EDIT")
+    def insert_typeahead(self):
+        """Insert typeahead.
+
+        Insert the typeahead if the caret is at the end of buffer.
+
+        Returns
+        -------
+        succ : bool
+            `False` if there is no typeahead or the caret is not at the end of
+            buffer.
+        """
+
+        if self.typeahead == "" or self.text_buffer.pos != len(self.text_buffer.buffer):
+            return False
+
+        self.text_buffer.insert(self.typeahead)
+
+        self.update_buffer()
+        self.ask_for_hint()
+
         return True
 
     @locked
@@ -737,28 +774,45 @@ class BeatInput:
 
     @locked
     @onstate("EDIT")
-    def insert_typeahead(self):
-        """Insert typeahead.
+    def ask_for_hint(self, index=None, type="all"):
+        """Ask some hint for command.
 
-        Insert the typeahead if the caret is at the end of buffer.
+        Provide some hint for the command on the caret.
+
+        Parameters
+        ----------
+        index : int, optional
+        type : one of "info", "desc", "all", optional
+            The type of hint to ask.
 
         Returns
         -------
         succ : bool
-            `False` if there is no typeahead or the caret is not at the end of
-            buffer.
         """
+        if index is None:
+            index, token = self.semantic_analyzer.find_token_before(self.text_buffer.pos)
 
-        if self.typeahead == "" or self.text_buffer.pos != len(self.text_buffer.buffer):
-            return False
+        return self.hint_manager.ask_for_hint(index, type=type)
 
-        selection = slice(self.text_buffer.pos, self.text_buffer.pos)
-        self.text_buffer.replace(selection, self.typeahead)
+    @locked
+    def update_buffer(self, clear=False):
+        """Update buffer.
 
-        self.update_buffer()
+        Parameters
+        ----------
+        clear : bool, optional
+
+        Returns
+        -------
+        succ : bool
+        """
+        self.semantic_analyzer.parse(self.text_buffer.buffer)
+        self.buffer_modified_counter += 1
         self.cancel_typeahead()
-        self.ask_for_hint()
-
+        if clear:
+            self.cancel_hint()
+        else:
+            self.update_hint()
         return True
 
     @locked
@@ -805,10 +859,7 @@ class BeatInput:
             return False
 
         self.update_buffer()
-        self.cancel_typeahead()
-        succ = self.ask_for_hint()
-        if not succ:
-            self.cancel_hint()
+        self.ask_for_hint()
 
         return True
 
@@ -828,10 +879,7 @@ class BeatInput:
             return False
 
         self.update_buffer()
-        self.cancel_typeahead()
-        succ = self.ask_for_hint()
-        if not succ:
-            self.cancel_hint()
+        self.ask_for_hint()
 
         return True
 
@@ -849,8 +897,7 @@ class BeatInput:
             return False
 
         self.update_buffer()
-        self.cancel_typeahead()
-        self.cancel_hint()
+        self.ask_for_hint()
 
         return True
 
@@ -871,10 +918,7 @@ class BeatInput:
         self.text_buffer.replace(slice(start, end), "")
 
         self.update_buffer()
-        self.cancel_typeahead()
-        succ = self.ask_for_hint()
-        if not succ:
-            self.cancel_hint()
+        self.ask_for_hint()
 
         return True
 
@@ -1058,66 +1102,6 @@ class BeatInput:
 
     @locked
     @onstate("EDIT")
-    def prev(self):
-        """Previous buffer.
-
-        Returns
-        -------
-        succ : bool
-        """
-        succ = self.text_buffer.prev()
-        if not succ:
-            return False
-
-        self.update_buffer()
-        self.cancel_typeahead()
-        self.cancel_hint()
-
-        return True
-
-    @locked
-    @onstate("EDIT")
-    def next(self):
-        """Next buffer.
-
-        Returns
-        -------
-        succ : bool
-        """
-        succ = self.text_buffer.next()
-        if not succ:
-            return False
-
-        self.update_buffer()
-        self.cancel_typeahead()
-        self.cancel_hint()
-
-        return True
-
-    @locked
-    @onstate("EDIT")
-    def ask_for_hint(self, index=None, type="all"):
-        """Ask some hint for command.
-
-        Provide some hint for the command on the caret.
-
-        Parameters
-        ----------
-        index : int, optional
-        type : one of "info", "desc", "all", default is "all"
-            The type of hint to ask.
-
-        Returns
-        -------
-        succ : bool
-        """
-        if index is None:
-            index, token = self.semantic_analyzer.find_token_before(self.text_buffer.pos)
-
-        return self.hint_manager.ask_for_hint(index, type=type)
-
-    @locked
-    @onstate("EDIT")
     def help(self):
         """Help for command.
 
@@ -1213,7 +1197,6 @@ class BeatInput:
             return False
 
         if self.tab_state is None:
-            self.cancel_typeahead()
             tab_state = self._prepare_tab_state(action)
 
             if len(tab_state.suggestions) == 0:
@@ -1244,8 +1227,7 @@ class BeatInput:
             self.text_buffer.move_to(self.tab_state.original_pos)
 
             self.tab_state = None
-            self.update_buffer()
-            self.cancel_hint()
+            self.update_buffer(clear=True)
             return False
 
         # autocomplete selected token
@@ -1255,7 +1237,8 @@ class BeatInput:
         )
 
         # update hint
-        self.update_buffer()
+        self.update_buffer(clear=True)
+
         target_type = self.semantic_analyzer.tokens[self.tab_state.token_index].type
         if target_type is None:
             msg = ""
