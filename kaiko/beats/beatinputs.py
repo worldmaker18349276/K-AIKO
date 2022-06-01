@@ -35,8 +35,8 @@ class SuggestionsHint(Hint):
 
 @dataclasses.dataclass
 class HintState:
-    index: int
     hint: Hint
+    index: Optional[int]
     tokens: Optional[List[str]]
 
 
@@ -82,7 +82,7 @@ class HintManager:
         else:
             assert False
 
-        self.hint_state = HintState(index, hint, msg_tokens)
+        self.hint_state = HintState(hint=hint, index=index, tokens=msg_tokens)
         self.update_preview()
         return True
 
@@ -181,10 +181,10 @@ class TabState:
 
 class AutocompleteManager:
     def __init__(self, text_buffer, semantic_analyzer):
-        self.tab_state = None
-
         self.text_buffer = text_buffer
         self.semantic_analyzer = semantic_analyzer
+
+        self.tab_state = None
 
     def is_in_cycle(self):
         return self.tab_state is not None
@@ -644,7 +644,6 @@ class BeatInput:
 
         self.text_buffer = TextBuffer([])
         self.typeahead = ""
-        self.tab_state = None
         self.hint_manager = HintManager(
             self.semantic_analyzer,
             lambda song: preview_handler(song) if self.input_settings.preview_song else None,
@@ -1298,7 +1297,7 @@ class BeatInput:
             self.ask_for_hint(index, type="info")
         if is_in_cycle:
             sugg_hint = self.autocomplete_manager.make_hint(self.hint_manager.get_hint())
-            self.hint_manager.set_hint(sugg_hint)
+            self.hint_manager.set_hint(sugg_hint, index)
 
         return is_in_cycle
 
@@ -1323,7 +1322,7 @@ class BeatInput:
             self.ask_for_hint(index, type="info")
         if is_in_cycle:
             sugg_hint = self.autocomplete_manager.make_hint(self.hint_manager.get_hint())
-            self.hint_manager.set_hint(sugg_hint)
+            self.hint_manager.set_hint(sugg_hint, index)
 
         return is_in_cycle
 
