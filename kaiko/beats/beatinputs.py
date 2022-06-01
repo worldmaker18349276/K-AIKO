@@ -1,5 +1,7 @@
 import functools
+import contextlib
 import re
+import queue
 import threading
 from typing import Optional, List, Tuple, Dict, Callable
 from pathlib import Path
@@ -65,28 +67,6 @@ class TabState:
 
 class ShellSyntaxError(Exception):
     pass
-
-
-def onstate(*states):
-    def onstate_dec(func):
-        @functools.wraps(func)
-        def onstate_func(self, *args, **kwargs):
-            if self.state not in states:
-                return False
-            return func(self, *args, **kwargs)
-
-        return onstate_func
-
-    return onstate_dec
-
-
-def locked(func):
-    @functools.wraps(func)
-    def locked_func(self, *args, **kwargs):
-        with self.lock:
-            return func(self, *args, **kwargs)
-
-    return locked_func
 
 
 @dataclasses.dataclass
@@ -285,6 +265,70 @@ class BeatInputSettings(cfg.Configurable):
     history_size: int = 500
 
 
+class ContextDispatcher:
+    def __init__(self):
+        self.lock = threading.RLock()
+        self.isin = False
+        self.before_callbacks = []
+        self.after_callbacks = []
+        self.onerror_callbacks = []
+
+    def before(self, callback):
+        with self.lock:
+            self.before_callbacks.append(callback)
+
+    def after(self, callback):
+        with self.lock:
+            self.after_callbacks.append(callback)
+
+    def onerror(self, callback):
+        with self.lock:
+            self.onerror_callbacks.append(callback)
+
+    @contextlib.contextmanager
+    def on(self):
+        with self.lock:
+            isin = self.isin
+            if isin:
+                for callback in self.before_callbacks:
+                    callback()
+            self.isin = False
+            try:
+                yield
+            except:
+                self.isin = isin
+                if isin:
+                    for callback in self.onerror_callbacks:
+                        callback()
+            finally:
+                self.isin = isin
+                if isin:
+                    for callback in self.after_callbacks:
+                        callback()
+
+
+def onstate(*states):
+    def onstate_dec(func):
+        @functools.wraps(func)
+        def onstate_func(self, *args, **kwargs):
+            if self.state not in states:
+                return False
+            return func(self, *args, **kwargs)
+
+        return onstate_func
+
+    return onstate_dec
+
+
+def locked(func):
+    @functools.wraps(func)
+    def locked_func(self, *args, **kwargs):
+        with self.edit_ctxt.on():
+            return func(self, *args, **kwargs)
+
+    return locked_func
+
+
 class BeatInput:
     r"""Input editor for beatshell.
 
@@ -310,15 +354,15 @@ class BeatInput:
         The state of autocomplete.
     hint_state : HintState or None
         The hint state of input.
+    popup_queue : queue.Queue
+        The message displayed above the prompt.
     result : Result or None
         The result of input.
     state : str
         The input state.
     preview_handler : function
         A function to preview beatmap.
-    popup_handler : function
-        The message displayed above the prompt.
-    modified_counter : int
+    buffer_modified_counter : int
         The event counter for modifying buffer.
     key_pressed_counter : int
         The event counter for key pressing.
@@ -326,11 +370,24 @@ class BeatInput:
 
     history_file_path = ".beatshell-history"
 
+    action_regex = "({fn}{op})*{fn}".format(
+        fn=r"input\.(?!_)\w+\(\)",
+        op=r"( \| | \& | and | or )",
+    )
+
+    @classmethod
+    def _parse_action(cls, func):
+        if not re.match(cls.action_regex, func):
+            raise ValueError(f"invalid action: {repr(func)}")
+        def action(input):
+            with input.edit_ctxt.on():
+                eval(func, {}, {"input": input})
+        return action
+
     def __init__(
         self,
         command_parser_getter,
         preview_handler,
-        popup_handler,
         rich,
         cache_dir,
         input_settings_getter=BeatInputSettings,
@@ -342,7 +399,6 @@ class BeatInput:
         command_parser_getter : function
             The function to produce command parser.
         preview_handler : function
-        popup_handler : function
         rich : markups.RichParser
         cache_dir : Path
             The directory of cache data.
@@ -362,15 +418,15 @@ class BeatInput:
         self.typeahead = ""
         self.tab_state = None
         self.hint_state = None
+        self.popup_queue = queue.Queue()
 
         self.state = "FIN"
         self.result = None
-        self.lock = threading.RLock()
+        self.edit_ctxt = ContextDispatcher()
 
         self.preview_handler = preview_handler
-        self.popup_handler = popup_handler
         self.key_pressed_counter = 0
-        self.modified_counter = 0
+        self.buffer_modified_counter = 0
 
         self.new_session()
 
@@ -451,7 +507,7 @@ class BeatInput:
         succ : bool
         """
         self.semantic_analyzer.parse(self.text_buffer.buffer)
-        self.modified_counter += 1
+        self.buffer_modified_counter += 1
         return True
 
     @locked
@@ -490,6 +546,24 @@ class BeatInput:
         succ : bool
         """
         self.typeahead = ""
+        return True
+
+    @locked
+    def add_popup(self, hint):
+        """Add popup.
+
+        Show hint above the prompt.
+
+        Parameters
+        ----------
+        hint : Hint
+            The hint.
+
+        Returns
+        -------
+        succ : bool
+        """
+        self.popup_queue.put(hint)
         return True
 
     @locked
@@ -1057,7 +1131,7 @@ class BeatInput:
         if isinstance(hint, SuggestionsHint):
             hint = InfoHint(hint.message)
 
-        self.popup_handler(hint)
+        self.add_popup(hint)
         return True
 
     @locked
@@ -1273,7 +1347,9 @@ class BeatStroke:
         controller.add_handler(self.printable_handler())
 
         for key, func in self.settings.keymap.items():
-            controller.add_handler(self.action_handler(func), key)
+            action = self.input._parse_action(func)
+            action_handler = lambda _, action=action: action(self.input)
+            controller.add_handler(action_handler, key)
 
         controller.add_handler(self.help_handler(), self.settings.help_key)
         controller.add_handler(self.confirm_handler(), self.settings.confirm_key)
@@ -1306,14 +1382,6 @@ class BeatStroke:
                 self.input.finish_autocomplete()
 
         return handler
-
-    def action_handler(self, func):
-        fn = r"input\.(?!_)\w+\(\)"
-        op = "(%s)" % "|".join(map(re.escape, (" | ", " & ", " and ", " or ")))
-        regex = f"({fn}{op})*{fn}"
-        if not re.match(regex, func):
-            raise ValueError(f"invalid action: {repr(func)}")
-        return lambda _: eval(func, {}, {"input": self.input})
 
     def printable_handler(self):
         def handler(args):

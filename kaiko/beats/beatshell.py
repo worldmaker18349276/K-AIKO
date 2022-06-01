@@ -266,12 +266,10 @@ class BeatPrompt:
         self.cache_dir = cache_dir
 
         self.fin_event = threading.Event()
-        self.popup_queue = queue.Queue()
 
         self.input = beatinputs.BeatInput(
             command_parser_getter,
             preview_handler,
-            lambda hint: self.popup_queue.put(hint),
             rich,
             cache_dir,
             lambda: self._shell_settings_getter().input,
@@ -293,7 +291,7 @@ class BeatPrompt:
         icon = widget_factory.create(settings.prompt.icons)
         marker = widget_factory.create(settings.prompt.marker)
 
-        state = ViewState(self.input)
+        state = InputView(self.input)
         text_renderer = TextRenderer(self.rich, settings.text)
         msg_renderer = MsgRenderer(self.rich, settings.text)
 
@@ -317,7 +315,7 @@ class BeatPrompt:
         renderer.add_texts(icon, icon_mask, zindex=(2,))
         renderer.add_texts(marker, marker_mask, zindex=(3,))
         renderer.add_texts(textbox, input_mask, zindex=(0,))
-        renderer.add_drawer(msg_renderer.render_msg(state, self.popup_queue), zindex=(1,))
+        renderer.add_drawer(msg_renderer.render_msg(state), zindex=(1,))
 
     @dn.datanode
     def prompt(self, devices_settings):
@@ -371,7 +369,7 @@ class BeatPrompt:
         return self.input.record_command()
 
 
-class ViewState:
+class InputView:
     def __init__(self, input):
         r"""Constructor.
 
@@ -389,19 +387,20 @@ class ViewState:
         self.typeahead = ""
         self.clean = False
         self.hint = None
+        self.popup = []
         self.state = "EDIT"
 
     @dn.datanode
     def load(self, fin_event):
-        modified_counter = None
+        buffer_modified_counter = None
         key_pressed_counter = None
 
         res, time, width = yield
 
         while True:
-            with self.input.lock:
-                if self.input.modified_counter != modified_counter:
-                    modified_counter = self.input.modified_counter
+            with self.input.edit_ctxt.lock:
+                if self.input.buffer_modified_counter != buffer_modified_counter:
+                    buffer_modified_counter = self.input.buffer_modified_counter
                     self.buffer = list(self.input.text_buffer.buffer)
                     self.tokens = list(self.input.semantic_analyzer.tokens)
                 self.pos = self.input.text_buffer.pos
@@ -413,6 +412,14 @@ class ViewState:
                     if self.input.hint_state is not None
                     else None
                 )
+
+                self.popup = []
+                while True:
+                    try:
+                        hint = self.input.popup_queue.get(False)
+                    except queue.Empty:
+                        break
+                    self.popup.append(hint)
 
                 if isinstance(self.input.result, beatinputs.ErrorResult):
                     self.highlighted = self.input.result.index
@@ -581,7 +588,7 @@ class MsgRenderer:
         self.settings = settings
 
     @dn.datanode
-    def render_msg(self, state, popup):
+    def render_msg(self, state):
         message_max_lines = self.settings.message_max_lines
         sugg_lines = self.settings.suggestions_lines
         sugg_items = self.settings.suggestion_items
@@ -627,7 +634,7 @@ class MsgRenderer:
             (view, msgs, logs), time, width = yield
             while True:
                 render_hint.send((msgs, state.hint))
-                logs.extend(self.render_popup(popup, desc=desc, info=info))
+                logs.extend(self.render_popup(state.popup, desc=desc, info=info))
                 (view, msgs, logs), time, width = yield (view, msgs, logs)
 
     def render_hint(
@@ -720,12 +727,7 @@ class MsgRenderer:
         logs = []
 
         # draw popup
-        while True:
-            try:
-                hint = popup.get(False)
-            except queue.Empty:
-                break
-
+        for hint in popup:
             msg = None
             if hint.message:
                 msg = self.rich.parse(hint.message, root_tag=True)
