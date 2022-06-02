@@ -1,6 +1,8 @@
 import contextlib
 import dataclasses
 import enum
+import re
+from inspect import cleandoc
 import shutil
 import numpy
 import difflib
@@ -14,35 +16,35 @@ class LoggerSettings(cfg.Configurable):
     r"""
     Fields
     ------
-    data : str
+    data : single tag
         The template of data icon.
-    info : str
+    info : single tag
         The template of info icon.
-    hint : str
+    hint : single tag
         The template of hint icon.
 
-    verb : str
-        The template of verb log.
-    emph : str
+    emph : pair tag
         The template of emph log.
-    warn : str
+    verb : pair tag
+        The template of verb log.
+    warn : pair tag
         The template of warn log.
 
-    verb_block : str
+    verb_block : pair tag
         The template of verb block log.
-    warn_block : str
+    warn_block : pair tag
         The template of warn block log.
 
-    codepoint : str
+    codepoint : pair tag
         The template of codepoint representation.
     """
     data: str = "[color=bright_green][wide=🖿/][/]"
     info: str = "[color=bright_blue][wide=🛠/][/]"
     hint: str = "[color=bright_yellow][wide=🖈/][/]"
 
-    verb: str = f"[weight=dim][slot/][/]"
-    warn: str = f"[color=red][slot/][/]"
     emph: str = "[weight=bold][slot/][/]"
+    verb: str = "[weight=dim][slot/][/]"
+    warn: str = "[color=red][slot/][/]"
 
     verb_block: str = f"[weight=dim]{'╌'*80}\n[slot/]{'╌'*80}\n[/]"
     warn_block: str = f"[color=red]{'═'*80}\n[slot/]{'═'*80}\n[/]"
@@ -51,6 +53,22 @@ class LoggerSettings(cfg.Configurable):
 
     @cfg.subconfig
     class python(cfg.Configurable):
+        r"""
+        Fields
+        ------
+        py_none : pair tag
+        py_ellipsis : pair tag
+        py_bool : pair tag
+        py_int : pair tag
+        py_float : pair tag
+        py_complex : pair tag
+        py_bytes : pair tag
+        py_str : pair tag
+        py_punctuation : pair tag
+        py_argument : pair tag
+        py_class : pair tag
+        py_attribute : pair tag
+        """
         py_none: str = "[color=bright_cyan][slot/][/]"
         py_ellipsis: str = "[color=bright_cyan][slot/][/]"
         py_bool: str = "[color=bright_cyan][slot/][/]"
@@ -69,20 +87,20 @@ class LoggerSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        qt : str
+        qt : single tag
             The replacement text for quotation marks.
-        bs : str
+        bs : single tag
             The replacement text for backslashes.
-        ws : str
+        ws : single tag
             The replacement text for escaped whitespaces.
 
-        unk : str
+        unk : pair tag
             The markup template for the unknown token.
-        cmd : str
+        cmd : pair tag
             The markup template for the command token.
-        kw : str
+        kw : pair tag
             The markup template for the keyword token.
-        arg : str
+        arg : pair tag
             The markup template for the argument token.
         """
         qt: str = "[weight=dim]'[/]"
@@ -114,43 +132,40 @@ class Logger:
         )
         self.renderer = mu.RichRenderer(terminal_settings.unicode_version)
 
-        self.rich.add_single_tag("data", logger_settings.data)
-        self.rich.add_single_tag("info", logger_settings.info)
-        self.rich.add_single_tag("hint", logger_settings.hint)
-        self.rich.add_pair_tag("verb", logger_settings.verb)
-        self.rich.add_pair_tag("emph", logger_settings.emph)
-        self.rich.add_pair_tag("warn", logger_settings.warn)
-
-        self.rich.add_pair_tag("verb_block", logger_settings.verb_block)
-        self.rich.add_pair_tag("warn_block", logger_settings.warn_block)
+        self._compile_settings(logger_settings)
+        self._compile_settings(logger_settings.shell)
+        self._compile_settings(logger_settings.python)
 
         self.verb_block = self.rich.parse(logger_settings.verb_block, slotted=True)
         self.warn_block = self.rich.parse(logger_settings.warn_block, slotted=True)
 
-        self.rich.add_pair_tag("codepoint", logger_settings.codepoint)
+    @staticmethod
+    def _parse_tag_type(doc):
+        res = {}
 
-        self.rich.add_pair_tag("unk", logger_settings.shell.unk)
-        self.rich.add_pair_tag("cmd", logger_settings.shell.cmd)
-        self.rich.add_pair_tag("kw", logger_settings.shell.kw)
-        self.rich.add_pair_tag("arg", logger_settings.shell.arg)
-        self.rich.add_single_tag("ws", logger_settings.shell.ws)
-        self.rich.add_single_tag("qt", logger_settings.shell.qt)
-        self.rich.add_single_tag("bs", logger_settings.shell.bs)
+        doc = cleandoc(doc)
 
-        self.rich.add_pair_tag("py_none", logger_settings.python.py_none)
-        self.rich.add_pair_tag("py_ellipsis", logger_settings.python.py_ellipsis)
-        self.rich.add_pair_tag("py_bool", logger_settings.python.py_bool)
-        self.rich.add_pair_tag("py_int", logger_settings.python.py_int)
-        self.rich.add_pair_tag("py_float", logger_settings.python.py_float)
-        self.rich.add_pair_tag("py_complex", logger_settings.python.py_complex)
-        self.rich.add_pair_tag("py_bytes", logger_settings.python.py_bytes)
-        self.rich.add_pair_tag("py_str", logger_settings.python.py_str)
-        self.rich.add_pair_tag(
-            "py_punctuation", logger_settings.python.py_punctuation
-        )
-        self.rich.add_pair_tag("py_argument", logger_settings.python.py_argument)
-        self.rich.add_pair_tag("py_class", logger_settings.python.py_class)
-        self.rich.add_pair_tag("py_attribute", logger_settings.python.py_attribute)
+        m = re.search(r"Fields\n------\n", doc)
+        if not m:
+            return res
+        doc = doc[m.end(0) :]
+
+        while True:
+            m = re.match(r"([0-9a-zA-Z_]+) : ([^\n]+)\n+((?:[ ]+[^\n]*(?:\n+|$))*)", doc)
+            if not m:
+                return res
+            res[m.group(1)] = cleandoc(m.group(2)).strip()
+            doc = doc[m.end(0) :]
+
+    def _compile_settings(self, settings):
+        res = Logger._parse_tag_type(type(settings).__doc__)
+        for tag_name, tag_type in res.items():
+            if tag_type == "single tag":
+                self.rich.add_single_tag(tag_name, getattr(settings, tag_name))
+            elif tag_type == "pair tag":
+                self.rich.add_pair_tag(tag_name, getattr(settings, tag_name))
+            else:
+                assert False
 
     @contextlib.contextmanager
     def verb(self):
