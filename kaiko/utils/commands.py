@@ -357,7 +357,7 @@ class PathParser(ArgumentParser):
         # check path
         currpath = self.expand(token)
         try:
-            is_dir = os.path.isdir(currpath)
+            is_dir = os.path.isdir(currpath) and currpath.endswith("/")
             is_file = os.path.isfile(currpath)
         except ValueError:
             return suggestions
@@ -365,19 +365,14 @@ class PathParser(ArgumentParser):
         if is_file and self.type in ["file", "all"] and self.filter(currpath):
             suggestions.append((token or ".") + "\000")
 
-        # prevent from   a/b/c/.  ->  a/b/c/./
-        if is_dir and self.type in ["dir", "all"] and os.path.basename(token) != "." and self.filter(currpath):
+        if is_dir and self.type in ["dir", "all"] and self.filter(currpath):
             suggestions.append(os.path.join(token or ".", "") + "\000")
 
         # separate parent and partial child name
-        if is_dir:
-            parent, child = token, ""
-            parentpath = currpath
-        else:
-            parent, child = os.path.split(token)
-            parentpath = self.expand(parent)
-            if not os.path.isdir(parentpath):
-                return suggestions
+        parent, child = os.path.split(token)
+        parentpath = self.expand(parent) if child else currpath
+        if not os.path.isdir(parentpath):
+            return suggestions
 
         names = fit(child, os.listdir(parentpath))
         for name in names:
