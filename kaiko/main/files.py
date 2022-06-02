@@ -413,6 +413,36 @@ class FileManager:
                 logger.print(traceback.format_exc(), end="", markup=False)
             return
 
+    def rm(self, path, logger):
+        path = Path(os.path.expandvars(os.path.expanduser(path)))
+        try:
+            abspath = (self.root / self.current / path).resolve()
+        except Exception:
+            logger.print("[warn]Failed to resolve path[/]")
+            with logger.warn():
+                logger.print(traceback.format_exc(), end="", markup=False)
+            return
+
+        if not abspath.is_relative_to(self.root):
+            logger.print("[warn]Out of root directory[/]")
+            return
+        if not abspath.exists():
+            logger.print("[warn]No such file[/]")
+            return
+
+        ind, abspath, descriptor = self.glob(self.root / self.current / path)
+        if descriptor is None:
+            logger.print("[warn]Unknown file[/]")
+            return
+
+        try:
+            descriptor.rm(abspath)
+        except Exception:
+            logger.print("[warn]Failed to remove file[/]")
+            with logger.warn():
+                logger.print(traceback.format_exc(), end="", markup=False)
+            return
+
     def get(self, path, logger):
         try:
             abspath = (self.root / self.current / path).resolve()
@@ -477,7 +507,14 @@ class FilesCommand:
         file_manager = self.file_manager
         logger = self.logger
 
-        abspath = file_manager.mk(path, logger)
+        file_manager.mk(path, logger)
+
+    @cmd.function_command
+    def rm(self, path):
+        file_manager = self.file_manager
+        logger = self.logger
+
+        file_manager.rm(path, logger)
 
     @cd.arg_parser("path")
     def _cd_path_parser(self):
@@ -490,6 +527,10 @@ class FilesCommand:
     @mk.arg_parser("path")
     def _mk_path_parser(self):
         return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="file", should_exist=False)
+
+    @rm.arg_parser("path")
+    def _rm_path_parser(self):
+        return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="all")
 
     @cmd.function_command
     def clean(self, bottom: bool = False):

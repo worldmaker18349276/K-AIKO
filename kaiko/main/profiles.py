@@ -58,6 +58,11 @@ class ProfilesDirDescriptor(DirDescriptor):
             logger = self.provider.get(Logger)
             profile_manager.make_empty(logger, name=path.stem)
 
+        def rm(self, path):
+            profile_manager = self.provider.get(ProfileManager)
+            logger = self.provider.get(Logger)
+            profile_manager.delete(logger, name=path.stem)
+
     @as_child(".default-profile")
     class Default(FileDescriptor):
         "(The file of default profile name)"
@@ -795,19 +800,6 @@ class ProfilesCommand:
 
         self.profile_manager.new(self.logger, profile, clone)
 
-    @cmd.function_command
-    def delete(self, profile):
-        """[rich]Delete a profile.
-
-        usage: [cmd]delete[/] [arg]{profile}[/]
-                         ╱
-                The profile name.
-        """
-        if not self.profile_manager.is_uptodate():
-            self.profile_manager.update(self.logger)
-
-        self.profile_manager.delete(self.logger, profile)
-
     @rename.arg_parser("profile")
     @new.arg_parser("profile")
     def _new_profile_parser(self):
@@ -815,7 +807,6 @@ class ProfilesCommand:
 
     @new.arg_parser("clone")
     @use.arg_parser("profile")
-    @delete.arg_parser("profile")
     def _old_profile_parser(self, *_, **__):
         return cmd.OptionParser(
             self.profile_manager.profiles,
