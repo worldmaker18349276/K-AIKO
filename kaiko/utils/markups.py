@@ -317,6 +317,23 @@ class PairTemplate(Pair):
         return replace_slot(self._template, Group(self.children)).expand()
 
 
+@dataclasses.dataclass(frozen=True)
+class SlottedTemplate(Markup):
+    _template: Markup
+
+    def _represent(self):
+        return self._template._represent()
+
+    def expand(self):
+        return self._template.expand()
+
+    def traverse(self, markup_type, func, strategy=TraverseStrategy.TopMost):
+        return self._template.traverse(markup_type, func, strategy=strategy)
+
+    def __call__(self, *args, **kwargs):
+        return replace_slot(self._template, *args, **kwargs)
+
+
 def replace_slot(template, *args, **kwargs):
     args = list(args)
     kwargs = dict(kwargs)
@@ -1070,6 +1087,8 @@ class RichParser:
         markup = parse_markup(markup_str, tags, self.props)
         if expand:
             markup = markup.expand()
+        if slotted:
+            markup = SlottedTemplate(markup)
         return markup
 
     def add_single_template(self, name, template):
@@ -1184,6 +1203,9 @@ class RichRenderer:
 
         elif isinstance(markup, Slot):
             yield
+
+        elif isinstance(markup, SlottedTemplate):
+            yield from self._render_context(markup._template, print, reopens)
 
         elif isinstance(markup, Group):
             if not markup.children:

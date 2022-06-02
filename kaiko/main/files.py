@@ -356,25 +356,25 @@ class FileManager:
             name = logger.rich.parse(name)
 
             if child.is_dir():
-                name = mu.replace_slot(file_dir, name)
+                name = file_dir(name)
 
             elif child.is_file():
                 if child.suffix in [".py", ".kaiko-profile"]:
-                    name = mu.replace_slot(file_script, name)
+                    name = file_script(name)
                 elif child.suffix in [".ka", ".kaiko", ".osu"]:
-                    name = mu.replace_slot(file_beatmap, name)
+                    name = file_beatmap(name)
                 elif child.suffix in [".wav", ".mp3", ".mp4", ".m4a", ".ogg"]:
-                    name = mu.replace_slot(file_sound, name)
+                    name = file_sound(name)
                 else:
-                    name = mu.replace_slot(file_normal, name)
+                    name = file_normal(name)
 
             else:
-                name = mu.replace_slot(file_other, name)
+                name = file_other(name)
 
             if child.is_symlink():
                 linkname = logger.escape(child.name, type="all")
                 linkname = logger.rich.parse(linkname)
-                name = mu.replace_slot(file_link, src=linkname, dst=name)
+                name = file_link(src=linkname, dst=name)
 
             ind, path, descriptor = self.glob(self.root / self.current / child.name)
             desc = descriptor.desc(path) if descriptor is not None else None
@@ -383,9 +383,9 @@ class FileManager:
             ordering_key = (descriptor is None, ind, child.is_symlink(), not child.is_dir(), child.suffix, child.stem)
 
             if descriptor is None:
-                name = mu.replace_slot(file_unknown, name)
-            desc = mu.replace_slot(file_desc, desc) if desc is not None else mu.Text("")
-            name = mu.replace_slot(file_item, name)
+                name = file_unknown(name)
+            desc = file_desc(desc) if desc is not None else mu.Text("")
+            name = file_item(name)
 
             width = logger.rich.widthof(name)
             res.append((ordering_key, width, name, desc))

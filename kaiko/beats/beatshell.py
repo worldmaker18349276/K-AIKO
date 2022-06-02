@@ -502,7 +502,7 @@ class TextRenderer:
             else:
                 typeahead = caret_markup(mu.join(typeahead[0]).children), typeahead[1:]
 
-        typeahead_markup = mu.replace_slot(typeahead_template, mu.join(typeahead))
+        typeahead_markup = typeahead_template(mu.join(typeahead))
 
         res = []
         prev_index = 0
@@ -528,7 +528,7 @@ class TextRenderer:
 
             # markup highlight
             if n == highlighted:
-                token_markup = mu.replace_slot(highlight_template, token_markup)
+                token_markup = highlight_template(token_markup)
 
             res.append(token_markup)
 
@@ -604,23 +604,23 @@ class MsgRenderer:
         if sugg_top_ellipsis_width == -1 or sugg_bottom_ellipsis_width == -1:
             raise ValueError(f"invalid ellipsis: {suggestion_overflow_ellipses!r}")
 
-        sugg_items = (
+        sugg_items_templates = (
             self.rich.parse(sugg_items[0], slotted=True),
             self.rich.parse(sugg_items[1], slotted=True),
         )
 
-        desc = self.rich.parse(self.settings.desc_message, slotted=True)
-        info = self.rich.parse(self.settings.info_message, slotted=True)
+        desc_template = self.rich.parse(self.settings.desc_message, slotted=True)
+        info_template = self.rich.parse(self.settings.info_message, slotted=True)
 
         render_hint = dn.starcachemap(
             self.render_hint,
             message_max_lines=message_max_lines,
             msg_ellipsis=msg_ellipsis,
             sugg_lines=sugg_lines,
-            sugg_items=sugg_items,
+            sugg_items_templates=sugg_items_templates,
             sugg_ellipses=(sugg_top_ellipsis, sugg_bottom_ellipsis),
-            desc=desc,
-            info=info,
+            desc_template=desc_template,
+            info_template=info_template,
         )
 
         with render_hint:
@@ -634,7 +634,7 @@ class MsgRenderer:
                     if len(msgs) != 1 or msgs[0] is not msg:
                         msgs.clear()
                         msgs.append(msg)
-                logs.extend(self.render_popup(state.popup, desc=desc, info=info))
+                logs.extend(self.render_popup(state.popup, desc_template=desc_template, info_template=info_template))
                 (view, msgs, logs), time, width = yield (view, msgs, logs)
 
     def render_hint(
@@ -645,10 +645,10 @@ class MsgRenderer:
         message_max_lines,
         msg_ellipsis,
         sugg_lines,
-        sugg_items,
+        sugg_items_templates,
         sugg_ellipses,
-        desc,
-        info,
+        desc_template,
+        info_template,
     ):
         msgs = []
 
@@ -680,9 +680,9 @@ class MsgRenderer:
             msg = msg.traverse((mu.Text, mu.Newline), trim_lines)
 
             if isinstance(hint, beatinputs.DescHint):
-                msg = mu.replace_slot(desc, msg)
+                msg = desc_template(msg)
             elif isinstance(hint, beatinputs.InfoHint):
-                msg = mu.replace_slot(info, msg)
+                msg = info_template(msg)
             else:
                 assert False
             msg = msg.expand()
@@ -696,8 +696,8 @@ class MsgRenderer:
             res = []
             for i, sugg in enumerate(suggs):
                 sugg = mu.Text(sugg)
-                item = sugg_items[1] if i == sugg_index - sugg_start else sugg_items[0]
-                sugg = mu.replace_slot(item, sugg)
+                item_template = sugg_items_templates[1] if i == sugg_index - sugg_start else sugg_items_templates[0]
+                sugg = item_template(sugg)
                 res.append(sugg)
                 if i == sugg_index - sugg_start and msg is not None:
                     res.append(msg)
@@ -721,7 +721,7 @@ class MsgRenderer:
 
         return mu.Group(tuple(msgs)) if msgs else None
 
-    def render_popup(self, popup, *, desc, info):
+    def render_popup(self, popup, *, desc_template, info_template):
         logs = []
 
         # draw popup
@@ -731,9 +731,9 @@ class MsgRenderer:
                 msg = self.rich.parse(hint.message, root_tag=True)
 
                 if isinstance(hint, beatinputs.DescHint):
-                    msg = mu.replace_slot(desc, msg)
+                    msg = desc_template(msg)
                 elif isinstance(hint, beatinputs.InfoHint):
-                    msg = mu.replace_slot(info, msg)
+                    msg = info_template(msg)
                 else:
                     assert False
 

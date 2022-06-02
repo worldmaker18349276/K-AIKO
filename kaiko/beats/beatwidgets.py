@@ -186,7 +186,7 @@ class SpectrumWidget:
             time, ran = arg
             width = len(ran)
             text = mu.Text(f"{self.spectrum:^{width}.{width}s}")
-            res = mu.replace_slot(template, text)
+            res = template(text)
             return [(0, res)]
 
         return widget_func
@@ -241,7 +241,7 @@ class VolumeIndicatorWidget:
             time, ran = arg
             width = len(ran)
             text = mu.Text("▮" * int(self.volume * width))
-            res = mu.replace_slot(template, text)
+            res = template(text)
             return [(0, res)]
 
         return widget_func
@@ -300,7 +300,7 @@ class KnockMeterWidget:
                     for i in range(length)
                 )
             )
-            res = mu.replace_slot(template, text)
+            res = template(text)
             return [(0, res)]
 
         return knock_func
@@ -467,20 +467,18 @@ class ScoreWidget:
                 if width == 0:
                     res = mu.Text("")
                 elif width == 1:
-                    res = mu.replace_slot(template, mu.Text("|"))
+                    res = template(mu.Text("|"))
                 elif width == 2:
-                    res = mu.replace_slot(template, mu.Text("[]"))
+                    res = template(mu.Text("[]"))
                 elif width <= 7:
                     score_str = uint_format(score, width - 2, True)
-                    res = mu.replace_slot(template, mu.Text(f"[{score_str}]"))
+                    res = template(mu.Text(f"[{score_str}]"))
                 else:
                     w1 = max((width - 3) // 2, 5)
                     w2 = (width - 3) - w1
                     score_str = uint_format(score, w1, True)
                     full_score_str = uint_format(full_score, w2, True)
-                    res = mu.replace_slot(
-                        template, mu.Text(f"[{score_str}/{full_score_str}]")
-                    )
+                    res = template(mu.Text(f"[{score_str}/{full_score_str}]"))
 
                 time, ran = yield [(0, res)]
 
@@ -529,18 +527,18 @@ class ProgressWidget:
                 if width == 0:
                     res = mu.Text("")
                 elif width == 1:
-                    res = mu.replace_slot(template, mu.Text("|"))
+                    res = template(mu.Text("|"))
                 elif width == 2:
-                    res = mu.replace_slot(template, mu.Text("[]"))
+                    res = template(mu.Text("[]"))
                 elif width <= 7:
                     progress_str = pc_format(progress, width - 2)
-                    res = mu.replace_slot(template, mu.Text(f"[{progress_str}]"))
+                    res = template(mu.Text(f"[{progress_str}]"))
                 else:
                     w1 = max((width - 3) // 2, 5)
                     w2 = (width - 3) - w1
                     progress_str = pc_format(progress, w1)
                     time_str = time_format(time, w2)
-                    res = mu.replace_slot(template, mu.Text(f"[{progress_str}/{time_str}]"))
+                    res = template(mu.Text(f"[{progress_str}/{time_str}]"))
 
                 time, ran = yield [(0, res)]
 
@@ -707,9 +705,9 @@ class TextBox:
     @dn.datanode
     def get_caret_template(self, *, rich, metronome):
         caret_blink_ratio = self.settings.caret_blink_ratio
-        normal = rich.parse(self.settings.caret_normal_appearance, slotted=True)
-        blinking = rich.parse(self.settings.caret_blinking_appearance, slotted=True)
-        highlighted = rich.parse(self.settings.caret_highlighted_appearance, slotted=True)
+        normal_template = rich.parse(self.settings.caret_normal_appearance, slotted=True)
+        blinking_template = rich.parse(self.settings.caret_blinking_appearance, slotted=True)
+        highlighted_template = rich.parse(self.settings.caret_highlighted_appearance, slotted=True)
 
         key_pressed_beat = 0
         time, key_pressed = yield
@@ -719,11 +717,11 @@ class TextBox:
             # don't blink while key pressing
             if beat < key_pressed_beat or beat % 1 < caret_blink_ratio:
                 if beat % 4 < 1:
-                    res = highlighted
+                    res = highlighted_template
                 else:
-                    res = blinking
+                    res = blinking_template
             else:
-                res = normal
+                res = normal_template
 
             time, key_pressed = yield res
             if key_pressed:
@@ -735,7 +733,7 @@ class TextBox:
             if caret_template is not None:
                 markup = markup.traverse(
                     Caret,
-                    lambda m: mu.replace_slot(caret_template, mu.Group(m.children)),
+                    lambda m: caret_template(mu.Group(m.children)),
                     strategy=mu.TraverseStrategy.TopDown,
                 )
             else:

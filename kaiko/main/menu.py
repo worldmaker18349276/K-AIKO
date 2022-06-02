@@ -322,31 +322,21 @@ class KAIKOMenu:
 
         user_markup = banner_settings.user
         user_markup = logger.rich.parse(user_markup, slotted=True)
-        user_markup = mu.replace_slot(
-            user_markup,
-            user_name=logger.rich.parse(username),
-        )
+        user_markup = user_markup(user_name=logger.rich.parse(username))
 
         profile_markup = banner_settings.profile
         profile_markup = profile_markup[0] if not profile_is_changed else profile_markup[1]
         profile_markup = logger.rich.parse(profile_markup, slotted=True)
-        profile_markup = mu.replace_slot(
-            profile_markup,
-            profile_name=logger.rich.parse(profile),
-        )
+        profile_markup = profile_markup(profile_name=logger.rich.parse(profile))
 
         path_markup = banner_settings.path
         path_markup = path_markup[0] if path_is_known else path_markup[1]
         path_markup = logger.rich.parse(path_markup, slotted=True)
-        path_markup = mu.replace_slot(
-            path_markup,
-            current_path=logger.rich.parse(path),
-        )
+        path_markup = path_markup(current_path=logger.rich.parse(path))
 
         banner_markup = banner_settings.banner
         banner_markup = logger.rich.parse(banner_markup, slotted=True)
-        banner_markup = mu.replace_slot(
-            banner_markup,
+        banner_markup = banner_markup(
             user=user_markup,
             profile=profile_markup,
             path=path_markup,
