@@ -614,7 +614,6 @@ class MsgRenderer:
 
         render_hint = dn.starcachemap(
             self.render_hint,
-            key=lambda msgs, hint, suggs: (hint, suggs),
             message_max_lines=message_max_lines,
             msg_ellipsis=msg_ellipsis,
             sugg_lines=sugg_lines,
@@ -627,13 +626,19 @@ class MsgRenderer:
         with render_hint:
             (view, msgs, logs), time, width = yield
             while True:
-                render_hint.send((msgs, state.hint, state.suggestions))
+                msg = render_hint.send((state.hint, state.suggestions))
+                if msg is None:
+                    if len(msgs) != 0:
+                        msgs.clear()
+                else:
+                    if len(msgs) != 1 or msgs[0] is not msg:
+                        msgs.clear()
+                        msgs.append(msg)
                 logs.extend(self.render_popup(state.popup, desc=desc, info=info))
                 (view, msgs, logs), time, width = yield (view, msgs, logs)
 
     def render_hint(
         self,
-        msgs,
         hint,
         suggestions,
         *,
@@ -645,7 +650,7 @@ class MsgRenderer:
         desc,
         info,
     ):
-        msgs.clear()
+        msgs = []
 
         # draw hint
         msg = None
@@ -714,7 +719,7 @@ class MsgRenderer:
             if msg is not None:
                 msgs.append(msg)
 
-        return msgs
+        return mu.Group(tuple(msgs)) if msgs else None
 
     def render_popup(self, popup, *, desc, info):
         logs = []
