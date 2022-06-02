@@ -56,12 +56,29 @@ class ProfilesDirDescriptor(DirDescriptor):
         def mk(self, path):
             profile_manager = self.provider.get(ProfileManager)
             logger = self.provider.get(Logger)
+
+            if not profile_manager.is_uptodate():
+                profile_manager.update(logger)
             profile_manager.make_empty(logger, name=path.stem)
+            profile_manager.update(logger)
 
         def rm(self, path):
             profile_manager = self.provider.get(ProfileManager)
             logger = self.provider.get(Logger)
+
+            if not profile_manager.is_uptodate():
+                profile_manager.update(logger)
             profile_manager.delete(logger, name=path.stem)
+            profile_manager.update(logger)
+
+        def mv(self, path, dst):
+            profile_manager = self.provider.get(ProfileManager)
+            logger = self.provider.get(Logger)
+
+            if not profile_manager.is_uptodate():
+                profile_manager.update(logger)
+            profile_manager.rename(logger, name=path.stem, newname=dst.stem)
+            profile_manager.update(logger)
 
     @as_child(".default-profile")
     class Default(FileDescriptor):
@@ -198,24 +215,32 @@ class ProfileManager:
         self._profiles_mtime = profiles_mtime
         return True
 
-    def set_default(self, logger):
+    def set_default(self, logger, name=None):
         """Set the current profile as default.
 
         Parameters
         ----------
         logger : loggers.Logger
+        name : str, optional
 
         Returns
         -------
         succ : bool
         """
+        name = name if name is not None else self.current_name
         logger.print(
-            f"[data/] Set {logger.emph(self.current_name, type='all')} as the default profile..."
+            f"[data/] Set {logger.emph(name, type='all')} as the default profile..."
         )
 
         if not self.profiles_dir.exists():
             logger.print(
                 f"[warn]No such profile directory: {logger.emph(self.profiles_dir.as_uri())}[/]"
+            )
+            return False
+
+        if name not in self.profiles:
+            logger.print(
+                f"[warn]This profile {logger.emph(name, type='all')} doesn't exist.[/]"
             )
             return False
 
@@ -226,8 +251,8 @@ class ProfileManager:
             )
             return False
 
-        default_meta_path.write_text(self.current_name)
-        self.default_name = self.current_name
+        default_meta_path.write_text(name)
+        self.default_name = name
 
         return True
 
@@ -490,50 +515,52 @@ class ProfileManager:
         self.profiles.remove(name)
         return True
 
-    def rename(self, logger, name):
-        """Rename the current profile.
+    def rename(self, logger, name, newname):
+        """Rename a profile.
 
         Parameters
         ----------
         logger : loggers.Logger
         name : str
+            The old name of profile.
+        newname : str
             The new name of profile.
 
         Returns
         -------
         succ : bool
         """
-        if self.current_name == name:
-            return True
-
         current_path = self.profiles_dir / (self.current_name + self.extension)
-        target_path = self.profiles_dir / (name + self.extension)
-        current_name = logger.emph(current_path.as_uri())
-        target_name = logger.emph(target_path.as_uri())
-        logger.print(f"[data/] Rename profile {current_name} to {target_name}...")
+        src_path = self.profiles_dir / (name + self.extension)
+        dst_path = self.profiles_dir / (newname + self.extension)
+        src_name = logger.emph(src_path.as_uri())
+        dst_name = logger.emph(dst_path.as_uri())
+        logger.print(f"[data/] Rename profile {src_name} to {dst_name}...")
 
-        if not name.isprintable() or "/" in name:
-            logger.print(f"[warn]Invalid profile name: {logger.emph(name, type='all')}[/]")
-            return False
-
-        if name in self.profiles:
+        if name not in self.profiles:
             logger.print(
-                f"[warn]This profile name {logger.emph(name, type='all')} already exists.[/]"
+                f"[warn]This profile {logger.emph(name, type='all')} doesn't exist.[/]"
             )
             return False
 
-        if self.current_name in self.profiles:
-            if current_path.exists():
-                current_path.rename(target_path)
+        if not newname.isprintable() or "/" in newname:
+            logger.print(f"[warn]Invalid profile name: {logger.emph(newname, type='all')}[/]")
+            return False
 
-            self.profiles.remove(self.current_name)
-            self.profiles.append(name)
+        if newname in self.profiles:
+            logger.print(
+                f"[warn]This profile name {logger.emph(newname, type='all')} already exists.[/]"
+            )
+            return False
 
-        if self.current_name == self.default_name:
-            self.current_name = name
-            self.set_default()
-        else:
-            self.current_name = name
+        if src_path.exists():
+            src_path.rename(dst_path)
+
+        if self.current_name == name:
+            self.current_name = newname
+
+        if self.default_name == name:
+            self.set_default(name=newname)
 
         return True
 
@@ -775,19 +802,6 @@ class ProfilesCommand:
         self.profile_manager.use(self.logger, profile)
 
     @cmd.function_command
-    def rename(self, profile):
-        """[rich]Rename the current profile.
-
-        usage: [cmd]rename[/] [arg]{profile}[/]
-                         ╱
-               The profile name.
-        """
-        if not self.profile_manager.is_uptodate():
-            self.profile_manager.update(self.logger)
-
-        self.profile_manager.rename(self.logger, profile)
-
-    @cmd.function_command
     def new(self, profile, clone=None):
         """[rich]Make a new profile.
 
@@ -800,7 +814,6 @@ class ProfilesCommand:
 
         self.profile_manager.new(self.logger, profile, clone)
 
-    @rename.arg_parser("profile")
     @new.arg_parser("profile")
     def _new_profile_parser(self):
         return cmd.RawParser()

@@ -39,6 +39,9 @@ class WildCardDescriptor:
     def rm(self, path):
         raise InvalidFileOperation
 
+    def mv(self, path, dst):
+        raise InvalidFileOperation
+
     def show(self, indent=0):
         return "[any] " + (type(self).__doc__ or "")
 
@@ -443,6 +446,61 @@ class FileManager:
                 logger.print(traceback.format_exc(), end="", markup=False)
             return
 
+    def mv(self, path, dst, logger):
+        path = Path(os.path.expandvars(os.path.expanduser(path)))
+        try:
+            abspath = (self.root / self.current / path).resolve()
+        except Exception:
+            logger.print("[warn]Failed to resolve path[/]")
+            with logger.warn():
+                logger.print(traceback.format_exc(), end="", markup=False)
+            return
+
+        if not abspath.is_relative_to(self.root):
+            logger.print("[warn]Out of root directory[/]")
+            return
+        if not abspath.exists():
+            logger.print("[warn]No such file[/]")
+            return
+
+        ind, abspath, descriptor = self.glob(self.root / self.current / path)
+        if descriptor is None:
+            logger.print("[warn]Unknown file[/]")
+            return
+
+        dst = Path(os.path.expandvars(os.path.expanduser(dst)))
+        try:
+            absdst = (self.root / self.current / dst).resolve()
+        except Exception:
+            logger.print("[warn]Failed to resolve path[/]")
+            with logger.warn():
+                logger.print(traceback.format_exc(), end="", markup=False)
+            return
+
+        if not absdst.is_relative_to(self.root):
+            logger.print("[warn]Out of root directory[/]")
+            return
+        if absdst.exists():
+            logger.print("[warn]File already exists[/]")
+            return
+
+        ind, absdst, dst_descriptor = self.glob(self.root / self.current / dst)
+        if dst_descriptor is None:
+            logger.print("[warn]Unknown file[/]")
+            return
+
+        if descriptor != dst_descriptor:
+            logger.print("[warn]Different file type[/]")
+            return
+
+        try:
+            descriptor.mv(abspath, absdst)
+        except Exception:
+            logger.print("[warn]Failed to move file[/]")
+            with logger.warn():
+                logger.print(traceback.format_exc(), end="", markup=False)
+            return
+
     def get(self, path, logger):
         try:
             abspath = (self.root / self.current / path).resolve()
@@ -516,6 +574,13 @@ class FilesCommand:
 
         file_manager.rm(path, logger)
 
+    @cmd.function_command
+    def mv(self, path, dst):
+        file_manager = self.file_manager
+        logger = self.logger
+
+        file_manager.mv(path, dst, logger)
+
     @cd.arg_parser("path")
     def _cd_path_parser(self):
         return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="dir")
@@ -526,9 +591,14 @@ class FilesCommand:
 
     @mk.arg_parser("path")
     def _mk_path_parser(self):
-        return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="file", should_exist=False)
+        return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="all", should_exist=False)
+
+    @mv.arg_parser("dst")
+    def _mv_path_parser(self, path):
+        return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="all", should_exist=False)
 
     @rm.arg_parser("path")
+    @mv.arg_parser("path")
     def _rm_path_parser(self):
         return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="all")
 
