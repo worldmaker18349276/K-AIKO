@@ -26,13 +26,6 @@ class InfoHint(Hint):
     message: str
 
 
-@dataclasses.dataclass(frozen=True)
-class SuggestionsHint(Hint):
-    suggestions: List[str]
-    selected: int
-    message: str
-
-
 @dataclasses.dataclass
 class HintState:
     hint: Hint
@@ -60,8 +53,6 @@ class HintManager:
         hint = self.hint_state.hint
         if not hint.message:
             return False
-        if isinstance(hint, SuggestionsHint):
-            hint = InfoHint(hint.message)
 
         self.add_popup(hint)
         return True
@@ -73,7 +64,7 @@ class HintManager:
                 if index is not None
                 else None
             )
-        elif isinstance(hint, (InfoHint, SuggestionsHint)):
+        elif isinstance(hint, InfoHint):
             msg_tokens = (
                 [token.string for token in self.semantic_analyzer.tokens[: index + 1]]
                 if index is not None
@@ -121,12 +112,7 @@ class HintManager:
     def update_preview(self):
         if self.hint_state is None:
             self.preview_handler(None)
-        elif not isinstance(self.hint_state.hint, (InfoHint, SuggestionsHint)):
-            self.preview_handler(None)
-        elif (
-            isinstance(self.hint_state.hint, SuggestionsHint)
-            and not self.hint_state.hint.message
-        ):
+        elif not isinstance(self.hint_state.hint, InfoHint):
             self.preview_handler(None)
         elif self.hint_state.tokens is None:
             self.preview_handler(None)
@@ -185,6 +171,18 @@ class AutocompleteManager:
         self.semantic_analyzer = semantic_analyzer
 
         self.tab_state = None
+
+    def get_suggestions_list(self):
+        if self.tab_state is None:
+            return None
+        else:
+            return self.tab_state.suggestions
+
+    def get_suggestions_index(self):
+        if self.tab_state is None:
+            return None
+        else:
+            return self.tab_state.sugg_index
 
     def is_in_cycle(self):
         return self.tab_state is not None
@@ -260,10 +258,6 @@ class AutocompleteManager:
         )
 
         return self.tab_state.token_index
-
-    def make_hint(self, info_hint):
-        msg = info_hint.message if info_hint is not None else ""
-        return SuggestionsHint(self.tab_state.suggestions, self.tab_state.sugg_index, msg)
 
     def cancel_autocomplete(self):
         if self.tab_state is None:
@@ -1295,9 +1289,6 @@ class BeatInput:
         self.update_buffer(clear=True)
         if index is not None:
             self.ask_for_hint(index, type="info")
-        if is_in_cycle:
-            sugg_hint = self.autocomplete_manager.make_hint(self.hint_manager.get_hint())
-            self.hint_manager.set_hint(sugg_hint, index)
 
         return is_in_cycle
 
@@ -1320,9 +1311,6 @@ class BeatInput:
         self.update_buffer(clear=True)
         if index is not None:
             self.ask_for_hint(index, type="info")
-        if is_in_cycle:
-            sugg_hint = self.autocomplete_manager.make_hint(self.hint_manager.get_hint())
-            self.hint_manager.set_hint(sugg_hint, index)
 
         return is_in_cycle
 

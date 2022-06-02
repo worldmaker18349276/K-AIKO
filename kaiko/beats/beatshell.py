@@ -388,6 +388,7 @@ class InputView:
         self.clean = False
         self.hint = None
         self.popup = []
+        self.suggestions = None
         self.state = "EDIT"
 
     @dn.datanode
@@ -408,6 +409,10 @@ class InputView:
                 self.typeahead = self.input.typeahead
                 self.clean = self.input.result is not None
                 self.hint = self.input.hint_manager.get_hint()
+                self.suggestions = (
+                    self.input.autocomplete_manager.get_suggestions_list(),
+                    self.input.autocomplete_manager.get_suggestions_index(),
+                )
 
                 self.popup = []
                 while True:
@@ -614,7 +619,7 @@ class MsgRenderer:
 
         render_hint = dn.starcachemap(
             self.render_hint,
-            key=lambda msgs, hint: hint,
+            key=lambda msgs, hint, suggs: (hint, suggs),
             message_max_lines=message_max_lines,
             msg_ellipsis=msg_ellipsis,
             sugg_lines=sugg_lines,
@@ -627,7 +632,7 @@ class MsgRenderer:
         with render_hint:
             (view, msgs, logs), time, width = yield
             while True:
-                render_hint.send((msgs, state.hint))
+                render_hint.send((msgs, state.hint, state.suggestions))
                 logs.extend(self.render_popup(state.popup, desc=desc, info=info))
                 (view, msgs, logs), time, width = yield (view, msgs, logs)
 
@@ -635,6 +640,7 @@ class MsgRenderer:
         self,
         msgs,
         hint,
+        suggestions,
         *,
         message_max_lines,
         msg_ellipsis,
@@ -647,11 +653,8 @@ class MsgRenderer:
         msgs.clear()
 
         # draw hint
-        if hint is None:
-            return msgs
-
         msg = None
-        if hint.message:
+        if hint is not None and hint.message:
             msg = self.rich.parse(hint.message, root_tag=True)
             lines = 0
 
@@ -678,29 +681,30 @@ class MsgRenderer:
 
             if isinstance(hint, beatinputs.DescHint):
                 msg = mu.replace_slot(desc, msg)
-            elif isinstance(hint, (beatinputs.InfoHint, beatinputs.SuggestionsHint)):
+            elif isinstance(hint, beatinputs.InfoHint):
                 msg = mu.replace_slot(info, msg)
             else:
                 assert False
             msg = msg.expand()
 
-        if isinstance(hint, beatinputs.SuggestionsHint):
-            sugg_start = hint.selected // sugg_lines * sugg_lines
+        if suggestions[0] is not None:
+            suggs_list, sugg_index = suggestions
+            sugg_start = sugg_index // sugg_lines * sugg_lines
             sugg_end = sugg_start + sugg_lines
-            suggs = hint.suggestions[sugg_start:sugg_end]
+            suggs = suggs_list[sugg_start:sugg_end]
 
             res = []
             for i, sugg in enumerate(suggs):
                 sugg = mu.Text(sugg)
-                item = sugg_items[1] if i == hint.selected - sugg_start else sugg_items[0]
+                item = sugg_items[1] if i == sugg_index - sugg_start else sugg_items[0]
                 sugg = mu.replace_slot(item, sugg)
                 res.append(sugg)
-                if i == hint.selected - sugg_start and msg is not None:
+                if i == sugg_index - sugg_start and msg is not None:
                     res.append(msg)
 
             if sugg_start > 0:
                 res.insert(0, sugg_ellipses[0])
-            if sugg_end < len(hint.suggestions):
+            if sugg_end < len(suggs_list):
                 res.append(sugg_ellipses[1])
 
             nl = mu.Text("\n")
