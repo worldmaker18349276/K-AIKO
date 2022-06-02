@@ -98,7 +98,7 @@ class HintManager:
             return self.cancel_hint()
 
         for token_string, token in zip(self.hint_state.tokens, self.semantic_analyzer.tokens):
-            if token_srting != token.string:
+            if token_string != token.string:
                 return self.cancel_hint()
 
         if (
@@ -528,6 +528,7 @@ class ContextDispatcher:
                 if isin:
                     for callback in self.onerror_callbacks:
                         callback()
+                raise
             finally:
                 self.isin = isin
                 if isin:

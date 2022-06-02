@@ -500,7 +500,7 @@ class TextRenderer:
             if pos < len(buffer):
                 buffer[pos] = caret_markup(mu.join([buffer[pos]]).children)
             else:
-                typeahead = caret_markup(mu.join(typeahead[0]).children), typeahead[1:]
+                typeahead = caret_markup(mu.join(typeahead[:1]).children), typeahead[1:]
 
         typeahead_markup = typeahead_template(mu.join(typeahead))
 
