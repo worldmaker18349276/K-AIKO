@@ -198,7 +198,7 @@ class KAIKOMenu:
 
             except beatshell.PromptError as e:
                 self.logger.print(f"[warn]{self.logger.escape(str(e.cause))}[/]")
-                prompt.new_session()
+                prompt.new_session(clear=False)
 
             else:
                 prompt.record_command()

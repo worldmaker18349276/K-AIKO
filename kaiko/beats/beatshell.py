@@ -258,28 +258,26 @@ class BeatPrompt:
         rich,
         cache_dir,
         command_parser_getter,
-        shell_settings_getter,
+        settings_getter,
         preview_handler,
     ):
         self.rich = rich
-        self._shell_settings_getter = shell_settings_getter
+        self._settings_getter = settings_getter
         self.cache_dir = cache_dir
-
-        self.fin_event = threading.Event()
 
         self.input = beatinputs.BeatInput(
             command_parser_getter,
             preview_handler,
             rich,
             cache_dir,
-            lambda: self._shell_settings_getter().input,
+            lambda: self.settings.input,
         )
 
     @property
     def settings(self):
-        return self._shell_settings_getter()
+        return self._settings_getter()
 
-    def register(self, renderer):
+    def register(self, renderer, fin_event):
         # widgets
         settings = self.settings
         t0 = settings.prompt.t0
@@ -311,7 +309,7 @@ class BeatPrompt:
         ] = beatwidgets.layout([icon_width, marker_width, -1])
 
         # register
-        renderer.add_drawer(state.load(self.fin_event), zindex=())
+        renderer.add_drawer(state.load(fin_event), zindex=())
         renderer.add_texts(icon, icon_mask, zindex=(2,))
         renderer.add_texts(marker, marker_mask, zindex=(3,))
         renderer.add_texts(textbox, input_mask, zindex=(0,))
@@ -319,7 +317,7 @@ class BeatPrompt:
 
     @dn.datanode
     def prompt(self, devices_settings):
-        self.fin_event.clear()
+        fin_event = threading.Event()
 
         # engines
         settings = self.settings
@@ -339,7 +337,7 @@ class BeatPrompt:
         )
 
         # handlers
-        self.register(renderer)
+        self.register(renderer, fin_event)
         self.input._register(controller)
 
         @dn.datanode
@@ -349,7 +347,7 @@ class BeatPrompt:
             while not event.is_set():
                 yield
 
-        yield from dn.pipe(stop_when(self.fin_event), display_task, input_task).join()
+        yield from dn.pipe(stop_when(fin_event), display_task, input_task).join()
 
         result = self.input.result
         if isinstance(result, beatinputs.ErrorResult):
@@ -359,11 +357,8 @@ class BeatPrompt:
         else:
             raise TypeError
 
-    def prev_session(self):
-        return self.input.prev_session()
-
-    def new_session(self):
-        return self.input.new_session()
+    def new_session(self, clear=True):
+        return self.input.new_session(clear=clear)
 
     def record_command(self):
         return self.input._record_command()

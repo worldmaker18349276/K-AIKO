@@ -562,7 +562,7 @@ class BeatInput:
 
     Attributes
     ----------
-    input_settings : BeatInputSettings
+    settings : BeatInputSettings
         The input settings.
     command_parser_getter : function
         The function to produce command parser for beatshell.
@@ -612,7 +612,7 @@ class BeatInput:
         preview_handler,
         rich,
         cache_dir,
-        input_settings_getter=BeatInputSettings,
+        settings_getter=BeatInputSettings,
     ):
         r"""Constructor.
 
@@ -624,13 +624,13 @@ class BeatInput:
         rich : markups.RichParser
         cache_dir : Path
             The directory of cache data.
-        input_settings_getter : BeatInputSettings
+        settings_getter : BeatInputSettings
             The settings getter of input.
         """
         self.rich = rich
 
         self.command_parser_getter = command_parser_getter
-        self._input_settings_getter = input_settings_getter
+        self._settings_getter = settings_getter
 
         self.semantic_analyzer = sh.SemanticAnalyzer(None)
         self.cache_dir = cache_dir
@@ -640,7 +640,7 @@ class BeatInput:
         self.typeahead = ""
         self.hint_manager = HintManager(
             self.semantic_analyzer,
-            lambda song: preview_handler(song) if self.input_settings.preview_song else None,
+            lambda song: preview_handler(song) if self.settings.preview_song else None,
         )
         self.autocomplete_manager = AutocompleteManager(
             self.text_buffer, self.semantic_analyzer
@@ -656,11 +656,11 @@ class BeatInput:
         self.new_session()
 
     @property
-    def input_settings(self):
-        return self._input_settings_getter()
+    def settings(self):
+        return self._settings_getter()
 
     def _register(self, controller):
-        stroke = BeatStroke(self, self.input_settings)
+        stroke = BeatStroke(self, self.settings)
         stroke.register(controller)
 
     def _record_command(self):
@@ -700,17 +700,27 @@ class BeatInput:
 
     @locked
     @onstate("FIN")
-    def new_session(self):
+    def new_session(self, clear=True):
         r"""Start a new session of input.
+
+        Parameters
+        ----------
+        clear : bool, optional
+
+        Returns
+        -------
+        succ : bool
         """
         self.semantic_analyzer.update_parser(self.command_parser_getter())
 
-        groups = self.semantic_analyzer.get_all_groups()
-        history_size = self.input_settings.history_size
-        self.text_buffer.init(self.history.read_history(groups, history_size))
+        if clear:
+            groups = self.semantic_analyzer.get_all_groups()
+            history_size = self.settings.history_size
+            self.text_buffer.init(self.history.read_history(groups, history_size))
 
         self.update_buffer(clear=True)
         self.start()
+        return True
 
     @locked
     @onstate("EDIT")
