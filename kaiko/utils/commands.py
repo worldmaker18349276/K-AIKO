@@ -267,6 +267,7 @@ class PathParser(ArgumentParser):
         root=".",
         type="all",
         default=inspect.Parameter.empty,
+        should_exist=True,
         desc=None,
         filter=lambda _: True,
     ):
@@ -283,6 +284,8 @@ class PathParser(ArgumentParser):
             `"all"`, default is `"all"`.
         default : any, optional
             The default value of this argument.
+        should_exist : bool, optional
+            Whether the path should exist.
         desc : str, optional
             The description of this argument.
         filter : function, optional
@@ -292,11 +295,21 @@ class PathParser(ArgumentParser):
         self.root = root
         self.type = type
         self.default = default
-        self._desc = desc or "It should be a path"
+        self.should_exist = should_exist
+        self._desc = desc
         self.filter = filter
 
     def desc(self):
-        return self._desc
+        if self._desc is not None:
+            return self._desc
+        if self.type == "all":
+            return "It should be a path"
+        elif self.type == "file":
+            return "It should be a file path"
+        elif self.type == "dir":
+            return "It should be a directory path"
+        else:
+            assert False
 
     def expand(self, path, root=None):
         if root is None:
@@ -314,6 +327,8 @@ class PathParser(ArgumentParser):
             exists = False
 
         if not exists:
+            if not self.should_exist:
+                return Path(token)
             desc = self.desc()
             raise CommandParseError(
                 "Path does not exist" + ("\n" + desc if desc is not None else "")

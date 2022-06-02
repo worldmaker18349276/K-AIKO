@@ -245,14 +245,11 @@ class FileManager:
     def glob(self, path):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
         try:
-            abspath = path.resolve(strict=True)
+            abspath = path.resolve()
         except Exception:
             return (), None, None
 
         if not abspath.is_relative_to(self.root):
-            return (), None, None
-
-        if not abspath.exists():
             return (), None, None
 
         route = [abspath, *abspath.parents]
@@ -269,10 +266,10 @@ class FileManager:
                     current_path = path
 
                 if isinstance(child.descriptor, DirDescriptor):
-                    if not Path.is_dir(current_path):
+                    if Path.exists(current_path) and not Path.is_dir(current_path):
                         continue
                 elif isinstance(child.descriptor, FileDescriptor):
-                    if not Path.is_file(current_path):
+                    if Path.exists(current_path) and not Path.is_file(current_path):
                         continue
                 elif isinstance(child.descriptor, WildCardDescriptor):
                     pass
@@ -296,18 +293,18 @@ class FileManager:
     def cd(self, path, logger):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
         try:
-            abspath = (self.root / self.current / path).resolve(strict=True)
+            abspath = (self.root / self.current / path).resolve()
         except Exception:
-            logger.print("[warn]Filed to resolve path[/]")
+            logger.print("[warn]Failed to resolve path[/]")
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
             return
 
-        if not abspath.exists():
-            logger.print("[warn]No such directory[/]")
-            return
         if not abspath.is_relative_to(self.root):
             logger.print("[warn]Out of root directory[/]")
+            return
+        if not abspath.exists():
+            logger.print("[warn]No such directory[/]")
             return
         if not abspath.is_dir():
             logger.print("[warn]Is not a directory[/]")
@@ -386,18 +383,48 @@ class FileManager:
             logger.print(name, end=padding)
             logger.print(desc, end="\n")
 
+    def mk(self, path, logger):
+        path = Path(os.path.expandvars(os.path.expanduser(path)))
+        try:
+            abspath = (self.root / self.current / path).resolve()
+        except Exception:
+            logger.print("[warn]Failed to resolve path[/]")
+            with logger.warn():
+                logger.print(traceback.format_exc(), end="", markup=False)
+            return
+
+        if not abspath.is_relative_to(self.root):
+            logger.print("[warn]Out of root directory[/]")
+            return
+        if abspath.exists():
+            logger.print("[warn]File already exists[/]")
+            return
+
+        ind, abspath, descriptor = self.glob(self.root / self.current / path)
+        if descriptor is None:
+            logger.print("[warn]Unknown file[/]")
+            return
+
+        try:
+            descriptor.mk(abspath)
+        except Exception:
+            logger.print("[warn]Failed to make file[/]")
+            with logger.warn():
+                logger.print(traceback.format_exc(), end="", markup=False)
+            return
+
     def get(self, path, logger):
         try:
-            abspath = (self.root / self.current / path).resolve(strict=True)
+            abspath = (self.root / self.current / path).resolve()
         except Exception:
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
 
-        if not abspath.exists():
-            logger.print("[warn]No such file[/]")
-            return
         if not abspath.is_relative_to(self.root):
             logger.print("[warn]Out of root directory[/]")
+            return
+        if not abspath.exists():
+            logger.print("[warn]No such file[/]")
             return
         if not abspath.is_file():
             logger.print("[warn]Is not a file[/]")
@@ -445,6 +472,13 @@ class FilesCommand:
         )
         logger.print(code)
 
+    @cmd.function_command
+    def mk(self, path):
+        file_manager = self.file_manager
+        logger = self.logger
+
+        abspath = file_manager.mk(path, logger)
+
     @cd.arg_parser("path")
     def _cd_path_parser(self):
         return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="dir")
@@ -452,6 +486,10 @@ class FilesCommand:
     @cat.arg_parser("path")
     def _cat_path_parser(self):
         return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="file")
+
+    @mk.arg_parser("path")
+    def _mk_path_parser(self):
+        return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="file", should_exist=False)
 
     @cmd.function_command
     def clean(self, bottom: bool = False):

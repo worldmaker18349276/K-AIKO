@@ -53,6 +53,11 @@ class ProfilesDirDescriptor(DirDescriptor):
                     break
             return note
 
+        def mk(self, path):
+            profile_manager = self.provider.get(ProfileManager)
+            logger = self.provider.get(Logger)
+            profile_manager.make_empty(logger, name=path.stem)
+
     @as_child(".default-profile")
     class Default(FileDescriptor):
         "(The file of default profile name)"
@@ -391,6 +396,62 @@ class ProfileManager:
                 return False
             self.current_name = name
 
+        return True
+
+    def make_empty(self, logger, name):
+        """Make an empty profile.
+
+        Parameters
+        ----------
+        logger : loggers.Logger
+        name : str
+            The name of profile.
+
+        Returns
+        -------
+        succ : bool
+        """
+        logger.print("Make new profile...")
+
+        if isinstance(name, str) and (not name.isprintable() or "/" in name):
+            logger.print(f"[warn]Invalid profile name: {logger.emph(name, type='all')}[/]")
+            return False
+
+        if name in self.profiles:
+            logger.print(
+                f"[warn]This profile name {logger.emph(name, type='all')} already exists.[/]"
+            )
+            return False
+
+        config = self.config_type()
+
+        path = self.profiles_dir / (name + self.extension)
+        logger.print(f"[data/] Save configuration to {logger.emph(path.as_uri())}...")
+
+        if not self.profiles_dir.exists():
+            logger.print(
+                f"[warn]The profile directory doesn't exist: {logger.emph(self.profiles_dir.as_uri())}[/]"
+            )
+            return False
+
+        if path.exists():
+            logger.print(
+                f"[warn]File already exists: {logger.emph(path.as_uri())}[/]"
+            )
+            return False
+
+        try:
+            cfg.write(
+                self.config_type, config, path, name=self.settings_name
+            )
+        except Exception:
+            logger.print("[warn]Fail to format configuration[/]")
+            with logger.warn():
+                logger.print(traceback.format_exc(), end="", markup=False)
+            return False
+
+        self._current_mtime = os.stat(str(path)).st_mtime
+        self.update(logger)
         return True
 
     def delete(self, logger, name):
