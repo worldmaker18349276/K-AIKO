@@ -264,7 +264,7 @@ class Pair(Tag):
 
 # template
 @dataclasses.dataclass(frozen=True)
-class SingleTemplate(Single):
+class CustomSingleTag(Single):
     # name
     # _template
 
@@ -299,7 +299,7 @@ class Slot(Single):
 
 
 @dataclasses.dataclass(frozen=True)
-class PairTemplate(Pair):
+class CustomPairTag(Pair):
     # name
     # _template
 
@@ -345,16 +345,16 @@ def replace_slot(template, *args, **kwargs):
     return template.traverse(Slot, inject, strategy=TraverseStrategy.TopMost)
 
 
-def make_single_template(name, template, tags, props={}):
+def make_single_tag(name, template, tags, props={}):
     temp = parse_markup(template, tags=tags, props=props)
-    cls = type(name.capitalize(), (SingleTemplate,), dict(name=name, _template=temp))
+    cls = type(name.capitalize(), (CustomSingleTag,), dict(name=name, _template=temp))
     cls = dataclasses.dataclass(frozen=True)(cls)
     return cls
 
 
-def make_pair_template(name, template, tags, props={}):
+def make_pair_tag(name, template, tags, props={}):
     temp = parse_markup(template, tags=dict(tags, slot=Slot), props=props)
-    cls = type(name.capitalize(), (PairTemplate,), dict(name=name, _template=temp))
+    cls = type(name.capitalize(), (CustomPairTag,), dict(name=name, _template=temp))
     cls = dataclasses.dataclass(frozen=True)(cls)
     return cls
 
@@ -1091,13 +1091,13 @@ class RichParser:
             markup = SlottedTemplate(markup)
         return markup
 
-    def add_single_template(self, name, template):
-        tag = make_single_template(name, template, self.tags, self.props)
+    def add_single_tag(self, name, template):
+        tag = make_single_tag(name, template, self.tags, self.props)
         self.tags[tag.name] = tag
         return tag
 
-    def add_pair_template(self, name, template):
-        tag = make_pair_template(name, template, self.tags, self.props)
+    def add_pair_tag(self, name, template):
+        tag = make_pair_tag(name, template, self.tags, self.props)
         self.tags[tag.name] = tag
         return tag
 
