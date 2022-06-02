@@ -23,8 +23,7 @@ class WildCardDescriptor:
 
         Parameters
         ----------
-        provider : object with methods set and get
-            The service provider to perform operation.
+        provider : utils.providers.Provider
         """
         self.provider = provider
 
@@ -243,16 +242,6 @@ class FileManager:
     def remove(self, logger):
         shutil.rmtree(str(self.root))
 
-    def get_desc(self, path, ret_ind=False):
-        if not ret_ind:
-            return self.get_desc(path, ret_ind=True)[1]
-
-        index, expanded_path, descriptor = self.glob(path)
-        if descriptor is None:
-            return (), None
-
-        return index, descriptor.desc(expanded_path)
-
     def glob(self, path):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
         try:
@@ -269,14 +258,13 @@ class FileManager:
         route = [abspath, *abspath.parents]
         route = route[route.index(self.root)::-1][1:]
 
-        desc_func = None
         index = ()
-        tree = self.structure
+        descriptor = self.structure
         for current_path in route:
-            if not isinstance(tree, DirDescriptor):
+            if not isinstance(descriptor, DirDescriptor):
                 return (), None, None
 
-            for i, child in enumerate(tree.children()):
+            for i, child in enumerate(descriptor.children()):
                 if child.pattern == "**":
                     current_path = path
 
@@ -297,13 +285,13 @@ class FileManager:
 
                 if current_path.match(child.pattern):
                     index = (*index, i)
-                    tree = child.descriptor
+                    descriptor = child.descriptor
                     break
 
             else:
                 return (), None, None
 
-        return index, path, tree
+        return index, path, descriptor
 
     def cd(self, path, logger):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
@@ -378,7 +366,7 @@ class FileManager:
 
             ind, path, descriptor = self.glob(self.root / self.current / child.name)
             desc = descriptor.desc(path) if descriptor is not None else None
-            desc = logger.rich.parse(desc) if desc is not None else None
+            desc = logger.rich.parse(desc, root_tag=True) if desc is not None else None
 
             ordering_key = (descriptor is None, ind, child.is_symlink(), not child.is_dir(), child.suffix, child.stem)
 

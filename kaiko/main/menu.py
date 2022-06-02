@@ -312,7 +312,7 @@ class KAIKOMenu:
             path = ""
         path = os.path.join("$KAIKO", path)
         profile_is_changed = self.profile_manager.is_changed()
-        path_is_known = self.file_manager.get_desc(self.file_manager.root / self.file_manager.current) is not None
+        path_is_known = self.file_manager.glob(self.file_manager.root / self.file_manager.current)[2] is not None
 
         banner_settings = self.settings.shell.banner
 

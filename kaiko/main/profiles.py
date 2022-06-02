@@ -39,7 +39,19 @@ class ProfilesDirDescriptor(DirDescriptor):
 
     @as_child("*.kaiko-profile")
     class Profile(FileDescriptor):
-        "(Your custom profile)"
+        def desc(self, path):
+            profile_manager = self.provider.get(ProfileManager)
+            note = "(Untracked custom profile)"
+            for profile in profile_manager.profiles:
+                name = profile + profile_manager.extension
+                if name == path.name:
+                    note = "(Your custom profile)"
+                    if profile == profile_manager.default_name:
+                        note += " (default)"
+                    if profile == profile_manager.current_name:
+                        note += " (current)"
+                    break
+            return note
 
     @as_child(".default-profile")
     class Default(FileDescriptor):
@@ -649,25 +661,6 @@ class ProfilesCommand:
         return cmd.LiteralParser(annotation, default)
 
     # profiles
-
-    @cmd.function_command
-    def list(self):
-        """[rich]Show all profiles.
-
-        usage: [cmd]list[/]
-        """
-        logger = self.logger
-
-        if not self.profile_manager.is_uptodate():
-            self.profile_manager.update(logger)
-
-        for profile in self.profile_manager.profiles:
-            note = ""
-            if profile == self.profile_manager.default_name:
-                note += " (default)"
-            if profile == self.profile_manager.current_name:
-                note += " (current)"
-            logger.print(logger.emph(profile + self.profile_manager.extension, type="all") + note)
 
     @cmd.function_command
     def reload(self):
