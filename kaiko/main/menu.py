@@ -187,7 +187,8 @@ class KAIKOMenu:
 
         self.print_tips()
         while True:
-            self.print_banner()
+            self.logger.print()
+            self.logger.print(prompt.make_banner(self.file_manager, self.profile_manager))
 
             try:
                 command = yield from prompt.prompt(self.settings.devices).join()
@@ -297,49 +298,6 @@ class KAIKOMenu:
         logger.print(f"[hint/] Use {tab_key} to autocomplete command.")
         logger.print(f"[hint/] If you need help, press {help_key}.")
         logger.print()
-
-    def print_banner(self):
-        logger = self.logger
-
-        username = self.file_manager.username
-        current_name = self.profile_manager.current_name
-        path = str(self.file_manager.current)
-        if path == ".":
-            path = ""
-        path = os.path.join("$" + self.file_manager.ROOT_ENVVAR, path)
-        profile_is_changed = self.profile_manager.is_changed()
-        path_is_known = self.file_manager.glob(self.file_manager.root / self.file_manager.current)[2] is not None
-
-        banner_settings = self.settings.shell.banner
-
-        username = logger.escape(username, type="all")
-        profile = logger.escape(current_name, type="all")
-        path = logger.escape(path, type="all")
-
-        user_markup = banner_settings.user
-        user_markup = logger.rich.parse(user_markup, slotted=True)
-        user_markup = user_markup(user_name=logger.rich.parse(username))
-
-        profile_markup = banner_settings.profile
-        profile_markup = profile_markup[0] if not profile_is_changed else profile_markup[1]
-        profile_markup = logger.rich.parse(profile_markup, slotted=True)
-        profile_markup = profile_markup(profile_name=logger.rich.parse(profile))
-
-        path_markup = banner_settings.path
-        path_markup = path_markup[0] if path_is_known else path_markup[1]
-        path_markup = logger.rich.parse(path_markup, slotted=True)
-        path_markup = path_markup(current_path=logger.rich.parse(path))
-
-        banner_markup = banner_settings.banner
-        banner_markup = logger.rich.parse(banner_markup, slotted=True)
-        banner_markup = banner_markup(
-            user=user_markup,
-            profile=profile_markup,
-            path=path_markup,
-        )
-
-        logger.print()
-        logger.print(banner_markup)
 
     def get_command_parser(self):
         commands = {}

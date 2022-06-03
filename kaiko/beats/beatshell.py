@@ -1,3 +1,4 @@
+import os
 import threading
 import queue
 from typing import List, Tuple, Union
@@ -187,6 +188,9 @@ class BeatShellSettings(cfg.Configurable):
         path : tuple of str and str
             The templates of path with slots: `current_path`, the second is for
             unknown path.
+
+        unprintable_character : str
+            The placeholder for unprintable character.
         """
 
         banner: str = (
@@ -206,6 +210,8 @@ class BeatShellSettings(cfg.Configurable):
             "[color=cyan]⛩ [weight=bold][slot=current_path/][/][/]",
             "[color=cyan]⛩ [weight=dim][slot=current_path/][/][/]",
         )
+
+        unprintable_character: str = "⍰"
 
     @cfg.subconfig
     class text(cfg.Configurable):
@@ -365,6 +371,47 @@ class BeatPrompt:
 
     def record_command(self):
         return self.input._record_command()
+
+    def make_banner(self, file_manager, profile_manager):
+        banner_settings = self.settings.banner
+
+        username = file_manager.username
+        current_name = profile_manager.current_name
+        path = str(file_manager.current)
+        if path == ".":
+            path = ""
+        path = os.path.join("$" + file_manager.ROOT_ENVVAR, path, "")
+        profile_is_changed = profile_manager.is_changed()
+        path_is_known = file_manager.glob(file_manager.root / file_manager.current)[2] is not None
+
+        unpr = banner_settings.unprintable_character
+        username = mu.Text("".join(ch if ch.isprintable() else unpr for ch in username))
+        profile = mu.Text("".join(ch if ch.isprintable() else unpr for ch in current_name))
+        path = mu.Text("".join(ch if ch.isprintable() else unpr for ch in path))
+
+        user_markup = banner_settings.user
+        user_markup = self.rich.parse(user_markup, slotted=True)
+        user_markup = user_markup(user_name=username)
+
+        profile_markup = banner_settings.profile
+        profile_markup = profile_markup[0] if not profile_is_changed else profile_markup[1]
+        profile_markup = self.rich.parse(profile_markup, slotted=True)
+        profile_markup = profile_markup(profile_name=profile)
+
+        path_markup = banner_settings.path
+        path_markup = path_markup[0] if path_is_known else path_markup[1]
+        path_markup = self.rich.parse(path_markup, slotted=True)
+        path_markup = path_markup(current_path=path)
+
+        banner_markup = banner_settings.banner
+        banner_markup = self.rich.parse(banner_markup, slotted=True)
+        banner_markup = banner_markup(
+            user=user_markup,
+            profile=profile_markup,
+            path=path_markup,
+        )
+
+        return banner_markup
 
 
 class InputView:
