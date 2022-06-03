@@ -419,7 +419,8 @@ class FileManager:
             logger.print(name, end=padding)
             logger.print(desc, end="\n")
 
-    def mk(self, logger, path):
+    def mk(self, logger, splitted_path):
+        path = splitted_path[0] / splitted_path[1]
         path = Path(os.path.expandvars(os.path.expanduser(path)))
         abspath = self.get(logger, path, should_exist=False, file_type="all")
         if abspath is None:
@@ -429,7 +430,10 @@ class FileManager:
 
         try:
             if descriptor is None:
-                abspath.touch(exist_ok=False)
+                if splitted_path[1] == Path(""):
+                    abspath.mkdir(exist_ok=False)
+                else:
+                    abspath.touch(exist_ok=False)
             else:
                 descriptor.mk(abspath)
         except Exception:
@@ -448,7 +452,10 @@ class FileManager:
 
         try:
             if descriptor is None:
-                abspath.unlink()
+                if abspath.is_dir():
+                    abspath.rmdir()
+                else:
+                    abspath.unlink()
             else:
                 descriptor.rm(abspath)
         except Exception:
@@ -551,11 +558,11 @@ class FilesCommand:
         logger.print(code)
 
     @cmd.function_command
-    def mk(self, path):
+    def mk(self, splitted_path):
         file_manager = self.file_manager
         logger = self.logger
 
-        file_manager.mk(logger, path)
+        file_manager.mk(logger, splitted_path)
 
     @cmd.function_command
     def rm(self, path):
@@ -586,7 +593,15 @@ class FilesCommand:
     def _cat_path_parser(self):
         return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="file")
 
-    @mk.arg_parser("path")
+    @mk.arg_parser("splitted_path")
+    def _mk_splitted_path_parser(self, path=None):
+        return cmd.PathParser(
+            self.file_manager.root / self.file_manager.current,
+            type="all",
+            should_exist=False,
+            split=True,
+        )
+
     @mv.arg_parser("dst")
     @cp.arg_parser("path")
     def _any_path_parser(self, path=None):

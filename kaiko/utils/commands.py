@@ -270,6 +270,7 @@ class PathParser(ArgumentParser):
         should_exist=True,
         desc=None,
         filter=lambda _: True,
+        split=False,
     ):
         r"""Contructor.
 
@@ -291,6 +292,8 @@ class PathParser(ArgumentParser):
         filter : function, optional
             The filter function for the valid path, the argument is absolute
             path in the str type.
+        split : bool, optional
+            Whether to split parent and child.
         """
         self.root = root
         self.type = type
@@ -298,6 +301,7 @@ class PathParser(ArgumentParser):
         self.should_exist = should_exist
         self._desc = desc
         self.filter = filter
+        self.split = split
 
     def desc(self):
         if self._desc is not None:
@@ -326,13 +330,18 @@ class PathParser(ArgumentParser):
         except ValueError:
             exists = False
 
-        if not exists:
-            if not self.should_exist:
-                return Path(token)
+        if not exists and self.should_exist:
             desc = self.desc()
             raise CommandParseError(
                 "Path does not exist" + ("\n" + desc if desc is not None else "")
             )
+
+        if not exists:
+            if self.split:
+                parent, child = os.path.split(token)
+                return Path(parent), Path(child)
+            else:
+                return Path(token)
 
         isdir = os.path.isdir(path)
         isfile = os.path.isfile(path)
@@ -361,7 +370,11 @@ class PathParser(ArgumentParser):
                 "Not a valid file type" + ("\n" + desc if desc is not None else "")
             )
 
-        return Path(token)
+        if self.split:
+            parent, child = os.path.split(token)
+            return Path(parent), Path(child)
+        else:
+            return Path(token)
 
     def suggest(self, token):
         suggestions = []
