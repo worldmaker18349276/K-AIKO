@@ -658,6 +658,161 @@ class FilesCommand:
             raise KeyboardInterrupt
 
 
+class PathParser(cmd.ArgumentParser):
+    r"""Parse a file path."""
+
+    def __init__(
+        self,
+        root=".",
+        type="all",
+        should_exist=True,
+        desc=None,
+        filter=lambda _: True,
+        split=False,
+    ):
+        r"""Contructor.
+
+        Parameters
+        ----------
+        root : str, optional
+            The root of path.
+        dir : bool, optional
+            The parse directory or not, default is true.
+        type : str, optional
+            The parse file type, which should be one of `"file"`, `"dir"`,
+            `"all"`, default is `"all"`.
+        should_exist : bool, optional
+            Whether the path should exist.
+        desc : str, optional
+            The description of this argument.
+        filter : function, optional
+            The filter function for the valid path, the argument is absolute
+            path in the str type.
+        split : bool, optional
+            Whether to split parent and child.
+        """
+        self.root = root
+        self.type = type
+        self.should_exist = should_exist
+        self._desc = desc
+        self.filter = filter
+        self.split = split
+
+    def desc(self):
+        if self._desc is not None:
+            return self._desc
+        if self.type == "all":
+            return "It should be a path"
+        elif self.type == "file":
+            return "It should be a file path"
+        elif self.type == "dir":
+            return "It should be a directory path"
+        else:
+            assert False
+
+    def expand(self, path, root=None):
+        if root is None:
+            root = self.root
+        path = os.path.expanduser(path)
+        path = os.path.expandvars(path)
+        path = os.path.join(root, path or ".")
+        return path
+
+    def parse(self, token):
+        path = self.expand(token)
+        try:
+            exists = os.path.lexists(path)
+        except ValueError:
+            exists = False
+
+        if not exists and self.should_exist:
+            desc = self.desc()
+            raise cmd.CommandParseError(
+                "Path does not exist" + ("\n" + desc if desc is not None else "")
+            )
+
+        if not exists:
+            if self.split:
+                parent, child = os.path.split(token)
+                return Path(parent), Path(child)
+            else:
+                return Path(token)
+
+        isdir = os.path.isdir(path)
+        isfile = os.path.isfile(path)
+
+        if self.type == "dir" and not isdir:
+            desc = self.desc()
+            raise cmd.CommandParseError(
+                "Not a directory" + ("\n" + desc if desc is not None else "")
+            )
+
+        if self.type == "file" and not isfile:
+            desc = self.desc()
+            raise cmd.CommandParseError(
+                "Not a file" + ("\n" + desc if desc is not None else "")
+            )
+
+        if self.type == "all" and not isdir and not isfile:
+            desc = self.desc()
+            raise cmd.CommandParseError(
+                "Not a directory or a file" + ("\n" + desc if desc is not None else "")
+            )
+
+        if not self.filter(path):
+            desc = self.desc()
+            raise cmd.CommandParseError(
+                "Not a valid file type" + ("\n" + desc if desc is not None else "")
+            )
+
+        if self.split:
+            parent, child = os.path.split(token)
+            return Path(parent), Path(child)
+        else:
+            return Path(token)
+
+    def suggest(self, token):
+        suggestions = []
+
+        # check path
+        currpath = self.expand(token)
+        try:
+            is_dir = os.path.isdir(currpath) and currpath.endswith("/")
+            is_file = os.path.isfile(currpath)
+        except ValueError:
+            return suggestions
+
+        if is_file and self.type in ["file", "all"] and self.filter(currpath):
+            suggestions.append((token or ".") + "\000")
+
+        if is_dir and self.type in ["dir", "all"] and self.filter(currpath):
+            suggestions.append(os.path.join(token or ".", "") + "\000")
+
+        # separate parent and partial child name
+        parent, child = os.path.split(token)
+        parentpath = self.expand(parent) if child else currpath
+        if not os.path.isdir(parentpath):
+            return suggestions
+
+        names = cmd.fit(child, os.listdir(parentpath))
+        for name in names:
+            # only suggest hidden files when starting with .
+            if not child.startswith(".") and name.startswith("."):
+                continue
+
+            subpath = os.path.join(parentpath, name)
+            sugg = os.path.join(parent, name)
+
+            if os.path.isdir(subpath):
+                sugg = os.path.join(sugg, "")
+                suggestions.append(sugg)
+
+            elif os.path.isfile(subpath) and self.type in ["file", "all"] and self.filter(subpath):
+                suggestions.append(sugg + "\000")
+
+        return suggestions
+
+
 def CdCommand(provider):
     def make_command(name):
         return cmd.function_command(

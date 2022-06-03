@@ -9,7 +9,7 @@ from ..utils import commands as cmd
 from ..beats import beatmaps
 from ..beats import beatsheets
 from .loggers import Logger
-from .files import FileDescriptor, DirDescriptor, WildCardDescriptor, as_child, FileManager
+from .files import FileDescriptor, DirDescriptor, WildCardDescriptor, as_child, FileManager, PathParser
 from .profiles import ProfileManager
 
 
@@ -215,7 +215,7 @@ class BeatmapManager:
         return BeatmapParser(root, type, self, logger)
 
 
-class BeatmapParser(cmd.PathParser):
+class BeatmapParser(PathParser):
     def __init__(self, root, type, beatmap_manager, logger):
         desc = "It should be a path to the beatmap file"
         super().__init__(root, type=type, desc=desc, filter=self.filter)
@@ -428,7 +428,7 @@ class PlayCommand:
 
     @add.arg_parser("beatmap")
     def _add_beatmap_parser(self):
-        return cmd.PathParser()
+        return PathParser()
 
     @cmd.function_command
     def remove(self, beatmap):
