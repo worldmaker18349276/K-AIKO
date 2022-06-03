@@ -488,8 +488,6 @@ class ProfileManager:
                 logger.print(traceback.format_exc(), end="", markup=False)
             return False
 
-        self._current_mtime = os.stat(str(path)).st_mtime
-        self.update(logger)
         return True
 
     def delete(self, logger, name):
