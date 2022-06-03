@@ -55,10 +55,6 @@ class RootDirDescriptor(DirDescriptor):
     class Resources(DirDescriptor):
         "(The place to store some resources of KAIKO)"
 
-        @as_child("**")
-        class Resource(WildCardDescriptor):
-            "(Resource file)"
-
     @as_child(cache_name, is_required=True)
     class Cache(DirDescriptor):
         "(The place to cache some data for better exprience)"
@@ -67,9 +63,9 @@ class RootDirDescriptor(DirDescriptor):
         class BeatShellHistory(FileDescriptor):
             "(The command history)"
 
-        @as_child("**")
-        class CacheData(WildCardDescriptor):
-            "(Cache data)"
+            def rm(self, path):
+                path.unlink()
+                path.touch()
 
 
 class KAIKOMenu:
