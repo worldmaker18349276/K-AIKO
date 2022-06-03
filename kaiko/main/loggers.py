@@ -232,6 +232,19 @@ class Logger:
     def emph(self, text, type="plain"):
         return f"[emph]{self.escape(text, type=type)}[/]"
 
+    def as_uri(self, path, emph=True):
+        if path.is_absolute():
+            path = path.as_uri()
+        else:
+            path = str(path)
+        if path.endswith("."):
+            path = path + "/"
+        if emph:
+            path = self.emph(path, type="all")
+        else:
+            path = self.escape(path, type="all")
+        return path
+
     def print(self, msg="", end="\n", flush=False, markup=True):
         if not markup:
             print(msg, end=end, flush=flush)

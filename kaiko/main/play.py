@@ -94,7 +94,7 @@ class BeatmapManager:
         beatmaps_dir = self.beatmaps_dir
 
         logger.print(
-            f"[data/] Load beatmaps from {logger.emph(beatmaps_dir.as_uri())}..."
+            f"[data/] Load beatmaps from {logger.as_uri(beatmaps_dir)}..."
         )
 
         for file in beatmaps_dir.iterdir():
@@ -102,7 +102,7 @@ class BeatmapManager:
                 distpath = file.parent / file.stem
                 if distpath.exists():
                     continue
-                logger.print(f"[data/] Unzip file {logger.emph(file.as_uri())}...")
+                logger.print(f"[data/] Unzip file {logger.as_uri(file)}...")
                 distpath.mkdir()
                 zf = zipfile.ZipFile(str(file), "r")
                 zf.extractall(path=str(distpath))
@@ -131,15 +131,15 @@ class BeatmapManager:
         beatmaps_dir = self.beatmaps_dir
 
         if not path.exists():
-            logger.print(f"[warn]File not found: {logger.escape(str(path), type='all')}[/]")
+            logger.print(f"[warn]File not found: {logger.as_uri(path)}[/]")
             return
         if not path.is_file() and not path.is_dir():
             logger.print(
-                f"[warn]Not a file or directory: {logger.escape(str(path), type='all')}[/]"
+                f"[warn]Not a file or directory: {logger.as_uri(path)}[/]"
             )
             return
 
-        logger.print(f"[data/] Add a new song from {logger.emph(path.as_uri())}...")
+        logger.print(f"[data/] Add a new song from {logger.as_uri(path)}...")
 
         distpath = beatmaps_dir / path.name
         n = 1
@@ -164,7 +164,7 @@ class BeatmapManager:
         if self.is_beatmap(path):
             beatmap_path = beatmaps_dir / path
             logger.print(
-                f"[data/] Remove the beatmap at {logger.emph(beatmap_path.as_uri())}..."
+                f"[data/] Remove the beatmap at {logger.as_uri(beatmap_path)}..."
             )
             beatmap_path.unlink()
             self.reload(logger)
@@ -172,14 +172,14 @@ class BeatmapManager:
         elif self.is_beatmapset(path):
             beatmapset_path = beatmaps_dir / path
             logger.print(
-                f"[data/] Remove the beatmapset at {logger.emph(beatmapset_path.as_uri())}..."
+                f"[data/] Remove the beatmapset at {logger.as_uri(beatmapset_path)}..."
             )
             shutil.rmtree(str(beatmapset_path))
             self.reload(logger)
 
         else:
             logger.print(
-                f"[warn]Not a beatmap or beatmapset: {logger.escape(str(path), type='all')}[/]"
+                f"[warn]Not a beatmap or beatmapset: {logger.as_uri(path)}[/]"
             )
 
     def make_parser(self, logger, root=".", type="file"):
@@ -464,9 +464,8 @@ class KAIKOPlay:
             beatmap = beatsheets.read(str(self.filepath))
 
         except beatsheets.BeatmapParseError:
-            filepath = logger.escape(str(self.filepath), type="all")
             logger.print(
-                f"[warn]Failed to read beatmap {filepath}[/]"
+                f"[warn]Failed to read beatmap {logger.as_uri(self.filepath)}[/]"
             )
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)

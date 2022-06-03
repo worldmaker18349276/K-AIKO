@@ -194,13 +194,13 @@ class ProfileManager:
 
         if not self.profiles_dir.exists():
             logger.print(
-                f"[warn]The profile directory doesn't exist: {logger.emph(self.profiles_dir.as_uri())}[/]"
+                f"[warn]The profile directory doesn't exist: {logger.as_uri(self.profiles_dir)}[/]"
             )
             return False
 
         if not self.profiles_dir.is_dir():
             logger.print(
-                f"[warn]Wrong file type for profile directory: {logger.emph(self.profiles_dir.as_uri())}[/]"
+                f"[warn]Wrong file type for profile directory: {logger.as_uri(self.profiles_dir)}[/]"
             )
             return False
 
@@ -211,7 +211,7 @@ class ProfileManager:
         if default_meta_path.exists():
             if not default_meta_path.is_file():
                 logger.print(
-                    f"[warn]Wrong file type for default profile: {logger.emph(default_meta_path.as_uri())}[/]"
+                    f"[warn]Wrong file type for default profile: {logger.as_uri(default_meta_path)}[/]"
                 )
                 return False
             self.default_name = default_meta_path.read_text().rstrip("\n")
@@ -244,7 +244,7 @@ class ProfileManager:
 
         if not self.profiles_dir.exists():
             logger.print(
-                f"[warn]No such profile directory: {logger.emph(self.profiles_dir.as_uri())}[/]"
+                f"[warn]No such profile directory: {logger.as_uri(self.profiles_dir)}[/]"
             )
             return False
 
@@ -257,7 +257,7 @@ class ProfileManager:
         default_meta_path = self.profiles_dir / self.default_meta
         if default_meta_path.exists() and not default_meta_path.is_file():
             logger.print(
-                f"[warn]Wrong file type for default profile: {logger.emph(default_meta_path.as_uri())}[/]"
+                f"[warn]Wrong file type for default profile: {logger.as_uri(default_meta_path)}[/]"
             )
             return False
 
@@ -279,18 +279,18 @@ class ProfileManager:
         """
         current_path = self.profiles_dir / (self.current_name + self.extension)
         logger.print(
-            f"[data/] Save configuration to {logger.emph(current_path.as_uri())}..."
+            f"[data/] Save configuration to {logger.as_uri(current_path)}..."
         )
 
         if not self.profiles_dir.exists():
             logger.print(
-                f"[warn]The profile directory doesn't exist: {logger.emph(self.profiles_dir.as_uri())}[/]"
+                f"[warn]The profile directory doesn't exist: {logger.as_uri(self.profiles_dir)}[/]"
             )
             return False
 
         if current_path.exists() and not current_path.is_file():
             logger.print(
-                f"[warn]Wrong file type for profile: {logger.emph(current_path.as_uri())}[/]"
+                f"[warn]Wrong file type for profile: {logger.as_uri(current_path)}[/]"
             )
             return False
 
@@ -321,18 +321,18 @@ class ProfileManager:
         """
         current_path = self.profiles_dir / (self.current_name + self.extension)
         logger.print(
-            f"[data/] Load configuration from {logger.emph(current_path.as_uri())}..."
+            f"[data/] Load configuration from {logger.as_uri(current_path)}..."
         )
 
         if not current_path.exists():
             logger.print(
-                f"[warn]The profile doesn't exist: {logger.emph(current_path.as_uri())}[/]"
+                f"[warn]The profile doesn't exist: {logger.as_uri(current_path)}[/]"
             )
             return False
 
         if not current_path.is_file():
             logger.print(
-                f"[warn]Wrong file type for profile: {logger.emph(current_path.as_uri())}[/]"
+                f"[warn]Wrong file type for profile: {logger.as_uri(current_path)}[/]"
             )
             return False
 
@@ -456,7 +456,7 @@ class ProfileManager:
         logger.print("Copy a profile...")
 
         if not src.exists():
-            logger.print(f"[warn]No such file: {logger.emph(src.as_uri())}[/]")
+            logger.print(f"[warn]No such file: {logger.as_uri(src)}[/]")
             return False
 
         if isinstance(name, str) and (not name.isprintable() or "/" in name):
@@ -501,17 +501,17 @@ class ProfileManager:
         config = self.config_type()
 
         path = self.profiles_dir / (name + self.extension)
-        logger.print(f"[data/] Save configuration to {logger.emph(path.as_uri())}...")
+        logger.print(f"[data/] Save configuration to {logger.as_uri(path)}...")
 
         if not self.profiles_dir.exists():
             logger.print(
-                f"[warn]The profile directory doesn't exist: {logger.emph(self.profiles_dir.as_uri())}[/]"
+                f"[warn]The profile directory doesn't exist: {logger.as_uri(self.profiles_dir)}[/]"
             )
             return False
 
         if path.exists():
             logger.print(
-                f"[warn]File already exists: {logger.emph(path.as_uri())}[/]"
+                f"[warn]File already exists: {logger.as_uri(path)}[/]"
             )
             return False
 
@@ -543,7 +543,7 @@ class ProfileManager:
         succ : bool
         """
         target_path = self.profiles_dir / (name + self.extension)
-        logger.print(f"[data/] Delete profile {logger.emph(target_path.as_uri())}...")
+        logger.print(f"[data/] Delete profile {logger.as_uri(target_path)}...")
 
         if name not in self.profiles:
             logger.print(f"[warn]No such profile: {logger.emph(name, type='all')}[/]")
@@ -552,7 +552,7 @@ class ProfileManager:
         if target_path.exists():
             if not target_path.is_file():
                 logger.print(
-                    f"[warn]Wrong file type for profile: {logger.emph(target_path.as_uri())}[/]"
+                    f"[warn]Wrong file type for profile: {logger.as_uri(target_path)}[/]"
                 )
                 return False
             target_path.unlink()
@@ -578,9 +578,7 @@ class ProfileManager:
         current_path = self.profiles_dir / (self.current_name + self.extension)
         src_path = self.profiles_dir / (name + self.extension)
         dst_path = self.profiles_dir / (newname + self.extension)
-        src_name = logger.emph(src_path.as_uri())
-        dst_name = logger.emph(dst_path.as_uri())
-        logger.print(f"[data/] Rename profile {src_name} to {dst_name}...")
+        logger.print(f"[data/] Rename profile {logger.as_uri(src_path)} to {logger.as_uri(dst_path)}...")
 
         if name not in self.profiles:
             logger.print(

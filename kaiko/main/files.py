@@ -240,7 +240,7 @@ class FileManager:
         if not self.root.exists():
             self.root.mkdir()
             logger.print(
-                f"[data/] Your data will be stored in {logger.emph(self.root.as_uri())}"
+                f"[data/] Your data will be stored in {logger.as_uri(self.root)}"
             )
 
         go(self.root, self.structure)
@@ -299,7 +299,8 @@ class FileManager:
         return index, path, descriptor
 
     def as_uri(self, logger, path):
-        return logger.emph((self.root / self.current / path).as_uri())
+        return logger.as_uri(self.root / self.current / path)
+        # return logger.emph(str(Path("$" + self.ROOT_ENVVAR) / self.current / path))
 
     def get(
         self,
