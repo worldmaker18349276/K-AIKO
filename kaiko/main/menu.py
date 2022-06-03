@@ -128,11 +128,7 @@ class KAIKOMenu:
         )
         profile_manager.update(logger)
 
-        succ = profile_manager.use(logger)
-        if not succ:
-            succ = profile_manager.new(logger)
-            if not succ:
-                raise RuntimeError("Fail to load profile")
+        profile_manager.use(logger)
 
         logger.print(flush=True)
 

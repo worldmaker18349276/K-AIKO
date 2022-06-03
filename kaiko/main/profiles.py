@@ -365,11 +365,22 @@ class ProfileManager:
         succ : bool
         """
         if name is None:
-            if self.default_name is None:
-                logger.print("[warn]No default profile[/]")
-                return False
-
             name = self.default_name
+
+            if name is None:
+                logger.print("[warn]No default profile.[/]")
+
+                name = "new profile"
+                n = 1
+                while name in self.profiles:
+                    n += 1
+                    name = f"new profile ({str(n)})"
+                logger.print(f"Create profile with name {logger.emph(name, type='all')}.")
+
+                self.current_name = name
+                self.current = self.config_type()
+                self.set_as_changed()
+                return True
 
         if name not in self.profiles:
             logger.print(f"[warn]No such profile: {logger.emph(name, type='all')}[/]")
@@ -381,61 +392,6 @@ class ProfileManager:
         if not succ:
             self.current_name = old_name
             return False
-        return True
-
-    def new(self, logger, name=None, clone=None):
-        """make a new profile.
-
-        Parameters
-        ----------
-        logger : loggers.Logger
-        name : str, optional
-            The name of profile.
-        clone : str, optional
-            The name of profile to clone.
-
-        Returns
-        -------
-        succ : bool
-        """
-        logger.print("Make new profile...")
-
-        if clone is not None and clone not in self.profiles:
-            logger.print(f"[warn]No such profile: {logger.emph(clone, type='all')}[/]")
-            return False
-
-        if isinstance(name, str) and (not name.isprintable() or "/" in name):
-            logger.print(f"[warn]Invalid profile name: {logger.emph(name, type='all')}[/]")
-            return False
-
-        if name in self.profiles:
-            logger.print(
-                f"[warn]This profile name {logger.emph(name, type='all')} already exists.[/]"
-            )
-            return False
-
-        if name is None:
-            name = "new profile"
-            n = 1
-            while name in self.profiles:
-                n += 1
-                name = f"new profile ({str(n)})"
-            logger.print(f"Create profile with name {logger.emph(name, type='all')}.")
-
-        if clone is None:
-            self.current_name = name
-            self.current = self.config_type()
-            self.set_as_changed()
-
-        else:
-            old_name = self.current_name
-            self.current_name = clone
-            succ = self.load(logger)
-            if not succ:
-                self.current_name = old_name
-                return False
-            self.current_name = name
-
         return True
 
     def copy(self, logger, src, name=None):
@@ -844,27 +800,9 @@ class ProfilesCommand:
 
         self.profile_manager.use(self.logger, profile)
 
-    @cmd.function_command
-    def new(self, profile, clone=None):
-        """[rich]Make a new profile.
-
-        usage: [cmd]new[/] [arg]{profile}[/] [[[kw]--clone[/] [arg]{PROFILE}[/]]]
-                       ╱                    ╲
-              The profile name.      The profile to be cloned.
-        """
-        if not self.profile_manager.is_uptodate():
-            self.profile_manager.update(self.logger)
-
-        self.profile_manager.new(self.logger, profile, clone)
-
-    @new.arg_parser("profile")
-    def _new_profile_parser(self):
-        return cmd.RawParser()
-
-    @new.arg_parser("clone")
     @use.arg_parser("profile")
-    def _old_profile_parser(self, *_, **__):
+    def _use_profile_parser(self):
         return cmd.OptionParser(
             self.profile_manager.profiles,
-            desc="It should be the name of the profile that exists in the configuration.",
+            desc="It should be the name of profile.",
         )
