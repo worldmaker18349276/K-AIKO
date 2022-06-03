@@ -94,6 +94,11 @@ class ProfilesDirDescriptor(DirDescriptor):
     class Default(FileDescriptor):
         "(The file of default profile name)"
 
+        def rm(self, path):
+            profile_manager = self.provider.get(ProfileManager)
+            logger = self.provider.get(Logger)
+            path.unlink()
+            profile_manager.update(logger)
 
 class ProfileManager:
     """Profile manager for Configurable object.
@@ -215,6 +220,8 @@ class ProfileManager:
                 )
                 return False
             self.default_name = default_meta_path.read_text().rstrip("\n")
+        else:
+            self.default_name = None
 
         # update profiles
         self.profiles = [
@@ -777,15 +784,17 @@ class ProfilesCommand:
         self.profile_manager.save(self.logger)
 
     @cmd.function_command
-    def set_default(self):
+    def set_default(self, profile):
         """[rich]Set the current profile as default.
 
-        usage: [cmd]set_default[/]
+        usage: [cmd]use_default[/] [arg]{profile}[/]
+                               ╱
+                      The profile name.
         """
         if not self.profile_manager.is_uptodate():
             self.profile_manager.update(self.logger)
 
-        self.profile_manager.set_default(self.logger)
+        self.profile_manager.set_default(self.logger, name=profile)
 
     @cmd.function_command
     def use(self, profile):
@@ -801,6 +810,7 @@ class ProfilesCommand:
         self.profile_manager.use(self.logger, profile)
 
     @use.arg_parser("profile")
+    @set_default.arg_parser("profile")
     def _use_profile_parser(self):
         return cmd.OptionParser(
             self.profile_manager.profiles,
