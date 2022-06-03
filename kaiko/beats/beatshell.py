@@ -168,6 +168,9 @@ class BeatShellSettings(cfg.Configurable):
         class textbox(cfg.Configurable, beatwidgets.TextBoxWidgetSettings):
             __doc__ = beatwidgets.TextBoxWidgetSettings.__doc__
 
+            def __init__(self):
+                pass
+
     @cfg.subconfig
     class banner(cfg.Configurable):
         r"""
