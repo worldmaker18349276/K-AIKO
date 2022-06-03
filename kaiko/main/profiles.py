@@ -2,6 +2,7 @@ import os
 import traceback
 import tempfile
 import subprocess
+import shutil
 from pathlib import Path
 from ..utils import config as cfg
 from ..utils import parsec as pc
@@ -78,6 +79,15 @@ class ProfilesDirDescriptor(DirDescriptor):
             if not profile_manager.is_uptodate():
                 profile_manager.update(logger)
             profile_manager.rename(logger, name=path.stem, newname=dst.stem)
+            profile_manager.update(logger)
+
+        def cp(self, path, src):
+            profile_manager = self.provider.get(ProfileManager)
+            logger = self.provider.get(Logger)
+
+            if not profile_manager.is_uptodate():
+                profile_manager.update(logger)
+            profile_manager.copy(logger, src, name=path.stem)
             profile_manager.update(logger)
 
     @as_child(".default-profile")
@@ -426,6 +436,41 @@ class ProfileManager:
                 return False
             self.current_name = name
 
+        return True
+
+    def copy(self, logger, src, name=None):
+        """Copy a profile.
+
+        Parameters
+        ----------
+        logger : loggers.Logger
+        src : Path
+            The source file to copy.
+        name : str, optional
+            The name of profile.
+
+        Returns
+        -------
+        succ : bool
+        """
+        logger.print("Copy a profile...")
+
+        if not src.exists():
+            logger.print(f"[warn]No such file: {logger.emph(src.as_uri())}[/]")
+            return False
+
+        if isinstance(name, str) and (not name.isprintable() or "/" in name):
+            logger.print(f"[warn]Invalid profile name: {logger.emph(name, type='all')}[/]")
+            return False
+
+        if name in self.profiles:
+            logger.print(
+                f"[warn]This profile name {logger.emph(name, type='all')} already exists.[/]"
+            )
+            return False
+
+        path = self.profiles_dir / (name + self.extension)
+        shutil.copy(src, path)
         return True
 
     def make_empty(self, logger, name):

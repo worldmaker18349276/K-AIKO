@@ -42,6 +42,9 @@ class WildCardDescriptor:
     def mv(self, path, dst):
         raise InvalidFileOperation
 
+    def cp(self, path, src):
+        raise InvalidFileOperation
+
     def show(self, indent=0):
         return "[any] " + (type(self).__doc__ or "")
 
@@ -405,7 +408,7 @@ class FileManager:
 
         ind, abspath, descriptor = self.glob(self.root / self.current / path)
         if descriptor is None:
-            logger.print("[warn]Unknown file[/]")
+            logger.print("[warn]Unknown file type[/]")
             return
 
         try:
@@ -435,7 +438,7 @@ class FileManager:
 
         ind, abspath, descriptor = self.glob(self.root / self.current / path)
         if descriptor is None:
-            logger.print("[warn]Unknown file[/]")
+            logger.print("[warn]Unknown file type[/]")
             return
 
         try:
@@ -465,7 +468,7 @@ class FileManager:
 
         ind, abspath, descriptor = self.glob(self.root / self.current / path)
         if descriptor is None:
-            logger.print("[warn]Unknown file[/]")
+            logger.print("[warn]Unknown file type[/]")
             return
 
         dst = Path(os.path.expandvars(os.path.expanduser(dst)))
@@ -486,7 +489,7 @@ class FileManager:
 
         ind, absdst, dst_descriptor = self.glob(self.root / self.current / dst)
         if dst_descriptor is None:
-            logger.print("[warn]Unknown file[/]")
+            logger.print("[warn]Unknown file type[/]")
             return
 
         if descriptor != dst_descriptor:
@@ -497,6 +500,49 @@ class FileManager:
             descriptor.mv(abspath, absdst)
         except Exception:
             logger.print("[warn]Failed to move file[/]")
+            with logger.warn():
+                logger.print(traceback.format_exc(), end="", markup=False)
+            return
+
+    def cp(self, path, src, logger):
+        path = Path(os.path.expandvars(os.path.expanduser(path)))
+        try:
+            abspath = (self.root / self.current / path).resolve()
+        except Exception:
+            logger.print("[warn]Failed to resolve path[/]")
+            with logger.warn():
+                logger.print(traceback.format_exc(), end="", markup=False)
+            return
+
+        if not abspath.is_relative_to(self.root):
+            logger.print("[warn]Out of root directory[/]")
+            return
+        if abspath.exists():
+            logger.print("[warn]File already exists[/]")
+            return
+
+        ind, abspath, descriptor = self.glob(self.root / self.current / path)
+        if descriptor is None:
+            logger.print("[warn]Unknown file type[/]")
+            return
+
+        src = Path(os.path.expandvars(os.path.expanduser(src)))
+        try:
+            abssrc = (self.root / self.current / src).resolve()
+        except Exception:
+            logger.print("[warn]Failed to resolve path[/]")
+            with logger.warn():
+                logger.print(traceback.format_exc(), end="", markup=False)
+            return
+
+        if not abssrc.exists():
+            logger.print("[warn]No such file[/]")
+            return
+
+        try:
+            descriptor.cp(abspath, abssrc)
+        except Exception:
+            logger.print("[warn]Failed to copy file[/]")
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
             return
@@ -581,6 +627,13 @@ class FilesCommand:
 
         file_manager.mv(path, dst, logger)
 
+    @cmd.function_command
+    def cp(self, path, src):
+        file_manager = self.file_manager
+        logger = self.logger
+
+        file_manager.cp(path, src, logger)
+
     @cd.arg_parser("path")
     def _cd_path_parser(self):
         return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="dir")
@@ -590,16 +643,15 @@ class FilesCommand:
         return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="file")
 
     @mk.arg_parser("path")
-    def _mk_path_parser(self):
-        return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="all", should_exist=False)
-
     @mv.arg_parser("dst")
-    def _mv_path_parser(self, path):
+    @cp.arg_parser("path")
+    def _any_path_parser(self, path=None):
         return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="all", should_exist=False)
 
     @rm.arg_parser("path")
     @mv.arg_parser("path")
-    def _rm_path_parser(self):
+    @cp.arg_parser("src")
+    def _exists_path_parser(self, path=None):
         return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="all")
 
     @cmd.function_command
