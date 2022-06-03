@@ -20,23 +20,52 @@ def format_info(info, logger):
     return logger.format_dict(data)
 
 
+def _rm_beatmap(provider, path):
+    beatmap_manager = provider.get(BeatmapManager)
+    logger = provider.get(Logger)
+    path = path.relative_to(beatmap_manager.beatmaps_dir)
+    beatmap_manager.remove(logger, path)
+
+
+class BeatmapFileDescriptor(FileDescriptor):
+    def desc(self, path):
+        beatmap_manager = self.provider.get(BeatmapManager)
+        path = path.relative_to(beatmap_manager.beatmaps_dir)
+        if beatmap_manager.is_beatmap(path):
+            return self.__doc__
+        else:
+            return "(Untracked beatmap)"
+
+    def rm(self, path):
+        _rm_beatmap(self.provider, path)
+
+
 class BeatmapsDirDescriptor(DirDescriptor):
     "(The place to hold your beatmaps)"
 
     @as_child("*")
     class BeatmapSet(DirDescriptor):
-        "(Beatmapset of a song)"
+        def desc(self, path):
+            beatmap_manager = self.provider.get(BeatmapManager)
+            path = path.relative_to(beatmap_manager.beatmaps_dir)
+            if beatmap_manager.is_beatmapset(path):
+                return "(Beatmapset of a song)"
+            else:
+                return "(Untracked beatmapset)"
+
+        def rm(self, path):
+            _rm_beatmap(self.provider, path)
 
         @as_child("*.kaiko")
-        class BeatmapKAIKO(FileDescriptor):
+        class BeatmapKAIKO(BeatmapFileDescriptor):
             "(Beatmap file in kaiko format)"
 
         @as_child("*.ka")
-        class BeatmapKA(FileDescriptor):
+        class BeatmapKA(BeatmapFileDescriptor):
             "(Beatmap file in kaiko format)"
 
         @as_child("*.osu")
-        class BeatmapOSU(FileDescriptor):
+        class BeatmapOSU(BeatmapFileDescriptor):
             "(Beatmap file in osu format)"
 
         @as_child("**")
