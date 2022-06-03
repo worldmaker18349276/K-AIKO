@@ -111,7 +111,7 @@ class KAIKOMenu:
         file_manager.prepare(logger)
         menu.provider.set(file_manager)
 
-        os.environ["KAIKO"] = str(file_manager.root)
+        os.environ[file_manager.ROOT_ENVVAR] = str(file_manager.root)
 
         # load profiles
         profile_manager = ProfileManager(KAIKOSettings, menu.profiles_dir)
@@ -310,7 +310,7 @@ class KAIKOMenu:
         path = str(self.file_manager.current)
         if path == ".":
             path = ""
-        path = os.path.join("$KAIKO", path)
+        path = os.path.join("$" + self.file_manager.ROOT_ENVVAR, path)
         profile_is_changed = self.profile_manager.is_changed()
         path_is_known = self.file_manager.glob(self.file_manager.root / self.file_manager.current)[2] is not None
 

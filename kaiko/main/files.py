@@ -171,6 +171,8 @@ class FileManager:
     structure: DirDescriptor
     settings: FileManagerSettings
 
+    ROOT_ENVVAR = "KAIKO"
+
     @classmethod
     def create(cls, structure):
         username = getpass.getuser()
@@ -296,24 +298,51 @@ class FileManager:
 
         return index, path, descriptor
 
-    def cd(self, path, logger):
-        path = Path(os.path.expandvars(os.path.expanduser(path)))
+    def as_uri(self, logger, path):
+        return logger.emph((self.root / self.current / path).as_uri())
+
+    def get(
+        self,
+        logger,
+        path,
+        should_in_range=True,
+        should_exist=True,
+        file_type="file",
+    ):
         try:
             abspath = (self.root / self.current / path).resolve()
         except Exception:
-            logger.print("[warn]Failed to resolve path[/]")
+            logger.print(f"[warn]Failed to resolve path: {self.as_uri(logger, path)}[/]")
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
             return
 
-        if not abspath.is_relative_to(self.root):
-            logger.print("[warn]Out of root directory[/]")
+        if should_in_range and not abspath.is_relative_to(self.root):
+            logger.print(f"[warn]Out of root directory: {self.as_uri(logger, path)}[/]")
             return
-        if not abspath.exists():
-            logger.print("[warn]No such directory[/]")
+
+        if should_exist and not abspath.exists():
+            logger.print(f"[warn]No such file: {self.as_uri(logger, path)}[/]")
             return
-        if not abspath.is_dir():
-            logger.print("[warn]Is not a directory[/]")
+
+        if not should_exist and abspath.exists():
+            logger.print(f"[warn]File already exists: {self.as_uri(logger, path)}[/]")
+            return
+
+        if file_type == "file" and abspath.exists() and not abspath.is_file():
+            logger.print(f"[warn]Is not a file: {self.as_uri(logger, path)}[/]")
+            return
+
+        if file_type == "dir" and abspath.exists() and not abspath.is_dir():
+            logger.print(f"[warn]Is not a directory: {self.as_uri(logger, path)}[/]")
+            return
+
+        return abspath
+
+    def cd(self, logger, path):
+        path = Path(os.path.expandvars(os.path.expanduser(path)))
+        abspath = self.get(logger, path, file_type="dir")
+        if abspath is None:
             return
 
         if not path.is_absolute():
@@ -389,182 +418,100 @@ class FileManager:
             logger.print(name, end=padding)
             logger.print(desc, end="\n")
 
-    def mk(self, path, logger):
+    def mk(self, logger, path):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
-        try:
-            abspath = (self.root / self.current / path).resolve()
-        except Exception:
-            logger.print("[warn]Failed to resolve path[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
-            return
-
-        if not abspath.is_relative_to(self.root):
-            logger.print("[warn]Out of root directory[/]")
-            return
-        if abspath.exists():
-            logger.print("[warn]File already exists[/]")
+        abspath = self.get(logger, path, should_exist=False, file_type="all")
+        if abspath is None:
             return
 
         ind, abspath, descriptor = self.glob(self.root / self.current / path)
         if descriptor is None:
-            logger.print("[warn]Unknown file type[/]")
+            logger.print(f"[warn]Unknown file type: {self.as_uri(logger, path)}[/]")
             return
 
         try:
             descriptor.mk(abspath)
         except Exception:
-            logger.print("[warn]Failed to make file[/]")
+            logger.print(f"[warn]Failed to make file: {self.as_uri(logger, path)}[/]")
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
             return
 
-    def rm(self, path, logger):
+    def rm(self, logger, path):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
-        try:
-            abspath = (self.root / self.current / path).resolve()
-        except Exception:
-            logger.print("[warn]Failed to resolve path[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
-            return
-
-        if not abspath.is_relative_to(self.root):
-            logger.print("[warn]Out of root directory[/]")
-            return
-        if not abspath.exists():
-            logger.print("[warn]No such file[/]")
+        abspath = self.get(logger, path, file_type="all")
+        if abspath is None:
             return
 
         ind, abspath, descriptor = self.glob(self.root / self.current / path)
         if descriptor is None:
-            logger.print("[warn]Unknown file type[/]")
+            logger.print(f"[warn]Unknown file type: {self.as_uri(logger, path)}[/]")
             return
 
         try:
             descriptor.rm(abspath)
         except Exception:
-            logger.print("[warn]Failed to remove file[/]")
+            logger.print(f"[warn]Failed to remove file: {self.as_uri(logger, path)}[/]")
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
             return
 
-    def mv(self, path, dst, logger):
+    def mv(self, logger, path, dst):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
-        try:
-            abspath = (self.root / self.current / path).resolve()
-        except Exception:
-            logger.print("[warn]Failed to resolve path[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
-            return
-
-        if not abspath.is_relative_to(self.root):
-            logger.print("[warn]Out of root directory[/]")
-            return
-        if not abspath.exists():
-            logger.print("[warn]No such file[/]")
+        abspath = self.get(logger, path, file_type="all")
+        if abspath is None:
             return
 
         ind, abspath, descriptor = self.glob(self.root / self.current / path)
         if descriptor is None:
-            logger.print("[warn]Unknown file type[/]")
+            logger.print(f"[warn]Unknown file type: {self.as_uri(logger, path)}[/]")
             return
 
         dst = Path(os.path.expandvars(os.path.expanduser(dst)))
-        try:
-            absdst = (self.root / self.current / dst).resolve()
-        except Exception:
-            logger.print("[warn]Failed to resolve path[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
-            return
-
-        if not absdst.is_relative_to(self.root):
-            logger.print("[warn]Out of root directory[/]")
-            return
-        if absdst.exists():
-            logger.print("[warn]File already exists[/]")
+        absdst = self.get(logger, dst, should_exist=False, file_type="all")
+        if absdst is None:
             return
 
         ind, absdst, dst_descriptor = self.glob(self.root / self.current / dst)
         if dst_descriptor is None:
-            logger.print("[warn]Unknown file type[/]")
+            logger.print(f"[warn]Unknown file type: {self.as_uri(logger, dst)}[/]")
             return
 
         if descriptor != dst_descriptor:
-            logger.print("[warn]Different file type[/]")
+            logger.print(f"[warn]Different file type: {self.as_uri(logger, path)} -> {self.as_uri(logger, dst)}[/]")
             return
 
         try:
             descriptor.mv(abspath, absdst)
         except Exception:
-            logger.print("[warn]Failed to move file[/]")
+            logger.print(f"[warn]Failed to move file: {self.as_uri(logger, path)} -> {self.as_uri(logger, dst)}[/]")
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
             return
 
-    def cp(self, path, src, logger):
+    def cp(self, logger, path, src):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
-        try:
-            abspath = (self.root / self.current / path).resolve()
-        except Exception:
-            logger.print("[warn]Failed to resolve path[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
-            return
-
-        if not abspath.is_relative_to(self.root):
-            logger.print("[warn]Out of root directory[/]")
-            return
-        if abspath.exists():
-            logger.print("[warn]File already exists[/]")
+        abspath = self.get(logger, path, should_exist=False, file_type="all")
+        if abspath is None:
             return
 
         ind, abspath, descriptor = self.glob(self.root / self.current / path)
         if descriptor is None:
-            logger.print("[warn]Unknown file type[/]")
+            logger.print(f"[warn]Unknown file type: {self.as_uri(logger, path)}[/]")
             return
 
         src = Path(os.path.expandvars(os.path.expanduser(src)))
-        try:
-            abssrc = (self.root / self.current / src).resolve()
-        except Exception:
-            logger.print("[warn]Failed to resolve path[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
-            return
-
-        if not abssrc.exists():
-            logger.print("[warn]No such file[/]")
+        abssrc = self.get(logger, src, should_in_range=False, file_type="all")
+        if abssrc is None:
             return
 
         try:
             descriptor.cp(abspath, abssrc)
         except Exception:
-            logger.print("[warn]Failed to copy file[/]")
+            logger.print(f"[warn]Failed to copy file: {self.as_uri(logger, src)} -> {self.as_uri(logger, path)}[/]")
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
             return
-
-    def get(self, path, logger):
-        try:
-            abspath = (self.root / self.current / path).resolve()
-        except Exception:
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
-
-        if not abspath.is_relative_to(self.root):
-            logger.print("[warn]Out of root directory[/]")
-            return
-        if not abspath.exists():
-            logger.print("[warn]No such file[/]")
-            return
-        if not abspath.is_file():
-            logger.print("[warn]Is not a file[/]")
-            return
-
-        return abspath
 
 
 class FilesCommand:
@@ -582,7 +529,7 @@ class FilesCommand:
 
     @cmd.function_command
     def cd(self, path):
-        self.file_manager.cd(path, self.logger)
+        self.file_manager.cd(self.logger, path)
 
     @cmd.function_command
     def ls(self):
@@ -593,7 +540,7 @@ class FilesCommand:
         file_manager = self.file_manager
         logger = self.logger
 
-        abspath = file_manager.get(path, logger)
+        abspath = file_manager.get(logger, path)
 
         try:
             content = abspath.read_text()
@@ -611,28 +558,28 @@ class FilesCommand:
         file_manager = self.file_manager
         logger = self.logger
 
-        file_manager.mk(path, logger)
+        file_manager.mk(logger, path)
 
     @cmd.function_command
     def rm(self, path):
         file_manager = self.file_manager
         logger = self.logger
 
-        file_manager.rm(path, logger)
+        file_manager.rm(logger, path)
 
     @cmd.function_command
     def mv(self, path, dst):
         file_manager = self.file_manager
         logger = self.logger
 
-        file_manager.mv(path, dst, logger)
+        file_manager.mv(logger, path, dst)
 
     @cmd.function_command
     def cp(self, path, src):
         file_manager = self.file_manager
         logger = self.logger
 
-        file_manager.cp(path, src, logger)
+        file_manager.cp(logger, path, src)
 
     @cd.arg_parser("path")
     def _cd_path_parser(self):
@@ -702,7 +649,7 @@ class FilesCommand:
 def CdCommand(provider):
     def make_command(name):
         return cmd.function_command(
-            lambda self: self.provider.get(FileManager).cd(name, self.provider.get(Logger))
+            lambda self: self.provider.get(FileManager).cd(self.provider.get(Logger), name)
         )
 
     attrs = {}
