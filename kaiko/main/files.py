@@ -425,13 +425,13 @@ class FileManager:
         if abspath is None:
             return
 
-        ind, abspath, descriptor = self.glob(self.root / self.current / path)
-        if descriptor is None:
-            logger.print(f"[warn]Unknown file type: {self.as_uri(logger, path)}[/]")
-            return
+        _, _, descriptor = self.glob(self.root / self.current / path)
 
         try:
-            descriptor.mk(abspath)
+            if descriptor is None:
+                abspath.touch(exist_ok=False)
+            else:
+                descriptor.mk(abspath)
         except Exception:
             logger.print(f"[warn]Failed to make file: {self.as_uri(logger, path)}[/]")
             with logger.warn():
@@ -444,13 +444,13 @@ class FileManager:
         if abspath is None:
             return
 
-        ind, abspath, descriptor = self.glob(self.root / self.current / path)
-        if descriptor is None:
-            logger.print(f"[warn]Unknown file type: {self.as_uri(logger, path)}[/]")
-            return
+        _, _, descriptor = self.glob(self.root / self.current / path)
 
         try:
-            descriptor.rm(abspath)
+            if descriptor is None:
+                abspath.unlink()
+            else:
+                descriptor.rm(abspath)
         except Exception:
             logger.print(f"[warn]Failed to remove file: {self.as_uri(logger, path)}[/]")
             with logger.warn():
@@ -463,27 +463,23 @@ class FileManager:
         if abspath is None:
             return
 
-        ind, abspath, descriptor = self.glob(self.root / self.current / path)
-        if descriptor is None:
-            logger.print(f"[warn]Unknown file type: {self.as_uri(logger, path)}[/]")
-            return
-
         dst = Path(os.path.expandvars(os.path.expanduser(dst)))
         absdst = self.get(logger, dst, should_exist=False, file_type="all")
         if absdst is None:
             return
 
-        ind, absdst, dst_descriptor = self.glob(self.root / self.current / dst)
-        if dst_descriptor is None:
-            logger.print(f"[warn]Unknown file type: {self.as_uri(logger, dst)}[/]")
-            return
+        _, _, descriptor = self.glob(self.root / self.current / path)
+        _, _, dst_descriptor = self.glob(self.root / self.current / dst)
 
         if descriptor != dst_descriptor:
             logger.print(f"[warn]Different file type: {self.as_uri(logger, path)} -> {self.as_uri(logger, dst)}[/]")
             return
 
         try:
-            descriptor.mv(abspath, absdst)
+            if descriptor is None:
+                abspath.rename(absdst)
+            else:
+                descriptor.mv(abspath, absdst)
         except Exception:
             logger.print(f"[warn]Failed to move file: {self.as_uri(logger, path)} -> {self.as_uri(logger, dst)}[/]")
             with logger.warn():
@@ -496,10 +492,7 @@ class FileManager:
         if abspath is None:
             return
 
-        ind, abspath, descriptor = self.glob(self.root / self.current / path)
-        if descriptor is None:
-            logger.print(f"[warn]Unknown file type: {self.as_uri(logger, path)}[/]")
-            return
+        _, _, descriptor = self.glob(self.root / self.current / path)
 
         src = Path(os.path.expandvars(os.path.expanduser(src)))
         abssrc = self.get(logger, src, should_in_range=False, file_type="all")
@@ -507,7 +500,10 @@ class FileManager:
             return
 
         try:
-            descriptor.cp(abspath, abssrc)
+            if descriptor is None:
+                shutil.copy(abssrc, abspath)
+            else:
+                descriptor.cp(abspath, abssrc)
         except Exception:
             logger.print(f"[warn]Failed to copy file: {self.as_uri(logger, src)} -> {self.as_uri(logger, path)}[/]")
             with logger.warn():
