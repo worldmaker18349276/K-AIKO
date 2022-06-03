@@ -91,6 +91,8 @@ def parse_markup(markup_str, tags, props={}):
 
 
 def escape(text):
+    if not isinstance(text, str):
+        raise TypeError(text)
     return text.replace("[", "[[")
 
 
