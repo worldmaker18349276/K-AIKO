@@ -810,7 +810,19 @@ class ProfilesCommand:
     @use.arg_parser("profile")
     @set_default.arg_parser("profile")
     def _use_profile_parser(self):
-        return cmd.OptionParser(
-            self.profile_manager.profiles,
-            desc="It should be the name of profile.",
-        )
+        profiles_paths = [
+            name + self.profile_manager.extension
+            for name in self.profile_manager.profiles
+        ]
+        if self.profile_manager.default_name is not None:
+            default = self.profile_manager.default_name + self.profile_manager.extension
+            return cmd.OptionParser(
+                profiles_paths,
+                default=default,
+                desc="It should be the name of profile.",
+            )
+        else:
+            return cmd.OptionParser(
+                profiles_paths,
+                desc="It should be the name of profile.",
+            )
