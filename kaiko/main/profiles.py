@@ -9,7 +9,7 @@ from ..utils import parsec as pc
 from ..utils import commands as cmd
 from ..utils import datanodes as dn
 from .loggers import Logger
-from .files import FileDescriptor, DirDescriptor, as_child
+from .files import RecognizedFilePath, RecognizedDirPath, as_pattern, as_child
 
 
 def exists(program):
@@ -35,17 +35,17 @@ def edit(text, editor, suffix=""):
         return open(file.name, mode="r").read()
 
 
-class ProfilesDirDescriptor(DirDescriptor):
+class ProfilesDirPath(RecognizedDirPath):
     "(The place to manage your profiles)"
 
-    @as_child("*.kaiko-profile")
-    class Profile(FileDescriptor):
-        def desc(self, path):
-            profile_manager = self.provider.get(ProfileManager)
+    @as_pattern("*.kaiko-profile")
+    class profile(RecognizedFilePath):
+        def desc(self, provider):
+            profile_manager = provider.get(ProfileManager)
             note = "(Untracked custom profile)"
             for profile in profile_manager.profiles:
                 name = profile + profile_manager.extension
-                if name == path.name:
+                if name == self.abs.name:
                     note = "(Your custom profile)"
                     if profile == profile_manager.default_name:
                         note += " (default)"
@@ -54,51 +54,52 @@ class ProfilesDirDescriptor(DirDescriptor):
                     break
             return note
 
-        def mk(self, path):
-            profile_manager = self.provider.get(ProfileManager)
-            logger = self.provider.get(Logger)
+        def mk(self, provider):
+            profile_manager = provider.get(ProfileManager)
+            logger = provider.get(Logger)
 
             if not profile_manager.is_uptodate():
                 profile_manager.update(logger)
-            profile_manager.make_empty(logger, name=path.stem)
+            profile_manager.make_empty(logger, name=self.abs.stem)
             profile_manager.update(logger)
 
-        def rm(self, path):
-            profile_manager = self.provider.get(ProfileManager)
-            logger = self.provider.get(Logger)
+        def rm(self, provider):
+            profile_manager = provider.get(ProfileManager)
+            logger = provider.get(Logger)
 
             if not profile_manager.is_uptodate():
                 profile_manager.update(logger)
-            profile_manager.delete(logger, name=path.stem)
+            profile_manager.delete(logger, name=self.abs.stem)
             profile_manager.update(logger)
 
-        def mv(self, path, dst):
-            profile_manager = self.provider.get(ProfileManager)
-            logger = self.provider.get(Logger)
+        def mv(self, dst, provider):
+            profile_manager = provider.get(ProfileManager)
+            logger = provider.get(Logger)
 
             if not profile_manager.is_uptodate():
                 profile_manager.update(logger)
-            profile_manager.rename(logger, name=path.stem, newname=dst.stem)
+            profile_manager.rename(logger, name=self.abs.stem, newname=dst.abs.stem)
             profile_manager.update(logger)
 
-        def cp(self, src, path):
-            profile_manager = self.provider.get(ProfileManager)
-            logger = self.provider.get(Logger)
+        def cp(self, dst, provider):
+            profile_manager = provider.get(ProfileManager)
+            logger = provider.get(Logger)
 
             if not profile_manager.is_uptodate():
                 profile_manager.update(logger)
-            profile_manager.copy(logger, src, name=path.stem)
+            profile_manager.copy(logger, self.abs, name=dst.abs.stem)
             profile_manager.update(logger)
 
     @as_child(".default-profile")
-    class Default(FileDescriptor):
+    class default(RecognizedFilePath):
         "(The file of default profile name)"
 
-        def rm(self, path):
-            profile_manager = self.provider.get(ProfileManager)
-            logger = self.provider.get(Logger)
-            path.unlink()
+        def rm(self, provider):
+            profile_manager = provider.get(ProfileManager)
+            logger = provider.get(Logger)
+            self.abs.unlink()
             profile_manager.update(logger)
+
 
 class ProfileManager:
     """Profile manager for Configurable object.

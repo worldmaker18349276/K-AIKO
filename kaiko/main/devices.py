@@ -12,12 +12,12 @@ from ..devices import terminals as term
 from ..devices import audios as aud
 from ..devices import engines
 from .loggers import Logger
-from .files import DirDescriptor
+from .files import RecognizedDirPath
 from .profiles import ProfileManager
 from pyaudio import PyAudio
 
 
-class DevicesDirDescriptor(DirDescriptor):
+class DevicesDirPath(RecognizedDirPath):
     "(The place to manage your devices)"
 
 

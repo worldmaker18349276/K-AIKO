@@ -9,7 +9,7 @@ from ..utils import commands as cmd
 from ..beats import beatmaps
 from ..beats import beatsheets
 from .loggers import Logger
-from .files import FileDescriptor, DirDescriptor, WildCardDescriptor, as_child, FileManager, PathParser
+from .files import RecognizedFilePath, RecognizedDirPath, RecognizedWildCardPath, as_pattern, as_child, FileManager, PathParser
 from .profiles import ProfileManager
 
 
@@ -27,53 +27,53 @@ def _rm_beatmap(provider, path):
     beatmap_manager.remove(logger, path)
 
 
-class BeatmapFileDescriptor(FileDescriptor):
-    def desc(self, path):
-        beatmap_manager = self.provider.get(BeatmapManager)
-        path = path.relative_to(beatmap_manager.beatmaps_dir)
+class BeatmapFilePath(RecognizedFilePath):
+    def desc(self, provider):
+        beatmap_manager = provider.get(BeatmapManager)
+        path = self.abs.relative_to(beatmap_manager.beatmaps_dir)
         if beatmap_manager.is_beatmap(path):
             return self.__doc__
         else:
             return "(Untracked beatmap)"
 
-    def rm(self, path):
-        _rm_beatmap(self.provider, path)
+    def rm(self, provider):
+        _rm_beatmap(provider, self.abs)
 
 
-class BeatmapsDirDescriptor(DirDescriptor):
+class BeatmapsDirPath(RecognizedDirPath):
     "(The place to hold your beatmaps)"
 
-    @as_child("*")
-    class BeatmapSet(DirDescriptor):
-        def desc(self, path):
-            beatmap_manager = self.provider.get(BeatmapManager)
-            path = path.relative_to(beatmap_manager.beatmaps_dir)
+    @as_pattern("*")
+    class beatmapset(RecognizedDirPath):
+        def desc(self, provider):
+            beatmap_manager = provider.get(BeatmapManager)
+            path = self.abs.relative_to(beatmap_manager.beatmaps_dir)
             if beatmap_manager.is_beatmapset(path):
                 return "(Beatmapset of a song)"
             else:
                 return "(Untracked beatmapset)"
 
-        def rm(self, path):
-            _rm_beatmap(self.provider, path)
+        def rm(self, provider):
+            _rm_beatmap(provider, self.abs)
 
-        @as_child("*.kaiko")
-        class BeatmapKAIKO(BeatmapFileDescriptor):
+        @as_pattern("*.kaiko")
+        class beatmap_KAIKO(BeatmapFilePath):
             "(Beatmap file in kaiko format)"
 
-        @as_child("*.ka")
-        class BeatmapKA(BeatmapFileDescriptor):
+        @as_pattern("*.ka")
+        class beatmap_KA(BeatmapFilePath):
             "(Beatmap file in kaiko format)"
 
-        @as_child("*.osu")
-        class BeatmapOSU(BeatmapFileDescriptor):
+        @as_pattern("*.osu")
+        class beatmap_OSU(BeatmapFilePath):
             "(Beatmap file in osu format)"
 
-        @as_child("**")
-        class InnerFile(WildCardDescriptor):
+        @as_pattern("**")
+        class inner_file(RecognizedWildCardPath):
             "(Inner file of this beatmapset)"
 
-    @as_child("*.osz")
-    class BeamapZip(FileDescriptor):
+    @as_pattern("*.osz")
+    class beamap_zip(RecognizedFilePath):
         "(Compressed beatmapset file)"
 
 

@@ -373,13 +373,15 @@ class BeatPrompt:
         return self.input._record_command()
 
     def make_banner(self, file_manager, profile_manager):
+        from ..main.files import UnrecognizedPath
+
         banner_settings = self.settings.banner
 
         username = file_manager.username
         current_name = profile_manager.current_name
         path = file_manager.as_relative_path(file_manager.current)
         profile_is_changed = profile_manager.is_changed()
-        path_is_known = file_manager.current.descriptor is not None
+        path_is_known = not isinstance(file_manager.current, UnrecognizedPath)
 
         unpr = banner_settings.unprintable_character
         username = mu.Text("".join(ch if ch.isprintable() else unpr for ch in username))

@@ -10,16 +10,24 @@ from ..utils import markups as mu
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
 from ..beats import beatshell
-from .files import FileManager, FilesCommand, CdCommand, FileDescriptor, DirDescriptor, WildCardDescriptor, as_child
+from .files import (
+    FileManager,
+    FilesCommand,
+    CdCommand,
+    RecognizedDirPath,
+    RecognizedFilePath,
+    RecognizedWildCardPath,
+    as_child,
+)
 from .settings import KAIKOSettings
 from .loggers import Logger
-from .profiles import ProfileManager, ProfilesCommand, ProfilesDirDescriptor
-from .play import BeatmapManager, BeatmapsDirDescriptor, PlayCommand
+from .profiles import ProfileManager, ProfilesCommand, ProfilesDirPath
+from .play import BeatmapManager, BeatmapsDirPath, PlayCommand
 from .bgm import BGMController, BGMCommand
 from .devices import (
     DeviceManager,
     DevicesCommand,
-    DevicesDirDescriptor,
+    DevicesDirPath,
 )
 
 
@@ -36,36 +44,30 @@ logo = """
 """
 
 
-class RootDirDescriptor(DirDescriptor):
+class RootDirPath(RecognizedDirPath):
     "(The workspace of KAIKO)"
 
-    beatmaps_name = "Beatmaps"
-    profiles_name = "Profiles"
-    devices_name = "Devices"
-    resources_name = "Resources"
-    cache_name = "Cache"
+    beatmaps = as_child("Beatmaps", BeatmapsDirPath)
 
-    Beatmaps = as_child(beatmaps_name, is_required=True)(BeatmapsDirDescriptor)
+    profiles = as_child("Profiles", ProfilesDirPath)
 
-    Profiles = as_child(profiles_name, is_required=True)(ProfilesDirDescriptor)
+    devices = as_child("Devices", DevicesDirPath)
 
-    Devices = as_child(devices_name, is_required=True)(DevicesDirDescriptor)
-
-    @as_child(resources_name, is_required=True)
-    class Resources(DirDescriptor):
+    @as_child("Resources")
+    class resources(RecognizedDirPath):
         "(The place to store some resources of KAIKO)"
 
-    @as_child(cache_name, is_required=True)
-    class Cache(DirDescriptor):
+    @as_child("Cache")
+    class cache(RecognizedDirPath):
         "(The place to cache some data for better exprience)"
 
-        @as_child(".beatshell-history", is_required=True)
-        class BeatShellHistory(FileDescriptor):
+        @as_child(".beatshell-history")
+        class beatshell_history(RecognizedFilePath):
             "(The command history)"
 
-            def rm(self, path):
-                path.unlink()
-                path.touch()
+            def rm(self, provider):
+                self.abs.unlink()
+                self.abs.touch()
 
 
 class KAIKOMenu:
@@ -103,9 +105,9 @@ class KAIKOMenu:
         menu.provider.set(logger)
 
         # load workspace
-        file_manager = FileManager.create(RootDirDescriptor(menu.provider))
-        if not file_manager.check_is_prepared(logger):
-            file_manager.prepare(logger)
+        file_manager = FileManager(RootDirPath, menu.provider)
+        if not file_manager.check_is_prepared():
+            file_manager.prepare()
         menu.provider.set(file_manager)
 
         os.environ[file_manager.ROOT_ENVVAR] = str(file_manager.root)
@@ -264,23 +266,23 @@ class KAIKOMenu:
 
     @property
     def cache_dir(self):
-        return self.file_manager.root / self.file_manager.structure.cache_name
+        return self.file_manager.root.cache.abs
 
     @property
     def profiles_dir(self):
-        return self.file_manager.root / self.file_manager.structure.profiles_name
+        return self.file_manager.root.profiles.abs
 
     @property
     def beatmaps_dir(self):
-        return self.file_manager.root / self.file_manager.structure.beatmaps_name
+        return self.file_manager.root.beatmaps.abs
 
     @property
     def resources_dir(self):
-        return self.file_manager.root / self.file_manager.structure.resources_name
+        return self.file_manager.root.resources.abs
 
     @property
     def devices_dir(self):
-        return self.file_manager.root / self.file_manager.structure.devices_name
+        return self.file_manager.root.devices.abs
 
     def print_tips(self):
         logger = self.logger
@@ -298,14 +300,14 @@ class KAIKOMenu:
 
     def get_command_parser(self):
         commands = {}
-        if self.file_manager.current.descriptor == self.file_manager.structure.Beatmaps:
+        if isinstance(self.file_manager.current, RootDirPath.beatmaps):
             commands["play"] = PlayCommand(self.provider, self.resources_dir, self.cache_dir)
-        if self.file_manager.current.descriptor == self.file_manager.structure.Devices:
+        if isinstance(self.file_manager.current, RootDirPath.devices):
             commands["devices"] = DevicesCommand(self.provider)
-        if self.file_manager.current.descriptor == self.file_manager.structure.Profiles:
+        if isinstance(self.file_manager.current, RootDirPath.profiles):
             commands["profiles"] = ProfilesCommand(self.provider)
         commands["bgm"] = BGMCommand(self.provider)
-        commands["files"] = FilesCommand(self.provider, self.profile_manager.is_changed())
+        commands["files"] = FilesCommand(self.provider)
         commands["cd"] = CdCommand(self.provider)
         return cmd.RootCommandParser(**commands)
 
