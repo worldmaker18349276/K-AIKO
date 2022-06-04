@@ -81,7 +81,7 @@ class ProfilesDirDescriptor(DirDescriptor):
             profile_manager.rename(logger, name=path.stem, newname=dst.stem)
             profile_manager.update(logger)
 
-        def cp(self, path, src):
+        def cp(self, src, path):
             profile_manager = self.provider.get(ProfileManager)
             logger = self.provider.get(Logger)
 

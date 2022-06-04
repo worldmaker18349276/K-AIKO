@@ -104,7 +104,8 @@ class KAIKOMenu:
 
         # load workspace
         file_manager = FileManager.create(RootDirDescriptor(menu.provider))
-        file_manager.prepare(logger)
+        if not file_manager.check_is_prepared(logger):
+            file_manager.prepare(logger)
         menu.provider.set(file_manager)
 
         os.environ[file_manager.ROOT_ENVVAR] = str(file_manager.root)
@@ -297,11 +298,11 @@ class KAIKOMenu:
 
     def get_command_parser(self):
         commands = {}
-        if self.file_manager.current == Path("Beatmaps/"):
+        if self.file_manager.current.descriptor == self.file_manager.structure.Beatmaps:
             commands["play"] = PlayCommand(self.provider, self.resources_dir, self.cache_dir)
-        if self.file_manager.current == Path("Devices/"):
+        if self.file_manager.current.descriptor == self.file_manager.structure.Devices:
             commands["devices"] = DevicesCommand(self.provider)
-        if self.file_manager.current == Path("Profiles/"):
+        if self.file_manager.current.descriptor == self.file_manager.structure.Profiles:
             commands["profiles"] = ProfilesCommand(self.provider)
         commands["bgm"] = BGMCommand(self.provider)
         commands["files"] = FilesCommand(self.provider, self.profile_manager.is_changed())

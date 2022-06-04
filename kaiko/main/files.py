@@ -2,8 +2,8 @@ import os
 import dataclasses
 import traceback
 import getpass
-import glob
 import re
+from typing import Optional
 import shutil
 from pathlib import Path
 from ..utils import config as cfg
@@ -17,9 +17,9 @@ class InvalidFileOperation(Exception):
     pass
 
 
-class WildCardDescriptor:
+class PathDescriptor:
     def __init__(self, provider):
-        """Constructor of file descriptor.
+        """Constructor of path descriptor.
 
         Parameters
         ----------
@@ -42,19 +42,24 @@ class WildCardDescriptor:
     def mv(self, path, dst):
         raise InvalidFileOperation
 
-    def cp(self, path, src):
+    def cp(self, src, path):
         raise InvalidFileOperation
 
     def show(self, indent=0):
         return "[any] " + (type(self).__doc__ or "")
 
 
-class FileDescriptor(WildCardDescriptor):
+class WildCardDescriptor(PathDescriptor):
+    def show(self, indent=0):
+        return "[any] " + (type(self).__doc__ or "")
+
+
+class FileDescriptor(PathDescriptor):
     def show(self, indent=0):
         return "[file] " + (type(self).__doc__ or "")
 
 
-class DirDescriptor(WildCardDescriptor):
+class DirDescriptor(PathDescriptor):
     def __init__(self, provider):
         super().__init__(provider)
 
@@ -77,12 +82,79 @@ class DirDescriptor(WildCardDescriptor):
             for child in self.children()
         )
 
+    def recognize(self, path, root="."):
+        root = Path(os.path.abspath(str(root)))
+        slashend = os.path.split(str(path))[1] in ("", ".", "..")
+        path = Path(os.path.abspath(str(path)))
+
+        route = [(path, slashend)]
+        route.extend((parent, True) for parent in path.parents)
+        i = next((i for i, (path, _) in enumerate(route) if path == root), None)
+        if i is None:
+            return RecognizedPath(path, slashend, None), None
+        route = route[i::-1][1:]
+
+        index = ()
+        descriptor = self
+        for curr_path, curr_is_dir in route:
+            if not isinstance(descriptor, DirDescriptor):
+                return RecognizedPath(path, slashend, None), None
+
+            for i, child in enumerate(descriptor.children()):
+                if child.pattern == "**":
+                    if isinstance(child.descriptor, FileDescriptor) and slashend:
+                        continue
+                    index = (*index, i)
+                    return RecognizedPath(path, slashend, child.descriptor), index
+
+                else:
+                    if isinstance(child.descriptor, FileDescriptor) and curr_is_dir:
+                        continue
+
+                    if curr_path.match(child.pattern):
+                        index = (*index, i)
+                        descriptor = child.descriptor
+                        break
+
+            else:
+                return RecognizedPath(path, slashend, None), None
+
+        return RecognizedPath(path, slashend, descriptor), index
+
+
+@dataclasses.dataclass(frozen=True)
+class RecognizedPath:
+    abs: Path
+    slashend: bool
+    descriptor: Optional[PathDescriptor]
+
+    def desc(self):
+        return self.descriptor.desc(self.abs) if self.descriptor is not None else None
+
+    def info(self):
+        return self.descriptor.info(self.abs) if self.descriptor is not None else None
+
+    def exists(self):
+        return self.abs.exists()
+
+    def is_dir(self):
+        return self.abs.is_dir()
+
+    def is_file(self):
+        return self.abs.is_file()
+
+    def __str__(self):
+        abspath = str(self.abs)
+        if self.slashend:
+            abspath = os.path.join(abspath, "")
+        return abspath
+
 
 @dataclasses.dataclass(frozen=True)
 class DirChild:
     pattern: str
     is_required: bool
-    descriptor: WildCardDescriptor
+    descriptor: PathDescriptor
 
 
 @dataclasses.dataclass(frozen=True)
@@ -109,7 +181,7 @@ def as_child(pattern, is_required=False):
             raise ValueError(f"invalid pattern: {pattern}")
 
         def child_decorator(descriptor_type):
-            if not issubclass(descriptor_type, WildCardDescriptor):
+            if not issubclass(descriptor_type, PathDescriptor):
                 raise TypeError(f"invalid file descriptor: {descriptor_type}")
             return DirChildField(pattern, is_required, descriptor_type)
 
@@ -167,24 +239,27 @@ class FileManagerSettings(cfg.Configurable):
 class FileManager:
     username: str
     root: Path
-    current: Path
+    current: RecognizedPath
     structure: DirDescriptor
     settings: FileManagerSettings
 
     ROOT_ENVVAR = "KAIKO"
+    ROOT_PATH = "~/.local/share/K-AIKO"
 
     @classmethod
     def create(cls, structure):
         username = getpass.getuser()
-        root = Path("~/.local/share/K-AIKO").expanduser()
+        root = Path(cls.ROOT_PATH).expanduser().resolve()
         settings = FileManagerSettings()
-        return cls(username, root, Path("."), structure, settings)
+        current, _ = structure.recognize(root, root=root)
+        return cls(username, root, current, structure, settings)
 
     def set_settings(self, settings):
         self.settings = settings
 
     def check_is_prepared(self, logger):
         def go(path, tree):
+            res = True
             for child in tree.children():
                 if child.is_required:
                     subpath = path / unescape_glob(child.pattern)
@@ -192,45 +267,54 @@ class FileManager:
                     if isinstance(child.descriptor, DirDescriptor):
                         if not subpath.exists():
                             logger.print(f"[data/] There is a missing directory [emph]{subpath!s}[/].")
-                            return False
-                        if not subpath.is_dir():
-                            raise ValueError(f"bad file structure: {subpath!s} should be a directory")
+                            res = False
+                        if not subpath.is_dir() or subpath.is_symlink():
+                            logger.print(f"[data/] Bad file structure: [emph]{subpath!s}[/] should be a directory.")
+                            res = False
                         if not go(subpath, child.descriptor):
-                            return False
+                            res = False
                     elif isinstance(child.descriptor, FileDescriptor):
                         if not subpath.exists():
                             logger.print(f"[data/] There is a missing file [emph]{subpath!s}[/].")
-                            return False
-                        if not subpath.is_file():
-                            raise ValueError(f"bad file structure: {subpath!s} should be a file")
+                            res = False
+                        if not subpath.is_file() or subpath.is_symlink():
+                            logger.print(f"[data/] Bad file structure: [emph]{subpath!s}[/] should be a file.")
+                            res = False
                     else:
                         raise TypeError(child.descriptor)
-            return True
+            return res
 
         if not self.root.exists():
             logger.print(f"[data/] The workspace [emph]{self.root!s}[/] is missing.")
             return False
 
+        if not self.root.is_dir() or self.root.is_symlink():
+            raise ValueError(f"Workspace name {self.root!s} is already taken.")
+
         return go(self.root, self.structure)
 
     def prepare(self, logger):
-        if self.check_is_prepared(logger):
-            return
-
-        # start up
         logger.print("[data/] Prepare your profile...")
 
         def go(path, tree):
+            REDUNDANT_EXT = ".redundant"
+
             for child in tree.children():
                 if child.is_required:
                     subpath = path / unescape_glob(child.pattern)
 
                     if isinstance(child.descriptor, DirDescriptor):
+                        if subpath.exists() and (not subpath.is_dir() or subpath.is_symlink()):
+                            logger.print(f"[data/] Rename directory [emph]{subpath!s}[/]...")
+                            subpath.rename(subpath.parent / (subpath.name + REDUNDANT_EXT))
                         if not subpath.exists():
                             logger.print(f"[data/] Create directory [emph]{subpath!s}[/]...")
                             subpath.mkdir()
                         go(subpath, child.descriptor)
                     elif isinstance(child.descriptor, FileDescriptor):
+                        if subpath.exists() and (not subpath.is_file() or subpath.is_symlink()):
+                            logger.print(f"[data/] Rename file [emph]{subpath!s}[/]...")
+                            subpath.rename(subpath.parent / (subpath.name + REDUNDANT_EXT))
                         if not subpath.exists():
                             logger.print(f"[data/] Create file [emph]{subpath!s}[/]...")
                             subpath.touch()
@@ -250,111 +334,18 @@ class FileManager:
     def remove(self, logger):
         shutil.rmtree(str(self.root))
 
-    def glob(self, path):
+    def recognize(self, path):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
-        try:
-            abspath = path.resolve()
-        except Exception:
-            return (), None, None
+        return self.structure.recognize(path, root=self.root)[0]
 
-        if not abspath.is_relative_to(self.root):
-            return (), None, None
-
-        route = [abspath, *abspath.parents]
-        route = route[route.index(self.root)::-1][1:]
-
-        index = ()
-        descriptor = self.structure
-        for current_path in route:
-            if not isinstance(descriptor, DirDescriptor):
-                return (), None, None
-
-            for i, child in enumerate(descriptor.children()):
-                if child.pattern == "**":
-                    current_path = path
-
-                if isinstance(child.descriptor, DirDescriptor):
-                    if Path.exists(current_path) and not Path.is_dir(current_path):
-                        continue
-                elif isinstance(child.descriptor, FileDescriptor):
-                    if Path.exists(current_path) and not Path.is_file(current_path):
-                        continue
-                elif isinstance(child.descriptor, WildCardDescriptor):
-                    pass
-                else:
-                    raise TypeError
-
-                if child.pattern == "**":
-                    index = (*index, i)
-                    return index, path, child.descriptor
-
-                if current_path.match(child.pattern):
-                    index = (*index, i)
-                    descriptor = child.descriptor
-                    break
-
-            else:
-                return (), None, None
-
-        return index, path, descriptor
-
-    def as_uri(self, logger, path):
-        return logger.as_uri(self.root / self.current / path)
-        # return logger.emph(str(Path("$" + self.ROOT_ENVVAR) / self.current / path))
-
-    def get(
-        self,
-        logger,
-        path,
-        should_in_range=True,
-        should_exist=True,
-        file_type="file",
-    ):
-        try:
-            abspath = (self.root / self.current / path).resolve()
-        except Exception:
-            logger.print(f"[warn]Failed to resolve path: {self.as_uri(logger, path)}[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
-            return
-
-        if should_in_range and not abspath.is_relative_to(self.root):
-            logger.print(f"[warn]Out of root directory: {self.as_uri(logger, path)}[/]")
-            return
-
-        if should_exist and not abspath.exists():
-            logger.print(f"[warn]No such file: {self.as_uri(logger, path)}[/]")
-            return
-
-        if not should_exist and abspath.exists():
-            logger.print(f"[warn]File already exists: {self.as_uri(logger, path)}[/]")
-            return
-
-        if file_type == "file" and abspath.exists() and not abspath.is_file():
-            logger.print(f"[warn]Is not a file: {self.as_uri(logger, path)}[/]")
-            return
-
-        if file_type == "dir" and abspath.exists() and not abspath.is_dir():
-            logger.print(f"[warn]Is not a directory: {self.as_uri(logger, path)}[/]")
-            return
-
-        return abspath
-
-    def cd(self, logger, path):
-        path = Path(os.path.expandvars(os.path.expanduser(path)))
-        abspath = self.get(logger, path, file_type="dir")
-        if abspath is None:
-            return
-
-        if not path.is_absolute():
-            currpath = self.current / path
-        elif path.is_relative_to(self.root):
-            currpath = path.relative_to(self.root)
-        else:
-            currpath = abspath.relative_to(self.root)
-
-        # don't resolve symlink
-        self.current = Path(os.path.normpath(str(currpath)))
+    def as_relative_path(self, recpath):
+        relpath = str(recpath.abs.relative_to(self.root))
+        if relpath == ".":
+            relpath = ""
+        relpath = os.path.join(f"${self.ROOT_ENVVAR}", relpath)
+        if recpath.slashend:
+            relpath = os.path.join(relpath, "")
+        return relpath
 
     def ls(self, logger):
         file_item = logger.rich.parse(self.settings.display.file_item, slotted=True)
@@ -368,8 +359,10 @@ class FileManager:
         file_normal = logger.rich.parse(self.settings.display.file_normal, slotted=True)
         file_other = logger.rich.parse(self.settings.display.file_other, slotted=True)
 
+        path = self.current.abs.resolve()
+
         res = []
-        for child in (self.root / self.current).resolve().iterdir():
+        for child in path.iterdir():
             if child.is_symlink():
                 name = logger.escape(str(child.readlink()), type="all")
             else:
@@ -397,13 +390,20 @@ class FileManager:
                 linkname = logger.rich.parse(linkname)
                 name = file_link(src=linkname, dst=name)
 
-            ind, path, descriptor = self.glob(self.root / self.current / child.name)
-            desc = descriptor.desc(path) if descriptor is not None else None
+            recpath, ind = self.structure.recognize(self.current.abs / child.name, root=self.root)
+            desc = recpath.desc()
             desc = logger.rich.parse(desc, root_tag=True) if desc is not None else None
 
-            ordering_key = (descriptor is None, ind, child.is_symlink(), not child.is_dir(), child.suffix, child.stem)
+            ordering_key = (
+                recpath.descriptor is None,
+                ind,
+                child.is_symlink(),
+                not child.is_dir(),
+                child.suffix,
+                child.stem,
+            )
 
-            if descriptor is None:
+            if recpath.descriptor is None:
                 name = file_unknown(name)
             desc = file_desc(desc) if desc is not None else mu.Text("")
             name = file_item(name)
@@ -419,103 +419,134 @@ class FileManager:
             logger.print(name, end=padding)
             logger.print(desc, end="\n")
 
-    def mk(self, logger, splitted_path):
-        path = splitted_path[0] / splitted_path[1]
-        path = Path(os.path.expandvars(os.path.expanduser(path)))
-        abspath = self.get(logger, path, should_exist=False, file_type="all")
-        if abspath is None:
+    def validate(
+        self,
+        logger,
+        path,
+        should_in_range=True,
+        should_exist=True,
+        file_type="file",
+    ):
+        if should_in_range and not path.abs.resolve().is_relative_to(self.root):
+            logger.print(f"[warn]Out of root directory: {logger.as_uri(path.abs.resolve())}[/]")
+            return False
+
+        if should_exist and not path.exists():
+            logger.print(f"[warn]No such file: {logger.as_uri(path.abs)}[/]")
+            return False
+
+        if not should_exist and path.exists():
+            logger.print(f"[warn]File already exists: {logger.as_uri(path.abs)}[/]")
+            return False
+
+        if file_type == "file" and path.slashend:
+            logger.print(f"[warn]Not a file: {logger.as_uri(path.abs)}[/]")
+            return False
+
+        if file_type == "file" and path.exists() and not path.is_file():
+            logger.print(f"[warn]Not a file: {logger.as_uri(path.abs)}[/]")
+            return False
+
+        if file_type == "dir" and path.exists() and not path.is_dir():
+            logger.print(f"[warn]Not a directory: {logger.as_uri(path.abs)}[/]")
+            return False
+
+        return True
+
+    def cd(self, logger, path):
+        if not self.validate(logger, path, file_type="dir"):
+            return
+        path = dataclasses.replace(path, slashend=True)
+        self.current = path
+
+    def mk(self, logger, path):
+        if not self.validate(logger, path, should_exist=False, file_type="all"):
             return
 
-        _, _, descriptor = self.glob(self.root / self.current / path)
-
         try:
-            if descriptor is None:
-                if splitted_path[1] == Path(""):
-                    abspath.mkdir(exist_ok=False)
-                else:
-                    abspath.touch(exist_ok=False)
+            if path.descriptor is not None:
+                path.descriptor.mk(path.abs)
+            elif path.slashend:
+                path.abs.mkdir(exist_ok=False)
             else:
-                descriptor.mk(abspath)
+                path.abs.touch(exist_ok=False)
         except Exception:
-            logger.print(f"[warn]Failed to make file: {self.as_uri(logger, path)}[/]")
+            logger.print(f"[warn]Failed to make file: {logger.as_uri(path.abs)}[/]")
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
             return
 
     def rm(self, logger, path):
-        path = Path(os.path.expandvars(os.path.expanduser(path)))
-        abspath = self.get(logger, path, file_type="all")
-        if abspath is None:
+        if not self.validate(logger, path, file_type="all"):
             return
 
-        _, _, descriptor = self.glob(self.root / self.current / path)
-
         try:
-            if descriptor is None:
-                if abspath.is_dir():
-                    abspath.rmdir()
-                else:
-                    abspath.unlink()
+            if path.descriptor is not None:
+                path.descriptor.rm(path.abs)
+            elif path.abs.is_dir() and not path.abs.is_symlink():
+                path.abs.rmdir()
             else:
-                descriptor.rm(abspath)
+                path.abs.unlink()
         except Exception:
-            logger.print(f"[warn]Failed to remove file: {self.as_uri(logger, path)}[/]")
+            logger.print(f"[warn]Failed to remove file: {logger.as_uri(path.abs)}[/]")
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
             return
 
     def mv(self, logger, path, dst):
-        path = Path(os.path.expandvars(os.path.expanduser(path)))
-        abspath = self.get(logger, path, file_type="all")
-        if abspath is None:
+        if not self.validate(logger, path, file_type="all"):
             return
 
-        dst = Path(os.path.expandvars(os.path.expanduser(dst)))
-        absdst = self.get(logger, dst, should_exist=False, file_type="all")
-        if absdst is None:
+        if not self.validate(logger, dst, should_exist=False, file_type="all"):
             return
 
-        _, _, descriptor = self.glob(self.root / self.current / path)
-        _, _, dst_descriptor = self.glob(self.root / self.current / dst)
-
-        if descriptor != dst_descriptor:
-            logger.print(f"[warn]Different file type: {self.as_uri(logger, path)} -> {self.as_uri(logger, dst)}[/]")
+        if path.descriptor != dst.descriptor:
+            logger.print(
+                f"[warn]Different file type: {logger.as_uri(path.abs)} -> {logger.as_uri(dst.abs)}[/]"
+            )
             return
 
         try:
-            if descriptor is None:
-                abspath.rename(absdst)
+            if path.descriptor is not None:
+                path.descriptor.mv(path.abs, dst.abs)
             else:
-                descriptor.mv(abspath, absdst)
+                path.abs.rename(dst.abs)
         except Exception:
-            logger.print(f"[warn]Failed to move file: {self.as_uri(logger, path)} -> {self.as_uri(logger, dst)}[/]")
+            logger.print(
+                f"[warn]Failed to move file: {logger.as_uri(path.abs)} -> {logger.as_uri(dst.abs)}[/]"
+            )
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
             return
 
-    def cp(self, logger, path, src):
-        path = Path(os.path.expandvars(os.path.expanduser(path)))
-        abspath = self.get(logger, path, should_exist=False, file_type="all")
-        if abspath is None:
+    def cp(self, logger, src, path):
+        if not self.validate(logger, path, should_exist=False, file_type="all"):
             return
 
-        _, _, descriptor = self.glob(self.root / self.current / path)
-
-        src = Path(os.path.expandvars(os.path.expanduser(src)))
-        abssrc = self.get(logger, src, should_in_range=False, file_type="all")
-        if abssrc is None:
+        if not self.validate(logger, src, should_in_range=False, file_type="all"):
             return
 
         try:
-            if descriptor is None:
-                shutil.copy(abssrc, abspath)
+            if path.descriptor is not None:
+                path.descriptor.cp(src.abs, path.abs)
             else:
-                descriptor.cp(abspath, abssrc)
+                shutil.copy(src.abs, path.abs)
         except Exception:
-            logger.print(f"[warn]Failed to copy file: {self.as_uri(logger, src)} -> {self.as_uri(logger, path)}[/]")
+            logger.print(
+                f"[warn]Failed to copy file: {logger.as_uri(src.abs)} -> {logger.as_uri(path.abs)}[/]"
+            )
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
             return
+
+    def make_parser(self, desc=None, filter=lambda _: True):
+        return PathParser(
+            self.root,
+            self.current.abs,
+            self.structure,
+            desc=desc,
+            filter=filter,
+        )
 
 
 class FilesCommand:
@@ -532,86 +563,66 @@ class FilesCommand:
         return self.provider.get(Logger)
 
     @cmd.function_command
-    def cd(self, path):
-        self.file_manager.cd(self.logger, path)
-
-    @cmd.function_command
     def ls(self):
         self.file_manager.ls(self.logger)
+
+    @cmd.function_command
+    def cd(self, path):
+        self.file_manager.cd(self.logger, path)
 
     @cmd.function_command
     def cat(self, path):
         file_manager = self.file_manager
         logger = self.logger
 
-        abspath = file_manager.get(logger, path)
-
         try:
-            content = abspath.read_text()
+            content = path.abs.read_text()
         except UnicodeDecodeError:
             logger.print("[warn]Cannot read binary file.[/]")
             return
 
-        code = logger.format_code(
-            content, title=str(file_manager.current / path)
-        )
+        relpath = file_manager.as_relative_path(path)
+        code = logger.format_code(content, title=str(relpath))
         logger.print(code)
 
     @cmd.function_command
-    def mk(self, splitted_path):
-        file_manager = self.file_manager
-        logger = self.logger
-
-        file_manager.mk(logger, splitted_path)
+    def mk(self, path):
+        self.file_manager.mk(self.logger, path)
 
     @cmd.function_command
     def rm(self, path):
-        file_manager = self.file_manager
-        logger = self.logger
-
-        file_manager.rm(logger, path)
+        self.file_manager.rm(self.logger, path)
 
     @cmd.function_command
     def mv(self, path, dst):
-        file_manager = self.file_manager
-        logger = self.logger
-
-        file_manager.mv(logger, path, dst)
+        self.file_manager.mv(self.logger, path, dst)
 
     @cmd.function_command
-    def cp(self, path, src):
-        file_manager = self.file_manager
-        logger = self.logger
-
-        file_manager.cp(logger, path, src)
+    def cp(self, src, path):
+        self.file_manager.cp(self.logger, src, path)
 
     @cd.arg_parser("path")
     def _cd_path_parser(self):
-        return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="dir")
+        return self.file_manager.make_parser(filter=os.path.isdir)
 
     @cat.arg_parser("path")
     def _cat_path_parser(self):
-        return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="file")
-
-    @mk.arg_parser("splitted_path")
-    def _mk_splitted_path_parser(self, path=None):
-        return cmd.PathParser(
-            self.file_manager.root / self.file_manager.current,
-            type="all",
-            should_exist=False,
-            split=True,
-        )
+        return self.file_manager.make_parser(filter=os.path.isfile)
 
     @mv.arg_parser("dst")
     @cp.arg_parser("path")
-    def _any_path_parser(self, path=None):
-        return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="all", should_exist=False)
+    @mk.arg_parser("path")
+    def _any_path_parser(self, *_, **__):
+        return self.file_manager.make_parser()
 
     @rm.arg_parser("path")
     @mv.arg_parser("path")
+    def _lexists_path_parser(self, *_, **__):
+        return self.file_manager.make_parser(filter=os.path.lexists)
+
     @cp.arg_parser("src")
-    def _exists_path_parser(self, path=None):
-        return cmd.PathParser(self.file_manager.root / self.file_manager.current, type="all")
+    def _exists_path_parser(self, *_, **__):
+        return self.file_manager.make_parser(filter=os.path.exists)
 
     @cmd.function_command
     def clean(self, bottom: bool = False):
@@ -664,133 +675,77 @@ class PathParser(cmd.ArgumentParser):
     def __init__(
         self,
         root=".",
-        type="all",
-        should_exist=True,
+        prefix=".",
+        structure=None,
         desc=None,
         filter=lambda _: True,
-        split=False,
     ):
         r"""Contructor.
 
         Parameters
         ----------
         root : str, optional
-            The root of path.
-        dir : bool, optional
-            The parse directory or not, default is true.
-        type : str, optional
-            The parse file type, which should be one of `"file"`, `"dir"`,
-            `"all"`, default is `"all"`.
-        should_exist : bool, optional
-            Whether the path should exist.
+            The root of structure.
+        prefix : str, optional
+            The prefix of path.
+        structure : PathDescriptor, optional
+            The structure of path to parse.
         desc : str, optional
             The description of this argument.
         filter : function, optional
             The filter function for the valid path, the argument is absolute
             path in the str type.
-        split : bool, optional
-            Whether to split parent and child.
         """
         self.root = root
-        self.type = type
-        self.should_exist = should_exist
+        self.prefix = prefix
+        self.structure = structure
         self._desc = desc
         self.filter = filter
-        self.split = split
 
     def desc(self):
-        if self._desc is not None:
-            return self._desc
-        if self.type == "all":
-            return "It should be a path"
-        elif self.type == "file":
-            return "It should be a file path"
-        elif self.type == "dir":
-            return "It should be a directory path"
-        else:
-            assert False
-
-    def expand(self, path, root=None):
-        if root is None:
-            root = self.root
-        path = os.path.expanduser(path)
-        path = os.path.expandvars(path)
-        path = os.path.join(root, path or ".")
-        return path
+        return self._desc if self._desc is not None else "It should be a path"
 
     def parse(self, token):
-        path = self.expand(token)
-        try:
-            exists = os.path.lexists(path)
-        except ValueError:
-            exists = False
+        path = token
+        path = os.path.expanduser(path)
+        path = os.path.expandvars(path)
+        path = os.path.join(self.prefix, path or ".")
+        path, _ = self.structure.recognize(path, root=self.root)
 
-        if not exists and self.should_exist:
-            desc = self.desc()
-            raise cmd.CommandParseError(
-                "Path does not exist" + ("\n" + desc if desc is not None else "")
-            )
-
-        if not exists:
-            if self.split:
-                parent, child = os.path.split(token)
-                return Path(parent), Path(child)
-            else:
-                return Path(token)
-
-        isdir = os.path.isdir(path)
-        isfile = os.path.isfile(path)
-
-        if self.type == "dir" and not isdir:
-            desc = self.desc()
-            raise cmd.CommandParseError(
-                "Not a directory" + ("\n" + desc if desc is not None else "")
-            )
-
-        if self.type == "file" and not isfile:
-            desc = self.desc()
-            raise cmd.CommandParseError(
-                "Not a file" + ("\n" + desc if desc is not None else "")
-            )
-
-        if self.type == "all" and not isdir and not isfile:
-            desc = self.desc()
-            raise cmd.CommandParseError(
-                "Not a directory or a file" + ("\n" + desc if desc is not None else "")
-            )
-
-        if not self.filter(path):
+        if not self.filter(str(path)):
             desc = self.desc()
             raise cmd.CommandParseError(
                 "Not a valid file type" + ("\n" + desc if desc is not None else "")
             )
 
-        if self.split:
-            parent, child = os.path.split(token)
-            return Path(parent), Path(child)
-        else:
-            return Path(token)
+        return path
 
     def suggest(self, token):
         suggestions = []
 
+        def expand(path):
+            path = os.path.expanduser(path)
+            path = os.path.expandvars(path)
+            path = os.path.join(self.prefix, path or ".")
+            return path
+
         # check path
-        currpath = self.expand(token)
+        currpath = expand(token)
         try:
             is_dir = os.path.isdir(currpath) and currpath.endswith("/")
             is_file = os.path.isfile(currpath)
         except ValueError:
             return suggestions
 
-        if is_file and self.type in ["file", "all"] and self.filter(currpath):
+        if is_file and self.filter(currpath):
             suggestions.append((token or ".") + "\000")
 
-        if is_dir and self.type in ["dir", "all"] and self.filter(currpath):
+        if is_dir and self.filter(currpath):
             suggestions.append(os.path.join(token or ".", "") + "\000")
 
         # separate parent and partial child name
         parent, child = os.path.split(token)
-        parentpath = self.expand(parent) if child else currpath
+        parentpath = expand(parent)
         if not os.path.isdir(parentpath):
             return suggestions
 
@@ -800,31 +755,36 @@ class PathParser(cmd.ArgumentParser):
             if not child.startswith(".") and name.startswith("."):
                 continue
 
-            subpath = os.path.join(parentpath, name)
             sugg = os.path.join(parent, name)
+            suggpath = expand(sugg)
 
-            if os.path.isdir(subpath):
+            if os.path.isdir(suggpath):
                 sugg = os.path.join(sugg, "")
                 suggestions.append(sugg)
 
-            elif os.path.isfile(subpath) and self.type in ["file", "all"] and self.filter(subpath):
+            elif os.path.isfile(suggpath) and self.filter(suggpath):
                 suggestions.append(sugg + "\000")
 
         return suggestions
 
 
 def CdCommand(provider):
-    def make_command(name):
-        return cmd.function_command(
-            lambda self: self.provider.get(FileManager).cd(self.provider.get(Logger), name)
-        )
+    def make_cd_command(name):
+        @cmd.function_command
+        def cd_command(self):
+            file_manager = self.provider.get(FileManager)
+            logger = self.provider.get(Logger)
+            path = file_manager.recognize(file_manager.current.abs / name)
+            return file_manager.cd(logger, path)
+        return cd_command
 
     attrs = {}
     attrs["provider"] = provider
-    attrs[".."] = make_command("..")
+    attrs[".."] = make_cd_command("..")
     file_manager = provider.get(FileManager)
-    for child in (file_manager.root / file_manager.current).resolve().iterdir():
+    curr_path = file_manager.current.abs.resolve()
+    for child in curr_path.iterdir():
         if child.is_dir():
-            attrs[child.name + "/"] = make_command(child.name)
+            attrs[child.name + "/"] = make_cd_command(child.name)
 
     return type("CdCommand", (object,), attrs)()

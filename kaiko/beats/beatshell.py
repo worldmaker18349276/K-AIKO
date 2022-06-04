@@ -377,12 +377,9 @@ class BeatPrompt:
 
         username = file_manager.username
         current_name = profile_manager.current_name
-        path = str(file_manager.current)
-        if path == ".":
-            path = ""
-        path = os.path.join("$" + file_manager.ROOT_ENVVAR, path, "")
+        path = file_manager.as_relative_path(file_manager.current)
         profile_is_changed = profile_manager.is_changed()
-        path_is_known = file_manager.glob(file_manager.root / file_manager.current)[2] is not None
+        path_is_known = file_manager.current.descriptor is not None
 
         unpr = banner_settings.unprintable_character
         username = mu.Text("".join(ch if ch.isprintable() else unpr for ch in username))

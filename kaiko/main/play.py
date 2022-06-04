@@ -397,7 +397,7 @@ class PlayCommand:
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        current = self.file_manager.root / self.file_manager.current
+        current = self.file_manager.current.abs
         return self.beatmap_manager.make_parser(self.logger, current, type="file")
 
     @play.arg_parser("start")
@@ -444,7 +444,7 @@ class PlayCommand:
 
     @remove.arg_parser("beatmap")
     def _remove_beatmap_parser(self):
-        current = self.file_manager.root / self.file_manager.current
+        current = self.file_manager.current.abs
         return self.beatmap_manager.make_parser(self.logger, current, type="all")
 
 
