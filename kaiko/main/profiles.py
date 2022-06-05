@@ -9,7 +9,15 @@ from ..utils import parsec as pc
 from ..utils import commands as cmd
 from ..utils import datanodes as dn
 from .loggers import Logger
-from .files import RecognizedFilePath, RecognizedDirPath, as_pattern, as_child, FileManager
+from .files import (
+    RecognizedFilePath,
+    RecognizedDirPath,
+    MissingFileException,
+    WrongFileTypeException,
+    as_pattern,
+    as_child,
+    FileManager,
+)
 
 
 def exists(program):
@@ -43,55 +51,36 @@ class ProfilesDirPath(RecognizedDirPath):
 
     @as_pattern("*.kaiko-profile")
     class profile(RecognizedFilePath):
+        EXTENSION = ".kaiko-profile"
+
         def desc(self, provider):
             profile_manager = provider.get(ProfileManager)
-            note = "(Untracked custom profile)"
-            for profile in profile_manager.profiles:
-                name = profile + profile_manager.EXTENSION
-                if name == self.abs.name:
-                    note = "(Your custom profile)"
-                    if profile == profile_manager.default_name:
-                        note += " (default)"
-                    if profile == profile_manager.current_name:
-                        note += " (current)"
-                    break
+            note = "(Your custom profile)"
+            if self.abs == profile_manager.default_path.abs:
+                note += " (default)"
+            if self.abs == profile_manager.current_path.abs:
+                note += " (current)"
             return note
 
         def mk(self, provider):
             profile_manager = provider.get(ProfileManager)
-            logger = provider.get(Logger)
-
-            if not profile_manager.is_uptodate():
-                profile_manager.update(logger)
-            profile_manager.make_empty(logger, name=self.abs.stem)
-            profile_manager.update(logger)
+            profile_manager.create(self)
+            profile_manager.update()
 
         def rm(self, provider):
             profile_manager = provider.get(ProfileManager)
-            logger = provider.get(Logger)
-
-            if not profile_manager.is_uptodate():
-                profile_manager.update(logger)
-            profile_manager.delete(logger, name=self.abs.stem)
-            profile_manager.update(logger)
+            profile_manager.delete(self)
+            profile_manager.update()
 
         def mv(self, dst, provider):
             profile_manager = provider.get(ProfileManager)
-            logger = provider.get(Logger)
-
-            if not profile_manager.is_uptodate():
-                profile_manager.update(logger)
-            profile_manager.rename(logger, name=self.abs.stem, newname=dst.abs.stem)
-            profile_manager.update(logger)
+            profile_manager.rename(self, dst)
+            profile_manager.update()
 
         def cp(self, dst, provider):
             profile_manager = provider.get(ProfileManager)
-            logger = provider.get(Logger)
-
-            if not profile_manager.is_uptodate():
-                profile_manager.update(logger)
-            profile_manager.copy(logger, self.abs, name=dst.abs.stem)
-            profile_manager.update(logger)
+            profile_manager.create(dst, self)
+            profile_manager.update()
 
     @as_child(".default-profile")
     class default(RecognizedFilePath):
@@ -102,9 +91,9 @@ class ProfilesDirPath(RecognizedDirPath):
 
         def rm(self, provider):
             profile_manager = provider.get(ProfileManager)
-            logger = provider.get(Logger)
             self.abs.unlink()
-            profile_manager.update(logger)
+            self.abs.touch()
+            profile_manager.update()
 
 
 class ProfileManager:
@@ -114,38 +103,43 @@ class ProfileManager:
     ----------
     config_type : cfg.Configurable
         The configuration type to manage.
-    path : Path
+    profiles_dir : ProfilesDirPath
         The path of profiles directory.
-    profiles : list of str
-        A list of names of profiles.
-    default_name : str or None
-        The name of default profile.
-    current_name : str
-        The name of current profile.
+    profile_paths : list of ProfilesDirPath.profile
+        A list of paths of profiles.
+    default_path : ProfilesDirPath.profile or None
+        The path of default profile.
+    current_path : ProfilesDirPath.profile
+        The path of current profile.
     current : config.Configurable
         The current configuration.
+    provider : utils.provider.Provider
     """
 
-    default_meta = ".default-profile"
-    extension = ".kaiko-profile"
-    settings_name = "settings"
+    # EXTENSION = ".kaiko-profile"
+    SETTINGS_NAME = "settings"
 
-    def __init__(self, config_type, profiles_dir):
-        if isinstance(profiles_dir, str):
-            profiles_dir = Path(profiles_dir)
-
+    def __init__(self, config_type, profiles_dir, provider):
         self.config_type = config_type
         self.profiles_dir = profiles_dir
-        self.profiles = []
-        self.default_name = None
-        self.current_name = None
+        self.provider = provider
+
+        self._profiles_mtime = None
+        self._profile_paths = []
+        self._default_path = None
+
+        self.current_path = None
         self.current = None
         self._current_mtime = None
-        self._profiles_mtime = None
+
         self.on_change_handlers = []
 
     def on_change(self, on_change_handler):
         self.on_change_handlers.append(on_change_handler)
+
+    @property
+    def logger(self):
+        return self.provider.get(Logger)
 
     # config manipulation
 
@@ -168,149 +162,137 @@ class ProfileManager:
         return cfg.has_default(self.current, fields)
 
     def get_title(self):
-        return self.current_name + self.extension
+        return self.provider.get(FileManager).as_relative_path(self.current_path)
 
     def format(self):
-        return cfg.format(self.config_type, self.current, name=self.settings_name)
+        return cfg.format(self.config_type, self.current, name=self.SETTINGS_NAME)
+
+    def is_changed(self):
+        if not self.current_path.exists():
+            return True
+        return self._current_mtime != self.current_path.abs.stat().st_mtime
+
+    def set_as_changed(self, mtime=None):
+        self._current_mtime = mtime
+        for on_change_handler in self.on_change_handlers:
+            on_change_handler(self.current)
 
     # profiles management
 
     def is_uptodate(self):
-        if not self.profiles_dir.exists():
-            return False
-        return self._profiles_mtime == os.stat(str(self.profiles_dir)).st_mtime
+        return self._profiles_mtime == self.profiles_dir.abs.stat().st_mtime
 
-    def is_changed(self):
-        current_path = self.profiles_dir / (self.current_name + self.extension)
-        if not current_path.exists():
-            return True
-        return self._current_mtime != os.stat(str(current_path)).st_mtime
+    def update(self):
+        default_meta_path = self.profiles_dir.default
+        profiles_mtime = self.profiles_dir.abs.stat().st_mtime
 
-    def set_as_changed(self):
-        self._current_mtime = None
-        for on_change_handler in self.on_change_handlers:
-            on_change_handler(self.current)
-
-    def update(self, logger):
-        """Update the list of profiles.
-
-        Parameters
-        ----------
-        logger : loggers.Logger
-
-        Returns
-        -------
-        succ : bool
-        """
-        logger.print("[data/] Update profiles...")
-
-        if not self.profiles_dir.exists():
-            logger.print(
-                f"[warn]The profile directory doesn't exist: {logger.as_uri(self.profiles_dir)}[/]"
-            )
-            return False
-
-        if not self.profiles_dir.is_dir():
-            logger.print(
-                f"[warn]Wrong file type for profile directory: {logger.as_uri(self.profiles_dir)}[/]"
-            )
-            return False
-
-        profiles_mtime = os.stat(str(self.profiles_dir)).st_mtime
-
-        # update default_name
-        default_meta_path = self.profiles_dir / self.default_meta
-        if default_meta_path.exists():
-            if not default_meta_path.is_file():
-                logger.print(
-                    f"[warn]Wrong file type for default profile: {logger.as_uri(default_meta_path)}[/]"
-                )
-                return False
-            self.default_name = default_meta_path.read_text().rstrip("\n")
-        else:
-            self.default_name = None
+        # update default_path
+        default_path = default_meta_path.abs.read_text().rstrip("\n")
+        default_path = os.path.join(self.profiles_dir.abs, default_path)
+        default_path, _ = self.profiles_dir.recognize(default_path)
+        if not isinstance(default_path, ProfilesDirPath.profile):
+            default_path = None
+        self._default_path = default_path
 
         # update profiles
-        self.profiles = [
-            subpath.stem
-            for subpath in self.profiles_dir.iterdir()
-            if subpath.suffix == self.extension
-        ]
+        self._profile_paths = list(self.profiles_dir.profile)
+
         self._profiles_mtime = profiles_mtime
-        return True
 
-    def set_default(self, logger, name=None):
-        """Set the current profile as default.
+    @property
+    def profile_paths(self):
+        if not self.is_uptodate():
+            self.update()
+        return self._profile_paths
 
-        Parameters
-        ----------
-        logger : loggers.Logger
-        name : str, optional
+    @property
+    def default_path(self):
+        if not self.is_uptodate():
+            self.update()
+        return self._default_path
 
-        Returns
-        -------
-        succ : bool
-        """
-        name = name if name is not None else self.current_name
-        logger.print(
-            f"[data/] Set {logger.emph(name, type='all')} as the default profile..."
-        )
+    def validate_profile_path(self, path, should_exist=None):
+        # should_exist: Optional[bool]
 
-        if not self.profiles_dir.exists():
+        logger = self.logger
+
+        path_str = path.try_relative_to(self.profiles_dir)
+
+        if not isinstance(path, ProfilesDirPath.profile):
             logger.print(
-                f"[warn]No such profile directory: {logger.as_uri(self.profiles_dir)}[/]"
-            )
-            return False
-
-        if name not in self.profiles:
-            logger.print(
-                f"[warn]This profile {logger.emph(name, type='all')} doesn't exist.[/]"
-            )
-            return False
-
-        default_meta_path = self.profiles_dir / self.default_meta
-        if default_meta_path.exists() and not default_meta_path.is_file():
-            logger.print(
-                f"[warn]Wrong file type for default profile: {logger.as_uri(default_meta_path)}[/]"
-            )
-            return False
-
-        default_meta_path.write_text(name)
-        self.default_name = name
-
-        return True
-
-    def save(self, logger):
-        """Save the current configuration.
-
-        Parameters
-        ----------
-        logger : loggers.Logger
-
-        Returns
-        -------
-        succ : bool
-        """
-        current_path = self.profiles_dir / (self.current_name + self.extension)
-        logger.print(
-            f"[data/] Save configuration to {logger.as_uri(current_path)}..."
-        )
-
-        if not self.profiles_dir.exists():
-            logger.print(
-                f"[warn]The profile directory doesn't exist: {logger.as_uri(self.profiles_dir)}[/]"
-            )
-            return False
-
-        if current_path.exists() and not current_path.is_file():
-            logger.print(
-                f"[warn]Wrong file type for profile: {logger.as_uri(current_path)}[/]"
+                f"[warn]Not a valid profile path {logger.emph(path_str, type='all')}[/]"
             )
             return False
 
         try:
+            path.validate()
+        except WrongFileTypeException:
+            logger.print(
+                f"[warn]Invalid file type {logger.emph(path_str, type='all')}[/]"
+            )
+            return False
+        except MissingFileException:
+            if should_exist is True:
+                logger.print(
+                    f"[warn]This profile {logger.emph(path_str, type='all')} doesn't exist.[/]"
+                )
+                return False
+
+        if should_exist is False and path.exists():
+            logger.print(
+                f"[warn]Profile path {logger.emph(path_str, type='all')} is already taken[/]"
+            )
+            return False
+
+        return True
+
+    def set_default(self, path=None):
+        """Set given profile path as default.
+
+        Parameters
+        ----------
+        path : ProfilesDirPath.profile, optional
+
+        Returns
+        -------
+        succ : bool
+        """
+        logger = self.logger
+
+        path = path if path is not None else self.current_path
+        path_str = path.try_relative_to(self.profiles_dir)
+
+        logger.print(
+            f"[data/] Set {logger.emph(path_str, type='all')} as the default profile..."
+        )
+
+        if not self.validate_profile_path(path, should_exist=True):
+            return False
+
+        default_meta_path = self.profiles_dir.default
+        default_meta_path.abs.write_text(path_str)
+
+        return True
+
+    def save(self):
+        """Save the current configuration.
+
+        Returns
+        -------
+        succ : bool
+        """
+        logger = self.logger
+
+        logger.print(
+            f"[data/] Save configuration to {logger.as_uri(self.current_path.abs)}..."
+        )
+
+        if not self.validate_profile_path(self.current_path):
+            return False
+
+        try:
             cfg.write(
-                self.config_type, self.current, current_path, name=self.settings_name
+                self.config_type, self.current, self.current_path.abs, name=self.SETTINGS_NAME
             )
         except Exception:
             logger.print("[warn]Fail to format configuration[/]")
@@ -318,42 +300,31 @@ class ProfileManager:
                 logger.print(traceback.format_exc(), end="", markup=False)
             return False
 
-        self._current_mtime = os.stat(str(current_path)).st_mtime
-        self.update(logger)
+        self._current_mtime = self.current_path.abs.stat().st_mtime
+
         return True
 
-    def load(self, logger):
-        """Load the current profile.
-
-        Parameters
-        ----------
-        logger : loggers.Logger
+    def load(self):
+        """Load the current configuration.
 
         Returns
         -------
         succ : bool
         """
-        current_path = self.profiles_dir / (self.current_name + self.extension)
+        logger = self.logger
+
         logger.print(
-            f"[data/] Load configuration from {logger.as_uri(current_path)}..."
+            f"[data/] Load configuration from {logger.as_uri(self.current_path.abs)}..."
         )
 
-        if not current_path.exists():
-            logger.print(
-                f"[warn]The profile doesn't exist: {logger.as_uri(current_path)}[/]"
-            )
+        if not self.validate_profile_path(self.current_path, should_exist=True):
             return False
 
-        if not current_path.is_file():
-            logger.print(
-                f"[warn]Wrong file type for profile: {logger.as_uri(current_path)}[/]"
-            )
-            return False
+        current_mtime = self.current_path.abs.stat().st_mtime
 
-        current_mtime = os.stat(str(current_path)).st_mtime
         try:
             self.current = cfg.read(
-                self.config_type, current_path, name=self.settings_name
+                self.config_type, self.current_path.abs, name=self.SETTINGS_NAME
             )
         except Exception:
             logger.print("[warn]Fail to parse configuration[/]")
@@ -361,217 +332,165 @@ class ProfileManager:
                 logger.print(traceback.format_exc(), end="", markup=False)
             return False
 
-        self.set_as_changed()
-        self._current_mtime = current_mtime
+        self.set_as_changed(current_mtime)
         return True
 
-    def use(self, logger, name=None):
-        """change the current profile.
+    def use(self, path=None):
+        """Switch the current configuration.
 
         Parameters
         ----------
-        logger : loggers.Logger
-        name : str, optional
-            The name of profile, or None for default.
+        path : ProfilesDirPath.profile, optional
 
         Returns
         -------
         succ : bool
         """
-        if name is None:
-            name = self.default_name
+        logger = self.logger
 
-            if name is None:
-                logger.print("[warn]No default profile.[/]")
+        if path is None:
+            path = self.default_path
 
+            if path is None:
+                logger.print("[warn]No default profile[/]")
+
+                # make a new profile
+                profile_names = [path.abs.stem for path in self.profile_paths]
                 name = "new profile"
                 n = 1
-                while name in self.profiles:
+                while name in profile_names:
                     n += 1
                     name = f"new profile ({str(n)})"
-                logger.print(f"Create profile with name {logger.emph(name, type='all')}.")
 
-                self.current_name = name
+                relpath = name + ProfilesDirPath.profile.EXTENSION
+                path, _ = self.profiles_dir.recognize(os.path.join(self.profiles_dir.abs, relpath))
+                assert isinstance(path, ProfilesDirPath.profile)
+
+                logger.print(f"[data/] Load empty configuration as {logger.emph(relpath, type='all')}...")
+
+                self.current_path = path
                 self.current = self.config_type()
                 self.set_as_changed()
                 return True
 
-        if name not in self.profiles:
-            logger.print(f"[warn]No such profile: {logger.emph(name, type='all')}[/]")
+        path_str = path.try_relative_to(self.profiles_dir)
+
+        logger.print(
+            f"[data/] Switch to profile {logger.emph(path_str, type='all')}..."
+        )
+
+        profile_paths = self.profile_paths
+        if path not in profile_paths:
+            logger.print(f"[warn]No such profile: {logger.emph(path_str, type='all')}[/]")
             return False
 
-        old_name = self.current_name
-        self.current_name = name
-        succ = self.load(logger)
+        previous_path = self.current_path
+        self.current_path = path
+        succ = self.load()
         if not succ:
-            self.current_name = old_name
+            self.current_name = previous_path
             return False
         return True
 
-    def copy(self, logger, src, name=None):
-        """Copy a profile.
+    def create(self, path, src=None):
+        """Create a new profile.
 
         Parameters
         ----------
-        logger : loggers.Logger
-        src : Path
-            The source file to copy.
-        name : str, optional
-            The name of profile.
+        path : ProfilesDirPath.profile
+        src : Path, None
+            The source file to copy, or None for empty profile.
 
         Returns
         -------
         succ : bool
         """
-        logger.print("Copy a profile...")
+        logger = self.logger
 
-        if not src.exists():
-            logger.print(f"[warn]No such file: {logger.as_uri(src)}[/]")
+        path_str = path.try_relative_to(self.profiles_dir)
+        logger.print(f"[data/] Create a new profile {logger.emph(path_str, type='all')}...")
+
+        if not self.validate_profile_path(path, should_exist=False):
             return False
 
-        if isinstance(name, str) and (not name.isprintable() or "/" in name):
-            logger.print(f"[warn]Invalid profile name: {logger.emph(name, type='all')}[/]")
-            return False
+        if src is not None:
+            logger.print(f"[data/] Copy profile from {logger.as_uri(src)} to {logger.as_uri(path.abs)}...")
 
-        if name in self.profiles:
-            logger.print(
-                f"[warn]This profile name {logger.emph(name, type='all')} already exists.[/]"
-            )
-            return False
+            if not src.exists():
+                logger.print(f"[warn]No such file: {logger.as_uri(src)}[/]")
+                return False
 
-        path = self.profiles_dir / (name + self.extension)
-        shutil.copy(src, path)
-        return True
+            shutil.copy(src, path.abs)
 
-    def make_empty(self, logger, name):
-        """Make an empty profile.
+        else:
+            config = self.config_type()
 
-        Parameters
-        ----------
-        logger : loggers.Logger
-        name : str
-            The name of profile.
+            logger.print(f"[data/] Save an empty configuration to {logger.as_uri(path.abs)}...")
 
-        Returns
-        -------
-        succ : bool
-        """
-        logger.print("Make new profile...")
-
-        if isinstance(name, str) and (not name.isprintable() or "/" in name):
-            logger.print(f"[warn]Invalid profile name: {logger.emph(name, type='all')}[/]")
-            return False
-
-        if name in self.profiles:
-            logger.print(
-                f"[warn]This profile name {logger.emph(name, type='all')} already exists.[/]"
-            )
-            return False
-
-        config = self.config_type()
-
-        path = self.profiles_dir / (name + self.extension)
-        logger.print(f"[data/] Save configuration to {logger.as_uri(path)}...")
-
-        if not self.profiles_dir.exists():
-            logger.print(
-                f"[warn]The profile directory doesn't exist: {logger.as_uri(self.profiles_dir)}[/]"
-            )
-            return False
-
-        if path.exists():
-            logger.print(
-                f"[warn]File already exists: {logger.as_uri(path)}[/]"
-            )
-            return False
-
-        try:
-            cfg.write(
-                self.config_type, config, path, name=self.settings_name
-            )
-        except Exception:
-            logger.print("[warn]Fail to format configuration[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
-            return False
+            try:
+                cfg.write(
+                    self.config_type, config, path, name=self.SETTINGS_NAME
+                )
+            except Exception:
+                logger.print("[warn]Fail to format configuration[/]")
+                with logger.warn():
+                    logger.print(traceback.format_exc(), end="", markup=False)
+                return False
 
         return True
 
-    def delete(self, logger, name):
+    def delete(self, path):
         """Delete a profile.
 
         Parameters
         ----------
-        logger : loggers.Logger
-        name : str
-            The name of profile to delete.
+        path : ProfilesDirPath.profile
 
         Returns
         -------
         succ : bool
         """
-        target_path = self.profiles_dir / (name + self.extension)
-        logger.print(f"[data/] Delete profile {logger.as_uri(target_path)}...")
+        logger = self.logger
 
-        if name not in self.profiles:
-            logger.print(f"[warn]No such profile: {logger.emph(name, type='all')}[/]")
+        logger.print(f"[data/] Delete profile {logger.emph(path_str, type='all')}...")
+
+        if not self.validate_profile_path(path, should_exist=True):
             return False
 
-        if target_path.exists():
-            if not target_path.is_file():
-                logger.print(
-                    f"[warn]Wrong file type for profile: {logger.as_uri(target_path)}[/]"
-                )
-                return False
-            target_path.unlink()
+        path.unlink()
 
-        self.profiles.remove(name)
         return True
 
-    def rename(self, logger, name, newname):
+    def rename(self, path, newpath):
         """Rename a profile.
 
         Parameters
         ----------
-        logger : loggers.Logger
-        name : str
-            The old name of profile.
-        newname : str
-            The new name of profile.
+        path : ProfilesDirPath.profile
+            The old path of profile.
+        newpath : ProfilesDirPath.profile
+            The new path of profile.
 
         Returns
         -------
         succ : bool
         """
-        current_path = self.profiles_dir / (self.current_name + self.extension)
-        src_path = self.profiles_dir / (name + self.extension)
-        dst_path = self.profiles_dir / (newname + self.extension)
-        logger.print(f"[data/] Rename profile {logger.as_uri(src_path)} to {logger.as_uri(dst_path)}...")
+        logger.print(f"[data/] Rename profile {logger.as_uri(path)} to {logger.as_uri(newpath)}...")
 
-        if name not in self.profiles:
-            logger.print(
-                f"[warn]This profile {logger.emph(name, type='all')} doesn't exist.[/]"
-            )
+        if not self.validate_profile_path(path, should_exist=True):
             return False
 
-        if not newname.isprintable() or "/" in newname:
-            logger.print(f"[warn]Invalid profile name: {logger.emph(newname, type='all')}[/]")
+        if not self.validate_profile_path(newpath, should_exist=False):
             return False
 
-        if newname in self.profiles:
-            logger.print(
-                f"[warn]This profile name {logger.emph(newname, type='all')} already exists.[/]"
-            )
-            return False
+        is_current = self.current_path == path
+        is_default = self.default_path == path
 
-        if src_path.exists():
-            src_path.rename(dst_path)
-
-        if self.current_name == name:
-            self.current_name = newname
-
-        if self.default_name == name:
-            self.set_default(name=newname)
+        path.abs.rename(newpath.abs)
+        if is_current:
+            self.current_path = newpath
+        if is_default:
+            self.set_default(newpath)
 
         return True
 
@@ -619,27 +538,25 @@ class ProfilesCommand:
                         bool, highlight
                         changes or not.
         """
-        text = self.profile_manager.format()
-        is_changed = self.profile_manager.is_changed()
-        title = self.profile_manager.get_title()
+        profile_manager = self.profile_manager
+        logger = self.logger
+
+        text = profile_manager.format()
+        is_changed = profile_manager.is_changed()
+        title = profile_manager.get_title()
 
         if diff:
-            current_path = self.profile_manager.profiles_dir / (
-                self.profile_manager.current_name + self.profile_manager.extension
-            )
-            if not current_path.exists() or not current_path.is_file():
+            if not profile_manager.current_path.validate():
                 old = ""
             else:
-                old = open(current_path, "r").read()
+                old = profile_manager.current_path.abs.read_text()
 
-            res = self.logger.format_code_diff(
-                old, text, title=title, is_changed=is_changed
-            )
+            res = logger.format_code_diff(old, text, title=title, is_changed=is_changed)
 
         else:
-            res = self.logger.format_code(text, title=title, is_changed=is_changed)
+            res = logger.format_code(text, title=title, is_changed=is_changed)
 
-        self.logger.print(res)
+        logger.print(res)
 
     @cmd.function_command
     def has(self, field):
@@ -693,63 +610,66 @@ class ProfilesCommand:
 
         usage: [cmd]edit[/]
         """
-        title = self.profile_manager.get_title()
+        profile_manager = self.profile_manager
+        logger = self.logger
 
-        editor = self.profile_manager.current.devices.terminal.editor
+        title = profile_manager.get_title()
+
+        editor = profile_manager.current.devices.terminal.editor
 
         text = cfg.format(
-            self.profile_manager.config_type,
-            self.profile_manager.current,
-            self.profile_manager.settings_name,
+            profile_manager.config_type,
+            profile_manager.current,
+            profile_manager.SETTINGS_NAME,
         )
 
         yield
 
         # open editor
         if not exists(editor):
-            self.logger.print(f"[warn]Unknown editor: {self.logger.escape(editor, type='all')}[/]")
+            logger.print(f"[warn]Unknown editor: {logger.emph(editor, type='all')}[/]")
             return
 
-        self.logger.print(f"[data/] Editing...")
+        logger.print(f"[data/] Editing...")
 
         edited_text = yield from edit(text, editor, ".py").join()
 
         # parse result
         try:
             res = cfg.parse(
-                self.profile_manager.config_type, edited_text, self.profile_manager.settings_name
+                profile_manager.config_type, edited_text, profile_manager.SETTINGS_NAME
             )
 
         except pc.ParseError as error:
             line, col = pc.ParseError.locate(error.text, error.index)
 
-            self.logger.print(
+            logger.print(
                 f"[warn]parse fail at ln {line+1}, col {col+1} (marked with ◊)[/]"
             )
-            self.logger.print(
-                self.logger.format_code(error.text, marked=(line, col), title=title)
+            logger.print(
+                logger.format_code(error.text, marked=(line, col), title=title)
             )
             if error.__cause__ is not None:
-                self.logger.print(
+                logger.print(
                     f"[warn]{self.logger.escape(str(error.__cause__))}[/]"
                 )
 
         except:
-            self.logger.print(f"[warn]An unexpected error occurred[/]")
-            with self.logger.warn():
-                self.logger.print(traceback.format_exc(), end="", markup=False)
+            logger.print(f"[warn]An unexpected error occurred[/]")
+            with logger.warn():
+                logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
-            self.logger.print(f"[data/] Your changes")
+            logger.print(f"[data/] Your changes")
 
-            self.logger.print(
-                self.logger.format_code_diff(
+            logger.print(
+                logger.format_code_diff(
                     text, edited_text, title=title, is_changed=True
                 )
             )
 
-            self.profile_manager.current = res
-            self.profile_manager.set_as_changed()
+            profile_manager.current = res
+            profile_manager.set_as_changed()
 
     @get.arg_parser("field")
     @has.arg_parser("field")
@@ -772,10 +692,7 @@ class ProfilesCommand:
 
         usage: [cmd]reload[/]
         """
-        if not self.profile_manager.is_uptodate():
-            self.profile_manager.update(self.logger)
-
-        self.profile_manager.load(self.logger)
+        self.profile_manager.load()
 
     @cmd.function_command
     def save(self):
@@ -783,10 +700,7 @@ class ProfilesCommand:
 
         usage: [cmd]save[/]
         """
-        if not self.profile_manager.is_uptodate():
-            self.profile_manager.update(self.logger)
-
-        self.profile_manager.save(self.logger)
+        self.profile_manager.save()
 
     @cmd.function_command
     def set_default(self, profile):
@@ -794,12 +708,11 @@ class ProfilesCommand:
 
         usage: [cmd]use_default[/] [arg]{profile}[/]
                                ╱
-                      The profile name.
+                      The profile path.
         """
-        if not self.profile_manager.is_uptodate():
-            self.profile_manager.update(self.logger)
-
-        self.profile_manager.set_default(self.logger, name=profile)
+        profiles_dir = self.profile_manager.profiles_dir
+        profile, _ = profiles_dir.recognize(profiles_dir.abs / profile)
+        self.profile_manager.set_default(profile)
 
     @cmd.function_command
     def use(self, profile):
@@ -807,29 +720,25 @@ class ProfilesCommand:
 
         usage: [cmd]use[/] [arg]{profile}[/]
                        ╱
-              The profile name.
+              The profile path.
         """
-        if not self.profile_manager.is_uptodate():
-            self.profile_manager.update(self.logger)
-
-        self.profile_manager.use(self.logger, profile)
+        profiles_dir = self.profile_manager.profiles_dir
+        profile, _ = profiles_dir.recognize(profiles_dir.abs / profile)
+        self.profile_manager.use(profile)
 
     @use.arg_parser("profile")
     @set_default.arg_parser("profile")
     def _use_profile_parser(self):
-        profiles_paths = [
-            name + self.profile_manager.extension
-            for name in self.profile_manager.profiles
-        ]
-        if self.profile_manager.default_name is not None:
-            default = self.profile_manager.default_name + self.profile_manager.extension
+        profiles_paths = [path.abs.name for path in self.profile_manager.profile_paths]
+        default_path = self.profile_manager.default_path
+        if default_path is not None:
             return cmd.OptionParser(
                 profiles_paths,
-                default=default,
-                desc="It should be the name of profile.",
+                default=default_path.abs.name,
+                desc="It should be the path of profile.",
             )
         else:
             return cmd.OptionParser(
                 profiles_paths,
-                desc="It should be the name of profile.",
+                desc="It should be the path of profile.",
             )

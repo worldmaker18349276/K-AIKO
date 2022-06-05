@@ -124,7 +124,7 @@ class KAIKOLauncher:
         os.environ[file_manager.ROOT_ENVVAR] = str(file_manager.root)
 
         # load profiles
-        profile_manager = ProfileManager(KAIKOSettings, file_manager.root.profiles.abs)
+        profile_manager = ProfileManager(KAIKOSettings, file_manager.root.profiles, launcher.provider)
         launcher.provider.set(profile_manager)
 
         profile_manager.on_change(
@@ -136,9 +136,9 @@ class KAIKOLauncher:
         profile_manager.on_change(
             lambda settings: file_manager.set_settings(settings.files)
         )
-        profile_manager.update(logger)
+        profile_manager.update()
 
-        profile_manager.use(logger)
+        profile_manager.use()
 
         logger.print(flush=True)
 

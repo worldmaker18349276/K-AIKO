@@ -378,7 +378,7 @@ class BeatPrompt:
         banner_settings = self.settings.banner
 
         username = file_manager.username
-        current_name = profile_manager.current_name
+        current_name = profile_manager.current_path.abs.stem
         path = file_manager.as_relative_path(file_manager.current)
         profile_is_changed = profile_manager.is_changed()
         path_is_known = not isinstance(file_manager.current, UnrecognizedPath)

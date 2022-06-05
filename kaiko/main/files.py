@@ -53,6 +53,15 @@ class RecognizedPath:
     def is_symlink(self):
         return self.abs.is_symlink()
 
+    def try_relative_to(self, path):
+        try:
+            relpath = str(self.abs.relative_to(path.abs))
+        except ValueError:
+            relpath = str(path)
+        if self.slashend:
+            relpath = os.path.join(relpath, "")
+        return relpath
+
     def validate(self):
         return
 
