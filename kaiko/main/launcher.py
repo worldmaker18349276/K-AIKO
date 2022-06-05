@@ -113,7 +113,7 @@ class KAIKOLauncher:
         os.environ[file_manager.ROOT_ENVVAR] = str(file_manager.root)
 
         # load profiles
-        profile_manager = ProfileManager(KAIKOSettings, launcher.profiles_dir)
+        profile_manager = ProfileManager(KAIKOSettings, file_manager.root.profiles.abs)
         launcher.provider.set(profile_manager)
 
         profile_manager.on_change(
@@ -137,7 +137,7 @@ class KAIKOLauncher:
         with devices_ctxt as device_manager:
             launcher.provider.set(device_manager)
 
-            beatmap_manager = BeatmapManager(launcher.beatmaps_dir)
+            beatmap_manager = BeatmapManager(file_manager.root.beatmaps.abs)
             launcher.provider.set(beatmap_manager)
 
             bgm_controller = BGMController(
@@ -178,7 +178,7 @@ class KAIKOLauncher:
         preview_handler = self.bgm_controller.preview_handler
         prompt = beatshell.BeatPrompt(
             self.logger.rich,
-            self.cache_dir,
+            self.file_manager.root.cache.abs,
             self.get_command_parser,
             lambda: self.settings.shell,
             preview_handler,
@@ -264,26 +264,6 @@ class KAIKOLauncher:
         r"""Current settings."""
         return self.profile_manager.current
 
-    @property
-    def cache_dir(self):
-        return self.file_manager.root.cache.abs
-
-    @property
-    def profiles_dir(self):
-        return self.file_manager.root.profiles.abs
-
-    @property
-    def beatmaps_dir(self):
-        return self.file_manager.root.beatmaps.abs
-
-    @property
-    def resources_dir(self):
-        return self.file_manager.root.resources.abs
-
-    @property
-    def devices_dir(self):
-        return self.file_manager.root.devices.abs
-
     def print_tips(self):
         logger = self.logger
 
@@ -301,7 +281,11 @@ class KAIKOLauncher:
     def get_command_parser(self):
         commands = {}
         if isinstance(self.file_manager.current, RootDirPath.beatmaps):
-            commands["play"] = PlayCommand(self.provider, self.resources_dir, self.cache_dir)
+            commands["play"] = PlayCommand(
+                self.provider,
+                self.file_manager.root.resources.abs,
+                self.file_manager.root.cache.abs,
+            )
         if isinstance(self.file_manager.current, RootDirPath.devices):
             commands["devices"] = DevicesCommand(self.provider)
         if isinstance(self.file_manager.current, RootDirPath.profiles):
