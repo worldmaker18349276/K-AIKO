@@ -1,8 +1,8 @@
-from .main.menu import KAIKOMenu
+from .main.launcher import KAIKOLauncher
 
 
 def main():
-    KAIKOMenu.main()
+    KAIKOLauncher.launch()
 
 
 if __name__ == "__main__":

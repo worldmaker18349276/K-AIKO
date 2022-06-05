@@ -70,7 +70,7 @@ class RootDirPath(RecognizedDirPath):
                 self.abs.touch()
 
 
-class KAIKOMenu:
+class KAIKOLauncher:
     update_interval = 0.01
     version = __version__
 
@@ -78,7 +78,7 @@ class KAIKOMenu:
         self.provider = Provider()
 
     @classmethod
-    def main(cls):
+    def launch(cls):
         # print logo
         print(logo.format(f"v{cls.version}"), flush=True)
 
@@ -97,24 +97,24 @@ class KAIKOMenu:
     @classmethod
     @dn.datanode
     def init_and_run(cls):
-        r"""Initialize KAIKOMenu and run."""
-        menu = cls()
+        r"""Initialize KAIKO and run."""
+        launcher = cls()
 
         # logger
         logger = Logger()
-        menu.provider.set(logger)
+        launcher.provider.set(logger)
 
         # load workspace
-        file_manager = FileManager(RootDirPath, menu.provider)
+        file_manager = FileManager(RootDirPath, launcher.provider)
         if not file_manager.check_is_prepared():
             file_manager.prepare()
-        menu.provider.set(file_manager)
+        launcher.provider.set(file_manager)
 
         os.environ[file_manager.ROOT_ENVVAR] = str(file_manager.root)
 
         # load profiles
-        profile_manager = ProfileManager(KAIKOSettings, menu.profiles_dir)
-        menu.provider.set(profile_manager)
+        profile_manager = ProfileManager(KAIKOSettings, launcher.profiles_dir)
+        launcher.provider.set(profile_manager)
 
         profile_manager.on_change(
             lambda settings: logger.recompile_style(
@@ -135,21 +135,21 @@ class KAIKOMenu:
         devices_ctxt = yield from DeviceManager.initialize(logger, profile_manager).join()
 
         with devices_ctxt as device_manager:
-            menu.provider.set(device_manager)
+            launcher.provider.set(device_manager)
 
-            beatmap_manager = BeatmapManager(menu.beatmaps_dir)
-            menu.provider.set(beatmap_manager)
+            beatmap_manager = BeatmapManager(launcher.beatmaps_dir)
+            launcher.provider.set(beatmap_manager)
 
             bgm_controller = BGMController(
-                beatmap_manager, lambda: menu.settings.devices.mixer
+                beatmap_manager, lambda: launcher.settings.devices.mixer
             )
-            menu.provider.set(bgm_controller)
+            launcher.provider.set(bgm_controller)
 
-            yield from menu.run().join()
+            yield from launcher.run().join()
 
     @dn.datanode
     def run(self):
-        r"""Run KAIKOMenu."""
+        r"""Run KAIKO."""
         logger = self.logger
 
         yield
