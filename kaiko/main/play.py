@@ -43,6 +43,9 @@ class BeatmapFilePath(RecognizedFilePath):
 class BeatmapsDirPath(RecognizedDirPath):
     "(The place to hold your beatmaps)"
 
+    def mk(self, provider):
+        self.abs.mkdir()
+
     @as_pattern("*")
     class beatmapset(RecognizedDirPath):
         def desc(self, provider):

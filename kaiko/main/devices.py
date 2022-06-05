@@ -20,6 +20,9 @@ from pyaudio import PyAudio
 class DevicesDirPath(RecognizedDirPath):
     "(The place to manage your devices)"
 
+    def mk(self, provider):
+        self.abs.mkdir()
+
 
 class DeviceManager:
     def __init__(self, audio_manager):

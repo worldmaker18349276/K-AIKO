@@ -47,6 +47,9 @@ logo = """
 class RootDirPath(RecognizedDirPath):
     "(The workspace of KAIKO)"
 
+    def mk(self, provider):
+        self.abs.mkdir()
+
     beatmaps = as_child("Beatmaps", BeatmapsDirPath)
 
     profiles = as_child("Profiles", ProfilesDirPath)
@@ -57,13 +60,22 @@ class RootDirPath(RecognizedDirPath):
     class resources(RecognizedDirPath):
         "(The place to store some resources of KAIKO)"
 
+        def mk(self, provider):
+            self.abs.mkdir()
+
     @as_child("Cache")
     class cache(RecognizedDirPath):
         "(The place to cache some data for better exprience)"
 
+        def mk(self, provider):
+            self.abs.mkdir()
+
         @as_child(".beatshell-history")
         class beatshell_history(RecognizedFilePath):
             "(The command history)"
+
+            def mk(self, provider):
+                self.abs.touch()
 
             def rm(self, provider):
                 self.abs.unlink()
@@ -106,8 +118,7 @@ class KAIKOLauncher:
 
         # load workspace
         file_manager = FileManager(RootDirPath, launcher.provider)
-        if not file_manager.check_is_prepared():
-            file_manager.prepare()
+        file_manager.fix()
         launcher.provider.set(file_manager)
 
         os.environ[file_manager.ROOT_ENVVAR] = str(file_manager.root)

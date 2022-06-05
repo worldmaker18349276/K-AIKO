@@ -17,6 +17,25 @@ class InvalidFileOperation(Exception):
     pass
 
 
+# if not subpath.exists():
+#     logger.print(f"[data/] There is a missing directory [emph]{subpath!s}[/].")
+#     res = False
+# if not subpath.is_dir() or subpath.is_symlink():
+#     logger.print(f"[data/] Bad file structure: [emph]{subpath!s}[/] should be a directory.")
+#     res = False
+
+
+class MissingFileException(Exception):
+    def __init__(self, path):
+        self.path = path
+
+
+class WrongFileTypeException(Exception):
+    def __init__(self, path, excepted):
+        self.path = path
+        self.excepted = excepted
+
+
 @dataclasses.dataclass(frozen=True)
 class RecognizedPath:
     abs: Path
@@ -33,6 +52,9 @@ class RecognizedPath:
 
     def is_symlink(self):
         return self.abs.is_symlink()
+
+    def validate(self):
+        return
 
     def __str__(self):
         abspath = str(self.abs)
@@ -84,10 +106,20 @@ class RecognizedWildCardPath(RecognizedPath):
 
 
 class RecognizedFilePath(RecognizedPath):
-    pass
+    def validate(self):
+        if not self.exists():
+            raise MissingFileException(self.abs)
+        if self.is_symlink() or not self.is_file():
+            raise WrongFileTypeException(self.abs, "a file")
 
 
 class RecognizedDirPath(RecognizedPath):
+    def validate(self):
+        if not self.exists():
+            raise MissingFileException(self.abs)
+        if self.is_symlink() or not self.is_dir():
+            raise WrongFileTypeException(self.abs, "a directory")
+
     @classmethod
     def get_fields(cls):
         for field in cls.__dict__.values():
@@ -118,29 +150,15 @@ class RecognizedDirPath(RecognizedPath):
 
             for index, field in enumerate(curr_path_type.get_fields()):
                 if isinstance(field, DirWildcardField):
-                    if issubclass(field.path_type, RecognizedFilePath) and slashend:
+                    if not field.match(path, slashend):
                         continue
 
                     curr_index = (*curr_index, index)
                     curr_path_type = field.path_type
                     return curr_path_type(path, slashend), curr_index
 
-                elif isinstance(field, DirPatternField):
-                    if issubclass(field.path_type, RecognizedFilePath) and next_slashend:
-                        continue
-
-                    if not next_path.match(field.pattern):
-                        continue
-
-                    curr_index = (*curr_index, index)
-                    curr_path_type = field.path_type
-                    break
-
-                elif isinstance(field, DirChildField):
-                    if issubclass(field.path_type, RecognizedFilePath) and next_slashend:
-                        continue
-
-                    if next_path.name != field.name:
+                elif isinstance(field, (DirPatternField, DirChildField)):
+                    if not field.match(next_path, next_slashend):
                         continue
 
                     curr_index = (*curr_index, index)
@@ -165,7 +183,27 @@ class DirPatternField:
         if instance is None:
             return self.path_type
         else:
-            raise ValueError
+            return self.find(instance.abs)
+
+    def find(self, parent):
+        for path in parent.iterdir():
+            slashend = False
+            if self.match(path, slashend):
+                path = self.path_type(path, slashend)
+                try:
+                    path.validate()
+                except WrongFileTypeException:
+                    continue
+                except MissingFileException:
+                    assert False
+                yield path
+
+    def match(self, path, slashend):
+        if issubclass(self.path_type, RecognizedFilePath) and slashend:
+            return False
+        if not path.match(self.pattern):
+            return False
+        return True
 
 
 @dataclasses.dataclass(frozen=True)
@@ -176,7 +214,25 @@ class DirWildcardField:
         if instance is None:
             return self.path_type
         else:
-            raise ValueError
+            return self.find(instance.abs)
+
+    def find(self, parent):
+        for path in parent.iterdir():
+            slashend = False
+            if self.match(path, slashend):
+                path = self.path_type(path, slashend)
+                try:
+                    path.validate()
+                except WrongFileTypeException:
+                    continue
+                except MissingFileException:
+                    assert False
+                yield path
+
+    def match(self, path, slashend):
+        if issubclass(self.path_type, RecognizedFilePath) and slashend:
+            return False
+        return True
 
 
 @dataclasses.dataclass(frozen=True)
@@ -189,6 +245,13 @@ class DirChildField:
             return self.path_type
         else:
             return self.path_type(instance.abs / self.name, self.name.endswith("/"))
+
+    def match(self, path, slashend):
+        if issubclass(self.path_type, RecognizedFilePath) and slashend:
+            return False
+        if path.name != self.name:
+            return False
+        return True
 
 
 def as_pattern(pattern, path_type=None):
@@ -280,75 +343,45 @@ class FileManager:
     def logger(self):
         return self.provider.get(Logger)
 
-    def check_is_prepared(self):
+    def fix(self):
         logger = self.logger
-
-        def go(path):
-            res = True
-            for subpath in path.get_children():
-                if isinstance(subpath, RecognizedDirPath):
-                    if not subpath.exists():
-                        logger.print(f"[data/] There is a missing directory [emph]{subpath!s}[/].")
-                        res = False
-                    if not subpath.is_dir() or subpath.is_symlink():
-                        logger.print(f"[data/] Bad file structure: [emph]{subpath!s}[/] should be a directory.")
-                        res = False
-                    if not go(subpath):
-                        res = False
-                elif isinstance(subpath, RecognizedFilePath):
-                    if not subpath.exists():
-                        logger.print(f"[data/] There is a missing file [emph]{subpath!s}[/].")
-                        res = False
-                    if not subpath.is_file() or subpath.is_symlink():
-                        logger.print(f"[data/] Bad file structure: [emph]{subpath!s}[/] should be a file.")
-                        res = False
-                else:
-                    assert False
-            return res
-
-        if not self.root.exists():
-            logger.print(f"[data/] The workspace [emph]{self.root!s}[/] is missing.")
-            return False
-
-        if not self.root.is_dir() or self.root.is_symlink():
-            raise ValueError(f"Workspace name {self.root!s} is already taken.")
-
-        return go(self.root)
-
-    def prepare(self):
-        logger = self.logger
-
-        logger.print("[data/] Prepare your profile...")
+        provider = self.provider
 
         def go(path):
             REDUNDANT_EXT = ".redundant"
 
             for subpath in path.get_children():
-                if isinstance(subpath, RecognizedDirPath):
-                    if subpath.exists() and (not subpath.is_dir() or subpath.is_symlink()):
-                        logger.print(f"[data/] Rename directory [emph]{subpath!s}[/]...")
-                        subpath.abs.rename(subpath.abs.parent / (subpath.abs.name + REDUNDANT_EXT))
-                    if not subpath.exists():
-                        logger.print(f"[data/] Create directory [emph]{subpath!s}[/]...")
-                        subpath.abs.mkdir()
-                    go(subpath)
-                elif isinstance(subpath, RecognizedFilePath):
-                    if subpath.exists() and (not subpath.is_file() or subpath.is_symlink()):
-                        logger.print(f"[data/] Rename file [emph]{subpath!s}[/]...")
-                        subpath.abs.rename(subpath.abs.parent / (subpath.abs.name + REDUNDANT_EXT))
-                    if not subpath.exists():
-                        logger.print(f"[data/] Create file [emph]{subpath!s}[/]...")
-                        subpath.abs.touch()
-                else:
-                    assert False
+                try:
+                    subpath.validate()
 
-        if not self.root.exists():
-            self.root.abs.mkdir()
+                except WrongFileTypeException:
+                    logger.print(f"[warn]Wrong file type [emph]{subpath!s}[/][/]")
+                    subpath_ = subpath.abs.parent / (subpath.abs.name + REDUNDANT_EXT)
+                    logger.print(f"[data/] Rename to [emph]{subpath_!s}[/]...")
+                    subpath.abs.rename(subpath_)
+                    logger.print(f"[data/] Create file [emph]{subpath!s}[/]...")
+                    subpath.mk(provider)
+
+                except MissingFileException:
+                    logger.print(f"[warn]Missing file [emph]{subpath!s}[/][/]")
+                    logger.print(f"[data/] Create file [emph]{subpath!s}[/]...")
+                    subpath.mk(provider)
+
+                if isinstance(subpath, RecognizedDirPath):
+                    go(subpath)
+
+        try:
+            self.root.validate()
+        except WrongFileTypeException:
+            raise RuntimeError(f"Workspace name {self.root!s} is already taken.")
+        except MissingFileException:
+            logger.print(f"[warn]The KAIKO workspace is missing[/]")
+            logger.print(f"[data/] Create KAIKO workspace...")
+            self.root.mk(provider)
             logger.print(
                 f"[data/] Your data will be stored in {logger.as_uri(self.root.abs)}"
             )
-
-        go(self.root)
+        return go(self.root)
 
         logger.print(flush=True)
 

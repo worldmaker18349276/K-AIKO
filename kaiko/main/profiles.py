@@ -9,7 +9,7 @@ from ..utils import parsec as pc
 from ..utils import commands as cmd
 from ..utils import datanodes as dn
 from .loggers import Logger
-from .files import RecognizedFilePath, RecognizedDirPath, as_pattern, as_child
+from .files import RecognizedFilePath, RecognizedDirPath, as_pattern, as_child, FileManager
 
 
 def exists(program):
@@ -38,13 +38,16 @@ def edit(text, editor, suffix=""):
 class ProfilesDirPath(RecognizedDirPath):
     "(The place to manage your profiles)"
 
+    def mk(self, provider):
+        self.abs.mkdir()
+
     @as_pattern("*.kaiko-profile")
     class profile(RecognizedFilePath):
         def desc(self, provider):
             profile_manager = provider.get(ProfileManager)
             note = "(Untracked custom profile)"
             for profile in profile_manager.profiles:
-                name = profile + profile_manager.extension
+                name = profile + profile_manager.EXTENSION
                 if name == self.abs.name:
                     note = "(Your custom profile)"
                     if profile == profile_manager.default_name:
@@ -93,6 +96,9 @@ class ProfilesDirPath(RecognizedDirPath):
     @as_child(".default-profile")
     class default(RecognizedFilePath):
         "(The file of default profile name)"
+
+        def mk(self, provider):
+            self.abs.touch()
 
         def rm(self, provider):
             profile_manager = provider.get(ProfileManager)
