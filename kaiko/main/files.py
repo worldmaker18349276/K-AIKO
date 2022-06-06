@@ -110,10 +110,6 @@ class UnrecognizedPath(RecognizedPath):
         shutil.copy(self.abs, dst.abs)
 
 
-class RecognizedWildCardPath(RecognizedPath):
-    pass
-
-
 class RecognizedFilePath(RecognizedPath):
     def validate(self):
         if not self.exists():
@@ -132,7 +128,7 @@ class RecognizedDirPath(RecognizedPath):
     @classmethod
     def get_fields(cls):
         for field in cls.__dict__.values():
-            if isinstance(field, (DirWildcardField, DirPatternField, DirChildField)):
+            if isinstance(field, (DirPatternField, DirChildField)):
                 yield field
 
     def get_children(self):
@@ -148,39 +144,48 @@ class RecognizedDirPath(RecognizedPath):
         route.extend((parent, True) for parent in path.parents)
         i = next((i for i, (path, _) in enumerate(route) if path == self.abs), None)
         if i is None:
-            return UnrecognizedPath(path, slashend), None
+            return UnrecognizedPath(path, slashend)
         route = route[i::-1][1:]
 
-        curr_index = ()
         curr_path_type = type(self)
         for next_path, next_slashend in route:
             if not issubclass(curr_path_type, RecognizedDirPath):
-                return UnrecognizedPath(path, slashend), None
+                return UnrecognizedPath(path, slashend)
 
             for index, field in enumerate(curr_path_type.get_fields()):
-                if isinstance(field, DirWildcardField):
-                    if not field.match(path, slashend):
-                        continue
+                if not field.match(next_path, next_slashend):
+                    continue
 
-                    curr_index = (*curr_index, index)
-                    curr_path_type = field.path_type
-                    return curr_path_type(path, slashend), curr_index
-
-                elif isinstance(field, (DirPatternField, DirChildField)):
-                    if not field.match(next_path, next_slashend):
-                        continue
-
-                    curr_index = (*curr_index, index)
-                    curr_path_type = field.path_type
-                    break
-
-                else:
-                    assert False
+                curr_path_type = field.path_type
+                break
 
             else:
-                return UnrecognizedPath(path, slashend), None
+                return UnrecognizedPath(path, slashend)
 
-        return curr_path_type(path, slashend), curr_index
+        return curr_path_type(path, slashend)
+
+    def iterdir(self):
+        fields = list(self.get_fields())
+        for path in self.abs.iterdir():
+            slashend = False
+            for field in fields:
+                if not field.match(path, slashend):
+                    continue
+
+                res = field.path_type(path, slashend)
+
+                try:
+                    res.validate()
+                except WrongFileTypeException:
+                    continue
+                except MissingFileException:
+                    assert False
+
+                yield res
+                break
+
+            else:
+                yield UnrecognizedPath(path, slashend)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -216,35 +221,6 @@ class DirPatternField:
 
 
 @dataclasses.dataclass(frozen=True)
-class DirWildcardField:
-    path_type: type
-
-    def __get__(self, instance, instance_type=None):
-        if instance is None:
-            return self.path_type
-        else:
-            return self.find(instance.abs)
-
-    def find(self, parent):
-        for path in parent.iterdir():
-            slashend = False
-            if self.match(path, slashend):
-                path = self.path_type(path, slashend)
-                try:
-                    path.validate()
-                except WrongFileTypeException:
-                    continue
-                except MissingFileException:
-                    assert False
-                yield path
-
-    def match(self, path, slashend):
-        if issubclass(self.path_type, RecognizedFilePath) and slashend:
-            return False
-        return True
-
-
-@dataclasses.dataclass(frozen=True)
 class DirChildField:
     name: str
     path_type: type
@@ -273,10 +249,7 @@ def as_pattern(pattern, path_type=None):
     if not issubclass(path_type, RecognizedPath):
         raise TypeError(f"invalid path type: {path_type}")
 
-    if pattern == "**":
-        return DirWildcardField(path_type)
-    else:
-        return DirPatternField(pattern, path_type)
+    return DirPatternField(pattern, path_type)
 
 
 def as_child(name, path_type=None):
@@ -399,7 +372,7 @@ class FileManager:
 
     def recognize(self, path):
         path = Path(os.path.expandvars(os.path.expanduser(path)))
-        return self.root.recognize(path)[0]
+        return self.root.recognize(path)
 
     def as_relative_path(self, path):
         relpath = str(path.abs.relative_to(self.root.abs))
@@ -424,25 +397,24 @@ class FileManager:
         file_normal = logger.rich.parse(self.settings.display.file_normal, slotted=True)
         file_other = logger.rich.parse(self.settings.display.file_other, slotted=True)
 
-        path = self.current.abs.resolve()
-
+        field_types = [field.path_type for field in self.current.get_fields()]
         res = []
-        for child in path.iterdir():
-            if child.is_symlink():
-                name = logger.escape(str(child.readlink()), type="all")
+        for path in self.current.iterdir():
+            if path.abs.is_symlink():
+                name = logger.escape(str(path.abs.readlink()), type="all")
             else:
-                name = logger.escape(child.name, type="all")
+                name = logger.escape(path.abs.name, type="all")
             name = logger.rich.parse(name)
 
-            if child.is_dir():
+            if path.abs.is_dir():
                 name = file_dir(name)
 
-            elif child.is_file():
-                if child.suffix in [".py", ".kaiko-profile"]:
+            elif path.abs.is_file():
+                if path.abs.suffix in [".py", ".kaiko-profile"]:
                     name = file_script(name)
-                elif child.suffix in [".ka", ".kaiko", ".osu"]:
+                elif path.abs.suffix in [".ka", ".kaiko", ".osu"]:
                     name = file_beatmap(name)
-                elif child.suffix in [".wav", ".mp3", ".mp4", ".m4a", ".ogg"]:
+                elif path.abs.suffix in [".wav", ".mp3", ".mp4", ".m4a", ".ogg"]:
                     name = file_sound(name)
                 else:
                     name = file_normal(name)
@@ -450,25 +422,25 @@ class FileManager:
             else:
                 name = file_other(name)
 
-            if child.is_symlink():
-                linkname = logger.escape(child.name, type="all")
+            if path.abs.is_symlink():
+                linkname = logger.escape(path.abs.name, type="all")
                 linkname = logger.rich.parse(linkname)
                 name = file_link(src=linkname, dst=name)
 
-            recpath, ind = self.root.recognize(self.current.abs / child.name)
-            desc = recpath.desc(self.provider)
+            ind = field_types.index(type(path)) if type(path) in field_types else len(field_types)
+            desc = path.desc(self.provider)
             desc = logger.rich.parse(desc, root_tag=True) if desc is not None else None
 
             ordering_key = (
-                isinstance(recpath, UnrecognizedPath),
+                isinstance(path, UnrecognizedPath),
                 ind,
-                child.is_symlink(),
-                not child.is_dir(),
-                child.suffix,
-                child.stem,
+                path.abs.is_symlink(),
+                not path.abs.is_dir(),
+                path.abs.suffix,
+                path.abs.stem,
             )
 
-            if isinstance(recpath, UnrecognizedPath):
+            if isinstance(path, UnrecognizedPath):
                 name = file_unknown(name)
             desc = file_desc(desc) if desc is not None else mu.Text("")
             name = file_item(name)
@@ -762,7 +734,7 @@ class PathParser(cmd.ArgumentParser):
         path = os.path.expanduser(path)
         path = os.path.expandvars(path)
         path = os.path.join(self.prefix, path or ".")
-        path, _ = self.root.recognize(path)
+        path = self.root.recognize(path)
 
         if not self.filter(str(path)):
             desc = self.desc()

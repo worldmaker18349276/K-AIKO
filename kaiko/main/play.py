@@ -9,7 +9,7 @@ from ..utils import commands as cmd
 from ..beats import beatmaps
 from ..beats import beatsheets
 from .loggers import Logger
-from .files import RecognizedFilePath, RecognizedDirPath, RecognizedWildCardPath, as_pattern, as_child, FileManager, PathParser
+from .files import RecognizedFilePath, RecognizedDirPath, as_pattern, as_child, FileManager, PathParser
 from .profiles import ProfileManager
 
 
@@ -70,10 +70,6 @@ class BeatmapsDirPath(RecognizedDirPath):
         @as_pattern("*.osu")
         class beatmap_OSU(BeatmapFilePath):
             "(Beatmap file in osu format)"
-
-        @as_pattern("**")
-        class inner_file(RecognizedWildCardPath):
-            "(Inner file of this beatmapset)"
 
     @as_pattern("*.osz")
     class beamap_zip(RecognizedFilePath):

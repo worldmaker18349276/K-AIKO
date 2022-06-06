@@ -189,7 +189,7 @@ class ProfileManager:
         # update default_path
         default_path = default_meta_path.abs.read_text().rstrip("\n")
         default_path = os.path.join(self.profiles_dir.abs, default_path)
-        default_path, _ = self.profiles_dir.recognize(default_path)
+        default_path = self.profiles_dir.recognize(default_path)
         if not isinstance(default_path, ProfilesDirPath.profile):
             default_path = None
         self._default_path = default_path
@@ -363,7 +363,7 @@ class ProfileManager:
                     name = f"new profile ({str(n)})"
 
                 relpath = name + ProfilesDirPath.profile.EXTENSION
-                path, _ = self.profiles_dir.recognize(os.path.join(self.profiles_dir.abs, relpath))
+                path = self.profiles_dir.recognize(os.path.join(self.profiles_dir.abs, relpath))
                 assert isinstance(path, ProfilesDirPath.profile)
 
                 logger.print(f"[data/] Load empty configuration as {logger.emph(relpath, type='all')}...")
@@ -711,7 +711,7 @@ class ProfilesCommand:
                       The profile path.
         """
         profiles_dir = self.profile_manager.profiles_dir
-        profile, _ = profiles_dir.recognize(profiles_dir.abs / profile)
+        profile = profiles_dir.recognize(profiles_dir.abs / profile)
         self.profile_manager.set_default(profile)
 
     @cmd.function_command
@@ -723,7 +723,7 @@ class ProfilesCommand:
               The profile path.
         """
         profiles_dir = self.profile_manager.profiles_dir
-        profile, _ = profiles_dir.recognize(profiles_dir.abs / profile)
+        profile = profiles_dir.recognize(profiles_dir.abs / profile)
         self.profile_manager.use(profile)
 
     @use.arg_parser("profile")

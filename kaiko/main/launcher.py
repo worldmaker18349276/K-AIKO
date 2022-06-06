@@ -16,7 +16,6 @@ from .files import (
     CdCommand,
     RecognizedDirPath,
     RecognizedFilePath,
-    RecognizedWildCardPath,
     as_child,
 )
 from .settings import KAIKOSettings
