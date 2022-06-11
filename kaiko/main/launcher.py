@@ -13,7 +13,7 @@ from ..beats import beatshell
 from .files import (
     FileManager,
     FilesCommand,
-    CdCommand,
+    DirectCdCommand,
     RecognizedDirPath,
     RecognizedFilePath,
     as_child,
@@ -299,6 +299,6 @@ class KAIKOLauncher:
             commands["profiles"] = ProfilesCommand(self.provider)
         commands["bgm"] = BGMCommand(self.provider)
         commands["files"] = FilesCommand(self.provider)
-        commands["cd"] = CdCommand(self.provider)
+        commands["cd"] = DirectCdCommand(self.provider)
         return cmd.RootCommandParser(**commands)
 

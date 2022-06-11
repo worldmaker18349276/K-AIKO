@@ -1,9 +1,7 @@
 import os
 import dataclasses
-import traceback
 import getpass
 import re
-from typing import Optional
 import shutil
 from pathlib import Path
 from ..utils import config as cfg
@@ -11,10 +9,6 @@ from ..utils import markups as mu
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
 from .loggers import Logger
-
-
-class InvalidFileOperation(Exception):
-    pass
 
 
 @dataclasses.dataclass(frozen=True)
@@ -29,7 +23,7 @@ class RecognizedPath:
         try:
             relpath = str(self.abs.relative_to(path.abs))
         except ValueError:
-            relpath = str(path)
+            relpath = str(self.abs)
         if self.slashend:
             relpath = os.path.join(relpath, "")
         return relpath
@@ -46,45 +40,6 @@ class RecognizedPath:
     def info(self, provider):
         return None
 
-    def mk(self, provider):
-        raise InvalidFileOperation
-
-    def rm(self, provider):
-        raise InvalidFileOperation
-
-    def mv(self, dst, provider):
-        raise InvalidFileOperation
-
-    def cp(self, src, provider):
-        raise InvalidFileOperation
-
-
-def validate_path(path, should_exist=None, root=None, file_type="file"):
-    # should_exist: Optional[bool]
-
-    if root is not None and not path.abs.resolve().is_relative_to(root.abs):
-        raise InvalidFileOperation(f"Out of root directory: {str(path.abs.resolve())}")
-
-    if path.slashend and path.abs.is_file():
-        raise InvalidFileOperation(f"Given path ends with a slash, but found a file: {path!s}")
-
-    if should_exist is True and not path.abs.exists():
-        raise InvalidFileOperation(f"No such file: {path!s}")
-
-    if should_exist is False and path.abs.exists():
-        raise InvalidFileOperation(f"File already exists: {path!s}")
-
-    if file_type == "file" and not path.abs.exists() and path.slashend:
-        raise InvalidFileOperation(f"Not a file: {path!s}")
-
-    if file_type == "file" and path.abs.exists() and not path.abs.is_file():
-        raise InvalidFileOperation(f"Not a file: {path!s}")
-
-    if file_type == "dir" and path.abs.exists() and not path.abs.is_dir():
-        raise InvalidFileOperation(f"Not a directory: {path!s}")
-
-
-class UnrecognizedPath(RecognizedPath):
     def mk(self, provider):
         file_manager = provider.get(FileManager)
         validate_path(self, should_exist=False, root=file_manager.root, file_type="all")
@@ -114,6 +69,10 @@ class UnrecognizedPath(RecognizedPath):
         validate_path(self, should_exist=False, root=file_manager.root, file_type="all")
         validate_path(src, should_exist=True, file_type="all")
         shutil.copy(src.abs, self.abs)
+
+
+class UnrecognizedPath(RecognizedPath):
+    pass
 
 
 class RecognizedFilePath(RecognizedPath):
@@ -259,6 +218,35 @@ def as_child(name, path_type=None):
     return DirChildField(name, path_type)
 
 
+class InvalidFileOperation(Exception):
+    pass
+
+
+def validate_path(path, should_exist=None, root=None, file_type="file"):
+    # should_exist: Optional[bool]
+
+    if root is not None and not path.abs.resolve().is_relative_to(root.abs):
+        raise InvalidFileOperation(f"Out of root directory: {str(path.abs.resolve())}")
+
+    if path.slashend and path.abs.is_file():
+        raise InvalidFileOperation(f"The given path ends with a slash, but found a file: {path!s}")
+
+    if path.slashend and file_type == "file":
+        raise InvalidFileOperation(f"The given path ends with a slash, but a file is required: {path!s}")
+
+    if should_exist is True and not path.abs.exists():
+        raise InvalidFileOperation(f"No such file: {path!s}")
+
+    if should_exist is False and path.abs.exists():
+        raise InvalidFileOperation(f"File already exists: {path!s}")
+
+    if file_type == "file" and path.abs.exists() and not path.abs.is_file():
+        raise InvalidFileOperation(f"Not a file: {path!s}")
+
+    if file_type == "dir" and path.abs.exists() and not path.abs.is_dir():
+        raise InvalidFileOperation(f"Not a directory: {path!s}")
+
+
 def rename_path(parent, stem, suffix):
     name = stem + suffix
     if "/" in name or not name.isprintable():
@@ -342,20 +330,22 @@ class FileManager:
             REDUNDANT_EXT = ".redundant"
 
             for subpath in path.get_children():
+                relpath = self.as_relative_path(subpath)
                 if not subpath.abs.exists():
-                    logger.print(f"[warn]Missing file [emph]{subpath!s}[/][/]")
-                    logger.print(f"[data/] Create file [emph]{subpath!s}[/]...")
+                    logger.print(f"[warn]Missing file [emph]{relpath}[/][/]")
+                    logger.print(f"[data/] Create file [emph]{subpath}[/]...")
                     subpath.mk(provider)
 
                 elif (
                     isinstance(subpath, RecognizedFilePath) and not subpath.abs.is_file()
                     or isinstance(subpath, RecognizedDirPath) and not subpath.abs.is_dir()
                 ):
-                    logger.print(f"[warn]Wrong file type [emph]{subpath!s}[/][/]")
+                    logger.print(f"[warn]Wrong file type [emph]{relpath}[/][/]")
                     subpath_ = subpath.abs.parent / (subpath.abs.name + REDUNDANT_EXT)
-                    logger.print(f"[data/] Rename to [emph]{subpath_!s}[/]...")
+                    relpath_ = self.as_relative_path(subpath_)
+                    logger.print(f"[data/] Rename to [emph]{relpath_}[/]...")
                     subpath.abs.rename(subpath_)
-                    logger.print(f"[data/] Create file [emph]{subpath!s}[/]...")
+                    logger.print(f"[data/] Create file [emph]{relpath}[/]...")
                     subpath.mk(provider)
 
                 if isinstance(subpath, RecognizedDirPath):
@@ -383,6 +373,25 @@ class FileManager:
         path = Path(os.path.expandvars(os.path.expanduser(path)))
         return self.root.recognize(path)
 
+    def iterdir(self):
+        current_path = self.current
+        if isinstance(current_path, RecognizedDirPath):
+            field_types = [field.path_type for field in current_path.get_fields()]
+            return current_path.iterdir()
+        elif current_path.abs.is_dir():
+            field_types = []
+            return (UnrecognizedPath(subpath, subpath.is_dir()) for subpath in current_path.abs.iterdir())
+        else:
+            field_types = []
+            return ()
+
+    def get_field_types(self):
+        current_path = self.current
+        if isinstance(current_path, RecognizedDirPath):
+            return [field.path_type for field in current_path.get_fields()]
+        else:
+            return []
+
     def as_relative_path(self, path):
         relpath = str(path.abs.relative_to(self.root.abs))
         if relpath == ".":
@@ -392,32 +401,100 @@ class FileManager:
             relpath = os.path.join(relpath, "")
         return relpath
 
+    def cd(self, path):
+        try:
+            validate_path(path, should_exist=True, root=self.root, file_type="dir")
+
+        except InvalidFileOperation as e:
+            logger = self.logger
+            logger.print(f"[warn]Failed to change directory to {logger.as_uri(path.abs)}[/]")
+            logger.print(f"[warn]{str(e)}[/]")
+            return
+
+        self.current = path.normalize()
+
+    def mk(self, path):
+        try:
+            path.mk(self.provider)
+
+        except InvalidFileOperation as e:
+            logger = self.logger
+            logger.print(f"[warn]Failed to make file: {logger.as_uri(path.abs)}[/]")
+            logger.print(f"[warn]{str(e)}[/]")
+            return
+
+    def rm(self, path):
+        try:
+            path.rm(self.provider)
+
+        except InvalidFileOperation as e:
+            logger = self.logger
+            logger.print(f"[warn]Failed to remove file: {logger.as_uri(path.abs)}[/]")
+            logger.print(f"[warn]{str(e)}[/]")
+            return
+
+    def mv(self, path, dst):
+        try:
+            path.mv(dst, self.provider)
+
+        except InvalidFileOperation as e:
+            logger = self.logger
+            logger.print(
+                f"[warn]Failed to move file: {logger.as_uri(path.abs)} -> {logger.as_uri(dst.abs)}[/]"
+            )
+            logger.print(f"[warn]{str(e)}[/]")
+            return
+
+    def cp(self, src, path):
+        try:
+            path.cp(src, self.provider)
+
+        except InvalidFileOperation as e:
+            logger = self.logger
+            logger.print(
+                f"[warn]Failed to copy file: {logger.as_uri(src.abs)} -> {logger.as_uri(path.abs)}[/]"
+            )
+            logger.print(f"[warn]{str(e)}[/]")
+            return
+
+    def make_parser(self, desc=None, filter=lambda _: True):
+        return PathParser(self.root, self.current.abs, desc=desc, filter=filter, provider=self.provider)
+
+
+class FilesCommand:
+    def __init__(self, provider):
+        self.provider = provider
+
+    @property
+    def file_manager(self):
+        return self.provider.get(FileManager)
+
+    @property
+    def logger(self):
+        return self.provider.get(Logger)
+
+    @cmd.function_command
     def ls(self):
         logger = self.logger
+        file_manager = self.file_manager
+        display_settings = file_manager.settings.display
+        current_path = file_manager.current
 
-        file_item = logger.rich.parse(self.settings.display.file_item, slotted=True)
-        file_unknown = logger.rich.parse(self.settings.display.file_unknown, slotted=True)
-        file_desc = logger.rich.parse(self.settings.display.file_desc, slotted=True)
-        file_dir = logger.rich.parse(self.settings.display.file_dir, slotted=True)
-        file_script = logger.rich.parse(self.settings.display.file_script, slotted=True)
-        file_beatmap = logger.rich.parse(self.settings.display.file_beatmap, slotted=True)
-        file_sound = logger.rich.parse(self.settings.display.file_sound, slotted=True)
-        file_link = logger.rich.parse(self.settings.display.file_link, slotted=True)
-        file_normal = logger.rich.parse(self.settings.display.file_normal, slotted=True)
-        file_other = logger.rich.parse(self.settings.display.file_other, slotted=True)
+        file_item = logger.rich.parse(display_settings.file_item, slotted=True)
+        file_unknown = logger.rich.parse(display_settings.file_unknown, slotted=True)
+        file_desc = logger.rich.parse(display_settings.file_desc, slotted=True)
+        file_dir = logger.rich.parse(display_settings.file_dir, slotted=True)
+        file_script = logger.rich.parse(display_settings.file_script, slotted=True)
+        file_beatmap = logger.rich.parse(display_settings.file_beatmap, slotted=True)
+        file_sound = logger.rich.parse(display_settings.file_sound, slotted=True)
+        file_link = logger.rich.parse(display_settings.file_link, slotted=True)
+        file_normal = logger.rich.parse(display_settings.file_normal, slotted=True)
+        file_other = logger.rich.parse(display_settings.file_other, slotted=True)
 
-        if isinstance(self.current, RecognizedDirPath):
-            field_types = [field.path_type for field in self.current.get_fields()]
-            subpaths = self.current.iterdir()
-        elif self.current.abs.is_dir():
-            field_types = []
-            subpaths = (UnrecognizedPath(subpath, subpath.is_dir()) for subpath in self.current.abs.iterdir())
-        else:
-            field_types = []
-            subpaths = ()
+        field_types = file_manager.get_field_types()
 
         res = []
-        for path in subpaths:
+        for path in file_manager.iterdir():
             if path.abs.is_symlink():
                 name = logger.escape(str(path.abs.readlink()), type="all")
             else:
@@ -474,117 +551,6 @@ class FileManager:
             logger.print(name, end=padding)
             logger.print(desc, end="\n")
 
-    def cd(self, path):
-        try:
-            validate_path(path, should_exist=True, root=self.root, file_type="dir")
-
-        except InvalidFileOperation as e:
-            logger = self.logger
-            logger.print(f"[warn]Failed to change directory to {logger.as_uri(path.abs)}[/]")
-            logger.print(f"[warn]{str(e)}[/]")
-            return
-
-        except Exception:
-            logger = self.logger
-            logger.print(f"[warn]Failed to change directory to {logger.as_uri(path.abs)}[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
-            return
-
-        self.current = path.normalize()
-
-    def mk(self, path):
-        try:
-            path.mk(self.provider)
-
-        except InvalidFileOperation as e:
-            logger = self.logger
-            logger.print(f"[warn]Failed to change directory to {logger.as_uri(path.abs)}[/]")
-            logger.print(f"[warn]{str(e)}[/]")
-            return
-
-        except Exception:
-            logger = self.logger
-            logger.print(f"[warn]Failed to make file: {logger.as_uri(path.abs)}[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
-            return
-
-    def rm(self, path):
-        try:
-            path.rm(self.provider)
-
-        except InvalidFileOperation as e:
-            logger = self.logger
-            logger.print(f"[warn]Failed to change directory to {logger.as_uri(path.abs)}[/]")
-            logger.print(f"[warn]{str(e)}[/]")
-            return
-
-        except Exception:
-            logger = self.logger
-            logger.print(f"[warn]Failed to remove file: {logger.as_uri(path.abs)}[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
-            return
-
-    def mv(self, path, dst):
-        try:
-            path.mv(dst, self.provider)
-
-        except InvalidFileOperation as e:
-            logger = self.logger
-            logger.print(f"[warn]Failed to change directory to {logger.as_uri(path.abs)}[/]")
-            logger.print(f"[warn]{str(e)}[/]")
-            return
-
-        except Exception:
-            logger = self.logger
-            logger.print(
-                f"[warn]Failed to move file: {logger.as_uri(path.abs)} -> {logger.as_uri(dst.abs)}[/]"
-            )
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
-            return
-
-    def cp(self, src, path):
-        try:
-            path.cp(src, self.provider)
-
-        except InvalidFileOperation as e:
-            logger = self.logger
-            logger.print(f"[warn]Failed to change directory to {logger.as_uri(path.abs)}[/]")
-            logger.print(f"[warn]{str(e)}[/]")
-            return
-
-        except Exception:
-            logger = self.logger
-            logger.print(
-                f"[warn]Failed to copy file: {logger.as_uri(src.abs)} -> {logger.as_uri(path.abs)}[/]"
-            )
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
-            return
-
-    def make_parser(self, desc=None, filter=lambda _: True):
-        return PathParser(self.root, self.current.abs, desc=desc, filter=filter, provider=self.provider)
-
-
-class FilesCommand:
-    def __init__(self, provider):
-        self.provider = provider
-
-    @property
-    def file_manager(self):
-        return self.provider.get(FileManager)
-
-    @property
-    def logger(self):
-        return self.provider.get(Logger)
-
-    @cmd.function_command
-    def ls(self):
-        self.file_manager.ls()
-
     @cmd.function_command
     def cd(self, path):
         self.file_manager.cd(path)
@@ -595,13 +561,20 @@ class FilesCommand:
         logger = self.logger
 
         try:
+            validate_path(path, should_exist=True, root=file_manager.root, file_type="file")
+        except InvalidFileOperation as e:
+            logger.print(f"[warn]Failed to change directory to {logger.as_uri(path.abs)}[/]")
+            logger.print(f"[warn]{str(e)}[/]")
+            return
+
+        try:
             content = path.abs.read_text()
         except UnicodeDecodeError:
             logger.print("[warn]Cannot read binary file.[/]")
             return
 
         relpath = file_manager.as_relative_path(path)
-        code = logger.format_code(content, title=str(relpath))
+        code = logger.format_code(content, title=relpath)
         logger.print(code)
 
     @cmd.function_command
@@ -793,22 +766,16 @@ class PathParser(cmd.ArgumentParser):
         return self.parse(token).info(self.provider)
 
 
-def CdCommand(provider):
-    def make_cd_command(name):
-        @cmd.function_command
-        def cd_command(self):
-            file_manager = self.provider.get(FileManager)
-            path = file_manager.recognize(file_manager.current.abs / name)
-            return file_manager.cd(path)
-        return cd_command
+def DirectCdCommand(provider):
+    file_commands = FilesCommand(provider)
+    def make_cd_command(path):
+        return cmd.function_command(lambda _: file_commands.cd(path))
+
+    file_manager = provider.get(FileManager)
 
     attrs = {}
-    attrs["provider"] = provider
-    attrs[".."] = make_cd_command("..")
-    file_manager = provider.get(FileManager)
-    curr_path = file_manager.current.abs.resolve()
-    for child in curr_path.iterdir():
-        if child.is_dir():
-            attrs[child.name + "/"] = make_cd_command(child.name)
+    attrs[".."] = make_cd_command(file_manager.recognize(file_manager.current.abs / ".."))
+    for path in file_manager.iterdir():
+        attrs[path.abs.name + "/"] = make_cd_command(path)
 
-    return type("CdCommand", (object,), attrs)()
+    return type("DirectCdCommand", (object,), attrs)()
