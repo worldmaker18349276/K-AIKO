@@ -17,7 +17,6 @@ from .files import (
     as_pattern,
     as_child,
     rename_path,
-    validate_path,
     InvalidFileOperation,
     FileManager,
     PathParser,
@@ -108,7 +107,7 @@ class BeatmapsDirPath(RecognizedDirPath):
 
     def mk(self, provider):
         file_manager = provider.get(FileManager)
-        validate_path(self, should_exist=False, root=file_manager.root, file_type="all")
+        file_manager.validate_path(self, should_exist=False, file_type="all")
         self.abs.mkdir()
 
     beatmapset = as_pattern("*")(BeatmapsetDirPath)
@@ -271,13 +270,13 @@ class BeatmapManager:
         file_manager = self.provider.get(FileManager)
         if not isinstance(path, BeatmapsetDirPath):
             raise InvalidFileOperation(f"Not a valid beatmapset path: {logger.as_uri(path.abs)}")
-        validate_path(path, should_exist=should_exist, root=file_manager.root, file_type="dir")
+        file_manager.validate_path(path, should_exist=should_exist, file_type="dir")
 
     def validate_beatmap_path(self, path, should_exist=None):
         file_manager = self.provider.get(FileManager)
         if not isinstance(path, BeatmapFilePath):
             raise InvalidFileOperation(f"Not a valid beatmap path: {logger.as_uri(path.abs)}")
-        validate_path(path, should_exist=should_exist, root=file_manager.root, file_type="file")
+        file_manager.validate_path(path, should_exist=should_exist, file_type="file")
 
     def remove_beatmapset(self, beatmapset_path):
         logger = self.provider.get(Logger)
@@ -320,7 +319,8 @@ class BeatmapManager:
 
         try:
             self.validate_beatmapset_path(beatmapset_path, should_exist=False)
-            validate_path(src_path, should_exist=True, file_type="dir")
+            file_manager = self.provider.get(FileManager)
+            file_manager.validate_path(src_path, should_exist=True, should_in_range=False, file_type="dir")
         except InvalidFileOperation as e:
             logger.print(f"[warn]{str(e)}[/]")
             return False
@@ -336,7 +336,8 @@ class BeatmapManager:
 
         try:
             self.validate_beatmap_path(beatmap_path, should_exist=False)
-            validate_path(src_path, should_exist=True, file_type="file")
+            file_manager = self.provider.get(FileManager)
+            file_manager.validate_path(src_path, should_exist=True, should_in_range=False, file_type="file")
         except InvalidFileOperation as e:
             logger.print(f"[warn]{str(e)}[/]")
             return False

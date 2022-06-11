@@ -22,7 +22,7 @@ class DevicesDirPath(RecognizedDirPath):
 
     def mk(self, provider):
         file_manager = provider.get(FileManager)
-        validate_path(self, should_exist=False, root=file_manager.root, file_type="all")
+        file_manager.validate_path(self, should_exist=False, file_type="all")
         self.abs.mkdir()
 
 
