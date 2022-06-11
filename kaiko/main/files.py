@@ -17,41 +17,13 @@ class InvalidFileOperation(Exception):
     pass
 
 
-# if not subpath.exists():
-#     logger.print(f"[data/] There is a missing directory [emph]{subpath!s}[/].")
-#     res = False
-# if not subpath.is_dir() or subpath.is_symlink():
-#     logger.print(f"[data/] Bad file structure: [emph]{subpath!s}[/] should be a directory.")
-#     res = False
-
-
-class MissingFileException(Exception):
-    def __init__(self, path):
-        self.path = path
-
-
-class WrongFileTypeException(Exception):
-    def __init__(self, path, excepted):
-        self.path = path
-        self.excepted = excepted
-
-
 @dataclasses.dataclass(frozen=True)
 class RecognizedPath:
     abs: Path
     slashend: bool
 
-    def exists(self):
-        return self.abs.exists()
-
-    def is_dir(self):
-        return self.abs.is_dir()
-
-    def is_file(self):
-        return self.abs.is_file()
-
-    def is_symlink(self):
-        return self.abs.is_symlink()
+    def normalize(self):
+        return self
 
     def try_relative_to(self, path):
         try:
@@ -61,9 +33,6 @@ class RecognizedPath:
         if self.slashend:
             relpath = os.path.join(relpath, "")
         return relpath
-
-    def validate(self):
-        return
 
     def __str__(self):
         abspath = str(self.abs)
@@ -86,44 +55,75 @@ class RecognizedPath:
     def mv(self, dst, provider):
         raise InvalidFileOperation
 
-    def cp(self, dst, provider):
+    def cp(self, src, provider):
         raise InvalidFileOperation
+
+
+def validate_path(path, should_exist=None, root=None, file_type="file"):
+    # should_exist: Optional[bool]
+
+    if root is not None and not path.abs.resolve().is_relative_to(root.abs):
+        raise InvalidFileOperation(f"Out of root directory: {str(path.abs.resolve())}")
+
+    if path.slashend and path.abs.is_file():
+        raise InvalidFileOperation(f"Given path ends with a slash, but found a file: {path!s}")
+
+    if should_exist is True and not path.abs.exists():
+        raise InvalidFileOperation(f"No such file: {path!s}")
+
+    if should_exist is False and path.abs.exists():
+        raise InvalidFileOperation(f"File already exists: {path!s}")
+
+    if file_type == "file" and not path.abs.exists() and path.slashend:
+        raise InvalidFileOperation(f"Not a file: {path!s}")
+
+    if file_type == "file" and path.abs.exists() and not path.abs.is_file():
+        raise InvalidFileOperation(f"Not a file: {path!s}")
+
+    if file_type == "dir" and path.abs.exists() and not path.abs.is_dir():
+        raise InvalidFileOperation(f"Not a directory: {path!s}")
 
 
 class UnrecognizedPath(RecognizedPath):
     def mk(self, provider):
+        file_manager = provider.get(FileManager)
+        validate_path(self, should_exist=False, root=file_manager.root, file_type="all")
         if self.slashend:
             self.abs.mkdir(exist_ok=False)
         else:
             self.abs.touch(exist_ok=False)
 
     def rm(self, provider):
+        file_manager = provider.get(FileManager)
+        validate_path(self, should_exist=True, root=file_manager.root, file_type="all")
         if self.abs.is_dir() and not self.abs.is_symlink():
             self.abs.rmdir()
         else:
             self.abs.unlink()
 
     def mv(self, dst, provider):
+        if type(self) != type(dst):
+            raise ValueError(f"Different file type: {self!s} -> {dst!s}")
+        file_manager = provider.get(FileManager)
+        validate_path(self, should_exist=True, root=file_manager.root, file_type="all")
+        validate_path(dst, should_exist=False, root=file_manager.root, file_type="all")
         self.abs.rename(dst.abs)
 
-    def cp(self, dst, provider):
-        shutil.copy(self.abs, dst.abs)
+    def cp(self, src, provider):
+        file_manager = provider.get(FileManager)
+        validate_path(self, should_exist=False, root=file_manager.root, file_type="all")
+        validate_path(src, should_exist=True, file_type="all")
+        shutil.copy(src.abs, self.abs)
 
 
 class RecognizedFilePath(RecognizedPath):
-    def validate(self):
-        if not self.exists():
-            raise MissingFileException(self.abs)
-        if self.is_symlink() or not self.is_file():
-            raise WrongFileTypeException(self.abs, "a file")
+    def normalize(self):
+        return dataclasses.replace(self, slashend=False) if self.slashend else self
 
 
 class RecognizedDirPath(RecognizedPath):
-    def validate(self):
-        if not self.exists():
-            raise MissingFileException(self.abs)
-        if self.is_symlink() or not self.is_dir():
-            raise WrongFileTypeException(self.abs, "a directory")
+    def normalize(self):
+        return dataclasses.replace(self, slashend=True) if not self.slashend else self
 
     @classmethod
     def get_fields(cls):
@@ -167,21 +167,17 @@ class RecognizedDirPath(RecognizedPath):
     def iterdir(self):
         fields = list(self.get_fields())
         for path in self.abs.iterdir():
-            slashend = False
+            slashend = path.is_dir()
             for field in fields:
                 if not field.match(path, slashend):
                     continue
 
-                res = field.path_type(path, slashend)
-
-                try:
-                    res.validate()
-                except WrongFileTypeException:
+                if issubclass(field.path_type, RecognizedFilePath) and not path.is_file():
                     continue
-                except MissingFileException:
-                    assert False
+                if issubclass(field.path_type, RecognizedDirPath) and not path.is_dir():
+                    continue
 
-                yield res
+                yield field.path_type(path, slashend)
                 break
 
             else:
@@ -201,16 +197,14 @@ class DirPatternField:
 
     def find(self, parent):
         for path in parent.iterdir():
-            slashend = False
+            slashend = path.is_dir()
             if self.match(path, slashend):
-                path = self.path_type(path, slashend)
-                try:
-                    path.validate()
-                except WrongFileTypeException:
+                if issubclass(self.path_type, RecognizedFilePath) and not path.is_file():
                     continue
-                except MissingFileException:
-                    assert False
-                yield path
+                if issubclass(self.path_type, RecognizedDirPath) and not path.is_dir():
+                    continue
+
+                yield self.path_type(path, slashend)
 
     def match(self, path, slashend):
         if issubclass(self.path_type, RecognizedFilePath) and slashend:
@@ -263,6 +257,21 @@ def as_child(name, path_type=None):
         raise TypeError(f"invalid path type: {path_type}")
 
     return DirChildField(name, path_type)
+
+
+def rename_path(parent, stem, suffix):
+    name = stem + suffix
+    if "/" in name or not name.isprintable():
+        raise ValueError(f"Invalid file name: {name}")
+
+    path = parent / name
+    n = 1
+    while path.exists():
+        n += 1
+        name = f"{stem} ({n}){suffix}"
+        path = parent / name
+
+    return path
 
 
 class FileManagerSettings(cfg.Configurable):
@@ -333,10 +342,15 @@ class FileManager:
             REDUNDANT_EXT = ".redundant"
 
             for subpath in path.get_children():
-                try:
-                    subpath.validate()
+                if not subpath.abs.exists():
+                    logger.print(f"[warn]Missing file [emph]{subpath!s}[/][/]")
+                    logger.print(f"[data/] Create file [emph]{subpath!s}[/]...")
+                    subpath.mk(provider)
 
-                except WrongFileTypeException:
+                elif (
+                    isinstance(subpath, RecognizedFilePath) and not subpath.abs.is_file()
+                    or isinstance(subpath, RecognizedDirPath) and not subpath.abs.is_dir()
+                ):
                     logger.print(f"[warn]Wrong file type [emph]{subpath!s}[/][/]")
                     subpath_ = subpath.abs.parent / (subpath.abs.name + REDUNDANT_EXT)
                     logger.print(f"[data/] Rename to [emph]{subpath_!s}[/]...")
@@ -344,25 +358,20 @@ class FileManager:
                     logger.print(f"[data/] Create file [emph]{subpath!s}[/]...")
                     subpath.mk(provider)
 
-                except MissingFileException:
-                    logger.print(f"[warn]Missing file [emph]{subpath!s}[/][/]")
-                    logger.print(f"[data/] Create file [emph]{subpath!s}[/]...")
-                    subpath.mk(provider)
-
                 if isinstance(subpath, RecognizedDirPath):
                     go(subpath)
 
-        try:
-            self.root.validate()
-        except WrongFileTypeException:
-            raise RuntimeError(f"Workspace name {self.root!s} is already taken.")
-        except MissingFileException:
+        if not self.root.abs.exists():
             logger.print(f"[warn]The KAIKO workspace is missing[/]")
             logger.print(f"[data/] Create KAIKO workspace...")
             self.root.mk(provider)
             logger.print(
                 f"[data/] Your data will be stored in {logger.as_uri(self.root.abs)}"
             )
+
+        elif not self.root.abs.is_dir():
+            raise RuntimeError(f"Workspace name {self.root!s} is already taken.")
+
         return go(self.root)
 
         logger.print(flush=True)
@@ -456,95 +465,43 @@ class FileManager:
             logger.print(name, end=padding)
             logger.print(desc, end="\n")
 
-    def validate(
-        self,
-        path,
-        should_in_range=True,
-        should_exist=True,
-        file_type="file",
-    ):
-        logger = self.logger
-
-        if should_in_range and not path.abs.resolve().is_relative_to(self.root.abs):
-            logger.print(f"[warn]Out of root directory: {logger.as_uri(path.abs.resolve())}[/]")
-            return False
-
-        if should_exist and not path.exists():
-            logger.print(f"[warn]No such file: {logger.as_uri(path.abs)}[/]")
-            return False
-
-        if not should_exist and path.exists():
-            logger.print(f"[warn]File already exists: {logger.as_uri(path.abs)}[/]")
-            return False
-
-        if file_type == "file" and path.slashend:
-            logger.print(f"[warn]Not a file: {logger.as_uri(path.abs)}[/]")
-            return False
-
-        if file_type == "file" and path.exists() and not path.is_file():
-            logger.print(f"[warn]Not a file: {logger.as_uri(path.abs)}[/]")
-            return False
-
-        if file_type == "dir" and path.exists() and not path.is_dir():
-            logger.print(f"[warn]Not a directory: {logger.as_uri(path.abs)}[/]")
-            return False
-
-        return True
-
     def cd(self, path):
-        logger = self.logger
-
-        if not self.validate(path, file_type="dir"):
+        try:
+            validate_path(path, should_exist=True, root=self.root, file_type="dir")
+        except Exception:
+            logger = self.logger
+            logger.print(f"[warn]Failed to change directory to {logger.as_uri(path.abs)}[/]")
+            with logger.warn():
+                logger.print(traceback.format_exc(), end="", markup=False)
             return
-        path = dataclasses.replace(path, slashend=True)
-        self.current = path
+
+        self.current = path.normalize()
 
     def mk(self, path):
-        logger = self.logger
-
-        if not self.validate(path, should_exist=False, file_type="all"):
-            return
-
         try:
             path.mk(self.provider)
         except Exception:
+            logger = self.logger
             logger.print(f"[warn]Failed to make file: {logger.as_uri(path.abs)}[/]")
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
             return
 
     def rm(self, path):
-        logger = self.logger
-
-        if not self.validate(path, file_type="all"):
-            return
-
         try:
             path.rm(self.provider)
         except Exception:
+            logger = self.logger
             logger.print(f"[warn]Failed to remove file: {logger.as_uri(path.abs)}[/]")
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
             return
 
     def mv(self, path, dst):
-        logger = self.logger
-
-        if not self.validate(path, file_type="all"):
-            return
-
-        if not self.validate(dst, should_exist=False, file_type="all"):
-            return
-
-        if type(path) != type(dst):
-            logger.print(
-                f"[warn]Different file type: {logger.as_uri(path.abs)} -> {logger.as_uri(dst.abs)}[/]"
-            )
-            return
-
         try:
             path.mv(dst, self.provider)
         except Exception:
+            logger = self.logger
             logger.print(
                 f"[warn]Failed to move file: {logger.as_uri(path.abs)} -> {logger.as_uri(dst.abs)}[/]"
             )
@@ -553,17 +510,10 @@ class FileManager:
             return
 
     def cp(self, src, path):
-        logger = self.logger
-
-        if not self.validate(path, should_exist=False, file_type="all"):
-            return
-
-        if not self.validate(src, should_in_range=False, file_type="all"):
-            return
-
         try:
-            src.cp(path, self.provider)
+            path.cp(src, self.provider)
         except Exception:
+            logger = self.logger
             logger.print(
                 f"[warn]Failed to copy file: {logger.as_uri(src.abs)} -> {logger.as_uri(path.abs)}[/]"
             )
@@ -572,7 +522,7 @@ class FileManager:
             return
 
     def make_parser(self, desc=None, filter=lambda _: True):
-        return PathParser(self.root, self.current.abs, desc=desc, filter=filter)
+        return PathParser(self.root, self.current.abs, desc=desc, filter=filter, provider=self.provider)
 
 
 class FilesCommand:
@@ -628,11 +578,11 @@ class FilesCommand:
 
     @cd.arg_parser("path")
     def _cd_path_parser(self):
-        return self.file_manager.make_parser(filter=os.path.isdir)
+        return self.file_manager.make_parser(filter=lambda path: os.path.isdir(str(path)))
 
     @cat.arg_parser("path")
     def _cat_path_parser(self):
-        return self.file_manager.make_parser(filter=os.path.isfile)
+        return self.file_manager.make_parser(filter=lambda path: os.path.isfile(str(path)))
 
     @mv.arg_parser("dst")
     @cp.arg_parser("path")
@@ -643,11 +593,11 @@ class FilesCommand:
     @rm.arg_parser("path")
     @mv.arg_parser("path")
     def _lexists_path_parser(self, *_, **__):
-        return self.file_manager.make_parser(filter=os.path.lexists)
+        return self.file_manager.make_parser(filter=lambda path: os.path.lexists(str(path)))
 
     @cp.arg_parser("src")
     def _exists_path_parser(self, *_, **__):
-        return self.file_manager.make_parser(filter=os.path.exists)
+        return self.file_manager.make_parser(filter=lambda path: os.path.exists(str(path)))
 
     @cmd.function_command
     def clean(self, bottom: bool = False):
@@ -706,6 +656,7 @@ class PathParser(cmd.ArgumentParser):
         prefix=".",
         desc=None,
         filter=lambda _: True,
+        provider=None,
     ):
         r"""Contructor.
 
@@ -718,13 +669,14 @@ class PathParser(cmd.ArgumentParser):
         desc : str, optional
             The description of this argument.
         filter : function, optional
-            The filter function for the valid path, the argument is absolute
-            path in the str type.
+            The filter function for the result.
+        provider : Provider, optional
         """
         self.root = root
         self.prefix = prefix
         self._desc = desc
         self.filter = filter
+        self.provider = provider
 
     def desc(self):
         return self._desc if self._desc is not None else "It should be a path"
@@ -736,7 +688,7 @@ class PathParser(cmd.ArgumentParser):
         path = os.path.join(self.prefix, path or ".")
         path = self.root.recognize(path)
 
-        if not self.filter(str(path)):
+        if not self.filter(path):
             desc = self.desc()
             raise cmd.CommandParseError(
                 "Not a valid file type" + ("\n" + desc if desc is not None else "")
@@ -761,10 +713,10 @@ class PathParser(cmd.ArgumentParser):
         except ValueError:
             return suggestions
 
-        if is_file and self.filter(currpath):
+        if is_file and self.filter(self.root.recognize(currpath)):
             suggestions.append((token or ".") + "\000")
 
-        if is_dir and self.filter(currpath):
+        if is_dir and self.filter(self.root.recognize(currpath)):
             suggestions.append(os.path.join(token or ".", "") + "\000")
 
         # separate parent and partial child name
@@ -786,10 +738,15 @@ class PathParser(cmd.ArgumentParser):
                 sugg = os.path.join(sugg, "")
                 suggestions.append(sugg)
 
-            elif os.path.isfile(suggpath) and self.filter(suggpath):
+            elif os.path.isfile(suggpath) and self.filter(self.root.recognize(suggpath)):
                 suggestions.append(sugg + "\000")
 
         return suggestions
+
+    def info(self, token):
+        if self.provider is None:
+            return None
+        return self.parse(token).info(self.provider)
 
 
 def CdCommand(provider):

@@ -21,6 +21,8 @@ class DevicesDirPath(RecognizedDirPath):
     "(The place to manage your devices)"
 
     def mk(self, provider):
+        file_manager = provider.get(FileManager)
+        validate_path(self, should_exist=False, root=file_manager.root, file_type="all")
         self.abs.mkdir()
 
 
@@ -30,7 +32,10 @@ class DeviceManager:
 
     @classmethod
     @dn.datanode
-    def initialize(cls, logger, profile_manager):
+    def initialize(cls, provider):
+        logger = provider.get(Logger)
+        profile_manager = provider.get(ProfileManager)
+
         # check tty
         if not sys.stdout.isatty():
             raise RuntimeError("please connect to interactive terminal device.")

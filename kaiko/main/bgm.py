@@ -12,7 +12,8 @@ from ..devices import audios as aud
 from ..devices import engines
 from ..beats import beatsheets
 from .loggers import Logger
-from .play import BeatmapManager, Song
+from .files import FileManager
+from .play import BeatmapManager, BeatmapFilePath, Song
 
 
 class BGMAction:
@@ -131,13 +132,17 @@ class BGMController:
     preview_duration = 30.0
 
     def __init__(
-        self, beatmap_manager, mixer_settings_getter=engines.MixerSettings
+        self, provider, mixer_settings_getter=engines.MixerSettings
     ):
-        self.beatmap_manager = beatmap_manager
+        self.provider = provider
         self._mixer_settings_getter = mixer_settings_getter
         self._action_queue = queue.Queue()
         self.is_bgm_on = False
         self.current_action = None
+
+    @property
+    def beatmap_manager(self):
+        return self.provider.get(BeatmapManager)
 
     @dn.datanode
     def execute(self, manager):
@@ -341,7 +346,7 @@ class BGMSubCommand:
             return
 
         logger.print("will play:")
-        logger.print(logger.emph(str(song.relpath), type="all"))
+        logger.print(logger.emph(str(song.path), type="all"))
         self.bgm_controller.play(song)
 
     @cmd.function_command
@@ -365,7 +370,7 @@ class BGMSubCommand:
                 return
 
             self.logger.print("will play:")
-            self.logger.print(self.logger.emph(str(song.relpath), type="all"))
+            self.logger.print(self.logger.emph(str(song.path), type="all"))
             self.bgm_controller.play(song)
 
     @cmd.function_command
@@ -390,12 +395,16 @@ class BGMSubCommand:
             return
 
         logger.print("will play:")
-        logger.print(logger.emph(str(song.relpath), type="all"))
+        logger.print(logger.emph(str(song.path), type="all"))
         self.bgm_controller.play(song, start)
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        return self.beatmap_manager.make_parser(self.logger)
+        file_manager = self.provider.get(FileManager)
+        return file_manager.make_parser(
+            desc="It should be a path to the beatmap file",
+            filter=lambda path: isinstance(path, BeatmapFilePath),
+        )
 
     @play.arg_parser("start")
     def _play_start_parser(self, beatmap):
@@ -410,10 +419,10 @@ class BGMSubCommand:
         current = self.bgm_controller.current_action
         if isinstance(current, PlayBGM):
             self.logger.print("now playing:")
-            self.logger.print(self.logger.emph(str(current.song.relpath), type="all"))
+            self.logger.print(self.logger.emph(str(current.song.path), type="all"))
         elif isinstance(current, PreviewSong):
             self.logger.print("now previewing:")
-            self.logger.print(self.logger.emph(str(current.song.relpath), type="all"))
+            self.logger.print(self.logger.emph(str(current.song.path), type="all"))
         elif current is None:
             self.logger.print("no song")
         else:

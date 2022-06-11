@@ -142,16 +142,16 @@ class KAIKOLauncher:
         logger.print(flush=True)
 
         # load devices
-        devices_ctxt = yield from DeviceManager.initialize(logger, profile_manager).join()
+        devices_ctxt = yield from DeviceManager.initialize(launcher.provider).join()
 
         with devices_ctxt as device_manager:
             launcher.provider.set(device_manager)
 
-            beatmap_manager = BeatmapManager(file_manager.root.beatmaps.abs)
+            beatmap_manager = BeatmapManager(file_manager.root.beatmaps, launcher.provider)
             launcher.provider.set(beatmap_manager)
 
             bgm_controller = BGMController(
-                beatmap_manager, lambda: launcher.settings.devices.mixer
+                launcher.provider, lambda: launcher.settings.devices.mixer
             )
             launcher.provider.set(bgm_controller)
 
@@ -163,9 +163,6 @@ class KAIKOLauncher:
         logger = self.logger
 
         yield
-
-        # load beatmaps
-        self.beatmap_manager.reload(logger)
 
         # execute given command
         if len(sys.argv) > 2 and sys.argv[1] == "-c":

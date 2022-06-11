@@ -3,298 +3,34 @@ import shutil
 import traceback
 import dataclasses
 import zipfile
+from collections import defaultdict
+from typing import Optional, Dict
 from pathlib import Path
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
 from ..beats import beatmaps
 from ..beats import beatsheets
 from .loggers import Logger
-from .files import RecognizedFilePath, RecognizedDirPath, as_pattern, as_child, FileManager, PathParser
+from .files import (
+    RecognizedFilePath,
+    RecognizedDirPath,
+    as_pattern,
+    as_child,
+    rename_path,
+    validate_path,
+    InvalidFileOperation,
+    FileManager,
+    PathParser,
+)
 from .profiles import ProfileManager
 
 
-def format_info(info, logger):
-    data = dict(
-        tuple(line.split(":", maxsplit=1)) for line in info.strip().splitlines()
-    )
-    return logger.format_dict(data)
-
-
-def _rm_beatmap(provider, path):
-    beatmap_manager = provider.get(BeatmapManager)
-    logger = provider.get(Logger)
-    path = path.relative_to(beatmap_manager.beatmaps_dir)
-    beatmap_manager.remove(logger, path)
-
-
 class BeatmapFilePath(RecognizedFilePath):
-    def desc(self, provider):
+    def info(self, provider):
         beatmap_manager = provider.get(BeatmapManager)
-        path = self.abs.relative_to(beatmap_manager.beatmaps_dir)
-        if beatmap_manager.is_beatmap(path):
-            return self.__doc__
-        else:
-            return "(Untracked beatmap)"
+        logger = provider.get(Logger)
 
-    def rm(self, provider):
-        _rm_beatmap(provider, self.abs)
-
-
-class BeatmapsDirPath(RecognizedDirPath):
-    "(The place to hold your beatmaps)"
-
-    def mk(self, provider):
-        self.abs.mkdir()
-
-    @as_pattern("*")
-    class beatmapset(RecognizedDirPath):
-        def desc(self, provider):
-            beatmap_manager = provider.get(BeatmapManager)
-            path = self.abs.relative_to(beatmap_manager.beatmaps_dir)
-            if beatmap_manager.is_beatmapset(path):
-                return "(Beatmapset of a song)"
-            else:
-                return "(Untracked beatmapset)"
-
-        def rm(self, provider):
-            _rm_beatmap(provider, self.abs)
-
-        @as_pattern("*.kaiko")
-        class beatmap_KAIKO(BeatmapFilePath):
-            "(Beatmap file in kaiko format)"
-
-        @as_pattern("*.ka")
-        class beatmap_KA(BeatmapFilePath):
-            "(Beatmap file in kaiko format)"
-
-        @as_pattern("*.osu")
-        class beatmap_OSU(BeatmapFilePath):
-            "(Beatmap file in osu format)"
-
-    @as_pattern("*.osz")
-    class beamap_zip(RecognizedFilePath):
-        "(Compressed beatmapset file)"
-
-
-class BeatmapManager:
-    def __init__(self, beatmaps_dir):
-        self.beatmaps_dir = beatmaps_dir
-        self._beatmaps = {}
-        self._beatmaps_mtime = None
-
-    def is_uptodate(self):
-        return self._beatmaps_mtime == os.stat(str(self.beatmaps_dir)).st_mtime
-
-    def is_beatmapset(self, path):
-        return path in self._beatmaps
-
-    def is_beatmap(self, path):
-        return path.parent in self._beatmaps and path in self._beatmaps[path.parent]
-
-    def get_beatmap_metadata(self, path):
-        if not self.is_beatmap(path):
-            raise ValueError(f"Not a beatmap: {str(path)}")
-
-        filepath = self.beatmaps_dir / path
-        try:
-            beatmap = beatsheets.read(str(filepath), metadata_only=True)
-        except beatsheets.BeatmapParseError:
-            return None
-        else:
-            return beatmap
-
-    def get_song(self, path):
-        if self.is_beatmapset(path):
-            if not self._beatmaps[path]:
-                return None
-            path = self._beatmaps[path][0]
-
-        beatmap = self.get_beatmap_metadata(path)
-        if beatmap is None or beatmap.audio is None or beatmap.audio.path is None:
-            return None
-        return Song(self.beatmaps_dir / path.parent, beatmap.audio)
-
-    def get_songs(self):
-        songs = [self.get_song(path) for path in self._beatmaps.keys()]
-        return [song for song in songs if song is not None]
-
-    def reload(self, logger):
-        beatmaps_dir = self.beatmaps_dir
-
-        logger.print(
-            f"[data/] Load beatmaps from {logger.as_uri(beatmaps_dir)}..."
-        )
-
-        for file in beatmaps_dir.iterdir():
-            if file.is_file() and file.suffix == ".osz":
-                distpath = file.parent / file.stem
-                if distpath.exists():
-                    continue
-                logger.print(f"[data/] Unzip file {logger.as_uri(file)}...")
-                distpath.mkdir()
-                zf = zipfile.ZipFile(str(file), "r")
-                zf.extractall(path=str(distpath))
-                file.unlink()
-
-        logger.print("[data/] Load beatmaps...")
-
-        beatmaps_mtime = os.stat(str(beatmaps_dir)).st_mtime
-        self._beatmaps = {}
-
-        for song in beatmaps_dir.iterdir():
-            if song.is_dir():
-                beatmapset = []
-                for beatmap in song.iterdir():
-                    if beatmap.suffix in (".kaiko", ".ka", ".osu"):
-                        beatmapset.append(beatmap.relative_to(beatmaps_dir))
-                if beatmapset:
-                    self._beatmaps[song.relative_to(beatmaps_dir)] = beatmapset
-
-        if len(self._beatmaps) == 0:
-            logger.print("[data/] There is no song in the folder yet!")
-        logger.print(flush=True)
-        self._beatmaps_mtime = beatmaps_mtime
-
-    def add(self, logger, path):
-        beatmaps_dir = self.beatmaps_dir
-
-        if not path.exists():
-            logger.print(f"[warn]File not found: {logger.as_uri(path)}[/]")
-            return
-        if not path.is_file() and not path.is_dir():
-            logger.print(
-                f"[warn]Not a file or directory: {logger.as_uri(path)}[/]"
-            )
-            return
-
-        logger.print(f"[data/] Add a new song from {logger.as_uri(path)}...")
-
-        distpath = beatmaps_dir / path.name
-        n = 1
-        while distpath.exists():
-            n += 1
-            distpath = beatmaps_dir / f"{path.stem} ({n}){path.suffix}"
-        if n != 1:
-            logger.print(
-                f"[data/] Name conflict! Rename to {logger.emph(distpath.name, type='all')}"
-            )
-
-        if path.is_file():
-            shutil.copy(str(path), str(beatmaps_dir))
-        elif path.is_dir():
-            shutil.copytree(str(path), str(distpath))
-
-        self.reload(logger)
-
-    def remove(self, logger, path):
-        beatmaps_dir = self.beatmaps_dir
-
-        if self.is_beatmap(path):
-            beatmap_path = beatmaps_dir / path
-            logger.print(
-                f"[data/] Remove the beatmap at {logger.as_uri(beatmap_path)}..."
-            )
-            beatmap_path.unlink()
-            self.reload(logger)
-
-        elif self.is_beatmapset(path):
-            beatmapset_path = beatmaps_dir / path
-            logger.print(
-                f"[data/] Remove the beatmapset at {logger.as_uri(beatmapset_path)}..."
-            )
-            shutil.rmtree(str(beatmapset_path))
-            self.reload(logger)
-
-        else:
-            logger.print(
-                f"[warn]Not a beatmap or beatmapset: {logger.as_uri(path)}[/]"
-            )
-
-    def make_parser(self, logger, root=".", type="file"):
-        return BeatmapParser(root, type, self, logger)
-
-
-class BeatmapParser(PathParser):
-    def __init__(self, root, type, beatmap_manager, logger):
-        desc = "It should be a path to the beatmap file"
-        super().__init__(root, type=type, desc=desc, filter=self.filter)
-        self.beatmap_manager = beatmap_manager
-        self.logger = logger
-
-    def filter(self, path):
-        path = Path(path)
-
-        try:
-            path = path.resolve(strict=True)
-        except:
-            return False
-
-        if not path.is_relative_to(self.beatmap_manager.beatmaps_dir):
-            return False
-
-        path = path.relative_to(self.beatmap_manager.beatmaps_dir)
-
-        return (
-            self.beatmap_manager.is_beatmapset(path)
-            or self.beatmap_manager.is_beatmap(path)
-        )
-
-    def parse(self, token):
-        path = super().parse(token)
-        path = Path(self.root) / path
-
-        try:
-            path = path.resolve(strict=True)
-        except:
-            raise cmd.CommandParseError(f"Failed to resolve path: {path!s}")
-
-        if not path.is_relative_to(self.beatmap_manager.beatmaps_dir):
-            desc = self.desc()
-            raise cmd.CommandParseError(
-                "Out of beatmaps directory" + ("\n" + desc if desc is not None else "")
-            )
-
-        path = path.relative_to(self.beatmap_manager.beatmaps_dir)
-        is_beatmapset = self.beatmap_manager.is_beatmapset(path)
-        is_beatmap = self.beatmap_manager.is_beatmap(path)
-
-        if self.type == "dir" and not is_beatmapset:
-            desc = self.desc()
-            raise cmd.CommandParseError(
-                "Not a beatmapset" + ("\n" + desc if desc is not None else "")
-            )
-
-        if self.type == "file" and not is_beatmap:
-            desc = self.desc()
-            raise cmd.CommandParseError(
-                "Not a beatmap file" + ("\n" + desc if desc is not None else "")
-            )
-
-        if self.type == "all" and not is_beatmapset and not is_beatmap:
-            desc = self.desc()
-            raise cmd.CommandParseError(
-                "Not a beatmapset or a beatmap file" + ("\n" + desc if desc is not None else "")
-            )
-
-        return path
-
-    def info(self, token):
-        path = Path(self.root) / (token or ".")
-
-        try:
-            path = path.resolve(strict=True)
-        except:
-            return None
-
-        if not path.is_relative_to(self.beatmap_manager.beatmaps_dir):
-            return None
-
-        path = path.relative_to(self.beatmap_manager.beatmaps_dir)
-
-        if not self.beatmap_manager.is_beatmap(path):
-            return None
-
-        beatmap = self.beatmap_manager.get_beatmap_metadata(path)
+        beatmap = beatmap_manager.get_beatmap_metadata(self)
 
         if beatmap is None or not beatmap.info.strip():
             return None
@@ -303,7 +39,314 @@ class BeatmapParser(PathParser):
             tuple(line.split(":", maxsplit=1))
             for line in beatmap.info.strip().splitlines()
         )
-        return "[rich]" + self.logger.format_dict(data, show_border=False)
+        return "[rich]" + logger.format_dict(data, show_border=False)
+
+    def rm(self, provider):
+        beatmap_manager = provider.get(BeatmapManager)
+        succ = beatmap_manager.remove_beatmap(self)
+        if not succ:
+            return
+        beatmap_manager.update_beatmapsdir()
+        beatmap_manager.update_beatmapset(self.parent)
+        beatmap_manager.update_beatmap(self)
+
+    def cp(self, src, provider):
+        beatmap_manager = provider.get(BeatmapManager)
+        succ = beatmap_manager.add_beatmap(self, src)
+        if not succ:
+            return
+        beatmap_manager.update_beatmapsdir()
+        beatmap_manager.update_beatmapset(self.parent)
+        beatmap_manager.update_beatmap(self)
+
+    @property
+    def parent(self):
+        return BeatmapsetDirPath(self.abs.parent, True)
+
+
+class BeatmapsetDirPath(RecognizedDirPath):
+    "(Beatmapset of a song)"
+
+    def rm(self, provider):
+        beatmap_manager = provider.get(BeatmapManager)
+        succ = beatmap_manager.remove_beatmapset(self)
+        if not succ:
+            return
+        beatmap_manager.update_beatmapsdir()
+        beatmap_manager.update_beatmapset(self)
+
+    def cp(self, src, provider):
+        beatmap_manager = provider.get(BeatmapManager)
+        succ = beatmap_manager.add_beatmapset(self, src)
+        if not succ:
+            return
+        beatmap_manager.update_beatmapsdir()
+        beatmap_manager.update_beatmapset(self)
+
+    @as_pattern("*.kaiko")
+    class beatmap_KAIKO(BeatmapFilePath):
+        "(Beatmap file in kaiko format)"
+
+    @as_pattern("*.ka")
+    class beatmap_KA(BeatmapFilePath):
+        "(Beatmap file in kaiko format)"
+
+    @as_pattern("*.osu")
+    class beatmap_OSU(BeatmapFilePath):
+        "(Beatmap file in osu format)"
+
+    @property
+    def beatmap(self):
+        cls = type(self)
+        for path in self.iterdir():
+            if isinstance(path, (cls.beatmap_KAIKO, cls.beatmap_KA, cls.beatmap_OSU)):
+                yield path
+
+
+class BeatmapsDirPath(RecognizedDirPath):
+    "(The place to hold your beatmaps)"
+
+    def mk(self, provider):
+        file_manager = provider.get(FileManager)
+        validate_path(self, should_exist=False, root=file_manager.root, file_type="all")
+        self.abs.mkdir()
+
+    beatmapset = as_pattern("*")(BeatmapsetDirPath)
+
+    @as_pattern("*.osz")
+    class beamap_zip(RecognizedFilePath):
+        "(Compressed beatmapset file)"
+
+
+@dataclasses.dataclass
+class BeatmapCache:
+    mtime: Optional[float] = None
+    cache: Optional[beatmaps.Beatmap] = None
+
+@dataclasses.dataclass
+class BeatmapsetCache:
+    mtime: Optional[float] = None
+    cache: Dict[BeatmapFilePath, BeatmapCache] = dataclasses.field(
+        default_factory=lambda: defaultdict(default_factory=BeatmapCache)
+    )
+
+@dataclasses.dataclass
+class BeatmapsDirCache:
+    mtime: Optional[float] = None
+    cache: Dict[BeatmapsetDirPath, BeatmapsetCache] = dataclasses.field(
+        default_factory=lambda: defaultdict(default_factory=BeatmapsetCache)
+    )
+
+
+class BeatmapManager:
+    def __init__(self, beatmaps_dir, provider):
+        self.beatmaps_dir = beatmaps_dir
+        self.provider = provider
+        self._beatmaps = BeatmapsDirCache()
+
+    def update_beatmapsdir(self):
+        if self._beatmaps.mtime == self.beatmaps_dir.abs.stat().st_mtime:
+            return
+
+        # unzip beatmapset file
+        for zip_file in self.beatmaps_dir.beatmap_zip:
+            dst_path = zip_file.abs.parent / zip_file.abs.stem
+            if not dst_path.exists():
+                dst_path.mkdir()
+                zf = zipfile.ZipFile(str(zip_file), "r")
+                zf.extractall(path=str(dst_path))
+            zip_file.abs.unlink()
+
+        beatmapsdir_mtime = self.beatmaps_dir.abs.stat().st_mtime
+
+        old_beatmapset_paths = set(self._beatmaps.cache.keys())
+
+        for beatmapset_path in beatmaps_dir.beatmapset:
+            if beatmapset_path not in self._beatmaps.cache:
+               self._beatmaps.cache[beatmapset_path]
+            old_beatmapset_paths.discard(beatmapset_path)
+
+        for beatmapset_path in old_beatmapset_paths:
+            if beatmapset_path in self._beatmaps.cache:
+                del self._beatmaps.cache[beatmapset_path]
+
+        self._beatmaps.mtime = beatmapsdir_mtime
+
+    def update_beatmapset(self, beatmapset_path):
+        beatmapset_path = beatmapset_path.normalize()
+
+        if not beatmapset_path.exists():
+            if beatmapset_path in self._beatmaps.cache:
+                del self._beatmaps.cache[beatmapset_path]
+            return
+
+        _beatmapset = self._beatmaps.cache[beatmapset_path]
+
+        beatmapset_mtime = beatmapset_path.abs.stat().st_mtime
+
+        if beatmapset_cache.mtime == beatmapset_mtime:
+            return
+
+        old_beatmap_paths = set(_beatmapset.cache.keys())
+
+        for beatmap_path in beatmapset_path.beatmap:
+            if beatmap_path not in _beatmapset.cache:
+                _beatmapset.cache[beatmap_path]
+            old_beatmap_paths.discard(beatmap_path)
+
+        for beatmap_path in old_beatmap_paths:
+            if beatmap_path in _beatmapset.cache:
+                del _beatmapset.cache[beatmap_path]
+
+        _beatmapset.mtime = beatmapset_mtime
+
+    def update_beatmap(self, beatmap_path):
+        beatmapset_path = beatmap_path.parent
+
+        if not beatmap_path.parent.exists():
+            return
+
+        _beatmapset = self._beatmaps.cache[beatmapset_path]
+
+        if not beatmap_path.exists():
+            if beatmap_path in _beatmapset.cache:
+                del _beatmapset.cache[beatmap_path]
+            return
+
+        _beatmap = _beatmapset.cache[beatmap_path]
+
+        beatmap_mtime = beatmap_path.abs.stat().st_mtime
+
+        if _beatmap.mtime == beatmap_mtime:
+            return
+
+        try:
+            beatmap_metadata = beatsheets.read(str(beatmap_path), metadata_only=True)
+        except beatsheets.BeatmapParseError:
+            beatmap_metadata = None
+
+        _beatmap.cache = beatmap_metadata
+        _beatmap.mtime = beatmap_mtime
+
+    def get_beatmapset_paths(self):
+        self.update_beatmapsdir()
+        return self._beatmaps.cache.keys()
+
+    def get_beatmap_paths(self, beatmapset_path):
+        self.update_beatmapset(beatmapset_path)
+        if beatmapset_path in self._beatmaps.cache:
+            return self._beatmaps.cache[beatmapset_path].cache.keys()
+        else:
+            return None
+
+    def get_beatmap_metadata(self, beatmap_path):
+        self.update_beatmap(beatmap_path)
+        beatmapset_path = beatmap_path.parent
+        if beatmapset_path in self._beatmaps.cache and beatmap_path in self._beatmaps.cache[beatmapset_path].cache:
+            return self._beatmaps.cache[beatmapset_path].cache[beatmap_path].cache
+        else:
+            return None
+
+    def get_song(self, beatmapset_path, beatmap_path=None):
+        try:
+            beatmap_paths = list(self.get_beatmap_paths(beatmapset_path))
+        except ValueError:
+            return None
+
+        if beatmap_path is None:
+            beatmap_path = beatmap_paths[0] if beatmap_paths else None
+        if beatmap_path not in beatmap_paths:
+            return None
+
+        beatmap = self.get_beatmap_metadata(beatmap_path)
+        if beatmap is None or beatmap.audio is None or beatmap.audio.path is None:
+            return None
+        return Song(beatmapset_path, beatmap.audio)
+
+    def get_songs(self):
+        songs = [self.get_song(beatmapset_path) for beatmapset_path in self.get_beatmapset_paths()]
+        return [song for song in songs if song is not None]
+
+    def validate_beatmapset_path(self, path, should_exist=None):
+        file_manager = self.provider.get(FileManager)
+        if not isinstance(path, BeatmapsetDirPath):
+            raise InvalidFileOperation(f"Not a valid beatmapset path: {logger.as_uri(path.abs)}")
+        validate_path(path, should_exist=should_exist, root=file_manager.root, file_type="dir")
+
+    def validate_beatmap_path(self, path, should_exist=None):
+        file_manager = self.provider.get(FileManager)
+        if not isinstance(path, BeatmapFilePath):
+            raise InvalidFileOperation(f"Not a valid beatmap path: {logger.as_uri(path.abs)}")
+        validate_path(path, should_exist=should_exist, root=file_manager.root, file_type="file")
+
+    def remove_beatmapset(self, beatmapset_path):
+        logger = self.provider.get(Logger)
+
+        beatmapset_path = beatmapset_path.normalize()
+
+        try:
+            self.validate_beatmapset_path(beatmapset_path, should_exist=True)
+        except InvalidFileOperation as e:
+            logger.print(f"[warn]{str(e)}[/]")
+            return False
+
+        logger.print(
+            f"[data/] Remove beatmapset {logger.as_uri(beatmapset_path.abs)}..."
+        )
+
+        shutil.rmtree(str(beatmapset_path))
+
+    def remove_beatmap(self, beatmap_path):
+        logger = self.provider.get(Logger)
+
+        beatmap_path = beatmap_path.normalize()
+
+        try:
+            self.validate_beatmap_path(beatmap_path, should_exist=True)
+        except InvalidFileOperation as e:
+            logger.print(f"[warn]{str(e)}[/]")
+            return False
+
+        logger.print(
+            f"[data/] Remove beatmap {logger.as_uri(beatmap_path.abs)}..."
+        )
+
+        beatmap_path.abs.unlink()
+
+    def add_beatmapset(self, beatmapset_path, src_path):
+        logger = self.provider.get(Logger)
+
+        beatmapset_path = beatmapset_path.normalize()
+
+        try:
+            self.validate_beatmapset_path(beatmapset_path, should_exist=False)
+            validate_path(src_path, should_exist=True, file_type="dir")
+        except InvalidFileOperation as e:
+            logger.print(f"[warn]{str(e)}[/]")
+            return False
+
+        logger.print(f"[data/] Add a new beatmapset from {logger.as_uri(src_path.abs)}...")
+
+        shutil.copytree(str(src_path), str(beatmapset_path))
+
+        return True
+
+    def add_beatmap(self, beatmap_path, src_path):
+        logger = self.provider.get(Logger)
+
+        try:
+            self.validate_beatmap_path(beatmap_path, should_exist=False)
+            validate_path(src_path, should_exist=True, file_type="file")
+        except InvalidFileOperation as e:
+            logger.print(f"[warn]{str(e)}[/]")
+            return False
+
+        logger.print(f"[data/] Add a new beatmap from {logger.as_uri(src_path.abs)}...")
+
+        beatmapset_path = beatmap_path.parent
+        if not beatmapset_path.exists():
+            beatmapset_path.abs.mkdir()
+        shutil.copy(str(src_path), str(beatmap_path))
 
 
 @dataclasses.dataclass(frozen=True)
@@ -316,13 +359,6 @@ class Song:
         if self.audio.path is None:
             return None
         return self.root / self.audio.path
-
-    @property
-    def relpath(self):
-        path = self.path
-        if path is None:
-            return None
-        return Path("~") / path.relative_to(Path("~").expanduser())
 
 
 class PlayCommand:
@@ -361,14 +397,16 @@ class PlayCommand:
         beatmaps folder can be accessed.
         """
 
-        if not self.beatmap_manager.is_beatmap(beatmap):
-            self.logger.print("[warn]Not a beatmap.[/]")
+        try:
+            self.validate_beatmap_path(beatmap, should_exist=True)
+        except InvalidFileOperation as e:
+            logger.print(f"[warn]{str(e)}[/]")
             return
 
         return KAIKOPlay(
             self.resources_dir,
             self.cache_dir,
-            self.beatmap_manager.beatmaps_dir / beatmap,
+            beatmap,
             start,
             self.profile_manager,
             self.logger,
@@ -385,7 +423,13 @@ class PlayCommand:
         """
 
         return KAIKOLoop(
-            pattern, tempo, offset, self.resources_dir, self.cache_dir, self.profile_manager, self.logger,
+            pattern,
+            tempo,
+            offset,
+            self.resources_dir,
+            self.cache_dir,
+            self.profile_manager,
+            self.logger,
         )
 
     @loop.arg_parser("pattern")
@@ -396,55 +440,14 @@ class PlayCommand:
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        current = self.file_manager.current.abs
-        return self.beatmap_manager.make_parser(self.logger, current, type="file")
+        return self.file_manager.make_parser(
+            desc="It should be a path to the beatmap file",
+            filter=lambda path: isinstance(path, BeatmapFilePath),
+        )
 
     @play.arg_parser("start")
     def _play_start_parser(self, beatmap):
         return cmd.TimeParser(0.0)
-
-    @cmd.function_command
-    def reload(self):
-        """[rich]Reload your beatmaps.
-
-        usage: [cmd]reload[/]
-        """
-        self.beatmap_manager.reload(self.logger)
-
-    @cmd.function_command
-    def add(self, beatmap):
-        """[rich]Add beatmap/beatmapset to your beatmaps folder.
-
-        usage: [cmd]add[/] [arg]{beatmap}[/]
-                        ╲
-              Path, the path to the
-             beatmap you want to add.
-             You can drop the file to
-           the terminal to paste its path.
-        """
-
-        self.beatmap_manager.add(self.logger, beatmap)
-
-    @add.arg_parser("beatmap")
-    def _add_beatmap_parser(self):
-        return PathParser()
-
-    @cmd.function_command
-    def remove(self, beatmap):
-        """[rich]Remove beatmap/beatmapset in your beatmaps folder.
-
-        usage: [cmd]remove[/] [arg]{beatmap}[/]
-                           ╲
-                 Path, the path to the
-               beatmap you want to remove.
-        """
-
-        self.beatmap_manager.remove(self.logger, beatmap)
-
-    @remove.arg_parser("beatmap")
-    def _remove_beatmap_parser(self):
-        current = self.file_manager.current.abs
-        return self.beatmap_manager.make_parser(self.logger, current, type="all")
 
 
 def print_hints(logger, settings):
@@ -493,7 +496,7 @@ class KAIKOPlay:
 
         except beatsheets.BeatmapParseError:
             logger.print(
-                f"[warn]Failed to read beatmap {logger.as_uri(self.filepath)}[/]"
+                f"[warn]Failed to read beatmap {logger.as_uri(self.filepath.abs)}[/]"
             )
             with logger.warn():
                 logger.print(traceback.format_exc(), end="", markup=False)
@@ -504,8 +507,8 @@ class KAIKOPlay:
 
             score, devices_settings = yield from beatmap.play(
                 manager,
-                self.resources_dir,
-                self.cache_dir,
+                self.resources_dir.abs,
+                self.cache_dir.abs,
                 self.start,
                 devices_settings,
                 gameplay_settings,
@@ -569,8 +572,8 @@ class KAIKOLoop:
 
             score, devices_settings = yield from beatmap.play(
                 manager,
-                self.resources_dir,
-                self.cache_dir,
+                self.resources_dir.abs,
+                self.cache_dir.abs,
                 None,
                 devices_settings,
                 gameplay_settings,
