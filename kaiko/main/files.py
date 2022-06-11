@@ -406,9 +406,18 @@ class FileManager:
         file_normal = logger.rich.parse(self.settings.display.file_normal, slotted=True)
         file_other = logger.rich.parse(self.settings.display.file_other, slotted=True)
 
-        field_types = [field.path_type for field in self.current.get_fields()]
+        if isinstance(self.current, RecognizedDirPath):
+            field_types = [field.path_type for field in self.current.get_fields()]
+            subpaths = self.current.iterdir()
+        elif self.current.abs.is_dir():
+            field_types = []
+            subpaths = (UnrecognizedPath(subpath, subpath.is_dir()) for subpath in self.current.abs.iterdir())
+        else:
+            field_types = []
+            subpaths = ()
+
         res = []
-        for path in self.current.iterdir():
+        for path in subpaths:
             if path.abs.is_symlink():
                 name = logger.escape(str(path.abs.readlink()), type="all")
             else:
@@ -468,6 +477,13 @@ class FileManager:
     def cd(self, path):
         try:
             validate_path(path, should_exist=True, root=self.root, file_type="dir")
+
+        except InvalidFileOperation as e:
+            logger = self.logger
+            logger.print(f"[warn]Failed to change directory to {logger.as_uri(path.abs)}[/]")
+            logger.print(f"[warn]{str(e)}[/]")
+            return
+
         except Exception:
             logger = self.logger
             logger.print(f"[warn]Failed to change directory to {logger.as_uri(path.abs)}[/]")
@@ -480,6 +496,13 @@ class FileManager:
     def mk(self, path):
         try:
             path.mk(self.provider)
+
+        except InvalidFileOperation as e:
+            logger = self.logger
+            logger.print(f"[warn]Failed to change directory to {logger.as_uri(path.abs)}[/]")
+            logger.print(f"[warn]{str(e)}[/]")
+            return
+
         except Exception:
             logger = self.logger
             logger.print(f"[warn]Failed to make file: {logger.as_uri(path.abs)}[/]")
@@ -490,6 +513,13 @@ class FileManager:
     def rm(self, path):
         try:
             path.rm(self.provider)
+
+        except InvalidFileOperation as e:
+            logger = self.logger
+            logger.print(f"[warn]Failed to change directory to {logger.as_uri(path.abs)}[/]")
+            logger.print(f"[warn]{str(e)}[/]")
+            return
+
         except Exception:
             logger = self.logger
             logger.print(f"[warn]Failed to remove file: {logger.as_uri(path.abs)}[/]")
@@ -500,6 +530,13 @@ class FileManager:
     def mv(self, path, dst):
         try:
             path.mv(dst, self.provider)
+
+        except InvalidFileOperation as e:
+            logger = self.logger
+            logger.print(f"[warn]Failed to change directory to {logger.as_uri(path.abs)}[/]")
+            logger.print(f"[warn]{str(e)}[/]")
+            return
+
         except Exception:
             logger = self.logger
             logger.print(
@@ -512,6 +549,13 @@ class FileManager:
     def cp(self, src, path):
         try:
             path.cp(src, self.provider)
+
+        except InvalidFileOperation as e:
+            logger = self.logger
+            logger.print(f"[warn]Failed to change directory to {logger.as_uri(path.abs)}[/]")
+            logger.print(f"[warn]{str(e)}[/]")
+            return
+
         except Exception:
             logger = self.logger
             logger.print(
