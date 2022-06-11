@@ -127,14 +127,14 @@ class BeatmapCache:
 class BeatmapsetCache:
     mtime: Optional[float] = None
     cache: Dict[BeatmapFilePath, BeatmapCache] = dataclasses.field(
-        default_factory=lambda: defaultdict(default_factory=BeatmapCache)
+        default_factory=lambda: defaultdict(BeatmapCache)
     )
 
 @dataclasses.dataclass
 class BeatmapsDirCache:
     mtime: Optional[float] = None
     cache: Dict[BeatmapsetDirPath, BeatmapsetCache] = dataclasses.field(
-        default_factory=lambda: defaultdict(default_factory=BeatmapsetCache)
+        default_factory=lambda: defaultdict(BeatmapsetCache)
     )
 
 
@@ -175,7 +175,7 @@ class BeatmapManager:
     def update_beatmapset(self, beatmapset_path):
         beatmapset_path = beatmapset_path.normalize()
 
-        if not beatmapset_path.exists():
+        if not beatmapset_path.abs.exists():
             if beatmapset_path in self._beatmaps.cache:
                 del self._beatmaps.cache[beatmapset_path]
             return
@@ -184,7 +184,7 @@ class BeatmapManager:
 
         beatmapset_mtime = beatmapset_path.abs.stat().st_mtime
 
-        if beatmapset_cache.mtime == beatmapset_mtime:
+        if _beatmapset.mtime == beatmapset_mtime:
             return
 
         old_beatmap_paths = set(_beatmapset.cache.keys())
@@ -203,12 +203,12 @@ class BeatmapManager:
     def update_beatmap(self, beatmap_path):
         beatmapset_path = beatmap_path.parent
 
-        if not beatmap_path.parent.exists():
+        if not beatmap_path.parent.abs.exists():
             return
 
         _beatmapset = self._beatmaps.cache[beatmapset_path]
 
-        if not beatmap_path.exists():
+        if not beatmap_path.abs.exists():
             if beatmap_path in _beatmapset.cache:
                 del _beatmapset.cache[beatmap_path]
             return
@@ -261,7 +261,7 @@ class BeatmapManager:
         beatmap = self.get_beatmap_metadata(beatmap_path)
         if beatmap is None or beatmap.audio is None or beatmap.audio.path is None:
             return None
-        return Song(beatmapset_path, beatmap.audio)
+        return Song(beatmapset_path.abs, beatmap.audio)
 
     def get_songs(self):
         songs = [self.get_song(beatmapset_path) for beatmapset_path in self.get_beatmapset_paths()]
@@ -344,7 +344,7 @@ class BeatmapManager:
         logger.print(f"[data/] Add a new beatmap from {logger.as_uri(src_path.abs)}...")
 
         beatmapset_path = beatmap_path.parent
-        if not beatmapset_path.exists():
+        if not beatmapset_path.abs.exists():
             beatmapset_path.abs.mkdir()
         shutil.copy(str(src_path), str(beatmap_path))
 

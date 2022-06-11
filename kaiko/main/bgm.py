@@ -287,13 +287,14 @@ class BGMController:
             self.stop_preview()
             return
 
-        path = Path(token)
+        file_manager = self.provider.get(FileManager)
+        path = self.beatmap_manager.beatmaps_dir.recognize(file_manager.current.abs / Path(token))
 
-        if not self.beatmap_manager.is_beatmap(path):
+        if not isinstance(path, BeatmapFilePath):
             self.stop_preview()
             return
 
-        song = self.beatmap_manager.get_song(path)
+        song = self.beatmap_manager.get_song(path.parent, path)
 
         if song is None:
             self.stop_preview()
@@ -385,7 +386,7 @@ class BGMSubCommand:
         logger = self.logger
 
         try:
-            song = self.beatmap_manager.get_song(beatmap)
+            song = self.beatmap_manager.get_song(beatmap.parent, beatmap)
         except beatsheets.BeatmapParseError:
             logger.print("[warn]Fail to read beatmap[/]")
             return
