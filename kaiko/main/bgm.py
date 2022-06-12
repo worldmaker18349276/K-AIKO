@@ -16,84 +16,6 @@ from .files import FileManager
 from .play import BeatmapManager, BeatmapFilePath, Song
 
 
-class BGMAction:
-    pass
-
-
-@dataclasses.dataclass(frozen=True)
-class StopBGM(BGMAction):
-    pass
-
-
-@dataclasses.dataclass(frozen=True)
-class PlayBGM(BGMAction):
-    song: Song
-    start: Optional[float]
-
-
-@dataclasses.dataclass(frozen=True)
-class PreviewSong(BGMAction):
-    song: Song
-
-
-@dataclasses.dataclass(frozen=True)
-class StopPreview(BGMAction):
-    pass
-
-
-class MixerLoader:
-    def __init__(self, manager, delay=0.0, mixer_settings_getter=engines.MixerSettings):
-        self._mixer_settings_getter = mixer_settings_getter
-        self.manager = manager
-        self.delay = delay
-        self.required = set()
-        self.mixer_task = None
-        self.mixer = None
-
-    @dn.datanode
-    def task(self):
-        while True:
-            yield
-            if not self.required:
-                continue
-
-            assert isinstance(self.mixer_task, dn.DataNode)
-
-            with self.mixer_task:
-                yield
-
-                expiration = None
-                while expiration is None or time.time() < expiration:
-                    if expiration is None and not self.required:
-                        expiration = time.time() + self.delay
-                    elif expiration is not None and self.required:
-                        expiration = None
-
-                    try:
-                        self.mixer_task.send(None)
-                    except StopIteration:
-                        return
-
-                    yield
-
-                self.mixer_task = None
-                self.mixer = None
-
-    @contextlib.contextmanager
-    def require(self):
-        if self.mixer is None:
-            self.mixer_task, self.mixer = engines.Mixer.create(
-                self._mixer_settings_getter(), self.manager
-            )
-
-        key = object()
-        self.required.add(key)
-        try:
-            yield self.mixer
-        finally:
-            self.required.remove(key)
-
-
 @dn.datanode
 def play_fadeinout(
     mixer, path, fadein_time, fadeout_time, volume=0.0, start=None, end=None
@@ -124,6 +46,31 @@ def play_fadeinout(
             raise
 
 
+class BGMAction:
+    pass
+
+
+@dataclasses.dataclass(frozen=True)
+class StopBGM(BGMAction):
+    pass
+
+
+@dataclasses.dataclass(frozen=True)
+class PlayBGM(BGMAction):
+    song: Song
+    start: Optional[float]
+
+
+@dataclasses.dataclass(frozen=True)
+class PreviewSong(BGMAction):
+    song: Song
+
+
+@dataclasses.dataclass(frozen=True)
+class StopPreview(BGMAction):
+    pass
+
+
 class BGMController:
     mixer_loader_delay = 3.0
     preview_delay = 0.5
@@ -146,9 +93,8 @@ class BGMController:
 
     @dn.datanode
     def execute(self, manager):
-        mixer_loader = MixerLoader(
-            manager, self.mixer_loader_delay, self._mixer_settings_getter
-        )
+        mixer_factory = lambda: engines.Mixer.create(self._mixer_settings_getter(), manager)
+        mixer_loader = engines.EngineLoader(mixer_factory, self.mixer_loader_delay)
         with mixer_loader.task() as mixer_task:
             with self._bgm_event_loop(mixer_loader.require) as event_task:
                 while True:
