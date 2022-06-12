@@ -722,7 +722,7 @@ class ProfilesCommand:
     def set_default(self, profile):
         """[rich]Set the current profile as default.
 
-        usage: [cmd]use_default[/] [arg]{profile}[/]
+        usage: [cmd]set_default[/] [arg]{profile}[/]
                                ╱
                       The profile path.
         """

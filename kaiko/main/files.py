@@ -351,13 +351,10 @@ class FileManager:
     def iterdir(self):
         current_path = self.current
         if isinstance(current_path, RecognizedDirPath):
-            field_types = [field.path_type for field in current_path.get_fields()]
             return current_path.iterdir()
         elif current_path.abs.is_dir():
-            field_types = []
             return (UnrecognizedPath(subpath, subpath.is_dir()) for subpath in current_path.abs.iterdir())
         else:
-            field_types = []
             return ()
 
     def get_field_types(self):
@@ -791,6 +788,7 @@ def DirectCdCommand(provider):
     attrs = {}
     attrs[".."] = make_cd_command(file_manager.recognize(file_manager.current.abs / ".."))
     for path in file_manager.iterdir():
-        attrs[path.abs.name + "/"] = make_cd_command(path)
+        if path.slashend:
+            attrs[path.abs.name + "/"] = make_cd_command(path)
 
     return type("DirectCdCommand", (object,), attrs)()
