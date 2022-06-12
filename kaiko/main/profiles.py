@@ -3,7 +3,6 @@ import traceback
 import tempfile
 import subprocess
 import shutil
-from pathlib import Path
 from ..utils import config as cfg
 from ..utils import parsec as pc
 from ..utils import commands as cmd

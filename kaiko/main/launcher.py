@@ -290,8 +290,8 @@ class KAIKOLauncher:
         if isinstance(self.file_manager.current, RootDirPath.beatmaps):
             commands["play"] = PlayCommand(
                 self.provider,
-                self.file_manager.root.resources.abs,
-                self.file_manager.root.cache.abs,
+                self.file_manager.root.resources,
+                self.file_manager.root.cache,
             )
         if isinstance(self.file_manager.current, RootDirPath.devices):
             commands["devices"] = DevicesCommand(self.provider)

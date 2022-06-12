@@ -105,10 +105,8 @@ class BeatmapsetDirPath(RecognizedDirPath):
 class BeatmapsDirPath(RecognizedDirPath):
     "(The place to hold your beatmaps)"
 
-    def mk(self, provider):
-        file_manager = provider.get(FileManager)
-        file_manager.validate_path(self, should_exist=False, file_type="all")
-        self.abs.mkdir()
+    def rm(self, provider):
+        raise InvalidFileOperation("Deleting important directories or files may crash the program")
 
     beatmapset = as_pattern("*")(BeatmapsetDirPath)
 
@@ -142,6 +140,10 @@ class BeatmapManager:
         self.beatmaps_dir = beatmaps_dir
         self.provider = provider
         self._beatmaps = BeatmapsDirCache()
+
+    @property
+    def file_manager(self):
+        return self.provider.get(FileManager)
 
     def update_beatmapsdir(self):
         if self._beatmaps.mtime == self.beatmaps_dir.abs.stat().st_mtime:
@@ -247,15 +249,12 @@ class BeatmapManager:
             return None
 
     def get_song(self, beatmapset_path, beatmap_path=None):
-        try:
-            beatmap_paths = list(self.get_beatmap_paths(beatmapset_path))
-        except ValueError:
-            return None
-
         if beatmap_path is None:
+            try:
+                beatmap_paths = list(self.get_beatmap_paths(beatmapset_path))
+            except ValueError:
+                return None
             beatmap_path = beatmap_paths[0] if beatmap_paths else None
-        if beatmap_path not in beatmap_paths:
-            return None
 
         beatmap = self.get_beatmap_metadata(beatmap_path)
         if beatmap is None or beatmap.audio is None or beatmap.audio.path is None:
@@ -267,15 +266,17 @@ class BeatmapManager:
         return [song for song in songs if song is not None]
 
     def validate_beatmapset_path(self, path, should_exist=None):
-        file_manager = self.provider.get(FileManager)
+        file_manager = self.file_manager
         if not isinstance(path, BeatmapsetDirPath):
-            raise InvalidFileOperation(f"Not a valid beatmapset path: {logger.as_uri(path.abs)}")
+            relpath = file_manager.as_relative_path(path)
+            raise InvalidFileOperation(f"Not a valid beatmapset path: {relpath}")
         file_manager.validate_path(path, should_exist=should_exist, file_type="dir")
 
     def validate_beatmap_path(self, path, should_exist=None):
-        file_manager = self.provider.get(FileManager)
+        file_manager = self.file_manager
         if not isinstance(path, BeatmapFilePath):
-            raise InvalidFileOperation(f"Not a valid beatmap path: {logger.as_uri(path.abs)}")
+            relpath = file_manager.as_relative_path(path)
+            raise InvalidFileOperation(f"Not a valid beatmap path: {relpath}")
         file_manager.validate_path(path, should_exist=should_exist, file_type="file")
 
     def remove_beatmapset(self, beatmapset_path):
@@ -289,10 +290,8 @@ class BeatmapManager:
             logger.print(f"[warn]{str(e)}[/]")
             return False
 
-        logger.print(
-            f"[data/] Remove beatmapset {logger.as_uri(beatmapset_path.abs)}..."
-        )
-
+        path_str = beatmapset_path.try_relative_to(self.beatmaps_dir)
+        logger.print(f"[data/] Remove beatmapset [emph]{path_str}[/]...")
         shutil.rmtree(str(beatmapset_path))
 
     def remove_beatmap(self, beatmap_path):
@@ -306,9 +305,8 @@ class BeatmapManager:
             logger.print(f"[warn]{str(e)}[/]")
             return False
 
-        logger.print(
-            f"[data/] Remove beatmap {logger.as_uri(beatmap_path.abs)}..."
-        )
+        path_str = beatmapset_path.try_relative_to(self.beatmaps_dir)
+        logger.print(f"[data/] Remove beatmap [emph]{path_str}[/]...")
 
         beatmap_path.abs.unlink()
 
@@ -319,13 +317,12 @@ class BeatmapManager:
 
         try:
             self.validate_beatmapset_path(beatmapset_path, should_exist=False)
-            file_manager = self.provider.get(FileManager)
-            file_manager.validate_path(src_path, should_exist=True, should_in_range=False, file_type="dir")
+            self.file_manager.validate_path(src_path, should_exist=True, should_in_range=False, file_type="dir")
         except InvalidFileOperation as e:
             logger.print(f"[warn]{str(e)}[/]")
             return False
 
-        logger.print(f"[data/] Add a new beatmapset from {logger.as_uri(src_path.abs)}...")
+        logger.print(f"[data/] Add a new beatmapset from {src_path!s}...")
 
         shutil.copytree(str(src_path), str(beatmapset_path))
 
@@ -336,13 +333,12 @@ class BeatmapManager:
 
         try:
             self.validate_beatmap_path(beatmap_path, should_exist=False)
-            file_manager = self.provider.get(FileManager)
-            file_manager.validate_path(src_path, should_exist=True, should_in_range=False, file_type="file")
+            self.file_manager.validate_path(src_path, should_exist=True, should_in_range=False, file_type="file")
         except InvalidFileOperation as e:
             logger.print(f"[warn]{str(e)}[/]")
             return False
 
-        logger.print(f"[data/] Add a new beatmap from {logger.as_uri(src_path.abs)}...")
+        logger.print(f"[data/] Add a new beatmap from {src_path!s}...")
 
         beatmapset_path = beatmap_path.parent
         if not beatmapset_path.abs.exists():
@@ -399,16 +395,17 @@ class PlayCommand:
         """
 
         try:
-            self.validate_beatmap_path(beatmap, should_exist=True)
+            self.beatmap_manager.validate_beatmap_path(beatmap, should_exist=True)
         except InvalidFileOperation as e:
             logger.print(f"[warn]{str(e)}[/]")
             return
 
         return KAIKOPlay(
+            load_beatmap(beatmap, self.file_manager, self.profile_manager, self.logger),
+            start,
             self.resources_dir,
             self.cache_dir,
-            beatmap,
-            start,
+            self.file_manager,
             self.profile_manager,
             self.logger,
         )
@@ -423,12 +420,12 @@ class PlayCommand:
                 to repeat.     pattern; default is 120.0.    at start; default is 1.0.
         """
 
-        return KAIKOLoop(
-            pattern,
-            tempo,
-            offset,
+        return KAIKOPlay(
+            load_pattern(pattern, tempo, offset, self.logger),
+            None,
             self.resources_dir,
             self.cache_dir,
+            self.file_manager,
             self.profile_manager,
             self.logger,
         )
@@ -449,6 +446,65 @@ class PlayCommand:
     @play.arg_parser("start")
     def _play_start_parser(self, beatmap):
         return cmd.TimeParser(0.0)
+
+
+class KAIKOPlay:
+    def __init__(self, beatmap_loeader, start, resources_dir, cache_dir, file_manager, profile_manager, logger):
+        self.beatmap_loeader = beatmap_loeader
+        self.start = start
+        self.resources_dir = resources_dir
+        self.cache_dir = cache_dir
+        self.file_manager = file_manager
+        self.profile_manager = profile_manager
+        self.logger = logger
+
+    @dn.datanode
+    def execute(self, manager):
+        logger = self.logger
+        devices_settings = self.profile_manager.current.devices
+        gameplay_settings = self.profile_manager.current.gameplay
+
+        beatmap = yield from self.beatmap_loeader.join()
+
+        if beatmap is None:
+            return
+
+        print_hints(logger, gameplay_settings)
+        logger.print()
+
+        score, devices_settings = yield from beatmap.play(
+            manager,
+            self.resources_dir.abs,
+            self.cache_dir.abs,
+            self.start,
+            devices_settings,
+            gameplay_settings,
+        ).join()
+
+        logger.print()
+        logger.print_scores(
+            beatmap.settings.difficulty.performance_tolerance, score.perfs
+        )
+
+        if devices_settings is None:
+            return
+
+        logger.print()
+        yes = yield from self.logger.ask(
+            "Keep changes to device settings?"
+        ).join()
+        if yes:
+            logger.print("[data/] Update device settings...")
+            title = self.file_manager.as_relative_path(self.profile_manager.current_path)
+            old = self.profile_manager.format()
+            self.profile_manager.current.devices = devices_settings
+            self.profile_manager.set_as_changed()
+            new = self.profile_manager.format()
+
+            self.logger.print(f"[data/] Your changes")
+            logger.print(
+                logger.format_code_diff(old, new, title=title, is_changed=True)
+            )
 
 
 def print_hints(logger, settings):
@@ -477,128 +533,34 @@ def print_hints(logger, settings):
     )
 
 
-class KAIKOPlay:
-    def __init__(self, resources_dir, cache_dir, filepath, start, profile_manager, logger):
-        self.resources_dir = resources_dir
-        self.cache_dir = cache_dir
-        self.filepath = filepath
-        self.start = start
-        self.profile_manager = profile_manager
-        self.logger = logger
+@dn.datanode
+def load_beatmap(beatmap_path, file_manager, profile_manager, logger):
+    yield
+    try:
+        return beatsheets.read(str(beatmap_path))
 
-    @dn.datanode
-    def execute(self, manager):
-        logger = self.logger
-        devices_settings = self.profile_manager.current.devices
-        gameplay_settings = self.profile_manager.current.gameplay
-
-        try:
-            beatmap = beatsheets.read(str(self.filepath))
-
-        except beatsheets.BeatmapParseError:
-            logger.print(
-                f"[warn]Failed to read beatmap {logger.as_uri(self.filepath.abs)}[/]"
-            )
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
-
-        else:
-            print_hints(logger, gameplay_settings)
-            logger.print()
-
-            score, devices_settings = yield from beatmap.play(
-                manager,
-                self.resources_dir.abs,
-                self.cache_dir.abs,
-                self.start,
-                devices_settings,
-                gameplay_settings,
-            ).join()
-
-            logger.print()
-            logger.print_scores(
-                beatmap.settings.difficulty.performance_tolerance, score.perfs
-            )
-
-            if devices_settings is not None:
-                logger.print()
-                yes = yield from self.logger.ask(
-                    "Keep changes to device settings?"
-                ).join()
-                if yes:
-                    logger.print("[data/] Update device settings...")
-                    title = self.profile_manager.get_title()
-                    old = self.profile_manager.format()
-                    self.profile_manager.current.devices = devices_settings
-                    self.profile_manager.set_as_changed()
-                    new = self.profile_manager.format()
-
-                    self.logger.print(f"[data/] Your changes")
-                    logger.print(
-                        logger.format_code_diff(old, new, title=title, is_changed=True)
-                    )
+    except beatsheets.BeatmapParseError:
+        path_str = beatmap_path.try_relative_to(profile_manager.beatmaps_dir)
+        logger.print(
+            f"[warn]Failed to read beatmap: [emph]{path_str}[/][/]"
+        )
+        with logger.warn():
+            logger.print(traceback.format_exc(), end="", markup=False)
+        return
 
 
-class KAIKOLoop:
-    def __init__(self, pattern, tempo, offset, resources_dir, cache_dir, profile_manager, logger):
-        self.pattern = pattern
-        self.tempo = tempo
-        self.offset = offset
-        self.resources_dir = resources_dir
-        self.cache_dir = cache_dir
-        self.profile_manager = profile_manager
-        self.logger = logger
+@dn.datanode
+def load_pattern(pattern, tempo, offset, logger):
+    yield
+    try:
+        track, width = beatmaps.BeatTrack.parse(pattern, ret_width=True)
 
-    @dn.datanode
-    def execute(self, manager):
-        logger = self.logger
-        devices_settings = self.profile_manager.current.devices
-        gameplay_settings = self.profile_manager.current.gameplay
+    except beatsheets.BeatmapParseError:
+        logger.print("[warn]Failed to parse pattern[/]")
+        with logger.warn():
+            logger.print(traceback.format_exc(), end="", markup=False)
+        return
 
-        try:
-            track, width = beatmaps.BeatTrack.parse(self.pattern, ret_width=True)
-
-        except beatsheets.BeatmapParseError:
-            logger.print("[warn]Failed to parse pattern.[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
-
-        else:
-            beatmap = beatmaps.Loop(
-                tempo=self.tempo, offset=self.offset, width=width, track=track
-            )
-
-            print_hints(logger, gameplay_settings)
-            logger.print()
-
-            score, devices_settings = yield from beatmap.play(
-                manager,
-                self.resources_dir.abs,
-                self.cache_dir.abs,
-                None,
-                devices_settings,
-                gameplay_settings,
-            ).join()
-
-            logger.print()
-            logger.print_scores(
-                beatmap.settings.difficulty.performance_tolerance, score.perfs
-            )
-
-            if devices_settings is not None:
-                logger.print()
-                yes = yield from self.logger.ask(
-                    "Keep changes to device settings?"
-                ).join()
-                if yes:
-                    logger.print("[data/] Update device settings...")
-                    title = self.profile_manager.get_title()
-                    old = self.profile_manager.format()
-                    self.profile_manager.current.devices = devices_settings
-                    self.profile_manager.set_as_changed()
-                    new = self.profile_manager.format()
-
-                    self.logger.print(f"[data/] Your changes")
-                    logger.print(
-                        logger.format_code_diff(old, new, title=title, is_changed=True)
-                    )
+    return beatmaps.Loop(
+        tempo=tempo, offset=offset, width=width, track=track
+    )
