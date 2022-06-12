@@ -249,7 +249,7 @@ class BeatShellSettings(cfg.Configurable):
 
         suggestions_lines: int = 8
         suggestion_items: Tuple[str, str] = ("• [slot/]", "• [invert][slot/][/]")
-        suggestion_overflow_ellipses: Tuple[str, str] = ("[weight=dim]ⵗ[/]", "[weight=dim]ⵗ[/]")
+        suggestion_overflow_ellipses: Tuple[str, str] = ("[weight=dim]ⵗ [slot/][/]", "[weight=dim]ⵗ [slot/][/]")
 
 
 class PromptError(Exception):
@@ -645,13 +645,8 @@ class MsgRenderer:
         if msg_ellipsis_width == -1:
             raise ValueError(f"invalid ellipsis: {message_overflow_ellipsis!r}")
 
-        sugg_top_ellipsis = self.rich.parse(suggestion_overflow_ellipses[0])
-        sugg_top_ellipsis_width = self.rich.widthof(sugg_top_ellipsis)
-        sugg_bottom_ellipsis = self.rich.parse(suggestion_overflow_ellipses[1])
-        sugg_bottom_ellipsis_width = self.rich.widthof(sugg_bottom_ellipsis)
-
-        if sugg_top_ellipsis_width == -1 or sugg_bottom_ellipsis_width == -1:
-            raise ValueError(f"invalid ellipsis: {suggestion_overflow_ellipses!r}")
+        sugg_top_ellipsis = self.rich.parse(suggestion_overflow_ellipses[0], slotted=True)
+        sugg_bottom_ellipsis = self.rich.parse(suggestion_overflow_ellipses[1], slotted=True)
 
         sugg_items_templates = (
             self.rich.parse(sugg_items[0], slotted=True),
@@ -752,9 +747,9 @@ class MsgRenderer:
                     res.append(msg)
 
             if sugg_start > 0:
-                res.insert(0, sugg_ellipses[0])
+                res.insert(0, sugg_ellipses[0](mu.Text(f"{sugg_start} more")))
             if sugg_end < len(suggs_list):
-                res.append(sugg_ellipses[1])
+                res.append(sugg_ellipses[1](mu.Text(f"{len(suggs_list) - sugg_end} more")))
 
             nl = mu.Text("\n")
             is_fst = True
