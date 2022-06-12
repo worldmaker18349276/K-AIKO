@@ -1,18 +1,15 @@
-import contextlib
-import time
 import random
 import threading
 import queue
 import dataclasses
 from typing import Optional
-from pathlib import Path
 from ..utils import commands as cmd
 from ..utils import datanodes as dn
 from ..devices import audios as aud
 from ..devices import engines
 from ..beats import beatsheets
 from .loggers import Logger
-from .files import FileManager
+from .files import FileManager, UnrecognizedPath
 from .play import BeatmapManager, BeatmapFilePath, Song
 
 
@@ -91,6 +88,10 @@ class BGMController:
     def beatmap_manager(self):
         return self.provider.get(BeatmapManager)
 
+    @property
+    def file_manager(self):
+        return self.provider.get(FileManager)
+
     @dn.datanode
     def execute(self, manager):
         mixer_factory = lambda: engines.Mixer.create(self._mixer_settings_getter(), manager)
@@ -147,11 +148,6 @@ class BGMController:
 
         yield
         while True:
-            if isinstance(action, StopPreview) and self.is_bgm_on:
-                song = self.random_song()
-                if song is not None:
-                    action = PlayBGM(song, None)
-
             if isinstance(action, (StopBGM, StopPreview)):
                 self.is_bgm_on = False
                 self.current_action = None
@@ -162,23 +158,27 @@ class BGMController:
                 action = self._action_queue.get()
 
             elif isinstance(action, PreviewSong):
-                preview_action = action
-                self.current_action = preview_action
+                self.current_action = action
                 with require_mixer() as mixer:
-                    with self._play_song(mixer, preview_action) as preview_task:
+                    with self._play_song(mixer, action) as preview_task:
                         while True:
                             yield
 
                             try:
                                 preview_task.send(None)
                             except StopIteration:
-                                action = preview_action
+                                action = self.current_action
                                 break
 
                             if not self._action_queue.empty():
                                 action = self._action_queue.get()
-                                if action != preview_action:
-                                    break
+                                if action == self.current_action:
+                                    continue
+                                if isinstance(action, StopPreview) and self.is_bgm_on:
+                                    song = self.random_song()
+                                    if song is not None:
+                                        action = PlayBGM(song, None)
+                                break
 
             elif isinstance(action, PlayBGM):
                 self.is_bgm_on = True
@@ -209,8 +209,9 @@ class BGMController:
 
     def random_song(self):
         songs = self.beatmap_manager.get_songs()
-        if self.current_action is not None and self.current_action.song in songs:
-            songs.remove(self.current_action.song)
+        current_action = self.current_action
+        if current_action is not None and current_action.song in songs:
+            songs.remove(current_action.song)
         return random.choice(songs) if songs else None
 
     def stop(self):
@@ -233,8 +234,7 @@ class BGMController:
             self.stop_preview()
             return
 
-        file_manager = self.provider.get(FileManager)
-        path = self.beatmap_manager.beatmaps_dir.recognize(file_manager.current.abs / Path(token))
+        path = self.beatmap_manager.beatmaps_dir.recognize(self.file_manager.current.abs / token)
 
         if not isinstance(path, BeatmapFilePath):
             self.stop_preview()
@@ -272,6 +272,10 @@ class BGMSubCommand:
         return self.provider.get(BeatmapManager)
 
     @property
+    def file_manager(self):
+        return self.provider.get(FileManager)
+
+    @property
     def logger(self):
         return self.provider.get(Logger)
 
@@ -282,19 +286,18 @@ class BGMSubCommand:
         usage: [cmd]bgm[/] [cmd]on[/]
         """
         logger = self.logger
+        bgm_controller = self.bgm_controller
 
-        if self.bgm_controller.is_bgm_on:
+        if bgm_controller.is_bgm_on:
             self.now_playing()
             return
 
-        song = self.bgm_controller.random_song()
+        song = bgm_controller.random_song()
         if song is None:
             logger.print("[data/] There is no song in the folder yet!")
             return
 
-        logger.print("will play:")
-        logger.print(logger.emph(str(song.path), type="all"))
-        self.bgm_controller.play(song)
+        self._play(song)
 
     @cmd.function_command
     def off(self):
@@ -310,15 +313,16 @@ class BGMSubCommand:
 
         usage: [cmd]bgm[/] [cmd]skip[/]
         """
-        if self.bgm_controller.current_action is not None:
-            song = self.bgm_controller.random_song()
+        logger = self.logger
+        bgm_controller = self.bgm_controller
+
+        if bgm_controller.current_action is not None:
+            song = bgm_controller.random_song()
             if song is None:
                 logger.print("[data/] There is no song in the folder yet!")
                 return
 
-            self.logger.print("will play:")
-            self.logger.print(self.logger.emph(str(song.path), type="all"))
-            self.bgm_controller.play(song)
+            self._play(song)
 
     @cmd.function_command
     def play(self, beatmap, start=None):
@@ -330,9 +334,10 @@ class BGMSubCommand:
                beatmap you want to play.     the song started.
         """
         logger = self.logger
+        beatmap_manager = self.beatmap_manager
 
         try:
-            song = self.beatmap_manager.get_song(beatmap.parent, beatmap)
+            song = beatmap_manager.get_song(beatmap.parent, beatmap)
         except beatsheets.BeatmapParseError:
             logger.print("[warn]Fail to read beatmap[/]")
             return
@@ -341,13 +346,21 @@ class BGMSubCommand:
             logger.print("[warn]This beatmap has no song[/]")
             return
 
-        logger.print("will play:")
-        logger.print(logger.emph(str(song.path), type="all"))
-        self.bgm_controller.play(song, start)
+        self._play(song, start)
+
+    def _play(self, song, start=None):
+        logger = self.logger
+        bgm_controller = self.bgm_controller
+        file_manager = self.file_manager
+
+        path_str = file_manager.as_relative_path(UnrecognizedPath(song.path, False))
+        logger.print(f"will play: [emph]{path_str}[/]")
+
+        bgm_controller.play(song, start)
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        file_manager = self.provider.get(FileManager)
+        file_manager = self.file_manager
         return file_manager.make_parser(
             desc="It should be a path to the beatmap file",
             filter=lambda path: isinstance(path, BeatmapFilePath),
@@ -363,14 +376,22 @@ class BGMSubCommand:
 
         usage: [cmd]bgm[/] [cmd]now_playing[/]
         """
-        current = self.bgm_controller.current_action
+        logger = self.logger
+        bgm_controller = self.bgm_controller
+        file_manager = self.file_manager
+
+        current = bgm_controller.current_action
         if isinstance(current, PlayBGM):
-            self.logger.print("now playing:")
-            self.logger.print(self.logger.emph(str(current.song.path), type="all"))
+            path_str = file_manager.as_relative_path(UnrecognizedPath(current.song.path, False))
+            logger.print(f"now playing: [emph]{path_str}[/]")
+
         elif isinstance(current, PreviewSong):
-            self.logger.print("now previewing:")
-            self.logger.print(self.logger.emph(str(current.song.path), type="all"))
+            path_str = file_manager.as_relative_path(UnrecognizedPath(current.song.path, False))
+            logger.print(f"now previewing: [emph]{path_str}[/]")
+
         elif current is None:
-            self.logger.print("no song")
+            logger.print("no song")
+
         else:
             assert False
+

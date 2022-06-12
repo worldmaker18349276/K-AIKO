@@ -111,7 +111,7 @@ class BeatmapsDirPath(RecognizedDirPath):
     beatmapset = as_pattern("*")(BeatmapsetDirPath)
 
     @as_pattern("*.osz")
-    class beamap_zip(RecognizedFilePath):
+    class beatmap_zip(RecognizedFilePath):
         "(Compressed beatmapset file)"
 
 
@@ -162,7 +162,7 @@ class BeatmapManager:
 
         old_beatmapset_paths = set(self._beatmaps.cache.keys())
 
-        for beatmapset_path in beatmaps_dir.beatmapset:
+        for beatmapset_path in self.beatmaps_dir.beatmapset:
             if beatmapset_path not in self._beatmaps.cache:
                self._beatmaps.cache[beatmapset_path]
             old_beatmapset_paths.discard(beatmapset_path)
