@@ -1,4 +1,3 @@
-import os
 import shutil
 import traceback
 import dataclasses
@@ -15,11 +14,8 @@ from .files import (
     RecognizedFilePath,
     RecognizedDirPath,
     as_pattern,
-    as_child,
-    rename_path,
     InvalidFileOperation,
     FileManager,
-    PathParser,
 )
 from .profiles import ProfileManager
 

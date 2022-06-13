@@ -20,21 +20,27 @@ from pyaudio import PyAudio
 class DevicesDirPath(RecognizedDirPath):
     "(The place to manage your devices)"
 
-    def mk(self, provider):
-        file_manager = provider.get(FileManager)
-        file_manager.validate_path(self, should_exist=False, file_type="all")
-        self.abs.mkdir()
+    def rm(self, provider):
+        raise InvalidFileOperation("Deleting important directories or files may crash the program")
 
 
 class DeviceManager:
-    def __init__(self, audio_manager):
-        self.audio_manager = audio_manager
+    def __init__(self, provider):
+        self.provider = provider
+        self.audio_manager = None
 
-    @classmethod
+    @property
+    def logger(self):
+        return self.provider.get(Logger)
+
+    @property
+    def profile_manager(self):
+        return self.provider.get(ProfileManager)
+
     @dn.datanode
-    def initialize(cls, provider):
-        logger = provider.get(Logger)
-        profile_manager = provider.get(ProfileManager)
+    def initialize(self):
+        logger = self.logger
+        profile_manager = self.profile_manager
 
         # check tty
         if not sys.stdout.isatty():
@@ -45,7 +51,7 @@ class DeviceManager:
             profile_manager.current.devices.terminal.unicode_version == "auto"
             and "UNICODE_VERSION" not in os.environ
         ):
-            version = yield from cls.determine_unicode_version(logger).join()
+            version = yield from self.determine_unicode_version().join()
             if version is not None:
                 os.environ["UNICODE_VERSION"] = version
                 profile_manager.current.devices.terminal.unicode_version = version
@@ -58,7 +64,7 @@ class DeviceManager:
         if size.columns < width:
             logger.print("[hint/] Your screen size seems too small.")
 
-            yield from cls.fit_screen(logger, profile_manager.current.devices.terminal).join()
+            yield from self.fit_screen().join()
 
         # load PyAudio
         @contextlib.contextmanager
@@ -66,28 +72,28 @@ class DeviceManager:
             logger.print("[info/] Load PyAudio...")
             logger.print()
 
-            with cls.prepare_pyaudio(logger) as audio_manager:
-                yield cls(audio_manager)
+            with self.prepare_pyaudio() as audio_manager:
+                self.audio_manager = audio_manager
+                try:
+                    yield self
+                finally:
+                    self.audio_manager = None
 
         return ctxt()
 
-    @staticmethod
     @contextlib.contextmanager
-    def prepare_pyaudio(logger):
+    def prepare_pyaudio(self):
         r"""Prepare PyAudio and print out some information.
 
         Loading PyAudio will cause PortAudio to print something to the terminal,
         which cannot be turned off by PyAudio, so why not print more information to
         make it more hacky.
 
-        Parameters
-        ----------
-        logger : loggers.Logger
-
         Yields
         ------
         audio_manager : PyAudio
         """
+        logger = self.logger
 
         verb_ctxt = logger.verb()
         verb_ctxt.__enter__()
@@ -116,20 +122,17 @@ class DeviceManager:
             if not has_exited and not hit_except:
                 verb_ctxt.__exit__(None, None, None)
 
-    @staticmethod
-    def fit_screen(logger, terminal_settings):
+    def fit_screen(self):
         r"""Guide user to adjust screen size.
-
-        Parameters
-        ----------
-        logger : loggers.Logger
-        terminal_settings : terminals.TerminalSettings
 
         Returns
         -------
         fit_task : datanodes.DataNode
             The datanode to manage this process.
         """
+        logger = self.logger
+        terminal_settings = self.profile_manager.current.devices.terminal
+
         width = terminal_settings.best_screen_size
         delay = terminal_settings.adjust_screen_delay
 
@@ -185,9 +188,10 @@ class DeviceManager:
 
         return dn.pipe(skip, term.terminal_size(), fit())
 
-    @staticmethod
     @dn.datanode
-    def determine_unicode_version(logger):
+    def determine_unicode_version(self):
+        logger = self.logger
+
         logger.print("[info/] Determine unicode version...")
 
         with logger.verb():
@@ -198,7 +202,7 @@ class DeviceManager:
 
         else:
             logger.print(f"Your unicode version is [emph]{version}[/]")
-            logger.print("[hint/] You can put this command into your settings file:")
+            logger.print("[hint/] You can put this command into your .bashrc file:")
             logger.print(f"[emph]UNICODE_VERSION={version}; export UNICODE_VERSION[/]")
 
         return version
@@ -266,22 +270,24 @@ class DevicesCommand:
 
         logger.print()
 
-        device = self.settings.devices.detector.input_device
+        devices_settings = self.settings.devices
+
+        device = devices_settings.detector.input_device
         if device == -1:
             device = "default"
-        samplerate = self.settings.devices.detector.input_samplerate
-        channels = self.settings.devices.detector.input_channels
-        format = self.settings.devices.detector.input_format
+        samplerate = devices_settings.detector.input_samplerate
+        channels = devices_settings.detector.input_channels
+        format = devices_settings.detector.input_format
         logger.print(
             f"current input device: {device} ({samplerate/1000} kHz, {channels} ch)"
         )
 
-        device = self.settings.devices.mixer.output_device
+        device = devices_settings.mixer.output_device
         if device == -1:
             device = "default"
-        samplerate = self.settings.devices.mixer.output_samplerate
-        channels = self.settings.devices.mixer.output_channels
-        format = self.settings.devices.mixer.output_format
+        samplerate = devices_settings.mixer.output_samplerate
+        channels = devices_settings.mixer.output_channels
+        format = devices_settings.mixer.output_format
         logger.print(
             f"current output device: {device} ({samplerate/1000} kHz, {channels} ch)"
         )
@@ -329,12 +335,14 @@ class DevicesCommand:
         pa_channels = ch
         pa_format = fmt
 
+        devices_settings = self.settings.devices
+
         if pa_samplerate is None:
-            pa_samplerate = self.settings.devices.detector.input_samplerate
+            pa_samplerate = devices_settings.detector.input_samplerate
         if pa_channels is None:
-            pa_channels = self.settings.devices.detector.input_channels
+            pa_channels = devices_settings.detector.input_channels
         if pa_format is None:
-            pa_format = self.settings.devices.detector.input_format
+            pa_format = devices_settings.detector.input_format
 
         try:
             logger.print("Validate input device...")
@@ -349,15 +357,15 @@ class DevicesCommand:
                 logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
-            self.settings.devices.detector.input_device = device
+            devices_settings.detector.input_device = device
             if rate is not None:
-                self.settings.devices.detector.input_samplerate = rate
+                devices_settings.detector.input_samplerate = rate
             if ch is not None:
-                self.settings.devices.detector.input_channels = ch
+                devices_settings.detector.input_channels = ch
             if len is not None:
-                self.settings.devices.detector.input_buffer_length = len
+                devices_settings.detector.input_buffer_length = len
             if fmt is not None:
-                self.settings.devices.detector.input_format = fmt
+                devices_settings.detector.input_format = fmt
             self.profile_manager.set_as_changed()
 
     @cmd.function_command
@@ -379,12 +387,14 @@ class DevicesCommand:
         pa_channels = ch
         pa_format = fmt
 
+        devices_settings = self.settings.devices
+
         if pa_samplerate is None:
-            pa_samplerate = self.settings.devices.mixer.output_samplerate
+            pa_samplerate = devices_settings.mixer.output_samplerate
         if pa_channels is None:
-            pa_channels = self.settings.devices.mixer.output_channels
+            pa_channels = devices_settings.mixer.output_channels
         if pa_format is None:
-            pa_format = self.settings.devices.mixer.output_format
+            pa_format = devices_settings.mixer.output_format
 
         try:
             logger.print("Validate output device...")
@@ -399,15 +409,15 @@ class DevicesCommand:
                 logger.print(traceback.format_exc(), end="", markup=False)
 
         else:
-            self.settings.devices.mixer.output_device = device
+            devices_settings.mixer.output_device = device
             if rate is not None:
-                self.settings.devices.mixer.output_samplerate = rate
+                devices_settings.mixer.output_samplerate = rate
             if ch is not None:
-                self.settings.devices.mixer.output_channels = ch
+                devices_settings.mixer.output_channels = ch
             if len is not None:
-                self.settings.devices.mixer.output_buffer_length = len
+                devices_settings.mixer.output_buffer_length = len
             if fmt is not None:
-                self.settings.devices.mixer.output_format = fmt
+                devices_settings.mixer.output_format = fmt
             self.profile_manager.set_as_changed()
 
     @test_mic.arg_parser("device")
@@ -479,9 +489,10 @@ class DevicesCommand:
             )
             logger.print("[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r")
 
+        devices_settings = self.settings.devices
         controller_task, controller = engines.Controller.create(
-            self.settings.devices.controller,
-            self.settings.devices.terminal,
+            devices_settings.controller,
+            devices_settings.terminal,
         )
         controller.add_handler(handler)
         controller.add_handler(lambda _: stop_event.set(), exit_key)
@@ -533,11 +544,12 @@ class DevicesCommand:
                      to be printed.          bool, use markup or not;
                                                 default is True.
         """
+        logger = self.logger
 
         try:
-            self.logger.print(message, markup=markup)
+            logger.print(message, markup=markup)
         except mu.MarkupParseError as e:
-            self.logger.print(f"[warn]{self.logger.escape(str(e))}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
 
     @test_logger.arg_parser("message")
     def _test_logger_message_parser(self):
@@ -565,7 +577,7 @@ class DevicesCommand:
         usage: [cmd]fit_screen[/]
         """
 
-        return self.device_manager.fit_screen(self.logger, self.settings.devices.terminal)
+        return self.device_manager.fit_screen()
 
     @cmd.function_command
     @dn.datanode
@@ -575,7 +587,7 @@ class DevicesCommand:
         usage: [cmd]ucs_detect[/]
         """
 
-        version = yield from self.device_manager.determine_unicode_version(self.logger).join()
+        version = yield from self.device_manager.determine_unicode_version().join()
         if version is not None:
             os.environ["UNICODE_VERSION"] = version
             self.settings.devices.terminal.unicode_version = version

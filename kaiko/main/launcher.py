@@ -142,7 +142,7 @@ class KAIKOLauncher:
         logger.print(flush=True)
 
         # load devices
-        devices_ctxt = yield from DeviceManager.initialize(launcher.provider).join()
+        devices_ctxt = yield from DeviceManager(launcher.provider).initialize().join()
 
         with devices_ctxt as device_manager:
             launcher.provider.set(device_manager)
