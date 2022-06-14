@@ -200,10 +200,6 @@ class Editor:
 
     Attributes
     ----------
-    buffers : list of list of str
-        The editable buffers of input history.
-    buffer_index : int
-        The negative index of current input buffer.
     buffer : list of str
         The buffer of current input.
     pos : int
@@ -223,28 +219,21 @@ class Editor:
         The parsed length of tokens.
     """
 
-    def __init__(self, parser, history):
+    def __init__(self, parser, buffer):
         self.parser = parser
+        self.init(buffer)
+
+    def init(self, buffer):
+        self.buffer = buffer
+        self.pos = len(self.buffer)
         self.tokens = []
         self.lex_state = SHLEXER_STATE.SPACED
         self.group = None
         self.result = None
         self.length = 0
 
-        self.init(history)
-
-    def init(self, history):
-        self.buffers = history
-        self.buffers.append([])
-        self.buffer_index = -1
-        self.pos = len(self.buffer)
-
     def update_parser(self, parser):
         self.parser = parser
-
-    @property
-    def buffer(self):
-        return self.buffers[self.buffer_index]
 
     def parse(self):
         tokenizer = tokenize(self.buffer)
@@ -271,20 +260,6 @@ class Editor:
         self.group = self.parser.get_group(self.tokens[0].string) if self.tokens else None
 
     # text operations
-
-    def prev(self):
-        if self.buffer_index == -len(self.buffers):
-            return False
-        self.buffer_index -= 1
-        self.pos = len(self.buffer)
-        return True
-
-    def next(self):
-        if self.buffer_index == -1:
-            return False
-        self.buffer_index += 1
-        self.pos = len(self.buffer)
-        return True
 
     def replace(self, selection, text):
         if not all(ch.isprintable() for ch in text):

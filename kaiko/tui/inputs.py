@@ -520,7 +520,9 @@ class BeatInput:
         self.cache_dir = cache_dir
         self.history = HistoryManager(self.cache_dir / self.history_file_path)
 
-        self.editor = sheditors.Editor(None, [])
+        self.buffers = [[]]
+        self.buffer_index = -1
+        self.editor = sheditors.Editor(None, self.buffers[self.buffer_index])
         self.typeahead = ""
         self.hint_manager = HintManager(
             self.editor,
@@ -598,7 +600,10 @@ class BeatInput:
         if clear:
             groups = self.editor.get_all_groups()
             history_size = self.settings.history_size
-            self.editor.init(self.history.read_history(groups, history_size))
+            self.buffers = self.history.read_history(groups, history_size)
+            self.buffers.append([])
+            self.buffer_index = -1
+            self.editor.init(self.buffers[self.buffer_index])
 
         self.update_buffer(clear=True)
         self.start()
@@ -613,10 +618,10 @@ class BeatInput:
         -------
         succ : bool
         """
-        succ = self.editor.prev()
-        if not succ:
+        if self.buffer_index == -len(self.buffers):
             return False
-
+        self.buffer_index -= 1
+        self.editor.init(self.buffers[self.buffer_index])
         self.update_buffer(clear=True)
 
         return True
@@ -630,10 +635,10 @@ class BeatInput:
         -------
         succ : bool
         """
-        succ = self.editor.next()
-        if not succ:
+        if self.buffer_index == -1:
             return False
-
+        self.buffer_index += 1
+        self.editor.init(self.buffers[self.buffer_index])
         self.update_buffer(clear=True)
 
         return True
@@ -657,7 +662,7 @@ class BeatInput:
 
         # search history
         pos = self.editor.pos
-        for buffer in reversed(self.editor.buffers):
+        for buffer in reversed(self.buffers):
             if len(buffer) > pos and buffer[:pos] == self.editor.buffer:
                 self.typeahead = "".join(buffer[pos:])
                 return True
