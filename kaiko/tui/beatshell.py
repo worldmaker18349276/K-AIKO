@@ -262,6 +262,7 @@ class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
     monitor_file_path = "monitor/prompt.csv"
+    history_file_path = ".beatshell-history"
 
     def __init__(
         self,
@@ -279,7 +280,7 @@ class BeatPrompt:
             command_parser_getter,
             preview_handler,
             rich,
-            cache_dir,
+            cache_dir / self.history_file_path,
             lambda: self.settings.input,
         )
 

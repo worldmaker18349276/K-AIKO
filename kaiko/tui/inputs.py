@@ -455,8 +455,8 @@ class BeatInput:
         The function to produce command parser for beatshell.
     rich : markups.RichParser
         The rich parser.
-    cache_dir : Path
-        The directory of cache data.
+    history_path : Path
+        The path of command history.
     history : HistoryManager
         The input history manager.
     editor : sheditors.Editor
@@ -474,8 +474,6 @@ class BeatInput:
     key_pressed_counter : int
         The event counter for key pressing.
     """
-
-    history_file_path = ".beatshell-history"
 
     action_regex = "({fn}{op})*{fn}".format(
         fn=r"input\.(?!_)\w+\(\)",
@@ -496,7 +494,7 @@ class BeatInput:
         command_parser_getter,
         preview_handler,
         rich,
-        cache_dir,
+        history_path,
         settings_getter=BeatInputSettings,
     ):
         r"""Constructor.
@@ -507,8 +505,8 @@ class BeatInput:
             The function to produce command parser.
         preview_handler : function
         rich : markups.RichParser
-        cache_dir : Path
-            The directory of cache data.
+        history_path : Path
+            The path of command history.
         settings_getter : BeatInputSettings
             The settings getter of input.
         """
@@ -517,8 +515,7 @@ class BeatInput:
         self.command_parser_getter = command_parser_getter
         self._settings_getter = settings_getter
 
-        self.cache_dir = cache_dir
-        self.history = HistoryManager(self.cache_dir / self.history_file_path)
+        self.history = HistoryManager(history_path)
 
         self.buffers = [[]]
         self.buffer_index = -1
