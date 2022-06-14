@@ -518,7 +518,7 @@ class BeatInput:
         self,
         preview_handler,
         history_path,
-        settings_getter=BeatInputSettings,
+        settings,
     ):
         r"""Constructor.
 
@@ -527,10 +527,10 @@ class BeatInput:
         preview_handler : function
         history_path : Path
             The path of command history.
-        settings_getter : BeatInputSettings
-            The settings getter of input.
+        settings : BeatInputSettings
+            The settings of input.
         """
-        self._settings_getter = settings_getter
+        self.settings = settings
 
         self.history = HistoryManager(history_path)
         self.editor = sheditors.Editor(None, self.history.buffer)
@@ -548,9 +548,8 @@ class BeatInput:
         self.key_pressed_counter = 0
         self.buffer_modified_counter = 0
 
-    @property
-    def settings(self):
-        return self._settings_getter()
+    def set_settings(self, settings):
+        self.settings = settings
 
     def _register(self, controller):
         stroke = BeatStroke(self, self.settings)

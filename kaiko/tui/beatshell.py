@@ -280,7 +280,7 @@ class BeatPrompt:
         self.input = inputs.BeatInput(
             preview_handler,
             cache_dir / self.history_file_path,
-            lambda: self.settings.input,
+            self.settings.input,
         )
 
         self.new_session()
@@ -330,6 +330,8 @@ class BeatPrompt:
     @dn.datanode
     def prompt(self, devices_settings):
         fin_event = threading.Event()
+
+        self.input.set_settings(self.settings.input)
 
         # engines
         settings = self.settings
