@@ -195,11 +195,20 @@ def quoting(compreply, state=SHLEXER_STATE.SPACED):
     return raw if partial else raw + " "
 
 
-class SemanticAnalyzer:
-    r"""Sematic analyzer for beatshell.
+class Editor:
+    r"""Text editor with sematic parser.
 
     Attributes
     ----------
+    buffers : list of list of str
+        The editable buffers of input history.
+    buffer_index : int
+        The negative index of current input buffer.
+    buffer : list of str
+        The buffer of current input.
+    pos : int
+        The caret position of input.
+
     parser : commands.RootCommandParser
         The root command parser for beatshell.
     tokens : list of ShToken
@@ -214,7 +223,7 @@ class SemanticAnalyzer:
         The parsed length of tokens.
     """
 
-    def __init__(self, parser):
+    def __init__(self, parser, history):
         self.parser = parser
         self.tokens = []
         self.lex_state = SHLEXER_STATE.SPACED
@@ -222,11 +231,23 @@ class SemanticAnalyzer:
         self.result = None
         self.length = 0
 
+        self.init(history)
+
+    def init(self, history):
+        self.buffers = history
+        self.buffers.append([])
+        self.buffer_index = -1
+        self.pos = len(self.buffer)
+
     def update_parser(self, parser):
         self.parser = parser
 
-    def parse(self, buffer):
-        tokenizer = tokenize(buffer)
+    @property
+    def buffer(self):
+        return self.buffers[self.buffer_index]
+
+    def parse(self):
+        tokenizer = tokenize(self.buffer)
 
         tokens = []
         while True:
@@ -248,6 +269,94 @@ class SemanticAnalyzer:
             for token, type in zip(tokens, types)
         ]
         self.group = self.parser.get_group(self.tokens[0].string) if self.tokens else None
+
+    # text operations
+
+    def prev(self):
+        if self.buffer_index == -len(self.buffers):
+            return False
+        self.buffer_index -= 1
+        self.pos = len(self.buffer)
+        return True
+
+    def next(self):
+        if self.buffer_index == -1:
+            return False
+        self.buffer_index += 1
+        self.pos = len(self.buffer)
+        return True
+
+    def replace(self, selection, text):
+        if not all(ch.isprintable() for ch in text):
+            raise ValueError("invalid text to insert: " + repr("".join(text)))
+
+        start, stop, _ = selection.indices(len(self.buffer))
+        self.buffer[selection] = text
+        selection = slice(start, start + len(text))
+        if start <= self.pos < stop:
+            self.pos = selection.stop
+        elif stop <= self.pos:
+            self.pos += selection.stop - stop
+        return selection
+
+    def insert(self, text):
+        text = list(text)
+
+        if len(text) == 0:
+            return False
+
+        while len(text) > 0 and text[0] == "\b":
+            del text[0]
+            del self.buffer[self.pos - 1]
+            self.pos = self.pos - 1
+
+        self.replace(slice(self.pos, self.pos), text)
+        return True
+
+    def backspace(self):
+        if self.pos == 0:
+            return False
+        self.replace(slice(self.pos-1, self.pos), "")
+        return True
+
+    def delete(self):
+        if self.pos >= len(self.buffer):
+            return False
+        self.replace(slice(self.pos, self.pos+1), "")
+        return True
+
+    def delete_all(self):
+        if not self.buffer:
+            return False
+        self.replace(slice(None, None), "")
+        return True
+
+    def move_to(self, pos):
+        pos = (
+            min(max(0, pos), len(self.buffer)) if pos is not None else len(self.buffer)
+        )
+
+        if self.pos == pos:
+            return False
+
+        self.pos = pos
+        return True
+
+    def to_word_start(self):
+        for match in re.finditer(r"\w+|\W+", "".join(self.buffer)):
+            if match.end() >= self.pos:
+                return slice(match.start(), self.pos)
+        else:
+            return slice(0, self.pos)
+
+    def to_word_end(self):
+        for match in re.finditer(r"\w+|\W+", "".join(self.buffer)):
+            if match.end() > self.pos:
+                return slice(self.pos, match.end())
+        else:
+            return slice(self.pos, len(self.buffer))
+
+    # sematic operations
 
     def get_all_groups(self):
         return self.parser.get_all_groups()
@@ -285,5 +394,4 @@ class SemanticAnalyzer:
                 return index, token
         else:
             return None, None
-
 

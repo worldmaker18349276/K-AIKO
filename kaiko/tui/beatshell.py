@@ -447,9 +447,9 @@ class InputView:
             with self.input.edit_ctxt.lock:
                 if self.input.buffer_modified_counter != buffer_modified_counter:
                     buffer_modified_counter = self.input.buffer_modified_counter
-                    self.buffer = list(self.input.text_buffer.buffer)
-                    self.tokens = list(self.input.semantic_analyzer.tokens)
-                self.pos = self.input.text_buffer.pos
+                    self.buffer = list(self.input.editor.buffer)
+                    self.tokens = list(self.input.editor.tokens)
+                self.pos = self.input.editor.pos
 
                 self.typeahead = self.input.typeahead
                 self.clean = self.input.result is not None

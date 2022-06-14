@@ -8,7 +8,7 @@ from pathlib import Path
 import dataclasses
 from ..utils import commands as cmd
 from ..utils import config as cfg
-from . import shells as sh
+from . import sheditors
 
 
 # hint
@@ -34,8 +34,8 @@ class HintState:
 
 
 class HintManager:
-    def __init__(self, semantic_analyzer, preview_handler):
-        self.semantic_analyzer = semantic_analyzer
+    def __init__(self, editor, preview_handler):
+        self.editor = editor
         self.preview_handler = preview_handler
         self.popup_queue = queue.Queue()
         self.hint_state = None
@@ -60,13 +60,13 @@ class HintManager:
     def set_hint(self, hint, index=None):
         if isinstance(hint, DescHint):
             msg_tokens = (
-                [token.string for token in self.semantic_analyzer.tokens[:index]]
+                [token.string for token in self.editor.tokens[:index]]
                 if index is not None
                 else None
             )
         elif isinstance(hint, InfoHint):
             msg_tokens = (
-                [token.string for token in self.semantic_analyzer.tokens[: index + 1]]
+                [token.string for token in self.editor.tokens[: index + 1]]
                 if index is not None
                 else None
             )
@@ -91,19 +91,19 @@ class HintManager:
         if self.hint_state.tokens is None:
             return self.cancel_hint()
 
-        if self.hint_state.index is not None and self.hint_state.index >= len(self.semantic_analyzer.tokens):
+        if self.hint_state.index is not None and self.hint_state.index >= len(self.editor.tokens):
             return self.cancel_hint()
 
-        if len(self.hint_state.tokens) > len(self.semantic_analyzer.tokens):
+        if len(self.hint_state.tokens) > len(self.editor.tokens):
             return self.cancel_hint()
 
-        for token_string, token in zip(self.hint_state.tokens, self.semantic_analyzer.tokens):
+        for token_string, token in zip(self.hint_state.tokens, self.editor.tokens):
             if token_string != token.string:
                 return self.cancel_hint()
 
         if (
             isinstance(self.hint_state.hint, DescHint)
-            and self.semantic_analyzer.tokens[len(self.hint_state.tokens) - 1].type is not None
+            and self.editor.tokens[len(self.hint_state.tokens) - 1].type is not None
         ):
             return self.cancel_hint()
 
@@ -124,16 +124,16 @@ class HintManager:
             self.preview_handler(self.hint_state.tokens[1])
 
     def ask_for_hint(self, index, type="all"):
-        if index not in range(len(self.semantic_analyzer.tokens)):
+        if index not in range(len(self.editor.tokens)):
             return False
 
-        target_type = self.semantic_analyzer.tokens[index].type
+        target_type = self.editor.tokens[index].type
 
         if target_type is None:
             if type not in ("all", "desc"):
                 self.cancel_hint()
                 return False
-            msg = self.semantic_analyzer.desc(index)
+            msg = self.editor.desc(index)
             if msg is None:
                 self.cancel_hint()
                 return False
@@ -145,7 +145,7 @@ class HintManager:
             if type not in ("all", "info"):
                 self.cancel_hint()
                 return False
-            msg = self.semantic_analyzer.info(index + 1)
+            msg = self.editor.info(index + 1)
             if msg is None:
                 self.cancel_hint()
                 return False
@@ -166,9 +166,8 @@ class TabState:
 
 
 class AutocompleteManager:
-    def __init__(self, text_buffer, semantic_analyzer):
-        self.text_buffer = text_buffer
-        self.semantic_analyzer = semantic_analyzer
+    def __init__(self, editor):
+        self.editor = editor
 
         self.tab_state = None
 
@@ -189,16 +188,16 @@ class AutocompleteManager:
 
     def prepare_tab_state(self, action=+1):
         # find the token to autocomplete
-        index, token = self.semantic_analyzer.find_token_before(self.text_buffer.pos)
+        index, token = self.editor.find_token_before(self.editor.pos)
         if token is None:
             token_index = 0
             target = ""
-            selection = slice(self.text_buffer.pos, self.text_buffer.pos)
+            selection = slice(self.editor.pos, self.editor.pos)
 
-        elif token.mask.stop < self.text_buffer.pos:
+        elif token.mask.stop < self.editor.pos:
             token_index = index + 1
             target = ""
-            selection = slice(self.text_buffer.pos, self.text_buffer.pos)
+            selection = slice(self.editor.pos, self.editor.pos)
 
         else:
             token_index = index
@@ -207,14 +206,14 @@ class AutocompleteManager:
 
         # generate suggestions
         suggestions = [
-            sh.quoting(sugg)
-            for sugg in self.semantic_analyzer.suggest(token_index, target)
+            sheditors.quoting(sugg)
+            for sugg in self.editor.suggest(token_index, target)
         ]
         sugg_index = len(suggestions) if action == -1 else -1
 
         # tab state
-        original_pos = self.text_buffer.pos
-        original_token = self.text_buffer.buffer[selection]
+        original_pos = self.editor.pos
+        original_token = self.editor.buffer[selection]
 
         return TabState(
             suggestions=suggestions,
@@ -235,7 +234,7 @@ class AutocompleteManager:
 
             if len(tab_state.suggestions) == 1:
                 # one suggestion -> complete directly
-                self.text_buffer.replace(tab_state.selection, tab_state.suggestions[0])
+                self.editor.replace(tab_state.selection, tab_state.suggestions[0])
                 return tab_state.token_index
 
             self.tab_state = tab_state
@@ -252,7 +251,7 @@ class AutocompleteManager:
             return None
 
         # fill in selected token
-        self.tab_state.selection = self.text_buffer.replace(
+        self.tab_state.selection = self.editor.replace(
             self.tab_state.selection,
             self.tab_state.suggestions[self.tab_state.sugg_index],
         )
@@ -262,8 +261,8 @@ class AutocompleteManager:
     def cancel_autocomplete(self):
         if self.tab_state is None:
             return
-        self.text_buffer.replace(self.tab_state.selection, self.tab_state.original_token)
-        self.text_buffer.move_to(self.tab_state.original_pos)
+        self.editor.replace(self.tab_state.selection, self.tab_state.original_token)
+        self.editor.move_to(self.tab_state.original_pos)
         self.tab_state = None
 
     def finish_autocomplete(self):
@@ -325,119 +324,6 @@ class HistoryManager:
                 del buffers[:trim_len]
 
         return [list(command) for command in buffers[-read_size:]]
-
-
-class TextBuffer:
-    r"""Text buffer for beatshell.
-
-    Attributes
-    ----------
-    buffers : list of list of str
-        The editable buffers of input history.
-    buffer_index : int
-        The negative index of current input buffer.
-    buffer : list of str
-        The buffer of current input.
-    pos : int
-        The caret position of input.
-    """
-
-    def __init__(self, history):
-        self.init(history)
-
-    def init(self, history):
-        self.buffers = history
-        self.buffers.append([])
-        self.buffer_index = -1
-        self.pos = len(self.buffer)
-
-    @property
-    def buffer(self):
-        return self.buffers[self.buffer_index]
-
-    def prev(self):
-        if self.buffer_index == -len(self.buffers):
-            return False
-        self.buffer_index -= 1
-        self.pos = len(self.buffer)
-        return True
-
-    def next(self):
-        if self.buffer_index == -1:
-            return False
-        self.buffer_index += 1
-        self.pos = len(self.buffer)
-        return True
-
-    def replace(self, selection, text):
-        if not all(ch.isprintable() for ch in text):
-            raise ValueError("invalid text to insert: " + repr("".join(text)))
-
-        start, stop, _ = selection.indices(len(self.buffer))
-        self.buffer[selection] = text
-        selection = slice(start, start + len(text))
-        if start <= self.pos < stop:
-            self.pos = selection.stop
-        elif stop <= self.pos:
-            self.pos += selection.stop - stop
-        return selection
-
-    def insert(self, text):
-        text = list(text)
-
-        if len(text) == 0:
-            return False
-
-        while len(text) > 0 and text[0] == "\b":
-            del text[0]
-            del self.buffer[self.pos - 1]
-            self.pos = self.pos - 1
-
-        self.replace(slice(self.pos, self.pos), text)
-        return True
-
-    def backspace(self):
-        if self.pos == 0:
-            return False
-        self.replace(slice(self.pos-1, self.pos), "")
-        return True
-
-    def delete(self):
-        if self.pos >= len(self.buffer):
-            return False
-        self.replace(slice(self.pos, self.pos+1), "")
-        return True
-
-    def delete_all(self):
-        if not self.buffer:
-            return False
-        self.replace(slice(None, None), "")
-        return True
-
-    def move_to(self, pos):
-        pos = (
-            min(max(0, pos), len(self.buffer)) if pos is not None else len(self.buffer)
-        )
-
-        if self.pos == pos:
-            return False
-
-        self.pos = pos
-        return True
-
-    def to_word_start(self):
-        for match in re.finditer(r"\w+|\W+", "".join(self.buffer)):
-            if match.end() >= self.pos:
-                return slice(match.start(), self.pos)
-        else:
-            return slice(0, self.pos)
-
-    def to_word_end(self):
-        for match in re.finditer(r"\w+|\W+", "".join(self.buffer)):
-            if match.end() > self.pos:
-                return slice(self.pos, match.end())
-        else:
-            return slice(self.pos, len(self.buffer))
 
 
 class BeatInputSettings(cfg.Configurable):
@@ -567,16 +453,14 @@ class BeatInput:
         The input settings.
     command_parser_getter : function
         The function to produce command parser for beatshell.
-    semantic_analyzer : shells.SemanticAnalyzer
-        The syntax analyzer.
     rich : markups.RichParser
         The rich parser.
     cache_dir : Path
         The directory of cache data.
     history : HistoryManager
         The input history manager.
-    text_buffer : TextBuffer
-        The text buffer of beatshell.
+    editor : sheditors.Editor
+        The editor of beatshell command.
     typeahead : str
         The type ahead of input.
     hint_manager : HintManager
@@ -633,19 +517,16 @@ class BeatInput:
         self.command_parser_getter = command_parser_getter
         self._settings_getter = settings_getter
 
-        self.semantic_analyzer = sh.SemanticAnalyzer(None)
         self.cache_dir = cache_dir
         self.history = HistoryManager(self.cache_dir / self.history_file_path)
 
-        self.text_buffer = TextBuffer([])
+        self.editor = sheditors.Editor(None, [])
         self.typeahead = ""
         self.hint_manager = HintManager(
-            self.semantic_analyzer,
+            self.editor,
             lambda song: preview_handler(song) if self.settings.preview_song else None,
         )
-        self.autocomplete_manager = AutocompleteManager(
-            self.text_buffer, self.semantic_analyzer
-        )
+        self.autocomplete_manager = AutocompleteManager(self.editor)
 
         self.state = "FIN"
         self.result = None
@@ -665,8 +546,8 @@ class BeatInput:
         stroke.register(controller)
 
     def _record_command(self):
-        command = "".join(self.text_buffer.buffer).strip()
-        self.history.write_history(self.semantic_analyzer.group, command)
+        command = "".join(self.editor.buffer).strip()
+        self.history.write_history(self.editor.group, command)
 
     @locked
     @onstate("EDIT")
@@ -712,12 +593,12 @@ class BeatInput:
         -------
         succ : bool
         """
-        self.semantic_analyzer.update_parser(self.command_parser_getter())
+        self.editor.update_parser(self.command_parser_getter())
 
         if clear:
-            groups = self.semantic_analyzer.get_all_groups()
+            groups = self.editor.get_all_groups()
             history_size = self.settings.history_size
-            self.text_buffer.init(self.history.read_history(groups, history_size))
+            self.editor.init(self.history.read_history(groups, history_size))
 
         self.update_buffer(clear=True)
         self.start()
@@ -732,7 +613,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        succ = self.text_buffer.prev()
+        succ = self.editor.prev()
         if not succ:
             return False
 
@@ -749,7 +630,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        succ = self.text_buffer.next()
+        succ = self.editor.next()
         if not succ:
             return False
 
@@ -770,14 +651,14 @@ class BeatInput:
             `False` if unable to complete or the caret is not at the end of
             buffer.
         """
-        if self.text_buffer.pos != len(self.text_buffer.buffer):
+        if self.editor.pos != len(self.editor.buffer):
             self.typeahead = ""
             return False
 
         # search history
-        pos = self.text_buffer.pos
-        for buffer in reversed(self.text_buffer.buffers):
-            if len(buffer) > pos and buffer[:pos] == self.text_buffer.buffer:
+        pos = self.editor.pos
+        for buffer in reversed(self.editor.buffers):
+            if len(buffer) > pos and buffer[:pos] == self.editor.buffer:
                 self.typeahead = "".join(buffer[pos:])
                 return True
 
@@ -809,10 +690,10 @@ class BeatInput:
             buffer.
         """
 
-        if self.typeahead == "" or self.text_buffer.pos != len(self.text_buffer.buffer):
+        if self.typeahead == "" or self.editor.pos != len(self.editor.buffer):
             return False
 
-        self.text_buffer.insert(self.typeahead)
+        self.editor.insert(self.typeahead)
 
         self.update_buffer()
         self.ask_for_hint()
@@ -900,7 +781,7 @@ class BeatInput:
         succ : bool
         """
         if index is None:
-            index, token = self.semantic_analyzer.find_token_before(self.text_buffer.pos)
+            index, token = self.editor.find_token_before(self.editor.pos)
 
         return self.hint_manager.ask_for_hint(index, type=type)
 
@@ -916,7 +797,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        self.semantic_analyzer.parse(self.text_buffer.buffer)
+        self.editor.parse()
         self.buffer_modified_counter += 1
         self.cancel_typeahead()
         if clear:
@@ -943,7 +824,7 @@ class BeatInput:
         succ : bool
             `False` if buffer isn't changed.
         """
-        succ = self.text_buffer.insert(text)
+        succ = self.editor.insert(text)
         if not succ:
             return False
 
@@ -964,7 +845,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        succ = self.text_buffer.backspace()
+        succ = self.editor.backspace()
         if not succ:
             return False
 
@@ -984,7 +865,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        succ = self.text_buffer.delete()
+        succ = self.editor.delete()
         if not succ:
             return False
 
@@ -1002,7 +883,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        succ = self.text_buffer.delete_all()
+        succ = self.editor.delete_all()
         if not succ:
             return False
 
@@ -1025,7 +906,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        self.text_buffer.replace(slice(start, end), "")
+        self.editor.replace(slice(start, end), "")
 
         self.update_buffer()
         self.ask_for_hint()
@@ -1046,14 +927,14 @@ class BeatInput:
         succ : bool
         """
         if index is not None:
-            token = self.semantic_analyzer.tokens[index]
+            token = self.editor.tokens[index]
             return self.delete_range(token.mask.start, token.mask.stop)
 
-        _, token = self.semantic_analyzer.find_token_before(self.text_buffer.pos)
+        _, token = self.editor.find_token_before(self.editor.pos)
         if token is None:
-            return self.delete_range(0, self.text_buffer.pos)
+            return self.delete_range(0, self.editor.pos)
         else:
-            return self.delete_range(token.mask.start, max(self.text_buffer.pos, token.mask.stop))
+            return self.delete_range(token.mask.start, max(self.editor.pos, token.mask.stop))
 
     @locked
     @onstate("EDIT")
@@ -1069,14 +950,14 @@ class BeatInput:
         succ : bool
         """
         if index is not None:
-            token = self.semantic_analyzer.tokens[index]
+            token = self.editor.tokens[index]
             return self.delete_range(token.mask.start, token.mask.stop)
 
-        _, token = self.semantic_analyzer.find_token_after(self.text_buffer.pos)
+        _, token = self.editor.find_token_after(self.editor.pos)
         if token is None:
-            return self.delete_range(self.text_buffer.pos, None)
+            return self.delete_range(self.editor.pos, None)
         else:
-            return self.delete_range(min(self.text_buffer.pos, token.mask.start), token.mask.stop)
+            return self.delete_range(min(self.editor.pos, token.mask.start), token.mask.stop)
 
     @locked
     @onstate("EDIT")
@@ -1089,7 +970,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        mask = self.text_buffer.to_word_start()
+        mask = self.editor.to_word_start()
         return self.delete_range(mask.start, mask.stop)
 
     @locked
@@ -1103,7 +984,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        mask = self.text_buffer.to_word_end()
+        mask = self.editor.to_word_end()
         return self.delete_range(mask.start, mask.stop)
 
     @locked
@@ -1123,7 +1004,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        succ = self.text_buffer.move_to(pos)
+        succ = self.editor.move_to(pos)
         self.cancel_typeahead()
         return succ
 
@@ -1140,7 +1021,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        return self.move_to(self.text_buffer.pos + offset)
+        return self.move_to(self.editor.pos + offset)
 
     @locked
     @onstate("EDIT")
@@ -1195,7 +1076,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        mask = self.text_buffer.to_word_start()
+        mask = self.editor.to_word_start()
         return self.move_to(mask.start)
 
     @locked
@@ -1207,7 +1088,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        mask = self.text_buffer.to_word_end()
+        mask = self.editor.to_word_end()
         return self.move_to(mask.stop)
 
     @locked
@@ -1222,7 +1103,7 @@ class BeatInput:
         succ : bool
         """
         # find the token before the caret
-        index, token = self.semantic_analyzer.find_token_before(self.text_buffer.pos)
+        index, token = self.editor.find_token_before(self.editor.pos)
         if token is None:
             return False
 
@@ -1244,16 +1125,16 @@ class BeatInput:
         """
         self.cancel_hint()
 
-        if not self.semantic_analyzer.tokens:
+        if not self.editor.tokens:
             self.finish(CompleteResult(lambda: None))
             return True
 
-        if self.semantic_analyzer.lex_state == sh.SHLEXER_STATE.BACKSLASHED:
-            res, index = ShellSyntaxError("No escaped character"), len(self.semantic_analyzer.tokens) - 1
-        elif self.semantic_analyzer.lex_state == sh.SHLEXER_STATE.QUOTED:
-            res, index = ShellSyntaxError("No closing quotation"), len(self.semantic_analyzer.tokens) - 1
+        if self.editor.lex_state == sheditors.SHLEXER_STATE.BACKSLASHED:
+            res, index = ShellSyntaxError("No escaped character"), len(self.editor.tokens) - 1
+        elif self.editor.lex_state == sheditors.SHLEXER_STATE.QUOTED:
+            res, index = ShellSyntaxError("No closing quotation"), len(self.editor.tokens) - 1
         else:
-            res, index = self.semantic_analyzer.result, self.semantic_analyzer.length
+            res, index = self.editor.result, self.editor.length
 
         if isinstance(res, cmd.CommandUnfinishError):
             self.finish(ErrorResult(None, res))
@@ -1275,7 +1156,7 @@ class BeatInput:
         succ : bool
             `False` if unfinished or the command is wrong.
         """
-        if self.text_buffer.buffer:
+        if self.editor.buffer:
             return False
 
         self.insert("bye")
