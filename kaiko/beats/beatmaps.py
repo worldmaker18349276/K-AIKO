@@ -12,7 +12,7 @@ from ..utils import datanodes as dn
 from ..utils import markups as mu
 from ..devices import audios as aud
 from ..devices import engines
-from . import beatwidgets
+from ..tui import widgets
 from . import beatbars
 from . import beatpatterns
 
@@ -1041,13 +1041,13 @@ def observe(stack):
 
 # widgets
 class BeatbarWidgetFactory:
-    spectrum = beatwidgets.SpectrumWidgetSettings
-    volume_indicator = beatwidgets.VolumeIndicatorWidgetSettings
-    knock_meter = beatwidgets.KnockMeterWidgetSettings
-    score = beatwidgets.ScoreWidgetSettings
-    progress = beatwidgets.ProgressWidgetSettings
-    accuracy_meter = beatwidgets.AccuracyMeterWidgetSettings
-    monitor = beatwidgets.MonitorWidgetSettings
+    spectrum = widgets.SpectrumWidgetSettings
+    volume_indicator = widgets.VolumeIndicatorWidgetSettings
+    knock_meter = widgets.KnockMeterWidgetSettings
+    score = widgets.ScoreWidgetSettings
+    progress = widgets.ProgressWidgetSettings
+    accuracy_meter = widgets.AccuracyMeterWidgetSettings
+    monitor = widgets.MonitorWidgetSettings
     sight = beatbars.SightWidgetSettings
 
     def __init__(self, state, rich, mixer, detector, renderer):
@@ -1061,21 +1061,21 @@ class BeatbarWidgetFactory:
 
     def create(self, widget_settings):
         if isinstance(widget_settings, BeatbarWidgetFactory.spectrum):
-            return beatwidgets.SpectrumWidget(widget_settings).load(self.provider)
+            return widgets.SpectrumWidget(widget_settings).load(self.provider)
         elif isinstance(widget_settings, BeatbarWidgetFactory.volume_indicator):
-            return beatwidgets.VolumeIndicatorWidget(widget_settings).load(self.provider)
+            return widgets.VolumeIndicatorWidget(widget_settings).load(self.provider)
         elif isinstance(widget_settings, BeatbarWidgetFactory.knock_meter):
-            return beatwidgets.KnockMeterWidget(widget_settings).load(self.provider)
+            return widgets.KnockMeterWidget(widget_settings).load(self.provider)
         elif isinstance(widget_settings, BeatbarWidgetFactory.accuracy_meter):
             accuracy_getter = dn.pipe(
                 observe(self.state.perfs), lambda perfs: [perf.err for perf in perfs]
             )
-            return beatwidgets.AccuracyMeterWidget(accuracy_getter, widget_settings).load(self.provider)
+            return widgets.AccuracyMeterWidget(accuracy_getter, widget_settings).load(self.provider)
         elif isinstance(widget_settings, BeatbarWidgetFactory.monitor):
-            return beatwidgets.MonitorWidget(widget_settings).load(self.provider)
+            return widgets.MonitorWidget(widget_settings).load(self.provider)
         elif isinstance(widget_settings, BeatbarWidgetFactory.score):
             score_getter = lambda _: (self.state.score, self.state.full_score)
-            return beatwidgets.ScoreWidget(score_getter, widget_settings).load(self.provider)
+            return widgets.ScoreWidget(score_getter, widget_settings).load(self.provider)
         elif isinstance(widget_settings, BeatbarWidgetFactory.progress):
             progress_getter = lambda _: (
                 self.state.finished_subjects / self.state.total_subjects
@@ -1083,7 +1083,7 @@ class BeatbarWidgetFactory:
                 else 1.0
             )
             time_getter = lambda _: self.state.time
-            return beatwidgets.ProgressWidget(
+            return widgets.ProgressWidget(
                 progress_getter, time_getter, widget_settings
             ).load(self.provider)
         elif isinstance(widget_settings, BeatbarWidgetFactory.sight):
@@ -1099,13 +1099,13 @@ class BeatbarWidgetFactory:
 
 
 BeatbarIconWidgetSettings = Union[
-    beatwidgets.SpectrumWidgetSettings,
-    beatwidgets.VolumeIndicatorWidgetSettings,
-    beatwidgets.KnockMeterWidgetSettings,
-    beatwidgets.ScoreWidgetSettings,
-    beatwidgets.ProgressWidgetSettings,
-    beatwidgets.AccuracyMeterWidgetSettings,
-    beatwidgets.MonitorWidgetSettings,
+    widgets.SpectrumWidgetSettings,
+    widgets.VolumeIndicatorWidgetSettings,
+    widgets.KnockMeterWidgetSettings,
+    widgets.ScoreWidgetSettings,
+    widgets.ProgressWidgetSettings,
+    widgets.AccuracyMeterWidgetSettings,
+    widgets.MonitorWidgetSettings,
 ]
 BeatbarHeaderWidgetSettings = BeatbarIconWidgetSettings
 BeatbarFooterWidgetSettings = BeatbarIconWidgetSettings
@@ -1562,7 +1562,7 @@ class Beatmap:
             header_mask,
             content_mask,
             footer_mask,
-        ] = beatwidgets.layout([icon_width, header_width, -1, footer_width])
+        ] = widgets.layout([icon_width, header_width, -1, footer_width])
 
         renderer.add_texts(beatbar_node, xmask=content_mask, zindex=(0,))
         renderer.add_texts(icon, xmask=icon_mask, zindex=(1,))

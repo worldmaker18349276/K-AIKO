@@ -9,7 +9,7 @@ from ..utils.providers import Provider
 from ..utils import markups as mu
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
-from ..beats import beatshell
+from ..tui import beatshell
 from .files import (
     FileManager,
     FilesCommand,
@@ -137,7 +137,9 @@ class KAIKOLauncher:
         )
         profile_manager.update()
 
-        profile_manager.use()
+        succ = profile_manager.use()
+        if not succ:
+            profile_manager.use_empty()
 
         logger.print(flush=True)
 

@@ -8,7 +8,7 @@ from pathlib import Path
 import dataclasses
 from ..utils import commands as cmd
 from ..utils import config as cfg
-from ..utils import shells as sh
+from . import shells as sh
 
 
 # hint

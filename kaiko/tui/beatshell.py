@@ -9,8 +9,8 @@ from ..utils import config as cfg
 from ..utils import markups as mu
 from ..utils import commands as cmd
 from ..devices import engines
-from . import beatwidgets
-from . import beatinputs
+from . import widgets
+from . import inputs
 
 
 # widgets
@@ -99,7 +99,7 @@ class MarkerWidget:
 
 
 class BeatshellWidgetFactory:
-    monitor = beatwidgets.MonitorWidgetSettings
+    monitor = widgets.MonitorWidgetSettings
     patterns = PatternsWidgetSettings
     marker = MarkerWidgetSettings
 
@@ -111,7 +111,7 @@ class BeatshellWidgetFactory:
 
     def create(self, widget_settings):
         if isinstance(widget_settings, BeatshellWidgetFactory.monitor):
-            return beatwidgets.MonitorWidget(widget_settings).load(self.provider)
+            return widgets.MonitorWidget(widget_settings).load(self.provider)
         elif isinstance(widget_settings, BeatshellWidgetFactory.patterns):
             return PatternsWidget(widget_settings).load(self.provider)
         elif isinstance(widget_settings, BeatshellWidgetFactory.marker):
@@ -121,7 +121,7 @@ class BeatshellWidgetFactory:
 
 
 BeatshellIconWidgetSettings = Union[
-    PatternsWidgetSettings, beatwidgets.MonitorWidgetSettings,
+    PatternsWidgetSettings, widgets.MonitorWidgetSettings,
 ]
 
 
@@ -136,7 +136,7 @@ class BeatShellSettings(cfg.Configurable):
 
     debug_monitor: bool = False
 
-    input = cfg.subconfig(beatinputs.BeatInputSettings)
+    input = cfg.subconfig(inputs.BeatInputSettings)
 
     @cfg.subconfig
     class prompt(cfg.Configurable):
@@ -166,8 +166,8 @@ class BeatShellSettings(cfg.Configurable):
         marker: MarkerWidgetSettings = MarkerWidgetSettings()
 
         @cfg.subconfig
-        class textbox(cfg.Configurable, beatwidgets.TextBoxWidgetSettings):
-            __doc__ = beatwidgets.TextBoxWidgetSettings.__doc__
+        class textbox(cfg.Configurable, widgets.TextBoxWidgetSettings):
+            __doc__ = widgets.TextBoxWidgetSettings.__doc__
 
             def __init__(self):
                 pass
@@ -274,7 +274,7 @@ class BeatPrompt:
         self._settings_getter = settings_getter
         self.cache_dir = cache_dir
 
-        self.input = beatinputs.BeatInput(
+        self.input = inputs.BeatInput(
             command_parser_getter,
             preview_handler,
             rich,
@@ -302,7 +302,7 @@ class BeatPrompt:
         text_renderer = TextRenderer(self.rich, settings.text)
         msg_renderer = MsgRenderer(self.rich, settings.text)
 
-        textbox = beatwidgets.TextBox(
+        textbox = widgets.TextBox(
             lambda: text_renderer.render_text(state),
             settings.prompt.textbox,
         ).load(widget_factory.provider)
@@ -315,7 +315,7 @@ class BeatPrompt:
             icon_mask,
             marker_mask,
             input_mask,
-        ] = beatwidgets.layout([icon_width, marker_width, -1])
+        ] = widgets.layout([icon_width, marker_width, -1])
 
         # register
         renderer.add_drawer(state.load(fin_event), zindex=())
@@ -359,9 +359,9 @@ class BeatPrompt:
         yield from dn.pipe(stop_when(fin_event), display_task, input_task).join()
 
         result = self.input.result
-        if isinstance(result, beatinputs.ErrorResult):
+        if isinstance(result, inputs.ErrorResult):
             raise PromptError(result.error)
-        elif isinstance(result, beatinputs.CompleteResult):
+        elif isinstance(result, inputs.CompleteResult):
             return result.command
         else:
             raise TypeError
@@ -466,7 +466,7 @@ class InputView:
                         break
                     self.popup.append(hint)
 
-                if isinstance(self.input.result, beatinputs.ErrorResult):
+                if isinstance(self.input.result, inputs.ErrorResult):
                     self.highlighted = self.input.result.index
                 else:
                     self.highlighted = self.input.hint_manager.get_hint_location()
@@ -597,7 +597,7 @@ class TextRenderer:
         render_grammar = dn.starcachemap(
             self.render_grammar,
             key=self._render_grammar_key,
-            caret_markup=beatwidgets.Caret,
+            caret_markup=widgets.Caret,
             typeahead_template=typeahead_template,
             highlight_template=highlight_template,
         )
@@ -723,9 +723,9 @@ class MsgRenderer:
 
             msg = msg.traverse((mu.Text, mu.Newline), trim_lines)
 
-            if isinstance(hint, beatinputs.DescHint):
+            if isinstance(hint, inputs.DescHint):
                 msg = desc_template(msg)
-            elif isinstance(hint, beatinputs.InfoHint):
+            elif isinstance(hint, inputs.InfoHint):
                 msg = info_template(msg)
             else:
                 assert False
@@ -774,9 +774,9 @@ class MsgRenderer:
             if hint.message:
                 msg = self.rich.parse(hint.message, root_tag=True)
 
-                if isinstance(hint, beatinputs.DescHint):
+                if isinstance(hint, inputs.DescHint):
                     msg = desc_template(msg)
-                elif isinstance(hint, beatinputs.InfoHint):
+                elif isinstance(hint, inputs.InfoHint):
                     msg = info_template(msg)
                 else:
                     assert False

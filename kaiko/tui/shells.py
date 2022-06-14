@@ -2,7 +2,7 @@ from enum import Enum
 import re
 from typing import Optional, List
 import dataclasses
-from . import commands as cmd
+from ..utils import commands as cmd
 
 
 class SHLEXER_STATE(Enum):

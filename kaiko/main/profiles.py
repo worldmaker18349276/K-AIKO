@@ -343,19 +343,7 @@ class ProfileManager:
 
             if path is None:
                 logger.print("[warn]No default profile[/]")
-
-                # make a new profile
-                path = rename_path(self.profiles_dir.abs, "new profile", ProfilesDirPath.profile.EXTENSION)
-                path = self.profiles_dir.recognize(path).normalize()
-                assert isinstance(path, ProfilesDirPath.profile)
-
-                path_str = path.try_relative_to(self.profiles_dir)
-                logger.print(f"[data/] Load empty configuration as [emph]{path_str}[/]...")
-
-                self.current_path = path
-                self.current = self.config_type()
-                self.set_as_changed()
-                return True
+                return False
 
         path = path.normalize()
 
@@ -384,6 +372,21 @@ class ProfileManager:
 
         self.current_path = path
         self.set_as_changed(current_mtime)
+        return True
+
+    def use_empty(self):
+        logger = self.logger
+
+        path = rename_path(self.profiles_dir.abs, "new profile", ProfilesDirPath.profile.EXTENSION)
+        path = self.profiles_dir.recognize(path).normalize()
+        assert isinstance(path, ProfilesDirPath.profile)
+
+        path_str = path.try_relative_to(self.profiles_dir)
+        logger.print(f"[data/] Load empty configuration as [emph]{path_str}[/]...")
+
+        self.current_path = path
+        self.current = self.config_type()
+        self.set_as_changed()
         return True
 
     def create(self, path, src=None):
