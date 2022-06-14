@@ -274,15 +274,16 @@ class BeatPrompt:
     ):
         self.rich = rich
         self._settings_getter = settings_getter
+        self._command_parser_getter = command_parser_getter
         self.cache_dir = cache_dir
 
         self.input = inputs.BeatInput(
-            command_parser_getter,
             preview_handler,
-            rich,
             cache_dir / self.history_file_path,
             lambda: self.settings.input,
         )
+
+        self.new_session()
 
     @property
     def settings(self):
@@ -369,7 +370,7 @@ class BeatPrompt:
             raise TypeError
 
     def new_session(self, clear=True):
-        return self.input.new_session(clear=clear)
+        return self.input.new_session(self._command_parser_getter(), clear=clear)
 
     def record_command(self):
         return self.input._record_command()

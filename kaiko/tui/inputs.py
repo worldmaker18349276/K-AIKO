@@ -293,37 +293,68 @@ class ShellSyntaxError(Exception):
     pass
 
 
-@dataclasses.dataclass
 class HistoryManager:
-    history_path: Path
-    latest_command: Optional[Tuple[str, str]] = None
+    r"""
+    Fields
+    ------
+    history_path : Path
+    latest_command : tuple of str and str, optional
+        lastest group and command.
+    buffers : list of list of str
+        The buffers of editor.
+    buffer_index : int
+        The index of current buffer.
+    """
+
+    TRIM_LEN = 10
+    PATTERN = re.compile(r"\[(\w+)\] (.+)")
+
+    def __init__(self, history_path, latest_command=None):
+        self.history_path = history_path
+        self.latest_command = latest_command
+        self.buffers = [[]]
+        self.buffer_index = -1
+
+    @property
+    def buffer(self):
+        return self.buffers[self.buffer_index]
+
+    def prev(self):
+        if self.buffer_index == -len(self.buffers):
+            return False
+        self.buffer_index -= 1
+        return True
+
+    def next(self):
+        if self.buffer_index == -1:
+            return False
+        self.buffer_index += 1
+        return True
 
     def write_history(self, command_group, command):
         self.history_path.touch()
         command = command.strip()
         if command and command_group and (command_group, command) != self.latest_command:
             open(self.history_path, "a").write(f"\n[{command_group}] {command}")
-            self.latest_command = command
+            self.latest_command = (command_group, command)
 
     def read_history(self, command_groups, read_size):
-        trim_len = 10
-
-        pattern = re.compile(r"\[(\w+)\] (.+)")
-
         buffers = []
         self.history_path.touch()
         self.latest_command = None
         for command in open(self.history_path):
             command = command.strip()
-            match = pattern.fullmatch(command)
+            match = self.PATTERN.fullmatch(command)
             if match:
                 self.latest_command = (match.group(1), match.group(2))
                 if match.group(1) in command_groups and (not buffers or buffers[-1] != match.group(2)):
                     buffers.append(match.group(2))
-            if len(buffers) - read_size > trim_len:
-                del buffers[:trim_len]
+            if len(buffers) - read_size > self.TRIM_LEN:
+                del buffers[:self.TRIM_LEN]
 
-        return [list(command) for command in buffers[-read_size:]]
+        self.buffers = [list(command) for command in buffers[-read_size:]]
+        self.buffers.append([])
+        self.buffer_index = -1
 
 
 class BeatInputSettings(cfg.Configurable):
@@ -451,12 +482,6 @@ class BeatInput:
     ----------
     settings : BeatInputSettings
         The input settings.
-    command_parser_getter : function
-        The function to produce command parser for beatshell.
-    rich : markups.RichParser
-        The rich parser.
-    history_path : Path
-        The path of command history.
     history : HistoryManager
         The input history manager.
     editor : sheditors.Editor
@@ -491,9 +516,7 @@ class BeatInput:
 
     def __init__(
         self,
-        command_parser_getter,
         preview_handler,
-        rich,
         history_path,
         settings_getter=BeatInputSettings,
     ):
@@ -501,25 +524,16 @@ class BeatInput:
 
         Parameters
         ----------
-        command_parser_getter : function
-            The function to produce command parser.
         preview_handler : function
-        rich : markups.RichParser
         history_path : Path
             The path of command history.
         settings_getter : BeatInputSettings
             The settings getter of input.
         """
-        self.rich = rich
-
-        self.command_parser_getter = command_parser_getter
         self._settings_getter = settings_getter
 
         self.history = HistoryManager(history_path)
-
-        self.buffers = [[]]
-        self.buffer_index = -1
-        self.editor = sheditors.Editor(None, self.buffers[self.buffer_index])
+        self.editor = sheditors.Editor(None, self.history.buffer)
         self.typeahead = ""
         self.hint_manager = HintManager(
             self.editor,
@@ -533,8 +547,6 @@ class BeatInput:
 
         self.key_pressed_counter = 0
         self.buffer_modified_counter = 0
-
-        self.new_session()
 
     @property
     def settings(self):
@@ -581,26 +593,25 @@ class BeatInput:
 
     @locked
     @onstate("FIN")
-    def new_session(self, clear=True):
+    def new_session(self, command_parser, clear=True):
         r"""Start a new session of input.
 
         Parameters
         ----------
+        command_parser : cmd.CommandParser
         clear : bool, optional
 
         Returns
         -------
         succ : bool
         """
-        self.editor.update_parser(self.command_parser_getter())
+        self.editor.update_parser(command_parser)
 
         if clear:
             groups = self.editor.get_all_groups()
             history_size = self.settings.history_size
-            self.buffers = self.history.read_history(groups, history_size)
-            self.buffers.append([])
-            self.buffer_index = -1
-            self.editor.init(self.buffers[self.buffer_index])
+            self.history.read_history(groups, history_size)
+            self.editor.init(self.history.buffer)
 
         self.update_buffer(clear=True)
         self.start()
@@ -615,10 +626,10 @@ class BeatInput:
         -------
         succ : bool
         """
-        if self.buffer_index == -len(self.buffers):
+        succ = self.history.prev()
+        if not succ:
             return False
-        self.buffer_index -= 1
-        self.editor.init(self.buffers[self.buffer_index])
+        self.editor.init(self.history.buffer)
         self.update_buffer(clear=True)
 
         return True
@@ -632,10 +643,10 @@ class BeatInput:
         -------
         succ : bool
         """
-        if self.buffer_index == -1:
+        succ = self.history.next()
+        if not succ:
             return False
-        self.buffer_index += 1
-        self.editor.init(self.buffers[self.buffer_index])
+        self.editor.init(self.history.buffer)
         self.update_buffer(clear=True)
 
         return True
@@ -659,7 +670,7 @@ class BeatInput:
 
         # search history
         pos = self.editor.pos
-        for buffer in reversed(self.buffers):
+        for buffer in reversed(self.history.buffers):
             if len(buffer) > pos and buffer[:pos] == self.editor.buffer:
                 self.typeahead = "".join(buffer[pos:])
                 return True
