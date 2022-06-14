@@ -12,7 +12,7 @@ from ..devices import terminals as term
 from ..devices import audios as aud
 from ..devices import engines
 from .loggers import Logger
-from .files import RecognizedDirPath
+from .files import FileManager, RecognizedDirPath
 from .profiles import ProfileManager
 from pyaudio import PyAudio
 
@@ -228,6 +228,10 @@ class DevicesCommand:
         return self.provider.get(ProfileManager)
 
     @property
+    def file_manager(self):
+        return self.provider.get(FileManager)
+
+    @property
     def settings(self):
         return self.profile_manager.current
 
@@ -241,6 +245,9 @@ class DevicesCommand:
         """
 
         logger = self.logger
+
+        logger.print(f"workspace: {logger.as_uri(self.file_manager.root.abs)}")
+        logger.print()
 
         term = os.environ.get("TERM", None)
         vte = os.environ.get("VTE_VERSION", None)
