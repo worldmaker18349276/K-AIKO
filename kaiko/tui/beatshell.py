@@ -10,6 +10,7 @@ from ..utils import markups as mu
 from ..utils import commands as cmd
 from ..devices import engines
 from . import widgets
+from .textboxes import Caret, TextBox, TextBoxWidgetSettings
 from . import inputs
 
 
@@ -166,8 +167,8 @@ class BeatShellSettings(cfg.Configurable):
         marker: MarkerWidgetSettings = MarkerWidgetSettings()
 
         @cfg.subconfig
-        class textbox(cfg.Configurable, widgets.TextBoxWidgetSettings):
-            __doc__ = widgets.TextBoxWidgetSettings.__doc__
+        class textbox(cfg.Configurable, TextBoxWidgetSettings):
+            __doc__ = TextBoxWidgetSettings.__doc__
 
             def __init__(self):
                 pass
@@ -302,7 +303,7 @@ class BeatPrompt:
         text_renderer = TextRenderer(self.rich, settings.text)
         msg_renderer = MsgRenderer(self.rich, settings.text)
 
-        textbox = widgets.TextBox(
+        textbox = TextBox(
             lambda: text_renderer.render_text(state),
             settings.prompt.textbox,
         ).load(widget_factory.provider)
@@ -597,7 +598,7 @@ class TextRenderer:
         render_grammar = dn.starcachemap(
             self.render_grammar,
             key=self._render_grammar_key,
-            caret_markup=widgets.Caret,
+            caret_markup=Caret,
             typeahead_template=typeahead_template,
             highlight_template=highlight_template,
         )
