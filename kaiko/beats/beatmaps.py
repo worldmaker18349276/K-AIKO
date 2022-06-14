@@ -13,7 +13,7 @@ from ..utils import markups as mu
 from ..devices import audios as aud
 from ..devices import engines
 from ..tui import widgets
-from . import beatbars
+from ..tui import beatbars
 from . import beatpatterns
 
 
