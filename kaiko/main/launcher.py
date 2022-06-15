@@ -276,7 +276,7 @@ class KAIKOLauncher:
     def print_tips(self):
         logger = self.logger
 
-        input_settings = self.settings.shell.input
+        input_settings = self.settings.shell.input.control
 
         confirm_key = logger.emph(input_settings.confirm_key, type="all")
         help_key = logger.emph(input_settings.help_key, type="all")
