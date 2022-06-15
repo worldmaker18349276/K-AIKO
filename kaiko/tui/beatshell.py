@@ -137,7 +137,7 @@ class BeatShellSettings(cfg.Configurable):
 
     debug_monitor: bool = False
 
-    input = cfg.subconfig(inputs.BeatInputSettings)
+    input = cfg.subconfig(inputs.InputSettings)
 
     @cfg.subconfig
     class prompt(cfg.Configurable):
@@ -277,7 +277,7 @@ class BeatPrompt:
         self._command_parser_getter = command_parser_getter
         self.cache_dir = cache_dir
 
-        self.input = inputs.BeatInput(
+        self.input = inputs.Input(
             preview_handler,
             cache_dir / self.history_file_path,
             self.settings.input,
@@ -331,7 +331,7 @@ class BeatPrompt:
     def prompt(self, devices_settings):
         fin_event = threading.Event()
 
-        self.input.set_settings(self.settings.input)
+        self.input._set_settings(self.settings.input)
 
         # engines
         settings = self.settings
@@ -424,7 +424,7 @@ class InputView:
 
         Parameters
         ----------
-        input : BeatInput
+        input : Input
         """
         self.input = input
 

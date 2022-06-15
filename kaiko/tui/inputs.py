@@ -357,7 +357,7 @@ class HistoryManager:
         self.buffer_index = -1
 
 
-class BeatInputSettings(cfg.Configurable):
+class InputSettings(cfg.Configurable):
     r"""
     Fields
     ------
@@ -477,12 +477,12 @@ def locked(func):
     return locked_func
 
 
-class BeatInput:
+class Input:
     r"""Input editor for beatshell.
 
     Attributes
     ----------
-    settings : BeatInputSettings
+    settings : InputSettings
         The input settings.
     history : HistoryManager
         The input history manager.
@@ -502,20 +502,6 @@ class BeatInput:
         The event counter for key pressing.
     """
 
-    action_regex = "({fn}{op})*{fn}".format(
-        fn=r"input\.(?!_)\w+\(\)",
-        op=r"( \| | \& | and | or )",
-    )
-
-    @classmethod
-    def _parse_action(cls, func):
-        if not re.match(cls.action_regex, func):
-            raise ValueError(f"invalid action: {repr(func)}")
-        def action(input):
-            with input.edit_ctxt.on():
-                eval(func, {}, {"input": input})
-        return action
-
     def __init__(
         self,
         preview_handler,
@@ -529,7 +515,7 @@ class BeatInput:
         preview_handler : function
         history_path : Path
             The path of command history.
-        settings : BeatInputSettings
+        settings : InputSettings
             The settings of input.
         """
         self.settings = settings
@@ -550,11 +536,11 @@ class BeatInput:
         self.key_pressed_counter = 0
         self.buffer_modified_counter = 0
 
-    def set_settings(self, settings):
+    def _set_settings(self, settings):
         self.settings = settings
 
     def _register(self, controller):
-        stroke = BeatStroke(self, self.settings)
+        stroke = InputStroke(self, self.settings)
         stroke.register(controller)
 
     def _record_command(self):
@@ -1273,12 +1259,26 @@ class BeatInput:
         self._finish_session(ErrorResult(None, ValueError(f"Unknown key: " + key)))
 
 
-class BeatStroke:
+class InputStroke:
     r"""Keyboard controller for beatshell."""
 
     def __init__(self, input, settings):
         self.input = input
         self.settings = settings
+
+    @staticmethod
+    def _parse_action(func):
+        ACTION_REGEX = "({fn}{op})*{fn}".format(
+            fn=r"input\.(?!_)\w+\(\)",
+            op=r"( \| | \& | and | or )",
+        )
+
+        if not re.match(ACTION_REGEX, func):
+            raise ValueError(f"invalid action: {repr(func)}")
+        def action(input):
+            with input.edit_ctxt.on():
+                eval(func, {}, {"input": input})
+        return action
 
     def register(self, controller):
         r"""Register handler to the given controller.
@@ -1297,7 +1297,7 @@ class BeatStroke:
         controller.add_handler(self.printable_handler())
 
         for key, func in self.settings.keymap.items():
-            action = self.input._parse_action(func)
+            action = self._parse_action(func)
             action_handler = lambda _, action=action: action(self.input)
             controller.add_handler(action_handler, key)
 
