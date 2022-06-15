@@ -372,7 +372,7 @@ class BeatPrompt:
             raise TypeError
 
     def new_session(self, clear=True):
-        return self.input.new_session(self._command_parser_getter(), clear=clear)
+        return self.input._new_session(self._command_parser_getter(), clear=clear)
 
     def record_command(self):
         return self.input._record_command()

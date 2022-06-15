@@ -389,8 +389,6 @@ class BeatInputSettings(cfg.Configurable):
 
     keymap: Dict[str, str] = {
         "Backspace": "input.backspace()",
-        "Alt_Backspace": "input.delete_backward_token()",
-        "Alt_Delete": "input.delete_forward_token()",
         "Delete": "input.delete()",
         "Left": "input.move_left()",
         "Right": "input.insert_typeahead() or input.move_right()",
@@ -402,6 +400,10 @@ class BeatInputSettings(cfg.Configurable):
         "Ctrl_Right": "input.move_to_word_end()",
         "Ctrl_Backspace": "input.delete_to_word_start()",
         "Ctrl_Delete": "input.delete_to_word_end()",
+        "Alt_Left": "input.move_to_token_start()",
+        "Alt_Right": "input.move_to_token_end()",
+        "Alt_Backspace": "input.delete_backward_token()",
+        "Alt_Delete": "input.delete_forward_token()",
         "Esc": "input.cancel_typeahead() | input.cancel_hint()",
         "'\\x04'": "input.delete() or input.exit_if_empty()",
     }
@@ -561,21 +563,37 @@ class BeatInput:
 
     @locked
     @onstate("EDIT")
-    def finish(self, res):
+    def _finish_session(self, res):
         r"""Finish this session of input.
 
         Parameters
         ----------
         res : Result
             The result.
-
-        Returns
-        -------
-        succ : bool
         """
         self.result = res
         self.state = "FIN"
-        return True
+
+    @locked
+    @onstate("FIN")
+    def _new_session(self, command_parser, clear=True):
+        r"""Start a new session of input.
+
+        Parameters
+        ----------
+        command_parser : cmd.CommandParser
+        clear : bool, optional
+        """
+        self.editor.update_parser(command_parser)
+
+        if clear:
+            groups = self.editor.get_all_groups()
+            history_size = self.settings.history_size
+            self.history.read_history(groups, history_size)
+            self.editor.init(self.history.buffer)
+
+        self.update_buffer(clear=True)
+        self.start()
 
     @locked
     @onstate("FIN")
@@ -588,32 +606,6 @@ class BeatInput:
         """
         self.result = None
         self.state = "EDIT"
-        return True
-
-    @locked
-    @onstate("FIN")
-    def new_session(self, command_parser, clear=True):
-        r"""Start a new session of input.
-
-        Parameters
-        ----------
-        command_parser : cmd.CommandParser
-        clear : bool, optional
-
-        Returns
-        -------
-        succ : bool
-        """
-        self.editor.update_parser(command_parser)
-
-        if clear:
-            groups = self.editor.get_all_groups()
-            history_size = self.settings.history_size
-            self.history.read_history(groups, history_size)
-            self.editor.init(self.history.buffer)
-
-        self.update_buffer(clear=True)
-        self.start()
         return True
 
     @locked
@@ -713,33 +705,33 @@ class BeatInput:
         return True
 
     @locked
-    def add_popup(self, hint):
+    def add_popup(self, msg):
         """Add popup.
 
         Show hint above the prompt.
 
         Parameters
         ----------
-        hint : Hint
-            The hint.
+        msg : str
+            The message of hint.
 
         Returns
         -------
         succ : bool
         """
-        self.hint_manager.add_popup(hint)
+        self.hint_manager.add_popup(DescHint(msg))
         return True
 
     @locked
-    def set_hint(self, hint, index=None):
+    def set_hint(self, msg, index=None):
         """Set hint.
 
         Show hint below the prompt.
 
         Parameters
         ----------
-        hint : Hint
-            The hint.
+        msg : str
+            The message of hint.
         index : int or None
             Index of the token to which the hint is directed, or `None` for
             nothing.
@@ -748,7 +740,7 @@ class BeatInput:
         -------
         succ : bool
         """
-        return self.hint_manager.set_hint(hint, index=index)
+        return self.hint_manager.set_hint(DescHint(msg), index=index)
 
     @locked
     def cancel_hint(self):
@@ -927,52 +919,6 @@ class BeatInput:
 
     @locked
     @onstate("EDIT")
-    def delete_backward_token(self, index=None):
-        """Delete current or backward token.
-
-        Parameters
-        ----------
-        index : int or None
-
-        Returns
-        -------
-        succ : bool
-        """
-        if index is not None:
-            token = self.editor.tokens[index]
-            return self.delete_range(token.mask.start, token.mask.stop)
-
-        _, token = self.editor.find_token_before(self.editor.pos)
-        if token is None:
-            return self.delete_range(0, self.editor.pos)
-        else:
-            return self.delete_range(token.mask.start, max(self.editor.pos, token.mask.stop))
-
-    @locked
-    @onstate("EDIT")
-    def delete_forward_token(self, index=None):
-        """Delete current or forward token.
-
-        Parameters
-        ----------
-        index : int or None
-
-        Returns
-        -------
-        succ : bool
-        """
-        if index is not None:
-            token = self.editor.tokens[index]
-            return self.delete_range(token.mask.start, token.mask.stop)
-
-        _, token = self.editor.find_token_after(self.editor.pos)
-        if token is None:
-            return self.delete_range(self.editor.pos, None)
-        else:
-            return self.delete_range(min(self.editor.pos, token.mask.start), token.mask.stop)
-
-    @locked
-    @onstate("EDIT")
     def delete_to_word_start(self):
         """Delete to the word start.
 
@@ -998,6 +944,52 @@ class BeatInput:
         """
         mask = self.editor.to_word_end()
         return self.delete_range(mask.start, mask.stop)
+
+    @locked
+    @onstate("EDIT")
+    def delete_token(self, index):
+        """Delete current token.
+
+        Parameters
+        ----------
+        index : int
+
+        Returns
+        -------
+        succ : bool
+        """
+        token = self.editor.tokens[index]
+        return self.delete_range(token.mask.start, token.mask.stop)
+
+    @locked
+    @onstate("EDIT")
+    def delete_backward_token(self):
+        """Delete backward token.
+
+        Returns
+        -------
+        succ : bool
+        """
+        _, token = self.editor.find_token_before(self.editor.pos)
+        if token is None:
+            return self.delete_range(0, self.editor.pos)
+        else:
+            return self.delete_range(token.mask.start, max(self.editor.pos, token.mask.stop))
+
+    @locked
+    @onstate("EDIT")
+    def delete_forward_token(self):
+        """Delete forward token.
+
+        Returns
+        -------
+        succ : bool
+        """
+        _, token = self.editor.find_token_after(self.editor.pos)
+        if token is None:
+            return self.delete_range(self.editor.pos, None)
+        else:
+            return self.delete_range(min(self.editor.pos, token.mask.start), token.mask.stop)
 
     @locked
     @onstate("EDIT")
@@ -1105,6 +1097,36 @@ class BeatInput:
 
     @locked
     @onstate("EDIT")
+    def move_to_token_start(self):
+        """Move caret to the start of the token.
+
+        Returns
+        -------
+        succ : bool
+        """
+        _, token = self.editor.find_token_before(self.editor.pos)
+        if token is None:
+            return self.move_to(0)
+        else:
+            return self.move_to(token.mask.start)
+
+    @locked
+    @onstate("EDIT")
+    def move_to_token_end(self):
+        """Move caret to the end of the word.
+
+        Returns
+        -------
+        succ : bool
+        """
+        _, token = self.editor.find_token_after(self.editor.pos)
+        if token is None:
+            return self.move_to(None)
+        else:
+            return self.move_to(token.mask.stop)
+
+    @locked
+    @onstate("EDIT")
     def help(self):
         """Help for command.
 
@@ -1138,7 +1160,7 @@ class BeatInput:
         self.cancel_hint()
 
         if not self.editor.tokens:
-            self.finish(CompleteResult(lambda: None))
+            self._finish_session(CompleteResult(lambda: None))
             return True
 
         if self.editor.lex_state == sheditors.SHLEXER_STATE.BACKSLASHED:
@@ -1149,13 +1171,13 @@ class BeatInput:
             res, index = self.editor.result, self.editor.length
 
         if isinstance(res, cmd.CommandUnfinishError):
-            self.finish(ErrorResult(None, res))
+            self._finish_session(ErrorResult(None, res))
             return False
         elif isinstance(res, (cmd.CommandParseError, ShellSyntaxError)):
-            self.finish(ErrorResult(index, res))
+            self._finish_session(ErrorResult(index, res))
             return False
         else:
-            self.finish(CompleteResult(res))
+            self._finish_session(CompleteResult(res))
             return True
 
     @locked
@@ -1248,7 +1270,7 @@ class BeatInput:
     @locked
     def unknown_key(self, key):
         self.cancel_hint()
-        self.finish(ErrorResult(None, ValueError(f"Unknown key: " + key)))
+        self._finish_session(ErrorResult(None, ValueError(f"Unknown key: " + key)))
 
 
 class BeatStroke:
