@@ -7,8 +7,9 @@ from ..utils import config as cfg
 from ..utils import markups as mu
 from ..utils import commands as cmd
 from ..devices import engines
-from . import widgets
-from . import inputs
+from ..tui import widgets
+from ..tui import inputs
+from .files import UnrecognizedPath
 
 
 # widgets
@@ -354,8 +355,6 @@ class BeatPrompt:
         return self.input._record_command()
 
     def make_banner(self, file_manager, profile_manager):
-        from ..main.files import UnrecognizedPath
-
         banner_settings = self.settings.banner
 
         username = file_manager.username

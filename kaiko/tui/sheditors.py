@@ -221,7 +221,7 @@ class Editor:
         The caret position of input.
 
     parser : commands.RootCommandParser
-        The root command parser for beatshell.
+        The root command parser.
     tokens : list of ShToken
         The parsed tokens.
     lex_state : SHLEXER_STATE

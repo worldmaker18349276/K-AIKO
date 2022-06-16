@@ -1,7 +1,7 @@
 from ..utils import config as cfg
 from ..devices import engines
-from ..tui import beatshell
 from ..beats import beatmaps
+from . import beatshell
 from . import loggers
 from . import files
 

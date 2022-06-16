@@ -387,7 +387,7 @@ class InputSettings(cfg.Configurable):
             The keys for finding the next, previous and canceling suggestions.
 
         keymap : dict from str to str
-            The keymap of beatshell. The key of dict is the keystroke, and the
+            The keymap of input. The key of dict is the keystroke, and the
             value of dict is the action to activate. The format of action is
             just like a normal python code: `input.insert_typeahead() or
             input.move_right()`. The syntax is::
@@ -533,7 +533,7 @@ def locked(func):
 
 
 class Input:
-    r"""Input editor for beatshell.
+    r"""Input editor.
 
     Attributes
     ----------
@@ -542,7 +542,7 @@ class Input:
     history : HistoryManager
         The input history manager.
     editor : sheditors.Editor
-        The editor of beatshell command.
+        The editor of command.
     typeahead : str
         The type ahead of input.
     hint_manager : HintManager
@@ -1333,7 +1333,7 @@ class Input:
 
 
 class InputStroke:
-    r"""Keyboard controller for beatshell."""
+    r"""Keyboard controller."""
 
     def __init__(self, input, settings):
         self.input = input

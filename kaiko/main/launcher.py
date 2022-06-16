@@ -9,7 +9,7 @@ from ..utils.providers import Provider
 from ..utils import markups as mu
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
-from ..tui import beatshell
+from . import beatshell
 from .files import (
     FileManager,
     FilesCommand,
