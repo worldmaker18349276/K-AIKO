@@ -1438,6 +1438,11 @@ class BeatTrack:
             return track
 
 
+mixer_monitor_file_path = "play_mixer_benchmark.csv"
+detector_monitor_file_path = "play_detector_benchmark.csv"
+renderer_monitor_file_path = "play_renderer_benchmark.csv"
+
+
 class Beatmap:
     def __init__(
         self,
@@ -1513,9 +1518,9 @@ class Beatmap:
         # load engines
         mixer_monitor = detector_monitor = renderer_monitor = None
         if debug_monitor:
-            mixer_monitor = engines.Monitor(cache_dir / "monitor" / "mixer.csv")
-            detector_monitor = engines.Monitor(cache_dir / "monitor" / "detector.csv")
-            renderer_monitor = engines.Monitor(cache_dir / "monitor" / "renderer.csv")
+            mixer_monitor = engines.Monitor(cache_dir / mixer_monitor_file_path)
+            detector_monitor = engines.Monitor(cache_dir / detector_monitor_file_path)
+            renderer_monitor = engines.Monitor(cache_dir / renderer_monitor_file_path)
 
         mixer_task, mixer = engines.Mixer.create(
             devices_settings.mixer, manager, self.start_time, mixer_monitor
