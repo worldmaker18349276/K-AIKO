@@ -348,9 +348,10 @@ class BeatPrompt:
         help_key = self.logger.escape(input_settings.help_key, type="all")
         tab_key = self.logger.escape(input_settings.autocomplete_keys[0], type="all")
 
-        self.logger.print(f"[hint/] Type command and press [emph]{confirm_key}[/] to execute.")
-        self.logger.print(f"[hint/] Use [emph]{tab_key}[/] to autocomplete command.")
-        self.logger.print(f"[hint/] If you need help, press [emph]{help_key}[/].")
+        with self.logger.stack():
+            self.logger.print(f"[hint/] Type command and press [emph]{confirm_key}[/] to execute.")
+            self.logger.print(f"[hint/] Use [emph]{tab_key}[/] to autocomplete command.")
+            self.logger.print(f"[hint/] If you need help, press [emph]{help_key}[/].")
 
     def print_banner(self, file_manager, profile_manager):
         banner_settings = self.settings.banner
@@ -387,5 +388,5 @@ class BeatPrompt:
             path=path_markup,
         )
 
-        self.logger.print(banner_markup)
+        self.logger.print(banner_markup, log=False)
 

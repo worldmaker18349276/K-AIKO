@@ -520,23 +520,24 @@ def print_hints(logger, settings):
     energy_key_1 = logger.escape(energy_keys[0], type='all')
     energy_key_2 = logger.escape(energy_keys[1], type='all')
 
-    logger.print(
-        f"[hint/] Press [emph]{pause_key}[/] to pause/resume the game."
-    )
-    logger.print(f"[hint/] Press [emph]{skip_key}[/] to skip time.")
-    logger.print(f"[hint/] Press [emph]{stop_key}[/] to end the game.")
-    logger.print(
-        f"[hint/] Use [emph]{display_key_1}[/] and "
-        f"[emph]{display_key_2}[/] to adjust display delay."
-    )
-    logger.print(
-        f"[hint/] Use [emph]{knock_key_1}[/] and "
-        f"[emph]{knock_key_2}[/] to adjust hit delay."
-    )
-    logger.print(
-        f"[hint/] Use [emph]{energy_key_1}[/] and "
-        f"[emph]{energy_key_2}[/] to adjust hit strength."
-    )
+    with logger.stack():
+        logger.print(
+            f"[hint/] Press [emph]{pause_key}[/] to pause/resume the game."
+        )
+        logger.print(f"[hint/] Press [emph]{skip_key}[/] to skip time.")
+        logger.print(f"[hint/] Press [emph]{stop_key}[/] to end the game.")
+        logger.print(
+            f"[hint/] Use [emph]{display_key_1}[/] and "
+            f"[emph]{display_key_2}[/] to adjust display delay."
+        )
+        logger.print(
+            f"[hint/] Use [emph]{knock_key_1}[/] and "
+            f"[emph]{knock_key_2}[/] to adjust hit delay."
+        )
+        logger.print(
+            f"[hint/] Use [emph]{energy_key_1}[/] and "
+            f"[emph]{energy_key_2}[/] to adjust hit strength."
+        )
 
 
 @dn.datanode

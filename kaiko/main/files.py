@@ -480,16 +480,16 @@ class FilesCommand:
         display_settings = file_manager.settings.display
         current_path = file_manager.current
 
-        file_item = logger.rich.parse(display_settings.file_item, slotted=True)
-        file_unknown = logger.rich.parse(display_settings.file_unknown, slotted=True)
-        file_desc = logger.rich.parse(display_settings.file_desc, slotted=True)
-        file_dir = logger.rich.parse(display_settings.file_dir, slotted=True)
-        file_script = logger.rich.parse(display_settings.file_script, slotted=True)
-        file_beatmap = logger.rich.parse(display_settings.file_beatmap, slotted=True)
-        file_sound = logger.rich.parse(display_settings.file_sound, slotted=True)
-        file_link = logger.rich.parse(display_settings.file_link, slotted=True)
-        file_normal = logger.rich.parse(display_settings.file_normal, slotted=True)
-        file_other = logger.rich.parse(display_settings.file_other, slotted=True)
+        file_item = logger.rich.parse(display_settings.file_item, expand=False, slotted=True)
+        file_unknown = logger.rich.parse(display_settings.file_unknown, expand=False, slotted=True)
+        file_desc = logger.rich.parse(display_settings.file_desc, expand=False, slotted=True)
+        file_dir = logger.rich.parse(display_settings.file_dir, expand=False, slotted=True)
+        file_script = logger.rich.parse(display_settings.file_script, expand=False, slotted=True)
+        file_beatmap = logger.rich.parse(display_settings.file_beatmap, expand=False, slotted=True)
+        file_sound = logger.rich.parse(display_settings.file_sound, expand=False, slotted=True)
+        file_link = logger.rich.parse(display_settings.file_link, expand=False, slotted=True)
+        file_normal = logger.rich.parse(display_settings.file_normal, expand=False, slotted=True)
+        file_other = logger.rich.parse(display_settings.file_other, expand=False, slotted=True)
 
         field_types = file_manager.get_field_types()
 
@@ -499,7 +499,7 @@ class FilesCommand:
                 name = logger.escape(str(path.abs.readlink()), type="all")
             else:
                 name = logger.escape(path.abs.name, type="all")
-            name = logger.rich.parse(name)
+            name = logger.rich.parse(name, expand=False)
 
             if path.abs.is_dir():
                 name = file_dir(name)
@@ -519,12 +519,12 @@ class FilesCommand:
 
             if path.abs.is_symlink():
                 linkname = logger.escape(path.abs.name, type="all")
-                linkname = logger.rich.parse(linkname)
+                linkname = logger.rich.parse(linkname, expand=False)
                 name = file_link(src=linkname, dst=name)
 
             ind = field_types.index(type(path)) if type(path) in field_types else len(field_types)
             desc = path.desc(self.provider)
-            desc = logger.rich.parse(desc, root_tag=True) if desc is not None else None
+            desc = logger.rich.parse(desc, root_tag=True, expand=False) if desc is not None else None
 
             ordering_key = (
                 isinstance(path, UnrecognizedPath),
@@ -540,16 +540,17 @@ class FilesCommand:
             desc = file_desc(desc) if desc is not None else mu.Text("")
             name = file_item(name)
 
-            width = logger.rich.widthof(name)
+            width = logger.rich.widthof(name.expand())
             res.append((ordering_key, width, name, desc))
 
         res = sorted(res, key=lambda e: e[0])
         max_width = max((width for _, width, _, _ in res), default=0)
 
-        for _, width, name, desc in res:
-            padding = " "*(max_width - width) if width != -1 else " "
-            logger.print(name, end=padding)
-            logger.print(desc, end="\n")
+        with logger.stack():
+            for _, width, name, desc in res:
+                padding = " "*(max_width - width) if width != -1 else " "
+                logger.print(name, end=padding)
+                logger.print(desc, end="\n")
 
     @cmd.function_command
     def cd(self, path):

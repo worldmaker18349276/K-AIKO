@@ -149,7 +149,7 @@ class DeviceManager:
             logger.print(f"Can you adjust the width to (or bigger than) {width}?")
             logger.print("Or [emph]Esc[/] to skip this process.")
             logger.print("You can try to fit the line below.")
-            logger.print("━" * width, flush=True)
+            logger.print("━" * width, flush=True, log=False)
 
             while current_width < width or time.perf_counter() < t + delay:
                 if skip_event.is_set():
@@ -167,9 +167,10 @@ class DeviceManager:
                         hint = "(perfect!)"
                     else:
                         hint = "(great!)"
-                    logger.clear_line()
+                    logger.clear_line(log=False)
                     logger.print(
-                        f"Current width: {current_width} {hint}", end="", flush=True
+                        f"Current width: {current_width} {hint}", end="", flush=True,
+                        log=False,
                     )
 
                 size = yield
@@ -200,9 +201,10 @@ class DeviceManager:
             logger.print("[warn]Fail to determine unicode version[/]")
 
         else:
-            logger.print(f"Your unicode version is [emph]{version}[/]")
-            logger.print("[hint/] You can put this command into your .bashrc file:")
-            logger.print(f"[emph]UNICODE_VERSION={version}; export UNICODE_VERSION[/]")
+            with logger.stack():
+                logger.print(f"Your unicode version is [emph]{version}[/]")
+                logger.print("[hint/] You can put this command into your .bashrc file:")
+                logger.print(f"[emph]UNICODE_VERSION={version}; export UNICODE_VERSION[/]")
 
         return version
 
@@ -245,58 +247,59 @@ class DevicesCommand:
 
         logger = self.logger
 
-        logger.print(f"workspace: {logger.as_uri(self.file_manager.root.abs)}")
-        logger.print()
+        with logger.stack():
+            logger.print(f"workspace: {logger.as_uri(self.file_manager.root.abs)}")
+            logger.print()
 
-        term = os.environ.get("TERM", None)
-        vte = os.environ.get("VTE_VERSION", None)
-        uni = os.environ.get("UNICODE_VERSION", None)
-        size = shutil.get_terminal_size()
+            term = os.environ.get("TERM", None)
+            vte = os.environ.get("VTE_VERSION", None)
+            uni = os.environ.get("UNICODE_VERSION", None)
+            size = shutil.get_terminal_size()
 
-        logger.print(f"  terminal type: {term}")
-        logger.print(f"    VTE version: {vte}")
-        logger.print(f"unicode version: {uni}")
-        logger.print(f"  terminal size: {size.columns}×{size.lines}")
+            logger.print(f"  terminal type: {term}")
+            logger.print(f"    VTE version: {vte}")
+            logger.print(f"unicode version: {uni}")
+            logger.print(f"  terminal size: {size.columns}×{size.lines}")
 
-        template = "[color={}]██[/]"
-        palette = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
+            template = "[color={}]██[/]"
+            palette = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
 
-        logger.print()
-        logger.print("color palette:")
-        logger.print(
-            " "
-            + "".join(map(template.format, palette))
-            + "\n "
-            + "".join(map(template.format, map("bright_".__add__, palette)))
-        )
+            logger.print()
+            logger.print("color palette:")
+            logger.print(
+                " "
+                + "".join(map(template.format, palette))
+                + "\n "
+                + "".join(map(template.format, map("bright_".__add__, palette)))
+            )
 
-        logger.print()
+            logger.print()
 
-        aud.print_pyaudio_info(self.audio_manager)
+            aud.print_pyaudio_info(self.audio_manager)
 
-        logger.print()
+            logger.print()
 
-        devices_settings = self.settings.devices
+            devices_settings = self.settings.devices
 
-        device = devices_settings.detector.input_device
-        if device == -1:
-            device = "default"
-        samplerate = devices_settings.detector.input_samplerate
-        channels = devices_settings.detector.input_channels
-        format = devices_settings.detector.input_format
-        logger.print(
-            f"current input device: {device} ({samplerate/1000} kHz, {channels} ch)"
-        )
+            device = devices_settings.detector.input_device
+            if device == -1:
+                device = "default"
+            samplerate = devices_settings.detector.input_samplerate
+            channels = devices_settings.detector.input_channels
+            format = devices_settings.detector.input_format
+            logger.print(
+                f"current input device: {device} ({samplerate/1000} kHz, {channels} ch)"
+            )
 
-        device = devices_settings.mixer.output_device
-        if device == -1:
-            device = "default"
-        samplerate = devices_settings.mixer.output_samplerate
-        channels = devices_settings.mixer.output_channels
-        format = devices_settings.mixer.output_format
-        logger.print(
-            f"current output device: {device} ({samplerate/1000} kHz, {channels} ch)"
-        )
+            device = devices_settings.mixer.output_device
+            if device == -1:
+                device = "default"
+            samplerate = devices_settings.mixer.output_samplerate
+            channels = devices_settings.mixer.output_channels
+            format = devices_settings.mixer.output_format
+            logger.print(
+                f"current output device: {device} ({samplerate/1000} kHz, {channels} ch)"
+            )
 
     @cmd.function_command
     def test_mic(self, device):
@@ -474,42 +477,7 @@ class DevicesCommand:
         usage: [cmd]test_keyboard[/]
         """
 
-        logger = self.logger
-        exit_key = "Esc"
-        exit_key_ = logger.escape(exit_key, type='all')
-
-        logger.print(f"[hint/] Press [emph]{exit_key_}[/] to end test.")
-        logger.print()
-        logger.print("[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r")
-
-        stop_event = threading.Event()
-
-        def handler(arg):
-            _, time, keyname, keycode = arg
-            keyname = logger.escape(keyname, type="all")
-            keycode = logger.escape(keycode, type="all")
-            logger.clear_line()
-            logger.print(f"[[{time:07.3f} s]] {keyname} '{keycode}'")
-            logger.print("[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r")
-
-        devices_settings = self.settings.devices
-        controller_task, controller = engines.Controller.create(
-            devices_settings.controller,
-            devices_settings.terminal,
-        )
-        controller.add_handler(handler)
-        controller.add_handler(lambda _: stop_event.set(), exit_key)
-
-        try:
-            with controller_task:
-                while not stop_event.is_set():
-                    try:
-                        controller_task.send(None)
-                    except StopIteration:
-                        return
-                    yield
-        finally:
-            logger.print()
+        yield from test_keyboard(self.logger, self.settings.devices).join()
 
     @cmd.function_command
     def test_waveform(self, waveform):
@@ -597,6 +565,44 @@ class DevicesCommand:
             self.profile_manager.set_as_changed()
 
 
+@dn.datanode
+def test_keyboard(logger, devices_settings):
+    exit_key = "Esc"
+    exit_key_ = logger.escape(exit_key, type='all')
+
+    logger.print(f"[hint/] Press [emph]{exit_key_}[/] to end test.")
+    logger.print()
+    logger.print("[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r", log=False)
+
+    stop_event = threading.Event()
+
+    def handler(arg):
+        _, time, keyname, keycode = arg
+        keyname = logger.escape(keyname, type="all")
+        keycode = logger.escape(keycode, type="all")
+        logger.clear_line(log=False)
+        logger.print(f"[[{time:07.3f} s]] {keyname} '{keycode}'", log=False)
+        logger.print("[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r", log=False)
+
+    controller_task, controller = engines.Controller.create(
+        devices_settings.controller,
+        devices_settings.terminal,
+    )
+    controller.add_handler(handler)
+    controller.add_handler(lambda _: stop_event.set(), exit_key)
+
+    try:
+        with controller_task:
+            while not stop_event.is_set():
+                try:
+                    controller_task.send(None)
+                except StopIteration:
+                    return
+                yield
+    finally:
+        logger.print()
+
+
 class KnockTest:
     def __init__(self, settings, logger):
         self.settings = settings
@@ -628,7 +634,8 @@ class KnockTest:
         try:
             while True:
                 self.logger.print(
-                    "[[ <time>  ]] │[emph]<strength>[/]│ (<value>)", end="\r"
+                    "[[ <time>  ]] │[emph]<strength>[/]│ (<value>)", end="\r",
+                    log=False,
                 )
 
                 while self.hit_queue.empty():
@@ -641,7 +648,7 @@ class KnockTest:
                     for i in range(length)
                 )
                 level = f"{level[:length//2]}[weight=bold]{level[length//2:]}[/]"
-                self.logger.print(f"[[{time:07.3f} s]] │{level}│ ({strength:.5f})")
+                self.logger.print(f"[[{time:07.3f} s]] │{level}│ ({strength:.5f})", log=False)
 
         finally:
             self.logger.print()
@@ -755,7 +762,7 @@ class SpeakerTest:
             yield
             for m in range(4):
                 mixer.play(dn.DataNode.wrap([sound]))
-                self.logger.print(".", end="", flush=True)
+                self.logger.print(".", end="", flush=True, log=False)
                 yield
             self.logger.print(flush=True)
             yield
@@ -844,6 +851,7 @@ class MicTest:
                     end="",
                     flush=True,
                     markup=False,
+                    log=False,
                 )
 
         finally:

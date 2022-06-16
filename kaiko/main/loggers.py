@@ -118,6 +118,7 @@ class LoggerSettings(cfg.Configurable):
 class Logger:
     def __init__(self, terminal_settings=None, logger_settings=None):
         self.log_file = None
+        self._stack = None
         self.recompile_style(terminal_settings, logger_settings)
 
     def recompile_style(self, terminal_settings, logger_settings):
@@ -143,7 +144,7 @@ class Logger:
 
     def set_log_file(self, path):
         self.log_file = open(path, "a")
-        self.log_file.write(f"[log_session={datetime.now()}/]\n")
+        self.log_file.write(f"\n\n\n[log_session={datetime.now()}/]\n")
 
     @staticmethod
     def _parse_tag_type(doc):
@@ -175,17 +176,41 @@ class Logger:
 
     @contextlib.contextmanager
     def verb(self):
-        with self.renderer.render_context(
-            self.verb_block, lambda text: print(text, end="", flush=True)
-        ):
-            yield
+        try:
+            self.log("[verb_block]")
+            with self.renderer.render_context(
+                self.verb_block, lambda text: print(text, end="", flush=True)
+            ):
+                yield
+        finally:
+            self.log("[/verb_block]")
 
     @contextlib.contextmanager
     def warn(self):
-        with self.renderer.render_context(
-            self.warn_block, lambda text: print(text, end="", flush=True)
-        ):
+        try:
+            self.log("[warn_block]")
+            with self.renderer.render_context(
+                self.warn_block, lambda text: print(text, end="", flush=True)
+            ):
+                yield
+        finally:
+            self.log("[/warn_block]")
+
+    @contextlib.contextmanager
+    def stack(self, end="", log=True):
+        if self._stack is not None:
             yield
+            return
+
+        try:
+            self._stack = []
+            yield
+        finally:
+            markup = mu.Group(tuple(self._stack))
+            self._stack = None
+            self.print(markup, end=end, flush=True, log=False)
+            if log:
+                self.log("\n" + markup.represent())
 
     def backslashreplace(self, ch):
         if ch in "\a\r\n\t\b\v\f":
@@ -244,6 +269,11 @@ class Logger:
     def print(self, msg="", end="\n", flush=False, markup=True, log=True):
         if not markup:
             msg = str(msg)
+
+            if self._stack is not None:
+                self._stack.append(mu.Text(msg + end))
+                return
+
             if log:
                 self.log(msg)
             print(msg, end=end, flush=flush)
@@ -256,6 +286,10 @@ class Logger:
         else:
             assert TypeError(type(msg))
 
+        if self._stack is not None:
+            self._stack.append(mu.Group((markup, mu.Text(end))))
+            return
+
         if msg and log:
             self.log(markup.represent())
         print(self.renderer.render(markup.expand()), end=end, flush=flush)
@@ -264,22 +298,15 @@ class Logger:
         with self.warn():
             self.print(traceback.format_exc(), end="", markup=False)
 
-    def clear_line(self, flush=False):
-        markup = self.renderer.clear_line()
-        self.log(markup.represent())
-        print(
-            self.renderer.render(markup.expand()),
-            end="",
-            flush=flush,
-        )
+    def clear_line(self, flush=False, log=True):
+        self.print(self.renderer.clear_line(), end="", flush=flush, log=log)
 
-    def clear(self, bottom=False, flush=False):
+    def clear(self, bottom=False, flush=False, log=False):
         markup = self.renderer.clear_screen()
         if bottom:
             y = shutil.get_terminal_size().lines - 1
             markup = mu.Group((markup, mu.Move(x=0, y=y)))
-        self.log(markup.represent())
-        print(self.renderer.render(markup.expand()), end="", flush=flush)
+        self.print(markup, end="", flush=flush, log=log)
 
     def format_code(self, content, marked=None, title=None, is_changed=False):
         total_width = 80
@@ -621,48 +648,49 @@ class Logger:
         acc_graph = [line.tostring().decode("utf-16") for line in acc_code]
 
         # print
-        self.print("╒" + grad_top + "╤" + scat_top + "╤" + stat_top + "╕", markup=False)
-        self.print(
-            "│" + grad_infos[0] + "│" + scat_graph[0] + "│" + stat_graph[0] + "│",
-            markup=False,
-        )
-        self.print(
-            "│" + grad_infos[1] + "│" + scat_graph[1] + "│" + stat_graph[1] + "│",
-            markup=False,
-        )
-        self.print(
-            "│" + grad_infos[2] + "│" + scat_graph[2] + "│" + stat_graph[2] + "│",
-            markup=False,
-        )
-        self.print(
-            "│" + grad_infos[3] + "│" + scat_graph[3] + "│" + stat_graph[3] + "│",
-            markup=False,
-        )
-        self.print(
-            "│" + grad_infos[4] + "│" + scat_graph[4] + "│" + stat_graph[4] + "│",
-            markup=False,
-        )
-        self.print(
-            "│" + grad_infos[5] + "│" + scat_graph[5] + "│" + stat_graph[5] + "│",
-            markup=False,
-        )
-        self.print(
-            "│" + grad_infos[6] + "│" + scat_graph[6] + "│" + stat_graph[6] + "│",
-            markup=False,
-        )
-        self.print(
-            "│" + grad_infos[7] + "├" + miss_graph + "┤" + stat_infos[0] + "│",
-            markup=False,
-        )
-        self.print(
-            "│" + grad_infos[8] + "│" + acc_graph[0] + "│" + stat_infos[1] + "│",
-            markup=False,
-        )
-        self.print(
-            "│" + grad_infos[9] + "│" + acc_graph[1] + "│" + stat_infos[2] + "│",
-            markup=False,
-        )
-        self.print("╘" + grad_bot + "╧" + scat_bot + "╧" + stat_bot + "╛", markup=False)
+        with self.stack():
+            self.print("╒" + grad_top + "╤" + scat_top + "╤" + stat_top + "╕", markup=False)
+            self.print(
+                "│" + grad_infos[0] + "│" + scat_graph[0] + "│" + stat_graph[0] + "│",
+                markup=False,
+            )
+            self.print(
+                "│" + grad_infos[1] + "│" + scat_graph[1] + "│" + stat_graph[1] + "│",
+                markup=False,
+            )
+            self.print(
+                "│" + grad_infos[2] + "│" + scat_graph[2] + "│" + stat_graph[2] + "│",
+                markup=False,
+            )
+            self.print(
+                "│" + grad_infos[3] + "│" + scat_graph[3] + "│" + stat_graph[3] + "│",
+                markup=False,
+            )
+            self.print(
+                "│" + grad_infos[4] + "│" + scat_graph[4] + "│" + stat_graph[4] + "│",
+                markup=False,
+            )
+            self.print(
+                "│" + grad_infos[5] + "│" + scat_graph[5] + "│" + stat_graph[5] + "│",
+                markup=False,
+            )
+            self.print(
+                "│" + grad_infos[6] + "│" + scat_graph[6] + "│" + stat_graph[6] + "│",
+                markup=False,
+            )
+            self.print(
+                "│" + grad_infos[7] + "├" + miss_graph + "┤" + stat_infos[0] + "│",
+                markup=False,
+            )
+            self.print(
+                "│" + grad_infos[8] + "│" + acc_graph[0] + "│" + stat_infos[1] + "│",
+                markup=False,
+            )
+            self.print(
+                "│" + grad_infos[9] + "│" + acc_graph[1] + "│" + stat_infos[2] + "│",
+                markup=False,
+            )
+            self.print("╘" + grad_bot + "╧" + scat_bot + "╧" + stat_bot + "╛", markup=False)
 
     def ask(self, prompt, default=True):
         @dn.datanode
