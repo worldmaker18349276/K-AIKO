@@ -422,7 +422,7 @@ class InputSettings(cfg.Configurable):
         }
 
     @cfg.subconfig
-    class text(cfg.Configurable):
+    class hint(cfg.Configurable):
         r"""
         Fields
         ------
@@ -603,8 +603,8 @@ class Input:
         stroke.register(controller)
 
         state = InputView(self)
-        text_renderer = TextRenderer(rich, self.settings.text)
-        msg_renderer = MsgRenderer(rich, self.settings.text)
+        text_renderer = TextRenderer(rich, self.settings.hint)
+        msg_renderer = MsgRenderer(rich, self.settings.hint)
 
         renderer.add_drawer(state.load(fin_event), zindex=())
         renderer.add_drawer(msg_renderer.render_msg(state), zindex=(1,))
@@ -1629,13 +1629,6 @@ class TextRenderer:
 
 class MsgRenderer:
     def __init__(self, rich, settings):
-        r"""Constructor.
-
-        Parameters
-        ----------
-        rich : markups.RichParser
-        settings : BeatShellSettings.text
-        """
         self.rich = rich
         self.settings = settings
 

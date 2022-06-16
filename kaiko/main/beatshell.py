@@ -5,7 +5,6 @@ from ..utils.providers import Provider
 from ..utils import datanodes as dn
 from ..utils import config as cfg
 from ..utils import markups as mu
-from ..utils import commands as cmd
 from ..devices import engines
 from ..tui import widgets
 from ..tui import inputs
@@ -126,28 +125,6 @@ class MarkerWidget:
         return marker_func
 
 
-class BeatshellWidgetFactory:
-    monitor = widgets.MonitorWidgetSettings
-    patterns = PatternsWidgetSettings
-    marker = MarkerWidgetSettings
-
-    def __init__(self, rich, renderer, metronome):
-        self.provider = Provider()
-        self.provider.set(rich)
-        self.provider.set(renderer)
-        self.provider.set(metronome)
-
-    def create(self, widget_settings):
-        if isinstance(widget_settings, BeatshellWidgetFactory.monitor):
-            return widgets.MonitorWidget(widget_settings).load(self.provider)
-        elif isinstance(widget_settings, BeatshellWidgetFactory.patterns):
-            return PatternsWidget(widget_settings).load(self.provider)
-        elif isinstance(widget_settings, BeatshellWidgetFactory.marker):
-            return MarkerWidget(widget_settings).load(self.provider)
-        else:
-            raise TypeError
-
-
 BeatshellIconWidgetSettings = Union[
     PatternsWidgetSettings, widgets.MonitorWidgetSettings,
 ]
@@ -199,15 +176,15 @@ class BeatShellSettings(cfg.Configurable):
         Fields
         ------
         banner : str
-            The template of banner with slots: `user`, `profile`, `path`.
+            The template of banner with slots `user`, `profile` and `path`.
 
         user : str
-            The template of user with slots: `user_name`.
+            The template of user with slot `user_name`.
         profile : tuple of str and str
-            The templates of profile with slots: `profile_name`, the second is
-            for changed profile.
+            The templates of profile with slot `profile_name`, the second is for
+            changed profile.
         path : tuple of str and str
-            The templates of path with slots: `current_path`, the second is for
+            The templates of path with slot `current_path`, the second is for
             unknown path.
 
         unprintable_character : str
@@ -250,13 +227,12 @@ class BeatPrompt:
         self,
         rich,
         cache_dir,
-        command_parser_getter,
-        settings_getter,
+        command_parser,
+        settings,
         preview_handler,
     ):
         self.rich = rich
-        self._settings_getter = settings_getter
-        self._command_parser_getter = command_parser_getter
+        self.settings = settings
         self.cache_dir = cache_dir
 
         self.input = inputs.Input(
@@ -265,11 +241,21 @@ class BeatPrompt:
             self.settings.input,
         )
 
-        self.new_session()
+        self.new_session(command_parser)
 
-    @property
-    def settings(self):
-        return self._settings_getter()
+    def set_settings(self, settings):
+        self.settings = settings
+        self.input._set_settings(self.settings.input)
+
+    def create_widget(self, provider, widget_settings):
+        if isinstance(widget_settings, widgets.MonitorWidgetSettings):
+            return widgets.MonitorWidget(widget_settings).load(provider)
+        elif isinstance(widget_settings, PatternsWidgetSettings):
+            return PatternsWidget(widget_settings).load(provider)
+        elif isinstance(widget_settings, MarkerWidgetSettings):
+            return MarkerWidget(widget_settings).load(provider)
+        else:
+            raise TypeError
 
     def register(self, renderer, controller, fin_event):
         # widgets
@@ -278,17 +264,15 @@ class BeatPrompt:
         tempo = settings.prompt.tempo
         metronome = engines.Metronome(t0, tempo)
 
-        widget_factory = BeatshellWidgetFactory(self.rich, renderer, metronome)
+        provider = Provider()
+        provider.set(self.rich)
+        provider.set(metronome)
+        provider.set(renderer)
+        provider.set(controller)
 
-        icon = widget_factory.create(settings.prompt.icons)
-        marker = widget_factory.create(settings.prompt.marker)
-
-        input_provider = Provider()
-        input_provider.set(self.rich)
-        input_provider.set(metronome)
-        input_provider.set(renderer)
-        input_provider.set(controller)
-        textbox = self.input._register(fin_event, input_provider)
+        icon = self.create_widget(provider, settings.prompt.icons)
+        marker = self.create_widget(provider, settings.prompt.marker)
+        textbox = self.input._register(fin_event, provider)
 
         # layout
         icon_width = settings.prompt.icon_width
@@ -297,19 +281,17 @@ class BeatPrompt:
         [
             icon_mask,
             marker_mask,
-            input_mask,
+            textbox_mask,
         ] = widgets.layout([icon_width, marker_width, -1])
 
         # register
         renderer.add_texts(icon, icon_mask, zindex=(2,))
         renderer.add_texts(marker, marker_mask, zindex=(3,))
-        renderer.add_texts(textbox, input_mask, zindex=(0,))
+        renderer.add_texts(textbox, textbox_mask, zindex=(0,))
 
     @dn.datanode
     def prompt(self, devices_settings):
         fin_event = threading.Event()
-
-        self.input._set_settings(self.settings.input)
 
         # engines
         settings = self.settings
@@ -348,8 +330,8 @@ class BeatPrompt:
         else:
             raise TypeError
 
-    def new_session(self, clear=True):
-        return self.input._new_session(self._command_parser_getter(), clear=clear)
+    def new_session(self, command_parser, clear=True):
+        return self.input._new_session(command_parser, clear=clear)
 
     def record_command(self):
         return self.input._record_command()

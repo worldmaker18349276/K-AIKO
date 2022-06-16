@@ -188,13 +188,15 @@ class KAIKOLauncher:
         prompt = beatshell.BeatPrompt(
             self.logger.rich,
             self.file_manager.root.cache.abs,
-            self.get_command_parser,
-            lambda: self.settings.shell,
+            self.get_command_parser(),
+            self.settings.shell,
             preview_handler,
         )
 
         self.print_tips()
         while True:
+            prompt.set_settings(self.settings.shell)
+
             self.logger.print()
             self.logger.print(prompt.make_banner(self.file_manager, self.profile_manager))
 
@@ -203,12 +205,12 @@ class KAIKOLauncher:
 
             except beatshell.PromptError as e:
                 self.logger.print(f"[warn]{self.logger.escape(str(e.cause))}[/]")
-                prompt.new_session(clear=False)
+                prompt.new_session(self.get_command_parser(), clear=False)
 
             else:
                 prompt.record_command()
                 yield from self.execute(command).join()
-                prompt.new_session()
+                prompt.new_session(self.get_command_parser())
 
     @dn.datanode
     def execute(self, command):
