@@ -1,5 +1,6 @@
 from datetime import datetime
 import contextlib
+import traceback
 import dataclasses
 import enum
 import re
@@ -262,6 +263,10 @@ class Logger:
         if msg and log:
             self.log(markup.represent())
         print(self.renderer.render(markup.expand()), end=end, flush=flush)
+
+    def print_traceback(self):
+        with self.warn():
+            self.print(traceback.format_exc(), end="", markup=False)
 
     def clear_line(self, flush=False):
         markup = self.renderer.clear_line()

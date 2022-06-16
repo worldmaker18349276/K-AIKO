@@ -244,8 +244,7 @@ class KAIKOLauncher:
                 self.logger.print(self.logger.format_value(result))
 
         except Exception:
-            with self.logger.warn():
-                self.logger.print(traceback.format_exc(), end="", markup=False)
+            self.logger.print_traceback()
 
     @property
     def profile_manager(self):

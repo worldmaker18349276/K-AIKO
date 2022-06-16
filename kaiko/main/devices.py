@@ -2,7 +2,6 @@ import sys
 import os
 import time
 import shutil
-import traceback
 import contextlib
 import threading
 import queue
@@ -360,8 +359,7 @@ class DevicesCommand:
 
         except:
             logger.print("[warn]Invalid configuration for mic.[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
+            logger.print_traceback()
 
         else:
             devices_settings.detector.input_device = device
@@ -412,8 +410,7 @@ class DevicesCommand:
 
         except:
             logger.print("[warn]Invalid configuration for speaker.[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
+            logger.print_traceback()
 
         else:
             devices_settings.mixer.output_device = device
@@ -721,8 +718,7 @@ class SpeakerTest:
 
         except:
             self.logger.print("[warn]Invalid configuration for speaker.[/]")
-            with self.logger.warn():
-                self.logger.print(traceback.format_exc(), end="", markup=False)
+            logger.print_traceback()
             return dn.DataNode.wrap([])
 
         else:
@@ -791,8 +787,7 @@ class MicTest:
 
         except:
             self.logger.print("[warn]Invalid configuration for mic.[/]")
-            with self.logger.warn():
-                self.logger.print(traceback.format_exc(), end="", markup=False)
+            logger.print_traceback()
             return dn.DataNode.wrap([])
 
         else:
@@ -872,8 +867,7 @@ class WaveformTest:
 
         except:
             self.logger.print("[warn]Fail to compile waveform.[/]")
-            with self.logger.warn():
-                self.logger.print(traceback.format_exc(), end="", markup=False)
+            logger.print_traceback()
             return dn.DataNode.wrap([])
 
         self.logger.print("[hint/] Press any key to end test.")

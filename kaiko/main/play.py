@@ -1,5 +1,4 @@
 import shutil
-import traceback
 import dataclasses
 import zipfile
 from collections import defaultdict
@@ -540,8 +539,7 @@ def load_beatmap(beatmap_path, file_manager, profile_manager, logger):
         logger.print(
             f"[warn]Failed to read beatmap: [emph]{path_str}[/][/]"
         )
-        with logger.warn():
-            logger.print(traceback.format_exc(), end="", markup=False)
+        logger.print_traceback()
         return
 
 
@@ -553,8 +551,7 @@ def load_pattern(pattern, tempo, offset, logger):
 
     except beatsheets.BeatmapParseError:
         logger.print("[warn]Failed to parse pattern[/]")
-        with logger.warn():
-            logger.print(traceback.format_exc(), end="", markup=False)
+        logger.print_traceback()
         return
 
     return beatmaps.Loop(

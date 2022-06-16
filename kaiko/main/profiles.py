@@ -1,5 +1,4 @@
 import os
-import traceback
 import tempfile
 import subprocess
 import shutil
@@ -282,8 +281,7 @@ class ProfileManager:
             )
         except Exception:
             logger.print("[warn]Fail to format configuration[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
+            logger.print_traceback()
             return False
 
         self._current_mtime = self.current_path.abs.stat().st_mtime
@@ -318,8 +316,7 @@ class ProfileManager:
             )
         except Exception:
             logger.print("[warn]Fail to parse configuration[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
+            logger.print_traceback()
             return False
 
         self.set_as_changed(current_mtime)
@@ -366,8 +363,7 @@ class ProfileManager:
             )
         except Exception:
             logger.print("[warn]Fail to parse configuration[/]")
-            with logger.warn():
-                logger.print(traceback.format_exc(), end="", markup=False)
+            logger.print_traceback()
             return False
 
         self.current_path = path
@@ -435,8 +431,7 @@ class ProfileManager:
                 )
             except Exception:
                 logger.print("[warn]Fail to format configuration[/]")
-                with logger.warn():
-                    logger.print(traceback.format_exc(), end="", markup=False)
+                logger.print_traceback()
                 return False
 
         return True
