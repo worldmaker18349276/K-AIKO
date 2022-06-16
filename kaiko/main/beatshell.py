@@ -369,21 +369,21 @@ class BeatPrompt:
         path = mu.Text("".join(ch if ch.isprintable() else unpr for ch in path))
 
         user_markup = banner_settings.user
-        user_markup = self.logger.rich.parse(user_markup, slotted=True)
+        user_markup = self.logger.rich.parse(user_markup, expand=False, slotted=True)
         user_markup = user_markup(user_name=username)
 
         profile_markup = banner_settings.profile
         profile_markup = profile_markup[0] if not profile_is_changed else profile_markup[1]
-        profile_markup = self.logger.rich.parse(profile_markup, slotted=True)
+        profile_markup = self.logger.rich.parse(profile_markup, expand=False, slotted=True)
         profile_markup = profile_markup(profile_name=profile)
 
         path_markup = banner_settings.path
         path_markup = path_markup[0] if path_is_known else path_markup[1]
-        path_markup = self.logger.rich.parse(path_markup, slotted=True)
+        path_markup = self.logger.rich.parse(path_markup, expand=False, slotted=True)
         path_markup = path_markup(current_path=path)
 
         banner_markup = banner_settings.banner
-        banner_markup = self.logger.rich.parse(banner_markup, slotted=True)
+        banner_markup = self.logger.rich.parse(banner_markup, expand=False, slotted=True)
         banner_markup = banner_markup(
             user=user_markup,
             profile=profile_markup,

@@ -1,3 +1,4 @@
+from datetime import datetime
 import contextlib
 import dataclasses
 import enum
@@ -115,7 +116,7 @@ class LoggerSettings(cfg.Configurable):
 
 class Logger:
     def __init__(self, terminal_settings=None, logger_settings=None):
-        self.level = 1
+        self.log_file = None
         self.recompile_style(terminal_settings, logger_settings)
 
     def recompile_style(self, terminal_settings, logger_settings):
@@ -138,6 +139,10 @@ class Logger:
 
         self.verb_block = self.rich.parse(logger_settings.verb_block, slotted=True)
         self.warn_block = self.rich.parse(logger_settings.warn_block, slotted=True)
+
+    def set_log_file(self, path):
+        self.log_file = open(path, "a")
+        self.log_file.write(f"[log_session={datetime.now()}/]\n")
 
     @staticmethod
     def _parse_tag_type(doc):
@@ -169,27 +174,17 @@ class Logger:
 
     @contextlib.contextmanager
     def verb(self):
-        level = self.level
-        self.level = 0
-        try:
-            with self.renderer.render_context(
-                self.verb_block, lambda text: print(text, end="", flush=True)
-            ):
-                yield
-        finally:
-            self.level = level
+        with self.renderer.render_context(
+            self.verb_block, lambda text: print(text, end="", flush=True)
+        ):
+            yield
 
     @contextlib.contextmanager
     def warn(self):
-        level = self.level
-        self.level = 2
-        try:
-            with self.renderer.render_context(
-                self.warn_block, lambda text: print(text, end="", flush=True)
-            ):
-                yield
-        finally:
-            self.level = level
+        with self.renderer.render_context(
+            self.warn_block, lambda text: print(text, end="", flush=True)
+        ):
+            yield
 
     def backslashreplace(self, ch):
         if ch in "\a\r\n\t\b\v\f":
@@ -245,18 +240,34 @@ class Logger:
             path = self.escape(path, type="all")
         return path
 
-    def print(self, msg="", end="\n", flush=False, markup=True):
+    def log(self, msg):
+        if self.log_file is not None:
+            self.log_file.write(f"[log={datetime.now()}/]{msg}\n")
+
+    def print(self, msg="", end="\n", flush=False, markup=True, log=True):
         if not markup:
+            msg = str(msg)
+            if log:
+                self.log(msg)
             print(msg, end=end, flush=flush)
             return
 
         if isinstance(msg, str):
-            msg = self.rich.parse(msg)
-        print(self.renderer.render(msg), end=end, flush=flush)
+            markup = self.rich.parse(msg, expand=False)
+        elif isinstance(msg, mu.Markup):
+            markup = msg
+        else:
+            assert TypeError(type(msg))
+
+        if msg and log:
+            self.log(markup.represent())
+        print(self.renderer.render(markup.expand()), end=end, flush=flush)
 
     def clear_line(self, flush=False):
+        markup = self.renderer.clear_line()
+        self.log(markup.represent())
         print(
-            self.renderer.render(self.renderer.clear_line().expand()),
+            self.renderer.render(markup.expand()),
             end="",
             flush=flush,
         )
@@ -266,6 +277,7 @@ class Logger:
         if bottom:
             y = shutil.get_terminal_size().lines - 1
             markup = mu.Group((markup, mu.Move(x=0, y=y)))
+        self.log(markup.represent())
         print(self.renderer.render(markup.expand()), end="", flush=flush)
 
     def format_code(self, content, marked=None, title=None, is_changed=False):

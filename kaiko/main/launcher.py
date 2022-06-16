@@ -69,6 +69,10 @@ class RootDirPath(RecognizedDirPath):
         def mk(self, provider):
             self.abs.mkdir()
 
+        @as_child("logs")
+        class logs(RecognizedFilePath):
+            pass
+
         beatshell_history = as_child(".beatshell-history")(beatshell.BeatshellHistory)
         prompt_benchmark = as_child("prompt_benchmark.csv")(beatshell.PromptBenchmark)
 
@@ -109,6 +113,8 @@ class KAIKOLauncher:
 
         # load workspace
         file_manager = FileManager(RootDirPath, launcher.provider)
+        logger.set_log_file(file_manager.root.cache.logs.abs)
+
         launcher.provider.set(file_manager)
         file_manager.fix()
 
