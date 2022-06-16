@@ -12,6 +12,46 @@ from . import inputs
 
 
 # widgets
+BLOCKER = [
+    "⠶⠦⣚⠀⠶",
+    "⢎⣀⡛⠀⠶",
+    "⢖⣄⠻⠀⠶",
+    "⠖⠐⡩⠂⠶",
+    "⠶⠀⡭⠲⠶",
+    "⠶⠀⣬⠉⡱",
+    "⠶⠀⣦⠙⠵",
+    "⠶⠠⣊⠄⠴",
+]
+
+TUMBLER = [
+    "⠀⢠⢦⠕",
+    "⠀⢰⢂⡔",
+    "⠀⠴⣂⡤",
+    "⠀⢖⣂⣤",
+    "⠀⢞⣀⢠",
+    "⠀⢟⡀⡄",
+    "⠐⢍⢤⠀",
+    "⠐⢥⢦⠀",
+    "⠐⣄⢲⠀",
+    "⠠⣄⡲⠄",
+    "⢠⣄⣒⠆",
+    "⢠⢀⣘⠆",
+    "⠀⡄⣘⠇",
+    "⠀⢠⢌⠕",
+]
+
+TIMCOEP8 = [
+    "⠀⠀⡔⠀⡱",
+    "⠀⢀⡤⠀⠶",
+    "⠀⢠⠤⠀⠶",
+    "⠀⡠⢆⠀⠶",
+    "⢀⡰⡦⠀⠶",
+    "⠀⡐⢰⠀⠶",
+    "⠀⢀⢢⠄⠶",
+    "⠀⠀⢰⡴⠶",
+]
+
+
 @dataclasses.dataclass
 class PatternsWidgetSettings:
     r"""
@@ -20,18 +60,7 @@ class PatternsWidgetSettings:
     patterns : list of str
         The patterns to loop.
     """
-    patterns: List[str] = dataclasses.field(
-        default_factory=lambda: [
-            "[color=cyan]⠶⠦⣚⠀⠶[/]",
-            "[color=cyan]⢎⣀⡛⠀⠶[/]",
-            "[color=cyan]⢖⣄⠻⠀⠶[/]",
-            "[color=cyan]⠖⠐⡩⠂⠶[/]",
-            "[color=cyan]⠶⠀⡭⠲⠶[/]",
-            "[color=cyan]⠶⠀⣬⠉⡱[/]",
-            "[color=cyan]⠶⠀⣦⠙⠵[/]",
-            "[color=cyan]⠶⠠⣊⠄⠴[/]",
-        ]
-    )
+    patterns: List[str] = dataclasses.field(default_factory=lambda: [f"[color=cyan]{pattern}[/]" for pattern in TIMCOEP8])
 
 
 class PatternsWidget:
