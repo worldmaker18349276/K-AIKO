@@ -4,6 +4,7 @@ import traceback
 import dataclasses
 import enum
 import re
+import queue
 from inspect import cleandoc
 import shutil
 import numpy
@@ -119,6 +120,7 @@ class Logger:
     def __init__(self, terminal_settings=None, logger_settings=None):
         self.log_file = None
         self._stack = None
+        self._redirect_queue = None
         self.recompile_style(terminal_settings, logger_settings)
 
     def recompile_style(self, terminal_settings, logger_settings):
@@ -212,6 +214,25 @@ class Logger:
             if log:
                 self.log("\n" + markup.represent())
 
+    @staticmethod
+    @dn.datanode
+    def _redirect_node(queue):
+        (view, msgs, logs), _, _ = yield
+        while True:
+            while not queue.empty():
+                logs.append(queue.get())
+            (view, msgs, logs), _, _ = yield (view, msgs, logs)
+
+    @contextlib.contextmanager
+    def popup(self, renderer):
+        redirect_queue = queue.Queue()
+        with renderer.add_drawer(self._redirect_node(redirect_queue)):
+            try:
+                self._redirect_queue = redirect_queue
+                yield
+            finally:
+                self._redirect_queue = None
+
     def backslashreplace(self, ch):
         if ch in "\a\r\n\t\b\v\f":
             return f"[codepoint]{repr(ch)[1:-1]}[/]"
@@ -276,6 +297,11 @@ class Logger:
 
             if log:
                 self.log(msg)
+
+            if self._redirect_queue is not None:
+                self._redirect_queue.put(mu.Text(msg + end))
+                return
+
             print(msg, end=end, flush=flush)
             return
 
@@ -292,6 +318,11 @@ class Logger:
 
         if msg and log:
             self.log(markup.represent())
+
+        if self._redirect_queue is not None:
+            self._redirect_queue.put(mu.Group((markup, mu.Text(end))))
+            return
+
         print(self.renderer.render(markup.expand()), end=end, flush=flush)
 
     def print_traceback(self):

@@ -325,7 +325,8 @@ class BeatPrompt:
             while not event.is_set():
                 yield
 
-        yield from dn.pipe(stop_when(fin_event), display_task, input_task).join()
+        with self.logger.popup(renderer):
+            yield from dn.pipe(stop_when(fin_event), display_task, input_task).join()
 
         result = self.input.result
         if isinstance(result, inputs.ErrorResult):
