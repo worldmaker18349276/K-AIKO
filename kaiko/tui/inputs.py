@@ -610,7 +610,7 @@ class Input:
         renderer.add_drawer(msg_renderer.render_msg(state), zindex=(1,))
 
         textbox = TextBox(
-            lambda: text_renderer.render_text(state),
+            text_renderer.render_text(state),
             self.settings.textbox,
         ).load(provider)
 
@@ -1430,12 +1430,6 @@ class InputStroke:
 
 class InputView:
     def __init__(self, input):
-        r"""Constructor.
-
-        Parameters
-        ----------
-        input : Input
-        """
         self.input = input
 
         self.key_pressed = False

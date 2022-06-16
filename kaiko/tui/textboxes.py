@@ -40,15 +40,15 @@ class TextBoxWidgetSettings:
 
 
 class TextBox:
-    def __init__(self, text_node_getter, settings):
+    def __init__(self, text_node, settings):
         r"""Constructor.
 
         Parameters
         ----------
-        text_node_getter : function
+        text_node : dn.datanode
         settings : TextBoxWidgetSettings
         """
-        self.text_node_getter = text_node_getter
+        self.text_node = text_node
         self.settings = settings
 
         self.text_offset = 0
@@ -212,7 +212,7 @@ class TextBox:
 
     @dn.datanode
     def render_textbox(self, *, rich, metronome):
-        text_node = self.text_node_getter()
+        text_node = self.text_node
         adjust_view = self.adjust_view(rich=rich)
         render_caret = self.render_caret(rich=rich, metronome=metronome)
 
