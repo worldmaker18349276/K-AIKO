@@ -8,7 +8,7 @@ from ..utils import markups as mu
 from ..devices import engines
 from ..tui import widgets
 from ..tui import inputs
-from .files import UnrecognizedPath
+from .files import UnrecognizedPath, RecognizedFilePath
 
 
 # widgets
@@ -217,27 +217,34 @@ class PromptError(Exception):
         self.cause = cause
 
 
+class BeatshellHistory(RecognizedFilePath):
+    "(The command history)"
+
+
+class PromptBenchmark(RecognizedFilePath):
+    "(The prompt benchmark data)"
+
+
 class BeatPrompt:
     r"""Prompt renderer for beatshell."""
 
-    monitor_file_path = "monitor/prompt.csv"
-    history_file_path = ".beatshell-history"
-
     def __init__(
         self,
-        rich,
-        cache_dir,
+        logger,
+        history_file_path,
+        monitor_file_path,
         command_parser,
         settings,
         preview_handler,
     ):
-        self.rich = rich
+        self.logger = logger
         self.settings = settings
-        self.cache_dir = cache_dir
+        self.history_file_path = history_file_path
+        self.monitor_file_path = monitor_file_path
 
         self.input = inputs.Input(
             preview_handler,
-            cache_dir / self.history_file_path,
+            self.history_file_path.abs,
             self.settings.input,
         )
 
@@ -265,7 +272,7 @@ class BeatPrompt:
         metronome = engines.Metronome(t0, tempo)
 
         provider = Provider()
-        provider.set(self.rich)
+        provider.set(self.logger.rich)
         provider.set(metronome)
         provider.set(renderer)
         provider.set(controller)
@@ -297,7 +304,7 @@ class BeatPrompt:
         settings = self.settings
         debug_monitor = settings.debug_monitor
         renderer_monitor = (
-            engines.Monitor(self.cache_dir / self.monitor_file_path)
+            engines.Monitor(self.monitor_file_path.abs)
             if debug_monitor
             else None
         )
@@ -336,7 +343,18 @@ class BeatPrompt:
     def record_command(self):
         return self.input._record_command()
 
-    def make_banner(self, file_manager, profile_manager):
+    def print_tips(self):
+        input_settings = self.settings.input.control
+
+        confirm_key = self.logger.emph(input_settings.confirm_key, type="all")
+        help_key = self.logger.emph(input_settings.help_key, type="all")
+        tab_key = self.logger.emph(input_settings.autocomplete_keys[0], type="all")
+
+        self.logger.print(f"[hint/] Type command and press {confirm_key} to execute.")
+        self.logger.print(f"[hint/] Use {tab_key} to autocomplete command.")
+        self.logger.print(f"[hint/] If you need help, press {help_key}.")
+
+    def print_banner(self, file_manager, profile_manager):
         banner_settings = self.settings.banner
 
         username = file_manager.username
@@ -351,26 +369,26 @@ class BeatPrompt:
         path = mu.Text("".join(ch if ch.isprintable() else unpr for ch in path))
 
         user_markup = banner_settings.user
-        user_markup = self.rich.parse(user_markup, slotted=True)
+        user_markup = self.logger.rich.parse(user_markup, slotted=True)
         user_markup = user_markup(user_name=username)
 
         profile_markup = banner_settings.profile
         profile_markup = profile_markup[0] if not profile_is_changed else profile_markup[1]
-        profile_markup = self.rich.parse(profile_markup, slotted=True)
+        profile_markup = self.logger.rich.parse(profile_markup, slotted=True)
         profile_markup = profile_markup(profile_name=profile)
 
         path_markup = banner_settings.path
         path_markup = path_markup[0] if path_is_known else path_markup[1]
-        path_markup = self.rich.parse(path_markup, slotted=True)
+        path_markup = self.logger.rich.parse(path_markup, slotted=True)
         path_markup = path_markup(current_path=path)
 
         banner_markup = banner_settings.banner
-        banner_markup = self.rich.parse(banner_markup, slotted=True)
+        banner_markup = self.logger.rich.parse(banner_markup, slotted=True)
         banner_markup = banner_markup(
             user=user_markup,
             profile=profile_markup,
             path=path_markup,
         )
 
-        return banner_markup
+        self.logger.print(banner_markup)
 

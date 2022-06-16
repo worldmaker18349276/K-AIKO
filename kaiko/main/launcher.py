@@ -69,16 +69,8 @@ class RootDirPath(RecognizedDirPath):
         def mk(self, provider):
             self.abs.mkdir()
 
-        @as_child(".beatshell-history")
-        class beatshell_history(RecognizedFilePath):
-            "(The command history)"
-
-            def mk(self, provider):
-                self.abs.touch()
-
-            def rm(self, provider):
-                self.abs.unlink()
-                self.abs.touch()
+        beatshell_history = as_child(".beatshell-history")(beatshell.BeatshellHistory)
+        prompt_benchmark = as_child("prompt_benchmark.csv")(beatshell.PromptBenchmark)
 
 
 class KAIKOLauncher:
@@ -117,8 +109,8 @@ class KAIKOLauncher:
 
         # load workspace
         file_manager = FileManager(RootDirPath, launcher.provider)
-        file_manager.fix()
         launcher.provider.set(file_manager)
+        file_manager.fix()
 
         os.environ[file_manager.ROOT_ENVVAR] = str(file_manager.root)
 
@@ -186,19 +178,20 @@ class KAIKOLauncher:
         r"""Start REPL."""
         preview_handler = self.bgm_controller.preview_handler
         prompt = beatshell.BeatPrompt(
-            self.logger.rich,
-            self.file_manager.root.cache.abs,
+            self.logger,
+            self.file_manager.root.cache.beatshell_history,
+            self.file_manager.root.cache.prompt_benchmark,
             self.get_command_parser(),
             self.settings.shell,
             preview_handler,
         )
 
-        self.print_tips()
-        while True:
-            prompt.set_settings(self.settings.shell)
+        prompt.print_tips()
+        self.logger.print()
 
+        while True:
             self.logger.print()
-            self.logger.print(prompt.make_banner(self.file_manager, self.profile_manager))
+            prompt.print_banner(self.file_manager, self.profile_manager)
 
             try:
                 command = yield from prompt.prompt(self.settings.devices).join()
@@ -211,6 +204,8 @@ class KAIKOLauncher:
                 prompt.record_command()
                 yield from self.execute(command).join()
                 prompt.new_session(self.get_command_parser())
+
+            prompt.set_settings(self.settings.shell)
 
     @dn.datanode
     def execute(self, command):
@@ -274,20 +269,6 @@ class KAIKOLauncher:
     def settings(self):
         r"""Current settings."""
         return self.profile_manager.current
-
-    def print_tips(self):
-        logger = self.logger
-
-        input_settings = self.settings.shell.input.control
-
-        confirm_key = logger.emph(input_settings.confirm_key, type="all")
-        help_key = logger.emph(input_settings.help_key, type="all")
-        tab_key = logger.emph(input_settings.autocomplete_keys[0], type="all")
-
-        logger.print(f"[hint/] Type command and press {confirm_key} to execute.")
-        logger.print(f"[hint/] Use {tab_key} to autocomplete command.")
-        logger.print(f"[hint/] If you need help, press {help_key}.")
-        logger.print()
 
     def get_command_parser(self):
         commands = {}
