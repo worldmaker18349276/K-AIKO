@@ -209,8 +209,6 @@ class BeatShellSettings(cfg.Configurable):
             "[color=cyan]⛩ [weight=dim][slot=current_path/][/][/]",
         )
 
-        unprintable_character: str = "⍰"
-
 
 class PromptError(Exception):
     def __init__(self, cause):
@@ -346,13 +344,13 @@ class BeatPrompt:
     def print_tips(self):
         input_settings = self.settings.input.control
 
-        confirm_key = self.logger.emph(input_settings.confirm_key, type="all")
-        help_key = self.logger.emph(input_settings.help_key, type="all")
-        tab_key = self.logger.emph(input_settings.autocomplete_keys[0], type="all")
+        confirm_key = self.logger.escape(input_settings.confirm_key, type="all")
+        help_key = self.logger.escape(input_settings.help_key, type="all")
+        tab_key = self.logger.escape(input_settings.autocomplete_keys[0], type="all")
 
-        self.logger.print(f"[hint/] Type command and press {confirm_key} to execute.")
-        self.logger.print(f"[hint/] Use {tab_key} to autocomplete command.")
-        self.logger.print(f"[hint/] If you need help, press {help_key}.")
+        self.logger.print(f"[hint/] Type command and press [emph]{confirm_key}[/] to execute.")
+        self.logger.print(f"[hint/] Use [emph]{tab_key}[/] to autocomplete command.")
+        self.logger.print(f"[hint/] If you need help, press [emph]{help_key}[/].")
 
     def print_banner(self, file_manager, profile_manager):
         banner_settings = self.settings.banner
@@ -363,10 +361,9 @@ class BeatPrompt:
         profile_is_changed = profile_manager.is_changed()
         path_is_known = not isinstance(file_manager.current, UnrecognizedPath)
 
-        unpr = banner_settings.unprintable_character
-        username = mu.Text("".join(ch if ch.isprintable() else unpr for ch in username))
-        profile = mu.Text("".join(ch if ch.isprintable() else unpr for ch in current_name))
-        path = mu.Text("".join(ch if ch.isprintable() else unpr for ch in path))
+        username = self.logger.rich.parse(self.logger.escape(username))
+        profile = self.logger.rich.parse(self.logger.escape(current_name))
+        path = self.logger.rich.parse(self.logger.escape(path))
 
         user_markup = banner_settings.user
         user_markup = self.logger.rich.parse(user_markup, expand=False, slotted=True)

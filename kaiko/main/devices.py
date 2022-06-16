@@ -476,8 +476,9 @@ class DevicesCommand:
 
         logger = self.logger
         exit_key = "Esc"
+        exit_key_ = logger.escape(exit_key, type='all')
 
-        logger.print(f"[hint/] Press {logger.emph(exit_key, type='all')} to end test.")
+        logger.print(f"[hint/] Press [emph]{exit_key_}[/] to end test.")
         logger.print()
         logger.print("[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r")
 
@@ -485,12 +486,10 @@ class DevicesCommand:
 
         def handler(arg):
             _, time, keyname, keycode = arg
-            keyname = logger.emph(keyname, type="all")
+            keyname = logger.escape(keyname, type="all")
             keycode = logger.escape(keycode, type="all")
             logger.clear_line()
-            logger.print(
-                f"[[{time:07.3f} s]] {keyname} '{keycode}'"
-            )
+            logger.print(f"[[{time:07.3f} s]] {keyname} '{keycode}'")
             logger.print("[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r")
 
         devices_settings = self.settings.devices
@@ -723,7 +722,8 @@ class SpeakerTest:
 
         else:
             info = PyAudioDeviceParser(audio_manager, False).info(str(device))
-            self.logger.print(f"Test output device {self.logger.emph(info)}...")
+            info = self.logger.escape(info)
+            self.logger.print(f"Test output device [emph]{info}[/]...")
             return self.test_speaker(audio_manager, device, samplerate, nchannels)
 
     def test_speaker(self, audio_manager, device, samplerate, nchannels):
@@ -792,7 +792,8 @@ class MicTest:
 
         else:
             info = PyAudioDeviceParser(audio_manager, True).info(str(device))
-            self.logger.print(f"Test input device {self.logger.emph(info)}...")
+            info = self.logger.escape(info)
+            self.logger.print(f"Test input device [emph]{info}[/]...")
             return self.test_mic(audio_manager, device, samplerate)
 
     @dn.datanode

@@ -643,7 +643,8 @@ class ProfilesCommand:
 
         # open editor
         if not check_exists_shell_command(editor):
-            logger.print(f"[warn]Unknown editor: {logger.emph(editor, type='all')}[/]")
+            editor_ = logger.escape(editor, type='all')
+            logger.print(f"[warn]Unknown editor: [emph]{editor_}[/][/]")
             return
 
         logger.print(f"[data/] Editing...")

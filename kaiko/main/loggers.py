@@ -225,9 +225,6 @@ class Logger:
         else:
             raise ValueError
 
-    def emph(self, text, type="plain"):
-        return f"[emph]{self.escape(text, type=type)}[/]"
-
     def as_uri(self, path, emph=True):
         if path.is_absolute():
             path = path.as_uri()
@@ -235,10 +232,9 @@ class Logger:
             path = str(path)
         if path.endswith("."):
             path = path + "/"
+        path = self.escape(path, type="all")
         if emph:
-            path = self.emph(path, type="all")
-        else:
-            path = self.escape(path, type="all")
+            path = f"[emph]{path}[/]"
         return path
 
     def log(self, msg):
@@ -291,9 +287,10 @@ class Logger:
         n = len(str(content.count("\n") + 1))
         res = []
         if title is not None:
+            title = self.escape(title, type='all')
             change_mark = "*" if is_changed else ""
             res.append(f"[weight=dim]{'─'*n}────{'─'*(max(0, total_width-n-4))}[/]")
-            res.append(f" {self.emph(title, type='all')}{change_mark}")
+            res.append(f" [emph]{title}[/]{change_mark}")
         res.append(f"[weight=dim]{'─'*n}──┬─{'─'*(max(0, total_width-n-4))}[/]")
         for i, line in enumerate(lines):
             if marked and marked[0] == i:
@@ -317,9 +314,10 @@ class Logger:
         n = len(str(new.count("\n") + 1))
         res = []
         if title is not None:
+            title = self.escape(title, type='all')
             change_mark = "*" if is_changed else ""
             res.append(f"[weight=dim]{'─'*n}────{'─'*(max(0, total_width-n-4))}[/]")
-            res.append(f" {self.emph(title, type='all')}{change_mark}")
+            res.append(f" [emph]{title}[/]{change_mark}")
         res.append(f"[weight=dim]{'─'*n}──┬─{'─'*(max(0, total_width-n-4))}[/]")
         i = 0
         for line in lines:
