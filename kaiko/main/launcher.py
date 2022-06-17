@@ -71,7 +71,7 @@ class RootDirPath(RecognizedDirPath):
 
         @as_child("logs")
         class logs(RecognizedFilePath):
-            pass
+            "(The printed messages will be recorded here)"
 
         beatshell_history = as_child(".beatshell-history")(beatshell.BeatshellHistory)
         prompt_benchmark = as_child("prompt_benchmark.csv")(beatshell.PromptBenchmark)
