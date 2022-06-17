@@ -243,7 +243,7 @@ class ProfileManager:
         try:
             self.validate_profile_path(path, should_exist=True)
         except InvalidFileOperation as e:
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
         path_mu = file_manager.as_relative_path(path, self.profiles_dir, markup=True)
@@ -269,7 +269,7 @@ class ProfileManager:
         try:
             self.validate_profile_path(self.current_path)
         except InvalidFileOperation as e:
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
         path_mu = file_manager.as_relative_path(self.current_path, self.profiles_dir, markup=True)
@@ -301,7 +301,7 @@ class ProfileManager:
         try:
             self.validate_profile_path(self.current_path, should_exist=True)
         except InvalidFileOperation as e:
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
         path_mu = file_manager.as_relative_path(self.current_path, self.profiles_dir, markup=True)
@@ -347,7 +347,7 @@ class ProfileManager:
         try:
             self.validate_profile_path(path, should_exist=True)
         except InvalidFileOperation as e:
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
         path_mu = file_manager.as_relative_path(path, self.profiles_dir, markup=True)
@@ -404,7 +404,7 @@ class ProfileManager:
         try:
             self.validate_profile_path(path, should_exist=False)
         except InvalidFileOperation as e:
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
         path_mu = file_manager.as_relative_path(path, self.profiles_dir, markup=True)
@@ -454,7 +454,7 @@ class ProfileManager:
         try:
             self.validate_profile_path(path, should_exist=True)
         except InvalidFileOperation as e:
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
         path_mu = file_manager.as_relative_path(path, self.profiles_dir, markup=True)
@@ -488,7 +488,7 @@ class ProfileManager:
             self.validate_profile_path(path, should_exist=True)
             self.validate_profile_path(newpath, should_exist=False)
         except InvalidFileOperation as e:
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
         path_mu = file_manager.as_relative_path(path, self.profiles_dir, markup=True)

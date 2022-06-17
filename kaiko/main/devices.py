@@ -251,9 +251,9 @@ class DevicesCommand:
             logger.print(f"workspace: {logger.as_uri(self.file_manager.root.abs)}")
             logger.print()
 
-            term = os.environ.get("TERM", None)
-            vte = os.environ.get("VTE_VERSION", None)
-            uni = os.environ.get("UNICODE_VERSION", None)
+            term = logger.escape(os.environ.get("TERM", None))
+            vte = logger.escape(os.environ.get("VTE_VERSION", None))
+            uni = logger.escape(os.environ.get("UNICODE_VERSION", None))
             size = shutil.get_terminal_size()
 
             logger.print(f"  terminal type: {term}")
@@ -568,9 +568,9 @@ class DevicesCommand:
 @dn.datanode
 def test_keyboard(logger, devices_settings):
     exit_key = "Esc"
-    exit_key_ = logger.escape(exit_key, type='all')
+    exit_key_mu = logger.escape(exit_key, type='all')
 
-    logger.print(f"[hint/] Press [emph]{exit_key_}[/] to end test.")
+    logger.print(f"[hint/] Press [emph]{exit_key_mu}[/] to end test.")
     logger.print()
     logger.print("[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r", log=False)
 

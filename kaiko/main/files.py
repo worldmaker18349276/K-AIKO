@@ -308,7 +308,7 @@ class FileManager:
                 subpath_mu = self.as_relative_path(subpath, markup=True)
                 if not subpath.abs.exists():
                     logger.print(f"[warn]Missing file {subpath_mu}[/]")
-                    logger.print(f"[data/] Create file [emph]{subpath!s}[/]...")
+                    logger.print(f"[data/] Create file [emph]{logger.escape(str(subpath))}[/]...")
                     subpath.mk(provider)
 
                 elif (
@@ -318,7 +318,7 @@ class FileManager:
                     logger.print(f"[warn]Wrong file type {subpath_mu}[/]")
                     subpath_ = subpath.abs.parent / (subpath.abs.name + REDUNDANT_EXT)
                     subpath_mu_ = self.as_relative_path(subpath_, markup=True)
-                    logger.print(f"[data/] Rename to [emph]{subpath_mu_}[/]...")
+                    logger.print(f"[data/] Rename to {subpath_mu_}...")
                     subpath.abs.rename(subpath_)
                     logger.print(f"[data/] Create file {subpath_mu}...")
                     subpath.mk(provider)
@@ -424,7 +424,7 @@ class FileManager:
             logger = self.logger
             path_mu = self.as_relative_path(path, markup=True)
             logger.print(f"[warn]Failed to change current directory to {path_mu}[/]")
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
 
         self.current = path.normalize()
@@ -437,7 +437,7 @@ class FileManager:
             logger = self.logger
             path_mu = self.as_relative_path(path, markup=True)
             logger.print(f"[warn]Failed to make file: {path_mu}[/]")
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
 
     def rm(self, path):
@@ -448,7 +448,7 @@ class FileManager:
             logger = self.logger
             path_mu = self.as_relative_path(path, markup=True)
             logger.print(f"[warn]Failed to remove file: {path_mu}[/]")
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
 
     def mv(self, path, dst):
@@ -462,7 +462,7 @@ class FileManager:
             logger.print(
                 f"[warn]Failed to move file: {path_mu} -> {dst_mu}[/]"
             )
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
 
     def cp(self, src, path):
@@ -476,7 +476,7 @@ class FileManager:
             logger.print(
                 f"[warn]Failed to copy file: {src_mu} -> {path_mu}[/]"
             )
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
 
     def make_parser(self, desc=None, filter=lambda _: True):
@@ -588,7 +588,7 @@ class FilesCommand:
         except InvalidFileOperation as e:
             path_mu = self.as_relative_path(path, markup=True)
             logger.print(f"[warn]Failed to change directory to {path_mu}[/]")
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
 
         try:

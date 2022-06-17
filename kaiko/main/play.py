@@ -304,7 +304,7 @@ class BeatmapManager:
         try:
             self.validate_beatmapset_path(beatmapset_path, should_exist=True)
         except InvalidFileOperation as e:
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
         path_mu = file_manager.as_relative_path(beatmapset_path, self.beatmaps_dir, markup=True)
@@ -320,7 +320,7 @@ class BeatmapManager:
         try:
             self.validate_beatmap_path(beatmap_path, should_exist=True)
         except InvalidFileOperation as e:
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
         path_mu = file_manager.as_relative_path(beatmapset_path, self.beatmaps_dir, markup=True)
@@ -337,10 +337,10 @@ class BeatmapManager:
             self.validate_beatmapset_path(beatmapset_path, should_exist=False)
             self.file_manager.validate_path(src_path, should_exist=True, should_in_range=False, file_type="dir")
         except InvalidFileOperation as e:
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
-        logger.print(f"[data/] Add a new beatmapset from {src_path!s}...")
+        logger.print(f"[data/] Add a new beatmapset from {logger.escape(str(src_path))}...")
 
         shutil.copytree(str(src_path), str(beatmapset_path))
 
@@ -353,10 +353,10 @@ class BeatmapManager:
             self.validate_beatmap_path(beatmap_path, should_exist=False)
             self.file_manager.validate_path(src_path, should_exist=True, should_in_range=False, file_type="file")
         except InvalidFileOperation as e:
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
-        logger.print(f"[data/] Add a new beatmap from {src_path!s}...")
+        logger.print(f"[data/] Add a new beatmap from {logger.escape(str(src_path))}...")
 
         beatmapset_path = beatmap_path.parent
         if not beatmapset_path.abs.exists():
@@ -415,7 +415,7 @@ class PlayCommand:
         try:
             self.beatmap_manager.validate_beatmap_path(beatmap, should_exist=True)
         except InvalidFileOperation as e:
-            logger.print(f"[warn]{str(e)}[/]")
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
 
         return KAIKOPlay(
