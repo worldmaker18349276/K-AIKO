@@ -151,7 +151,7 @@ class KAIKOLauncher:
             launcher.provider.set(beatmap_manager)
 
             bgm_controller = BGMController(
-                launcher.provider, lambda: launcher.settings.devices.mixer
+                launcher.provider, launcher.settings.bgm, launcher.settings.devices.mixer
             )
             launcher.provider.set(bgm_controller)
 
@@ -212,6 +212,8 @@ class KAIKOLauncher:
                 prompt.new_session(self.get_command_parser())
 
             prompt.set_settings(self.settings.shell)
+            self.bgm_controller.set_settings(self.settings.bgm)
+            self.bgm_controller.set_mixer_settings(self.settings.devices.mixer)
 
     @dn.datanode
     def execute(self, command):

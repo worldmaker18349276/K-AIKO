@@ -4,6 +4,7 @@ import queue
 import dataclasses
 from typing import Optional
 from ..utils import commands as cmd
+from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..devices import audios as aud
 from ..devices import engines
@@ -68,21 +69,46 @@ class StopPreview(BGMAction):
     pass
 
 
-class BGMController:
-    mixer_loader_delay = 3.0
-    preview_delay = 0.5
-    fadein_time = 0.5
-    fadeout_time = 1.0
-    preview_duration = 30.0
+class BGMControllerSettings(cfg.Configurable):
+    r"""
+    Fields
+    ------
+    mixer_loader_delay : float
+        The mixer loader delay.
+    volume : float
+        The master volume of bgm controller.
+    play_delay : float
+        The delay time before the song starts playing.
+    fadein_time : float
+        The fade-in time when switching between songs.
+    fadeout_time : float
+        The fade-out time when switching between songs.
+    preview_duration : float
+        The duration of previewing song.
+    """
 
-    def __init__(
-        self, provider, mixer_settings_getter=engines.MixerSettings
-    ):
+    mixer_loader_delay: float = 3.0
+    volume: float = -10.0
+    play_delay: float = 0.5
+    fadein_time: float = 0.5
+    fadeout_time: float = 1.0
+    preview_duration: float = 30.0
+
+
+class BGMController:
+    def __init__(self, provider, settings, mixer_settings):
         self.provider = provider
-        self._mixer_settings_getter = mixer_settings_getter
+        self.settings = settings
+        self.mixer_settings = mixer_settings
         self._action_queue = queue.Queue()
         self.is_bgm_on = False
         self.current_action = None
+
+    def set_settings(self, settings):
+        self.settings = settings
+
+    def set_mixer_settings(self, mixer_settings):
+        self.mixer_settings = mixer_settings
 
     @property
     def beatmap_manager(self):
@@ -98,8 +124,8 @@ class BGMController:
 
     @dn.datanode
     def execute(self, manager):
-        mixer_factory = lambda: engines.Mixer.create(self._mixer_settings_getter(), manager)
-        mixer_loader = engines.EngineLoader(mixer_factory, self.mixer_loader_delay)
+        mixer_factory = lambda: engines.Mixer.create(self.mixer_settings, manager)
+        mixer_loader = engines.EngineLoader(mixer_factory, self.settings.mixer_loader_delay)
         with mixer_loader.task() as mixer_task:
             with self._bgm_event_loop(mixer_loader.require) as event_task:
                 while True:
@@ -114,12 +140,12 @@ class BGMController:
             if start is None:
                 start = 0.0
             end = (
-                start + self.preview_duration
-                if self.preview_duration is not None
+                start + self.settings.preview_duration
+                if self.settings.preview_duration is not None
                 else None
             )
 
-            yield from dn.sleep(self.preview_delay).join()
+            yield from dn.sleep(self.settings.play_delay).join()
 
             logger = self.logger
             file_manager = self.file_manager
@@ -129,15 +155,15 @@ class BGMController:
             yield from play_fadeinout(
                 mixer,
                 action.song.path,
-                fadein_time=self.fadein_time,
-                fadeout_time=self.fadeout_time,
-                volume=action.song.audio.volume,
+                fadein_time=self.settings.fadein_time,
+                fadeout_time=self.settings.fadeout_time,
+                volume=action.song.audio.volume + self.settings.volume,
                 start=start,
                 end=end,
             ).join()
 
         elif isinstance(action, PlayBGM):
-            yield from dn.sleep(self.preview_delay).join()
+            yield from dn.sleep(self.settings.play_delay).join()
 
             logger = self.logger
             file_manager = self.file_manager
@@ -147,9 +173,9 @@ class BGMController:
             yield from play_fadeinout(
                 mixer,
                 action.song.path,
-                fadein_time=self.fadein_time,
-                fadeout_time=self.fadeout_time,
-                volume=action.song.audio.volume,
+                fadein_time=self.settings.fadein_time,
+                fadeout_time=self.settings.fadeout_time,
+                volume=action.song.audio.volume + self.settings.volume,
                 start=action.start,
             ).join()
 
