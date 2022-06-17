@@ -211,7 +211,7 @@ class KAIKOLauncher:
 
         while True:
             self.logger.print()
-            prompt.print_banner(self.file_manager, self.profile_manager)
+            prompt.print_banner(self.provider)
 
             try:
                 command = yield from prompt.prompt(self.settings.devices).join()

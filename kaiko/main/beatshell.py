@@ -8,7 +8,8 @@ from ..utils import markups as mu
 from ..devices import engines
 from ..tui import widgets
 from ..tui import inputs
-from .files import UnrecognizedPath, RecognizedFilePath
+from .files import FileManager, UnrecognizedPath, RecognizedFilePath
+from .profiles import ProfileManager
 
 
 # widgets
@@ -177,6 +178,8 @@ class BeatShellSettings(cfg.Configurable):
         ------
         banner : str
             The template of banner with slots `user`, `profile` and `path`.
+        info_block : str
+            The template for info of current directory.
 
         user : str
             The template of user with slot `user_name`.
@@ -199,6 +202,8 @@ class BeatShellSettings(cfg.Configurable):
             "[color=bright_black]]][/]"
             " [slot=path/]"
         )
+        info_block: str = f"{'━'*80}\n[slot/]\n{'━'*80}\n"
+
         user: str = "[color=magenta]♜ [weight=bold][slot=user_name/][/][/]"
         profile: Tuple[str, str] = (
             "[color=blue]⚙ [weight=bold][slot=profile_name/][/][/]",
@@ -358,7 +363,10 @@ class BeatPrompt:
             self.logger.print(f"[hint/] Use [emph]{tab_key}[/] to autocomplete command.")
             self.logger.print(f"[hint/] If you need help, press [emph]{help_key}[/].")
 
-    def print_banner(self, file_manager, profile_manager):
+    def print_banner(self, provider):
+        file_manager = provider.get(FileManager)
+        profile_manager = provider.get(ProfileManager)
+
         banner_settings = self.settings.banner
 
         username = file_manager.username
@@ -393,5 +401,15 @@ class BeatPrompt:
             path=path_markup,
         )
 
+        info = file_manager.current.info_detailed(provider)
+        if info is not None:
+            info_markup = self.logger.rich.parse(info, root_tag=True)
+            info_block = self.logger.rich.parse(banner_settings.info_block, expand=False, slotted=True)
+            info_markup = info_block(info_markup)
+        else:
+            info_markup = None
+
         self.logger.print(banner_markup, log=False)
+        if info_markup is not None:
+            self.logger.print(info_markup, log=False)
 

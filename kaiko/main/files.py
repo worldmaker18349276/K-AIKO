@@ -48,9 +48,9 @@ class RecognizedPath:
 
         docs = doc.split("\n\n", 1)
         if len(docs) == 1:
-            return doc
-        else:
-            return cleandoc(docs[1])
+            return None
+
+        return cleandoc(docs[1])
 
     def mk(self, provider):
         file_manager = provider.get(FileManager)
@@ -811,7 +811,11 @@ class PathParser(cmd.ArgumentParser):
     def info(self, token):
         if self.provider is None:
             return None
-        return self.parse(token).info_detailed(self.provider)
+        path = self.parse(token)
+        info = path.info_detailed(self.provider)
+        if info is None:
+            info = path.info(self.provider)
+        return info
 
 
 def DirectCdCommand(provider):
