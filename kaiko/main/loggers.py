@@ -236,6 +236,15 @@ class Logger:
             finally:
                 self._redirect_queue = None
 
+    @contextlib.contextmanager
+    def mute(self):
+        redirect_queue = queue.Queue()
+        try:
+            self._redirect_queue = redirect_queue
+            yield
+        finally:
+            self._redirect_queue = None
+
     def backslashreplace(self, ch):
         if ch in "\a\r\n\t\b\v\f":
             return f"[codepoint]{repr(ch)[1:-1]}[/]"

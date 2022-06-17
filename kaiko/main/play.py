@@ -490,14 +490,15 @@ class KAIKOPlay:
         print_hints(logger, gameplay_settings)
         logger.print()
 
-        score, devices_settings = yield from beatmap.play(
-            manager,
-            self.resources_dir.abs,
-            self.cache_dir.abs,
-            self.start,
-            devices_settings,
-            gameplay_settings,
-        ).join()
+        with logger.mute():
+            score, devices_settings = yield from beatmap.play(
+                manager,
+                self.resources_dir.abs,
+                self.cache_dir.abs,
+                self.start,
+                devices_settings,
+                gameplay_settings,
+            ).join()
 
         logger.print()
         logger.print_scores(
