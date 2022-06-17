@@ -220,7 +220,7 @@ class Logger:
         (view, msgs, logs), _, _ = yield
         while True:
             while not queue.empty():
-                logs.append(queue.get())
+                logs.append(queue.get().expand())
             (view, msgs, logs), _, _ = yield (view, msgs, logs)
 
     @contextlib.contextmanager
