@@ -419,7 +419,7 @@ class PlayCommand:
             return
 
         return KAIKOPlay(
-            load_beatmap(beatmap, self.file_manager, self.profile_manager, self.logger),
+            load_beatmap(beatmap, self.file_manager, self.beatmap_manager, self.logger),
             start,
             self.resources_dir,
             self.cache_dir,
@@ -564,13 +564,13 @@ def print_hints(logger, settings):
 
 
 @dn.datanode
-def load_beatmap(beatmap_path, file_manager, profile_manager, logger):
+def load_beatmap(beatmap_path, file_manager, beatmap_manager, logger):
     yield
     try:
         return beatsheets.read(str(beatmap_path))
 
     except beatsheets.BeatmapParseError:
-        path_mu = file_manager.as_relative_path(beatmap_path, profile_manager.beatmaps_dir, markup=True)
+        path_mu = file_manager.as_relative_path(beatmap_path, beatmap_manager.beatmaps_dir, markup=True)
         logger.print(f"[warn]Failed to read beatmap: {path_mu}[/]")
         logger.print_traceback()
         return
