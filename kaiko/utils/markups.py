@@ -18,14 +18,46 @@ import wcwidth
 
 
 class MarkupParseError(Exception):
+    def __init__(self, text, index):
+        self.text = text
+        self.index = index
+
+    @staticmethod
+    @contextlib.contextmanager
+    def at(text, index):
+        try:
+            yield
+        except Exception as e:
+            raise MarkupParseError(text, index) from e
+
+    @staticmethod
+    def locate(text, index):
+        if index > len(text):
+            raise IndexError("string index out of range")
+        line = text.count("\n", 0, index)
+        last_ln = text.rfind("\n", 0, index)
+        col = index - (last_ln + 1)
+        return (line, col)
+
+    def __str__(self):
+        if self.index > len(self.text):
+            return f"<out of bounds index {self.index}>"
+        line, col = MarkupParseError.locate(self.text, self.index)
+        return (
+            f"parse fail at {line}:{col}, {self.__cause__!s}\n"
+            + self.text[: self.index]
+            + "◊"
+            + self.text[self.index :]
+        )
+
+
+class TagError(Exception):
     pass
 
 
-def loc_at(text, index):
-    line = text.count("\n", 0, index)
-    last_ln = text.rfind("\n", 0, index)
-    col = index - (last_ln + 1)
-    return f"{line}:{col}"
+class ParamError(Exception):
+    pass
+
 
 MU_TOKEN = re.compile(r"(?P<text>([^\[]|\[\[)+)|(?P<tag>\[[^\]]*\])")
 STAG = re.compile(r"^\[(?P<name>\w+)(?:=(?P<param>.*))?/\]$")
@@ -44,45 +76,45 @@ def parse_markup(markup_str, tags, props={}):
             continue
 
         tag = match.group("tag")
+        with MarkupParseError.at(markup_str, match.start("tag")):
+            match_end = ETAG.match(tag)
+            if match_end:  # [/]
+                if len(stack) <= 1:
+                    raise TagError("too many closing tag")
+                markup_type, children, *param = stack.pop()
+                markup = markup_type(tuple(children), *param)
+                stack[-1][1].append(markup)
+                continue
 
-        match_end = ETAG.match(tag)
-        if match_end:  # [/]
-            if len(stack) <= 1:
-                loc = loc_at(markup_str, match.start("tag"))
-                raise MarkupParseError(f"parse failed at {loc}, too many closing tag")
-            markup_type, children, *param = stack.pop()
-            markup = markup_type(tuple(children), *param)
-            stack[-1][1].append(markup)
-            continue
+            match_single = STAG.match(tag)  # [tag=param/]
+            if match_single:
+                name = match_single.group("name")
+                param_str = match_single.group("param")
 
-        match_single = STAG.match(tag)  # [tag=param/]
-        if match_single:
-            name = match_single.group("name")
-            param_str = match_single.group("param")
-            if name not in tags or not issubclass(tags[name], Single):
-                loc = loc_at(markup_str, match.start("tag"))
-                raise MarkupParseError(f"parse failed at {loc}, unknown tag [{name}/]")
-            param = tags[name].parse(param_str)
-            if name in props:
-                param += props[name]
-            stack[-1][1].append(tags[name](*param))
-            continue
+                if name not in tags or not issubclass(tags[name], Single):
+                    raise TagError(f"unknown tag [{name}/]")
+                param = tags[name].parse(param_str)
 
-        match_pair = PTAG.match(tag)  # [tag=param]
-        if match_pair:
-            name = match_pair.group("name")
-            param_str = match_pair.group("param")
-            if name not in tags or not issubclass(tags[name], Pair):
-                loc = loc_at(markup_str, match.start("tag"))
-                raise MarkupParseError(f"parse failed at {loc}, unknown tag [{name}]")
-            param = tags[name].parse(param_str)
-            if name in props:
-                param += props[name]
-            stack.append((tags[name], [], *param))
-            continue
+                if name in props:
+                    param += props[name]
+                stack[-1][1].append(tags[name](*param))
+                continue
 
-        loc = loc_at(markup_str, match.start("tag"))
-        raise MarkupParseError(f"parse failed at {loc}, invalid tag {tag}")
+            match_pair = PTAG.match(tag)  # [tag=param]
+            if match_pair:
+                name = match_pair.group("name")
+                param_str = match_pair.group("param")
+
+                if name not in tags or not issubclass(tags[name], Pair):
+                    raise TagError(f"unknown tag [{name}]")
+                param = tags[name].parse(param_str)
+
+                if name in props:
+                    param += props[name]
+                stack.append((tags[name], [], *param))
+                continue
+
+            raise TagError(f"invalid tag {tag}")
 
     for i in range(len(stack) - 1, 0, -1):
         markup_type, children, *param = stack[i]
@@ -276,7 +308,7 @@ class CustomSingleTag(Single):
     @classmethod
     def parse(cls, param):
         if param is not None:
-            raise MarkupParseError("no parameter is needed for template tag")
+            raise ParamError("no parameter is needed for template tag")
         return ()
 
     @property
@@ -311,7 +343,7 @@ class CustomPairTag(Pair):
     @classmethod
     def parse(cls, param):
         if param is not None:
-            raise MarkupParseError("no parameter is needed for template tag")
+            raise ParamError("no parameter is needed for template tag")
         return ()
 
     @property
@@ -373,7 +405,7 @@ class CSI(Single):
     @classmethod
     def parse(cls, param):
         if param is None:
-            raise MarkupParseError(f"missing parameter for tag [{cls.name}/]")
+            raise ParamError(f"missing parameter for tag [{cls.name}/]")
         return (param,)
 
     @property
@@ -397,11 +429,11 @@ class Move(Single):
     @classmethod
     def parse(cls, param):
         if param is None:
-            raise MarkupParseError(f"missing parameter for tag [{cls.name}/]")
+            raise ParamError(f"missing parameter for tag [{cls.name}/]")
         try:
             x, y = tuple(int(n) for n in param.split(","))
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{cls.name}/]: {param}")
+            raise ParamError(f"invalid parameter for tag [{cls.name}/]: {param}")
         return x, y
 
     @property
@@ -442,11 +474,11 @@ class Pos(Single):
     @classmethod
     def parse(cls, param):
         if param is None:
-            raise MarkupParseError(f"missing parameter for tag [{cls.name}/]")
+            raise ParamError(f"missing parameter for tag [{cls.name}/]")
         try:
             x, y = tuple(int(n) for n in param.split(","))
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{cls.name}/]: {param}")
+            raise ParamError(f"invalid parameter for tag [{cls.name}/]: {param}")
         return x, y
 
     @property
@@ -468,11 +500,11 @@ class Scroll(Single):
     @classmethod
     def parse(cls, param):
         if param is None:
-            raise MarkupParseError(f"missing parameter for tag [{cls.name}/]")
+            raise ParamError(f"missing parameter for tag [{cls.name}/]")
         try:
             x = int(param)
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{cls.name}/]: {param}")
+            raise ParamError(f"invalid parameter for tag [{cls.name}/]: {param}")
         return (x,)
 
     @property
@@ -513,9 +545,9 @@ class Clear(Single):
     @classmethod
     def parse(cls, param):
         if param is None:
-            raise MarkupParseError(f"missing parameter for tag [{cls.name}/]")
+            raise ParamError(f"missing parameter for tag [{cls.name}/]")
         if all(param != region.name for region in ClearRegion):
-            raise MarkupParseError(f"invalid parameter for tag [{cls.name}/]: {param}")
+            raise ParamError(f"invalid parameter for tag [{cls.name}/]: {param}")
         region = ClearRegion[param]
 
         return (region,)
@@ -545,7 +577,7 @@ class SGR(Pair):
         try:
             attr = tuple(int(n or "0") for n in param.split(";"))
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
+            raise ParamError(f"invalid parameter for tag [{cls.name}]: {param}")
         return attr
 
     @property
@@ -578,7 +610,7 @@ class SimpleAttr(Pair):
         if param is None:
             param = next(iter(cls._options.keys()))
         if param not in cls._options:
-            raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
+            raise ParamError(f"invalid parameter for tag [{cls.name}]: {param}")
         return (param,)
 
     def expand(self):
@@ -744,7 +776,7 @@ class Color(Pair):
         try:
             rgb = Palette(param) if param in color_names else int(param, 16)
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
+            raise ParamError(f"invalid parameter for tag [{cls.name}]: {param}")
         return (rgb,)
 
     @property
@@ -815,7 +847,7 @@ class BgColor(Pair):
         try:
             rgb = Palette(param) if param in color_names else int(param, 16)
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
+            raise ParamError(f"invalid parameter for tag [{cls.name}]: {param}")
         return (rgb,)
 
     @property
@@ -861,7 +893,7 @@ class ControlCharacter(Single):
     @classmethod
     def parse(cls, param):
         if param is not None:
-            raise MarkupParseError(f"no parameter is needed for tag [{cls.name}/]")
+            raise ParamError(f"no parameter is needed for tag [{cls.name}/]")
         return ()
 
     @property
@@ -920,7 +952,7 @@ class Space(Single):
     @classmethod
     def parse(cls, param):
         if param is not None:
-            raise MarkupParseError(f"no parameter is needed for tag [{cls.name}/]")
+            raise ParamError(f"no parameter is needed for tag [{cls.name}/]")
         return ()
 
     @property
@@ -940,9 +972,9 @@ class Wide(Single):
     @classmethod
     def parse(cls, param):
         if param is None:
-            raise MarkupParseError(f"missing parameter for tag [{cls.name}/]")
+            raise ParamError(f"missing parameter for tag [{cls.name}/]")
         if len(param) != 1 or not param.isprintable():
-            raise MarkupParseError(f"invalid parameter for tag [{cls.name}/]: {param}")
+            raise ParamError(f"invalid parameter for tag [{cls.name}/]: {param}")
         return (param,)
 
     @property
@@ -966,11 +998,11 @@ class X(Single):
     @classmethod
     def parse(cls, param):
         if param is None:
-            raise MarkupParseError(f"missing parameter for tag [{cls.name}]")
+            raise ParamError(f"missing parameter for tag [{cls.name}]")
         try:
             x = int(param)
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
+            raise ParamError(f"invalid parameter for tag [{cls.name}]: {param}")
         return (x,)
 
     @property
@@ -986,11 +1018,11 @@ class DX(Single):
     @classmethod
     def parse(cls, param):
         if param is None:
-            raise MarkupParseError(f"missing parameter for tag [{cls.name}]")
+            raise ParamError(f"missing parameter for tag [{cls.name}]")
         try:
             dx = int(param)
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
+            raise ParamError(f"invalid parameter for tag [{cls.name}]: {param}")
         return (dx,)
 
     @property
@@ -1005,7 +1037,7 @@ class Restore(Pair):
     @classmethod
     def parse(cls, param):
         if param is not None:
-            raise MarkupParseError(f"no parameter is needed for tag [{cls.name}]")
+            raise ParamError(f"no parameter is needed for tag [{cls.name}]")
         return ()
 
     @property
@@ -1023,7 +1055,7 @@ class Mask(Pair):
         try:
             start, stop = [int(p) if p else None for p in (param or ":").split(":")]
         except ValueError:
-            raise MarkupParseError(f"invalid parameter for tag [{cls.name}]: {param}")
+            raise ParamError(f"invalid parameter for tag [{cls.name}]: {param}")
         return (slice(start, stop),)
 
     @property
@@ -1038,7 +1070,7 @@ class Rich(Pair):
     @classmethod
     def parse(cls, param):
         if param is not None:
-            raise MarkupParseError(f"no parameter is needed for tag [{cls.name}/]")
+            raise ParamError(f"no parameter is needed for tag [{cls.name}/]")
         return ()
 
     @property
