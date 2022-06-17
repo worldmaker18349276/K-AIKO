@@ -2,7 +2,7 @@ import re
 import contextlib
 import enum
 import dataclasses
-from typing import Union, Sequence
+from typing import Optional, Union, Sequence
 import wcwidth
 
 # pair: [tag=param]...[/]
@@ -27,23 +27,26 @@ def loc_at(text, index):
     col = index - (last_ln + 1)
     return f"{line}:{col}"
 
+MU_TOKEN = re.compile(r"(?P<text>([^\[]|\[\[)+)|(?P<tag>\[[^\]]*\])")
+STAG = re.compile(r"^\[(?P<name>\w+)(?:=(?P<param>.*))?/\]$")
+PTAG = re.compile(r"^\[(?P<name>\w+)(?:=(?P<param>.*))?\]$")
+ETAG = re.compile(r"\[/\]")
 
 def parse_markup(markup_str, tags, props={}):
     stack = [(Group, [])]
 
-    for match in re.finditer(
-        r"(?P<text>([^\[]|\[\[)+)|(?P<tag>\[[^\]]*\])", markup_str
-    ):
-        tag = match.group("tag")
+    for match in MU_TOKEN.finditer(markup_str):
         text = match.group("text")
-
         if text is not None:
             # process escapes
             raw = text.replace("[[", "[").replace("]]", "]")
             stack[-1][1].append(Text(raw))
             continue
 
-        if tag == "[/]":  # [/]
+        tag = match.group("tag")
+
+        match_end = ETAG.match(tag)
+        if match_end:  # [/]
             if len(stack) <= 1:
                 loc = loc_at(markup_str, match.start("tag"))
                 raise MarkupParseError(f"parse failed at {loc}, too many closing tag")
@@ -52,10 +55,10 @@ def parse_markup(markup_str, tags, props={}):
             stack[-1][1].append(markup)
             continue
 
-        match_single = re.match(r"^\[(\w+)(?:=(.*))?/\]$", tag)  # [tag=param/]
+        match_single = STAG.match(tag)  # [tag=param/]
         if match_single:
-            name = match_single.group(1)
-            param_str = match_single.group(2)
+            name = match_single.group("name")
+            param_str = match_single.group("param")
             if name not in tags or not issubclass(tags[name], Single):
                 loc = loc_at(markup_str, match.start("tag"))
                 raise MarkupParseError(f"parse failed at {loc}, unknown tag [{name}/]")
@@ -65,10 +68,10 @@ def parse_markup(markup_str, tags, props={}):
             stack[-1][1].append(tags[name](*param))
             continue
 
-        match_pair = re.match("^\[(\w+)(?:=(.*))?\]$", tag)  # [tag=param]
+        match_pair = PTAG.match(tag)  # [tag=param]
         if match_pair:
-            name = match_pair.group(1)
-            param_str = match_pair.group(2)
+            name = match_pair.group("name")
+            param_str = match_pair.group("param")
             if name not in tags or not issubclass(tags[name], Pair):
                 loc = loc_at(markup_str, match.start("tag"))
                 raise MarkupParseError(f"parse failed at {loc}, unknown tag [{name}]")
