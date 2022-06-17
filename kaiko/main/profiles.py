@@ -189,6 +189,7 @@ class ProfileManager:
         # update profiles
         profiles_mtime = self.profiles_dir.abs.stat().st_mtime
         if self._profiles_mtime != profiles_mtime:
+            self.logger.print("[data/] Update profiles...")
             self._profile_paths = list(self.profiles_dir.profile)
             self._profiles_mtime = profiles_mtime
 
@@ -196,6 +197,7 @@ class ProfileManager:
         default_meta_path = self.profiles_dir.default
         default_mtime = default_meta_path.abs.stat().st_mtime if default_meta_path.abs.exists() else None
         if default_mtime is None or self._default_mtime != default_mtime:
+            self.logger.print("[data/] Update default profile...")
             default_path = default_meta_path.abs.read_text().rstrip("\n") if default_meta_path.abs.exists() else ""
             default_path = self.profiles_dir.abs / default_path
             default_path = self.profiles_dir.recognize(default_path)

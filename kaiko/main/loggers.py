@@ -25,6 +25,8 @@ class LoggerSettings(cfg.Configurable):
         The template of info icon.
     hint : single tag
         The template of hint icon.
+    music : single tag
+        The template of music icon.
 
     emph : pair tag
         The template of emph log.
@@ -44,6 +46,7 @@ class LoggerSettings(cfg.Configurable):
     data: str = "[color=bright_green][wide=🖿/][/]"
     info: str = "[color=bright_blue][wide=🛠/][/]"
     hint: str = "[color=bright_yellow][wide=🖈/][/]"
+    music: str = "[color=bright_magenta][wide=🎜/][/]"
 
     emph: str = "[weight=bold][slot/][/]"
     verb: str = "[weight=dim][slot/][/]"

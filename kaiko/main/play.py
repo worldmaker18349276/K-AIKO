@@ -140,14 +140,25 @@ class BeatmapManager:
     def file_manager(self):
         return self.provider.get(FileManager)
 
+    @property
+    def logger(self):
+        return self.provider.get(Logger)
+
     def update_beatmapsdir(self):
         if self._beatmaps.mtime == self.beatmaps_dir.abs.stat().st_mtime:
             return
+
+        logger = self.logger
+        file_manager = self.file_manager
+
+        logger.print("[data/] Load beatmaps...")
 
         # unzip beatmapset file
         for zip_file in self.beatmaps_dir.beatmap_zip:
             dst_path = zip_file.abs.parent / zip_file.abs.stem
             if not dst_path.exists():
+                path_str = logger.escape(file_manager.as_relative_path(zip_file))
+                logger.print(f"[data/] Unzip file [emph]{path_str}[/]...")
                 dst_path.mkdir()
                 zf = zipfile.ZipFile(str(zip_file), "r")
                 zf.extractall(path=str(dst_path))
@@ -183,6 +194,11 @@ class BeatmapManager:
         if _beatmapset.mtime == beatmapset_mtime:
             return
 
+        logger = self.logger
+        file_manager = self.file_manager
+        path_str = logger.escape(file_manager.as_relative_path(beatmapset_path))
+        logger.log(f"[data/] Load beatmapsets [emph]{path_str}[/]...")
+
         old_beatmap_paths = set(_beatmapset.cache.keys())
 
         for beatmap_path in beatmapset_path.beatmap:
@@ -215,6 +231,11 @@ class BeatmapManager:
 
         if _beatmap.mtime == beatmap_mtime:
             return
+
+        logger = self.logger
+        file_manager = self.file_manager
+        path_str = logger.escape(file_manager.as_relative_path(beatmap_path))
+        logger.log(f"[data/] Load beatmap [emph]{path_str}[/]...")
 
         try:
             beatmap_metadata = beatsheets.read(str(beatmap_path), metadata_only=True)
@@ -275,7 +296,7 @@ class BeatmapManager:
         file_manager.validate_path(path, should_exist=should_exist, file_type="file")
 
     def remove_beatmapset(self, beatmapset_path):
-        logger = self.provider.get(Logger)
+        logger = self.logger
 
         beatmapset_path = beatmapset_path.normalize()
 
@@ -290,7 +311,7 @@ class BeatmapManager:
         shutil.rmtree(str(beatmapset_path))
 
     def remove_beatmap(self, beatmap_path):
-        logger = self.provider.get(Logger)
+        logger = self.logger
 
         beatmap_path = beatmap_path.normalize()
 
@@ -306,7 +327,7 @@ class BeatmapManager:
         beatmap_path.abs.unlink()
 
     def add_beatmapset(self, beatmapset_path, src_path):
-        logger = self.provider.get(Logger)
+        logger = self.logger
 
         beatmapset_path = beatmapset_path.normalize()
 
@@ -324,7 +345,7 @@ class BeatmapManager:
         return True
 
     def add_beatmap(self, beatmap_path, src_path):
-        logger = self.provider.get(Logger)
+        logger = self.logger
 
         try:
             self.validate_beatmap_path(beatmap_path, should_exist=False)

@@ -92,6 +92,10 @@ class BGMController:
     def file_manager(self):
         return self.provider.get(FileManager)
 
+    @property
+    def logger(self):
+        return self.provider.get(Logger)
+
     @dn.datanode
     def execute(self, manager):
         mixer_factory = lambda: engines.Mixer.create(self._mixer_settings_getter(), manager)
@@ -117,6 +121,11 @@ class BGMController:
 
             yield from dn.sleep(self.preview_delay).join()
 
+            logger = self.logger
+            file_manager = self.file_manager
+            path_str = file_manager.as_relative_path(UnrecognizedPath(action.song.path, False))
+            logger.print(f"[music/] will preview: [emph]{path_str}[/]")
+
             yield from play_fadeinout(
                 mixer,
                 action.song.path,
@@ -129,6 +138,11 @@ class BGMController:
 
         elif isinstance(action, PlayBGM):
             yield from dn.sleep(self.preview_delay).join()
+
+            logger = self.logger
+            file_manager = self.file_manager
+            path_str = file_manager.as_relative_path(UnrecognizedPath(action.song.path, False))
+            logger.print(f"[music/] will play: [emph]{path_str}[/]")
 
             yield from play_fadeinout(
                 mixer,
@@ -349,14 +363,7 @@ class BGMSubCommand:
         self._play(song, start)
 
     def _play(self, song, start=None):
-        logger = self.logger
-        bgm_controller = self.bgm_controller
-        file_manager = self.file_manager
-
-        path_str = file_manager.as_relative_path(UnrecognizedPath(song.path, False))
-        logger.print(f"will play: [emph]{path_str}[/]")
-
-        bgm_controller.play(song, start)
+        self.bgm_controller.play(song, start)
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
@@ -383,14 +390,14 @@ class BGMSubCommand:
         current = bgm_controller.current_action
         if isinstance(current, PlayBGM):
             path_str = file_manager.as_relative_path(UnrecognizedPath(current.song.path, False))
-            logger.print(f"now playing: [emph]{path_str}[/]")
+            logger.print(f"[music/] now playing: [emph]{path_str}[/]")
 
         elif isinstance(current, PreviewSong):
             path_str = file_manager.as_relative_path(UnrecognizedPath(current.song.path, False))
-            logger.print(f"now previewing: [emph]{path_str}[/]")
+            logger.print(f"[music/] now previewing: [emph]{path_str}[/]")
 
         elif current is None:
-            logger.print("no song")
+            logger.print("[music/] no song is playing")
 
         else:
             assert False
