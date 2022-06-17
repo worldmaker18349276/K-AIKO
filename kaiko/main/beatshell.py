@@ -330,9 +330,13 @@ class BeatPrompt:
 
         result = self.input.result
         if isinstance(result, inputs.ErrorResult):
+            self.logger.log(f"parse command: {result.command_str}")
             raise PromptError(result.error)
         elif isinstance(result, inputs.CompleteResult):
+            self.logger.log(f"parse command: [{result.command_group}] {result.command_str}")
             return result.command
+        elif isinstance(result, inputs.EmptyResult):
+            return lambda:None
         else:
             raise TypeError
 

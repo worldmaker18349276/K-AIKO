@@ -283,13 +283,21 @@ class Result:
 
 
 @dataclasses.dataclass(frozen=True)
+class EmptyResult(Result):
+    pass
+
+
+@dataclasses.dataclass(frozen=True)
 class ErrorResult(Result):
+    command_str: str
     index : Optional[int]
     error: Exception
 
 
 @dataclasses.dataclass(frozen=True)
 class CompleteResult(Result):
+    command_group: str
+    command_str: str
     command: Callable
 
 
@@ -1219,8 +1227,10 @@ class Input:
         self.cancel_hint()
 
         if not self.editor.tokens:
-            self._finish_session(CompleteResult(lambda: None))
+            self._finish_session(EmptyResult())
             return True
+
+        command_str = "".join(self.editor.buffer).strip()
 
         if self.editor.lex_state == sheditors.SHLEXER_STATE.BACKSLASHED:
             res, index = ShellSyntaxError("No escaped character"), len(self.editor.tokens) - 1
@@ -1230,13 +1240,13 @@ class Input:
             res, index = self.editor.result, self.editor.length
 
         if isinstance(res, cmd.CommandUnfinishError):
-            self._finish_session(ErrorResult(None, res))
+            self._finish_session(ErrorResult(command_str, None, res))
             return False
         elif isinstance(res, (cmd.CommandParseError, ShellSyntaxError)):
-            self._finish_session(ErrorResult(index, res))
+            self._finish_session(ErrorResult(command_str, index, res))
             return False
         else:
-            self._finish_session(CompleteResult(res))
+            self._finish_session(CompleteResult(str(self.editor.group), command_str, res))
             return True
 
     @locked
@@ -1329,7 +1339,8 @@ class Input:
     @locked
     def unknown_key(self, key):
         self.cancel_hint()
-        self._finish_session(ErrorResult(None, ValueError(f"Unknown key: " + key)))
+        command_str = "".join(self.editor.buffer).strip()
+        self._finish_session(ErrorResult(command_str, None, ValueError(f"Unknown key: " + key)))
 
 
 class InputStroke:
