@@ -44,7 +44,13 @@ logo = """
 
 
 class RootDirPath(RecognizedDirPath):
-    "(The workspace of KAIKO)"
+    """The workspace of KAIKO
+
+    [rich]All data for this game will be stored here, like beatmaps, settings and
+    cache data.  To manage your data, use the commands [cmd]rm[/], [cmd]mk[/], [cmd]cp[/] and [cmd]mv[/]
+    like bash.  Use the command [cmd]cd[/] or type folder name directly to change
+    the current directory.
+    """
 
     def mk(self, provider):
         self.abs.mkdir()
@@ -57,21 +63,29 @@ class RootDirPath(RecognizedDirPath):
 
     @as_child("Resources")
     class resources(RecognizedDirPath):
-        "(The place to store some resources of KAIKO)"
+        """The place to store some resources of KAIKO"""
 
         def mk(self, provider):
             self.abs.mkdir()
 
     @as_child("Cache")
     class cache(RecognizedDirPath):
-        "(The place to cache some data for better exprience)"
+        """The place to cache some data for better experience
+
+        [rich][color=bright_white]┌──────┐[/]
+        [color=bright_white]│>#&$% │[/]
+        [color=bright_white]│>$@!*&│[/] Cached data stored here will be used to improve user experience
+        [color=bright_white]│>{:?  │[/] and debugging, deleting them will not break the system, so feel
+        [color=bright_white]│~     │[/] free to manage them.
+        [color=bright_white]└──────┘[/]
+        """
 
         def mk(self, provider):
             self.abs.mkdir()
 
         @as_child("logs")
         class logs(RecognizedFilePath):
-            "(The printed messages will be recorded here)"
+            "The printed messages will be recorded here"
 
         beatshell_history = as_child(".beatshell-history")(beatshell.BeatshellHistory)
         prompt_benchmark = as_child("prompt_benchmark.csv")(beatshell.PromptBenchmark)

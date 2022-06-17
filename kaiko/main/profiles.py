@@ -42,7 +42,15 @@ def edit_by_external_editor(text, editor, suffix=""):
 
 
 class ProfilesDirPath(RecognizedDirPath):
-    "(The place to manage your profiles)"
+    """The place to manage your profiles
+
+    [rich][color=bright_blue]⠀⡠⠤⣀⠎⠉⢆⡠⠤⡀⠀[/]
+    [color=bright_blue]⠀⢣⠀⠀⠀⠀⠀⠀⢠⠃⠀[/]
+    [color=bright_blue]⡎⠁⠀⠀⡎⠉⡆⠀⠀⠉⡆[/] Your settings will be managed here.  Use the commands [cmd]get[/], [cmd]set[/]
+    [color=bright_blue]⠈⡱⠀⠀⠈⠉⠀⠀⠰⡉⠀[/] and [cmd]unset[/] to configure your settings.  You can switch to
+    [color=bright_blue]⠀⠣⠤⠒⡄⠀⡔⠢⠤⠃⠀[/] different set of settings by the command [cmd]use[/].
+    [color=bright_blue]⠀⠀⠀⠀⠈⠉⠀⠀⠀⠀⠀[/]
+    """
 
     def rm(self, provider):
         raise InvalidFileOperation("Deleting important directories or files may crash the program")
@@ -53,7 +61,7 @@ class ProfilesDirPath(RecognizedDirPath):
 
         def info(self, provider):
             profile_manager = provider.get(ProfileManager)
-            note = "(Your custom profile)"
+            note = "Your custom profile"
             if self.abs == profile_manager.default_path.abs:
                 note += " (default)"
             if self.abs == profile_manager.current_path.abs:
@@ -90,7 +98,7 @@ class ProfilesDirPath(RecognizedDirPath):
 
     @as_child(".default-profile")
     class default(RecognizedFilePath):
-        "(The file of default profile name)"
+        "The file of default profile name"
 
         def mk(self, provider):
             super().mk(provider)

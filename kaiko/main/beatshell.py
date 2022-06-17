@@ -216,11 +216,11 @@ class PromptError(Exception):
 
 
 class BeatshellHistory(RecognizedFilePath):
-    "(The command history)"
+    "The command history"
 
 
 class PromptBenchmark(RecognizedFilePath):
-    "(The prompt benchmark data)"
+    "The prompt benchmark data"
 
 
 class BeatPrompt:

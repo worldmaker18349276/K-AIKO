@@ -3,6 +3,7 @@ import dataclasses
 import getpass
 import re
 import shutil
+from inspect import cleandoc
 from pathlib import Path
 from ..utils import config as cfg
 from ..utils import markups as mu
@@ -35,10 +36,21 @@ class RecognizedPath:
         return abspath
 
     def info(self, provider):
-        return type(self).__doc__
+        doc = type(self).__doc__
+        if doc is None:
+            return None
+        return doc.split("\n", 1)[0]
 
     def info_detailed(self, provider):
-        return None
+        doc = type(self).__doc__
+        if doc is None:
+            return None
+
+        docs = doc.split("\n\n", 1)
+        if len(docs) == 1:
+            return doc
+        else:
+            return cleandoc(docs[1])
 
     def mk(self, provider):
         file_manager = provider.get(FileManager)

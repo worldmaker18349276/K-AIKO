@@ -18,7 +18,15 @@ from pyaudio import PyAudio
 
 
 class DevicesDirPath(RecognizedDirPath):
-    "(The place to manage your devices)"
+    """The place to manage your devices
+
+    [rich][color=bright_cyan]  ╭────────▫ ╭──────6[/]
+    [color=bright_cyan]1─╯╭─────▫ │ │ ╔════7[/] This folder doesn't contain any meaningful file, but
+    [color=bright_cyan]2──╯╭──▫─│─│─│─║────8[/] is used to manage your devices such as keyboard,
+    [color=bright_cyan]3───╯╭─┆─⬡ ⬡ ⬡ ║ ╭──9[/] terminal, audios, etc.
+    [color=bright_cyan]4────╯ └╌╌⬡ □ ─║─╯╭─0[/]
+    [color=bright_cyan]5──━━━━━━──────╨──╯  [/] Use the command [cmd]show[/] to view the details of your device.
+    """
 
     def rm(self, provider):
         raise InvalidFileOperation("Deleting important directories or files may crash the program")

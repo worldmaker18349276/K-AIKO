@@ -20,6 +20,8 @@ from .profiles import ProfileManager
 
 
 class BeatmapFilePath(RecognizedFilePath):
+    "Beatmap of a song"
+
     def info_detailed(self, provider):
         beatmap_manager = provider.get(BeatmapManager)
         logger = provider.get(Logger)
@@ -59,7 +61,7 @@ class BeatmapFilePath(RecognizedFilePath):
 
 
 class BeatmapsetDirPath(RecognizedDirPath):
-    "(Beatmapset of a song)"
+    "Beatmapset of a song"
 
     def rm(self, provider):
         beatmap_manager = provider.get(BeatmapManager)
@@ -98,7 +100,13 @@ class BeatmapsetDirPath(RecognizedDirPath):
 
 
 class BeatmapsDirPath(RecognizedDirPath):
-    "(The place to hold your beatmaps)"
+    """The place to hold your beatmaps
+
+    [rich][color=bright_blue]█▀▀▀▀▀▀█[/]
+    [color=bright_blue]█ ▓▓▓▓ █[/] All the beatmaps will be managed here.  You should put the .osz
+    [color=bright_blue]█ ▓▓▓▓ █[/] file or the unzipped beatmapset folder here.  You can use the
+    [color=bright_blue]█▄▄▄▄▄▄█[/] command [cmd]play[/] to play the beatmap in this folder.
+    """
 
     def rm(self, provider):
         raise InvalidFileOperation("Deleting important directories or files may crash the program")
