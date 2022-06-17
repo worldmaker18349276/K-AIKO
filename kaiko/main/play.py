@@ -157,8 +157,8 @@ class BeatmapManager:
         for zip_file in self.beatmaps_dir.beatmap_zip:
             dst_path = zip_file.abs.parent / zip_file.abs.stem
             if not dst_path.exists():
-                path_str = logger.escape(file_manager.as_relative_path(zip_file))
-                logger.print(f"[data/] Unzip file [emph]{path_str}[/]...")
+                path_mu = file_manager.as_relative_path(zip_file, markup=True)
+                logger.print(f"[data/] Unzip file {path_mu}...")
                 dst_path.mkdir()
                 zf = zipfile.ZipFile(str(zip_file), "r")
                 zf.extractall(path=str(dst_path))
@@ -196,8 +196,8 @@ class BeatmapManager:
 
         logger = self.logger
         file_manager = self.file_manager
-        path_str = logger.escape(file_manager.as_relative_path(beatmapset_path))
-        logger.log(f"[data/] Load beatmapsets [emph]{path_str}[/]...")
+        path_mu = file_manager.as_relative_path(beatmapset_path, markup=True)
+        logger.log(f"[data/] Load beatmapsets {path_mu}...")
 
         old_beatmap_paths = set(_beatmapset.cache.keys())
 
@@ -234,8 +234,8 @@ class BeatmapManager:
 
         logger = self.logger
         file_manager = self.file_manager
-        path_str = logger.escape(file_manager.as_relative_path(beatmap_path))
-        logger.log(f"[data/] Load beatmap [emph]{path_str}[/]...")
+        path_mu = file_manager.as_relative_path(beatmap_path, markup=True)
+        logger.log(f"[data/] Load beatmap {path_mu}...")
 
         try:
             beatmap_metadata = beatsheets.read(str(beatmap_path), metadata_only=True)
@@ -297,6 +297,7 @@ class BeatmapManager:
 
     def remove_beatmapset(self, beatmapset_path):
         logger = self.logger
+        file_manager = self.file_manager
 
         beatmapset_path = beatmapset_path.normalize()
 
@@ -306,12 +307,13 @@ class BeatmapManager:
             logger.print(f"[warn]{str(e)}[/]")
             return False
 
-        path_str = beatmapset_path.try_relative_to(self.beatmaps_dir)
-        logger.print(f"[data/] Remove beatmapset [emph]{path_str}[/]...")
+        path_mu = file_manager.as_relative_path(beatmapset_path, self.beatmaps_dir, markup=True)
+        logger.print(f"[data/] Remove beatmapset {path_mu}...")
         shutil.rmtree(str(beatmapset_path))
 
     def remove_beatmap(self, beatmap_path):
         logger = self.logger
+        file_manager = self.file_manager
 
         beatmap_path = beatmap_path.normalize()
 
@@ -321,8 +323,8 @@ class BeatmapManager:
             logger.print(f"[warn]{str(e)}[/]")
             return False
 
-        path_str = beatmapset_path.try_relative_to(self.beatmaps_dir)
-        logger.print(f"[data/] Remove beatmap [emph]{path_str}[/]...")
+        path_mu = file_manager.as_relative_path(beatmapset_path, self.beatmaps_dir, markup=True)
+        logger.print(f"[data/] Remove beatmap {path_mu}...")
 
         beatmap_path.abs.unlink()
 
@@ -568,10 +570,8 @@ def load_beatmap(beatmap_path, file_manager, profile_manager, logger):
         return beatsheets.read(str(beatmap_path))
 
     except beatsheets.BeatmapParseError:
-        path_str = beatmap_path.try_relative_to(profile_manager.beatmaps_dir)
-        logger.print(
-            f"[warn]Failed to read beatmap: [emph]{path_str}[/][/]"
-        )
+        path_mu = file_manager.as_relative_path(beatmap_path, profile_manager.beatmaps_dir, markup=True)
+        logger.print(f"[warn]Failed to read beatmap: {path_mu}[/]")
         logger.print_traceback()
         return
 

@@ -123,8 +123,8 @@ class BGMController:
 
             logger = self.logger
             file_manager = self.file_manager
-            path_str = file_manager.as_relative_path(UnrecognizedPath(action.song.path, False))
-            logger.print(f"[music/] will preview: [emph]{path_str}[/]")
+            path_mu = file_manager.as_relative_path(UnrecognizedPath(action.song.path, False), markup=True)
+            logger.print(f"[music/] will preview: {path_mu}")
 
             yield from play_fadeinout(
                 mixer,
@@ -141,8 +141,8 @@ class BGMController:
 
             logger = self.logger
             file_manager = self.file_manager
-            path_str = file_manager.as_relative_path(UnrecognizedPath(action.song.path, False))
-            logger.print(f"[music/] will play: [emph]{path_str}[/]")
+            path_mu = file_manager.as_relative_path(UnrecognizedPath(action.song.path, False), markup=True)
+            logger.print(f"[music/] will play: {path_mu}")
 
             yield from play_fadeinout(
                 mixer,
@@ -389,12 +389,12 @@ class BGMSubCommand:
 
         current = bgm_controller.current_action
         if isinstance(current, PlayBGM):
-            path_str = file_manager.as_relative_path(UnrecognizedPath(current.song.path, False))
-            logger.print(f"[music/] now playing: [emph]{path_str}[/]")
+            path_mu = file_manager.as_relative_path(UnrecognizedPath(current.song.path, False), markup=True)
+            logger.print(f"[music/] now playing: {path_mu}")
 
         elif isinstance(current, PreviewSong):
-            path_str = file_manager.as_relative_path(UnrecognizedPath(current.song.path, False))
-            logger.print(f"[music/] now previewing: [emph]{path_str}[/]")
+            path_mu = file_manager.as_relative_path(UnrecognizedPath(current.song.path, False), markup=True)
+            logger.print(f"[music/] now previewing: {path_mu}")
 
         elif current is None:
             logger.print("[music/] no song is playing")
