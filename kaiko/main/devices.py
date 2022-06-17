@@ -260,9 +260,9 @@ class DevicesCommand:
             logger.print(f"workspace: {logger.as_uri(self.file_manager.root.abs)}")
             logger.print()
 
-            term = logger.escape(os.environ.get("TERM", None))
-            vte = logger.escape(os.environ.get("VTE_VERSION", None))
-            uni = logger.escape(os.environ.get("UNICODE_VERSION", None))
+            term = logger.escape(os.environ.get("TERM", "unknown"))
+            vte = logger.escape(os.environ.get("VTE_VERSION", "unknown"))
+            uni = logger.escape(os.environ.get("UNICODE_VERSION", "unknown"))
             size = shutil.get_terminal_size()
 
             logger.print(f"  terminal type: {term}")
