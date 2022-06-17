@@ -20,7 +20,7 @@ from .profiles import ProfileManager
 
 
 class BeatmapFilePath(RecognizedFilePath):
-    def info(self, provider):
+    def info_detailed(self, provider):
         beatmap_manager = provider.get(BeatmapManager)
         logger = provider.get(Logger)
 

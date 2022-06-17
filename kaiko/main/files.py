@@ -34,10 +34,10 @@ class RecognizedPath:
             abspath = os.path.join(abspath, "")
         return abspath
 
-    def desc(self, provider):
+    def info(self, provider):
         return type(self).__doc__
 
-    def info(self, provider):
+    def info_detailed(self, provider):
         return None
 
     def mk(self, provider):
@@ -247,7 +247,7 @@ class FileManagerSettings(cfg.Configurable):
             The template for file item.
         file_unknown : str
             The template for unknown file.
-        file_desc : str
+        file_info : str
             The template for file description.
 
         file_dir : str
@@ -267,7 +267,7 @@ class FileManagerSettings(cfg.Configurable):
         """
         file_item: str = "• [slot/]"
         file_unknown: str = "[weight=dim][slot/][/]"
-        file_desc: str = "  [weight=dim][slot/][/]"
+        file_info: str = "  [weight=dim][slot/][/]"
 
         file_dir: str = "[weight=bold][color=blue][slot/][/][/]/"
         file_script: str = "[weight=bold][color=green][slot/][/][/]"
@@ -504,7 +504,7 @@ class FilesCommand:
 
         file_item = logger.rich.parse(display_settings.file_item, expand=False, slotted=True)
         file_unknown = logger.rich.parse(display_settings.file_unknown, expand=False, slotted=True)
-        file_desc = logger.rich.parse(display_settings.file_desc, expand=False, slotted=True)
+        file_info = logger.rich.parse(display_settings.file_info, expand=False, slotted=True)
         file_dir = logger.rich.parse(display_settings.file_dir, expand=False, slotted=True)
         file_script = logger.rich.parse(display_settings.file_script, expand=False, slotted=True)
         file_beatmap = logger.rich.parse(display_settings.file_beatmap, expand=False, slotted=True)
@@ -545,8 +545,8 @@ class FilesCommand:
                 name = file_link(src=linkname, dst=name)
 
             ind = field_types.index(type(path)) if type(path) in field_types else len(field_types)
-            desc = path.desc(self.provider)
-            desc = logger.rich.parse(desc, root_tag=True, expand=False) if desc is not None else None
+            info = path.info(self.provider)
+            info = logger.rich.parse(info, root_tag=True, expand=False) if info is not None else None
 
             ordering_key = (
                 isinstance(path, UnrecognizedPath),
@@ -559,20 +559,20 @@ class FilesCommand:
 
             if isinstance(path, UnrecognizedPath):
                 name = file_unknown(name)
-            desc = file_desc(desc) if desc is not None else mu.Text("")
+            info = file_info(info) if info is not None else mu.Text("")
             name = file_item(name)
 
             width = logger.rich.widthof(name.expand())
-            res.append((ordering_key, width, name, desc))
+            res.append((ordering_key, width, name, info))
 
         res = sorted(res, key=lambda e: e[0])
         max_width = max((width for _, width, _, _ in res), default=0)
 
         with logger.stack():
-            for _, width, name, desc in res:
+            for _, width, name, info in res:
                 padding = " "*(max_width - width) if width != -1 else " "
                 logger.print(name, end=padding)
-                logger.print(desc, end="\n")
+                logger.print(info, end="\n")
 
     @cmd.function_command
     def cd(self, path):
@@ -799,7 +799,7 @@ class PathParser(cmd.ArgumentParser):
     def info(self, token):
         if self.provider is None:
             return None
-        return self.parse(token).info(self.provider)
+        return self.parse(token).info_detailed(self.provider)
 
 
 def DirectCdCommand(provider):

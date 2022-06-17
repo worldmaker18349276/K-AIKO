@@ -51,7 +51,7 @@ class ProfilesDirPath(RecognizedDirPath):
     class profile(RecognizedFilePath):
         EXTENSION = ".kaiko-profile"
 
-        def desc(self, provider):
+        def info(self, provider):
             profile_manager = provider.get(ProfileManager)
             note = "(Your custom profile)"
             if self.abs == profile_manager.default_path.abs:
