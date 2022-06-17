@@ -73,10 +73,10 @@ class RootDirPath(RecognizedDirPath):
         """The place to cache some data for better experience
 
         [rich][color=bright_white]┌──────┐[/]
-        [color=bright_white]│>#&$% │[/]
-        [color=bright_white]│>$@!*&│[/] Cached data stored here will be used to improve user experience
-        [color=bright_white]│>{:?  │[/] and debugging, deleting them will not break the system, so feel
-        [color=bright_white]│~     │[/] free to manage them.
+        [color=bright_white]│☰☲☰☱  │[/]
+        [color=bright_white]│☴☲☱☴☱ │[/] Cached data stored here will be used to improve user experience
+        [color=bright_white]│☱☴☲   │[/] and debugging, deleting them will not break the system, so feel
+        [color=bright_white]│⚌     │[/] free to manage them.
         [color=bright_white]└──────┘[/]
         """
 
