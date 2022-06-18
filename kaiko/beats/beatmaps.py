@@ -1070,12 +1070,16 @@ class BeatbarWidgetFactory:
             accuracy_getter = dn.pipe(
                 observe(self.state.perfs), lambda perfs: [perf.err for perf in perfs]
             )
-            return widgets.AccuracyMeterWidget(accuracy_getter, widget_settings).load(self.provider)
+            return widgets.AccuracyMeterWidget(accuracy_getter, widget_settings).load(
+                self.provider
+            )
         elif isinstance(widget_settings, BeatbarWidgetFactory.monitor):
             return widgets.MonitorWidget(widget_settings).load(self.provider)
         elif isinstance(widget_settings, BeatbarWidgetFactory.score):
             score_getter = lambda _: (self.state.score, self.state.full_score)
-            return widgets.ScoreWidget(score_getter, widget_settings).load(self.provider)
+            return widgets.ScoreWidget(score_getter, widget_settings).load(
+                self.provider
+            )
         elif isinstance(widget_settings, BeatbarWidgetFactory.progress):
             progress_getter = lambda _: (
                 self.state.finished_subjects / self.state.total_subjects
@@ -1093,7 +1097,9 @@ class BeatbarWidgetFactory:
                     perf.grade.shift for perf in perfs if perf.grade.shift is not None
                 ],
             )
-            return beatbars.SightWidget(grade_getter, widget_settings).load(self.provider)
+            return beatbars.SightWidget(grade_getter, widget_settings).load(
+                self.provider
+            )
         else:
             raise TypeError
 
@@ -1153,6 +1159,7 @@ class BeatbarLayoutSettings(cfg.Configurable):
                                                                         here
 
     """
+
     icon_width: int = 8
     header_width: int = 13
     footer_width: int = 13
@@ -1631,9 +1638,7 @@ class Beatmap:
 
         # stop
         stop_key = controls_settings.stop_key
-        controller.add_handler(
-            dn.pipe(dn.time(0.0), event_clock.stop), stop_key
-        )
+        controller.add_handler(dn.pipe(dn.time(0.0), event_clock.stop), stop_key)
 
         # display delay
         display_delay_adjust_step = controls_settings.display_delay_adjust_step
@@ -1642,17 +1647,13 @@ class Beatmap:
         def incr_display_delay(time):
             devices_settings.renderer.display_delay += display_delay_adjust_step
             renderer.clock.skip(time, display_delay_adjust_step)
-            renderer.add_log(
-                mu.Text(f"display_delay += {display_delay_adjust_step}\n")
-            )
+            renderer.add_log(mu.Text(f"display_delay += {display_delay_adjust_step}\n"))
             settings_changed.set()
 
         def decr_display_delay(time):
             devices_settings.renderer.display_delay -= display_delay_adjust_step
             renderer.clock.skip(time, -display_delay_adjust_step)
-            renderer.add_log(
-                mu.Text(f"display_delay -= {display_delay_adjust_step}\n")
-            )
+            renderer.add_log(mu.Text(f"display_delay -= {display_delay_adjust_step}\n"))
             settings_changed.set()
 
         controller.add_handler(
@@ -1669,17 +1670,13 @@ class Beatmap:
         def incr_knock_delay(time):
             devices_settings.detector.knock_delay += knock_delay_adjust_step
             detector.clock.skip(time, knock_delay_adjust_step)
-            renderer.add_log(
-                mu.Text(f"knock_delay += {knock_delay_adjust_step}\n")
-            )
+            renderer.add_log(mu.Text(f"knock_delay += {knock_delay_adjust_step}\n"))
             settings_changed.set()
 
         def decr_knock_delay(time):
             devices_settings.detector.knock_delay -= knock_delay_adjust_step
             detector.clock.skip(time, -knock_delay_adjust_step)
-            renderer.add_log(
-                mu.Text(f"knock_delay -= {knock_delay_adjust_step}\n")
-            )
+            renderer.add_log(mu.Text(f"knock_delay -= {knock_delay_adjust_step}\n"))
             settings_changed.set()
 
         controller.add_handler(
@@ -1696,17 +1693,13 @@ class Beatmap:
         def incr_knock_energy(_):
             devices_settings.detector.knock_energy += knock_energy_adjust_step
             detector.knock_energy.add(knock_energy_adjust_step)
-            renderer.add_log(
-                mu.Text(f"knock_energy += {knock_energy_adjust_step}\n")
-            )
+            renderer.add_log(mu.Text(f"knock_energy += {knock_energy_adjust_step}\n"))
             settings_changed.set()
 
         def decr_knock_energy(_):
             devices_settings.detector.knock_energy -= knock_energy_adjust_step
             detector.knock_energy.add(-knock_energy_adjust_step)
-            renderer.add_log(
-                mu.Text(f"knock_energy -= {knock_energy_adjust_step}\n")
-            )
+            renderer.add_log(mu.Text(f"knock_energy -= {knock_energy_adjust_step}\n"))
             settings_changed.set()
 
         controller.add_handler(incr_knock_energy, knock_energy_adjust_keys[0])
@@ -1813,7 +1806,8 @@ class Beatmap:
                 waveform_max_time = 30.0
                 try:
                     node = path.generate(
-                        samplerate=output_samplerate, channels=output_nchannels,
+                        samplerate=output_samplerate,
+                        channels=output_nchannels,
                     )
 
                     resource = []

@@ -29,7 +29,9 @@ class DevicesDirPath(RecognizedDirPath):
     """
 
     def rm(self, provider):
-        raise InvalidFileOperation("Deleting important directories or files may crash the program")
+        raise InvalidFileOperation(
+            "Deleting important directories or files may crash the program"
+        )
 
 
 class DeviceManager:
@@ -178,7 +180,9 @@ class DeviceManager:
                         hint = "(great!)"
                     logger.clear_line(log=False)
                     logger.print(
-                        f"Current width: {current_width} {hint}", end="", flush=True,
+                        f"Current width: {current_width} {hint}",
+                        end="",
+                        flush=True,
                         log=False,
                     )
 
@@ -213,9 +217,12 @@ class DeviceManager:
             with logger.stack():
                 logger.print(f"Your unicode version is [emph]{version}[/]")
                 logger.print("[hint/] You can put this command into your .bashrc file:")
-                logger.print(f"[emph]UNICODE_VERSION={version}; export UNICODE_VERSION[/]")
+                logger.print(
+                    f"[emph]UNICODE_VERSION={version}; export UNICODE_VERSION[/]"
+                )
 
         return version
+
 
 class DevicesCommand:
     def __init__(self, provider):
@@ -271,7 +278,16 @@ class DevicesCommand:
             logger.print(f"  terminal size: {size.columns}×{size.lines}")
 
             template = "[color={}]██[/]"
-            palette = ["black", "red", "green", "yellow", "blue", "magenta", "cyan", "white"]
+            palette = [
+                "black",
+                "red",
+                "green",
+                "yellow",
+                "blue",
+                "magenta",
+                "cyan",
+                "white",
+            ]
 
             logger.print()
             logger.print("color palette:")
@@ -511,7 +527,7 @@ class DevicesCommand:
     def _test_waveform_waveform_parser(self):
         return cmd.RawParser(
             default="2**(-abs({sawtooth:t}+1)/0.02)*{sine:t*1000.0}",
-            desc="It should be an expression of waveform."
+            desc="It should be an expression of waveform.",
         )
 
     @cmd.function_command
@@ -547,7 +563,6 @@ class DevicesCommand:
             " the default is False.",
         )
 
-
     # terminal
 
     @cmd.function_command
@@ -577,7 +592,7 @@ class DevicesCommand:
 @dn.datanode
 def test_keyboard(logger, devices_settings):
     exit_key = "Esc"
-    exit_key_mu = logger.escape(exit_key, type='all')
+    exit_key_mu = logger.escape(exit_key, type="all")
 
     logger.print(f"[hint/] Press [emph]{exit_key_mu}[/] to end test.")
     logger.print()
@@ -591,7 +606,9 @@ def test_keyboard(logger, devices_settings):
         keycode = logger.escape(keycode, type="all")
         logger.clear_line(log=False)
         logger.print(f"[[{time:07.3f} s]] {keyname} '{keycode}'", log=False)
-        logger.print("[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r", log=False)
+        logger.print(
+            "[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r", log=False
+        )
 
     controller_task, controller = engines.Controller.create(
         devices_settings.controller,
@@ -643,7 +660,8 @@ class KnockTest:
         try:
             while True:
                 self.logger.print(
-                    "[[ <time>  ]] │[emph]<strength>[/]│ (<value>)", end="\r",
+                    "[[ <time>  ]] │[emph]<strength>[/]│ (<value>)",
+                    end="\r",
                     log=False,
                 )
 
@@ -657,7 +675,9 @@ class KnockTest:
                     for i in range(length)
                 )
                 level = f"{level[:length//2]}[weight=bold]{level[length//2:]}[/]"
-                self.logger.print(f"[[{time:07.3f} s]] │{level}│ ({strength:.5f})", log=False)
+                self.logger.print(
+                    f"[[{time:07.3f} s]] │{level}│ ({strength:.5f})", log=False
+                )
 
         finally:
             self.logger.print()
@@ -698,7 +718,9 @@ class PyAudioDeviceParser(cmd.ArgumentParser):
         device_info = self.audio_manager.get_device_info_by_index(value)
 
         name = device_info["name"]
-        api = self.audio_manager.get_host_api_info_by_index(device_info["hostApi"])["name"]
+        api = self.audio_manager.get_host_api_info_by_index(device_info["hostApi"])[
+            "name"
+        ]
         freq = device_info["defaultSampleRate"] / 1000
         ch_in = device_info["maxInputChannels"]
         ch_out = device_info["maxOutputChannels"]
@@ -728,7 +750,9 @@ class SpeakerTest:
 
         try:
             self.logger.print("Validate output device...")
-            aud.validate_output_device(audio_manager, device, samplerate, nchannels, format)
+            aud.validate_output_device(
+                audio_manager, device, samplerate, nchannels, format
+            )
             self.logger.print("Success!")
 
         except:
@@ -798,7 +822,9 @@ class MicTest:
 
         try:
             self.logger.print("Validate input device...")
-            aud.validate_input_device(audio_manager, device, samplerate, channels, format)
+            aud.validate_input_device(
+                audio_manager, device, samplerate, channels, format
+            )
             self.logger.print("Success!")
 
         except:
@@ -901,5 +927,3 @@ class WaveformTest:
         exit_task = term.inkey(exit_any())
 
         return dn.pipe(mixer_task, exit_task)
-
-

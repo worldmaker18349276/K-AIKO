@@ -163,7 +163,9 @@ class Logger:
         doc = doc[m.end(0) :]
 
         while True:
-            m = re.match(r"([0-9a-zA-Z_]+) : ([^\n]+)\n+((?:[ ]+[^\n]*(?:\n+|$))*)", doc)
+            m = re.match(
+                r"([0-9a-zA-Z_]+) : ([^\n]+)\n+((?:[ ]+[^\n]*(?:\n+|$))*)", doc
+            )
             if not m:
                 return res
             res[m.group(1)] = cleandoc(m.group(2)).strip()
@@ -273,10 +275,7 @@ class Logger:
         elif type == "all":
             text = mu.escape(text)
             text = "".join(
-                ch
-                if ch.isprintable()
-                else self.backslashreplace(ch)
-                for ch in text
+                ch if ch.isprintable() else self.backslashreplace(ch) for ch in text
             )
             return text
 
@@ -357,7 +356,7 @@ class Logger:
         n = len(str(content.count("\n") + 1))
         res = []
         if title is not None:
-            title = self.escape(title, type='all')
+            title = self.escape(title, type="all")
             change_mark = "*" if is_changed else ""
             res.append(f"[weight=dim]{'─'*n}────{'─'*(max(0, total_width-n-4))}[/]")
             res.append(f" [emph]{title}[/]{change_mark}")
@@ -384,7 +383,7 @@ class Logger:
         n = len(str(new.count("\n") + 1))
         res = []
         if title is not None:
-            title = self.escape(title, type='all')
+            title = self.escape(title, type="all")
             change_mark = "*" if is_changed else ""
             res.append(f"[weight=dim]{'─'*n}────{'─'*(max(0, total_width-n-4))}[/]")
             res.append(f" [emph]{title}[/]{change_mark}")
@@ -692,7 +691,9 @@ class Logger:
 
         # print
         with self.stack():
-            self.print("╒" + grad_top + "╤" + scat_top + "╤" + stat_top + "╕", markup=False)
+            self.print(
+                "╒" + grad_top + "╤" + scat_top + "╤" + stat_top + "╕", markup=False
+            )
             self.print(
                 "│" + grad_infos[0] + "│" + scat_graph[0] + "│" + stat_graph[0] + "│",
                 markup=False,
@@ -733,7 +734,9 @@ class Logger:
                 "│" + grad_infos[9] + "│" + acc_graph[1] + "│" + stat_infos[2] + "│",
                 markup=False,
             )
-            self.print("╘" + grad_bot + "╧" + scat_bot + "╧" + stat_bot + "╛", markup=False)
+            self.print(
+                "╘" + grad_bot + "╧" + scat_bot + "╧" + stat_bot + "╛", markup=False
+            )
 
     def ask(self, prompt, default=True):
         @dn.datanode

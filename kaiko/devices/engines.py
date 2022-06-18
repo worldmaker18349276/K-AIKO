@@ -867,7 +867,9 @@ class Renderer:
     def create(cls, settings, term_settings, init_time=0.0, monitor=None):
         pipeline = dn.DynamicPipeline()
         clock = Clock()
-        task = cls.get_task(pipeline, clock, settings, term_settings, init_time, monitor)
+        task = cls.get_task(
+            pipeline, clock, settings, term_settings, init_time, monitor
+        )
         return task, cls(pipeline, clock, settings, monitor)
 
     def add_drawer(self, node, zindex=(0,)):
@@ -940,7 +942,9 @@ class Controller:
     @staticmethod
     def get_task(pipeline, clock, settings, term_settings, init_time):
         return term.inkey(
-            Controller._control_node(pipeline, clock, settings, term_settings, init_time),
+            Controller._control_node(
+                pipeline, clock, settings, term_settings, init_time
+            ),
             dt=settings.update_interval,
         )
 

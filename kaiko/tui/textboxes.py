@@ -85,7 +85,9 @@ class TextBox:
         else:
             raise TypeError(f"unknown markup type: {type(markup)}")
 
-    def shift_text(self, text_width, caret_masks, box_width, *, left_margin, right_margin):
+    def shift_text(
+        self, text_width, caret_masks, box_width, *, left_margin, right_margin
+    ):
         # trim empty spaces
         if text_width - self.text_offset < box_width - right_margin:
             # from: ......[....I...    ]
@@ -93,14 +95,18 @@ class TextBox:
             self.text_offset = max(0, text_width - box_width + right_margin)
 
         # reveal the rightmost caret
-        caret_stop = max((caret_slice.stop for caret_slice in caret_masks), default=float("-inf"))
+        caret_stop = max(
+            (caret_slice.stop for caret_slice in caret_masks), default=float("-inf")
+        )
         if caret_stop - self.text_offset > box_width - right_margin:
             # from: ...[............]..I....
             #   to: ........[..........I.]..
             self.text_offset = caret_stop - box_width + right_margin
 
         # reveal the leftmost caret
-        caret_start = min((caret_slice.start for caret_slice in caret_masks), default=float("inf"))
+        caret_start = min(
+            (caret_slice.start for caret_slice in caret_masks), default=float("inf")
+        )
         if caret_start - self.text_offset < left_margin:
             # from: .....I...[............]...
             #   to: ...[.I..........].........
@@ -110,7 +116,9 @@ class TextBox:
         self.left_overflow = self.text_offset > 0
         self.right_overflow = text_width - self.text_offset > box_width
 
-    def draw_ellipses(self, box_width, *, left_ellipsis, right_ellipsis, right_ellipsis_width):
+    def draw_ellipses(
+        self, box_width, *, left_ellipsis, right_ellipsis, right_ellipsis_width
+    ):
         res = []
         if self.left_overflow:
             res.append((0, left_ellipsis))
@@ -161,9 +169,15 @@ class TextBox:
     @dn.datanode
     def get_caret_template(self, *, rich, metronome):
         caret_blink_ratio = self.settings.caret_blink_ratio
-        normal_template = rich.parse(self.settings.caret_normal_appearance, slotted=True)
-        blinking_template = rich.parse(self.settings.caret_blinking_appearance, slotted=True)
-        highlighted_template = rich.parse(self.settings.caret_highlighted_appearance, slotted=True)
+        normal_template = rich.parse(
+            self.settings.caret_normal_appearance, slotted=True
+        )
+        blinking_template = rich.parse(
+            self.settings.caret_blinking_appearance, slotted=True
+        )
+        highlighted_template = rich.parse(
+            self.settings.caret_highlighted_appearance, slotted=True
+        )
 
         key_pressed_beat = 0
         time, key_pressed = yield

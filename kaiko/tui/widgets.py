@@ -75,7 +75,7 @@ def layout(widths):
     for j, width in enumerate(widths[:i:-1]):
         right_ = left
         left -= width
-        slices[-1-j] = slice(left, None if left != right_ == 0 else right_)
+        slices[-1 - j] = slice(left, None if left != right_ == 0 else right_)
 
     slices[i] = slice(right, None if left == 0 else left)
 
@@ -546,4 +546,3 @@ class ProgressWidget:
         template = rich.parse(self.settings.template, slotted=True)
 
         return self.widget_node(template)
-

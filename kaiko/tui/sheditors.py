@@ -112,7 +112,9 @@ def tokenize(raw):
                     try:
                         index, char = next(raw)
                     except StopIteration:
-                        yield ShToken("".join(token), None, slice(start, length), quotes)
+                        yield ShToken(
+                            "".join(token), None, slice(start, length), quotes
+                        )
                         return SHLEXER_STATE.QUOTED
 
                     if char == QUOTE:
@@ -283,13 +285,13 @@ class Editor:
     def backspace(self):
         if self.pos == 0:
             return False
-        self.replace(slice(self.pos-1, self.pos), "")
+        self.replace(slice(self.pos - 1, self.pos), "")
         return True
 
     def delete(self):
         if self.pos >= len(self.buffer):
             return False
-        self.replace(slice(self.pos, self.pos+1), "")
+        self.replace(slice(self.pos, self.pos + 1), "")
         return True
 
     def delete_all(self):
@@ -366,10 +368,11 @@ class Editor:
 
         types.extend([None] * (len(tokens) - len(types)))
         self.tokens = [
-            dataclasses.replace(token, type=type)
-            for token, type in zip(tokens, types)
+            dataclasses.replace(token, type=type) for token, type in zip(tokens, types)
         ]
-        self.group = self.parser.get_group(self.tokens[0].string) if self.tokens else None
+        self.group = (
+            self.parser.get_group(self.tokens[0].string) if self.tokens else None
+        )
 
     def desc(self, length):
         cached_parser = self._cached_parser
@@ -383,12 +386,12 @@ class Editor:
     def info(self, length):
         assert length >= 1
         cached_parser = self._cached_parser
-        for token in self.tokens[:length-1]:
+        for token in self.tokens[: length - 1]:
             try:
                 _, cached_parser = cached_parser.parse(token.string)
             except cmd.CommandParseError:
                 return None
-        return cached_parser.origin.info(self.tokens[length-1].string)
+        return cached_parser.origin.info(self.tokens[length - 1].string)
 
     def suggest(self, length, target):
         cached_parser = self._cached_parser
@@ -409,7 +412,7 @@ class Editor:
     def find_token_before(self, pos):
         for index, token in enumerate(reversed(self.tokens)):
             if token.mask.start <= pos:
-                return len(self.tokens)-1-index, token
+                return len(self.tokens) - 1 - index, token
         else:
             return None, None
 
@@ -419,4 +422,3 @@ class Editor:
                 return index, token
         else:
             return None, None
-

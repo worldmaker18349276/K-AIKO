@@ -53,7 +53,9 @@ class ProfilesDirPath(RecognizedDirPath):
     """
 
     def rm(self, provider):
-        raise InvalidFileOperation("Deleting important directories or files may crash the program")
+        raise InvalidFileOperation(
+            "Deleting important directories or files may crash the program"
+        )
 
     @as_pattern("*.kaiko-profile")
     class profile(RecognizedFilePath):
@@ -203,10 +205,18 @@ class ProfileManager:
 
         # update default_path
         default_meta_path = self.profiles_dir.default
-        default_mtime = default_meta_path.abs.stat().st_mtime if default_meta_path.abs.exists() else None
+        default_mtime = (
+            default_meta_path.abs.stat().st_mtime
+            if default_meta_path.abs.exists()
+            else None
+        )
         if default_mtime is None or self._default_mtime != default_mtime:
             self.logger.print("[data/] Update default profile...")
-            default_path = default_meta_path.abs.read_text().rstrip("\n") if default_meta_path.abs.exists() else ""
+            default_path = (
+                default_meta_path.abs.read_text().rstrip("\n")
+                if default_meta_path.abs.exists()
+                else ""
+            )
             default_path = self.profiles_dir.abs / default_path
             default_path = self.profiles_dir.recognize(default_path)
             default_path = default_path.normalize()
@@ -280,12 +290,17 @@ class ProfileManager:
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
-        path_mu = file_manager.as_relative_path(self.current_path, self.profiles_dir, markup=True)
+        path_mu = file_manager.as_relative_path(
+            self.current_path, self.profiles_dir, markup=True
+        )
         logger.print(f"[data/] Save configuration to {path_mu}...")
 
         try:
             cfg.write(
-                self.config_type, self.current, self.current_path.abs, name=self.SETTINGS_NAME
+                self.config_type,
+                self.current,
+                self.current_path.abs,
+                name=self.SETTINGS_NAME,
             )
         except Exception:
             logger.print("[warn]Fail to format configuration[/]")
@@ -312,7 +327,9 @@ class ProfileManager:
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
-        path_mu = file_manager.as_relative_path(self.current_path, self.profiles_dir, markup=True)
+        path_mu = file_manager.as_relative_path(
+            self.current_path, self.profiles_dir, markup=True
+        )
         logger.print(f"[data/] Load configuration from {path_mu}...")
 
         current_mtime = self.current_path.abs.stat().st_mtime
@@ -364,9 +381,7 @@ class ProfileManager:
         current_mtime = path.abs.stat().st_mtime
 
         try:
-            self.current = cfg.read(
-                self.config_type, path.abs, name=self.SETTINGS_NAME
-            )
+            self.current = cfg.read(self.config_type, path.abs, name=self.SETTINGS_NAME)
         except Exception:
             logger.print("[warn]Fail to parse configuration[/]")
             logger.print_traceback()
@@ -380,7 +395,9 @@ class ProfileManager:
         logger = self.logger
         file_manager = self.file_manager
 
-        path = rename_path(self.profiles_dir.abs, "new profile", ProfilesDirPath.profile.EXTENSION)
+        path = rename_path(
+            self.profiles_dir.abs, "new profile", ProfilesDirPath.profile.EXTENSION
+        )
         path = self.profiles_dir.recognize(path).normalize()
         assert isinstance(path, ProfilesDirPath.profile)
 
@@ -434,9 +451,7 @@ class ProfileManager:
             logger.print(f"[data/] Save an empty configuration to {path_mu}...")
 
             try:
-                cfg.write(
-                    self.config_type, config, path.abs, name=self.SETTINGS_NAME
-                )
+                cfg.write(self.config_type, config, path.abs, name=self.SETTINGS_NAME)
             except Exception:
                 logger.print("[warn]Fail to format configuration[/]")
                 logger.print_traceback()
@@ -500,7 +515,9 @@ class ProfileManager:
             return False
 
         path_mu = file_manager.as_relative_path(path, self.profiles_dir, markup=True)
-        newpath_mu = file_manager.as_relative_path(newpath, self.profiles_dir, markup=True)
+        newpath_mu = file_manager.as_relative_path(
+            newpath, self.profiles_dir, markup=True
+        )
         logger.print(f"[data/] Rename profile {path_mu} to {newpath_mu}...")
 
         is_current = self.current_path == path
@@ -601,7 +618,9 @@ class ProfilesCommand:
                      ╱
               The field name.
         """
-        if not self.profile_manager.has(field) and not self.profile_manager.has_default(field):
+        if not self.profile_manager.has(field) and not self.profile_manager.has_default(
+            field
+        ):
             self.logger.print(f"[warn]No value for field {'.'.join(field)}[/]")
             return
         return self.profile_manager.get(field)
@@ -653,7 +672,7 @@ class ProfilesCommand:
 
         # open editor
         if not check_exists_shell_command(editor):
-            editor_ = logger.escape(editor, type='all')
+            editor_ = logger.escape(editor, type="all")
             logger.print(f"[warn]Unknown editor: [emph]{editor_}[/][/]")
             return
 
@@ -677,17 +696,13 @@ class ProfilesCommand:
                 logger.format_code(error.text, marked=(line, col), title=title)
             )
             if error.__cause__ is not None:
-                logger.print(
-                    f"[warn]{logger.escape(str(error.__cause__))}[/]"
-                )
+                logger.print(f"[warn]{logger.escape(str(error.__cause__))}[/]")
 
         else:
             logger.print(f"[data/] Your changes")
 
             logger.print(
-                logger.format_code_diff(
-                    text, edited_text, title=title, is_changed=True
-                )
+                logger.format_code_diff(text, edited_text, title=title, is_changed=True)
             )
 
             profile_manager.current = res

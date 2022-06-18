@@ -1,6 +1,6 @@
-
 class ServiceError(Exception):
     pass
+
 
 class Provider:
     def __init__(self):
@@ -17,4 +17,3 @@ class Provider:
             raise ServiceError(f"Service already set: {type}")
         else:
             self.services_provider[type(obj)] = obj
-

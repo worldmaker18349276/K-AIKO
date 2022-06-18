@@ -125,7 +125,9 @@ class BGMController:
     @dn.datanode
     def execute(self, manager):
         mixer_factory = lambda: engines.Mixer.create(self.mixer_settings, manager)
-        mixer_loader = engines.EngineLoader(mixer_factory, self.settings.mixer_loader_delay)
+        mixer_loader = engines.EngineLoader(
+            mixer_factory, self.settings.mixer_loader_delay
+        )
         with mixer_loader.task() as mixer_task:
             with self._bgm_event_loop(mixer_loader.require) as event_task:
                 while True:
@@ -149,7 +151,9 @@ class BGMController:
 
             logger = self.logger
             file_manager = self.file_manager
-            path_mu = file_manager.as_relative_path(UnrecognizedPath(action.song.path, False), markup=True)
+            path_mu = file_manager.as_relative_path(
+                UnrecognizedPath(action.song.path, False), markup=True
+            )
             logger.print(f"[music/] will preview: {path_mu}")
 
             yield from play_fadeinout(
@@ -167,7 +171,9 @@ class BGMController:
 
             logger = self.logger
             file_manager = self.file_manager
-            path_mu = file_manager.as_relative_path(UnrecognizedPath(action.song.path, False), markup=True)
+            path_mu = file_manager.as_relative_path(
+                UnrecognizedPath(action.song.path, False), markup=True
+            )
             logger.print(f"[music/] will play: {path_mu}")
 
             yield from play_fadeinout(
@@ -274,7 +280,9 @@ class BGMController:
             self.stop_preview()
             return
 
-        path = self.beatmap_manager.beatmaps_dir.recognize(self.file_manager.current.abs / token)
+        path = self.beatmap_manager.beatmaps_dir.recognize(
+            self.file_manager.current.abs / token
+        )
 
         if not isinstance(path, BeatmapFilePath):
             self.stop_preview()
@@ -415,11 +423,15 @@ class BGMSubCommand:
 
         current = bgm_controller.current_action
         if isinstance(current, PlayBGM):
-            path_mu = file_manager.as_relative_path(UnrecognizedPath(current.song.path, False), markup=True)
+            path_mu = file_manager.as_relative_path(
+                UnrecognizedPath(current.song.path, False), markup=True
+            )
             logger.print(f"[music/] now playing: {path_mu}")
 
         elif isinstance(current, PreviewSong):
-            path_mu = file_manager.as_relative_path(UnrecognizedPath(current.song.path, False), markup=True)
+            path_mu = file_manager.as_relative_path(
+                UnrecognizedPath(current.song.path, False), markup=True
+            )
             logger.print(f"[music/] now previewing: {path_mu}")
 
         elif current is None:
@@ -427,4 +439,3 @@ class BGMSubCommand:
 
         else:
             assert False
-

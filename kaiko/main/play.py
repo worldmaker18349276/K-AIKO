@@ -109,7 +109,9 @@ class BeatmapsDirPath(RecognizedDirPath):
     """
 
     def rm(self, provider):
-        raise InvalidFileOperation("Deleting important directories or files may crash the program")
+        raise InvalidFileOperation(
+            "Deleting important directories or files may crash the program"
+        )
 
     beatmapset = as_pattern("*")(BeatmapsetDirPath)
 
@@ -123,12 +125,14 @@ class BeatmapCache:
     mtime: Optional[float] = None
     cache: Optional[beatmaps.Beatmap] = None
 
+
 @dataclasses.dataclass
 class BeatmapsetCache:
     mtime: Optional[float] = None
     cache: Dict[BeatmapFilePath, BeatmapCache] = dataclasses.field(
         default_factory=lambda: defaultdict(BeatmapCache)
     )
+
 
 @dataclasses.dataclass
 class BeatmapsDirCache:
@@ -178,7 +182,7 @@ class BeatmapManager:
 
         for beatmapset_path in self.beatmaps_dir.beatmapset:
             if beatmapset_path not in self._beatmaps.cache:
-               self._beatmaps.cache[beatmapset_path]
+                self._beatmaps.cache[beatmapset_path]
             old_beatmapset_paths.discard(beatmapset_path)
 
         for beatmapset_path in old_beatmapset_paths:
@@ -267,7 +271,10 @@ class BeatmapManager:
     def get_beatmap_metadata(self, beatmap_path):
         self.update_beatmap(beatmap_path)
         beatmapset_path = beatmap_path.parent
-        if beatmapset_path in self._beatmaps.cache and beatmap_path in self._beatmaps.cache[beatmapset_path].cache:
+        if (
+            beatmapset_path in self._beatmaps.cache
+            and beatmap_path in self._beatmaps.cache[beatmapset_path].cache
+        ):
             return self._beatmaps.cache[beatmapset_path].cache[beatmap_path].cache
         else:
             return None
@@ -286,7 +293,10 @@ class BeatmapManager:
         return Song(beatmapset_path.abs, beatmap.audio)
 
     def get_songs(self):
-        songs = [self.get_song(beatmapset_path) for beatmapset_path in self.get_beatmapset_paths()]
+        songs = [
+            self.get_song(beatmapset_path)
+            for beatmapset_path in self.get_beatmapset_paths()
+        ]
         return [song for song in songs if song is not None]
 
     def validate_beatmapset_path(self, path, should_exist=None):
@@ -315,7 +325,9 @@ class BeatmapManager:
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
-        path_mu = file_manager.as_relative_path(beatmapset_path, self.beatmaps_dir, markup=True)
+        path_mu = file_manager.as_relative_path(
+            beatmapset_path, self.beatmaps_dir, markup=True
+        )
         logger.print(f"[data/] Remove beatmapset {path_mu}...")
         shutil.rmtree(str(beatmapset_path))
 
@@ -331,7 +343,9 @@ class BeatmapManager:
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
-        path_mu = file_manager.as_relative_path(beatmapset_path, self.beatmaps_dir, markup=True)
+        path_mu = file_manager.as_relative_path(
+            beatmapset_path, self.beatmaps_dir, markup=True
+        )
         logger.print(f"[data/] Remove beatmap {path_mu}...")
 
         beatmap_path.abs.unlink()
@@ -343,12 +357,16 @@ class BeatmapManager:
 
         try:
             self.validate_beatmapset_path(beatmapset_path, should_exist=False)
-            self.file_manager.validate_path(src_path, should_exist=True, should_in_range=False, file_type="dir")
+            self.file_manager.validate_path(
+                src_path, should_exist=True, should_in_range=False, file_type="dir"
+            )
         except InvalidFileOperation as e:
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
-        logger.print(f"[data/] Add a new beatmapset from {logger.escape(str(src_path))}...")
+        logger.print(
+            f"[data/] Add a new beatmapset from {logger.escape(str(src_path))}..."
+        )
 
         shutil.copytree(str(src_path), str(beatmapset_path))
 
@@ -359,12 +377,16 @@ class BeatmapManager:
 
         try:
             self.validate_beatmap_path(beatmap_path, should_exist=False)
-            self.file_manager.validate_path(src_path, should_exist=True, should_in_range=False, file_type="file")
+            self.file_manager.validate_path(
+                src_path, should_exist=True, should_in_range=False, file_type="file"
+            )
         except InvalidFileOperation as e:
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
-        logger.print(f"[data/] Add a new beatmap from {logger.escape(str(src_path))}...")
+        logger.print(
+            f"[data/] Add a new beatmap from {logger.escape(str(src_path))}..."
+        )
 
         beatmapset_path = beatmap_path.parent
         if not beatmapset_path.abs.exists():
@@ -475,7 +497,16 @@ class PlayCommand:
 
 
 class KAIKOPlay:
-    def __init__(self, beatmap_loeader, start, resources_dir, cache_dir, file_manager, profile_manager, logger):
+    def __init__(
+        self,
+        beatmap_loeader,
+        start,
+        resources_dir,
+        cache_dir,
+        file_manager,
+        profile_manager,
+        logger,
+    ):
         self.beatmap_loeader = beatmap_loeader
         self.start = start
         self.resources_dir = resources_dir
@@ -517,12 +548,12 @@ class KAIKOPlay:
             return
 
         logger.print()
-        yes = yield from self.logger.ask(
-            "Keep changes to device settings?"
-        ).join()
+        yes = yield from self.logger.ask("Keep changes to device settings?").join()
         if yes:
             logger.print("[data/] Update device settings...")
-            title = self.file_manager.as_relative_path(self.profile_manager.current_path)
+            title = self.file_manager.as_relative_path(
+                self.profile_manager.current_path
+            )
             old = self.profile_manager.format()
             self.profile_manager.current.devices = devices_settings
             self.profile_manager.set_as_changed()
@@ -542,20 +573,18 @@ def print_hints(logger, settings):
     knock_keys = settings.controls.knock_delay_adjust_keys
     energy_keys = settings.controls.knock_energy_adjust_keys
 
-    pause_key = logger.escape(pause_key, type='all')
-    skip_key = logger.escape(skip_key, type='all')
-    stop_key = logger.escape(stop_key, type='all')
-    display_key_1 = logger.escape(display_keys[0], type='all')
-    display_key_2 = logger.escape(display_keys[1], type='all')
-    knock_key_1 = logger.escape(knock_keys[0], type='all')
-    knock_key_2 = logger.escape(knock_keys[1], type='all')
-    energy_key_1 = logger.escape(energy_keys[0], type='all')
-    energy_key_2 = logger.escape(energy_keys[1], type='all')
+    pause_key = logger.escape(pause_key, type="all")
+    skip_key = logger.escape(skip_key, type="all")
+    stop_key = logger.escape(stop_key, type="all")
+    display_key_1 = logger.escape(display_keys[0], type="all")
+    display_key_2 = logger.escape(display_keys[1], type="all")
+    knock_key_1 = logger.escape(knock_keys[0], type="all")
+    knock_key_2 = logger.escape(knock_keys[1], type="all")
+    energy_key_1 = logger.escape(energy_keys[0], type="all")
+    energy_key_2 = logger.escape(energy_keys[1], type="all")
 
     with logger.stack():
-        logger.print(
-            f"[hint/] Press [emph]{pause_key}[/] to pause/resume the game."
-        )
+        logger.print(f"[hint/] Press [emph]{pause_key}[/] to pause/resume the game.")
         logger.print(f"[hint/] Press [emph]{skip_key}[/] to skip time.")
         logger.print(f"[hint/] Press [emph]{stop_key}[/] to end the game.")
         logger.print(
@@ -579,7 +608,9 @@ def load_beatmap(beatmap_path, file_manager, beatmap_manager, logger):
         return beatsheets.read(str(beatmap_path))
 
     except beatsheets.BeatmapParseError:
-        path_mu = file_manager.as_relative_path(beatmap_path, beatmap_manager.beatmaps_dir, markup=True)
+        path_mu = file_manager.as_relative_path(
+            beatmap_path, beatmap_manager.beatmaps_dir, markup=True
+        )
         logger.print(f"[warn]Failed to read beatmap: {path_mu}[/]")
         logger.print_traceback()
         return
@@ -596,6 +627,4 @@ def load_pattern(pattern, tempo, offset, logger):
         logger.print_traceback()
         return
 
-    return beatmaps.Loop(
-        tempo=tempo, offset=offset, width=width, track=track
-    )
+    return beatmaps.Loop(tempo=tempo, offset=offset, width=width, track=track)

@@ -64,6 +64,7 @@ STAG = re.compile(r"^\[(?P<name>\w+)(?:=(?P<param>.*))?/\]$")
 PTAG = re.compile(r"^\[(?P<name>\w+)(?:=(?P<param>.*))?\]$")
 ETAG = re.compile(r"\[/\]")
 
+
 def parse_markup(markup_str, tags, props={}):
     stack = [(Group, [])]
 
@@ -374,11 +375,13 @@ class SlottedTemplate(Markup):
 def replace_slot(template, *args, **kwargs):
     args = list(args)
     kwargs = dict(kwargs)
+
     def inject(slot):
         if slot.id == "":
             return args.pop(0) if args else Group([])
         else:
             return kwargs.pop(slot.id) if slot.id in kwargs else Group([])
+
     return template.traverse(Slot, inject, strategy=TraverseStrategy.TopMost)
 
 
@@ -1180,7 +1183,9 @@ class RichRenderer:
         child = attr
         while not isinstance(child, Slot):
             if not isinstance(child, SGR) or len(child.children) != 1:
-                raise TypeError(f"Invalid markup for default attribute: {attr.represent()}")
+                raise TypeError(
+                    f"Invalid markup for default attribute: {attr.represent()}"
+                )
             code += child.ansi_code
             child = child.children[0]
         self.default_ansi_code = code
@@ -1387,7 +1392,9 @@ class RichRenderer:
                 if x + 1 < width and buffer[x + 1] == "":
                     buffer[x + 1] = " "
                 buffer[x] = (
-                    ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}{self.default_ansi_code}"
+                    ch
+                    if not attrs
+                    else f"\x1b[{';'.join(map(str, attrs))}m{ch}{self.default_ansi_code}"
                 )
                 x += 1
 
@@ -1398,7 +1405,9 @@ class RichRenderer:
                 if x_ + 1 < width and buffer[x_ + 1] == "":
                     buffer[x_ + 1] = " "
                 buffer[x] = (
-                    ch if not attrs else f"\x1b[{';'.join(map(str, attrs))}m{ch}{self.default_ansi_code}"
+                    ch
+                    if not attrs
+                    else f"\x1b[{';'.join(map(str, attrs))}m{ch}{self.default_ansi_code}"
                 )
                 buffer[x_] = ""
                 x += 2

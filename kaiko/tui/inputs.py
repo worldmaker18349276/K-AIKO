@@ -95,7 +95,9 @@ class HintManager:
         if self.hint_state.tokens is None:
             return self.cancel_hint()
 
-        if self.hint_state.index is not None and self.hint_state.index >= len(self.editor.tokens):
+        if self.hint_state.index is not None and self.hint_state.index >= len(
+            self.editor.tokens
+        ):
             return self.cancel_hint()
 
         if len(self.hint_state.tokens) > len(self.editor.tokens):
@@ -210,8 +212,7 @@ class AutocompleteManager:
 
         # generate suggestions
         suggestions = [
-            sheditors.quoting(sugg)
-            for sugg in self.editor.suggest(token_index, target)
+            sheditors.quoting(sugg) for sugg in self.editor.suggest(token_index, target)
         ]
         sugg_index = len(suggestions) if action == -1 else -1
 
@@ -290,7 +291,7 @@ class EmptyResult(Result):
 @dataclasses.dataclass(frozen=True)
 class ErrorResult(Result):
     command_str: str
-    index : Optional[int]
+    index: Optional[int]
     error: Exception
 
 
@@ -346,7 +347,11 @@ class HistoryManager:
     def write_history(self, command_group, command):
         self.history_path.touch()
         command = command.strip()
-        if command and command_group and (command_group, command) != self.latest_command:
+        if (
+            command
+            and command_group
+            and (command_group, command) != self.latest_command
+        ):
             open(self.history_path, "a").write(f"\n[{command_group}] {command}")
             self.latest_command = (command_group, command)
 
@@ -359,10 +364,12 @@ class HistoryManager:
             match = self.PATTERN.fullmatch(command)
             if match:
                 self.latest_command = (match.group(1), match.group(2))
-                if match.group(1) in command_groups and (not buffers or buffers[-1] != match.group(2)):
+                if match.group(1) in command_groups and (
+                    not buffers or buffers[-1] != match.group(2)
+                ):
                     buffers.append(match.group(2))
             if len(buffers) - read_size > self.TRIM_LEN:
-                del buffers[:self.TRIM_LEN]
+                del buffers[: self.TRIM_LEN]
 
         self.buffers = [list(command) for command in buffers[-read_size:]]
         self.buffers.append([])
@@ -465,7 +472,10 @@ class InputSettings(cfg.Configurable):
 
         suggestions_lines: int = 8
         suggestion_items: Tuple[str, str] = ("• [slot/]", "• [invert][slot/][/]")
-        suggestion_overflow_ellipses: Tuple[str, str] = ("[weight=dim]ⵗ [slot/][/]", "[weight=dim]ⵗ [slot/][/]")
+        suggestion_overflow_ellipses: Tuple[str, str] = (
+            "[weight=dim]ⵗ [slot/][/]",
+            "[weight=dim]ⵗ [slot/][/]",
+        )
 
     @cfg.subconfig
     class textbox(cfg.Configurable, TextBoxWidgetSettings):
@@ -1041,7 +1051,9 @@ class Input:
         if token is None:
             return self.delete_range(0, self.editor.pos)
         else:
-            return self.delete_range(token.mask.start, max(self.editor.pos, token.mask.stop))
+            return self.delete_range(
+                token.mask.start, max(self.editor.pos, token.mask.stop)
+            )
 
     @locked
     @onstate("EDIT")
@@ -1056,7 +1068,9 @@ class Input:
         if token is None:
             return self.delete_range(self.editor.pos, None)
         else:
-            return self.delete_range(min(self.editor.pos, token.mask.start), token.mask.stop)
+            return self.delete_range(
+                min(self.editor.pos, token.mask.start), token.mask.stop
+            )
 
     @locked
     @onstate("EDIT")
@@ -1233,9 +1247,15 @@ class Input:
         command_str = "".join(self.editor.buffer).strip()
 
         if self.editor.lex_state == sheditors.SHLEXER_STATE.BACKSLASHED:
-            res, index = ShellSyntaxError("No escaped character"), len(self.editor.tokens) - 1
+            res, index = (
+                ShellSyntaxError("No escaped character"),
+                len(self.editor.tokens) - 1,
+            )
         elif self.editor.lex_state == sheditors.SHLEXER_STATE.QUOTED:
-            res, index = ShellSyntaxError("No closing quotation"), len(self.editor.tokens) - 1
+            res, index = (
+                ShellSyntaxError("No closing quotation"),
+                len(self.editor.tokens) - 1,
+            )
         else:
             res, index = self.editor.result, self.editor.length
 
@@ -1246,7 +1266,9 @@ class Input:
             self._finish_session(ErrorResult(command_str, index, res))
             return False
         else:
-            self._finish_session(CompleteResult(str(self.editor.group), command_str, res))
+            self._finish_session(
+                CompleteResult(str(self.editor.group), command_str, res)
+            )
             return True
 
     @locked
@@ -1340,7 +1362,9 @@ class Input:
     def unknown_key(self, key):
         self.cancel_hint()
         command_str = "".join(self.editor.buffer).strip()
-        self._finish_session(ErrorResult(command_str, None, ValueError(f"Unknown key: " + key)))
+        self._finish_session(
+            ErrorResult(command_str, None, ValueError(f"Unknown key: " + key))
+        )
 
 
 class InputStroke:
@@ -1359,9 +1383,11 @@ class InputStroke:
 
         if not re.match(ACTION_REGEX, func):
             raise ValueError(f"invalid action: {repr(func)}")
+
         def action(input):
             with input.edit_ctxt.on():
                 eval(func, {}, {"input": input})
+
         return action
 
     def register(self, controller):
@@ -1658,8 +1684,12 @@ class MsgRenderer:
         if msg_ellipsis_width == -1:
             raise ValueError(f"invalid ellipsis: {message_overflow_ellipsis!r}")
 
-        sugg_top_ellipsis = self.rich.parse(suggestion_overflow_ellipses[0], slotted=True)
-        sugg_bottom_ellipsis = self.rich.parse(suggestion_overflow_ellipses[1], slotted=True)
+        sugg_top_ellipsis = self.rich.parse(
+            suggestion_overflow_ellipses[0], slotted=True
+        )
+        sugg_bottom_ellipsis = self.rich.parse(
+            suggestion_overflow_ellipses[1], slotted=True
+        )
 
         sugg_items_templates = (
             self.rich.parse(sugg_items[0], slotted=True),
@@ -1691,7 +1721,13 @@ class MsgRenderer:
                     if len(msgs) != 1 or msgs[0] is not msg:
                         msgs.clear()
                         msgs.append(msg)
-                logs.extend(self.render_popup(state.popup, desc_template=desc_template, info_template=info_template))
+                logs.extend(
+                    self.render_popup(
+                        state.popup,
+                        desc_template=desc_template,
+                        info_template=info_template,
+                    )
+                )
                 (view, msgs, logs), time, width = yield (view, msgs, logs)
 
     def render_hint(
@@ -1730,7 +1766,9 @@ class MsgRenderer:
                         if ch == "\n":
                             lines += 1
                         if lines == message_max_lines:
-                            return mu.Group((mu.Text(text.string[:i+1]), msg_ellipsis))
+                            return mu.Group(
+                                (mu.Text(text.string[: i + 1]), msg_ellipsis)
+                            )
 
                 return text
 
@@ -1753,7 +1791,11 @@ class MsgRenderer:
             res = []
             for i, sugg in enumerate(suggs):
                 sugg = mu.Text(sugg)
-                item_template = sugg_items_templates[1] if i == sugg_index - sugg_start else sugg_items_templates[0]
+                item_template = (
+                    sugg_items_templates[1]
+                    if i == sugg_index - sugg_start
+                    else sugg_items_templates[0]
+                )
                 sugg = item_template(sugg)
                 res.append(sugg)
                 if i == sugg_index - sugg_start and msg is not None:
@@ -1762,7 +1804,9 @@ class MsgRenderer:
             if sugg_start > 0:
                 res.insert(0, sugg_ellipses[0](mu.Text(f"{sugg_start} more")))
             if sugg_end < len(suggs_list):
-                res.append(sugg_ellipses[1](mu.Text(f"{len(suggs_list) - sugg_end} more")))
+                res.append(
+                    sugg_ellipses[1](mu.Text(f"{len(suggs_list) - sugg_end} more"))
+                )
 
             nl = mu.Text("\n")
             is_fst = True
@@ -1801,4 +1845,3 @@ class MsgRenderer:
                 logs.append(msg)
 
         return logs
-

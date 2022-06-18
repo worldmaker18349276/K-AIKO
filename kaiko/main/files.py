@@ -79,7 +79,9 @@ class RecognizedPath:
     def cp(self, src, provider):
         file_manager = provider.get(FileManager)
         file_manager.validate_path(self, should_exist=False, file_type="all")
-        file_manager.validate_path(src, should_exist=True, should_in_range=False, file_type="all")
+        file_manager.validate_path(
+            src, should_exist=True, should_in_range=False, file_type="all"
+        )
         shutil.copy(src.abs, self.abs)
 
 
@@ -143,7 +145,10 @@ class RecognizedDirPath(RecognizedPath):
                 if not field.match(path, slashend):
                     continue
 
-                if issubclass(field.path_type, RecognizedFilePath) and not path.is_file():
+                if (
+                    issubclass(field.path_type, RecognizedFilePath)
+                    and not path.is_file()
+                ):
                     continue
                 if issubclass(field.path_type, RecognizedDirPath) and not path.is_dir():
                     continue
@@ -170,7 +175,10 @@ class DirPatternField:
         for path in parent.iterdir():
             slashend = path.is_dir()
             if self.match(path, slashend):
-                if issubclass(self.path_type, RecognizedFilePath) and not path.is_file():
+                if (
+                    issubclass(self.path_type, RecognizedFilePath)
+                    and not path.is_file()
+                ):
                     continue
                 if issubclass(self.path_type, RecognizedDirPath) and not path.is_dir():
                     continue
@@ -323,12 +331,16 @@ class FileManager:
                 subpath_mu = self.as_relative_path(subpath, markup=True)
                 if not subpath.abs.exists():
                     logger.print(f"[warn]Missing file {subpath_mu}[/]")
-                    logger.print(f"[data/] Create file [emph]{logger.escape(str(subpath))}[/]...")
+                    logger.print(
+                        f"[data/] Create file [emph]{logger.escape(str(subpath))}[/]..."
+                    )
                     subpath.mk(provider)
 
                 elif (
-                    isinstance(subpath, RecognizedFilePath) and not subpath.abs.is_file()
-                    or isinstance(subpath, RecognizedDirPath) and not subpath.abs.is_dir()
+                    isinstance(subpath, RecognizedFilePath)
+                    and not subpath.abs.is_file()
+                    or isinstance(subpath, RecognizedDirPath)
+                    and not subpath.abs.is_dir()
                 ):
                     logger.print(f"[warn]Wrong file type {subpath_mu}[/]")
                     subpath_ = subpath.abs.parent / (subpath.abs.name + REDUNDANT_EXT)
@@ -368,7 +380,10 @@ class FileManager:
         if isinstance(current_path, RecognizedDirPath):
             return current_path.iterdir()
         elif current_path.abs.is_dir():
-            return (UnrecognizedPath(subpath, subpath.is_dir()) for subpath in current_path.abs.iterdir())
+            return (
+                UnrecognizedPath(subpath, subpath.is_dir())
+                for subpath in current_path.abs.iterdir()
+            )
         else:
             return ()
 
@@ -405,19 +420,27 @@ class FileManager:
 
         return relpath
 
-    def validate_path(self, path, should_exist=None, should_in_range=True, file_type="file"):
+    def validate_path(
+        self, path, should_exist=None, should_in_range=True, file_type="file"
+    ):
         # should_exist: Optional[bool]
 
         if should_in_range and not path.abs.resolve().is_relative_to(self.root.abs):
-            raise InvalidFileOperation(f"Out of root directory: {str(path.abs.resolve())}")
+            raise InvalidFileOperation(
+                f"Out of root directory: {str(path.abs.resolve())}"
+            )
 
         path_str = self.as_relative_path(path)
 
         if path.slashend and path.abs.is_file():
-            raise InvalidFileOperation(f"The given path ends with a slash, but found a file: {path_str}")
+            raise InvalidFileOperation(
+                f"The given path ends with a slash, but found a file: {path_str}"
+            )
 
         if path.slashend and file_type == "file":
-            raise InvalidFileOperation(f"The given path ends with a slash, but a file is required: {path_str}")
+            raise InvalidFileOperation(
+                f"The given path ends with a slash, but a file is required: {path_str}"
+            )
 
         if should_exist is True and not path.abs.exists():
             raise InvalidFileOperation(f"No such file: {path_str}")
@@ -474,9 +497,7 @@ class FileManager:
             logger = self.logger
             path_mu = self.as_relative_path(path, markup=True)
             dst_mu = self.as_relative_path(dst, markup=True)
-            logger.print(
-                f"[warn]Failed to move file: {path_mu} -> {dst_mu}[/]"
-            )
+            logger.print(f"[warn]Failed to move file: {path_mu} -> {dst_mu}[/]")
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
 
@@ -488,9 +509,7 @@ class FileManager:
             logger = self.logger
             src_mu = self.as_relative_path(src, markup=True)
             path_mu = self.as_relative_path(path, markup=True)
-            logger.print(
-                f"[warn]Failed to copy file: {src_mu} -> {path_mu}[/]"
-            )
+            logger.print(f"[warn]Failed to copy file: {src_mu} -> {path_mu}[/]")
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
 
@@ -524,16 +543,36 @@ class FilesCommand:
         display_settings = file_manager.settings.display
         current_path = file_manager.current
 
-        file_item = logger.rich.parse(display_settings.file_item, expand=False, slotted=True)
-        file_unknown = logger.rich.parse(display_settings.file_unknown, expand=False, slotted=True)
-        file_info = logger.rich.parse(display_settings.file_info, expand=False, slotted=True)
-        file_dir = logger.rich.parse(display_settings.file_dir, expand=False, slotted=True)
-        file_script = logger.rich.parse(display_settings.file_script, expand=False, slotted=True)
-        file_beatmap = logger.rich.parse(display_settings.file_beatmap, expand=False, slotted=True)
-        file_sound = logger.rich.parse(display_settings.file_sound, expand=False, slotted=True)
-        file_link = logger.rich.parse(display_settings.file_link, expand=False, slotted=True)
-        file_normal = logger.rich.parse(display_settings.file_normal, expand=False, slotted=True)
-        file_other = logger.rich.parse(display_settings.file_other, expand=False, slotted=True)
+        file_item = logger.rich.parse(
+            display_settings.file_item, expand=False, slotted=True
+        )
+        file_unknown = logger.rich.parse(
+            display_settings.file_unknown, expand=False, slotted=True
+        )
+        file_info = logger.rich.parse(
+            display_settings.file_info, expand=False, slotted=True
+        )
+        file_dir = logger.rich.parse(
+            display_settings.file_dir, expand=False, slotted=True
+        )
+        file_script = logger.rich.parse(
+            display_settings.file_script, expand=False, slotted=True
+        )
+        file_beatmap = logger.rich.parse(
+            display_settings.file_beatmap, expand=False, slotted=True
+        )
+        file_sound = logger.rich.parse(
+            display_settings.file_sound, expand=False, slotted=True
+        )
+        file_link = logger.rich.parse(
+            display_settings.file_link, expand=False, slotted=True
+        )
+        file_normal = logger.rich.parse(
+            display_settings.file_normal, expand=False, slotted=True
+        )
+        file_other = logger.rich.parse(
+            display_settings.file_other, expand=False, slotted=True
+        )
 
         field_types = file_manager.get_field_types()
 
@@ -566,9 +605,17 @@ class FilesCommand:
                 linkname = logger.rich.parse(linkname, expand=False)
                 name = file_link(src=linkname, dst=name)
 
-            ind = field_types.index(type(path)) if type(path) in field_types else len(field_types)
+            ind = (
+                field_types.index(type(path))
+                if type(path) in field_types
+                else len(field_types)
+            )
             info = path.info(self.provider)
-            info = logger.rich.parse(info, root_tag=True, expand=False) if info is not None else None
+            info = (
+                logger.rich.parse(info, root_tag=True, expand=False)
+                if info is not None
+                else None
+            )
 
             ordering_key = (
                 isinstance(path, UnrecognizedPath),
@@ -592,7 +639,7 @@ class FilesCommand:
 
         with logger.stack():
             for _, width, name, info in res:
-                padding = " "*(max_width - width) if width != -1 else " "
+                padding = " " * (max_width - width) if width != -1 else " "
                 logger.print(name, end=padding)
                 logger.print(info, end="\n")
 
@@ -693,6 +740,7 @@ class FilesCommand:
         usage: [cmd]bye[/]
         """
         from .profiles import ProfileManager
+
         profile_is_changed = self.provider.get(ProfileManager).is_changed()
 
         if profile_is_changed:
@@ -809,7 +857,9 @@ class PathParser(cmd.ArgumentParser):
             if os.path.isdir(currpath):
                 add(suggestions, os.path.join(token, ""))
 
-            elif os.path.isfile(currpath) and self.filter(self.root.recognize(currpath)):
+            elif os.path.isfile(currpath) and self.filter(
+                self.root.recognize(currpath)
+            ):
                 add(suggestions, token + "\000")
 
             return suggestions
@@ -833,7 +883,9 @@ class PathParser(cmd.ArgumentParser):
                 sugg = os.path.join(sugg, "")
                 add(suggestions, sugg)
 
-            elif os.path.isfile(suggpath) and self.filter(self.root.recognize(suggpath)):
+            elif os.path.isfile(suggpath) and self.filter(
+                self.root.recognize(suggpath)
+            ):
                 add(suggestions, sugg + "\000")
 
         return suggestions
@@ -850,6 +902,7 @@ class PathParser(cmd.ArgumentParser):
 
 def DirectCdCommand(provider):
     file_commands = FilesCommand(provider)
+
     def make_cd_command(path, doc):
         command = lambda _: file_commands.cd(path)
         command.__doc__ = doc

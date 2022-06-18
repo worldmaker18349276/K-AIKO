@@ -982,4 +982,3 @@ class function_command(CommandDescriptor):
             return parser
 
         return arg_parser_dec
-

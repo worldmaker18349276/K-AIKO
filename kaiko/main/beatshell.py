@@ -61,7 +61,9 @@ class PatternsWidgetSettings:
     patterns : list of str
         The patterns to loop.
     """
-    patterns: List[str] = dataclasses.field(default_factory=lambda: [f"[color=cyan]{pattern}[/]" for pattern in TIMCOEP8])
+    patterns: List[str] = dataclasses.field(
+        default_factory=lambda: [f"[color=cyan]{pattern}[/]" for pattern in TIMCOEP8]
+    )
 
 
 class PatternsWidget:
@@ -127,7 +129,8 @@ class MarkerWidget:
 
 
 BeatshellIconWidgetSettings = Union[
-    PatternsWidgetSettings, widgets.MonitorWidgetSettings,
+    PatternsWidgetSettings,
+    widgets.MonitorWidgetSettings,
 ]
 
 
@@ -307,9 +310,7 @@ class BeatPrompt:
         settings = self.settings
         debug_monitor = settings.debug_monitor
         renderer_monitor = (
-            engines.Monitor(self.monitor_file_path.abs)
-            if debug_monitor
-            else None
+            engines.Monitor(self.monitor_file_path.abs) if debug_monitor else None
         )
         input_task, controller = engines.Controller.create(
             devices_settings.controller, devices_settings.terminal
@@ -338,10 +339,12 @@ class BeatPrompt:
             self.logger.log(f"parse command: {result.command_str}")
             raise PromptError(result.error)
         elif isinstance(result, inputs.CompleteResult):
-            self.logger.log(f"parse command: [{result.command_group}] {result.command_str}")
+            self.logger.log(
+                f"parse command: [{result.command_group}] {result.command_str}"
+            )
             return result.command
         elif isinstance(result, inputs.EmptyResult):
-            return lambda:None
+            return lambda: None
         else:
             raise TypeError
 
@@ -372,8 +375,12 @@ class BeatPrompt:
         user_markup = user_markup(user_name=username)
 
         profile_markup = banner_settings.profile
-        profile_markup = profile_markup[0] if not profile_is_changed else profile_markup[1]
-        profile_markup = self.logger.rich.parse(profile_markup, expand=False, slotted=True)
+        profile_markup = (
+            profile_markup[0] if not profile_is_changed else profile_markup[1]
+        )
+        profile_markup = self.logger.rich.parse(
+            profile_markup, expand=False, slotted=True
+        )
         profile_markup = profile_markup(profile_name=profile)
 
         path_markup = banner_settings.path
@@ -382,7 +389,9 @@ class BeatPrompt:
         path_markup = path_markup(current_path=path)
 
         banner_markup = banner_settings.banner
-        banner_markup = self.logger.rich.parse(banner_markup, expand=False, slotted=True)
+        banner_markup = self.logger.rich.parse(
+            banner_markup, expand=False, slotted=True
+        )
         banner_markup = banner_markup(
             user=user_markup,
             profile=profile_markup,
@@ -399,7 +408,8 @@ class BeatPrompt:
             return
 
         info_markup = self.logger.rich.parse(info, root_tag=True)
-        info_block = self.logger.rich.parse(banner_settings.info_block, expand=False, slotted=True)
+        info_block = self.logger.rich.parse(
+            banner_settings.info_block, expand=False, slotted=True
+        )
         info_markup = info_block(info_markup)
         self.logger.print(info_markup, log=False)
-

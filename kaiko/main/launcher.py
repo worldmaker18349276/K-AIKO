@@ -44,12 +44,13 @@ logo = """
 
 logo_animated_text = "  🎧  A sound-controlled terminal-based rhythm game 🎤 "
 
+
 def animated_print(text, kps=30.0, word_delay=0.05, pre_delay=0.5, post_delay=1.0):
     time.sleep(pre_delay)
     for match in re.finditer(r".*?\s+", text):
         for ch in match.group(0):
             print(ch, end="", flush=True)
-            time.sleep(1/kps)
+            time.sleep(1 / kps)
         time.sleep(word_delay)
     time.sleep(post_delay)
 
@@ -164,7 +165,9 @@ class KAIKOLauncher:
         file_manager.init_env()
 
         # load profiles
-        profile_manager = ProfileManager(KAIKOSettings, file_manager.root.profiles, launcher.provider)
+        profile_manager = ProfileManager(
+            KAIKOSettings, file_manager.root.profiles, launcher.provider
+        )
         launcher.provider.set(profile_manager)
 
         profile_manager.on_change(
@@ -190,11 +193,15 @@ class KAIKOLauncher:
         with devices_ctxt as device_manager:
             launcher.provider.set(device_manager)
 
-            beatmap_manager = BeatmapManager(file_manager.root.beatmaps, launcher.provider)
+            beatmap_manager = BeatmapManager(
+                file_manager.root.beatmaps, launcher.provider
+            )
             launcher.provider.set(beatmap_manager)
 
             bgm_controller = BGMController(
-                launcher.provider, launcher.settings.bgm, launcher.settings.devices.mixer
+                launcher.provider,
+                launcher.settings.bgm,
+                launcher.settings.devices.mixer,
             )
             launcher.provider.set(bgm_controller)
 
@@ -240,7 +247,7 @@ class KAIKOLauncher:
 
         while True:
             self.logger.print()
-            prompt.print_banner(self.provider, prev_dir!=self.file_manager.current)
+            prompt.print_banner(self.provider, prev_dir != self.file_manager.current)
             prev_dir = self.file_manager.current
 
             try:
@@ -337,4 +344,3 @@ class KAIKOLauncher:
         commands["files"] = FilesCommand(self.provider)
         commands["cd"] = DirectCdCommand(self.provider)
         return cmd.RootCommandParser(**commands)
-
