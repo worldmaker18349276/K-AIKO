@@ -1,5 +1,6 @@
 import sys
 import os
+from inspect import cleandoc
 import traceback
 import shutil
 import pkgutil
@@ -44,16 +45,30 @@ logo = """
 
 
 class RootDirPath(RecognizedDirPath):
-    """The workspace of KAIKO
+    """The workspace of KAIKO"""
 
-    [rich]⠟⣡⡾⠋⣀⡰⡟⠛⢻⡆⠙⢻⡟⠓⢸⣇⣴⠟⠁⡏⣭⣭⢹
-    ⡾⠋⠻⣦⡉⢱⡟⠛⢻⡇⢤⣼⣧⣄⢸⡟⠙⢷⣄⣇⣛⣛⣸
+    def info_detailed(self, provider):
+        logger = provider.get(Logger)
+        profile_manager = provider.get(ProfileManager)
 
-    All data for this game will be stored here, like beatmaps, settings and
-    cache data.  To manage your data, use the commands [cmd]rm[/], [cmd]mk[/], [cmd]cp[/] and [cmd]mv[/]
-    like bash.  Use the command [cmd]cd[/] or type folder name directly to change
-    the current directory.
-    """
+        input_settings = profile_manager.current.shell.input.control
+
+        confirm_key = logger.escape(input_settings.confirm_key, type="all")
+        help_key = logger.escape(input_settings.help_key, type="all")
+        tab_key = logger.escape(input_settings.autocomplete_keys[0], type="all")
+
+        info = f"""
+        ⠟⣡⡾⠋⣀⡰⡟⠛⢻⡆⠙⢻⡟⠓⢸⣇⣴⠟⠁⡏⣭⣭⢹
+        ⡾⠋⠻⣦⡉⢱⡟⠛⢻⡇⢤⣼⣧⣄⢸⡟⠙⢷⣄⣇⣛⣛⣸
+
+        Welcome to K-AIKO, a sound-controlled terminal-based rhythm game!
+
+        [hint/] Type command and press [emph]{confirm_key}[/] to execute.
+        [hint/] Use [emph]{tab_key}[/] to autocomplete command.
+        [hint/] If you need help, press [emph]{help_key}[/].
+        """
+
+        return "[rich]" + cleandoc(info)
 
     def mk(self, provider):
         self.abs.mkdir()
@@ -209,7 +224,6 @@ class KAIKOLauncher:
             preview_handler,
         )
 
-        prompt.print_tips()
         self.logger.print()
         prev_dir = None
 

@@ -351,18 +351,6 @@ class BeatPrompt:
     def record_command(self):
         return self.input._record_command()
 
-    def print_tips(self):
-        input_settings = self.settings.input.control
-
-        confirm_key = self.logger.escape(input_settings.confirm_key, type="all")
-        help_key = self.logger.escape(input_settings.help_key, type="all")
-        tab_key = self.logger.escape(input_settings.autocomplete_keys[0], type="all")
-
-        with self.logger.stack():
-            self.logger.print(f"[hint/] Type command and press [emph]{confirm_key}[/] to execute.")
-            self.logger.print(f"[hint/] Use [emph]{tab_key}[/] to autocomplete command.")
-            self.logger.print(f"[hint/] If you need help, press [emph]{help_key}[/].")
-
     def print_banner(self, provider, print_info):
         file_manager = provider.get(FileManager)
         profile_manager = provider.get(ProfileManager)
