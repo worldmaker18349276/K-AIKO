@@ -820,15 +820,22 @@ class PathParser(cmd.ArgumentParser):
 
 def DirectCdCommand(provider):
     file_commands = FilesCommand(provider)
-    def make_cd_command(path):
-        return cmd.function_command(lambda _: file_commands.cd(path))
+    def make_cd_command(path, doc):
+        command = lambda _: file_commands.cd(path)
+        command.__doc__ = doc
+        return cmd.function_command(command)
 
     file_manager = provider.get(FileManager)
 
     attrs = {}
-    attrs[".."] = make_cd_command(file_manager.recognize(file_manager.current.abs / ".."))
+
+    path = file_manager.recognize(file_manager.current.abs / "..")
+    doc = path.info_detailed(provider)
+    attrs[".."] = make_cd_command(path, doc)
+
     for path in file_manager.iterdir():
         if path.slashend:
-            attrs[path.abs.name + "/"] = make_cd_command(path)
+            doc = path.info_detailed(provider)
+            attrs[path.abs.name + "/"] = make_cd_command(path, doc)
 
     return type("DirectCdCommand", (object,), attrs)()
