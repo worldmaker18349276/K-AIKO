@@ -1,13 +1,11 @@
-.. image:: https://github.com/worldmaker18349276/K-AIKO/raw/master/logo.png
+=====================================================
+K-AIKO: A sound-controlled terminal-based rhythm game
+=====================================================
 
-K-AIK▣ is a sound-controlled terminal-based rhythm game.
-
-::
-
-     ⣿⣴⣧⣰⣤⣄ [00000/00032] □   □⛶  □   ■       ■   □   □   ■   ■   □   [  0.9%|00:01]
+.. image:: https://github.com/worldmaker18349276/K-AIKO/raw/master/screenshot.png
 
 Instruction
------------
+===========
 
 K-AIKO runs on linux with python 3.9, make sure you have it.
 
@@ -47,6 +45,6 @@ Now you can play K-AIKO, just run:
 Have fun!
 
 License
--------
+=======
 
 MIT
