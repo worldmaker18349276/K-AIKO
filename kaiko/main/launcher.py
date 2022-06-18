@@ -1,5 +1,6 @@
 import sys
 import os
+import time
 from inspect import cleandoc
 import traceback
 import shutil
@@ -111,6 +112,7 @@ class RootDirPath(RecognizedDirPath):
 
 class KAIKOLauncher:
     update_interval = 0.01
+    logo_delay = 1.0
     version = __version__
 
     def __init__(self):
@@ -120,6 +122,8 @@ class KAIKOLauncher:
     def launch(cls):
         # print logo
         print(logo.format(f"v{cls.version}"), flush=True)
+
+        time.sleep(cls.logo_delay)
 
         try:
             cls.init_and_run().exhaust(dt=cls.update_interval, interruptible=True)
