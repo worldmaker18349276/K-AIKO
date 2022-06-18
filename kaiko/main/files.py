@@ -302,6 +302,9 @@ class FileManager:
         self.settings = FileManagerSettings()
         self.provider = provider
 
+    def init_env(self):
+        os.environ[self.ROOT_ENVVAR] = str(self.root.abs)
+
     def set_settings(self, settings):
         self.settings = settings
 
@@ -492,7 +495,13 @@ class FileManager:
             return
 
     def make_parser(self, desc=None, filter=lambda _: True):
-        return PathParser(self.root, self.current.abs, desc=desc, filter=filter, provider=self.provider)
+        return PathParser(
+            self.root,
+            self.current.abs,
+            desc=desc,
+            filter=filter,
+            provider=self.provider,
+        )
 
 
 class FilesCommand:
@@ -783,6 +792,16 @@ class PathParser(cmd.ArgumentParser):
 
         if is_dir and self.filter(self.root.recognize(currpath)):
             suggestions.append(os.path.join(token or ".", "") + "\000")
+
+        # deal with variables
+        if re.fullmatch(r"\$\w+", token) and os.path.exists(currpath):
+            if os.path.isdir(currpath):
+                suggestions.append(os.path.join(token, ""))
+
+            elif os.path.isfile(currpath) and self.filter(self.root.recognize(currpath)):
+                suggestions.append(token + "\000")
+
+            return suggestions
 
         # separate parent and partial child name
         parent, child = os.path.split(token)

@@ -150,7 +150,7 @@ class KAIKOLauncher:
         launcher.provider.set(file_manager)
         file_manager.fix()
 
-        os.environ[file_manager.ROOT_ENVVAR] = str(file_manager.root)
+        file_manager.init_env()
 
         # load profiles
         profile_manager = ProfileManager(KAIKOSettings, file_manager.root.profiles, launcher.provider)
