@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 import time
 from inspect import cleandoc
 import traceback
@@ -39,10 +40,18 @@ logo = """
   ▄██▀██▄ ▀▀▀▄███████    ██    ███▀██▄  █ ▓▓▓▓ █
   █▀   ▀██▄  ██    ██ ▀██████▄ ██   ▀██▄█▄▄▄▄▄▄█  {}
 
-
-  🎧  Use headphones for the best experience 🎤 
-
 """
+
+logo_animated_text = "  🎧  A sound-controlled terminal-based rhythm game 🎤 "
+
+def animated_print(text, kps=30.0, word_delay=0.05, pre_delay=0.5, post_delay=1.0):
+    time.sleep(pre_delay)
+    for match in re.finditer(r".*?\s+", text):
+        for ch in match.group(0):
+            print(ch, end="", flush=True)
+            time.sleep(1/kps)
+        time.sleep(word_delay)
+    time.sleep(post_delay)
 
 
 class RootDirPath(RecognizedDirPath):
@@ -62,8 +71,7 @@ class RootDirPath(RecognizedDirPath):
         [color=bright_green]⠟⣡⡾⠋⣀⡰⡟⠛⢻⡆⠙⢻⡟⠓⢸⣇⣴⠟⠁⡏⣭⣭⢹[/]
         [color=bright_green]⡾⠋⠻⣦⡉⢱⡟⠛⢻⡇⢤⣼⣧⣄⢸⡟⠙⢷⣄⣇⣛⣛⣸[/]
 
-        Welcome to K-AIKO, a sound-controlled terminal-based rhythm game!
-
+        [hint/] Use headphones for the best experience.
         [hint/] Type command and press [emph]{confirm_key}[/] to execute.
         [hint/] Use [emph]{tab_key}[/] to autocomplete command.
         [hint/] If you need help, press [emph]{help_key}[/].
@@ -112,7 +120,6 @@ class RootDirPath(RecognizedDirPath):
 
 class KAIKOLauncher:
     update_interval = 0.01
-    logo_delay = 1.0
     version = __version__
 
     def __init__(self):
@@ -122,8 +129,8 @@ class KAIKOLauncher:
     def launch(cls):
         # print logo
         print(logo.format(f"v{cls.version}"), flush=True)
-
-        time.sleep(cls.logo_delay)
+        animated_print(logo_animated_text)
+        print("\n\n\n", end="", flush=True)
 
         try:
             cls.init_and_run().exhaust(dt=cls.update_interval, interruptible=True)
