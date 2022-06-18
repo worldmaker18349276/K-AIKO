@@ -500,6 +500,7 @@ class FileManager:
             self.current.abs,
             desc=desc,
             filter=filter,
+            suggs=[f"${self.ROOT_ENVVAR}/"],
             provider=self.provider,
         )
 
@@ -730,6 +731,7 @@ class PathParser(cmd.ArgumentParser):
         prefix=".",
         desc=None,
         filter=lambda _: True,
+        suggs=None,
         provider=None,
     ):
         r"""Contructor.
@@ -744,12 +746,15 @@ class PathParser(cmd.ArgumentParser):
             The description of this argument.
         filter : function, optional
             The filter function for the result.
+        suggs : list of str, optional
+            The absolute path that will be suggested.
         provider : Provider, optional
         """
         self.root = root
         self.prefix = prefix
         self._desc = desc
         self.filter = filter
+        self.suggs = suggs
         self.provider = provider
 
     def desc(self):
@@ -771,7 +776,13 @@ class PathParser(cmd.ArgumentParser):
         return path
 
     def suggest(self, token):
-        suggestions = []
+        suggestions = cmd.fit(token, self.suggs)
+        if token in suggestions:
+            suggestions.remove(token)
+
+        def add(list, elem):
+            if elem not in list:
+                list.append(elem)
 
         def expand(path):
             path = os.path.expanduser(path)
@@ -788,18 +799,18 @@ class PathParser(cmd.ArgumentParser):
             return suggestions
 
         if is_file and self.filter(self.root.recognize(currpath)):
-            suggestions.append((token or ".") + "\000")
+            add(suggestions, (token or ".") + "\000")
 
         if is_dir and self.filter(self.root.recognize(currpath)):
-            suggestions.append(os.path.join(token or ".", "") + "\000")
+            add(suggestions, os.path.join(token or ".", "") + "\000")
 
         # deal with variables
         if re.fullmatch(r"\$\w+", token) and os.path.exists(currpath):
             if os.path.isdir(currpath):
-                suggestions.append(os.path.join(token, ""))
+                add(suggestions, os.path.join(token, ""))
 
             elif os.path.isfile(currpath) and self.filter(self.root.recognize(currpath)):
-                suggestions.append(token + "\000")
+                add(suggestions, token + "\000")
 
             return suggestions
 
@@ -820,10 +831,10 @@ class PathParser(cmd.ArgumentParser):
 
             if os.path.isdir(suggpath):
                 sugg = os.path.join(sugg, "")
-                suggestions.append(sugg)
+                add(suggestions, sugg)
 
             elif os.path.isfile(suggpath) and self.filter(self.root.recognize(suggpath)):
-                suggestions.append(sugg + "\000")
+                add(suggestions, sugg + "\000")
 
         return suggestions
 
