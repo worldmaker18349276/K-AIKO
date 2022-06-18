@@ -9,35 +9,64 @@ Value = Union[None, bool, int, Fraction, float, str]
 Arguments = Tuple[List[Value], Dict[str, Value]]
 
 
-class Pattern:
+class PatternError(Exception):
+    pass
+
+
+class AST:
     pass
 
 
 @dataclasses.dataclass
-class Note(Pattern):
-    #    event note: XXX(arg=...)
-    #     text note: "ABC"(arg=...)
-    # lengthen note: ~
-    #  measure note: |
-    #     rest note: _
+class Symbol(AST):
+    # XYZ(arg=...)
 
     symbol: str
     arguments: Arguments
 
 
 @dataclasses.dataclass
-class Division(Pattern):
+class Text(AST):
+    # "ABC"(arg=...)
+
+    text: str
+    arguments: Arguments
+
+
+@dataclasses.dataclass
+class Lengthen(AST):
+    # ~
+
+    pass
+
+
+@dataclasses.dataclass
+class Measure(AST):
+    # |
+
+    pass
+
+
+@dataclasses.dataclass
+class Rest(AST):
+    # _
+
+    pass
+
+
+@dataclasses.dataclass
+class Division(AST):
     # [x o]
     # [x x o]/3
 
     divisor: int = 2
-    patterns: List[Pattern] = dataclasses.field(default_factory=list)
+    patterns: List[AST] = dataclasses.field(default_factory=list)
 
 
 @dataclasses.dataclass
-class Instant(Pattern):
+class Instant(AST):
     # {x x o}
-    patterns: List[Pattern] = dataclasses.field(default_factory=list)
+    patterns: List[AST] = dataclasses.field(default_factory=list)
 
 
 def IIFE(func):
@@ -104,9 +133,29 @@ def note_parser():
     text = pc.regex(
         r'"([^\r\n\\"\x00]|\\[\\"btnrfv]|\\x[0-9a-fA-F]{2}|\\u[0-9a-fA-F]{4}|\\U[0-9a-fA-F]{8})*"'
     ).map(ast.literal_eval)
-    return (symbol + arguments_parser).starmap(Note) | (
-        text + arguments_parser
-    ).starmap(lambda text, arg: Note("Text", ([text, *arg[0]], arg[1])))
+
+    def make_note(sym, arg):
+        if sym == "~":
+            if arg[0] or arg[1]:
+                raise PatternError("lengthen note don't accept any argument")
+            return Lengthen()
+
+        elif sym == "|":
+            if arg[0] or arg[1]:
+                raise PatternError("measure note don't accept any argument")
+            return Measure()
+
+        elif sym == "_":
+            if arg[0] or arg[1]:
+                raise PatternError("rest note don't accept any argument")
+            return Rest()
+
+        else:
+            return Symbol(sym, arg)
+
+    symbol_parser = (symbol + arguments_parser).starmap(make_note)
+    text_parser = (text + arguments_parser).starmap(Text)
+    return symbol_parser | text_parser
 
 
 @pc.parsec
@@ -144,10 +193,6 @@ def patterns_parser():
     return enclose_by(pattern, msp, pc.nothing(), end)
 
 
-class PatternError(Exception):
-    pass
-
-
 def to_events(patterns, beat=0, length=1, notations={}):
     def build(beat, length, last_event, patterns):
         for pattern in patterns:
@@ -165,38 +210,41 @@ def to_events(patterns, beat=0, length=1, notations={}):
                     beat, Fraction(0, 1), last_event, pattern.patterns
                 )
 
-            elif pattern.symbol == "~":
-                if pattern.arguments[0] or pattern.arguments[1]:
-                    raise PatternError("lengthen note don't accept any argument")
-
+            elif isinstance(pattern, Lengthen):
                 if last_event is not None:
                     last_event.length += length
                 beat += length
 
-            elif pattern.symbol == "|":
-                if pattern.arguments[0] or pattern.arguments[1]:
-                    raise PatternError("measure note don't accept any argument")
+            elif isinstance(pattern, Measure):
+                pass
 
-            elif pattern.symbol == "_":
-                if pattern.arguments[0] or pattern.arguments[1]:
-                    raise PatternError("rest note don't accept any argument")
-
+            elif isinstance(pattern, Rest):
                 if last_event is not None:
                     yield last_event
                 last_event = None
                 beat += length
 
-            else:
-                if pattern.symbol not in notations:
-                    raise PatternError("unknown symbol: " + pattern.symbol)
+            elif isinstance(pattern, (Text, Symbol)):
+                if isinstance(pattern, Symbol):
+                    symbol = pattern.symbol
+                    args = pattern.arguments[0]
+                    kw = pattern.arguments[1]
+                else:
+                    symbol = "Text"
+                    args = (pattern.text, *pattern.arguments[0])
+                    kw = pattern.arguments[1]
+
+                if symbol not in notations:
+                    raise PatternError("unknown symbol: " + symbol)
 
                 if last_event is not None:
                     yield last_event
-                event_type = notations[pattern.symbol]
-                last_event = event_type(
-                    beat, length, *pattern.arguments[0], **pattern.arguments[1]
-                )
+                event_type = notations[symbol]
+                last_event = event_type(beat, length, *args, **kw)
                 beat += length
+
+            else:
+                raise TypeError
 
         return beat, last_event
 
@@ -219,6 +267,20 @@ def to_events(patterns, beat=0, length=1, notations={}):
         events.append(last_event)
 
     return events, last_beat
+
+
+def snap_to_frac(value, epsilon=0.001, N=float("inf")):
+    d = 2
+    count = 0
+    while True:
+        w = epsilon * 0.5 ** d / 2
+        for n in range(1, d):
+            if n / d - w < value < n / d + w:
+                return Fraction(n, d)
+            count += 1
+            if count > N:
+                raise ValueError(f"cannot snap {value} to any fraction")
+        d += 1
 
 
 def format_value(value):
@@ -254,7 +316,7 @@ def format_patterns(patterns):
             temp = "[%s]" if pattern.divisor == 2 else f"[%s]/{pattern.divisor}"
             items.append(temp % format_patterns(pattern.patterns))
 
-        elif isinstance(pattern, Note):
+        elif isinstance(pattern, Symbol):
             items.append(pattern.symbol + format_arguments(*pattern.arguments))
 
         else:
