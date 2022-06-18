@@ -193,35 +193,64 @@ def patterns_parser():
     return enclose_by(pattern, msp, pc.nothing(), end)
 
 
-def to_events(patterns, beat=0, length=1, notations={}):
-    def build(beat, length, last_event, patterns):
+@dataclasses.dataclass
+class Note:
+    symbol: str
+    beat: Fraction
+    length: Fraction
+    arguments: Arguments
+
+    def to_event(self, notations):
+        if self.symbol not in notations:
+            raise ValueError(f"unknown symbol: {self.symbol}")
+        return notations[self.symbol](
+            self.beat,
+            self.length,
+            *self.arguments[0],
+            **self.arguments[1],
+        )
+
+
+def collect(it):
+    res = []
+    while True:
+        try:
+            value = next(it)
+        except StopIteration as e:
+            return res, e.value
+        else:
+            res.append(value)
+
+
+def to_notes(patterns, beat=0, length=1):
+    def build(beat, length, last_note, patterns):
         for pattern in patterns:
             if isinstance(pattern, Division):
-                beat, last_event = yield from build(
-                    beat, length / pattern.divisor, last_event, pattern.patterns
+                beat, last_note = yield from build(
+                    beat, length / pattern.divisor, last_note, pattern.patterns
                 )
 
             elif isinstance(pattern, Instant):
-                if last_event is not None:
-                    yield last_event
-                last_event = None
+                if last_note is not None:
+                    yield last_note
+                last_note = None
 
-                beat, last_event = yield from build(
-                    beat, Fraction(0, 1), last_event, pattern.patterns
+                beat, last_note = yield from build(
+                    beat, Fraction(0, 1), last_note, pattern.patterns
                 )
 
             elif isinstance(pattern, Lengthen):
-                if last_event is not None:
-                    last_event.length += length
+                if last_note is not None:
+                    last_note.length += length
                 beat += length
 
             elif isinstance(pattern, Measure):
                 pass
 
             elif isinstance(pattern, Rest):
-                if last_event is not None:
-                    yield last_event
-                last_event = None
+                if last_note is not None:
+                    yield last_note
+                last_note = None
                 beat += length
 
             elif isinstance(pattern, (Text, Symbol)):
@@ -234,39 +263,25 @@ def to_events(patterns, beat=0, length=1, notations={}):
                     args = (pattern.text, *pattern.arguments[0])
                     kw = pattern.arguments[1]
 
-                if symbol not in notations:
-                    raise PatternError("unknown symbol: " + symbol)
-
-                if last_event is not None:
-                    yield last_event
-                event_type = notations[symbol]
-                last_event = event_type(beat, length, *args, **kw)
+                if last_note is not None:
+                    yield last_note
+                last_note = Note(symbol, beat, length, (args, kw))
                 beat += length
 
             else:
                 raise TypeError
 
-        return beat, last_event
+        return beat, last_note
 
     beat = Fraction(1, 1) * beat
     length = Fraction(1, 1) * length
-    last_event = None
+    last_note = None
 
-    events = []
-    it = build(beat, length, last_event, patterns)
-    while True:
-        try:
-            event = next(it)
-        except StopIteration as e:
-            last_beat, last_event = e.value
-            break
-        else:
-            events.append(event)
+    notes, (last_beat, last_note) = collect(build(beat, length, last_note, patterns))
+    if last_note is not None:
+        notes.append(last_note)
 
-    if last_event is not None:
-        events.append(last_event)
-
-    return events, last_beat
+    return notes, last_beat
 
 
 def snap_to_frac(value, epsilon=0.001, N=float("inf")):

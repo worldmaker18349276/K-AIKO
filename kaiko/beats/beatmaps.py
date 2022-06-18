@@ -1437,8 +1437,10 @@ class BeatTrack:
     def parse(cls, patterns_str, ret_width=False, notations=None):
         notations = notations if notations is not None else cls._notations
         patterns = beatpatterns.patterns_parser.parse(patterns_str)
-        events, width = beatpatterns.to_events(patterns, notations=notations)
-        track = cls(events)
+        notes, width = beatpatterns.to_notes(patterns)
+
+        track = cls([note.to_event(notations) for note in notes])
+
         if ret_width:
             return track, width
         else:
