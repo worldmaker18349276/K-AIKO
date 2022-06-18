@@ -58,8 +58,8 @@ class RootDirPath(RecognizedDirPath):
         tab_key = logger.escape(input_settings.autocomplete_keys[0], type="all")
 
         info = f"""
-        ⠟⣡⡾⠋⣀⡰⡟⠛⢻⡆⠙⢻⡟⠓⢸⣇⣴⠟⠁⡏⣭⣭⢹
-        ⡾⠋⠻⣦⡉⢱⡟⠛⢻⡇⢤⣼⣧⣄⢸⡟⠙⢷⣄⣇⣛⣛⣸
+        [color=bright_green]⠟⣡⡾⠋⣀⡰⡟⠛⢻⡆⠙⢻⡟⠓⢸⣇⣴⠟⠁⡏⣭⣭⢹[/]
+        [color=bright_green]⡾⠋⠻⣦⡉⢱⡟⠛⢻⡇⢤⣼⣧⣄⢸⡟⠙⢷⣄⣇⣛⣛⣸[/]
 
         Welcome to K-AIKO, a sound-controlled terminal-based rhythm game!
 
