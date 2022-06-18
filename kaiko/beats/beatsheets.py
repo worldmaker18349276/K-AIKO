@@ -141,8 +141,8 @@ _beatmap_fields = {
     "audio.preview": float,
     "metronome.offset": float,
     "metronome.tempo": float,
-    "playfield_state.bar_shift": float,
-    "playfield_state.bar_flip": bool,
+    "beatbar_state.bar_shift": float,
+    "beatbar_state.bar_flip": bool,
 }
 
 
