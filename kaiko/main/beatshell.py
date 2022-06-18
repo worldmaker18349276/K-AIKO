@@ -363,7 +363,7 @@ class BeatPrompt:
             self.logger.print(f"[hint/] Use [emph]{tab_key}[/] to autocomplete command.")
             self.logger.print(f"[hint/] If you need help, press [emph]{help_key}[/].")
 
-    def print_banner(self, provider):
+    def print_banner(self, provider, print_info):
         file_manager = provider.get(FileManager)
         profile_manager = provider.get(ProfileManager)
 
@@ -401,15 +401,17 @@ class BeatPrompt:
             path=path_markup,
         )
 
-        info = file_manager.current.info_detailed(provider)
-        if info is not None:
-            info_markup = self.logger.rich.parse(info, root_tag=True)
-            info_block = self.logger.rich.parse(banner_settings.info_block, expand=False, slotted=True)
-            info_markup = info_block(info_markup)
-        else:
-            info_markup = None
-
         self.logger.print(banner_markup, log=False)
-        if info_markup is not None:
-            self.logger.print(info_markup, log=False)
+
+        if not print_info:
+            return
+
+        info = file_manager.current.info_detailed(provider)
+        if info is None:
+            return
+
+        info_markup = self.logger.rich.parse(info, root_tag=True)
+        info_block = self.logger.rich.parse(banner_settings.info_block, expand=False, slotted=True)
+        info_markup = info_block(info_markup)
+        self.logger.print(info_markup, log=False)
 

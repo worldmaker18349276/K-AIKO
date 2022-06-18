@@ -211,10 +211,12 @@ class KAIKOLauncher:
 
         prompt.print_tips()
         self.logger.print()
+        prev_dir = None
 
         while True:
             self.logger.print()
-            prompt.print_banner(self.provider)
+            prompt.print_banner(self.provider, prev_dir!=self.file_manager.current)
+            prev_dir = self.file_manager.current
 
             try:
                 command = yield from prompt.prompt(self.settings.devices).join()
