@@ -1,6 +1,6 @@
 from fractions import Fraction
 import dataclasses
-from typing import List, Tuple, Dict, Union
+from typing import List, Tuple, Dict, Union, Optional
 import ast
 from ..utils import parsec as pc
 
@@ -15,6 +15,21 @@ class PatternError(Exception):
 
 class AST:
     pass
+
+
+@dataclasses.dataclass
+class Comment(AST):
+    # # abc
+
+    comment: str
+
+
+@dataclasses.dataclass
+class Metadata(AST):
+    # #@TITLE: 123
+
+    title: str
+    content: Optional[str]
 
 
 @dataclasses.dataclass
@@ -128,6 +143,20 @@ def arguments_parser():
 
 
 @IIFE
+@pc.parsec
+def comment_parser():
+    comment = yield pc.regex(r"#[^\n]*[\n$]").desc("comment")
+    comment = comment[1:].rstrip("\n")
+    if comment.startswith("@"):
+        metadata = comment[1:].split(":", 1)
+        title = metadata[0]
+        content = metadata[1] if len(metadata) >= 2 else None
+        return Metadata(title, content)
+    else:
+        return Comment(comment)
+    
+
+@IIFE
 def note_parser():
     symbol = pc.regex(r"[^ \b\t\n\r\f\v()[\]{}\'\"\\#]+")
     text = pc.regex(
@@ -180,7 +209,7 @@ def enclose_by(elem, sep, opening, closing):
 @IIFE
 def patterns_parser():
     end = pc.regex(r"[ \t\n]*$").desc("end of file")
-    msp = pc.regex(r"([ \t\n$]|#[^\n]*[\n$])+").desc("whitespace")
+    msp = pc.regex(r"([ \t\n$])+").desc("whitespace")
     div = pc.regex(r"/(\d+)").map(lambda m: int(m[1:])) | pc.nothing(2)
 
     instant = enclose_by(
@@ -189,7 +218,7 @@ def patterns_parser():
     division = (
         enclose_by(pc.proxy(lambda: pattern), msp, pc.string("["), pc.string("]")) + div
     ).starmap(lambda a, b: Division(b, a))
-    pattern = instant | division | note_parser
+    pattern = instant | division | note_parser | comment_parser
     return enclose_by(pattern, msp, pc.nothing(), end)
 
 
@@ -267,6 +296,9 @@ def to_notes(patterns, beat=0, length=1):
                     yield last_note
                 last_note = Note(symbol, beat, length, (args, kw))
                 beat += length
+
+            elif isinstance(pattern, (Comment, Metadata)):
+                pass
 
             else:
                 raise TypeError
