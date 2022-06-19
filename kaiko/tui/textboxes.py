@@ -4,6 +4,7 @@ import numpy
 from ..utils import datanodes as dn
 from ..utils import markups as mu
 from ..devices import engines
+from ..devices import clocks
 
 
 @dataclasses.dataclass(frozen=True)
@@ -240,6 +241,6 @@ class TextBox:
 
     def load(self, provider):
         rich = provider.get(mu.RichParser)
-        metronome = provider.get(engines.Metronome)
+        metronome = provider.get(clocks.Metronome)
 
         return self.render_textbox(rich=rich, metronome=metronome)

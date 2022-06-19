@@ -5,6 +5,7 @@ from ..utils.providers import Provider
 from ..utils import datanodes as dn
 from ..utils import config as cfg
 from ..utils import markups as mu
+from ..devices import clocks
 from ..devices import engines
 from ..tui import widgets
 from ..tui import inputs
@@ -72,7 +73,7 @@ class PatternsWidget:
 
     def load(self, provider):
         rich = provider.get(mu.RichParser)
-        metronome = provider.get(engines.Metronome)
+        metronome = provider.get(clocks.Metronome)
 
         patterns = self.settings.patterns
 
@@ -111,7 +112,7 @@ class MarkerWidget:
 
     def load(self, provider):
         rich = provider.get(mu.RichParser)
-        metronome = provider.get(engines.Metronome)
+        metronome = provider.get(clocks.Metronome)
 
         blink_ratio = self.settings.blink_ratio
         normal = [(0, rich.parse(self.settings.normal_appearance))]
@@ -275,7 +276,7 @@ class BeatPrompt:
         settings = self.settings
         t0 = settings.prompt.t0
         tempo = settings.prompt.tempo
-        metronome = engines.Metronome(t0, tempo)
+        metronome = clocks.Metronome(t0, tempo)
 
         provider = Provider()
         provider.set(self.logger.rich)

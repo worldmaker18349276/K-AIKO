@@ -11,6 +11,7 @@ from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..utils import markups as mu
 from ..devices import audios as aud
+from ..devices import clocks
 from ..devices import engines
 from ..tui import widgets
 from ..tui import beatbars
@@ -1469,7 +1470,7 @@ class Beatmap:
         self.metronome = (
             metronome
             if metronome is not None
-            else engines.Metronome(offset=0.0, tempo=120.0)
+            else clocks.Metronome(offset=0.0, tempo=120.0)
         )
         self.beatbar_state = (
             beatbar_state if beatbar_state is not None else beatbars.BeatbarState()
@@ -1584,7 +1585,7 @@ class Beatmap:
         renderer.add_texts(footer, xmask=footer_mask, zindex=(3,))
 
         # handler
-        event_clock = engines.Clock()
+        event_clock = clocks.Clock()
 
         devices_settings = devices_settings.copy()
         settings_changed = Beatmap.register_controllers(
@@ -1921,7 +1922,7 @@ class Loop(Beatmap):
     def __init__(
         self, *, offset=1.0, tempo=120.0, width=Fraction(0), track=None, settings=None
     ):
-        metronome = engines.Metronome(offset=offset, tempo=tempo)
+        metronome = clocks.Metronome(offset=offset, tempo=tempo)
         super().__init__(metronome=metronome, tracks={"main": track}, settings=settings)
         self.width = width
 
