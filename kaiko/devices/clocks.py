@@ -3,28 +3,28 @@ import queue
 from ..utils import datanodes as dn
 
 
-class ClockAction:
+class ClockOperation:
     pass
 
 
 @dataclasses.dataclass(frozen=True)
-class ClockPause(ClockAction):
+class ClockPause(ClockOperation):
     time: float
 
 
 @dataclasses.dataclass(frozen=True)
-class ClockResume(ClockAction):
+class ClockResume(ClockOperation):
     time: float
 
 
 @dataclasses.dataclass(frozen=True)
-class ClockSkip(ClockAction):
+class ClockSkip(ClockOperation):
     time: float
     delta: float
 
 
 @dataclasses.dataclass(frozen=True)
-class ClockStop(ClockAction):
+class ClockStop(ClockOperation):
     time: float
 
 
@@ -36,113 +36,109 @@ class Clock:
     def clock(self, offset, ratio):
         ratio0 = ratio
 
-        waited = None
         action = None
 
         time = yield
         last_time = time
         last_tick = offset + last_time * ratio
+        last_ratio = ratio
         while True:
             # find unhandled action
-            if waited is None and not self.action_queue.empty():
-                waited = self.action_queue.get()
-            if waited is not None and waited.time <= time:
-                action, waited = waited, None
-            else:
-                action = None
+            if action is None and not self.action_queue.empty():
+                action = self.action_queue.get()
 
-            # no action -> yield value
-            if action is None:
-                last_time = time
-                if last_tick <= offset + last_time * ratio:
-                    last_tick = offset + last_time * ratio
-                    time = yield (last_tick, ratio)
+            # update last_time, last_tick, last_ratio
+            curr_time = time if action is None else min(action.time, time)
+            if last_time < curr_time:
+                time_slice = slice(offset + last_time * ratio, offset + curr_time * ratio)
+                last_tick = max(last_tick, time_slice.start)
+                last_ratio = 0 if last_tick > time_slice.stop else ratio
+                last_tick = max(last_tick, time_slice.stop)
+                last_time = curr_time
+
+            # update offset, ratio
+            if action is not None and action.time <= time:
+                if isinstance(action, ClockStop):
+                    return
+                if isinstance(action, ClockResume):
+                    offset, ratio = offset + action.time * (ratio - ratio0), ratio0
+                elif isinstance(action, ClockPause):
+                    offset, ratio = offset + action.time * ratio, 0
+                elif isinstance(action, ClockSkip):
+                    offset += action.delta
                 else:
-                    time = yield (last_tick, 0)
+                    raise TypeError
+
+                action = None
                 continue
 
-            # update state
-            if isinstance(action, ClockStop):
-                return
-            if isinstance(action, ClockResume):
-                offset, ratio = offset + action.time * (ratio - ratio0), ratio0
-            elif isinstance(action, ClockPause):
-                offset, ratio = offset + action.time * ratio, 0
-            elif isinstance(action, ClockSkip):
-                offset += action.delta
-            else:
-                raise TypeError
-
-            last_tick = max(last_tick, offset + last_time * ratio)
-            last_time = max(last_time, action.time)
-            last_tick = max(last_tick, offset + last_time * ratio)
+            time = yield (last_tick, last_ratio)
 
     @dn.datanode
     def clock_slice(self, offset, ratio):
         ratio0 = ratio
 
-        waited = None
         action = None
 
         time_slice = yield
         slices_map = []
+        last_ratio = ratio
         last_time = time_slice.start
         last_tick = offset + last_time * ratio
         while True:
             # find unhandled action
-            if waited is None and not self.action_queue.empty():
-                waited = self.action_queue.get()
-            if waited is not None and waited.time <= time_slice.stop:
-                action, waited = waited, None
-            else:
-                action = None
+            if action is None and not self.action_queue.empty():
+                action = self.action_queue.get()
 
-            # slice
-            time = time_slice.stop if action is None else action.time
-            if last_time < time:
-                tick_slice = slice(offset + last_time * ratio, offset + time * ratio)
+            # update last_time, last_tick, last_ratio
+            curr_time = time_slice.stop if action is None else min(action.time, time_slice.stop)
+            if last_time < curr_time:
+                tick_slice = slice(offset + last_time * ratio, offset + curr_time * ratio)
 
                 if last_tick < tick_slice.start:
                     slices_map.append(
                         (
                             slice(last_time, last_time),
                             slice(last_tick, tick_slice.start),
-                            ratio,
+                            last_ratio,
                         )
                     )
                     last_tick = tick_slice.start
 
                 if last_tick > tick_slice.start:
-                    cut_time = (last_tick - offset) / ratio if ratio != 0 else time
-                    cut_time = min(max(cut_time, last_time), time)
+                    cut_time = (last_tick - offset) / ratio if ratio != 0 else curr_time
+                    cut_time = min(max(cut_time, last_time), curr_time)
                     slices_map.append(
                         (slice(last_time, cut_time), slice(last_tick, last_tick), 0)
                     )
+                    last_ratio = 0
                     last_time = cut_time
-                    tick_slice = slice(last_tick, offset + time * ratio)
+                    tick_slice = slice(last_tick, tick_slice.stop)
 
-                if last_time < time:
-                    slices_map.append((slice(last_time, time), tick_slice, ratio))
-                    last_time = time
+                if last_time < curr_time:
+                    slices_map.append((slice(last_time, curr_time), tick_slice, ratio))
+                    last_ratio = ratio
+                    last_time = curr_time
                     last_tick = tick_slice.stop
 
-            # no action -> yield value
-            if action is None:
-                time_slice = yield slices_map
-                slices_map = []
+            # update offset, ratio
+            if action is not None and action.time <= time_slice.stop:
+                if isinstance(action, ClockStop):
+                    return
+                if isinstance(action, ClockResume):
+                    offset, ratio = offset + action.time * (ratio - ratio0), ratio0
+                elif isinstance(action, ClockPause):
+                    offset, ratio = offset + action.time * ratio, 0
+                elif isinstance(action, ClockSkip):
+                    offset += action.delta
+                else:
+                    raise TypeError
+
+                action = None
                 continue
 
-            # update state
-            if isinstance(action, ClockStop):
-                return
-            if isinstance(action, ClockResume):
-                offset, ratio = offset + action.time * (ratio - ratio0), ratio0
-            elif isinstance(action, ClockPause):
-                offset, ratio = offset + action.time * ratio, 0
-            elif isinstance(action, ClockSkip):
-                offset += action.delta
-            else:
-                raise TypeError
+            time_slice = yield slices_map
+            slices_map = []
 
     def resume(self, time):
         self.action_queue.put(ClockResume(time))
