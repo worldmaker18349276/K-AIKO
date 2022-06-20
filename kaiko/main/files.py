@@ -52,6 +52,40 @@ class RecognizedPath:
 
         return cleandoc(docs[1])
 
+    def fix(self, provider):
+        file_manager = provider.get(FileManager)
+        logger = provider.get(Logger)
+
+        file_manager.validate_path(self, file_type="all")
+
+        REDUNDANT_EXT = ".redundant"
+
+        path_mu = file_manager.as_relative_path(self, markup=True)
+        if not self.abs.exists():
+            logger.print(f"[warn]Missing file {path_mu}[/]")
+
+        elif (
+            isinstance(self, RecognizedFilePath)
+            and not self.abs.is_file()
+            or isinstance(self, RecognizedDirPath)
+            and not self.abs.is_dir()
+        ):
+            logger.print(f"[warn]Wrong file type {path_mu}[/]")
+            path_ = self.abs.parent / (self.abs.name + REDUNDANT_EXT)
+            path_mu_ = file_manager.as_relative_path(UnrecognizedPath(path_, False), markup=True)
+            logger.print(f"[data/] Rename {path_mu} to {path_mu_}...")
+            self.abs.rename(path_)
+
+        else:
+            return
+
+        logger.print(f"[data/] Create file {path_mu}...")
+
+        if isinstance(self, RecognizedDirPath):
+            self.abs.mkdir(exist_ok=False)
+        else:
+            self.abs.touch(exist_ok=False)
+
     def mk(self, provider):
         file_manager = provider.get(FileManager)
         file_manager.validate_path(self, should_exist=False, file_type="all")
@@ -335,35 +369,6 @@ class FileManager:
         logger = self.logger
         provider = self.provider
 
-        def go(path):
-            REDUNDANT_EXT = ".redundant"
-
-            for subpath in path.get_children():
-                subpath_mu = self.as_relative_path(subpath, markup=True)
-                if not subpath.abs.exists():
-                    logger.print(f"[warn]Missing file {subpath_mu}[/]")
-                    logger.print(
-                        f"[data/] Create file [emph]{logger.escape(str(subpath))}[/]..."
-                    )
-                    subpath.mk(provider)
-
-                elif (
-                    isinstance(subpath, RecognizedFilePath)
-                    and not subpath.abs.is_file()
-                    or isinstance(subpath, RecognizedDirPath)
-                    and not subpath.abs.is_dir()
-                ):
-                    logger.print(f"[warn]Wrong file type {subpath_mu}[/]")
-                    subpath_ = subpath.abs.parent / (subpath.abs.name + REDUNDANT_EXT)
-                    subpath_mu_ = self.as_relative_path(subpath_, markup=True)
-                    logger.print(f"[data/] Rename to {subpath_mu_}...")
-                    subpath.abs.rename(subpath_)
-                    logger.print(f"[data/] Create file {subpath_mu}...")
-                    subpath.mk(provider)
-
-                if isinstance(subpath, RecognizedDirPath):
-                    go(subpath)
-
         if not self.root.abs.exists():
             logger.print(f"[warn]The KAIKO workspace is missing[/]")
             logger.print(f"[data/] Create KAIKO workspace...")
@@ -374,6 +379,12 @@ class FileManager:
 
         elif not self.root.abs.is_dir():
             raise RuntimeError(f"Workspace name {self.root!s} is already taken.")
+
+        def go(path):
+            for subpath in path.get_children():
+                subpath.fix(provider)
+                if isinstance(subpath, RecognizedDirPath):
+                    go(subpath)
 
         return go(self.root)
 
