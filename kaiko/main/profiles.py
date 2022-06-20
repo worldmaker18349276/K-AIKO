@@ -104,10 +104,12 @@ class ProfilesDirPath(RecognizedDirPath):
 
         def mk(self, provider):
             super().mk(provider)
+            profile_manager = provider.get(ProfileManager)
             profile_manager.update()
 
         def rm(self, provider):
             super().rm(provider)
+            profile_manager = provider.get(ProfileManager)
             profile_manager.update()
 
 

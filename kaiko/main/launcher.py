@@ -157,10 +157,10 @@ class KAIKOLauncher:
 
         # load workspace
         file_manager = FileManager(RootDirPath, launcher.provider)
-        logger.set_log_file(file_manager.root.cache.logs.abs)
-
         launcher.provider.set(file_manager)
         file_manager.fix()
+
+        logger.set_log_file(file_manager.root.cache.logs.abs)
 
         file_manager.init_env()
 

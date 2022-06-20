@@ -93,10 +93,20 @@ class RecognizedFilePath(RecognizedPath):
     def normalize(self):
         return dataclasses.replace(self, slashend=False) if self.slashend else self
 
+    def mk(self, provider):
+        file_manager = provider.get(FileManager)
+        file_manager.validate_path(self, should_exist=False, file_type="all")
+        self.abs.touch(exist_ok=False)
+
 
 class RecognizedDirPath(RecognizedPath):
     def normalize(self):
         return dataclasses.replace(self, slashend=True) if not self.slashend else self
+
+    def mk(self, provider):
+        file_manager = provider.get(FileManager)
+        file_manager.validate_path(self, should_exist=False, file_type="all")
+        self.abs.mkdir(exist_ok=False)
 
     @classmethod
     def get_fields(cls):
@@ -202,7 +212,8 @@ class DirChildField:
         if instance is None:
             return self.path_type
         else:
-            return self.path_type(instance.abs / self.name, self.name.endswith("/"))
+            slashend = isinstance(self.path_type, RecognizedDirPath)
+            return self.path_type(instance.abs / self.name, slashend)
 
     def match(self, path, slashend):
         if issubclass(self.path_type, RecognizedFilePath) and slashend:
