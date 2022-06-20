@@ -42,7 +42,7 @@ logo = """
 
 """
 
-logo_animated_text = "  🎧  A sound-controlled terminal-based rhythm game 🎤 "
+logo_animated_text = "  ▣  A sound-controlled terminal-based rhythm game ▣ "
 
 
 def animated_print(text, kps=30.0, word_delay=0.05, pre_delay=0.5, post_delay=1.0):
