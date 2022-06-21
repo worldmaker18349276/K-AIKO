@@ -64,7 +64,10 @@ class ProfilesDirPath(RecognizedDirPath):
         def info(self, provider):
             profile_manager = provider.get(ProfileManager)
             note = "Your custom profile"
-            if self.abs == profile_manager.default_path.abs:
+            if (
+                profile_manager.default_path is not None
+                and self.abs == profile_manager.default_path.abs
+            ):
                 note += " (default)"
             if self.abs == profile_manager.current_path.abs:
                 note += " (current)"
