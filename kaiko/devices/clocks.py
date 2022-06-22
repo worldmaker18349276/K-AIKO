@@ -20,7 +20,13 @@ class ClockResume(ClockOperation):
 @dataclasses.dataclass(frozen=True)
 class ClockSkip(ClockOperation):
     time: float
-    delta: float
+    offset: float
+
+
+@dataclasses.dataclass(frozen=True)
+class ClockDelay(ClockOperation):
+    time: float
+    delay: float
 
 
 @dataclasses.dataclass(frozen=True)
@@ -33,7 +39,7 @@ class Clock:
         self.action_queue = queue.Queue()
 
     @dn.datanode
-    def clock(self, offset, ratio):
+    def clock(self, offset, ratio, delay=0.0):
         ratio0 = ratio
 
         action = None
@@ -48,7 +54,7 @@ class Clock:
                 action = self.action_queue.get()
 
             # update last_time, last_tick, last_ratio
-            curr_time = time if action is None else min(action.time, time)
+            curr_time = time if action is None else min(action.time - delay, time)
             if last_time < curr_time:
                 time_slice = slice(offset + last_time * ratio, offset + curr_time * ratio)
                 last_tick = max(last_tick, time_slice.start)
@@ -57,15 +63,18 @@ class Clock:
                 last_time = curr_time
 
             # update offset, ratio
-            if action is not None and action.time <= time:
+            if action is not None and (action_time := action.time - delay) <= time:
                 if isinstance(action, ClockStop):
                     return
                 if isinstance(action, ClockResume):
-                    offset, ratio = offset + action.time * (ratio - ratio0), ratio0
+                    offset, ratio = offset + action_time * (ratio - ratio0), ratio0
                 elif isinstance(action, ClockPause):
-                    offset, ratio = offset + action.time * ratio, 0
+                    offset, ratio = offset + action_time * ratio, 0
                 elif isinstance(action, ClockSkip):
-                    offset += action.delta
+                    offset += action.offset
+                elif isinstance(action, ClockDelay):
+                    offset += action.delay * ratio
+                    delay += action.delay
                 else:
                     raise TypeError
 
@@ -75,7 +84,7 @@ class Clock:
             time = yield (last_tick, last_ratio)
 
     @dn.datanode
-    def clock_slice(self, offset, ratio):
+    def clock_slice(self, offset, ratio, delay=0.0):
         ratio0 = ratio
 
         action = None
@@ -91,7 +100,7 @@ class Clock:
                 action = self.action_queue.get()
 
             # update last_time, last_tick, last_ratio
-            curr_time = time_slice.stop if action is None else min(action.time, time_slice.stop)
+            curr_time = time_slice.stop if action is None else min(action.time - delay, time_slice.stop)
             if last_time < curr_time:
                 tick_slice = slice(offset + last_time * ratio, offset + curr_time * ratio)
 
@@ -122,15 +131,18 @@ class Clock:
                     last_tick = tick_slice.stop
 
             # update offset, ratio
-            if action is not None and action.time <= time_slice.stop:
+            if action is not None and (action_time := action.time - delay) <= time_slice.stop:
                 if isinstance(action, ClockStop):
                     return
                 if isinstance(action, ClockResume):
-                    offset, ratio = offset + action.time * (ratio - ratio0), ratio0
+                    offset, ratio = offset + action_time * (ratio - ratio0), ratio0
                 elif isinstance(action, ClockPause):
-                    offset, ratio = offset + action.time * ratio, 0
+                    offset, ratio = offset + action_time * ratio, 0
                 elif isinstance(action, ClockSkip):
-                    offset += action.delta
+                    offset += action.offset
+                elif isinstance(action, ClockDelay):
+                    offset += action.delay * ratio
+                    delay += action.delay
                 else:
                     raise TypeError
 
@@ -146,8 +158,11 @@ class Clock:
     def pause(self, time):
         self.action_queue.put(ClockPause(time))
 
-    def skip(self, time, delta):
-        self.action_queue.put(ClockSkip(time, delta))
+    def skip(self, time, offset):
+        self.action_queue.put(ClockSkip(time, offset))
+
+    def delay(self, time, delay):
+        self.action_queue.put(ClockDelay(time, delay))
 
     def stop(self, time):
         self.action_queue.put(ClockStop(time))

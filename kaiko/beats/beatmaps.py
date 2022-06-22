@@ -1649,13 +1649,13 @@ class Beatmap:
 
         def incr_display_delay(time):
             devices_settings.renderer.display_delay += display_delay_adjust_step
-            renderer.clock.skip(time, display_delay_adjust_step)
+            renderer.clock.delay(time, display_delay_adjust_step)
             renderer.add_log(mu.Text(f"display_delay += {display_delay_adjust_step}\n"))
             settings_changed.set()
 
         def decr_display_delay(time):
             devices_settings.renderer.display_delay -= display_delay_adjust_step
-            renderer.clock.skip(time, -display_delay_adjust_step)
+            renderer.clock.delay(time, -display_delay_adjust_step)
             renderer.add_log(mu.Text(f"display_delay -= {display_delay_adjust_step}\n"))
             settings_changed.set()
 
@@ -1672,13 +1672,13 @@ class Beatmap:
 
         def incr_knock_delay(time):
             devices_settings.detector.knock_delay += knock_delay_adjust_step
-            detector.clock.skip(time, knock_delay_adjust_step)
+            detector.clock.delay(time, knock_delay_adjust_step)
             renderer.add_log(mu.Text(f"knock_delay += {knock_delay_adjust_step}\n"))
             settings_changed.set()
 
         def decr_knock_delay(time):
             devices_settings.detector.knock_delay -= knock_delay_adjust_step
-            detector.clock.skip(time, -knock_delay_adjust_step)
+            detector.clock.delay(time, -knock_delay_adjust_step)
             renderer.add_log(mu.Text(f"knock_delay -= {knock_delay_adjust_step}\n"))
             settings_changed.set()
 

@@ -213,7 +213,7 @@ class Mixer:
                 index * buffer_length / samplerate,
                 (index + 1) * buffer_length / samplerate,
             ),
-            clock.clock_slice(settings.sound_delay + init_time, 1),
+            clock.clock_slice(init_time, 1, settings.sound_delay),
         )
 
     @classmethod
@@ -490,7 +490,7 @@ class Detector:
     def _timer_node(clock, init_time, hop_length, samplerate, prepare, settings):
         return dn.pipe(
             dn.count(-prepare * hop_length / samplerate, hop_length / samplerate),
-            clock.clock(settings.knock_delay + init_time, 1),
+            clock.clock(init_time, 1, settings.knock_delay),
         )
 
     @classmethod
@@ -707,7 +707,7 @@ class Renderer:
     def _timer_node(clock, init_time, framerate, settings):
         return dn.pipe(
             dn.count(1 / framerate, 1 / framerate),
-            clock.clock(settings.display_delay + init_time, 1),
+            clock.clock(init_time, 1, settings.display_delay),
         )
 
     @classmethod
