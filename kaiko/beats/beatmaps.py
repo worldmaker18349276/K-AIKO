@@ -1723,18 +1723,18 @@ class Beatmap:
                     yield
                     time = time_node.send(None)
                     if paused:
-                        mixer.clock.resume(time + control_delay)
-                        detector.clock.resume(time + control_delay)
-                        renderer.clock.resume(time + control_delay)
-                        controller.clock.resume(time + control_delay)
-                        event_clock.resume(time + control_delay)
+                        mixer.clock.speed(time + control_delay, 1.0)
+                        detector.clock.speed(time + control_delay, 1.0)
+                        renderer.clock.speed(time + control_delay, 1.0)
+                        controller.clock.speed(time + control_delay, 1.0)
+                        event_clock.speed(time + control_delay, 1.0)
                         paused = False
                     else:
-                        mixer.clock.pause(time + control_delay)
-                        detector.clock.pause(time + control_delay)
-                        renderer.clock.pause(time + control_delay)
-                        controller.clock.pause(time + control_delay)
-                        event_clock.pause(time + control_delay)
+                        mixer.clock.speed(time + control_delay, 0.0)
+                        detector.clock.speed(time + control_delay, 0.0)
+                        renderer.clock.speed(time + control_delay, 0.0)
+                        controller.clock.speed(time + control_delay, 0.0)
+                        event_clock.speed(time + control_delay, 0.0)
                         paused = True
 
         controller.add_handler(pause_node(), pause_key)

@@ -8,13 +8,9 @@ class ClockOperation:
 
 
 @dataclasses.dataclass(frozen=True)
-class ClockPause(ClockOperation):
+class ClockSpeed(ClockOperation):
     time: float
-
-
-@dataclasses.dataclass(frozen=True)
-class ClockResume(ClockOperation):
-    time: float
+    ratio: float
 
 
 @dataclasses.dataclass(frozen=True)
@@ -40,8 +36,6 @@ class Clock:
 
     @dn.datanode
     def clock(self, offset, ratio, delay=0.0):
-        ratio0 = ratio
-
         action = None
 
         time = yield
@@ -66,10 +60,8 @@ class Clock:
             if action is not None and (action_time := action.time - delay) <= time:
                 if isinstance(action, ClockStop):
                     return
-                if isinstance(action, ClockResume):
-                    offset, ratio = offset + action_time * (ratio - ratio0), ratio0
-                elif isinstance(action, ClockPause):
-                    offset, ratio = offset + action_time * ratio, 0
+                if isinstance(action, ClockSpeed):
+                    offset, ratio = offset + action_time * (ratio - action.ratio), action.ratio
                 elif isinstance(action, ClockSkip):
                     offset += action.offset
                 elif isinstance(action, ClockDelay):
@@ -85,8 +77,6 @@ class Clock:
 
     @dn.datanode
     def clock_slice(self, offset, ratio, delay=0.0):
-        ratio0 = ratio
-
         action = None
 
         time_slice = yield
@@ -134,10 +124,8 @@ class Clock:
             if action is not None and (action_time := action.time - delay) <= time_slice.stop:
                 if isinstance(action, ClockStop):
                     return
-                if isinstance(action, ClockResume):
-                    offset, ratio = offset + action_time * (ratio - ratio0), ratio0
-                elif isinstance(action, ClockPause):
-                    offset, ratio = offset + action_time * ratio, 0
+                if isinstance(action, ClockSpeed):
+                    offset, ratio = offset + action_time * (ratio - action.ratio), action.ratio
                 elif isinstance(action, ClockSkip):
                     offset += action.offset
                 elif isinstance(action, ClockDelay):
@@ -152,11 +140,8 @@ class Clock:
             time_slice = yield slices_map
             slices_map = []
 
-    def resume(self, time):
-        self.action_queue.put(ClockResume(time))
-
-    def pause(self, time):
-        self.action_queue.put(ClockPause(time))
+    def speed(self, time, ratio):
+        self.action_queue.put(ClockSpeed(time, ratio))
 
     def skip(self, time, offset):
         self.action_queue.put(ClockSkip(time, offset))
