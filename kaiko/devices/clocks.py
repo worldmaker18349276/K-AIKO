@@ -22,13 +22,12 @@ class ClockSkip(ClockOperation):
 
 @dataclasses.dataclass(frozen=True)
 class ClockDelay(ClockOperation):
-    time: float
     delay: float
 
 
 @dataclasses.dataclass(frozen=True)
 class ClockStop(ClockOperation):
-    time: float
+    pass
 
 
 class Clock:
@@ -52,8 +51,15 @@ class Clock:
             if action is None and not action_queue.empty():
                 action = action_queue.get()
 
+            if action is None:
+                action_time = None
+            elif hasattr(action, "time"):
+                action_time = action.time - delay
+            else:
+                action_time = last_time
+
             # update last_time, last_tick, last_ratio
-            curr_time = time if action is None else min(action.time - delay, time)
+            curr_time = time if action is None else min(action_time, time)
             if last_time < curr_time:
                 time_slice = slice(offset + last_time * ratio, offset + curr_time * ratio)
                 last_tick = max(last_tick, time_slice.start)
@@ -62,7 +68,7 @@ class Clock:
                 last_time = curr_time
 
             # update offset, ratio
-            if action is not None and (action_time := action.time - delay) <= time:
+            if action is not None and action_time <= time:
                 if isinstance(action, ClockStop):
                     return
                 if isinstance(action, ClockSpeed):
@@ -95,8 +101,15 @@ class Clock:
             if action is None and not action_queue.empty():
                 action = action_queue.get()
 
+            if action is None:
+                action_time = None
+            elif hasattr(action, "time"):
+                action_time = action.time - delay
+            else:
+                action_time = last_time
+
             # update last_time, last_tick, last_ratio
-            curr_time = time_slice.stop if action is None else min(action.time - delay, time_slice.stop)
+            curr_time = time_slice.stop if action is None else min(action_time, time_slice.stop)
             if last_time < curr_time:
                 tick_slice = slice(offset + last_time * ratio, offset + curr_time * ratio)
 
@@ -127,7 +140,7 @@ class Clock:
                     last_tick = tick_slice.stop
 
             # update offset, ratio
-            if action is not None and (action_time := action.time - delay) <= time_slice.stop:
+            if action is not None and action_time <= time_slice.stop:
                 if isinstance(action, ClockStop):
                     return
                 if isinstance(action, ClockSpeed):
@@ -170,15 +183,15 @@ class Clock:
                 action_queue.put(ClockSkip(time, offset))
             self.offset += offset
 
-    def delay(self, name, time, delay):
+    def delay(self, name, delay):
         with self.lock:
             action_queue = self.action_queues[name]
-            action_queue.put(ClockDelay(time, delay))
+            action_queue.put(ClockDelay(delay))
 
-    def stop(self, time):
+    def stop(self):
         with self.lock:
             for action_queue in self.action_queues.values():
-                action_queue.put(ClockStop(time))
+                action_queue.put(ClockStop())
 
 
 @dataclasses.dataclass
