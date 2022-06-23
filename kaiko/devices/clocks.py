@@ -99,7 +99,7 @@ class Clock:
                         (
                             slice(last_time, last_time),
                             slice(last_tick, tick_slice.start),
-                            last_ratio,
+                            float("inf"),
                         )
                     )
                     last_tick = tick_slice.start
