@@ -158,21 +158,20 @@ class MixerSettings(cfg.Configurable):
 
 
 class Mixer:
-    def __init__(self, effects_pipeline, clock, settings, monitor):
+    def __init__(self, effects_pipeline, settings, monitor):
         self.effects_pipeline = effects_pipeline
-        self.clock = clock
         self.settings = settings
         self.monitor = monitor
 
     @staticmethod
-    def get_task(pipeline, clock, settings, manager, init_time, monitor):
+    def get_task(pipeline, clock_node, settings, manager, monitor):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
         format = settings.output_format
         device = settings.output_device
 
-        output_node = Mixer._mix_node(pipeline, clock, settings, init_time)
+        output_node = Mixer._mix_node(pipeline, clock_node, settings)
         if monitor:
             output_node = monitor.monitoring(output_node)
 
@@ -187,12 +186,12 @@ class Mixer:
 
     @staticmethod
     @dn.datanode
-    def _mix_node(pipeline, clock, settings, init_time):
+    def _mix_node(pipeline, clock_node, settings):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
 
-        timer = Mixer._timer_node(clock, init_time, buffer_length, samplerate, settings)
+        timer = Mixer._timer_node(clock_node, buffer_length, samplerate, settings)
 
         with timer, pipeline:
             yield
@@ -206,26 +205,26 @@ class Mixer:
                 yield data
 
     @staticmethod
-    def _timer_node(clock, init_time, buffer_length, samplerate, settings):
+    def _timer_node(clock_node, buffer_length, samplerate, settings):
         return dn.pipe(
             dn.count(0, 1),
             lambda index: slice(
                 index * buffer_length / samplerate,
                 (index + 1) * buffer_length / samplerate,
             ),
-            clock.clock_slice(init_time, 1, settings.sound_delay),
+            clock_node,
         )
 
     @classmethod
-    def create(cls, settings, manager, init_time=0.0, monitor=None):
+    def create(cls, settings, manager, clock, monitor=None):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
 
         pipeline = dn.DynamicPipeline()
-        clock = clocks.Clock()
-        task = cls.get_task(pipeline, clock, settings, manager, init_time, monitor)
-        return task, cls(pipeline, clock, settings, monitor)
+        clock_node = clock.clock_slice("mixer", settings.sound_delay)
+        task = cls.get_task(pipeline, clock_node, settings, manager, monitor)
+        return task, cls(pipeline, settings, monitor)
 
     def add_effect(self, node, zindex=(0,)):
         return self.effects_pipeline.add_node(node, zindex=zindex)
@@ -395,15 +394,14 @@ class DetectorSettings(cfg.Configurable):
 
 
 class Detector:
-    def __init__(self, listeners_pipeline, clock, knock_energy, settings, monitor):
+    def __init__(self, listeners_pipeline, knock_energy, settings, monitor):
         self.listeners_pipeline = listeners_pipeline
-        self.clock = clock
         self.knock_energy = knock_energy
         self.settings = settings
         self.monitor = monitor
 
     @staticmethod
-    def get_task(pipeline, clock, knock_energy, settings, manager, init_time, monitor):
+    def get_task(pipeline, clock_node, knock_energy, settings, manager, monitor):
         samplerate = settings.input_samplerate
         buffer_length = settings.input_buffer_length
         nchannels = settings.input_channels
@@ -414,7 +412,7 @@ class Detector:
         hop_length = round(samplerate * time_res)
 
         input_node = Detector._detect_node(
-            pipeline, clock, knock_energy, init_time, settings
+            pipeline, clock_node, knock_energy, settings
         )
         if buffer_length != hop_length:
             input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
@@ -432,7 +430,7 @@ class Detector:
 
     @staticmethod
     @dn.datanode
-    def _detect_node(pipeline, clock, knock_energy, init_time, settings):
+    def _detect_node(pipeline, clock_node, knock_energy, settings):
         samplerate = settings.input_samplerate
 
         time_res = settings.detect.time_res
@@ -450,7 +448,7 @@ class Detector:
         prepare = max(post_max, post_avg)
 
         timer = Detector._timer_node(
-            clock, init_time, hop_length, samplerate, prepare, settings
+            clock_node, hop_length, samplerate, prepare, settings
         )
 
         window = dn.get_half_Hann_window(win_length)
@@ -487,21 +485,21 @@ class Detector:
                 data = yield
 
     @staticmethod
-    def _timer_node(clock, init_time, hop_length, samplerate, prepare, settings):
+    def _timer_node(clock_node, hop_length, samplerate, prepare, settings):
         return dn.pipe(
             dn.count(-prepare * hop_length / samplerate, hop_length / samplerate),
-            clock.clock(init_time, 1, settings.knock_delay),
+            clock_node,
         )
 
     @classmethod
-    def create(cls, settings, manager, init_time=0.0, monitor=None):
+    def create(cls, settings, manager, clock, monitor=None):
         pipeline = dn.DynamicPipeline()
         knock_energy = AsyncAdditiveValue(settings.knock_energy)
-        clock = clocks.Clock()
+        clock_node = clock.clock("detector", settings.knock_delay)
         task = cls.get_task(
-            pipeline, clock, knock_energy, settings, manager, init_time, monitor
+            pipeline, clock_node, knock_energy, settings, manager, monitor
         )
-        return task, cls(pipeline, clock, knock_energy, settings, monitor)
+        return task, cls(pipeline, knock_energy, settings, monitor)
 
     def add_listener(self, node):
         return self.listeners_pipeline.add_node(node, (0,))
@@ -594,18 +592,17 @@ class RendererSettings(cfg.Configurable):
 
 
 class Renderer:
-    def __init__(self, drawers_pipeline, clock, settings, monitor):
+    def __init__(self, drawers_pipeline, settings, monitor):
         self.drawers_pipeline = drawers_pipeline
-        self.clock = clock
         self.settings = settings
         self.monitor = monitor
 
     @staticmethod
-    def get_task(pipeline, clock, settings, term_settings, init_time, monitor):
+    def get_task(pipeline, clock_node, settings, term_settings, monitor):
         framerate = settings.display_framerate
 
         display_node = Renderer._resize_node(
-            Renderer._render_node(pipeline, clock, settings, term_settings, init_time),
+            Renderer._render_node(pipeline, clock_node, settings, term_settings),
             settings,
             term_settings,
         )
@@ -615,7 +612,7 @@ class Renderer:
 
     @staticmethod
     @dn.datanode
-    def _render_node(pipeline, clock, settings, term_settings, init_time):
+    def _render_node(pipeline, clock_node, settings, term_settings):
         framerate = settings.display_framerate
 
         rich_renderer = mu.RichRenderer(term_settings.unicode_version)
@@ -626,7 +623,7 @@ class Renderer:
         msgs = []
         curr_msgs = list(msgs)
 
-        timer = Renderer._timer_node(clock, init_time, framerate, settings)
+        timer = Renderer._timer_node(clock_node, framerate, settings)
 
         with timer, pipeline:
             shown, resized, size = yield
@@ -704,20 +701,20 @@ class Renderer:
                     resized = False
 
     @staticmethod
-    def _timer_node(clock, init_time, framerate, settings):
+    def _timer_node(clock_node, framerate, settings):
         return dn.pipe(
             dn.count(1 / framerate, 1 / framerate),
-            clock.clock(init_time, 1, settings.display_delay),
+            clock_node,
         )
 
     @classmethod
-    def create(cls, settings, term_settings, init_time=0.0, monitor=None):
+    def create(cls, settings, term_settings, clock, monitor=None):
         pipeline = dn.DynamicPipeline()
-        clock = clocks.Clock()
+        clock_node = clock.clock("renderer", settings.display_delay)
         task = cls.get_task(
-            pipeline, clock, settings, term_settings, init_time, monitor
+            pipeline, clock_node, settings, term_settings, monitor
         )
-        return task, cls(pipeline, clock, settings, monitor)
+        return task, cls(pipeline, settings, monitor)
 
     def add_drawer(self, node, zindex=(0,)):
         return self.drawers_pipeline.add_node(node, zindex=zindex)
@@ -781,26 +778,25 @@ class ControllerSettings(cfg.Configurable):
 
 
 class Controller:
-    def __init__(self, handlers_pipeline, clock, settings):
+    def __init__(self, handlers_pipeline, settings):
         self.handlers_pipeline = handlers_pipeline
-        self.clock = clock
         self.settings = settings
 
     @staticmethod
-    def get_task(pipeline, clock, settings, term_settings, init_time):
+    def get_task(pipeline, clock_node, settings, term_settings):
         return term.inkey(
             Controller._control_node(
-                pipeline, clock, settings, term_settings, init_time
+                pipeline, clock_node, settings, term_settings
             ),
             dt=settings.update_interval,
         )
 
     @staticmethod
     @dn.datanode
-    def _control_node(pipeline, clock, settings, term_settings, init_time):
+    def _control_node(pipeline, clock_node, settings, term_settings):
         keycodes = term_settings.keycodes
 
-        timer = Controller._timer_node(clock, init_time, settings.update_interval)
+        timer = Controller._timer_node(clock_node, settings.update_interval)
 
         with timer, pipeline:
             while True:
@@ -824,15 +820,15 @@ class Controller:
                     return
 
     @staticmethod
-    def _timer_node(clock, init_time, update_interval):
-        return dn.pipe(dn.time(0.0), clock.clock(init_time, 1))
+    def _timer_node(clock_node, update_interval):
+        return dn.pipe(dn.time(0.0), clock_node)
 
     @classmethod
-    def create(cls, settings, term_settings, init_time=0.0):
+    def create(cls, settings, term_settings, clock):
         pipeline = dn.DynamicPipeline()
-        clock = clocks.Clock()
-        task = cls.get_task(pipeline, clock, settings, term_settings, init_time)
-        return task, cls(pipeline, clock, settings)
+        clock_node = clock.clock("controller")
+        task = cls.get_task(pipeline, clock_node, settings, term_settings)
+        return task, cls(pipeline, settings)
 
     def add_handler(self, node, keyname=None):
         return self.handlers_pipeline.add_node(self._filter_node(node, keyname), (0,))

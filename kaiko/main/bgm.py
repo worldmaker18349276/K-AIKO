@@ -7,6 +7,7 @@ from ..utils import commands as cmd
 from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..devices import audios as aud
+from ..devices import clocks
 from ..devices import engines
 from ..beats import beatsheets
 from .loggers import Logger
@@ -124,7 +125,7 @@ class BGMController:
 
     @dn.datanode
     def execute(self, manager):
-        mixer_factory = lambda: engines.Mixer.create(self.mixer_settings, manager)
+        mixer_factory = lambda: engines.Mixer.create(self.mixer_settings, manager, clocks.Clock(0.0, 1.0))
         mixer_loader = engines.EngineLoader(
             mixer_factory, self.settings.mixer_loader_delay
         )

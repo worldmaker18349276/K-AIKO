@@ -1,4 +1,5 @@
 import dataclasses
+import threading
 import queue
 from ..utils import datanodes as dn
 
@@ -31,11 +32,15 @@ class ClockStop(ClockOperation):
 
 
 class Clock:
-    def __init__(self):
-        self.action_queue = queue.Queue()
+    def __init__(self, offset, ratio):
+        self.offset = offset
+        self.ratio = ratio
+        self.action_queues = {}
+        self.lock = threading.Lock()
 
+    @staticmethod
     @dn.datanode
-    def clock(self, offset, ratio, delay=0.0):
+    def _clock(action_queue, offset, ratio, delay=0.0):
         action = None
 
         time = yield
@@ -44,8 +49,8 @@ class Clock:
         last_ratio = ratio
         while True:
             # find unhandled action
-            if action is None and not self.action_queue.empty():
-                action = self.action_queue.get()
+            if action is None and not action_queue.empty():
+                action = action_queue.get()
 
             # update last_time, last_tick, last_ratio
             curr_time = time if action is None else min(action.time - delay, time)
@@ -75,8 +80,9 @@ class Clock:
 
             time = yield (last_tick, last_ratio)
 
+    @staticmethod
     @dn.datanode
-    def clock_slice(self, offset, ratio, delay=0.0):
+    def _clock_slice(action_queue, offset, ratio, delay=0.0):
         action = None
 
         time_slice = yield
@@ -86,8 +92,8 @@ class Clock:
         last_tick = offset + last_time * ratio
         while True:
             # find unhandled action
-            if action is None and not self.action_queue.empty():
-                action = self.action_queue.get()
+            if action is None and not action_queue.empty():
+                action = action_queue.get()
 
             # update last_time, last_tick, last_ratio
             curr_time = time_slice.stop if action is None else min(action.time - delay, time_slice.stop)
@@ -140,17 +146,39 @@ class Clock:
             time_slice = yield slices_map
             slices_map = []
 
+    def clock(self, name, delay=0.0):
+        with self.lock:
+            action_queue = queue.Queue()
+            self.action_queues[name] = action_queue
+            return self._clock(action_queue, self.offset, self.ratio, delay=delay)
+
+    def clock_slice(self, name, delay=0.0):
+        with self.lock:
+            action_queue = queue.Queue()
+            self.action_queues[name] = action_queue
+            return self._clock_slice(action_queue, self.offset, self.ratio, delay=delay)
+
     def speed(self, time, ratio):
-        self.action_queue.put(ClockSpeed(time, ratio))
+        with self.lock:
+            for action_queue in self.action_queues.values():
+                action_queue.put(ClockSpeed(time, ratio))
+            self.offset, self.ratio = self.offset + time * (self.ratio - ratio), ratio
 
     def skip(self, time, offset):
-        self.action_queue.put(ClockSkip(time, offset))
+        with self.lock:
+            for action_queue in self.action_queues.values():
+                action_queue.put(ClockSkip(time, offset))
+            self.offset += offset
 
-    def delay(self, time, delay):
-        self.action_queue.put(ClockDelay(time, delay))
+    def delay(self, name, time, delay):
+        with self.lock:
+            action_queue = self.action_queues[name]
+            action_queue.put(ClockDelay(time, delay))
 
     def stop(self, time):
-        self.action_queue.put(ClockStop(time))
+        with self.lock:
+            for action_queue in self.action_queues.values():
+                action_queue.put(ClockStop(time))
 
 
 @dataclasses.dataclass

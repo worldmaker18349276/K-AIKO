@@ -1522,6 +1522,8 @@ class Beatmap:
         if start_time is not None:
             self.start_time = start_time
 
+        clock = clocks.Clock(self.start_time, 1.0)
+
         score = BeatmapScore()
         score.set_total_subjects(self.total_subjects)
 
@@ -1533,19 +1535,19 @@ class Beatmap:
             renderer_monitor = engines.Monitor(cache_dir / renderer_monitor_file_path)
 
         mixer_task, mixer = engines.Mixer.create(
-            devices_settings.mixer, manager, self.start_time, mixer_monitor
+            devices_settings.mixer, manager, clock, mixer_monitor
         )
         detector_task, detector = engines.Detector.create(
-            devices_settings.detector, manager, self.start_time, detector_monitor
+            devices_settings.detector, manager, clock, detector_monitor
         )
         renderer_task, renderer = engines.Renderer.create(
             devices_settings.renderer,
             devices_settings.terminal,
-            self.start_time,
+            clock,
             renderer_monitor,
         )
         controller_task, controller = engines.Controller.create(
-            devices_settings.controller, devices_settings.terminal, self.start_time
+            devices_settings.controller, devices_settings.terminal, clock
         )
 
         # build playfield
@@ -1585,15 +1587,13 @@ class Beatmap:
         renderer.add_texts(footer, xmask=footer_mask, zindex=(3,))
 
         # handler
-        event_clock = clocks.Clock()
-
         devices_settings = devices_settings.copy()
         settings_changed = Beatmap.register_controllers(
             mixer,
             detector,
             renderer,
             controller,
-            event_clock,
+            clock,
             devices_settings,
             gameplay_settings.controls,
         )
@@ -1603,15 +1603,16 @@ class Beatmap:
             mixer.play(self.audionode, time=0.0, zindex=(-3,))
 
         # game loop
+        event_clock_node = clock.clock("event")
+
         updater = self.update_events(
             self.events,
             score,
             beatbar,
-            self.start_time,
             self.end_time,
             tickrate,
             prepare_time,
-            event_clock,
+            event_clock_node,
         )
         event_task = dn.interval(updater, dt=1 / tickrate)
 
@@ -1633,7 +1634,7 @@ class Beatmap:
         detector,
         renderer,
         controller,
-        event_clock,
+        clock,
         devices_settings,
         controls_settings,
     ):
@@ -1641,7 +1642,7 @@ class Beatmap:
 
         # stop
         stop_key = controls_settings.stop_key
-        controller.add_handler(dn.pipe(dn.time(0.0), event_clock.stop), stop_key)
+        controller.add_handler(dn.pipe(dn.time(0.0), clock.stop), stop_key)
 
         # display delay
         display_delay_adjust_step = controls_settings.display_delay_adjust_step
@@ -1649,13 +1650,13 @@ class Beatmap:
 
         def incr_display_delay(time):
             devices_settings.renderer.display_delay += display_delay_adjust_step
-            renderer.clock.delay(time, display_delay_adjust_step)
+            clock.delay("renderer", time, display_delay_adjust_step)
             renderer.add_log(mu.Text(f"display_delay += {display_delay_adjust_step}\n"))
             settings_changed.set()
 
         def decr_display_delay(time):
             devices_settings.renderer.display_delay -= display_delay_adjust_step
-            renderer.clock.delay(time, -display_delay_adjust_step)
+            clock.delay("renderer", time, -display_delay_adjust_step)
             renderer.add_log(mu.Text(f"display_delay -= {display_delay_adjust_step}\n"))
             settings_changed.set()
 
@@ -1672,13 +1673,13 @@ class Beatmap:
 
         def incr_knock_delay(time):
             devices_settings.detector.knock_delay += knock_delay_adjust_step
-            detector.clock.delay(time, knock_delay_adjust_step)
+            clock.delay("detector", time, knock_delay_adjust_step)
             renderer.add_log(mu.Text(f"knock_delay += {knock_delay_adjust_step}\n"))
             settings_changed.set()
 
         def decr_knock_delay(time):
             devices_settings.detector.knock_delay -= knock_delay_adjust_step
-            detector.clock.delay(time, -knock_delay_adjust_step)
+            clock.delay("detector", time, -knock_delay_adjust_step)
             renderer.add_log(mu.Text(f"knock_delay -= {knock_delay_adjust_step}\n"))
             settings_changed.set()
 
@@ -1723,18 +1724,10 @@ class Beatmap:
                     yield
                     time = time_node.send(None)
                     if paused:
-                        mixer.clock.speed(time + control_delay, 1.0)
-                        detector.clock.speed(time + control_delay, 1.0)
-                        renderer.clock.speed(time + control_delay, 1.0)
-                        controller.clock.speed(time + control_delay, 1.0)
-                        event_clock.speed(time + control_delay, 1.0)
+                        clock.speed(time + control_delay, 1.0)
                         paused = False
                     else:
-                        mixer.clock.speed(time + control_delay, 0.0)
-                        detector.clock.speed(time + control_delay, 0.0)
-                        renderer.clock.speed(time + control_delay, 0.0)
-                        controller.clock.speed(time + control_delay, 0.0)
-                        event_clock.speed(time + control_delay, 0.0)
+                        clock.speed(time + control_delay, 0.0)
                         paused = True
 
         controller.add_handler(pause_node(), pause_key)
@@ -1746,11 +1739,7 @@ class Beatmap:
                 while True:
                     yield
                     time = time_node.send(None)
-                    mixer.clock.skip(time + control_delay, skip_time)
-                    detector.clock.skip(time + control_delay, skip_time)
-                    renderer.clock.skip(time + control_delay, skip_time)
-                    controller.clock.skip(time + control_delay, skip_time)
-                    event_clock.skip(time + control_delay, skip_time)
+                    clock.skip(time + control_delay, skip_time)
 
         controller.add_handler(skip_node(), skip_key)
 
@@ -1886,17 +1875,16 @@ class Beatmap:
         events,
         state,
         beatbar,
-        start_time,
         end_time,
         tickrate,
         prepare_time,
-        clock,
+        clock_node,
     ):
         # register events
         events_iter = iter(events)
         event = next(events_iter, None)
 
-        timer = dn.pipe(dn.count(0.0, 1 / tickrate), clock.clock(start_time, 1))
+        timer = dn.pipe(dn.count(0.0, 1 / tickrate), clock_node)
 
         with timer:
             yield

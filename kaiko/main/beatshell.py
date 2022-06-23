@@ -313,12 +313,14 @@ class BeatPrompt:
         renderer_monitor = (
             engines.Monitor(self.monitor_file_path.abs) if debug_monitor else None
         )
+        clock = clocks.Clock(0.0, 1.0)
         input_task, controller = engines.Controller.create(
-            devices_settings.controller, devices_settings.terminal
+            devices_settings.controller, devices_settings.terminal, clock
         )
         display_task, renderer = engines.Renderer.create(
             devices_settings.renderer,
             devices_settings.terminal,
+            clock,
             monitor=renderer_monitor,
         )
 
