@@ -163,19 +163,21 @@ class Mixer:
         self.settings = settings
         self.monitor = monitor
 
-    @staticmethod
-    def get_task(pipeline, clock_node, settings, manager, monitor):
+    @classmethod
+    def create(cls, settings, manager, clock, monitor=None):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
         format = settings.output_format
         device = settings.output_device
 
-        output_node = Mixer._mix_node(pipeline, clock_node, settings)
+        pipeline = dn.DynamicPipeline()
+        tick_node = clock.tick_slice("mixer", settings.sound_delay)
+        output_node = cls._mix_node(pipeline, tick_node, settings)
         if monitor:
             output_node = monitor.monitoring(output_node)
 
-        return aud.play(
+        task = aud.play(
             manager,
             output_node,
             samplerate=samplerate,
@@ -184,14 +186,23 @@ class Mixer:
             device=device,
         )
 
+        return task, cls(pipeline, settings, monitor)
+
     @staticmethod
     @dn.datanode
-    def _mix_node(pipeline, clock_node, settings):
+    def _mix_node(pipeline, tick_node, settings):
         samplerate = settings.output_samplerate
         buffer_length = settings.output_buffer_length
         nchannels = settings.output_channels
 
-        timer = Mixer._timer_node(clock_node, buffer_length, samplerate, settings)
+        timer = dn.pipe(
+            dn.count(0, 1),
+            lambda index: slice(
+                index * buffer_length / samplerate,
+                (index + 1) * buffer_length / samplerate,
+            ),
+            tick_node,
+        )
 
         with timer, pipeline:
             yield
@@ -203,28 +214,6 @@ class Mixer:
                 except StopIteration:
                     return
                 yield data
-
-    @staticmethod
-    def _timer_node(clock_node, buffer_length, samplerate, settings):
-        return dn.pipe(
-            dn.count(0, 1),
-            lambda index: slice(
-                index * buffer_length / samplerate,
-                (index + 1) * buffer_length / samplerate,
-            ),
-            clock_node,
-        )
-
-    @classmethod
-    def create(cls, settings, manager, clock, monitor=None):
-        samplerate = settings.output_samplerate
-        buffer_length = settings.output_buffer_length
-        nchannels = settings.output_channels
-
-        pipeline = dn.DynamicPipeline()
-        clock_node = clock.clock_slice("mixer", settings.sound_delay)
-        task = cls.get_task(pipeline, clock_node, settings, manager, monitor)
-        return task, cls(pipeline, settings, monitor)
 
     def add_effect(self, node, zindex=(0,)):
         return self.effects_pipeline.add_node(node, zindex=zindex)
@@ -400,26 +389,30 @@ class Detector:
         self.settings = settings
         self.monitor = monitor
 
-    @staticmethod
-    def get_task(pipeline, clock_node, knock_energy, settings, manager, monitor):
+    @classmethod
+    def create(cls, settings, manager, clock, monitor=None):
         samplerate = settings.input_samplerate
         buffer_length = settings.input_buffer_length
         nchannels = settings.input_channels
         format = settings.input_format
         device = settings.input_device
 
+        pipeline = dn.DynamicPipeline()
+        knock_energy = AsyncAdditiveValue(settings.knock_energy)
+        tick_node = clock.tick("detector", settings.knock_delay)
+
         time_res = settings.detect.time_res
         hop_length = round(samplerate * time_res)
 
-        input_node = Detector._detect_node(
-            pipeline, clock_node, knock_energy, settings
+        input_node = cls._detect_node(
+            pipeline, tick_node, knock_energy, settings
         )
         if buffer_length != hop_length:
             input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
         if monitor:
             input_node = monitor.monitoring(input_node)
 
-        return aud.record(
+        task = aud.record(
             manager,
             input_node,
             samplerate=samplerate,
@@ -428,9 +421,11 @@ class Detector:
             device=device,
         )
 
+        return task, cls(pipeline, knock_energy, settings, monitor)
+
     @staticmethod
     @dn.datanode
-    def _detect_node(pipeline, clock_node, knock_energy, settings):
+    def _detect_node(pipeline, tick_node, knock_energy, settings):
         samplerate = settings.input_samplerate
 
         time_res = settings.detect.time_res
@@ -447,8 +442,9 @@ class Detector:
 
         prepare = max(post_max, post_avg)
 
-        timer = Detector._timer_node(
-            clock_node, hop_length, samplerate, prepare, settings
+        timer = dn.pipe(
+            dn.count(-prepare * hop_length / samplerate, hop_length / samplerate),
+            tick_node,
         )
 
         window = dn.get_half_Hann_window(win_length)
@@ -483,23 +479,6 @@ class Detector:
                 except StopIteration:
                     return
                 data = yield
-
-    @staticmethod
-    def _timer_node(clock_node, hop_length, samplerate, prepare, settings):
-        return dn.pipe(
-            dn.count(-prepare * hop_length / samplerate, hop_length / samplerate),
-            clock_node,
-        )
-
-    @classmethod
-    def create(cls, settings, manager, clock, monitor=None):
-        pipeline = dn.DynamicPipeline()
-        knock_energy = AsyncAdditiveValue(settings.knock_energy)
-        clock_node = clock.clock("detector", settings.knock_delay)
-        task = cls.get_task(
-            pipeline, clock_node, knock_energy, settings, manager, monitor
-        )
-        return task, cls(pipeline, knock_energy, settings, monitor)
 
     def add_listener(self, node):
         return self.listeners_pipeline.add_node(node, (0,))
@@ -597,22 +576,27 @@ class Renderer:
         self.settings = settings
         self.monitor = monitor
 
-    @staticmethod
-    def get_task(pipeline, clock_node, settings, term_settings, monitor):
+    @classmethod
+    def create(cls, settings, term_settings, clock, monitor=None):
+        pipeline = dn.DynamicPipeline()
+        tick_node = clock.tick("renderer", settings.display_delay)
+
         framerate = settings.display_framerate
 
         display_node = Renderer._resize_node(
-            Renderer._render_node(pipeline, clock_node, settings, term_settings),
+            cls._render_node(pipeline, tick_node, settings, term_settings),
             settings,
             term_settings,
         )
         if monitor:
             display_node = monitor.monitoring(display_node)
-        return term.show(display_node, 1 / framerate, hide_cursor=True)
+        task = term.show(display_node, 1 / framerate, hide_cursor=True)
+
+        return task, cls(pipeline, settings, monitor)
 
     @staticmethod
     @dn.datanode
-    def _render_node(pipeline, clock_node, settings, term_settings):
+    def _render_node(pipeline, tick_node, settings, term_settings):
         framerate = settings.display_framerate
 
         rich_renderer = mu.RichRenderer(term_settings.unicode_version)
@@ -623,7 +607,10 @@ class Renderer:
         msgs = []
         curr_msgs = list(msgs)
 
-        timer = Renderer._timer_node(clock_node, framerate, settings)
+        timer = dn.pipe(
+            dn.count(1 / framerate, 1 / framerate),
+            tick_node,
+        )
 
         with timer, pipeline:
             shown, resized, size = yield
@@ -700,22 +687,6 @@ class Renderer:
                 if shown:
                     resized = False
 
-    @staticmethod
-    def _timer_node(clock_node, framerate, settings):
-        return dn.pipe(
-            dn.count(1 / framerate, 1 / framerate),
-            clock_node,
-        )
-
-    @classmethod
-    def create(cls, settings, term_settings, clock, monitor=None):
-        pipeline = dn.DynamicPipeline()
-        clock_node = clock.clock("renderer", settings.display_delay)
-        task = cls.get_task(
-            pipeline, clock_node, settings, term_settings, monitor
-        )
-        return task, cls(pipeline, settings, monitor)
-
     def add_drawer(self, node, zindex=(0,)):
         return self.drawers_pipeline.add_node(node, zindex=zindex)
 
@@ -782,21 +753,26 @@ class Controller:
         self.handlers_pipeline = handlers_pipeline
         self.settings = settings
 
-    @staticmethod
-    def get_task(pipeline, clock_node, settings, term_settings):
-        return term.inkey(
-            Controller._control_node(
-                pipeline, clock_node, settings, term_settings
+    @classmethod
+    def create(cls, settings, term_settings, clock):
+        pipeline = dn.DynamicPipeline()
+        tick_node = clock.tick("controller")
+
+        task = term.inkey(
+            cls._control_node(
+                pipeline, tick_node, settings, term_settings
             ),
             dt=settings.update_interval,
         )
 
+        return task, cls(pipeline, settings)
+
     @staticmethod
     @dn.datanode
-    def _control_node(pipeline, clock_node, settings, term_settings):
+    def _control_node(pipeline, tick_node, settings, term_settings):
         keycodes = term_settings.keycodes
 
-        timer = Controller._timer_node(clock_node, settings.update_interval)
+        timer = dn.pipe(dn.time(0.0), tick_node)
 
         with timer, pipeline:
             while True:
@@ -818,17 +794,6 @@ class Controller:
                     pipeline.send((None, time, keyname, keycode))
                 except StopIteration:
                     return
-
-    @staticmethod
-    def _timer_node(clock_node, update_interval):
-        return dn.pipe(dn.time(0.0), clock_node)
-
-    @classmethod
-    def create(cls, settings, term_settings, clock):
-        pipeline = dn.DynamicPipeline()
-        clock_node = clock.clock("controller")
-        task = cls.get_task(pipeline, clock_node, settings, term_settings)
-        return task, cls(pipeline, settings)
 
     def add_handler(self, node, keyname=None):
         return self.handlers_pipeline.add_node(self._filter_node(node, keyname), (0,))

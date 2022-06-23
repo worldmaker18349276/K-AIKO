@@ -1603,7 +1603,7 @@ class Beatmap:
             mixer.play(self.audionode, time=0.0, zindex=(-3,))
 
         # game loop
-        event_clock_node = clock.clock("event")
+        event_tick_node = clock.tick("event")
 
         updater = self.update_events(
             self.events,
@@ -1612,7 +1612,7 @@ class Beatmap:
             self.end_time,
             tickrate,
             prepare_time,
-            event_clock_node,
+            event_tick_node,
         )
         event_task = dn.interval(updater, dt=1 / tickrate)
 
@@ -1878,13 +1878,13 @@ class Beatmap:
         end_time,
         tickrate,
         prepare_time,
-        clock_node,
+        tick_node,
     ):
         # register events
         events_iter = iter(events)
         event = next(events_iter, None)
 
-        timer = dn.pipe(dn.count(0.0, 1 / tickrate), clock_node)
+        timer = dn.pipe(dn.count(0.0, 1 / tickrate), tick_node)
 
         with timer:
             yield

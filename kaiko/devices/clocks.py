@@ -40,7 +40,7 @@ class Clock:
 
     @staticmethod
     @dn.datanode
-    def _clock(action_queue, offset, ratio, delay=0.0):
+    def _tick(action_queue, offset, ratio, delay=0.0):
         action = None
 
         time = yield
@@ -82,7 +82,7 @@ class Clock:
 
     @staticmethod
     @dn.datanode
-    def _clock_slice(action_queue, offset, ratio, delay=0.0):
+    def _tick_slice(action_queue, offset, ratio, delay=0.0):
         action = None
 
         time_slice = yield
@@ -146,17 +146,17 @@ class Clock:
             time_slice = yield slices_map
             slices_map = []
 
-    def clock(self, name, delay=0.0):
+    def tick(self, name, delay=0.0):
         with self.lock:
             action_queue = queue.Queue()
             self.action_queues[name] = action_queue
-            return self._clock(action_queue, self.offset, self.ratio, delay=delay)
+            return self._tick(action_queue, self.offset, self.ratio, delay=delay)
 
-    def clock_slice(self, name, delay=0.0):
+    def tick_slice(self, name, delay=0.0):
         with self.lock:
             action_queue = queue.Queue()
             self.action_queues[name] = action_queue
-            return self._clock_slice(action_queue, self.offset, self.ratio, delay=delay)
+            return self._tick_slice(action_queue, self.offset, self.ratio, delay=delay)
 
     def speed(self, time, ratio):
         with self.lock:
