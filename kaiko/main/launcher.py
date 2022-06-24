@@ -214,10 +214,19 @@ class KAIKOLauncher:
             )
             launcher.provider.set(bgm_controller)
 
-            yield from launcher.run().join()
+            prompt = beatshell.BeatPrompt(
+                launcher.provider,
+                file_manager.root.cache.beatshell_history,
+                file_manager.root.cache.prompt_benchmark,
+                launcher.settings.shell,
+            )
+            launcher.provider.set(prompt)
+
+            clock = clocks.Clock(0.0, 1.0)
+            yield from launcher.run(clock).join()
 
     @dn.datanode
-    def run(self):
+    def run(self, clock):
         r"""Run KAIKO."""
         logger = self.logger
 
@@ -232,7 +241,6 @@ class KAIKOLauncher:
             raise ValueError("unknown arguments: " + " ".join(sys.argv[1:]))
 
         # load bgm
-        clock = clocks.Clock(0.0, 1.0)
         bgm_task = self.bgm_controller.execute(clock, self.device_manager.audio_manager)
 
         # prompt
@@ -242,35 +250,30 @@ class KAIKOLauncher:
     @dn.datanode
     def repl(self, clock):
         r"""Start REPL."""
-        preview_handler = self.bgm_controller.preview_handler
-        prompt = beatshell.BeatPrompt(
-            self.logger,
-            self.file_manager.root.cache.beatshell_history,
-            self.file_manager.root.cache.prompt_benchmark,
-            self.get_command_parser(),
-            self.settings.shell,
-            preview_handler,
-        )
+        prompt = self.prompt
 
         self.logger.print()
         prev_dir = None
+        clear = True
 
         while True:
             self.logger.print()
-            prompt.print_banner(self.provider, prev_dir != self.file_manager.current)
+            prompt.print_banner(prev_dir != self.file_manager.current)
             prev_dir = self.file_manager.current
 
             try:
-                command = yield from prompt.prompt(clock, self.settings.devices).join()
+                command = yield from prompt.new_session(
+                    self.get_command_parser(), clock, self.settings.devices, clear
+                ).join()
 
             except beatshell.PromptError as e:
                 self.logger.print(f"[warn]{self.logger.escape(str(e.cause))}[/]")
-                prompt.new_session(self.get_command_parser(), clear=False)
+                clear = False
 
             else:
                 prompt.record_command()
                 yield from self.execute(command).join()
-                prompt.new_session(self.get_command_parser())
+                clear = True
 
             prompt.set_settings(self.settings.shell)
             self.bgm_controller.set_settings(self.settings.bgm)
@@ -332,6 +335,10 @@ class KAIKOLauncher:
     @property
     def bgm_controller(self):
         return self.provider.get(BGMController)
+
+    @property
+    def prompt(self):
+        return self.provider.get(beatshell.BeatPrompt)
 
     @property
     def settings(self):

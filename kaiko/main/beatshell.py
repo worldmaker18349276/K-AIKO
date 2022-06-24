@@ -11,6 +11,8 @@ from ..tui import widgets
 from ..tui import inputs
 from .files import FileManager, UnrecognizedPath, RecognizedFilePath
 from .profiles import ProfileManager
+from .loggers import Logger
+from .bgm import BGMController
 
 
 # widgets
@@ -237,25 +239,24 @@ class BeatPrompt:
 
     def __init__(
         self,
-        logger,
+        provider,
         history_file_path,
         monitor_file_path,
-        command_parser,
         settings,
-        preview_handler,
     ):
-        self.logger = logger
+        self.provider = provider
+        self.logger = provider.get(Logger)
         self.settings = settings
         self.history_file_path = history_file_path
         self.monitor_file_path = monitor_file_path
 
+        bgm_controller = provider.get(BGMController)
+
         self.input = inputs.Input(
-            preview_handler,
+            bgm_controller.preview_handler,
             self.history_file_path.abs,
             self.settings.input,
         )
-
-        self.new_session(command_parser)
 
     def set_settings(self, settings):
         self.settings = settings
@@ -304,7 +305,9 @@ class BeatPrompt:
         renderer.add_texts(textbox, textbox_mask, zindex=(0,))
 
     @dn.datanode
-    def prompt(self, clock, devices_settings):
+    def new_session(self, command_parser, clock, devices_settings, clear=True):
+        self.input._new_session(command_parser, clear=clear)
+
         fin_event = threading.Event()
 
         # engines
@@ -350,15 +353,12 @@ class BeatPrompt:
         else:
             raise TypeError
 
-    def new_session(self, command_parser, clear=True):
-        return self.input._new_session(command_parser, clear=clear)
-
     def record_command(self):
         return self.input._record_command()
 
-    def print_banner(self, provider, print_info):
-        file_manager = provider.get(FileManager)
-        profile_manager = provider.get(ProfileManager)
+    def print_banner(self, print_info):
+        file_manager = self.provider.get(FileManager)
+        profile_manager = self.provider.get(ProfileManager)
 
         banner_settings = self.settings.banner
 
@@ -405,7 +405,7 @@ class BeatPrompt:
         if not print_info:
             return
 
-        info = file_manager.current.info_detailed(provider)
+        info = file_manager.current.info_detailed(self.provider)
         if info is None:
             return
 
