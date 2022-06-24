@@ -621,11 +621,20 @@ class Renderer:
 
         tick_node = clock.tick("renderer", display_delay)
         render_node = self._render_node(self.pipeline, tick_node, self.settings, term_settings)
-        display_node = self._resize_node(
+        resize_node = self._resize_node(
             render_node,
             self.settings,
             term_settings,
         )
+
+        timer = dn.count(1 / framerate, 1 / framerate)
+        size_node = term.terminal_size()
+        display_node = dn.pipe(
+            dn.merge(timer),
+            dn.merge(size_node),
+            resize_node,
+        )
+
         if monitor:
             display_node = monitor.monitoring(display_node)
 
@@ -645,16 +654,13 @@ class Renderer:
         msgs = []
         curr_msgs = list(msgs)
 
-        timer = dn.count(1 / framerate, 1 / framerate)
-
-        with timer, tick_node, pipeline:
-            shown, resized, size = yield
+        with tick_node, pipeline:
+            shown, resized, time, size = yield
             init_time = self.init_time
             while True:
                 width = size.columns
                 view = RichBar(term_settings)
                 try:
-                    time = timer.send(None)
                     time += init_time
                     tick, ratio = tick_node.send(time)
                     view, msgs, logs = pipeline.send(((view, msgs, logs), tick, width))
@@ -679,7 +685,7 @@ class Renderer:
                     )
                     res_text = f"{clear_below}{logs_str}{view_str}\r{msg_text}"
 
-                shown, resized, size = yield res_text
+                shown, resized, time, size = yield res_text
                 if shown:
                     logs.clear()
                     curr_msgs = list(msgs)
@@ -692,19 +698,13 @@ class Renderer:
         rich_renderer = mu.RichRenderer(term_settings.unicode_version)
         clear_line = rich_renderer.render(rich_renderer.clear_line().expand())
         clear_screen = rich_renderer.render(rich_renderer.clear_screen().expand())
-        size_node = term.terminal_size()
 
         width = 0
         resizing_since = time.perf_counter()
         resized = False
-        with render_node, size_node:
-            shown = yield
+        with render_node:
+            (shown, t), size = yield
             while True:
-                try:
-                    size = size_node.send(None)
-                except StopIteration:
-                    return
-
                 if size.columns < width:
                     resizing_since = time.perf_counter()
                     resized = True
@@ -715,13 +715,13 @@ class Renderer:
 
                 width = size.columns
                 try:
-                    res_text = render_node.send((shown, resized, size))
+                    res_text = render_node.send((shown, resized, t, size))
                 except StopIteration:
                     return
                 if resized:
                     res_text = f"{clear_screen}{res_text}"
 
-                shown = yield res_text
+                (shown, t), size = yield res_text
                 if shown:
                     resized = False
 

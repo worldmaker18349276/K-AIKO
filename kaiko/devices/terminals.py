@@ -175,7 +175,6 @@ def show(node, dt, t0=0, stream=None, hide_cursor=False, end="\n"):
                     view = node.send(not expired)
                 except StopIteration as stop:
                     return stop.value
-                shown = False
 
                 expired = yield
 
