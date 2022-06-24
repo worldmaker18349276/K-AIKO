@@ -139,8 +139,8 @@ _beatmap_fields = {
     "audio.path": str,
     "audio.volume": float,
     "audio.preview": float,
-    "metronome.offset": float,
-    "metronome.tempo": float,
+    "beatpoints.offset": float,
+    "beatpoints.tempo": float,
     "beatbar_state.bar_shift": float,
     "beatbar_state.bar_flip": bool,
 }
@@ -369,8 +369,8 @@ class OSU:
             context["timings"] = []
         if "beatLength0" not in context:
             context["beatLength0"] = beatLength
-            beatmap.metronome.offset = time / 1000
-            beatmap.metronome.tempo = 60 / (beatLength / 1000)
+            beatmap.beatpoints.offset = time / 1000
+            beatmap.beatpoints.tempo = 60 / (beatLength / 1000)
 
         if uninherited == "0":
             multiplier = multiplier / (-0.01 * beatLength)
@@ -397,7 +397,7 @@ class OSU:
         type = int(type)
         hitSound = int(hitSound)
 
-        beat = beatmap.metronome.beat(time / 1000)
+        beat = beatmap.beatpoints.beat(time / 1000)
         speed, volume, sliderVelocity, density = next(
             (vs for t, b, m, *vs in context["timings"][::-1] if t <= time),
             context["timings"][0][3:],

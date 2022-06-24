@@ -157,7 +157,7 @@ class Text(Event):
     speed: Optional[float] = None
 
     def prepare(self, beatmap, rich, context):
-        self.time = beatmap.metronome.time(self.beat)
+        self.time = beatmap.beatpoints.time(self.beat)
         if self.speed is None:
             self.speed = context.get("speed", 1.0)
 
@@ -201,8 +201,8 @@ class Title(Event):
     pos: float = 0.5
 
     def prepare(self, beatmap, rich, context):
-        self.time = beatmap.metronome.time(self.beat)
-        self.end = beatmap.metronome.time(self.beat + self.length)
+        self.time = beatmap.beatpoints.time(self.beat)
+        self.end = beatmap.beatpoints.time(self.beat + self.length)
 
         self.lifespan = (self.time, self.end)
         self.zindex = (10, -self.time)
@@ -236,7 +236,7 @@ class Flip(Event):
     flip: Optional[bool] = None
 
     def prepare(self, beatmap, rich, context):
-        self.time = beatmap.metronome.time(self.beat)
+        self.time = beatmap.beatpoints.time(self.beat)
         self.lifespan = (self.time, self.time)
 
     def register(self, state, beatbar):
@@ -278,8 +278,8 @@ class Shift(Event):
     span: Union[int, Fraction, float] = 0
 
     def prepare(self, beatmap, rich, context):
-        self.time = beatmap.metronome.time(self.beat)
-        self.end = beatmap.metronome.time(self.beat + self.span)
+        self.time = beatmap.beatpoints.time(self.beat)
+        self.end = beatmap.beatpoints.time(self.beat + self.span)
         self.lifespan = (self.time, self.end)
 
     def register(self, state, beatbar):
@@ -412,7 +412,7 @@ class OneshotTarget(Target):
     def prepare(self, beatmap, rich, context):
         self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
 
-        self.time = beatmap.metronome.time(self.beat)
+        self.time = beatmap.beatpoints.time(self.beat)
         self.perf = None
 
         travel_time = 1.0 / abs(0.5 * self.speed)
@@ -734,15 +734,15 @@ class Roll(Target):
         if self.nofeedback is None:
             self.nofeedback = context.get("nofeedback", False)
 
-        self.time = beatmap.metronome.time(self.beat)
-        self.end = beatmap.metronome.time(self.beat + self.length)
+        self.time = beatmap.beatpoints.time(self.beat)
+        self.end = beatmap.beatpoints.time(self.beat + self.length)
         self.roll = 0
         self.number = max(int(self.length * self.density // -1 * -1), 1)
         self.is_finished = False
         self.score = 0
 
         self.times = [
-            beatmap.metronome.time(self.beat + i / self.density)
+            beatmap.beatpoints.time(self.beat + i / self.density)
             for i in range(self.number)
         ]
         travel_time = 1.0 / abs(0.5 * self.speed)
@@ -849,15 +849,15 @@ class Spin(Target):
         if self.nofeedback is None:
             self.nofeedback = context.get("nofeedback", False)
 
-        self.time = beatmap.metronome.time(self.beat)
-        self.end = beatmap.metronome.time(self.beat + self.length)
+        self.time = beatmap.beatpoints.time(self.beat)
+        self.end = beatmap.beatpoints.time(self.beat + self.length)
         self.charge = 0.0
         self.capacity = float(self.length * self.density)
         self.is_finished = False
         self.score = 0
 
         self.times = [
-            beatmap.metronome.time(self.beat + i / self.density)
+            beatmap.beatpoints.time(self.beat + i / self.density)
             for i in range(int(self.capacity))
         ]
         travel_time = 1.0 / abs(0.5 * self.speed)
@@ -1453,13 +1453,59 @@ detector_monitor_file_path = "play_detector_benchmark.csv"
 renderer_monitor_file_path = "play_renderer_benchmark.csv"
 
 
+@dataclasses.dataclass
+class BeatPoints:
+    offset: float
+    tempo: float
+
+    def time(self, beat):
+        r"""Convert beat to time (in seconds).
+
+        Parameters
+        ----------
+        beat : int or Fraction or float
+
+        Returns
+        -------
+        time : float
+        """
+        return self.offset + beat * 60 / self.tempo
+
+    def beat(self, time):
+        r"""Convert time (in seconds) to beat.
+
+        Parameters
+        ----------
+        time : float
+
+        Returns
+        -------
+        beat : float
+        """
+        return (time - self.offset) * self.tempo / 60
+
+    def dtime(self, beat, length):
+        r"""Convert length to time difference (in seconds).
+
+        Parameters
+        ----------
+        beat : int or Fraction or float
+        length : int or Fraction or float
+
+        Returns
+        -------
+        dtime : float
+        """
+        return self.time(beat + length) - self.time(beat)
+
+
 class Beatmap:
     def __init__(
         self,
         path=None,
         info=None,
         audio=None,
-        metronome=None,
+        beatpoints=None,
         beatbar_state=None,
         tracks=None,
         settings=None,
@@ -1467,10 +1513,10 @@ class Beatmap:
         self.path = path
         self.info = info if info is not None else ""
         self.audio = audio if audio is not None else BeatmapAudio()
-        self.metronome = (
-            metronome
-            if metronome is not None
-            else clocks.Metronome(offset=0.0, tempo=120.0)
+        self.beatpoints = (
+            beatpoints
+            if beatpoints is not None
+            else BeatPoints(offset=0.0, tempo=120.0)
         )
         self.beatbar_state = (
             beatbar_state if beatbar_state is not None else beatbars.BeatbarState()
@@ -1903,8 +1949,8 @@ class Loop(Beatmap):
     def __init__(
         self, *, offset=1.0, tempo=120.0, width=Fraction(0), track=None, settings=None
     ):
-        metronome = clocks.Metronome(offset=offset, tempo=tempo)
-        super().__init__(metronome=metronome, tracks={"main": track}, settings=settings)
+        beatpoints = BeatPoints(offset=offset, tempo=tempo)
+        super().__init__(beatpoints=beatpoints, tracks={"main": track}, settings=settings)
         self.width = width
 
     def repeat_events(self, rich):
