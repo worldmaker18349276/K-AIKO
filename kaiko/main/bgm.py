@@ -122,7 +122,7 @@ class BGMController:
 
     @dn.datanode
     def execute(self, manager):
-        mixer_factory = lambda: engines.Mixer.create(self.mixer_settings, manager, clocks.Clock(0.0, 1.0))
+        mixer_factory = lambda: engines.Mixer.create(self.mixer_settings, manager)
         mixer_loader = engines.EngineLoader(mixer_factory)
         with mixer_loader.task() as mixer_task:
             with self._bgm_event_loop(mixer_loader.require) as event_task:

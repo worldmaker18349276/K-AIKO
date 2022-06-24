@@ -614,8 +614,7 @@ def test_keyboard(logger, devices_settings):
     controller_task, controller = engines.Controller.create(
         devices_settings.controller,
         devices_settings.terminal,
-        clocks.Clock(0.0, 1.0),
-        0.0,
+        init_time=0.0,
     )
     controller.add_handler(handler)
     controller.add_handler(lambda _: stop_event.set(), exit_key)
@@ -642,7 +641,7 @@ class KnockTest:
         self.logger.print("[hint/] Press any key to end test.")
         self.logger.print()
 
-        detector_task, detector = engines.Detector.create(self.settings, audio_manager, clocks.Clock(0.0, 1.0), 0.0)
+        detector_task, detector = engines.Detector.create(self.settings, audio_manager, init_time=0.0)
         detector.add_listener(self.hit_listener())
 
         @dn.datanode
@@ -775,7 +774,7 @@ class SpeakerTest:
         settings.output_samplerate = samplerate
         settings.output_channels = nchannels
 
-        mixer_task, mixer = engines.Mixer.create(settings, audio_manager, clocks.Clock(0.0, 1.0))
+        mixer_task, mixer = engines.Mixer.create(settings, audio_manager)
 
         dt = 60.0 / self.tempo
         t0 = self.delay
@@ -918,7 +917,7 @@ class WaveformTest:
             return dn.DataNode.wrap([])
 
         self.logger.print("[hint/] Press any key to end test.")
-        mixer_task, mixer = engines.Mixer.create(self.mixer_settings, audio_manager, clocks.Clock(0.0, 1.0))
+        mixer_task, mixer = engines.Mixer.create(self.mixer_settings, audio_manager)
         mixer.play(node)
 
         @dn.datanode
