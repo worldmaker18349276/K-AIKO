@@ -168,7 +168,7 @@ class TextBox:
                 markup, box_width = yield ellipses_res
 
     @dn.datanode
-    def get_caret_template(self, *, rich, metronome):
+    def get_caret_template(self, *, rich):
         caret_blink_ratio = self.settings.caret_blink_ratio
         normal_template = rich.parse(
             self.settings.caret_normal_appearance, slotted=True
@@ -181,10 +181,8 @@ class TextBox:
         )
 
         key_pressed_beat = 0
-        time, key_pressed = yield
+        beat, key_pressed = yield
         while True:
-            beat = metronome.beat(time)
-
             # don't blink while key pressing
             if beat < key_pressed_beat or beat % 1 < caret_blink_ratio:
                 if beat % 4 < 1:
@@ -194,12 +192,12 @@ class TextBox:
             else:
                 res = normal_template
 
-            time, key_pressed = yield res
+            beat, key_pressed = yield res
             if key_pressed:
-                key_pressed_beat = metronome.beat(time) // -1 * -1
+                key_pressed_beat = beat // -1 * -1
 
     @dn.datanode
-    def render_caret(self, *, rich, metronome):
+    def render_caret(self, *, rich):
         def render_caret_cached(markup, caret_template):
             if caret_template is not None:
                 markup = markup.traverse(
@@ -215,32 +213,34 @@ class TextBox:
                 )
             return markup.expand()
 
-        get_caret_template = self.get_caret_template(rich=rich, metronome=metronome)
+        get_caret_template = self.get_caret_template(rich=rich)
         render_caret_cached = dn.starcachemap(render_caret_cached)
 
         with get_caret_template, render_caret_cached:
-            markup, time, key_pressed = yield
+            markup, beat, key_pressed = yield
             while True:
-                caret_template = get_caret_template.send((time, key_pressed))
+                caret_template = get_caret_template.send((beat, key_pressed))
                 markup = render_caret_cached.send((markup, caret_template))
-                markup, time, key_pressed = yield markup
+                markup, beat, key_pressed = yield markup
 
     @dn.datanode
-    def render_textbox(self, *, rich, metronome):
+    def render_textbox(self, *, rich, tick_node):
         text_node = self.text_node
         adjust_view = self.adjust_view(rich=rich)
-        render_caret = self.render_caret(rich=rich, metronome=metronome)
+        render_caret = self.render_caret(rich=rich)
 
-        with text_node, adjust_view, render_caret:
+        with text_node, adjust_view, render_caret, tick_node:
             time, ran = yield
             while True:
+                beat, _ = tick_node.send(time)
                 markup, key_pressed = text_node.send()
                 ellipses = adjust_view.send((markup, len(ran)))
-                markup = render_caret.send((markup, time, key_pressed))
+                markup = render_caret.send((markup, beat, key_pressed))
                 time, ran = yield [(-self.text_offset, markup), *ellipses]
 
     def load(self, provider):
         rich = provider.get(mu.RichParser)
         metronome = provider.get(clocks.Metronome)
+        tick_node = metronome.tick("textbox")
 
-        return self.render_textbox(rich=rich, metronome=metronome)
+        return self.render_textbox(rich=rich, tick_node=tick_node)

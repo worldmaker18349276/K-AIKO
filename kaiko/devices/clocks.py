@@ -195,49 +195,5 @@ class Clock:
                 action_queue.put(ClockStop())
 
 
-@dataclasses.dataclass
-class Metronome:
-    offset: float
-    tempo: float
-
-    def time(self, beat):
-        r"""Convert beat to time (in seconds).
-
-        Parameters
-        ----------
-        beat : int or Fraction or float
-
-        Returns
-        -------
-        time : float
-        """
-        return self.offset + beat * 60 / self.tempo
-
-    def beat(self, time):
-        r"""Convert time (in seconds) to beat.
-
-        Parameters
-        ----------
-        time : float
-
-        Returns
-        -------
-        beat : float
-        """
-        return (time - self.offset) * self.tempo / 60
-
-    def dtime(self, beat, length):
-        r"""Convert length to time difference (in seconds).
-
-        Parameters
-        ----------
-        beat : int or Fraction or float
-        length : int or Fraction or float
-
-        Returns
-        -------
-        dtime : float
-        """
-        return self.time(beat + length) - self.time(beat)
-
-
+class Metronome(Clock):
+    pass
