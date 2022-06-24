@@ -1535,19 +1535,20 @@ class Beatmap:
             renderer_monitor = engines.Monitor(cache_dir / renderer_monitor_file_path)
 
         mixer_task, mixer = engines.Mixer.create(
-            devices_settings.mixer, manager, clock, mixer_monitor
+            devices_settings.mixer, manager, clock, 0.0, mixer_monitor
         )
         detector_task, detector = engines.Detector.create(
-            devices_settings.detector, manager, clock, detector_monitor
+            devices_settings.detector, manager, clock, 0.0, detector_monitor
         )
         renderer_task, renderer = engines.Renderer.create(
             devices_settings.renderer,
             devices_settings.terminal,
             clock,
+            0.0,
             renderer_monitor,
         )
         controller_task, controller = engines.Controller.create(
-            devices_settings.controller, devices_settings.terminal, clock
+            devices_settings.controller, devices_settings.terminal, clock, 0.0,
         )
 
         # build playfield

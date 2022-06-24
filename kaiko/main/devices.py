@@ -615,6 +615,7 @@ def test_keyboard(logger, devices_settings):
         devices_settings.controller,
         devices_settings.terminal,
         clocks.Clock(0.0, 1.0),
+        0.0,
     )
     controller.add_handler(handler)
     controller.add_handler(lambda _: stop_event.set(), exit_key)
@@ -641,7 +642,7 @@ class KnockTest:
         self.logger.print("[hint/] Press any key to end test.")
         self.logger.print()
 
-        detector_task, detector = engines.Detector.create(self.settings, audio_manager, clocks.Clock(0.0, 1.0))
+        detector_task, detector = engines.Detector.create(self.settings, audio_manager, clocks.Clock(0.0, 1.0), 0.0)
         detector.add_listener(self.hit_listener())
 
         @dn.datanode

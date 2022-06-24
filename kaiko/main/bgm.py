@@ -74,8 +74,6 @@ class BGMControllerSettings(cfg.Configurable):
     r"""
     Fields
     ------
-    mixer_loader_delay : float
-        The mixer loader delay.
     volume : float
         The master volume of bgm controller.
     play_delay : float
@@ -88,7 +86,6 @@ class BGMControllerSettings(cfg.Configurable):
         The duration of previewing song.
     """
 
-    mixer_loader_delay: float = 3.0
     volume: float = -10.0
     play_delay: float = 0.5
     fadein_time: float = 0.5
@@ -126,9 +123,7 @@ class BGMController:
     @dn.datanode
     def execute(self, manager):
         mixer_factory = lambda: engines.Mixer.create(self.mixer_settings, manager, clocks.Clock(0.0, 1.0))
-        mixer_loader = engines.EngineLoader(
-            mixer_factory, self.settings.mixer_loader_delay
-        )
+        mixer_loader = engines.EngineLoader(mixer_factory)
         with mixer_loader.task() as mixer_task:
             with self._bgm_event_loop(mixer_loader.require) as event_task:
                 while True:

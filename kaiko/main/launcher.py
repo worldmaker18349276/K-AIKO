@@ -130,7 +130,8 @@ class KAIKOLauncher:
     def launch(cls):
         # print logo
         print(logo.format(f"v{cls.version}"), flush=True)
-        animated_print(logo_animated_text)
+        # animated_print(logo_animated_text)
+        print(logo_animated_text)
         print("\n\n\n", end="", flush=True)
 
         try:
