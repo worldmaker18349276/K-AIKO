@@ -1603,7 +1603,7 @@ class Beatmap:
             mixer.play(self.audionode, time=0.0, zindex=(-3,))
 
         # game loop
-        event_tick_node = clock.tick("event")
+        event_tick_node = clock.tick("event", 0.0)
 
         updater = self.update_events(
             self.events,

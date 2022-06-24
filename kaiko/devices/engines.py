@@ -756,7 +756,7 @@ class Controller:
     @classmethod
     def create(cls, settings, term_settings, clock):
         pipeline = dn.DynamicPipeline()
-        tick_node = clock.tick("controller")
+        tick_node = clock.tick("controller", 0.0)
 
         task = term.inkey(
             cls._control_node(

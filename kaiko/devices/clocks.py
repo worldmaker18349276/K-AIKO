@@ -1,6 +1,7 @@
 import dataclasses
 import threading
 import queue
+import time
 from ..utils import datanodes as dn
 
 
@@ -39,7 +40,7 @@ class Clock:
 
     @staticmethod
     @dn.datanode
-    def _tick(action_queue, offset, ratio, delay=0.0):
+    def _tick(action_queue, offset, ratio, delay):
         action = None
 
         time = yield
@@ -88,7 +89,7 @@ class Clock:
 
     @staticmethod
     @dn.datanode
-    def _tick_slice(action_queue, offset, ratio, delay=0.0):
+    def _tick_slice(action_queue, offset, ratio, delay):
         action = None
 
         time_slice = yield
