@@ -12,6 +12,7 @@ from ..utils.providers import Provider
 from ..utils import markups as mu
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
+from ..devices import clocks
 from . import beatshell
 from .files import (
     FileManager,
@@ -231,14 +232,15 @@ class KAIKOLauncher:
             raise ValueError("unknown arguments: " + " ".join(sys.argv[1:]))
 
         # load bgm
-        bgm_task = self.bgm_controller.execute(self.device_manager.audio_manager)
+        clock = clocks.Clock(0.0, 1.0)
+        bgm_task = self.bgm_controller.execute(clock, self.device_manager.audio_manager)
 
         # prompt
-        repl_task = self.repl()
+        repl_task = self.repl(clock)
         yield from dn.pipe(repl_task, bgm_task).join()
 
     @dn.datanode
-    def repl(self):
+    def repl(self, clock):
         r"""Start REPL."""
         preview_handler = self.bgm_controller.preview_handler
         prompt = beatshell.BeatPrompt(
@@ -259,7 +261,7 @@ class KAIKOLauncher:
             prev_dir = self.file_manager.current
 
             try:
-                command = yield from prompt.prompt(self.settings.devices).join()
+                command = yield from prompt.prompt(clock, self.settings.devices).join()
 
             except beatshell.PromptError as e:
                 self.logger.print(f"[warn]{self.logger.escape(str(e.cause))}[/]")

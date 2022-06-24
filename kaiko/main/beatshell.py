@@ -304,7 +304,7 @@ class BeatPrompt:
         renderer.add_texts(textbox, textbox_mask, zindex=(0,))
 
     @dn.datanode
-    def prompt(self, devices_settings):
+    def prompt(self, clock, devices_settings):
         fin_event = threading.Event()
 
         # engines
@@ -314,11 +314,12 @@ class BeatPrompt:
             engines.Monitor(self.monitor_file_path.abs) if debug_monitor else None
         )
         input_task, controller = engines.Controller.create(
-            devices_settings.controller, devices_settings.terminal
+            devices_settings.controller, devices_settings.terminal, clock=clock,
         )
         display_task, renderer = engines.Renderer.create(
             devices_settings.renderer,
             devices_settings.terminal,
+            clock=clock,
             monitor=renderer_monitor,
         )
 
