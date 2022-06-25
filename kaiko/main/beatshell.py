@@ -81,17 +81,17 @@ class PatternsWidget:
         patterns = self.settings.patterns
 
         markuped_patterns = [rich.parse(pattern) for pattern in patterns]
-        tick_node = metronome.tick("patterns")
 
         @dn.datanode
         def patterns_node():
-            with tick_node:
-                time, ran = yield
-                while True:
-                    beat, _ = tick_node.send(time)
-                    ind = int(beat * len(markuped_patterns) // 1) % len(markuped_patterns)
-                    res = markuped_patterns[ind]
-                    time, ran = yield [(0, res)]
+            with metronome.tick("patterns") as tick_node:
+                with tick_node:
+                    time, ran = yield
+                    while True:
+                        beat, _ = tick_node.send(time)
+                        ind = int(beat * len(markuped_patterns) // 1) % len(markuped_patterns)
+                        res = markuped_patterns[ind]
+                        time, ran = yield [(0, res)]
 
         return patterns_node()
 
@@ -124,16 +124,16 @@ class MarkerWidget:
         blink_ratio = self.settings.blink_ratio
         normal = [(0, rich.parse(self.settings.normal_appearance))]
         blinking = [(0, rich.parse(self.settings.blinking_appearance))]
-        tick_node = metronome.tick("marker")
 
         @dn.datanode
         def marker_node():
-            with tick_node:
-                time, ran = yield
-                while True:
-                    beat, _ = tick_node.send(time)
-                    res = blinking if beat % 4 < min(1.0, blink_ratio) else normal
-                    time, ran = yield res
+            with metronome.tick("marker") as tick_node:
+                with tick_node:
+                    time, ran = yield
+                    while True:
+                        beat, _ = tick_node.send(time)
+                        res = blinking if beat % 4 < min(1.0, blink_ratio) else normal
+                        time, ran = yield res
 
         return marker_node()
 

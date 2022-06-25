@@ -224,23 +224,22 @@ class TextBox:
                 markup, beat, key_pressed = yield markup
 
     @dn.datanode
-    def render_textbox(self, *, rich, tick_node):
+    def render_textbox(self, *, rich, metronome):
         text_node = self.text_node
         adjust_view = self.adjust_view(rich=rich)
         render_caret = self.render_caret(rich=rich)
 
-        with text_node, adjust_view, render_caret, tick_node:
-            time, ran = yield
-            while True:
-                beat, _ = tick_node.send(time)
-                markup, key_pressed = text_node.send()
-                ellipses = adjust_view.send((markup, len(ran)))
-                markup = render_caret.send((markup, beat, key_pressed))
-                time, ran = yield [(-self.text_offset, markup), *ellipses]
+        with metronome.tick("textbox") as tick_node:
+            with text_node, adjust_view, render_caret, tick_node:
+                time, ran = yield
+                while True:
+                    beat, _ = tick_node.send(time)
+                    markup, key_pressed = text_node.send()
+                    ellipses = adjust_view.send((markup, len(ran)))
+                    markup = render_caret.send((markup, beat, key_pressed))
+                    time, ran = yield [(-self.text_offset, markup), *ellipses]
 
     def load(self, provider):
         rich = provider.get(mu.RichParser)
         metronome = provider.get(clocks.Metronome)
-        tick_node = metronome.tick("textbox")
-
-        return self.render_textbox(rich=rich, tick_node=tick_node)
+        return self.render_textbox(rich=rich, metronome=metronome)

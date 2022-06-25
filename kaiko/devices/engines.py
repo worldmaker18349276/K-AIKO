@@ -128,21 +128,6 @@ class Monitor:
         )
 
 
-@dn.datanode
-def _task_init_time(engine):
-    yield
-    engine.init_time = time.perf_counter()
-    yield
-    while True:
-        yield
-
-def _set_init_time(engine, task):
-    if engine.init_time is not None:
-        return task
-    else:
-        return dn.pipe(_task_init_time(engine), task)
-
-
 class MixerSettings(cfg.Configurable):
     r"""
     Fields
@@ -187,6 +172,7 @@ class Mixer:
         self = cls(pipeline, init_time, settings, monitor)
         return self._task(manager, clock, monitor), self
 
+    @dn.datanode
     def _task(self, manager, clock, monitor):
         samplerate = self.settings.output_samplerate
         buffer_length = self.settings.output_buffer_length
@@ -195,21 +181,30 @@ class Mixer:
         device = self.settings.output_device
         sound_delay = self.settings.sound_delay
 
-        tick_node = clock.tick_slice("mixer", sound_delay)
-        output_node = self._mix_node(self.pipeline, tick_node, self.settings)
-        if monitor:
-            output_node = monitor.monitoring(output_node)
+        with clock.tick_slice("mixer", sound_delay) as tick_node:
+            output_node = self._mix_node(self.pipeline, tick_node, self.settings)
+            if monitor:
+                output_node = monitor.monitoring(output_node)
 
-        task = aud.play(
-            manager,
-            output_node,
-            samplerate=samplerate,
-            buffer_shape=(buffer_length, nchannels),
-            format=format,
-            device=device,
-        )
+            task = aud.play(
+                manager,
+                output_node,
+                samplerate=samplerate,
+                buffer_shape=(buffer_length, nchannels),
+                format=format,
+                device=device,
+            )
 
-        return _set_init_time(self, task)
+            if self.init_time is not None:
+                yield from task.join()
+            else:
+                with task:
+                    yield
+                    self.init_time = time.perf_counter()
+                    task.send(None)
+                    while True:
+                        yield
+                        task.send(None)
 
     @dn.datanode
     def _mix_node(self, pipeline, tick_node, settings):
@@ -424,6 +419,7 @@ class Detector:
         self = cls(pipeline, knock_energy, init_time, settings, monitor)
         return self._task(manager, clock, monitor), self
 
+    @dn.datanode
     def _task(self, manager, clock, monitor):
         samplerate = self.settings.input_samplerate
         buffer_length = self.settings.input_buffer_length
@@ -434,26 +430,34 @@ class Detector:
         hop_length = round(samplerate * time_res)
         knock_delay = self.settings.knock_delay
 
-        tick_node = clock.tick("detector", knock_delay)
+        with clock.tick("detector", knock_delay) as tick_node:
+            input_node = self._detect_node(
+                self.pipeline, tick_node, self.knock_energy, self.settings
+            )
+            if buffer_length != hop_length:
+                input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
+            if monitor:
+                input_node = monitor.monitoring(input_node)
 
-        input_node = self._detect_node(
-            self.pipeline, tick_node, self.knock_energy, self.settings
-        )
-        if buffer_length != hop_length:
-            input_node = dn.unchunk(input_node, chunk_shape=(hop_length, nchannels))
-        if monitor:
-            input_node = monitor.monitoring(input_node)
+            task = aud.record(
+                manager,
+                input_node,
+                samplerate=samplerate,
+                buffer_shape=(buffer_length, nchannels),
+                format=format,
+                device=device,
+            )
 
-        task = aud.record(
-            manager,
-            input_node,
-            samplerate=samplerate,
-            buffer_shape=(buffer_length, nchannels),
-            format=format,
-            device=device,
-        )
-
-        return _set_init_time(self, task)
+            if self.init_time is not None:
+                yield from task.join()
+            else:
+                with task:
+                    yield
+                    self.init_time = time.perf_counter()
+                    task.send(None)
+                    while True:
+                        yield
+                        task.send(None)
 
     @dn.datanode
     def _detect_node(self, pipeline, tick_node, knock_energy, settings):
@@ -616,32 +620,42 @@ class Renderer:
         self = cls(pipeline, init_time, settings, monitor)
         return self._task(term_settings, clock, monitor), self
 
+    @dn.datanode
     def _task(self, term_settings, clock, monitor):
         framerate = self.settings.display_framerate
         display_delay = self.settings.display_delay
 
-        tick_node = clock.tick("renderer", display_delay)
-        render_node = self._render_node(self.pipeline, tick_node, self.settings, term_settings)
-        resize_node = self._resize_node(
-            render_node,
-            self.settings,
-            term_settings,
-        )
+        with clock.tick("renderer", display_delay) as tick_node:
+            render_node = self._render_node(self.pipeline, tick_node, self.settings, term_settings)
+            resize_node = self._resize_node(
+                render_node,
+                self.settings,
+                term_settings,
+            )
 
-        timer = dn.count(1 / framerate, 1 / framerate)
-        size_node = term.terminal_size()
-        display_node = dn.pipe(
-            dn.merge(timer),
-            dn.merge(size_node),
-            resize_node,
-        )
+            timer = dn.count(1 / framerate, 1 / framerate)
+            size_node = term.terminal_size()
+            display_node = dn.pipe(
+                dn.merge(timer),
+                dn.merge(size_node),
+                resize_node,
+            )
 
-        if monitor:
-            display_node = monitor.monitoring(display_node)
+            if monitor:
+                display_node = monitor.monitoring(display_node)
 
-        task = term.show(display_node, 1 / framerate, hide_cursor=True)
+            task = term.show(display_node, 1 / framerate, hide_cursor=True)
 
-        return _set_init_time(self, task)
+            if self.init_time is not None:
+                yield from task.join()
+            else:
+                with task:
+                    yield
+                    self.init_time = time.perf_counter()
+                    task.send(None)
+                    while True:
+                        yield
+                        task.send(None)
 
     @dn.datanode
     def _render_node(self, pipeline, tick_node, settings, term_settings):
@@ -801,19 +815,28 @@ class Controller:
         self = cls(pipeline, init_time, settings)
         return self._task(term_settings, clock), self
 
+    @dn.datanode
     def _task(self, term_settings, clock):
         update_interval = self.settings.update_interval
 
-        tick_node = clock.tick("controller", 0.0)
+        with clock.tick("controller", 0.0) as tick_node:
+            task = term.inkey(
+                self._control_node(
+                    self.pipeline, tick_node, self.settings, term_settings
+                ),
+                dt=update_interval,
+            )
 
-        task = term.inkey(
-            self._control_node(
-                self.pipeline, tick_node, self.settings, term_settings
-            ),
-            dt=update_interval,
-        )
-
-        return _set_init_time(self, task)
+            if self.init_time is not None:
+                yield from task.join()
+            else:
+                with task:
+                    yield
+                    self.init_time = time.perf_counter()
+                    task.send(None)
+                    while True:
+                        yield
+                        task.send(None)
 
     @dn.datanode
     def _control_node(self, pipeline, tick_node, settings, term_settings):

@@ -1,3 +1,4 @@
+import contextlib
 import dataclasses
 import threading
 import queue
@@ -160,17 +161,33 @@ class Clock:
             time_slice = yield slices_map
             slices_map = []
 
+    @contextlib.contextmanager
     def tick(self, name, delay=0.0):
+        action_queue = queue.Queue()
+        tick_node = self._tick(action_queue, self.offset, self.ratio, delay=delay)
         with self.lock:
-            action_queue = queue.Queue()
+            if name in self.action_queues:
+                raise ValueError
             self.action_queues[name] = action_queue
-            return self._tick(action_queue, self.offset, self.ratio, delay=delay)
+        try:
+            yield tick_node
+        finally:
+            with self.lock:
+                del self.action_queues[name]
 
+    @contextlib.contextmanager
     def tick_slice(self, name, delay=0.0):
+        action_queue = queue.Queue()
+        tick_node = self._tick_slice(action_queue, self.offset, self.ratio, delay=delay)
         with self.lock:
-            action_queue = queue.Queue()
+            if name in self.action_queues:
+                raise ValueError
             self.action_queues[name] = action_queue
-            return self._tick_slice(action_queue, self.offset, self.ratio, delay=delay)
+        try:
+            yield tick_node
+        finally:
+            with self.lock:
+                del self.action_queues[name]
 
     def speed(self, time, ratio):
         action = ClockSpeed(time, ratio)
