@@ -11,6 +11,7 @@ from ..tui import widgets
 from ..tui import inputs
 from .files import FileManager, UnrecognizedPath, RecognizedFilePath
 from .profiles import ProfileManager
+from .devices import DeviceManager
 from .loggers import Logger
 from .bgm import BGMController
 
@@ -303,26 +304,20 @@ class BeatPrompt:
         renderer.add_texts(textbox, textbox_mask, zindex=(0,))
 
     @dn.datanode
-    def new_session(self, command_parser, clock, devices_settings, clear=True):
-        self.input._new_session(command_parser, clear=clear)
+    def new_session(self, command_parser, clear=True):
+        device_manager = self.provider.get(DeviceManager)
+        settings = self.settings
+        debug_monitor = settings.debug_monitor
 
         fin_event = threading.Event()
 
+        self.input._new_session(command_parser, clear=clear)
+
         # engines
-        settings = self.settings
-        debug_monitor = settings.debug_monitor
-        renderer_monitor = (
-            engines.Monitor(self.monitor_file_path.abs) if debug_monitor else None
+        engine_task, engines = device_manager.load_engines(
+            "renderer", "controller", session_name="prompt", monitoring=self.settings.debug_monitor
         )
-        input_task, controller = engines.Controller.create(
-            devices_settings.controller, devices_settings.terminal, clock=clock,
-        )
-        display_task, renderer = engines.Renderer.create(
-            devices_settings.renderer,
-            devices_settings.terminal,
-            clock=clock,
-            monitor=renderer_monitor,
-        )
+        renderer, controller = engines
 
         # handlers
         self.register(renderer, controller, fin_event)
@@ -335,7 +330,7 @@ class BeatPrompt:
                 yield
 
         with self.logger.popup(renderer):
-            yield from dn.pipe(stop_when(fin_event), display_task, input_task).join()
+            yield from dn.pipe(stop_when(fin_event), engine_task).join()
 
         result = self.input.result
         if isinstance(result, inputs.ErrorResult):
