@@ -8,7 +8,6 @@ from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..devices import audios as aud
 from ..devices import clocks
-from ..devices import engines
 from ..beats import beatsheets
 from .loggers import Logger
 from .devices import DeviceManager
@@ -129,20 +128,11 @@ class BGMController:
     def logger(self):
         return self.provider.get(Logger)
 
-    @dn.datanode
     def start(self):
         device_manager = self.provider.get(DeviceManager)
-        audio_manager = device_manager.audio_manager
-        clock = device_manager.clock
-        
-        mixer_factory = lambda: engines.Mixer.create(self.mixer_settings, audio_manager, clock=clock)
-        mixer_loader = engines.EngineLoader(mixer_factory)
-        with mixer_loader.task() as mixer_task:
-            with self._bgm_event_loop(mixer_loader.require) as event_task:
-                while True:
-                    yield
-                    mixer_task.send(None)
-                    event_task.send(None)
+        loader_task, loader = device_manager.load_engine_loader("mixer")
+        event_task = self._bgm_event_loop(loader.require)
+        return dn.pipe(loader_task, event_task)
 
     @dn.datanode
     def _play_song(self, mixer, action):
@@ -228,7 +218,7 @@ class BGMController:
 
             elif isinstance(action, PreviewSong):
                 self.current_action = action
-                with require_mixer() as mixer:
+                with require_mixer() as (mixer,):
                     with self._play_song(mixer, action) as preview_task:
                         while True:
                             yield
@@ -252,7 +242,7 @@ class BGMController:
             elif isinstance(action, PlayBGM):
                 self.is_bgm_on = True
                 self.current_action = action
-                with require_mixer() as mixer:
+                with require_mixer() as (mixer,):
                     with self._play_song(mixer, action) as song_task:
                         while True:
                             yield
