@@ -162,32 +162,32 @@ class Clock:
             slices_map = []
 
     @contextlib.contextmanager
-    def tick(self, name, delay=0.0):
+    def tick(self, key, delay=0.0):
         action_queue = queue.Queue()
         tick_node = self._tick(action_queue, self.offset, self.ratio, delay=delay)
         with self.lock:
-            if name in self.action_queues:
-                raise ValueError
-            self.action_queues[name] = action_queue
+            if key in self.action_queues:
+                raise ValueError(f"already register: {key}")
+            self.action_queues[key] = action_queue
         try:
             yield tick_node
         finally:
             with self.lock:
-                del self.action_queues[name]
+                del self.action_queues[key]
 
     @contextlib.contextmanager
-    def tick_slice(self, name, delay=0.0):
+    def tick_slice(self, key, delay=0.0):
         action_queue = queue.Queue()
         tick_node = self._tick_slice(action_queue, self.offset, self.ratio, delay=delay)
         with self.lock:
-            if name in self.action_queues:
-                raise ValueError
-            self.action_queues[name] = action_queue
+            if key in self.action_queues:
+                raise ValueError(f"already register: {key}")
+            self.action_queues[key] = action_queue
         try:
             yield tick_node
         finally:
             with self.lock:
-                del self.action_queues[name]
+                del self.action_queues[key]
 
     def speed(self, time, ratio):
         action = ClockSpeed(time, ratio)
@@ -203,10 +203,10 @@ class Clock:
                 action_queue.put(action)
             self.offset += offset
 
-    def delay(self, name, delay):
+    def delay(self, key, delay):
         action = ClockDelay(delay)
         with self.lock:
-            action_queue = self.action_queues[name]
+            action_queue = self.action_queues[key]
             action_queue.put(action)
 
     def stop(self):

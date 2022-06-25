@@ -229,7 +229,7 @@ class TextBox:
         adjust_view = self.adjust_view(rich=rich)
         render_caret = self.render_caret(rich=rich)
 
-        with metronome.tick("textbox") as tick_node:
+        with metronome.tick(self) as tick_node:
             with text_node, adjust_view, render_caret, tick_node:
                 time, ran = yield
                 while True:

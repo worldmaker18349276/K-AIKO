@@ -181,7 +181,7 @@ class Mixer:
         device = self.settings.output_device
         sound_delay = self.settings.sound_delay
 
-        with clock.tick_slice("mixer", sound_delay) as tick_node:
+        with clock.tick_slice(self, sound_delay) as tick_node:
             output_node = self._mix_node(self.pipeline, tick_node, self.settings)
             if monitor:
                 output_node = monitor.monitoring(output_node)
@@ -430,7 +430,7 @@ class Detector:
         hop_length = round(samplerate * time_res)
         knock_delay = self.settings.knock_delay
 
-        with clock.tick("detector", knock_delay) as tick_node:
+        with clock.tick(self, knock_delay) as tick_node:
             input_node = self._detect_node(
                 self.pipeline, tick_node, self.knock_energy, self.settings
             )
@@ -625,7 +625,7 @@ class Renderer:
         framerate = self.settings.display_framerate
         display_delay = self.settings.display_delay
 
-        with clock.tick("renderer", display_delay) as tick_node:
+        with clock.tick(self, display_delay) as tick_node:
             render_node = self._render_node(self.pipeline, tick_node, self.settings, term_settings)
             resize_node = self._resize_node(
                 render_node,
@@ -819,7 +819,7 @@ class Controller:
     def _task(self, term_settings, clock):
         update_interval = self.settings.update_interval
 
-        with clock.tick("controller", 0.0) as tick_node:
+        with clock.tick(self, 0.0) as tick_node:
             task = term.inkey(
                 self._control_node(
                     self.pipeline, tick_node, self.settings, term_settings

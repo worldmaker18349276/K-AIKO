@@ -84,7 +84,7 @@ class PatternsWidget:
 
         @dn.datanode
         def patterns_node():
-            with metronome.tick("patterns") as tick_node:
+            with metronome.tick(self) as tick_node:
                 with tick_node:
                     time, ran = yield
                     while True:
@@ -127,7 +127,7 @@ class MarkerWidget:
 
         @dn.datanode
         def marker_node():
-            with metronome.tick("marker") as tick_node:
+            with metronome.tick(self) as tick_node:
                 with tick_node:
                     time, ran = yield
                     while True:

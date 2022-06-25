@@ -1629,7 +1629,7 @@ class Beatmap:
             mixer.play(self.audionode, time=0.0, zindex=(-3,))
 
         # game loop
-        with clock.tick("event", 0.0) as event_tick_node:
+        with clock.tick(self, 0.0) as event_tick_node:
             updater = self.update_events(
                 self.events,
                 score,
@@ -1673,13 +1673,13 @@ class Beatmap:
 
         def incr_display_delay(_):
             devices_settings.renderer.display_delay += display_delay_adjust_step
-            clock.delay("renderer", display_delay_adjust_step)
+            clock.delay(renderer, display_delay_adjust_step)
             renderer.add_log(mu.Text(f"display_delay += {display_delay_adjust_step}\n"))
             settings_changed.set()
 
         def decr_display_delay(_):
             devices_settings.renderer.display_delay -= display_delay_adjust_step
-            clock.delay("renderer", -display_delay_adjust_step)
+            clock.delay(renderer, -display_delay_adjust_step)
             renderer.add_log(mu.Text(f"display_delay -= {display_delay_adjust_step}\n"))
             settings_changed.set()
 
@@ -1692,13 +1692,13 @@ class Beatmap:
 
         def incr_knock_delay(_):
             devices_settings.detector.knock_delay += knock_delay_adjust_step
-            clock.delay("detector", knock_delay_adjust_step)
+            clock.delay(detector, knock_delay_adjust_step)
             renderer.add_log(mu.Text(f"knock_delay += {knock_delay_adjust_step}\n"))
             settings_changed.set()
 
         def decr_knock_delay(_):
             devices_settings.detector.knock_delay -= knock_delay_adjust_step
-            clock.delay("detector", -knock_delay_adjust_step)
+            clock.delay(detector, -knock_delay_adjust_step)
             renderer.add_log(mu.Text(f"knock_delay -= {knock_delay_adjust_step}\n"))
             settings_changed.set()
 
