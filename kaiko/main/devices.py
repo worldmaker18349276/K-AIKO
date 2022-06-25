@@ -5,6 +5,7 @@ import shutil
 import contextlib
 import threading
 import queue
+from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
 from ..utils import markups as mu
@@ -33,6 +34,14 @@ class DevicesDirPath(RecognizedDirPath):
         raise InvalidFileOperation(
             "Deleting important directories or files may crash the program"
         )
+
+
+class DevicesSettings(cfg.Configurable):
+    mixer = cfg.subconfig(engines.MixerSettings)
+    detector = cfg.subconfig(engines.DetectorSettings)
+    renderer = cfg.subconfig(engines.RendererSettings)
+    controller = cfg.subconfig(engines.ControllerSettings)
+    terminal = cfg.subconfig(term.TerminalSettings)
 
 
 class DeviceManager:

@@ -923,10 +923,3 @@ class EngineLoader:
                     except StopIteration:
                         raise RuntimeError("engine stop unexpectedly")
 
-
-class DevicesSettings(cfg.Configurable):
-    mixer = cfg.subconfig(MixerSettings)
-    detector = cfg.subconfig(DetectorSettings)
-    renderer = cfg.subconfig(RendererSettings)
-    controller = cfg.subconfig(ControllerSettings)
-    terminal = cfg.subconfig(term.TerminalSettings)
