@@ -11,6 +11,7 @@ from ..devices import clocks
 from ..devices import engines
 from ..beats import beatsheets
 from .loggers import Logger
+from .devices import DeviceManager
 from .files import FileManager, UnrecognizedPath
 from .play import BeatmapManager, BeatmapFilePath, Song
 
@@ -129,8 +130,12 @@ class BGMController:
         return self.provider.get(Logger)
 
     @dn.datanode
-    def start(self, clock, manager):
-        mixer_factory = lambda: engines.Mixer.create(self.mixer_settings, manager, clock=clock)
+    def start(self):
+        device_manager = self.provider.get(DeviceManager)
+        audio_manager = device_manager.audio_manager
+        clock = device_manager.clock
+        
+        mixer_factory = lambda: engines.Mixer.create(self.mixer_settings, audio_manager, clock=clock)
         mixer_loader = engines.EngineLoader(mixer_factory)
         with mixer_loader.task() as mixer_task:
             with self._bgm_event_loop(mixer_loader.require) as event_task:

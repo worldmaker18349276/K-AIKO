@@ -231,11 +231,10 @@ class KAIKOLauncher:
             )
             launcher.provider.set(prompt)
 
-            clock = clocks.Clock(0.0, 1.0)
-            yield from launcher.run(clock).join()
+            yield from launcher.run().join()
 
     @dn.datanode
-    def run(self, clock):
+    def run(self):
         r"""Run KAIKO."""
         logger = self.logger
 
@@ -250,15 +249,16 @@ class KAIKOLauncher:
             raise ValueError("unknown arguments: " + " ".join(sys.argv[1:]))
 
         # load bgm
-        bgm_task = self.bgm_controller.start(clock, self.device_manager.audio_manager)
+        bgm_task = self.bgm_controller.start()
 
         # prompt
-        repl_task = self.repl(clock)
+        repl_task = self.repl()
         yield from dn.pipe(repl_task, bgm_task).join()
 
     @dn.datanode
-    def repl(self, clock):
+    def repl(self):
         r"""Start REPL."""
+        clock = self.device_manager.clock
         prompt = self.prompt
 
         self.logger.print()
