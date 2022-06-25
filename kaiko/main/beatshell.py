@@ -161,9 +161,6 @@ class BeatShellSettings(cfg.Configurable):
         r"""
         Fields
         ------
-        t0 : float
-        tempo : float
-
         icon_width : int
             The text width of icon.
         marker_width : int
@@ -174,9 +171,6 @@ class BeatShellSettings(cfg.Configurable):
         marker : MarkerWidgetSettings
             The appearance of marker.
         """
-        t0: float = 0.0
-        tempo: float = 130.0
-
         icon_width: int = 5
         marker_width: int = 2
 

@@ -200,10 +200,12 @@ class Clock:
 
 
 class Metronome(Clock):
-    def tempo(self, time, offset, tempo):
-        tick0 = (offset * tempo / 60) % 1
+    def __init__(self, tempo):
+        super().__init__(0.0, tempo / 60)
 
+    def tempo(self, time, offset, tempo):
         with self.lock:
+            tick0 = offset * tempo / 60
             tick = self.offset + time * self.ratio
             action1 = ClockSkip(time, (tick0 - tick) % 1)
             action2 = ClockSpeed(time, tempo / 60)

@@ -123,6 +123,7 @@ class RootDirPath(RecognizedDirPath):
 class KAIKOLauncher:
     update_interval = 0.01
     version = __version__
+    METRONOME_TEMPO = 120.0
 
     def __init__(self):
         self.provider = Provider()
@@ -207,9 +208,7 @@ class KAIKOLauncher:
             )
             launcher.provider.set(beatmap_manager)
 
-            t0 = launcher.settings.shell.prompt.t0
-            tempo = launcher.settings.shell.prompt.tempo
-            metronome = clocks.Metronome(t0, tempo/60)
+            metronome = clocks.Metronome(launcher.METRONOME_TEMPO)
             launcher.provider.set(metronome)
 
             bgm_controller = BGMController(
@@ -336,6 +335,10 @@ class KAIKOLauncher:
     @property
     def beatmap_manager(self):
         return self.provider.get(BeatmapManager)
+
+    @property
+    def metronome(self):
+        return self.provider.get(clocks.Metronome)
 
     @property
     def bgm_controller(self):
