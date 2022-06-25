@@ -610,8 +610,7 @@ class DevicesCommand:
         Available templates: sine, square, triangle, sawtooth, square_duty
         Available hashtags: tspan, clip, bandpass, gammatone
         """
-        settings = self.settings.devices.mixer
-        return WaveformTest(waveform, self.logger, settings)
+        return WaveformTest(waveform, self.logger, self.device_manager)
 
     @test_waveform.arg_parser("waveform")
     def _test_waveform_waveform_parser(self):
@@ -754,6 +753,37 @@ def test_keyboard(logger, devices_manager):
 
     stop_task = dn.take(lambda _: not stop_event.is_set())
     return dn.pipe(stop_task, engine_task)
+
+
+class WaveformTest:
+    def __init__(self, waveform, logger, device_manager):
+        self.waveform = waveform
+        self.logger = logger
+        self.device_manager = device_manager
+
+    def execute(self):
+        self.logger.print("[info/] Compile waveform...")
+
+        try:
+            node = dn.Waveform(self.waveform).generate(
+                self.device_manager.settings.mixer.output_samplerate,
+                self.device_manager.settings.mixer.output_channels,
+                self.device_manager.settings.mixer.output_buffer_length,
+            )
+
+        except:
+            self.logger.print("[warn]Fail to compile waveform.[/]")
+            logger.print_traceback()
+            return dn.DataNode.wrap([])
+
+        engine_task, engines = self.device_manager.load_engines("mixer")
+        mixer, = engines
+
+        mixer.play(node)
+
+        self.logger.print(f"Play waveform...")
+        self.logger.print("[hint/] Press any key to end test.")
+        return dn.pipe(engine_task, exit_any())
 
 
 class KnockTest:
@@ -975,33 +1005,3 @@ class MicTest:
         finally:
             self.logger.print()
 
-
-class WaveformTest:
-    def __init__(self, waveform, logger, audio_manager, mixer_settings):
-        self.waveform = waveform
-        self.logger = logger
-        self.audio_manager = audio_manager
-        self.mixer_settings = mixer_settings
-
-    def execute(self):
-        self.logger.print("[info/] Compile waveform...")
-
-        try:
-            node = dn.Waveform(self.waveform).generate(
-                self.mixer_settings.output_samplerate,
-                self.mixer_settings.output_channels,
-                self.mixer_settings.output_buffer_length,
-            )
-
-        except:
-            self.logger.print("[warn]Fail to compile waveform.[/]")
-            logger.print_traceback()
-            return dn.DataNode.wrap([])
-
-        self.logger.print("[hint/] Press any key to end test.")
-        mixer_task, mixer = engines.Mixer.create(self.mixer_settings, self.audio_manager)
-        mixer.play(node)
-
-        exit_task = exit_any()
-
-        return dn.pipe(mixer_task, exit_task)
