@@ -252,6 +252,7 @@ class BeatPrompt:
     ):
         self.provider = provider
         self.logger = provider.get(Logger)
+        self.metronome = provider.get(clocks.Metronome)
         self.settings = settings
         self.history_file_path = history_file_path
         self.monitor_file_path = monitor_file_path
@@ -281,13 +282,10 @@ class BeatPrompt:
     def register(self, renderer, controller, fin_event):
         # widgets
         settings = self.settings
-        t0 = settings.prompt.t0
-        tempo = settings.prompt.tempo
-        metronome = clocks.Metronome(t0, tempo/60)
 
         provider = Provider()
         provider.set(self.logger.rich)
-        provider.set(metronome)
+        provider.set(self.metronome)
         provider.set(renderer)
         provider.set(controller)
 

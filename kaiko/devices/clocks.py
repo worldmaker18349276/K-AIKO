@@ -36,7 +36,7 @@ class Clock:
         self.offset = offset
         self.ratio = ratio
         self.action_queues = {}
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
 
     @staticmethod
     @dn.datanode
@@ -173,27 +173,42 @@ class Clock:
             return self._tick_slice(action_queue, self.offset, self.ratio, delay=delay)
 
     def speed(self, time, ratio):
+        action = ClockSpeed(time, ratio)
         with self.lock:
             for action_queue in self.action_queues.values():
-                action_queue.put(ClockSpeed(time, ratio))
+                action_queue.put(action)
             self.offset, self.ratio = self.offset + time * (self.ratio - ratio), ratio
 
     def skip(self, time, offset):
+        action = ClockSkip(time, offset)
         with self.lock:
             for action_queue in self.action_queues.values():
-                action_queue.put(ClockSkip(time, offset))
+                action_queue.put(action)
             self.offset += offset
 
     def delay(self, name, delay):
+        action = ClockDelay(delay)
         with self.lock:
             action_queue = self.action_queues[name]
-            action_queue.put(ClockDelay(delay))
+            action_queue.put(action)
 
     def stop(self):
+        action = ClockStop()
         with self.lock:
             for action_queue in self.action_queues.values():
-                action_queue.put(ClockStop())
+                action_queue.put(action)
 
 
 class Metronome(Clock):
-    pass
+    def tempo(self, time, offset, tempo):
+        tick0 = (offset * tempo / 60) % 1
+
+        with self.lock:
+            tick = self.offset + time * self.ratio
+            action1 = ClockSkip(time, (tick0 - tick) % 1)
+            action2 = ClockSpeed(time, tempo / 60)
+
+            for action_queue in self.action_queues.values():
+                action_queue.put(action1)
+                action_queue.put(action2)
+

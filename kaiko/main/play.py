@@ -290,7 +290,7 @@ class BeatmapManager:
         beatmap = self.get_beatmap_metadata(beatmap_path)
         if beatmap is None or beatmap.audio is None or beatmap.audio.path is None:
             return None
-        return Song(beatmapset_path.abs, beatmap.audio)
+        return Song(beatmapset_path.abs, beatmap.audio, beatmap.beatpoints)
 
     def get_songs(self):
         songs = [
@@ -398,6 +398,7 @@ class BeatmapManager:
 class Song:
     root: Path
     audio: beatmaps.BeatmapAudio
+    beatpoints: beatmaps.BeatPoints
 
     @property
     def path(self):

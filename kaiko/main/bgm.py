@@ -17,7 +17,7 @@ from .play import BeatmapManager, BeatmapFilePath, Song
 
 @dn.datanode
 def play_fadeinout(
-    mixer, path, fadein_time, fadeout_time, volume=0.0, start=None, end=None
+    mixer, path, fadein_time, fadeout_time, volume=0.0, start=None, end=None, startup=lambda t:None
 ):
     meta = aud.AudioMetadata.read(path)
     node = aud.load(path)
@@ -36,7 +36,14 @@ def play_fadeinout(
         dn.fadeout(samplerate, fadeout_time, out_event, before),
     )
 
-    node = dn.pipe(lambda args:args[0], dn.attach(node))
+    @dn.datanode
+    def startup_node():
+        time = yield
+        startup(time)
+        while True:
+            yield
+
+    node = dn.pipe(dn.pair(dn.attach(node), startup_node()), lambda args:args[0])
     song_handler = mixer.add_effect(mixer.tmask(node, None))
     while not song_handler.is_finalized():
         try:
@@ -153,6 +160,12 @@ class BGMController:
             )
             logger.print(f"[music/] will preview: {path_mu}")
 
+            metronome = self.provider.get(clocks.Metronome)
+            def startup(time):
+                offset = action.song.beatpoints.offset
+                tempo = action.song.beatpoints.tempo
+                metronome.tempo(time, offset, tempo)
+
             yield from play_fadeinout(
                 mixer,
                 action.song.path,
@@ -161,6 +174,7 @@ class BGMController:
                 volume=action.song.audio.volume + self.settings.volume,
                 start=start,
                 end=end,
+                startup=startup,
             ).join()
 
         elif isinstance(action, PlayBGM):
@@ -173,6 +187,12 @@ class BGMController:
             )
             logger.print(f"[music/] will play: {path_mu}")
 
+            metronome = self.provider.get(clocks.Metronome)
+            def startup(time):
+                offset = action.song.beatpoints.offset
+                tempo = action.song.beatpoints.tempo
+                metronome.tempo(time, offset, tempo)
+
             yield from play_fadeinout(
                 mixer,
                 action.song.path,
@@ -180,6 +200,7 @@ class BGMController:
                 fadeout_time=self.settings.fadeout_time,
                 volume=action.song.audio.volume + self.settings.volume,
                 start=action.start,
+                startup=startup,
             ).join()
 
         else:

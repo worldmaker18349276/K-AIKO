@@ -207,6 +207,11 @@ class KAIKOLauncher:
             )
             launcher.provider.set(beatmap_manager)
 
+            t0 = launcher.settings.shell.prompt.t0
+            tempo = launcher.settings.shell.prompt.tempo
+            metronome = clocks.Metronome(t0, tempo/60)
+            launcher.provider.set(metronome)
+
             bgm_controller = BGMController(
                 launcher.provider,
                 launcher.settings.bgm,
