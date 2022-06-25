@@ -581,7 +581,7 @@ class DevicesCommand:
         usage: [cmd]test_knock[/]
         """
         settings = self.settings.devices.detector
-        return KnockTest(settings, self.logger, self.audio_manager)
+        return KnockTest(self.logger, self.device_manager)
 
     @cmd.function_command
     @dn.datanode
@@ -714,29 +714,26 @@ def test_keyboard(logger, devices_manager):
     return dn.pipe(stop_task, engine_task)
 
 
+def exit_any():
+    return term.inkey(dn.pipe(dn.take(lambda arg: arg[1] is None), lambda _: None))
+
 class KnockTest:
-    def __init__(self, settings, logger, audio_manager):
-        self.settings = settings
+    def __init__(self, logger, device_manager):
         self.logger = logger
-        self.audio_manager = audio_manager
+        self.device_manager = device_manager
         self.hit_queue = queue.Queue()
 
     def execute(self):
         self.logger.print("[hint/] Press any key to end test.")
         self.logger.print()
 
-        detector_task, detector = engines.Detector.create(self.settings, self.audio_manager, init_time=0.0)
+        clock = clocks.Clock(0.0, 1.0)
+        engine_task, engines = self.device_manager.load_engines("detector", clock=clock, init_time=0.0)
+        detector, = engines
+
         detector.add_listener(self.hit_listener())
 
-        @dn.datanode
-        def exit_any():
-            keycode = None
-            while keycode is None:
-                _, keycode = yield
-
-        exit_task = term.inkey(exit_any())
-
-        return dn.pipe(detector_task, self.show_hit(), exit_task)
+        return dn.pipe(engine_task, self.show_hit(), exit_any())
 
     @dn.datanode
     def show_hit(self):
@@ -934,13 +931,7 @@ class MicTest:
 
         vol = dn.branch(self.draw_volume(samplerate, buffer_length))
 
-        @dn.datanode
-        def exit_any():
-            keycode = None
-            while keycode is None:
-                _, keycode = yield
-
-        exit_task = term.inkey(exit_any())
+        exit_task = exit_any()
         mic_task = aud.record(
             audio_manager,
             vol,
@@ -1007,12 +998,6 @@ class WaveformTest:
         mixer_task, mixer = engines.Mixer.create(self.mixer_settings, self.audio_manager)
         mixer.play(node)
 
-        @dn.datanode
-        def exit_any():
-            keycode = None
-            while keycode is None:
-                _, keycode = yield
-
-        exit_task = term.inkey(exit_any())
+        exit_task = exit_any()
 
         return dn.pipe(mixer_task, exit_task)
