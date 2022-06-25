@@ -522,7 +522,7 @@ class KAIKOPlay:
         self.logger = logger
 
     @dn.datanode
-    def execute(self, manager):
+    def execute(self):
         logger = self.logger
         devices_settings = self.profile_manager.current.devices
         gameplay_settings = self.profile_manager.current.gameplay

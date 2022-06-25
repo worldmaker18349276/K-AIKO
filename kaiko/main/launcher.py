@@ -250,7 +250,7 @@ class KAIKOLauncher:
             raise ValueError("unknown arguments: " + " ".join(sys.argv[1:]))
 
         # load bgm
-        bgm_task = self.bgm_controller.execute(clock, self.device_manager.audio_manager)
+        bgm_task = self.bgm_controller.start(clock, self.device_manager.audio_manager)
 
         # prompt
         repl_task = self.repl(clock)
@@ -293,8 +293,8 @@ class KAIKOLauncher:
         r"""Execute a command.
 
         If it returns executable object (an object has method `execute`), call
-        `result.execute(audio_manager)`; if it returns a DataNode, exhaust it;
-        otherwise, print repr of result.
+        `result.execute()`; if it returns a DataNode, exhaust it; otherwise,
+        print repr of result.
 
         Parameters
         ----------
@@ -307,7 +307,7 @@ class KAIKOLauncher:
             if hasattr(result, "execute"):
                 is_bgm_on = self.bgm_controller.is_bgm_on
                 self.bgm_controller.stop()
-                yield from result.execute(self.device_manager.audio_manager).join()
+                yield from result.execute().join()
                 if is_bgm_on:
                     self.bgm_controller.play()
 

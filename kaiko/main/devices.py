@@ -581,7 +581,7 @@ class DevicesCommand:
         usage: [cmd]test_knock[/]
         """
         settings = self.settings.devices.detector
-        return KnockTest(settings, self.logger)
+        return KnockTest(settings, self.logger, self.audio_manager)
 
     @cmd.function_command
     @dn.datanode
@@ -720,16 +720,17 @@ def test_keyboard(logger, devices_settings):
 
 
 class KnockTest:
-    def __init__(self, settings, logger):
+    def __init__(self, settings, logger, audio_manager):
         self.settings = settings
         self.logger = logger
+        self.audio_manager = audio_manager
         self.hit_queue = queue.Queue()
 
-    def execute(self, audio_manager):
+    def execute(self):
         self.logger.print("[hint/] Press any key to end test.")
         self.logger.print()
 
-        detector_task, detector = engines.Detector.create(self.settings, audio_manager, init_time=0.0)
+        detector_task, detector = engines.Detector.create(self.settings, self.audio_manager, init_time=0.0)
         detector.add_listener(self.hit_listener())
 
         @dn.datanode
@@ -821,18 +822,19 @@ class PyAudioDeviceParser(cmd.ArgumentParser):
 class SpeakerTest:
     test_waveform = "2**(-t/0.01)*{sine:t*1000.0}#tspan:0,0.1"
 
-    def __init__(self, device, logger, tempo=120.0, delay=0.5):
+    def __init__(self, device, logger, audio_manager, tempo=120.0, delay=0.5):
         self.device = device
         self.logger = logger
+        self.audio_manager = audio_manager
         self.tempo = tempo
         self.delay = delay
 
-    def execute(self, audio_manager):
+    def execute(self):
         device = self.device
 
         if device == -1:
-            device = audio_manager.get_default_output_device_info()["index"]
-        device_info = audio_manager.get_device_info_by_index(device)
+            device = self.audio_manager.get_default_output_device_info()["index"]
+        device_info = self.audio_manager.get_device_info_by_index(device)
 
         samplerate = int(device_info["defaultSampleRate"])
         nchannels = min(device_info["maxOutputChannels"], 2)
@@ -841,7 +843,7 @@ class SpeakerTest:
         try:
             self.logger.print("Validate output device...")
             aud.validate_output_device(
-                audio_manager, device, samplerate, nchannels, format
+                self.audio_manager, device, samplerate, nchannels, format
             )
             self.logger.print("Success!")
 
@@ -851,10 +853,10 @@ class SpeakerTest:
             return dn.DataNode.wrap([])
 
         else:
-            info = PyAudioDeviceParser(audio_manager, False).info(str(device))
+            info = PyAudioDeviceParser(self.audio_manager, False).info(str(device))
             info = self.logger.escape(info)
             self.logger.print(f"Test output device [emph]{info}[/]...")
-            return self.test_speaker(audio_manager, device, samplerate, nchannels)
+            return self.test_speaker(self.audio_manager, device, samplerate, nchannels)
 
     def test_speaker(self, audio_manager, device, samplerate, nchannels):
         settings = engines.MixerSettings()
@@ -892,18 +894,19 @@ class SpeakerTest:
 
 
 class MicTest:
-    def __init__(self, device, logger, width=12, decay_time=0.1):
+    def __init__(self, device, logger, audio_manager, width=12, decay_time=0.1):
         self.device = device
         self.logger = logger
+        self.audio_manager = audio_manager
         self.width = width
         self.decay_time = decay_time
 
-    def execute(self, audio_manager):
+    def execute(self):
         device = self.device
 
         if device == -1:
-            device = audio_manager.get_default_input_device_info()["index"]
-        device_info = audio_manager.get_device_info_by_index(device)
+            device = self.audio_manager.get_default_input_device_info()["index"]
+        device_info = self.audio_manager.get_device_info_by_index(device)
 
         samplerate = int(device_info["defaultSampleRate"])
         channels = 1
@@ -913,7 +916,7 @@ class MicTest:
         try:
             self.logger.print("Validate input device...")
             aud.validate_input_device(
-                audio_manager, device, samplerate, channels, format
+                self.audio_manager, device, samplerate, channels, format
             )
             self.logger.print("Success!")
 
@@ -923,10 +926,10 @@ class MicTest:
             return dn.DataNode.wrap([])
 
         else:
-            info = PyAudioDeviceParser(audio_manager, True).info(str(device))
+            info = PyAudioDeviceParser(self.audio_manager, True).info(str(device))
             info = self.logger.escape(info)
             self.logger.print(f"Test input device [emph]{info}[/]...")
-            return self.test_mic(audio_manager, device, samplerate)
+            return self.test_mic(self.audio_manager, device, samplerate)
 
     @dn.datanode
     def test_mic(self, audio_manager, device, samplerate):
@@ -984,12 +987,13 @@ class MicTest:
 
 
 class WaveformTest:
-    def __init__(self, waveform, logger, mixer_settings):
+    def __init__(self, waveform, logger, audio_manager, mixer_settings):
         self.waveform = waveform
         self.logger = logger
+        self.audio_manager = audio_manager
         self.mixer_settings = mixer_settings
 
-    def execute(self, audio_manager):
+    def execute(self):
         self.logger.print("[info/] Compile waveform...")
 
         try:
@@ -1005,7 +1009,7 @@ class WaveformTest:
             return dn.DataNode.wrap([])
 
         self.logger.print("[hint/] Press any key to end test.")
-        mixer_task, mixer = engines.Mixer.create(self.mixer_settings, audio_manager)
+        mixer_task, mixer = engines.Mixer.create(self.mixer_settings, self.audio_manager)
         mixer.play(node)
 
         @dn.datanode
