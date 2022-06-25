@@ -38,6 +38,7 @@ class Clock:
         self.ratio = ratio
         self.action_queues = {}
         self.lock = threading.RLock()
+        self.is_stopped = False
 
     @staticmethod
     @dn.datanode
@@ -166,6 +167,8 @@ class Clock:
         action_queue = queue.Queue()
         tick_node = self._tick(action_queue, self.offset, self.ratio, delay=delay)
         with self.lock:
+            if self.is_stopped:
+                raise ValueError("clock has already stopped")
             if key in self.action_queues:
                 raise ValueError(f"already register: {key}")
             self.action_queues[key] = action_queue
@@ -180,6 +183,8 @@ class Clock:
         action_queue = queue.Queue()
         tick_node = self._tick_slice(action_queue, self.offset, self.ratio, delay=delay)
         with self.lock:
+            if self.is_stopped:
+                raise ValueError("clock has already stopped")
             if key in self.action_queues:
                 raise ValueError(f"already register: {key}")
             self.action_queues[key] = action_queue
@@ -192,6 +197,8 @@ class Clock:
     def speed(self, time, ratio):
         action = ClockSpeed(time, ratio)
         with self.lock:
+            if self.is_stopped:
+                return
             for action_queue in self.action_queues.values():
                 action_queue.put(action)
             self.offset, self.ratio = self.offset + time * (self.ratio - ratio), ratio
@@ -199,6 +206,8 @@ class Clock:
     def skip(self, time, offset):
         action = ClockSkip(time, offset)
         with self.lock:
+            if self.is_stopped:
+                return
             for action_queue in self.action_queues.values():
                 action_queue.put(action)
             self.offset += offset
@@ -206,14 +215,19 @@ class Clock:
     def delay(self, key, delay):
         action = ClockDelay(delay)
         with self.lock:
+            if self.is_stopped:
+                return
             action_queue = self.action_queues[key]
             action_queue.put(action)
 
     def stop(self):
         action = ClockStop()
         with self.lock:
+            if self.is_stopped:
+                return
             for action_queue in self.action_queues.values():
                 action_queue.put(action)
+            self.is_stopped = True
 
 
 class Metronome(Clock):
