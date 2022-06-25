@@ -1534,10 +1534,9 @@ class Beatmap:
     @dn.datanode
     def play(
         self,
-        manager,
         resources_dir,
-        cache_dir,
         start_time,
+        load_engines,
         devices_settings,
         gameplay_settings=None,
     ):
@@ -1574,28 +1573,30 @@ class Beatmap:
         score.set_total_subjects(self.total_subjects)
 
         # load engines
-        mixer_monitor = detector_monitor = renderer_monitor = None
-        if debug_monitor:
-            mixer_monitor = engines.Monitor(cache_dir / mixer_monitor_file_path)
-            detector_monitor = engines.Monitor(cache_dir / detector_monitor_file_path)
-            renderer_monitor = engines.Monitor(cache_dir / renderer_monitor_file_path)
+        engine_task, engines = load_engines(clock, debug_monitor)
+        mixer, detector, renderer, controller = engines
+        # mixer_monitor = detector_monitor = renderer_monitor = None
+        # if debug_monitor:
+        #     mixer_monitor = engines.Monitor(cache_dir / mixer_monitor_file_path)
+        #     detector_monitor = engines.Monitor(cache_dir / detector_monitor_file_path)
+        #     renderer_monitor = engines.Monitor(cache_dir / renderer_monitor_file_path)
 
-        mixer_task, mixer = engines.Mixer.create(
-            devices_settings.mixer, manager, clock, 0.0, mixer_monitor
-        )
-        detector_task, detector = engines.Detector.create(
-            devices_settings.detector, manager, clock, 0.0, detector_monitor
-        )
-        renderer_task, renderer = engines.Renderer.create(
-            devices_settings.renderer,
-            devices_settings.terminal,
-            clock,
-            0.0,
-            renderer_monitor,
-        )
-        controller_task, controller = engines.Controller.create(
-            devices_settings.controller, devices_settings.terminal, clock, 0.0,
-        )
+        # mixer_task, mixer = engines.Mixer.create(
+        #     devices_settings.mixer, manager, clock, 0.0, mixer_monitor
+        # )
+        # detector_task, detector = engines.Detector.create(
+        #     devices_settings.detector, manager, clock, 0.0, detector_monitor
+        # )
+        # renderer_task, renderer = engines.Renderer.create(
+        #     devices_settings.renderer,
+        #     devices_settings.terminal,
+        #     clock,
+        #     0.0,
+        #     renderer_monitor,
+        # )
+        # controller_task, controller = engines.Controller.create(
+        #     devices_settings.controller, devices_settings.terminal, clock, 0.0,
+        # )
 
         # build playfield
         widget_factory = BeatbarWidgetFactory(score, rich, mixer, detector, renderer)
@@ -1663,9 +1664,7 @@ class Beatmap:
         )
         event_task = dn.interval(updater, dt=1 / tickrate)
 
-        yield from dn.pipe(
-            event_task, mixer_task, detector_task, renderer_task, controller_task
-        ).join()
+        yield from dn.pipe(event_task, engine_task).join()
 
         if debug_monitor:
             print()

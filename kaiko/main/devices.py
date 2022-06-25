@@ -36,9 +36,12 @@ class DevicesDirPath(RecognizedDirPath):
 
 
 class DeviceManager:
-    def __init__(self, provider):
+    def __init__(self, provider, cache_dir, settings):
         self.provider = provider
+        self.cache_dir = cache_dir
+        self.settings = settings
         self.audio_manager = None
+        self.clock = clocks.Clock(0.0, 1.0)
 
     @property
     def logger(self):
@@ -91,6 +94,82 @@ class DeviceManager:
                     self.audio_manager = None
 
         return ctxt()
+
+    def load_engine(self, *types, clock=None, init_time=None, monitoring=False):
+        mixer_monitor_file_path = "mixer_benchmark.csv"
+        detector_monitor_file_path = "detector_benchmark.csv"
+        renderer_monitor_file_path = "renderer_benchmark.csv"
+
+        if clock is None:
+            clock = self.clock
+
+        tasks = []
+        res = []
+
+        for typ in types:
+            if typ == "mixer":
+                mixer_monitor = None
+                if monitoring:
+                    mixer_monitor = engines.Monitor(self.cache_dir / mixer_monitor_file_path)
+
+                mixer_task, mixer = engines.Mixer.create(
+                    self.settings.mixer,
+                    self.audio_manager,
+                    clock,
+                    init_time,
+                    mixer_monitor,
+                )
+
+                tasks.append(mixer_task)
+                res.append(mixer)
+
+            elif typ == "detector":
+                detector_monitor = None
+                if monitoring:
+                    detector_monitor = engines.Monitor(self.cache_dir / detector_monitor_file_path)
+
+                detector_task, detector = engines.Detector.create(
+                    self.settings.detector,
+                    self.audio_manager,
+                    clock,
+                    init_time,
+                    detector_monitor,
+                )
+
+                tasks.append(detector_task)
+                res.append(detector)
+
+            elif typ == "renderer":
+                renderer_monitor = None
+                if monitoring:
+                    renderer_monitor = engines.Monitor(self.cache_dir / renderer_monitor_file_path)
+
+                renderer_task, renderer = engines.Renderer.create(
+                    self.settings.renderer,
+                    self.settings.terminal,
+                    clock,
+                    init_time,
+                    renderer_monitor,
+                )
+
+                tasks.append(renderer_task)
+                res.append(renderer)
+
+            elif typ == "controller":
+                controller_task, controller = engines.Controller.create(
+                    self.settings.controller,
+                    self.settings.terminal,
+                    clock,
+                    init_time,
+                )
+
+                tasks.append(controller_task)
+                res.append(controller)
+
+            else:
+                raise ValueError(typ)
+
+        return dn.pipe(*tasks), res
 
     @contextlib.contextmanager
     def prepare_pyaudio(self):

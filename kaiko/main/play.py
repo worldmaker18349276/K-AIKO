@@ -9,6 +9,7 @@ from ..utils import commands as cmd
 from ..beats import beatmaps
 from ..beats import beatsheets
 from .loggers import Logger
+from .devices import DeviceManager
 from .files import (
     RecognizedFilePath,
     RecognizedDirPath,
@@ -422,6 +423,10 @@ class PlayCommand:
         return self.provider.get(ProfileManager)
 
     @property
+    def device_manager(self):
+        return self.provider.get(DeviceManager)
+
+    @property
     def file_manager(self):
         return self.provider.get(FileManager)
 
@@ -453,9 +458,9 @@ class PlayCommand:
             load_beatmap(beatmap, self.file_manager, self.beatmap_manager, self.logger),
             start,
             self.resources_dir,
-            self.cache_dir,
             self.file_manager,
             self.profile_manager,
+            self.device_manager,
             self.logger,
         )
 
@@ -473,9 +478,9 @@ class PlayCommand:
             load_pattern(pattern, tempo, offset, self.logger),
             None,
             self.resources_dir,
-            self.cache_dir,
             self.file_manager,
             self.profile_manager,
+            self.device_manager,
             self.logger,
         )
 
@@ -503,17 +508,17 @@ class KAIKOPlay:
         beatmap_loeader,
         start,
         resources_dir,
-        cache_dir,
         file_manager,
         profile_manager,
+        device_manager,
         logger,
     ):
         self.beatmap_loeader = beatmap_loeader
         self.start = start
         self.resources_dir = resources_dir
-        self.cache_dir = cache_dir
         self.file_manager = file_manager
         self.profile_manager = profile_manager
+        self.device_manager = device_manager
         self.logger = logger
 
     @dn.datanode
@@ -521,6 +526,7 @@ class KAIKOPlay:
         logger = self.logger
         devices_settings = self.profile_manager.current.devices
         gameplay_settings = self.profile_manager.current.gameplay
+        device_manager = self.device_manager
 
         beatmap = yield from self.beatmap_loeader.join()
 
@@ -530,12 +536,22 @@ class KAIKOPlay:
         print_hints(logger, gameplay_settings)
         logger.print()
 
+        def load_engines(clock, monitoring):
+            return device_manager.load_engine(
+                "mixer",
+                "detector",
+                "renderer",
+                "controller",
+                clock = clock,
+                init_time = 0.0,
+                monitoring = monitoring,
+            )
+
         with logger.mute():
             score, devices_settings = yield from beatmap.play(
-                manager,
                 self.resources_dir.abs,
-                self.cache_dir.abs,
                 self.start,
+                load_engines,
                 devices_settings,
                 gameplay_settings,
             ).join()
