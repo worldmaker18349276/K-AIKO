@@ -36,7 +36,8 @@ def play_fadeinout(
         dn.fadeout(samplerate, fadeout_time, out_event, before),
     )
 
-    song_handler = mixer.play(node)
+    node = dn.pipe(lambda args:args[0], dn.attach(node))
+    song_handler = mixer.add_effect(mixer.tmask(node, None))
     while not song_handler.is_finalized():
         try:
             yield

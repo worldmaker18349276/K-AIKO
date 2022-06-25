@@ -276,7 +276,7 @@ class Mixer:
                         length = min(-offset, buffer_length)
                         dummy = numpy.zeros((length, nchannels), dtype=numpy.float32)
                         try:
-                            node.send(dummy)
+                            node.send((dummy, time))
                         except StopIteration:
                             return
                         offset += length
@@ -290,7 +290,7 @@ class Mixer:
 
                     try:
                         data[data_start + offset : data_stop] = node.send(
-                            data[data_start + offset : data_stop]
+                            (data[data_start + offset : data_stop], time)
                         )
                     except StopIteration:
                         return
@@ -329,7 +329,8 @@ class Mixer:
         zindex=(0,),
     ):
         node = dn.pipe(node, self.resample(samplerate, channels, volume, start, end))
-        node = self.tmask(dn.attach(node), time)
+        node = dn.pipe(lambda args:args[0], dn.attach(node))
+        node = self.tmask(node, time)
         return self.add_effect(node, zindex=zindex)
 
     def play_file(self, path, volume=0.0, start=None, end=None, time=None, zindex=(0,)):
