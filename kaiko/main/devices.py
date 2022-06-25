@@ -17,6 +17,7 @@ from .loggers import Logger
 from .files import FileManager, RecognizedDirPath
 from .profiles import ProfileManager
 from pyaudio import PyAudio
+import numpy
 
 
 class DevicesDirPath(RecognizedDirPath):
@@ -437,7 +438,7 @@ class DevicesCommand:
                      device, -1 is the
                       default device.
         """
-        return SpeakerTest(device, self.logger)
+        return SpeakerTest(device, self.logger, self.audio_manager)
 
     @cmd.function_command
     def set_mic(self, device, rate=None, ch=None, len=None, fmt=None):
@@ -678,6 +679,47 @@ class DevicesCommand:
             self.profile_manager.set_as_changed()
 
 
+class PyAudioDeviceParser(cmd.ArgumentParser):
+    def __init__(self, audio_manager, is_input):
+        self.audio_manager = audio_manager
+        self.is_input = is_input
+        self.options = ["-1"]
+        for index in range(audio_manager.get_device_count()):
+            self.options.append(str(index))
+
+    def parse(self, token):
+        if token not in self.options:
+            raise cmd.CommandParseError(f"Invalid device index: {token}")
+        return int(token)
+
+    def suggest(self, token):
+        return [val + "\000" for val in cmd.fit(token, self.options)]
+
+    def info(self, token):
+        value = int(token)
+        if value == -1:
+            if self.is_input:
+                value = self.audio_manager.get_default_input_device_info()["index"]
+            else:
+                value = self.audio_manager.get_default_output_device_info()["index"]
+
+        device_info = self.audio_manager.get_device_info_by_index(value)
+
+        name = device_info["name"]
+        api = self.audio_manager.get_host_api_info_by_index(device_info["hostApi"])[
+            "name"
+        ]
+        freq = device_info["defaultSampleRate"] / 1000
+        ch_in = device_info["maxInputChannels"]
+        ch_out = device_info["maxOutputChannels"]
+
+        return f"{name} by {api} ({freq} kHz, in: {ch_in}, out: {ch_out})"
+
+
+def exit_any():
+    return term.inkey(dn.pipe(dn.take(lambda arg: arg[1] is None), lambda _: None))
+
+
 def test_keyboard(logger, devices_manager):
     exit_key = "Esc"
     exit_key_mu = logger.escape(exit_key, type="all")
@@ -713,9 +755,6 @@ def test_keyboard(logger, devices_manager):
     stop_task = dn.take(lambda _: not stop_event.is_set())
     return dn.pipe(stop_task, engine_task)
 
-
-def exit_any():
-    return term.inkey(dn.pipe(dn.take(lambda arg: arg[1] is None), lambda _: None))
 
 class KnockTest:
     def __init__(self, logger, device_manager):
@@ -774,52 +813,14 @@ class KnockTest:
                 self.hit_queue.put((time, strength))
 
 
-class PyAudioDeviceParser(cmd.ArgumentParser):
-    def __init__(self, audio_manager, is_input):
-        self.audio_manager = audio_manager
-        self.is_input = is_input
-        self.options = ["-1"]
-        for index in range(audio_manager.get_device_count()):
-            self.options.append(str(index))
-
-    def parse(self, token):
-        if token not in self.options:
-            raise cmd.CommandParseError(f"Invalid device index: {token}")
-        return int(token)
-
-    def suggest(self, token):
-        return [val + "\000" for val in cmd.fit(token, self.options)]
-
-    def info(self, token):
-        value = int(token)
-        if value == -1:
-            if self.is_input:
-                value = self.audio_manager.get_default_input_device_info()["index"]
-            else:
-                value = self.audio_manager.get_default_output_device_info()["index"]
-
-        device_info = self.audio_manager.get_device_info_by_index(value)
-
-        name = device_info["name"]
-        api = self.audio_manager.get_host_api_info_by_index(device_info["hostApi"])[
-            "name"
-        ]
-        freq = device_info["defaultSampleRate"] / 1000
-        ch_in = device_info["maxInputChannels"]
-        ch_out = device_info["maxOutputChannels"]
-
-        return f"{name} by {api} ({freq} kHz, in: {ch_in}, out: {ch_out})"
-
-
 class SpeakerTest:
-    test_waveform = "2**(-t/0.01)*{sine:t*1000.0}#tspan:0,0.1"
+    CLICK_WAVEFORM = "2**(-t/0.01)*{sine:t*1000.0}#tspan:0,0.1"
+    CLICK_DELAY = 0.5
 
-    def __init__(self, device, logger, audio_manager, tempo=120.0, delay=0.5):
+    def __init__(self, device, logger, audio_manager):
         self.device = device
         self.logger = logger
         self.audio_manager = audio_manager
-        self.tempo = tempo
-        self.delay = delay
 
     def execute(self):
         device = self.device
@@ -851,24 +852,26 @@ class SpeakerTest:
             return self.test_speaker(self.audio_manager, device, samplerate, nchannels)
 
     def test_speaker(self, audio_manager, device, samplerate, nchannels):
-        settings = engines.MixerSettings()
-        settings.output_device = device
-        settings.output_samplerate = samplerate
-        settings.output_channels = nchannels
+        buffer_length = engines.MixerSettings.output_buffer_length
+        format = engines.MixerSettings.output_format
 
-        mixer_task, mixer = engines.Mixer.create(settings, audio_manager)
+        click = dn.chunk(self.make_click(samplerate, nchannels), chunk_shape=(buffer_length, nchannels))
 
-        dt = 60.0 / self.tempo
-        t0 = self.delay
-        click_task = dn.interval(
-            self.make_click(mixer, samplerate, nchannels), dt=dt, t0=t0
+        speaker_task = aud.play(
+            audio_manager,
+            click,
+            samplerate=samplerate,
+            buffer_shape=(buffer_length, nchannels),
+            format=format,
+            device=device
         )
 
-        return dn.pipe(mixer_task, click_task)
+        return dn.pipe(speaker_task, exit_any())
 
     @dn.datanode
-    def make_click(self, mixer, samplerate, nchannels):
-        click = dn.Waveform(self.test_waveform).generate(samplerate, 0)
+    def make_click(self, samplerate, nchannels):
+        delay = numpy.zeros((round(self.CLICK_DELAY * samplerate), nchannels))
+        click = dn.Waveform(self.CLICK_WAVEFORM).generate(samplerate, 0)
         click = dn.collect(click)
 
         yield
@@ -876,13 +879,12 @@ class SpeakerTest:
         for n in range(nchannels):
             sound = click[:, None] * [[m == n for m in range(nchannels)]]
             self.logger.print(f"Test channel {n}: ", end="", flush=True)
-            yield
+            yield delay
             for m in range(4):
-                mixer.play(dn.DataNode.wrap([sound]))
                 self.logger.print(".", end="", flush=True, log=False)
-                yield
+                yield sound
+                yield delay
             self.logger.print(flush=True)
-            yield
 
 
 class MicTest:
