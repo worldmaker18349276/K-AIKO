@@ -207,10 +207,6 @@ class Metronome(Clock):
         with self.lock:
             tick0 = offset * tempo / 60
             tick = self.offset + time * self.ratio
-            action1 = ClockSkip(time, (tick0 - tick) % 1)
-            action2 = ClockSpeed(time, tempo / 60)
-
-            for action_queue in self.action_queues.values():
-                action_queue.put(action1)
-                action_queue.put(action2)
+            self.skip(time, (tick0 - tick) % 1)
+            self.speed(time, tempo / 60)
 
