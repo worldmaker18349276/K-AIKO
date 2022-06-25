@@ -322,15 +322,9 @@ class BeatPrompt:
         # handlers
         self.register(renderer, controller, fin_event)
 
-        @dn.datanode
-        def stop_when(event):
-            yield
-            yield
-            while not event.is_set():
-                yield
-
+        stop_task = dn.take(lambda _: not fin_event.is_set())
         with self.logger.popup(renderer):
-            yield from dn.pipe(stop_when(fin_event), engine_task).join()
+            yield from dn.pipe(stop_task, engine_task).join()
 
         result = self.input.result
         if isinstance(result, inputs.ErrorResult):

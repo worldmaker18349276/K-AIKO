@@ -591,7 +591,7 @@ class DevicesCommand:
         usage: [cmd]test_keyboard[/]
         """
 
-        yield from test_keyboard(self.logger, self.settings.devices).join()
+        yield from test_keyboard(self.logger, self.device_manager).join()
 
     @cmd.function_command
     def test_waveform(self, waveform):
@@ -678,8 +678,7 @@ class DevicesCommand:
             self.profile_manager.set_as_changed()
 
 
-@dn.datanode
-def test_keyboard(logger, devices_settings):
+def test_keyboard(logger, devices_manager):
     exit_key = "Esc"
     exit_key_mu = logger.escape(exit_key, type="all")
 
@@ -689,34 +688,30 @@ def test_keyboard(logger, devices_settings):
 
     stop_event = threading.Event()
 
-    def handler(arg):
-        _, time, keyname, keycode = arg
-        keyname = logger.escape(keyname, type="all")
-        keycode = logger.escape(keycode, type="all")
-        logger.clear_line(log=False)
-        logger.print(f"[[{time:07.3f} s]] {keyname} '{keycode}'", log=False)
-        logger.print(
-            "[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r", log=False
-        )
+    @dn.datanode
+    def handler():
+        try:
+            while True:
+                _, time, keyname, keycode = yield
+                keyname = logger.escape(keyname, type="all")
+                keycode = logger.escape(keycode, type="all")
+                logger.clear_line(log=False)
+                logger.print(f"[[{time:07.3f} s]] {keyname} '{keycode}'", log=False)
+                logger.print(
+                    "[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r", log=False
+                )
+        finally:
+            logger.print()
 
-    controller_task, controller = engines.Controller.create(
-        devices_settings.controller,
-        devices_settings.terminal,
-        init_time=0.0,
-    )
-    controller.add_handler(handler)
+    clock = clocks.Clock(0.0, 1.0)
+    engine_task, engines = devices_manager.load_engines("controller", clock=clock, init_time=0.0)
+    controller, = engines
+
+    controller.add_handler(handler())
     controller.add_handler(lambda _: stop_event.set(), exit_key)
 
-    try:
-        with controller_task:
-            while not stop_event.is_set():
-                try:
-                    controller_task.send(None)
-                except StopIteration:
-                    return
-                yield
-    finally:
-        logger.print()
+    stop_task = dn.take(lambda _: not stop_event.is_set())
+    return dn.pipe(stop_task, engine_task)
 
 
 class KnockTest:
