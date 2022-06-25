@@ -426,7 +426,7 @@ class DevicesCommand:
                  device, -1 is the
                   default device.
         """
-        return MicTest(device, self.logger)
+        return MicTest(device, self.logger, self.audio_manager)
 
     @cmd.function_command
     def test_speaker(self, device):
@@ -849,6 +849,7 @@ class SpeakerTest:
             info = PyAudioDeviceParser(self.audio_manager, False).info(str(device))
             info = self.logger.escape(info)
             self.logger.print(f"Test output device [emph]{info}[/]...")
+            self.logger.print("[hint/] Press any key to end testing.")
             return self.test_speaker(self.audio_manager, device, samplerate, nchannels)
 
     def test_speaker(self, audio_manager, device, samplerate, nchannels):
@@ -888,12 +889,15 @@ class SpeakerTest:
 
 
 class MicTest:
-    def __init__(self, device, logger, audio_manager, width=12, decay_time=0.1):
+    VOLUME_DECAY_TIME = 0.01
+    INDICATOR_WIDTH = 12
+    INDICATOR_TICK0 = " "
+    INDICATOR_TICK1 = "▮"
+
+    def __init__(self, device, logger, audio_manager):
         self.device = device
         self.logger = logger
         self.audio_manager = audio_manager
-        self.width = width
-        self.decay_time = decay_time
 
     def execute(self):
         device = self.device
@@ -923,9 +927,9 @@ class MicTest:
             info = PyAudioDeviceParser(self.audio_manager, True).info(str(device))
             info = self.logger.escape(info)
             self.logger.print(f"Test input device [emph]{info}[/]...")
+            self.logger.print("[hint/] Press any key to end testing.")
             return self.test_mic(self.audio_manager, device, samplerate)
 
-    @dn.datanode
     def test_mic(self, audio_manager, device, samplerate):
         channels = 1
         buffer_length = engines.DetectorSettings.input_buffer_length
@@ -933,7 +937,6 @@ class MicTest:
 
         vol = dn.branch(self.draw_volume(samplerate, buffer_length))
 
-        exit_task = exit_any()
         mic_task = aud.record(
             audio_manager,
             vol,
@@ -943,15 +946,14 @@ class MicTest:
             device=device,
         )
 
-        self.logger.print("[hint/] Press any key to end testing.")
-        yield from dn.pipe(mic_task, exit_task).join()
+        return dn.pipe(mic_task, exit_any())
 
     @dn.datanode
     def draw_volume(self, samplerate, buffer_length):
-        decay_time = self.decay_time
-        tick0 = " "
-        tick1 = "▮"
-        width = self.width
+        decay_time = self.VOLUME_DECAY_TIME
+        width = self.INDICATOR_WIDTH
+        tick0 = self.INDICATOR_TICK0
+        tick1 = self.INDICATOR_TICK1
 
         decay = buffer_length / samplerate / decay_time
         volume_of = lambda x: dn.power2db((x ** 2).mean(), scale=(1e-5, 1e6)) / 60.0
