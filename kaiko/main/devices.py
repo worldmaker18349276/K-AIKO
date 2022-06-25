@@ -104,10 +104,10 @@ class DeviceManager:
 
         return ctxt()
 
-    def load_engine(self, *types, clock=None, init_time=None, monitoring=False):
-        mixer_monitor_file_path = "mixer_benchmark.csv"
-        detector_monitor_file_path = "detector_benchmark.csv"
-        renderer_monitor_file_path = "renderer_benchmark.csv"
+    def load_engines(self, *types, session_name="", clock=None, init_time=None, monitoring=False):
+        mixer_monitor_file_path = f"{session_name}_mixer_benchmark.csv"
+        detector_monitor_file_path = f"{session_name}_detector_benchmark.csv"
+        renderer_monitor_file_path = f"{session_name}_renderer_benchmark.csv"
 
         if clock is None:
             clock = self.clock

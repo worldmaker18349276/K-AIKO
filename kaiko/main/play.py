@@ -537,11 +537,12 @@ class KAIKOPlay:
         logger.print()
 
         def load_engines(clock, monitoring):
-            return device_manager.load_engine(
+            return device_manager.load_engines(
                 "mixer",
                 "detector",
                 "renderer",
                 "controller",
+                session_name = "play",
                 clock = clock,
                 init_time = 0.0,
                 monitoring = monitoring,
