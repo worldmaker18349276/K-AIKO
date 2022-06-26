@@ -1621,18 +1621,17 @@ class Beatmap:
             mixer.play(self.audionode, time=0.0, zindex=(-3,))
 
         # game loop
-        with clock.tick(self, 0.0) as event_tick_node:
-            updater = self.update_events(
-                self.events,
-                score,
-                beatbar,
-                self.end_time,
-                tickrate,
-                prepare_time,
-                event_tick_node,
-            )
-            event_task = dn.interval(updater, dt=1 / tickrate)
+        event_node = self.update_events(
+            self.events,
+            score,
+            beatbar,
+            self.end_time,
+            prepare_time,
+        )
 
+        with clock.tick(self, 0.0) as tick_node:
+            event_node = dn.pipe(dn.count(0.0, 1 / tickrate), tick_node, event_node)
+            event_task = dn.interval(event_node, dt=1 / tickrate)
             with engine_task_ctxt as engine_task:
                 yield from dn.pipe(engine_task, event_task).join()
 
@@ -1859,34 +1858,22 @@ class Beatmap:
         state,
         beatbar,
         end_time,
-        tickrate,
         prepare_time,
-        tick_node,
     ):
-        # register events
         events_iter = iter(events)
         event = next(events_iter, None)
 
-        timer = dn.pipe(dn.count(0.0, 1 / tickrate), tick_node)
+        while True:
+            time, ratio = yield
 
-        with timer:
-            yield
-            while True:
-                try:
-                    time, ratio = timer.send(None)
-                except StopIteration:
-                    return
+            if end_time <= time:
+                return
 
-                if end_time <= time:
-                    return
+            while event is not None and event.lifespan[0] - prepare_time <= time:
+                event.register(state, beatbar)
+                event = next(events_iter, None)
 
-                while event is not None and event.lifespan[0] - prepare_time <= time:
-                    event.register(state, beatbar)
-                    event = next(events_iter, None)
-
-                state.time = time
-
-                yield
+            state.time = time
 
 
 class Loop(Beatmap):
