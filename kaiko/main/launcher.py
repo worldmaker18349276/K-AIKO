@@ -285,6 +285,7 @@ class KAIKOLauncher:
             prompt.set_settings(self.settings.shell)
             self.bgm_controller.set_settings(self.settings.bgm)
             self.bgm_controller.set_mixer_settings(self.settings.devices.mixer)
+            self.device_manager.set_settings(self.settings.devices)
 
     @dn.datanode
     def execute(self, command):

@@ -114,6 +114,9 @@ class DeviceManager:
         self.audio_manager = None
         self.clock = clocks.Clock(0.0, 1.0)
 
+    def set_settings(self, settings):
+        self.settings = settings
+
     @property
     def logger(self):
         return self.provider.get(Logger)
