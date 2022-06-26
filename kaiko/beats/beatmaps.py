@@ -1573,83 +1573,77 @@ class Beatmap:
         score.set_total_subjects(self.total_subjects)
 
         # load engines
-        engine_task, engines = load_engines(clock, debug_monitor)
-        mixer, detector, renderer, controller = engines
+        with load_engines(clock, debug_monitor) as (engine_task, engines):
+            mixer, detector, renderer, controller = engines
 
-        Beatmap.register_clock_controller(
-            mixer,
-            detector,
-            renderer,
-            controller,
-            clock,
-            gameplay_settings.controls,
-        )
-
-        # build playfield
-        widget_factory = BeatbarWidgetFactory(score, rich, mixer, detector, renderer)
-
-        icon = widget_factory.create(gameplay_settings.playfield.widgets.icon)
-        header = widget_factory.create(gameplay_settings.playfield.widgets.header)
-        footer = widget_factory.create(gameplay_settings.playfield.widgets.footer)
-        sight = widget_factory.create(gameplay_settings.playfield.sight)
-
-        beatbar = beatbars.Beatbar(
-            mixer,
-            detector,
-            renderer,
-            controller,
-            sight,
-            self.beatbar_state,
-        )
-
-        beatbar_node = beatbar.load()
-
-        # layout
-        icon_width = gameplay_settings.playfield.layout.icon_width
-        header_width = gameplay_settings.playfield.layout.header_width
-        footer_width = gameplay_settings.playfield.layout.footer_width
-
-        [
-            icon_mask,
-            header_mask,
-            content_mask,
-            footer_mask,
-        ] = widgets.layout([icon_width, header_width, -1, footer_width])
-
-        renderer.add_texts(beatbar_node, xmask=content_mask, zindex=(0,))
-        renderer.add_texts(icon, xmask=icon_mask, zindex=(1,))
-        renderer.add_texts(header, xmask=header_mask, zindex=(2,))
-        renderer.add_texts(footer, xmask=footer_mask, zindex=(3,))
-
-        # play music
-        if self.audionode is not None:
-            mixer.play(self.audionode, time=0.0, zindex=(-3,))
-
-        # game loop
-        with clock.tick(self, 0.0) as event_tick_node:
-            updater = self.update_events(
-                self.events,
-                score,
-                beatbar,
-                self.end_time,
-                tickrate,
-                prepare_time,
-                event_tick_node,
+            Beatmap.register_clock_controller(
+                mixer,
+                detector,
+                renderer,
+                controller,
+                clock,
+                gameplay_settings.controls,
             )
-            event_task = dn.interval(updater, dt=1 / tickrate)
 
-            yield from dn.pipe(event_task, engine_task).join()
+            # build playfield
+            widget_factory = BeatbarWidgetFactory(score, rich, mixer, detector, renderer)
 
-        if debug_monitor:
-            print()
-            print("   mixer: " + str(mixer.monitor))
-            print("detector: " + str(detector.monitor))
-            print("renderer: " + str(renderer.monitor))
+            icon = widget_factory.create(gameplay_settings.playfield.widgets.icon)
+            header = widget_factory.create(gameplay_settings.playfield.widgets.header)
+            footer = widget_factory.create(gameplay_settings.playfield.widgets.footer)
+            sight = widget_factory.create(gameplay_settings.playfield.sight)
 
-        devices_settings_modified = devices_settings.copy()
-        devices_settings_modified.mixer = mixer.settings
-        devices_settings_modified.detector = detector.settings
-        devices_settings_modified.renderer = renderer.settings
+            beatbar = beatbars.Beatbar(
+                mixer,
+                detector,
+                renderer,
+                controller,
+                sight,
+                self.beatbar_state,
+            )
+
+            beatbar_node = beatbar.load()
+
+            # layout
+            icon_width = gameplay_settings.playfield.layout.icon_width
+            header_width = gameplay_settings.playfield.layout.header_width
+            footer_width = gameplay_settings.playfield.layout.footer_width
+
+            [
+                icon_mask,
+                header_mask,
+                content_mask,
+                footer_mask,
+            ] = widgets.layout([icon_width, header_width, -1, footer_width])
+
+            renderer.add_texts(beatbar_node, xmask=content_mask, zindex=(0,))
+            renderer.add_texts(icon, xmask=icon_mask, zindex=(1,))
+            renderer.add_texts(header, xmask=header_mask, zindex=(2,))
+            renderer.add_texts(footer, xmask=footer_mask, zindex=(3,))
+
+            # play music
+            if self.audionode is not None:
+                mixer.play(self.audionode, time=0.0, zindex=(-3,))
+
+            # game loop
+            with clock.tick(self, 0.0) as event_tick_node:
+                updater = self.update_events(
+                    self.events,
+                    score,
+                    beatbar,
+                    self.end_time,
+                    tickrate,
+                    prepare_time,
+                    event_tick_node,
+                )
+                event_task = dn.interval(updater, dt=1 / tickrate)
+
+                yield from dn.pipe(event_task, engine_task).join()
+
+            devices_settings_modified = devices_settings.copy()
+            devices_settings_modified.mixer = mixer.settings
+            devices_settings_modified.detector = detector.settings
+            devices_settings_modified.renderer = renderer.settings
 
         return score, devices_settings_modified
 

@@ -1,4 +1,5 @@
 import shutil
+import contextlib
 import dataclasses
 import zipfile
 from collections import defaultdict
@@ -536,8 +537,9 @@ class KAIKOPlay:
         print_hints(logger, gameplay_settings)
         logger.print()
 
+        @contextlib.contextmanager
         def load_engines(clock, monitoring):
-            return device_manager.load_engines(
+            engine_task, engines = device_manager.load_engines(
                 "mixer",
                 "detector",
                 "renderer",
@@ -547,15 +549,25 @@ class KAIKOPlay:
                 init_time = 0.0,
                 monitoring = monitoring,
             )
+            mixer, detector, renderer, controller = engines
 
-        with logger.mute():
-            score, devices_settings_modified = yield from beatmap.play(
-                self.resources_dir.abs,
-                self.start,
-                load_engines,
-                devices_settings,
-                gameplay_settings,
-            ).join()
+            with logger.popup(renderer):
+                yield engine_task, engines
+
+            if monitoring:
+                logger.print()
+                logger.print("   mixer: " + str(mixer.monitor), markup=False)
+                logger.print("detector: " + str(detector.monitor), markup=False)
+                logger.print("renderer: " + str(renderer.monitor), markup=False)
+
+
+        score, devices_settings_modified = yield from beatmap.play(
+            self.resources_dir.abs,
+            self.start,
+            load_engines,
+            devices_settings,
+            gameplay_settings,
+        ).join()
 
         logger.print()
         logger.print_scores(
