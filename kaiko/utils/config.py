@@ -280,6 +280,9 @@ class Configurable(metaclass=ConfigurableMeta):
     def copy(self):
         return copy(type(self), self)
 
+    def __eq__(self, other):
+        return type(self) == type(other) and equal(type(self), self, other)
+
 
 def set(config, field, value):
     """Set a field of the configuration to the given value.
@@ -489,6 +492,17 @@ def copy(cls, config):
         set(copied, field, value)
 
     return copied
+
+
+def equal(cls, this, other):
+    for field in cls.iter_all_fields():
+        if not has(this, field) and not has(other, field):
+            continue
+        if not has(this, field) or not has(other, field):
+            return False
+        if get(this, field) != get(other, field):
+            return False
+    return True
 
 
 def read(cls, path, name="settings"):
