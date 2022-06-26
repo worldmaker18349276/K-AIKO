@@ -162,15 +162,8 @@ class KAIKOLauncher:
         file_manager = FileManager(RootDirPath, launcher.provider)
         launcher.provider.set(file_manager)
 
-        log_file = file_manager.root.cache.logs.abs
-        log_ok = log_file.parent.exists() and not log_file.is_dir()
-        if log_ok:
-            logger.set_log_file(log_file)
-
         file_manager.fix()
-
-        if not log_ok:
-            logger.set_log_file(log_file)
+        logger.set_log_file(file_manager.root.cache.logs.abs)
 
         file_manager.init_env()
 

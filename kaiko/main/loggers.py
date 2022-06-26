@@ -121,10 +121,11 @@ class LoggerSettings(cfg.Configurable):
 
 class Logger:
     def __init__(self, terminal_settings=None, logger_settings=None):
-        self.log_file = None
+        self.log_file = []
         self._stack = None
         self._redirect_queue = None
         self.recompile_style(terminal_settings, logger_settings)
+        self.log_file.append(f"\n\n\n[log_session={datetime.now()}/]\n")
 
     def recompile_style(self, terminal_settings, logger_settings):
         if terminal_settings is None:
@@ -148,8 +149,11 @@ class Logger:
         self.warn_block = self.rich.parse(logger_settings.warn_block, slotted=True)
 
     def set_log_file(self, path):
-        self.log_file = open(path, "a")
-        self.log_file.write(f"\n\n\n[log_session={datetime.now()}/]\n")
+        log_file = open(path, "a")
+        if isinstance(self.log_file, list):
+            for msg in self.log_file:
+                log_file.write(msg)
+        self.log_file = log_file
 
     @staticmethod
     def _parse_tag_type(doc):
@@ -295,8 +299,11 @@ class Logger:
         return path
 
     def log(self, msg):
-        if self.log_file is not None:
-            self.log_file.write(f"[log={datetime.now()}/]{msg}\n")
+        msg = f"[log={datetime.now()}/]{msg}\n"
+        if isinstance(self.log_file, list):
+            self.log_file.append(msg)
+        else:
+            self.log_file.write(msg)
 
     def print(self, msg="", end="\n", flush=False, markup=True, log=True):
         if not markup:
