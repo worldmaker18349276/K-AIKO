@@ -1181,9 +1181,19 @@ class Waveform:
         return gammatone(frequency, samplerate)
 
 
+@datanode
 def collect(node):
+    result = []
     with node:
-        return numpy.concatenate(list(node))
+        yield
+        while True:
+            try:
+                data = node.send(None)
+            except StopIteration as stop:
+                return numpy.concatenate(result)
+
+            result.append(data)
+            yield
 
 
 # others
@@ -1309,23 +1319,6 @@ def tick(dt, t0=0.0, shift=0.0, stop_event=None):
             break
 
         yield time_module.perf_counter() - ref_time + shift
-
-
-@datanode
-def ensure(node, exception):
-    node = DataNode.wrap(node)
-    data = None
-    with node:
-        while True:
-            try:
-                data = yield data
-            except GeneratorExit:
-                raise exception()
-
-            try:
-                data = node.send(data)
-            except StopIteration as stop:
-                return stop.value
 
 
 # async processes

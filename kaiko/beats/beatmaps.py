@@ -1792,30 +1792,26 @@ class Beatmap:
 
             elif isinstance(path, dn.Waveform):
                 waveform_max_time = 30.0
+                node = path.generate(
+                    samplerate=output_samplerate,
+                    channels=output_nchannels,
+                )
+
+                resource = []
                 try:
-                    node = path.generate(
-                        samplerate=output_samplerate,
-                        channels=output_nchannels,
-                    )
-
-                    resource = []
-                    yield from dn.ensure(
-                        dn.pipe(
-                            node,
-                            dn.tspan(
-                                samplerate=output_samplerate, end=waveform_max_time
-                            ),
-                            resource.append,
+                    yield from dn.pipe(
+                        node,
+                        dn.tspan(
+                            samplerate=output_samplerate, end=waveform_max_time
                         ),
-                        lambda: aud.IOCancelled(
-                            f"The operation of generating sound {path!r} has been cancelled."
-                        ),
+                        resource.append,
                     ).join()
-
                     self.resources[name] = resource
 
-                except aud.IOCancelled:
-                    raise
+                except GeneratorExit:
+                    raise aud.IOCancelled(
+                        f"The operation of generating sound {path!r} has been cancelled."
+                    )
 
                 except Exception as e:
                     raise RuntimeError(f"Failed to load resource {name}") from e

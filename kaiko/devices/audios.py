@@ -432,12 +432,13 @@ def load_sound(
     if start is not None or end is not None:
         pipeline = dn.tunslice(pipeline, meta.samplerate, start, end)
 
-    node = dn.ensure(
-        dn.pipe(load(filepath), pipeline),
-        lambda: IOCancelled(
-            f"The operation of loading file {filepath} has been cancelled."
-        ),
-    )
+    node = dn.pipe(load(filepath), pipeline)
 
-    yield from node.join()
+    try:
+        yield from node.join()
+    except GeneratorExit:
+        raise IOCancelled(
+            f"The operation of loading file {filepath} has been cancelled."
+        )
+
     return sound

@@ -970,7 +970,7 @@ class SpeakerTest:
     def make_click(self, samplerate, nchannels):
         delay = numpy.zeros((round(self.CLICK_DELAY * samplerate), nchannels))
         click = dn.Waveform(self.CLICK_WAVEFORM).generate(samplerate, 0)
-        click = dn.collect(click)
+        click = dn.collect(click).exhaust()
 
         yield
 
