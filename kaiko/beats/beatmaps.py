@@ -1642,9 +1642,9 @@ class Beatmap:
 
         if debug_monitor:
             print()
-            print("   mixer: " + str(mixer_monitor))
-            print("detector: " + str(detector_monitor))
-            print("renderer: " + str(renderer_monitor))
+            print("   mixer: " + str(mixer.monitor))
+            print("detector: " + str(detector.monitor))
+            print("renderer: " + str(renderer.monitor))
 
         devices_settings_modified = devices_settings.copy()
         devices_settings_modified.mixer = mixer.settings

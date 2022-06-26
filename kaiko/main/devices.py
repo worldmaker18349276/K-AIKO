@@ -181,7 +181,7 @@ class DeviceManager:
             if typ == "mixer":
                 mixer_monitor = None
                 if monitoring:
-                    mixer_monitor = engines.Monitor(self.cache_dir / mixer_monitor_file_path)
+                    mixer_monitor = engines.Monitor(self.cache_dir.abs / mixer_monitor_file_path)
 
                 mixer_task, mixer = engines.Mixer.create(
                     self.settings.mixer.copy(),
@@ -197,7 +197,7 @@ class DeviceManager:
             elif typ == "detector":
                 detector_monitor = None
                 if monitoring:
-                    detector_monitor = engines.Monitor(self.cache_dir / detector_monitor_file_path)
+                    detector_monitor = engines.Monitor(self.cache_dir.abs / detector_monitor_file_path)
 
                 detector_task, detector = engines.Detector.create(
                     self.settings.detector.copy(),
@@ -213,7 +213,7 @@ class DeviceManager:
             elif typ == "renderer":
                 renderer_monitor = None
                 if monitoring:
-                    renderer_monitor = engines.Monitor(self.cache_dir / renderer_monitor_file_path)
+                    renderer_monitor = engines.Monitor(self.cache_dir.abs / renderer_monitor_file_path)
 
                 renderer_task, renderer = engines.Renderer.create(
                     self.settings.renderer.copy(),
