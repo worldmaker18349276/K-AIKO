@@ -7,6 +7,7 @@ from typing import Optional, Dict
 from pathlib import Path
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
+from ..devices import clocks
 from ..beats import beatmaps
 from ..beats import beatsheets
 from .loggers import Logger
@@ -537,31 +538,41 @@ class KAIKOPlay:
         print_hints(logger, gameplay_settings)
         logger.print()
 
-        @contextlib.contextmanager
-        def load_engines(clock, monitoring):
+        # implicit arguments
+        debug_monitor = gameplay_settings.debug_monitor
+        devices_settings_modified = devices_settings.copy()
+        # device_manager, logger
+        def load_engines(start_time):
+            clock = clocks.Clock(start_time, 1.0)
+
             engine_task, engines = device_manager.load_engines(
                 "mixer",
                 "detector",
                 "renderer",
                 "controller",
-                session_name = "play",
                 clock = clock,
-                init_time = 0.0,
-                monitoring = monitoring,
+                monitoring_session = "play" if debug_monitor else None,
             )
             mixer, detector, renderer, controller = engines
 
-            with logger.popup(renderer):
-                yield engine_task, engines
+            @contextlib.contextmanager
+            def task_ctxt():
+                with logger.popup(renderer):
+                    yield engine_task
 
-            if monitoring:
-                logger.print()
-                logger.print("   mixer: " + str(mixer.monitor), markup=False)
-                logger.print("detector: " + str(detector.monitor), markup=False)
-                logger.print("renderer: " + str(renderer.monitor), markup=False)
+                if debug_monitor:
+                    logger.print()
+                    logger.print(f"   mixer: {mixer.monitor!s}", markup=False)
+                    logger.print(f"detector: {detector.monitor!s}", markup=False)
+                    logger.print(f"renderer: {renderer.monitor!s}", markup=False)
 
+                devices_settings_modified.mixer = mixer.settings
+                devices_settings_modified.detector = detector.settings
+                devices_settings_modified.renderer = renderer.settings
 
-        score, devices_settings_modified = yield from beatmap.play(
+            return task_ctxt(), (mixer, detector, renderer, controller, clock)
+
+        score = yield from beatmap.play(
             self.resources_dir.abs,
             self.start,
             load_engines,

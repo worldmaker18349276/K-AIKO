@@ -11,8 +11,6 @@ from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..utils import markups as mu
 from ..devices import audios as aud
-from ..devices import clocks
-from ..devices import engines
 from ..tui import widgets
 from ..tui import beatbars
 from . import beatpatterns
@@ -1546,7 +1544,6 @@ class Beatmap:
         nchannels = devices_settings.mixer.output_channels
         tickrate = gameplay_settings.controls.tickrate
         prepare_time = gameplay_settings.controls.prepare_time
-        debug_monitor = gameplay_settings.debug_monitor
 
         rich = mu.RichParser(
             devices_settings.terminal.unicode_version,
@@ -1567,85 +1564,79 @@ class Beatmap:
         if start_time is not None:
             self.start_time = start_time
 
-        clock = clocks.Clock(self.start_time, 1.0)
-
         score = BeatmapScore()
         score.set_total_subjects(self.total_subjects)
 
         # load engines
-        with load_engines(clock, debug_monitor) as (engine_task, engines):
-            mixer, detector, renderer, controller = engines
+        engine_task_ctxt, engines = load_engines(self.start_time)
+        mixer, detector, renderer, controller, clock = engines
 
-            Beatmap.register_clock_controller(
-                mixer,
-                detector,
-                renderer,
-                controller,
-                clock,
-                gameplay_settings.controls,
+        Beatmap.register_clock_controller(
+            mixer,
+            detector,
+            renderer,
+            controller,
+            clock,
+            gameplay_settings.controls,
+        )
+
+        # build playfield
+        widget_factory = BeatbarWidgetFactory(score, rich, mixer, detector, renderer)
+
+        icon = widget_factory.create(gameplay_settings.playfield.widgets.icon)
+        header = widget_factory.create(gameplay_settings.playfield.widgets.header)
+        footer = widget_factory.create(gameplay_settings.playfield.widgets.footer)
+        sight = widget_factory.create(gameplay_settings.playfield.sight)
+
+        beatbar = beatbars.Beatbar(
+            mixer,
+            detector,
+            renderer,
+            controller,
+            sight,
+            self.beatbar_state,
+        )
+
+        beatbar_node = beatbar.load()
+
+        # layout
+        icon_width = gameplay_settings.playfield.layout.icon_width
+        header_width = gameplay_settings.playfield.layout.header_width
+        footer_width = gameplay_settings.playfield.layout.footer_width
+
+        [
+            icon_mask,
+            header_mask,
+            content_mask,
+            footer_mask,
+        ] = widgets.layout([icon_width, header_width, -1, footer_width])
+
+        renderer.add_texts(beatbar_node, xmask=content_mask, zindex=(0,))
+        renderer.add_texts(icon, xmask=icon_mask, zindex=(1,))
+        renderer.add_texts(header, xmask=header_mask, zindex=(2,))
+        renderer.add_texts(footer, xmask=footer_mask, zindex=(3,))
+
+        # play music
+        if self.audionode is not None:
+            mixer.play(self.audionode, time=0.0, zindex=(-3,))
+
+        # game loop
+        with clock.tick(self, 0.0) as event_tick_node:
+            updater = self.update_events(
+                self.events,
+                score,
+                beatbar,
+                self.end_time,
+                tickrate,
+                prepare_time,
+                event_tick_node,
             )
+            event_task = dn.interval(updater, dt=1 / tickrate)
 
-            # build playfield
-            widget_factory = BeatbarWidgetFactory(score, rich, mixer, detector, renderer)
+            with engine_task_ctxt as engine_task:
+                yield from dn.pipe(engine_task, event_task).join()
 
-            icon = widget_factory.create(gameplay_settings.playfield.widgets.icon)
-            header = widget_factory.create(gameplay_settings.playfield.widgets.header)
-            footer = widget_factory.create(gameplay_settings.playfield.widgets.footer)
-            sight = widget_factory.create(gameplay_settings.playfield.sight)
-
-            beatbar = beatbars.Beatbar(
-                mixer,
-                detector,
-                renderer,
-                controller,
-                sight,
-                self.beatbar_state,
-            )
-
-            beatbar_node = beatbar.load()
-
-            # layout
-            icon_width = gameplay_settings.playfield.layout.icon_width
-            header_width = gameplay_settings.playfield.layout.header_width
-            footer_width = gameplay_settings.playfield.layout.footer_width
-
-            [
-                icon_mask,
-                header_mask,
-                content_mask,
-                footer_mask,
-            ] = widgets.layout([icon_width, header_width, -1, footer_width])
-
-            renderer.add_texts(beatbar_node, xmask=content_mask, zindex=(0,))
-            renderer.add_texts(icon, xmask=icon_mask, zindex=(1,))
-            renderer.add_texts(header, xmask=header_mask, zindex=(2,))
-            renderer.add_texts(footer, xmask=footer_mask, zindex=(3,))
-
-            # play music
-            if self.audionode is not None:
-                mixer.play(self.audionode, time=0.0, zindex=(-3,))
-
-            # game loop
-            with clock.tick(self, 0.0) as event_tick_node:
-                updater = self.update_events(
-                    self.events,
-                    score,
-                    beatbar,
-                    self.end_time,
-                    tickrate,
-                    prepare_time,
-                    event_tick_node,
-                )
-                event_task = dn.interval(updater, dt=1 / tickrate)
-
-                yield from dn.pipe(event_task, engine_task).join()
-
-            devices_settings_modified = devices_settings.copy()
-            devices_settings_modified.mixer = mixer.settings
-            devices_settings_modified.detector = detector.settings
-            devices_settings_modified.renderer = renderer.settings
-
-        return score, devices_settings_modified
+        return score
 
     @staticmethod
     def register_clock_controller(

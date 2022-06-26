@@ -169,13 +169,17 @@ class DeviceManager:
 
         return ctxt()
 
-    def load_engines(self, *types, session_name="", clock=None, init_time=None, monitoring=False):
-        mixer_monitor_file_path = f"{session_name}_mixer_benchmark.csv"
-        detector_monitor_file_path = f"{session_name}_detector_benchmark.csv"
-        renderer_monitor_file_path = f"{session_name}_renderer_benchmark.csv"
+    def load_engines(self, *types, clock=None, monitoring_session=None):
+        if monitoring_session is not None:
+            mixer_monitor_file_path = f"{monitoring_session}_mixer_benchmark.csv"
+            detector_monitor_file_path = f"{monitoring_session}_detector_benchmark.csv"
+            renderer_monitor_file_path = f"{monitoring_session}_renderer_benchmark.csv"
 
         if clock is None:
             clock = self.clock
+            init_time = None
+        else:
+            init_time = 0.0
 
         tasks = []
         res = []
@@ -183,7 +187,7 @@ class DeviceManager:
         for typ in types:
             if typ == "mixer":
                 mixer_monitor = None
-                if monitoring:
+                if monitoring_session is not None:
                     mixer_monitor = engines.Monitor(self.cache_dir.abs / mixer_monitor_file_path)
 
                 mixer_task, mixer = engines.Mixer.create(
@@ -199,7 +203,7 @@ class DeviceManager:
 
             elif typ == "detector":
                 detector_monitor = None
-                if monitoring:
+                if monitoring_session is not None:
                     detector_monitor = engines.Monitor(self.cache_dir.abs / detector_monitor_file_path)
 
                 detector_task, detector = engines.Detector.create(
@@ -215,7 +219,7 @@ class DeviceManager:
 
             elif typ == "renderer":
                 renderer_monitor = None
-                if monitoring:
+                if monitoring_session is not None:
                     renderer_monitor = engines.Monitor(self.cache_dir.abs / renderer_monitor_file_path)
 
                 renderer_task, renderer = engines.Renderer.create(
@@ -812,7 +816,7 @@ def test_keyboard(logger, devices_manager):
             logger.print()
 
     clock = clocks.Clock(0.0, 1.0)
-    engine_task, engines = devices_manager.load_engines("controller", clock=clock, init_time=0.0)
+    engine_task, engines = devices_manager.load_engines("controller", clock=clock)
     controller, = engines
 
     controller.add_handler(handler())
@@ -864,7 +868,7 @@ class KnockTest:
         self.logger.print()
 
         clock = clocks.Clock(0.0, 1.0)
-        engine_task, engines = self.device_manager.load_engines("detector", clock=clock, init_time=0.0)
+        engine_task, engines = self.device_manager.load_engines("detector", clock=clock)
         detector, = engines
 
         detector.add_listener(self.hit_listener())

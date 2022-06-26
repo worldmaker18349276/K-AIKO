@@ -315,7 +315,9 @@ class BeatPrompt:
 
         # engines
         engine_task, engines = device_manager.load_engines(
-            "renderer", "controller", session_name="prompt", monitoring=self.settings.debug_monitor
+            "renderer",
+            "controller",
+            monitoring_session = "prompt" if self.settings.debug_monitor else None,
         )
         renderer, controller = engines
 
