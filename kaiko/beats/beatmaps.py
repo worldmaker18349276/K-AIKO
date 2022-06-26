@@ -1446,11 +1446,6 @@ class BeatTrack:
             return track
 
 
-mixer_monitor_file_path = "play_mixer_benchmark.csv"
-detector_monitor_file_path = "play_detector_benchmark.csv"
-renderer_monitor_file_path = "play_renderer_benchmark.csv"
-
-
 @dataclasses.dataclass
 class BeatPoints:
     offset: float
@@ -1532,29 +1527,24 @@ class Beatmap:
     @dn.datanode
     def play(
         self,
-        resources_dir,
         start_time,
-        load_engines,
-        devices_settings,
+        rich_loader,
+        resource_loader,
+        engine_loader,
         gameplay_settings=None,
     ):
         gameplay_settings = gameplay_settings or GameplaySettings()
 
-        samplerate = devices_settings.mixer.output_samplerate
-        nchannels = devices_settings.mixer.output_channels
         tickrate = gameplay_settings.controls.tickrate
         prepare_time = gameplay_settings.controls.prepare_time
 
-        rich = mu.RichParser(
-            devices_settings.terminal.unicode_version,
-            devices_settings.terminal.color_support,
-        )
+        rich = rich_loader()
 
         # prepare
         try:
             yield from dn.create_task(
                 dn.chain(
-                    self.load_resources(samplerate, nchannels, resources_dir),
+                    self.load_resources(resource_loader),
                     self.prepare_events(rich),
                 ),
             ).join()
@@ -1568,7 +1558,7 @@ class Beatmap:
         score.set_total_subjects(self.total_subjects)
 
         # load engines
-        engine_task_ctxt, engines = load_engines(self.start_time)
+        engine_task_ctxt, engines = engine_loader(self.start_time)
         mixer, detector, renderer, controller, clock = engines
 
         Beatmap.register_clock_controller(
@@ -1732,82 +1722,24 @@ class Beatmap:
         controller.add_handler(skip_node(), skip_key)
 
     @dn.datanode
-    def load_resources(self, output_samplerate, output_nchannels, resources_dir):
+    def load_resources(self, resource_loader):
         r"""Load resources to `audionode` and `resources`.
 
         Parameters
         ----------
-        output_samplerate : int
-        output_channels : int
-        resources_dir : Path
+        resource_loader : function
         """
 
         if self.path is not None and self.audio.path is not None:
-            root = Path(self.path).parent
-            try:
-                sound = yield from aud.load_sound(
-                    root / self.audio.path,
-                    samplerate=output_samplerate,
-                    channels=output_nchannels,
-                    volume=self.audio.volume,
-                ).join()
+            path = Path(self.path).parent / self.audio.path
+            sound = yield from resource_loader(path).join()
+            volume = self.audio.volume
+            if volume != 0.0:
+                sound = dn.pipe(sound, lambda s: s * 10 ** (volume / 20))
+            self.audionode = dn.DataNode.wrap(sound)
 
-                self.audionode = dn.DataNode.wrap(sound)
-
-            except aud.IOCancelled:
-                raise
-
-            except Exception as e:
-                raise RuntimeError(f"Failed to load song {self.audio.path}") from e
-
-        for name, path in self.settings.resources.items():
-            if isinstance(path, Path):
-                sound_path = resources_dir / path
-                try:
-                    resource = yield from aud.load_sound(
-                        sound_path,
-                        samplerate=output_samplerate,
-                        channels=output_nchannels,
-                    ).join()
-
-                    self.resources[name] = resource
-
-                except aud.IOCancelled:
-                    raise
-
-                except Exception as e:
-                    raise RuntimeError(
-                        f"Failed to load resource {name} at {sound_path}"
-                    ) from e
-
-            elif isinstance(path, dn.Waveform):
-                waveform_max_time = 30.0
-                node = path.generate(
-                    samplerate=output_samplerate,
-                    channels=output_nchannels,
-                )
-
-                resource = []
-                try:
-                    yield from dn.pipe(
-                        node,
-                        dn.tspan(
-                            samplerate=output_samplerate, end=waveform_max_time
-                        ),
-                        resource.append,
-                    ).join()
-                    self.resources[name] = resource
-
-                except GeneratorExit:
-                    raise aud.IOCancelled(
-                        f"The operation of generating sound {path!r} has been cancelled."
-                    )
-
-                except Exception as e:
-                    raise RuntimeError(f"Failed to load resource {name}") from e
-
-            else:
-                raise TypeError
+        for name, src in self.settings.resources.items():
+            self.resources[name] = yield from resource_loader(src).join()
 
     @dn.datanode
     def prepare_events(self, rich):
@@ -1817,7 +1749,6 @@ class Beatmap:
         ----------
         rich : markups.RichParser
         """
-
         events = []
         for track in self.tracks.values():
             context = {}

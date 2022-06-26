@@ -5,9 +5,11 @@ import zipfile
 from collections import defaultdict
 from typing import Optional, Dict
 from pathlib import Path
+from ..utils import markups as mu
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
 from ..devices import clocks
+from ..devices import audios as aud
 from ..beats import beatmaps
 from ..beats import beatsheets
 from .loggers import Logger
@@ -538,45 +540,14 @@ class KAIKOPlay:
         print_hints(logger, gameplay_settings)
         logger.print()
 
-        # implicit arguments
-        debug_monitor = gameplay_settings.debug_monitor
         devices_settings_modified = devices_settings.copy()
-        # device_manager, logger
-        def load_engines(start_time):
-            clock = clocks.Clock(start_time, 1.0)
-
-            engine_task, engines = device_manager.load_engines(
-                "mixer",
-                "detector",
-                "renderer",
-                "controller",
-                clock = clock,
-                monitoring_session = "play" if debug_monitor else None,
-            )
-            mixer, detector, renderer, controller = engines
-
-            @contextlib.contextmanager
-            def task_ctxt():
-                with logger.popup(renderer):
-                    yield engine_task
-
-                if debug_monitor:
-                    logger.print()
-                    logger.print(f"   mixer: {mixer.monitor!s}", markup=False)
-                    logger.print(f"detector: {detector.monitor!s}", markup=False)
-                    logger.print(f"renderer: {renderer.monitor!s}", markup=False)
-
-                devices_settings_modified.mixer = mixer.settings
-                devices_settings_modified.detector = detector.settings
-                devices_settings_modified.renderer = renderer.settings
-
-            return task_ctxt(), (mixer, detector, renderer, controller, clock)
+        engine_loader = lambda start_time: self.engine_loader(devices_settings_modified, start_time)
 
         score = yield from beatmap.play(
-            self.resources_dir.abs,
             self.start,
-            load_engines,
-            devices_settings,
+            self.rich_loader,
+            self.resource_loader,
+            engine_loader,
             gameplay_settings,
         ).join()
 
@@ -604,6 +575,100 @@ class KAIKOPlay:
             logger.print(
                 logger.format_code_diff(old, new, title=title, is_changed=True)
             )
+
+    @dn.datanode
+    def resource_loader(self, src):
+        WAVEFORM_MAX_TIME = 30.0
+        samplerate = self.device_manager.settings.mixer.output_samplerate
+        nchannels = self.device_manager.settings.mixer.output_channels
+
+        if isinstance(src, Path):
+            sound_path = self.resources_dir.abs / src
+            try:
+                resource = yield from aud.load_sound(
+                    sound_path,
+                    samplerate=samplerate,
+                    channels=nchannels,
+                ).join()
+
+                return resource
+
+            except aud.IOCancelled:
+                raise
+
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to load resource {sound_path!s}"
+                ) from e
+
+        elif isinstance(src, dn.Waveform):
+            node = src.generate(
+                samplerate=samplerate,
+                channels=nchannels,
+            )
+
+            res = []
+            try:
+                yield from dn.pipe(
+                    node,
+                    dn.tspan(
+                        samplerate=samplerate, end=WAVEFORM_MAX_TIME
+                    ),
+                    res.append,
+                ).join()
+                return res
+
+            except GeneratorExit:
+                raise aud.IOCancelled(
+                    f"The operation of generating sound {src!r} has been cancelled."
+                )
+
+            except Exception as e:
+                raise RuntimeError(f"Failed to load resource {src!r}") from e
+
+        else:
+            raise TypeError
+
+    def rich_loader(self):
+        devices_settings = self.profile_manager.current.devices
+        return mu.RichParser(
+            devices_settings.terminal.unicode_version,
+            devices_settings.terminal.color_support,
+        )
+
+    def engine_loader(self, devices_settings_modified, start_time):
+        logger = self.logger
+        device_manager = self.device_manager
+        debug_monitor = self.profile_manager.current.gameplay.debug_monitor
+
+        clock = clocks.Clock(start_time, 1.0)
+
+        engine_task, engines = device_manager.load_engines(
+            "mixer",
+            "detector",
+            "renderer",
+            "controller",
+            clock = clock,
+            monitoring_session = "play" if debug_monitor else None,
+        )
+        mixer, detector, renderer, controller = engines
+
+        @contextlib.contextmanager
+        def task_ctxt():
+            with logger.popup(renderer):
+                yield engine_task
+
+            if debug_monitor:
+                logger.print()
+                logger.print(f"   mixer: {mixer.monitor!s}", markup=False)
+                logger.print(f"detector: {detector.monitor!s}", markup=False)
+                logger.print(f"renderer: {renderer.monitor!s}", markup=False)
+
+            devices_settings_modified.mixer = mixer.settings
+            devices_settings_modified.detector = detector.settings
+            devices_settings_modified.renderer = renderer.settings
+
+        return task_ctxt(), (mixer, detector, renderer, controller, clock)
 
 
 def print_hints(logger, settings):
