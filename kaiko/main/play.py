@@ -549,7 +549,7 @@ class KAIKOPlay:
             )
 
         with logger.mute():
-            score, devices_settings = yield from beatmap.play(
+            score, devices_settings_modified = yield from beatmap.play(
                 self.resources_dir.abs,
                 self.start,
                 load_engines,
@@ -562,7 +562,7 @@ class KAIKOPlay:
             beatmap.settings.difficulty.performance_tolerance, score.perfs
         )
 
-        if devices_settings is None:
+        if devices_settings == devices_settings_modified:
             return
 
         logger.print()
@@ -573,7 +573,7 @@ class KAIKOPlay:
                 self.profile_manager.current_path
             )
             old = self.profile_manager.format()
-            self.profile_manager.current.devices = devices_settings
+            self.profile_manager.current.devices = devices_settings_modified
             self.profile_manager.set_as_changed()
             new = self.profile_manager.format()
 

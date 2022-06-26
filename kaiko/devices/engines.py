@@ -158,8 +158,9 @@ class MixerSettings(cfg.Configurable):
 
 
 class Mixer:
-    def __init__(self, pipeline, init_time, settings, monitor):
+    def __init__(self, pipeline, clock, init_time, settings, monitor):
         self.pipeline = pipeline
+        self.clock = clock
         self.init_time = init_time
         self.settings = settings
         self.monitor = monitor
@@ -169,17 +170,17 @@ class Mixer:
         if clock is None:
             clock = clocks.Clock(0.0, 1.0)
         pipeline = dn.DynamicPipeline()
-        self = cls(pipeline, init_time, settings, monitor)
-        return self._task(manager, clock, monitor), self
+        sound_delay = settings.sound_delay
+        self = cls(pipeline, clock, init_time, settings, monitor)
+        return self._task(manager, clock, sound_delay, monitor), self
 
     @dn.datanode
-    def _task(self, manager, clock, monitor):
+    def _task(self, manager, clock, sound_delay, monitor):
         samplerate = self.settings.output_samplerate
         buffer_length = self.settings.output_buffer_length
         nchannels = self.settings.output_channels
         format = self.settings.output_format
         device = self.settings.output_device
-        sound_delay = self.settings.sound_delay
 
         with clock.tick_slice(self, sound_delay) as tick_node:
             output_node = self._mix_node(self.pipeline, tick_node, self.settings)
@@ -233,6 +234,10 @@ class Mixer:
                 except StopIteration:
                     return
                 yield data
+
+    def delay(self, step):
+        self.settings.sound_delay += step
+        self.clock.delay(self, step)
 
     def add_effect(self, node, zindex=(0,)):
         return self.pipeline.add_node(node, zindex=zindex)
@@ -403,8 +408,9 @@ class DetectorSettings(cfg.Configurable):
 
 
 class Detector:
-    def __init__(self, pipeline, knock_energy, init_time, settings, monitor):
+    def __init__(self, pipeline, clock, knock_energy, init_time, settings, monitor):
         self.pipeline = pipeline
+        self.clock = clock
         self.knock_energy = knock_energy
         self.init_time = init_time
         self.settings = settings
@@ -416,11 +422,12 @@ class Detector:
             clock = clocks.Clock(0.0, 1.0)
         pipeline = dn.DynamicPipeline()
         knock_energy = AsyncAdditiveValue(settings.knock_energy)
-        self = cls(pipeline, knock_energy, init_time, settings, monitor)
-        return self._task(manager, clock, monitor), self
+        knock_delay = settings.knock_delay
+        self = cls(pipeline, clock, knock_energy, init_time, settings, monitor)
+        return self._task(manager, clock, knock_delay, monitor), self
 
     @dn.datanode
-    def _task(self, manager, clock, monitor):
+    def _task(self, manager, clock, knock_delay, monitor):
         samplerate = self.settings.input_samplerate
         buffer_length = self.settings.input_buffer_length
         nchannels = self.settings.input_channels
@@ -428,7 +435,6 @@ class Detector:
         device = self.settings.input_device
         time_res = self.settings.detect.time_res
         hop_length = round(samplerate * time_res)
-        knock_delay = self.settings.knock_delay
 
         with clock.tick(self, knock_delay) as tick_node:
             input_node = self._detect_node(
@@ -514,6 +520,14 @@ class Detector:
                 except StopIteration:
                     return
                 data = yield
+
+    def delay(self, step):
+        self.settings.knock_delay += step
+        self.clock.delay(self, step)
+
+    def increase(self, step):
+        self.settings.knock_energy += step
+        self.knock_energy.add(step)
 
     def add_listener(self, node):
         return self.pipeline.add_node(node, (0,))
@@ -606,8 +620,9 @@ class RendererSettings(cfg.Configurable):
 
 
 class Renderer:
-    def __init__(self, pipeline, init_time, settings, monitor):
+    def __init__(self, pipeline, clock, init_time, settings, monitor):
         self.pipeline = pipeline
+        self.clock = clock
         self.init_time = init_time
         self.settings = settings
         self.monitor = monitor
@@ -617,13 +632,13 @@ class Renderer:
         if clock is None:
             clock = clocks.Clock(0.0, 1.0)
         pipeline = dn.DynamicPipeline()
-        self = cls(pipeline, init_time, settings, monitor)
-        return self._task(term_settings, clock, monitor), self
+        display_delay = settings.display_delay
+        self = cls(pipeline, clock, init_time, settings, monitor)
+        return self._task(term_settings, clock, display_delay, monitor), self
 
     @dn.datanode
-    def _task(self, term_settings, clock, monitor):
+    def _task(self, term_settings, clock, display_delay, monitor):
         framerate = self.settings.display_framerate
-        display_delay = self.settings.display_delay
 
         with clock.tick(self, display_delay) as tick_node:
             render_node = self._render_node(self.pipeline, tick_node, self.settings, term_settings)
@@ -740,6 +755,10 @@ class Renderer:
                 if shown:
                     resized = False
 
+    def delay(self, step):
+        self.settings.display_delay += step
+        self.clock.delay(self, step)
+
     def add_drawer(self, node, zindex=(0,)):
         return self.pipeline.add_node(node, zindex=zindex)
 
@@ -802,8 +821,9 @@ class ControllerSettings(cfg.Configurable):
 
 
 class Controller:
-    def __init__(self, pipeline, init_time, settings):
+    def __init__(self, pipeline, clock, init_time, settings):
         self.pipeline = pipeline
+        self.clock = clock
         self.init_time = init_time
         self.settings = settings
 
@@ -812,7 +832,7 @@ class Controller:
         if clock is None:
             clock = clocks.Clock(0.0, 1.0)
         pipeline = dn.DynamicPipeline()
-        self = cls(pipeline, init_time, settings)
+        self = cls(pipeline, clock, init_time, settings)
         return self._task(term_settings, clock), self
 
     @dn.datanode

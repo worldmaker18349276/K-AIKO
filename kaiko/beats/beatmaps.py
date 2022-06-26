@@ -1576,6 +1576,15 @@ class Beatmap:
         engine_task, engines = load_engines(clock, debug_monitor)
         mixer, detector, renderer, controller = engines
 
+        Beatmap.register_clock_controller(
+            mixer,
+            detector,
+            renderer,
+            controller,
+            clock,
+            gameplay_settings.controls,
+        )
+
         # build playfield
         widget_factory = BeatbarWidgetFactory(score, rich, mixer, detector, renderer)
 
@@ -1612,18 +1621,6 @@ class Beatmap:
         renderer.add_texts(header, xmask=header_mask, zindex=(2,))
         renderer.add_texts(footer, xmask=footer_mask, zindex=(3,))
 
-        # handler
-        devices_settings = devices_settings.copy()
-        settings_changed = Beatmap.register_controllers(
-            mixer,
-            detector,
-            renderer,
-            controller,
-            clock,
-            devices_settings,
-            gameplay_settings.controls,
-        )
-
         # play music
         if self.audionode is not None:
             mixer.play(self.audionode, time=0.0, zindex=(-3,))
@@ -1649,20 +1646,22 @@ class Beatmap:
             print("detector: " + str(detector_monitor))
             print("renderer: " + str(renderer_monitor))
 
-        return score, (devices_settings if settings_changed.is_set() else None)
+        devices_settings_modified = devices_settings.copy()
+        devices_settings_modified.mixer = mixer.settings
+        devices_settings_modified.detector = detector.settings
+        devices_settings_modified.renderer = renderer.settings
+
+        return score, devices_settings_modified
 
     @staticmethod
-    def register_controllers(
+    def register_clock_controller(
         mixer,
         detector,
         renderer,
         controller,
         clock,
-        devices_settings,
         controls_settings,
     ):
-        settings_changed = threading.Event()
-
         # stop
         stop_key = controls_settings.stop_key
         controller.add_handler(lambda _: clock.stop(), stop_key)
@@ -1672,16 +1671,12 @@ class Beatmap:
         display_delay_adjust_keys = controls_settings.display_delay_adjust_keys
 
         def incr_display_delay(_):
-            devices_settings.renderer.display_delay += display_delay_adjust_step
-            clock.delay(renderer, display_delay_adjust_step)
+            renderer.delay(display_delay_adjust_step)
             renderer.add_log(mu.Text(f"display_delay += {display_delay_adjust_step}\n"))
-            settings_changed.set()
 
         def decr_display_delay(_):
-            devices_settings.renderer.display_delay -= display_delay_adjust_step
-            clock.delay(renderer, -display_delay_adjust_step)
+            renderer.delay(-display_delay_adjust_step)
             renderer.add_log(mu.Text(f"display_delay -= {display_delay_adjust_step}\n"))
-            settings_changed.set()
 
         controller.add_handler(incr_display_delay, display_delay_adjust_keys[0])
         controller.add_handler(decr_display_delay, display_delay_adjust_keys[1])
@@ -1691,16 +1686,12 @@ class Beatmap:
         knock_delay_adjust_keys = controls_settings.knock_delay_adjust_keys
 
         def incr_knock_delay(_):
-            devices_settings.detector.knock_delay += knock_delay_adjust_step
-            clock.delay(detector, knock_delay_adjust_step)
+            detector.delay(knock_delay_adjust_step)
             renderer.add_log(mu.Text(f"knock_delay += {knock_delay_adjust_step}\n"))
-            settings_changed.set()
 
         def decr_knock_delay(_):
-            devices_settings.detector.knock_delay -= knock_delay_adjust_step
-            clock.delay(detector, -knock_delay_adjust_step)
+            detector.delay(-knock_delay_adjust_step)
             renderer.add_log(mu.Text(f"knock_delay -= {knock_delay_adjust_step}\n"))
-            settings_changed.set()
 
         controller.add_handler(incr_knock_delay, knock_delay_adjust_keys[0])
         controller.add_handler(decr_knock_delay, knock_delay_adjust_keys[1])
@@ -1710,16 +1701,12 @@ class Beatmap:
         knock_energy_adjust_keys = controls_settings.knock_energy_adjust_keys
 
         def incr_knock_energy(_):
-            devices_settings.detector.knock_energy += knock_energy_adjust_step
-            detector.knock_energy.add(knock_energy_adjust_step)
+            detector.increase(knock_energy_adjust_step)
             renderer.add_log(mu.Text(f"knock_energy += {knock_energy_adjust_step}\n"))
-            settings_changed.set()
 
         def decr_knock_energy(_):
-            devices_settings.detector.knock_energy -= knock_energy_adjust_step
-            detector.knock_energy.add(-knock_energy_adjust_step)
+            detector.increase(-knock_energy_adjust_step)
             renderer.add_log(mu.Text(f"knock_energy -= {knock_energy_adjust_step}\n"))
-            settings_changed.set()
 
         controller.add_handler(incr_knock_energy, knock_energy_adjust_keys[0])
         controller.add_handler(decr_knock_energy, knock_energy_adjust_keys[1])
@@ -1744,6 +1731,7 @@ class Beatmap:
                     else:
                         clock.speed(time + control_delay, 0.0)
                         paused = True
+                        renderer.add_log(mu.Text(f"pause\n"))
 
         controller.add_handler(pause_node(), pause_key)
 
@@ -1755,10 +1743,9 @@ class Beatmap:
                     yield
                     time = time_node.send(None)
                     clock.skip(time + control_delay, skip_time)
+                    renderer.add_log(mu.Text(f"skip\n"))
 
         controller.add_handler(skip_node(), skip_key)
-
-        return settings_changed
 
     @dn.datanode
     def load_resources(self, output_samplerate, output_nchannels, resources_dir):

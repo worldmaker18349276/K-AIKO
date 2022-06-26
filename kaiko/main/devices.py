@@ -184,7 +184,7 @@ class DeviceManager:
                     mixer_monitor = engines.Monitor(self.cache_dir / mixer_monitor_file_path)
 
                 mixer_task, mixer = engines.Mixer.create(
-                    self.settings.mixer,
+                    self.settings.mixer.copy(),
                     self.audio_manager,
                     clock,
                     init_time,
@@ -200,7 +200,7 @@ class DeviceManager:
                     detector_monitor = engines.Monitor(self.cache_dir / detector_monitor_file_path)
 
                 detector_task, detector = engines.Detector.create(
-                    self.settings.detector,
+                    self.settings.detector.copy(),
                     self.audio_manager,
                     clock,
                     init_time,
@@ -216,7 +216,7 @@ class DeviceManager:
                     renderer_monitor = engines.Monitor(self.cache_dir / renderer_monitor_file_path)
 
                 renderer_task, renderer = engines.Renderer.create(
-                    self.settings.renderer,
+                    self.settings.renderer.copy(),
                     self.settings.terminal,
                     clock,
                     init_time,
@@ -228,7 +228,7 @@ class DeviceManager:
 
             elif typ == "controller":
                 controller_task, controller = engines.Controller.create(
-                    self.settings.controller,
+                    self.settings.controller.copy(),
                     self.settings.terminal,
                     clock,
                     init_time,
