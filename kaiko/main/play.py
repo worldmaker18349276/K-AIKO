@@ -576,65 +576,11 @@ class KAIKOPlay:
                 logger.format_code_diff(old, new, title=title, is_changed=True)
             )
 
-    @dn.datanode
     def resource_loader(self, src):
-        WAVEFORM_MAX_TIME = 30.0
-        samplerate = self.device_manager.settings.mixer.output_samplerate
-        nchannels = self.device_manager.settings.mixer.output_channels
-
-        if isinstance(src, Path):
-            sound_path = self.resources_dir.abs / src
-            try:
-                resource = yield from aud.load_sound(
-                    sound_path,
-                    samplerate=samplerate,
-                    channels=nchannels,
-                ).join()
-
-                return resource
-
-            except aud.IOCancelled:
-                raise
-
-            except Exception as e:
-                raise RuntimeError(
-                    f"Failed to load resource {sound_path!s}"
-                ) from e
-
-        elif isinstance(src, dn.Waveform):
-            node = src.generate(
-                samplerate=samplerate,
-                channels=nchannels,
-            )
-
-            res = []
-            try:
-                yield from dn.pipe(
-                    node,
-                    dn.tspan(
-                        samplerate=samplerate, end=WAVEFORM_MAX_TIME
-                    ),
-                    res.append,
-                ).join()
-                return res
-
-            except GeneratorExit:
-                raise aud.IOCancelled(
-                    f"The operation of generating sound {src!r} has been cancelled."
-                )
-
-            except Exception as e:
-                raise RuntimeError(f"Failed to load resource {src!r}") from e
-
-        else:
-            raise TypeError
+        return self.device_manager.load_sound(src)
 
     def rich_loader(self):
-        devices_settings = self.profile_manager.current.devices
-        return mu.RichParser(
-            devices_settings.terminal.unicode_version,
-            devices_settings.terminal.color_support,
-        )
+        return self.device_manager.load_rich()
 
     def engine_loader(self, devices_settings_modified, start_time):
         logger = self.logger

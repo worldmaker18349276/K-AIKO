@@ -3,6 +3,7 @@ import os
 import time
 import shutil
 import contextlib
+from pathlib import Path
 import threading
 import queue
 from ..utils import config as cfg
@@ -107,9 +108,10 @@ class DynamicLoader:
 
 
 class DeviceManager:
-    def __init__(self, provider, cache_dir, settings):
+    def __init__(self, provider, cache_dir, resources_dir, settings):
         self.provider = provider
         self.cache_dir = cache_dir
+        self.resources_dir = resources_dir
         self.settings = settings
         self.audio_manager = None
         self.clock = clocks.Clock(0.0, 1.0)
@@ -170,11 +172,6 @@ class DeviceManager:
         return ctxt()
 
     def load_engines(self, *types, clock=None, monitoring_session=None):
-        if monitoring_session is not None:
-            mixer_monitor_file_path = f"{monitoring_session}_mixer_benchmark.csv"
-            detector_monitor_file_path = f"{monitoring_session}_detector_benchmark.csv"
-            renderer_monitor_file_path = f"{monitoring_session}_renderer_benchmark.csv"
-
         if clock is None:
             clock = self.clock
             init_time = None
@@ -188,7 +185,8 @@ class DeviceManager:
             if typ == "mixer":
                 mixer_monitor = None
                 if monitoring_session is not None:
-                    mixer_monitor = engines.Monitor(self.cache_dir.abs / mixer_monitor_file_path)
+                    path = self.cache_dir.abs / f"{monitoring_session}_mixer_benchmark.csv"
+                    mixer_monitor = engines.Monitor(path)
 
                 mixer_task, mixer = engines.Mixer.create(
                     self.settings.mixer.copy(),
@@ -204,7 +202,8 @@ class DeviceManager:
             elif typ == "detector":
                 detector_monitor = None
                 if monitoring_session is not None:
-                    detector_monitor = engines.Monitor(self.cache_dir.abs / detector_monitor_file_path)
+                    path = self.cache_dir.abs / f"{monitoring_session}_detector_benchmark.csv"
+                    detector_monitor = engines.Monitor(path)
 
                 detector_task, detector = engines.Detector.create(
                     self.settings.detector.copy(),
@@ -220,7 +219,8 @@ class DeviceManager:
             elif typ == "renderer":
                 renderer_monitor = None
                 if monitoring_session is not None:
-                    renderer_monitor = engines.Monitor(self.cache_dir.abs / renderer_monitor_file_path)
+                    path = self.cache_dir.abs / f"{monitoring_session}_renderer_benchmark.csv"
+                    renderer_monitor = engines.Monitor(path)
 
                 renderer_task, renderer = engines.Renderer.create(
                     self.settings.renderer.copy(),
@@ -251,6 +251,70 @@ class DeviceManager:
 
     def load_engine_loader(self, *types):
         return DynamicLoader.create(lambda: self.load_engines(*types))
+
+    def load_rich(self):
+        devices_settings = self.profile_manager.current.devices
+        return mu.RichParser(
+            devices_settings.terminal.unicode_version,
+            devices_settings.terminal.color_support,
+        )
+
+    @dn.datanode
+    def load_sound(self, src):
+        WAVEFORM_MAX_TIME = 30.0
+        samplerate = self.settings.mixer.output_samplerate
+        nchannels = self.settings.mixer.output_channels
+
+        if isinstance(src, Path):
+            if src.is_absolute():
+                sound_path = src
+            else:
+                sound_path = (self.resources_dir.abs / src).resolve()
+
+            try:
+                resource = yield from aud.load_sound(
+                    sound_path,
+                    samplerate=samplerate,
+                    channels=nchannels,
+                ).join()
+
+                return resource
+
+            except aud.IOCancelled:
+                raise
+
+            except Exception as e:
+                raise RuntimeError(
+                    f"Failed to load resource {sound_path!s}"
+                ) from e
+
+        elif isinstance(src, dn.Waveform):
+            node = src.generate(
+                samplerate=samplerate,
+                channels=nchannels,
+            )
+
+            res = []
+            try:
+                yield from dn.pipe(
+                    node,
+                    dn.tspan(
+                        samplerate=samplerate, end=WAVEFORM_MAX_TIME
+                    ),
+                    res.append,
+                ).join()
+                return res
+
+            except GeneratorExit:
+                raise aud.IOCancelled(
+                    f"The operation of generating sound {src!r} has been cancelled."
+                )
+
+            except Exception as e:
+                raise RuntimeError(f"Failed to load resource {src!r}") from e
+
+        else:
+            raise TypeError
 
     @contextlib.contextmanager
     def prepare_pyaudio(self):

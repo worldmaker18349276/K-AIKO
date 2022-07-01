@@ -194,6 +194,7 @@ class KAIKOLauncher:
         device_manager = DeviceManager(
             launcher.provider,
             file_manager.root.cache,
+            file_manager.root.resources,
             launcher.settings.devices,
         )
         devices_ctxt = yield from device_manager.initialize().join()
