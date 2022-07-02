@@ -1,4 +1,5 @@
 from datetime import datetime
+from fractions import Fraction
 import contextlib
 import traceback
 import dataclasses
@@ -66,6 +67,7 @@ class LoggerSettings(cfg.Configurable):
         py_ellipsis : pair tag
         py_bool : pair tag
         py_int : pair tag
+        py_fraction : pair tag
         py_float : pair tag
         py_complex : pair tag
         py_bytes : pair tag
@@ -79,6 +81,7 @@ class LoggerSettings(cfg.Configurable):
         py_ellipsis: str = "[color=bright_cyan][slot/][/]"
         py_bool: str = "[color=bright_cyan][slot/][/]"
         py_int: str = "[color=bright_cyan][slot/][/]"
+        py_fraction: str = "[color=bright_cyan][slot/][/]"
         py_float: str = "[color=bright_cyan][slot/][/]"
         py_complex: str = "[color=bright_cyan][slot/][/]"
         py_bytes: str = "[color=bright_cyan][slot/][/]"
@@ -433,9 +436,12 @@ class Logger:
             res.append(border)
         return "\n".join(res)
 
-    def format_value(self, value, multiline=True, indent=0):
+    def format_value(self, value, multiline=-1, indent=0):
         if value is None:
             return f"[py_none]{mu.escape(repr(value))}[/]"
+
+        if type(value) is Fraction:
+            return f"[py_fraction]{mu.escape(str(value))}[/]"
 
         if type(value) in (
             type(...),
@@ -474,7 +480,7 @@ class Logger:
 
             if type(value) is tuple and len(value) == 1:
                 content = self.format_value(
-                    value[0], multiline=multiline, indent=indent
+                    value[0], multiline=multiline-1 if multiline else multiline, indent=indent
                 )
                 return opening + content + "[py_punctuation],[/]" + closing
 
@@ -487,9 +493,9 @@ class Logger:
                 indent = indent + 4
 
             if type(value) is dict:
-                keys = [self.format_value(key, multiline=False) for key in value.keys()]
+                keys = [self.format_value(key, multiline=0) for key in value.keys()]
                 subvalues = [
-                    self.format_value(subvalue, multiline=multiline, indent=indent)
+                    self.format_value(subvalue, multiline=multiline-1 if multiline else multiline, indent=indent)
                     for subvalue in value.values()
                 ]
 
@@ -508,7 +514,7 @@ class Logger:
 
             else:
                 content = delimiter.join(
-                    self.format_value(subvalue, multiline=multiline, indent=indent)
+                    self.format_value(subvalue, multiline=multiline-1 if multiline else multiline, indent=indent)
                     for subvalue in value
                 )
 
@@ -536,7 +542,7 @@ class Logger:
             content = delimiter.join(
                 f"[py_argument]{mu.escape(field.name)}[/][py_punctuation]=[/]"
                 + self.format_value(
-                    getattr(value, field.name), multiline=multiline, indent=indent
+                    getattr(value, field.name), multiline=multiline-1 if multiline else multiline, indent=indent
                 )
                 for field in fields
             )
