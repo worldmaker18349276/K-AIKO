@@ -441,6 +441,29 @@ class PlayCommand:
     # beatmaps
 
     @cmd.function_command
+    @dn.datanode
+    def parse(self, beatmap):
+        """[rich]Parse a beatmap.
+
+        usage: [cmd]parse[/] [arg]{beatmap}[/]
+                        ╱
+           Path, the path to the
+          beatmap you want to parse.
+        """
+
+        try:
+            self.beatmap_manager.validate_beatmap_path(beatmap, should_exist=True)
+        except InvalidFileOperation as e:
+            logger.print(f"[warn]{logger.escape(str(e))}[/]")
+            return
+
+        beatmap = yield from load_beatmap(beatmap, self.file_manager, self.beatmap_manager, self.logger).join()
+        if beatmap is None:
+            return
+        beatmap_mu = self.logger.format_value(beatmap, multiline=4)
+        self.logger.print(beatmap_mu)
+
+    @cmd.function_command
     def play(self, beatmap, start=None):
         """[rich]Let's beat with the song!
 
@@ -495,6 +518,7 @@ class PlayCommand:
         )
 
     @play.arg_parser("beatmap")
+    @parse.arg_parser("beatmap")
     def _play_beatmap_parser(self):
         return self.file_manager.make_parser(
             desc="It should be a path to the beatmap file",
