@@ -153,8 +153,8 @@ def make_beatmap_parser(filepath, metadata_only=False):
 
     # parse header
     header = yield pc.regex(r"#K-AIKO-std-(\d+\.\d+\.\d+)(?=\n|$)").desc("header")
-    vernum = header[len("#K-AIKO-std-") :].split(".")
-    vernum0 = version.split(".")
+    vernum = [int(v) for v in header[len("#K-AIKO-std-") :].split(".")]
+    vernum0 = [int(v) for v in version.split(".")]
     if vernum[0] != vernum0[0] or vernum[1:] > vernum0[1:]:
         raise ValueError("incompatible version")
 
