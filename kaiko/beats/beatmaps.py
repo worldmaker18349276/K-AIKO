@@ -1935,7 +1935,7 @@ class Loop(Beatmap):
     def __init__(
         self, *, offset=1.0, tempo=120.0, width=Fraction(0), track=None, settings=None
     ):
-        beatpoints = BeatPoints(offset=offset, tempo=tempo)
+        beatpoints = BeatPoints.fixed(offset=offset, tempo=tempo)
         super().__init__(beatpoints=beatpoints, tracks={"main": track}, settings=settings)
         self.width = width
 
