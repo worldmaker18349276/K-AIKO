@@ -387,8 +387,7 @@ class OSU:
             context["timings"] = []
         if "beatLength0" not in context:
             context["beatLength0"] = beatLength
-            beatmap.beatpoints.offset = time / 1000
-            beatmap.beatpoints.tempo = 60 / (beatLength / 1000)
+            beatmap.beatpoints = beatmaps.BeatPoints.fixed(offset=time/1000, tempo=60/(beatLength/1000))
 
         if uninherited == "0":
             multiplier = multiplier / (-0.01 * beatLength)
