@@ -59,7 +59,7 @@ class ParamError(Exception):
     pass
 
 
-MU_TOKEN = re.compile(r"(?P<text>([^\[]|\[\[)+)|(?P<tag>\[[^\]]*\])")
+MU_TOKEN = re.compile(r"(?P<text>([^\[]|\[\[)+)|(?P<tag>\[[^\]]*\])|(?P<fail>\[)")
 STAG = re.compile(r"^\[(?P<name>\w+)(?:=(?P<param>.*))?/\]$")
 PTAG = re.compile(r"^\[(?P<name>\w+)(?:=(?P<param>.*))?\]$")
 ETAG = re.compile(r"\[/\]")
@@ -69,7 +69,7 @@ def parse_markup(markup_str, tags, props={}):
     stack = [(Group, [])]
 
     for match in MU_TOKEN.finditer(markup_str):
-        text = match.group("text")
+        text = match.group("text") or match.group("fail")
         if text is not None:
             # process escapes
             raw = text.replace("[[", "[").replace("]]", "]")
