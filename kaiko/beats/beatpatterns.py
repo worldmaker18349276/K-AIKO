@@ -154,7 +154,7 @@ def comment_parser():
         return Metadata(title, content)
     else:
         return Comment(comment)
-    
+
 
 @IIFE
 def note_parser():
@@ -228,16 +228,6 @@ class Note:
     beat: Fraction
     length: Fraction
     arguments: Arguments
-
-    def to_event(self, notations):
-        if self.symbol not in notations:
-            raise ValueError(f"unknown symbol: {self.symbol}")
-        return notations[self.symbol](
-            self.beat,
-            self.length,
-            *self.arguments[0],
-            **self.arguments[1],
-        )
 
 
 def collect(it):

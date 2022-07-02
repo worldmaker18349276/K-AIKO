@@ -1432,13 +1432,24 @@ class BeatTrack:
     def __iter__(self):
         yield from self.events
 
+    @staticmethod
+    def to_event(note, notations):
+        if note.symbol not in notations:
+            raise ValueError(f"unknown symbol: {note.symbol}")
+        return notations[note.symbol](
+            note.beat,
+            note.length,
+            *note.arguments[0],
+            **note.arguments[1],
+        )
+
     @classmethod
     def parse(cls, patterns_str, ret_width=False, notations=None):
         notations = notations if notations is not None else cls._notations
         patterns = beatpatterns.patterns_parser.parse(patterns_str)
         notes, width = beatpatterns.to_notes(patterns)
 
-        track = cls([note.to_event(notations) for note in notes])
+        track = cls([cls.to_event(note, notations) for note in notes])
 
         if ret_width:
             return track, width
@@ -1446,10 +1457,46 @@ class BeatTrack:
             return track
 
 
+def bisect(list, elem, key):
+    length = len(list)
+
+    if length == 0:
+        return length
+
+    i, j = 0, length-1
+
+    if elem < key(list[i]):
+        return 0
+    if not (elem < key(list[j])):
+        return length
+
+    # assert j - i > 0
+
+    while j - i >= 2:
+        k = (i + j) // 2
+        if elem < key(list[k]):
+            j = k
+        else:
+            i = k
+    else:
+        return j
+
+
+@dataclasses.dataclass
+class BeatPoint:
+    beat: Fraction = Fraction(0, 1)
+    length: Fraction = Fraction(1, 1)
+    time: float = 0.0
+    tempo: Optional[float] = None
+
+
 @dataclasses.dataclass
 class BeatPoints:
-    offset: float
-    tempo: float
+    beatpoints: List[BeatPoint]
+
+    @classmethod
+    def fixed(cls, offset, tempo):
+        return cls([BeatPoint(time=offset, tempo=tempo)])
 
     def time(self, beat):
         r"""Convert beat to time (in seconds).
@@ -1462,7 +1509,34 @@ class BeatPoints:
         -------
         time : float
         """
-        return self.offset + beat * 60 / self.tempo
+        length = len(self.beatpoints)
+
+        if length == 0:
+            raise ValueError("No beat point")
+
+        if length == 1:
+            beatpoint = self.beatpoints[0]
+            if beatpoint.tempo is None:
+                raise ValueError("No tempo")
+            return beatpoint.time + (beat - beatpoint.beat) * 60.0 / beatpoint.tempo
+
+        i = bisect(self.beatpoints, beat, key=lambda beatpoint: beatpoint.beat)
+
+        if i == 0:
+            left, right = self.beatpoints[:2]
+            if left.tempo is not None:
+                return left.time + (beat - left.beat) * 60.0 / left.tempo
+
+        elif i == length:
+            left, right = self.beatpoints[-2:]
+            if right.tempo is not None:
+                return right.time + (beat - right.beat) * 60.0 / right.tempo
+
+        else:
+            left, right = self.beatpoints[i-1:i+1]
+
+        s = (beat - left.beat) / (right.beat - left.beat)
+        return left.time + s * (right.time - left.time)
 
     def beat(self, time):
         r"""Convert time (in seconds) to beat.
@@ -1475,7 +1549,34 @@ class BeatPoints:
         -------
         beat : float
         """
-        return (time - self.offset) * self.tempo / 60
+        length = len(self.beatpoints)
+
+        if length == 0:
+            raise ValueError("No beat point")
+
+        if length == 1:
+            beatpoint = self.beatpoints[0]
+            if beatpoint.tempo is None:
+                raise ValueError("No tempo")
+            return float(beatpoint.beat) + (time - beatpoint.time) * beatpoint.tempo / 60.0
+
+        i = bisect(self.beatpoints, time, key=lambda beatpoint: beatpoint.time)
+
+        if i == 0:
+            left, right = self.beatpoints[:2]
+            if left.tempo is not None:
+                return float(left.beat) + (time - left.time) * left.tempo / 60.0
+
+        elif i == length:
+            left, right = self.beatpoints[-2:]
+            if right.tempo is not None:
+                return float(right.beat) + (time - right.time) * right.tempo / 60.0
+
+        else:
+            left, right = self.beatpoints[i-1:i+1]
+
+        s = (time - left.time) / (right.time - left.time)
+        return float(left.beat) + s * float(right.beat - left.beat)
 
     def dtime(self, beat, length):
         r"""Convert length to time difference (in seconds).
@@ -1490,6 +1591,29 @@ class BeatPoints:
         dtime : float
         """
         return self.time(beat + length) - self.time(beat)
+
+    @staticmethod
+    def to_beatpoint(note):
+        if note.symbol != "!":
+            raise ValueError(f"unknown symbol: {note.symbol}")
+        return BeatPoint(
+            note.beat,
+            note.length,
+            *note.arguments[0],
+            **note.arguments[1],
+        )
+
+    @classmethod
+    def parse(cls, patterns_str, ret_width=False):
+        patterns = beatpatterns.patterns_parser.parse(patterns_str)
+        notes, width = beatpatterns.to_notes(patterns)
+
+        beatpoints = cls([cls.to_beatpoint(note) for note in notes])
+
+        if ret_width:
+            return beatpoints, width
+        else:
+            return beatpoints
 
 
 class Beatmap:
@@ -1509,7 +1633,7 @@ class Beatmap:
         self.beatpoints = (
             beatpoints
             if beatpoints is not None
-            else BeatPoints(offset=0.0, tempo=120.0)
+            else BeatPoints([])
         )
         self.beatbar_state = (
             beatbar_state if beatbar_state is not None else beatbars.BeatbarState()

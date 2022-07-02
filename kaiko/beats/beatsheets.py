@@ -139,8 +139,6 @@ _beatmap_fields = {
     "audio.path": str,
     "audio.volume": float,
     "audio.preview": float,
-    "beatpoints.offset": float,
-    "beatpoints.tempo": float,
     "beatbar_state.bar_shift": float,
     "beatbar_state.bar_flip": bool,
 }
@@ -151,6 +149,7 @@ def make_beatmap_parser(filepath, metadata_only=False):
     beatmap_name = "beatmap"
     Beatmap = beatmaps.Beatmap
     BeatTrack = beatmaps.BeatTrack
+    BeatPoints = beatmaps.BeatPoints
 
     # parse header
     header = yield pc.regex(r"#K-AIKO-std-(\d+\.\d+\.\d+)(?=\n|$)").desc("header")
@@ -161,7 +160,7 @@ def make_beatmap_parser(filepath, metadata_only=False):
 
     # parse imports, initialization
     prepare = [
-        pc.string("from kaiko.beats.beatmaps import Beatmap, BeatTrack"),
+        pc.string("from kaiko.beats.beatmaps import Beatmap, BeatTrack, BeatPoints"),
         pc.string(f"{beatmap_name} = Beatmap(__file__)"),
     ]
     for prepare_parser in prepare:
@@ -175,6 +174,7 @@ def make_beatmap_parser(filepath, metadata_only=False):
     # parse fields
     valid_fields = dict(_beatmap_fields)
     valid_fields["tracks"] = dict
+    valid_fields["beatpoints"] = object
 
     while True:
         sp = yield make_msp_parser(indent=0).reject(
@@ -186,22 +186,7 @@ def make_beatmap_parser(filepath, metadata_only=False):
         yield pc.string(f"{beatmap_name}.")
         name = yield pc.tokens(list(valid_fields.keys()))
 
-        if name != "tracks":
-            yield pc.string(" = ")
-            field_type = valid_fields[name]
-            value = (
-                yield mstr_parser
-                if name == "info"
-                else sz.make_serializer_from_type_hint(field_type).parser
-            )
-            del valid_fields[name]
-
-            subfield = beatmap
-            for field in name.split(".")[:-1]:
-                subfield = getattr(subfield, field)
-            setattr(subfield, name.split(".")[-1], value)
-
-        else:
+        if name == "tracks":
             # parse track:
 
             # beatmap.tracks["main"] = BeatTrack.parse(r"""
@@ -222,6 +207,36 @@ def make_beatmap_parser(filepath, metadata_only=False):
 
             track = BeatTrack.parse(track_str) if not metadata_only else BeatTrack([])
             beatmap.tracks[track_name] = track
+
+        elif name == "beatpoints":
+            # parse beatpoints:
+
+            # beatmap.beatpoints = BeatPoints.parse(r"""
+            # ...
+            # """)
+
+            yield pc.string(" = ")
+            beatpoints_str = (
+                yield pc.string("BeatPoints.parse(") >> rmstr_parser << pc.string(")")
+            )
+
+            beatpoints = BeatPoints.parse(beatpoints_str) if not metadata_only else BeatPoints([])
+            beatmap.beatpoints = beatpoints
+
+        else:
+            yield pc.string(" = ")
+            field_type = valid_fields[name]
+            value = (
+                yield mstr_parser
+                if name == "info"
+                else sz.make_serializer_from_type_hint(field_type).parser
+            )
+            del valid_fields[name]
+
+            subfield = beatmap
+            for field in name.split(".")[:-1]:
+                subfield = getattr(subfield, field)
+            setattr(subfield, name.split(".")[-1], value)
 
 
 def format_mstr(value):
