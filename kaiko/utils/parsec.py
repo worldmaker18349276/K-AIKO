@@ -6,6 +6,7 @@ This is a fork of https://github.com/sighingnow/parsec.py.
 """
 
 import re
+import string as string_module
 import contextlib
 import functools
 
@@ -1431,6 +1432,28 @@ def string(string):
                 raise ParseFailure(repr(string))
 
     return Parsec(string_parser)
+
+
+def template(template_str, *args):
+    res = []
+    i = 0
+    indices = []
+    for literal_text, field_name, format_spec, conversion in string_module.Formatter().parse(template_str):
+        if literal_text:
+            res.append(string(literal_text))
+
+        if field_name is not None:
+            indices.append(len(res))
+            res.append(args[i])
+            i += 1
+
+    if i != len(args):
+        raise ValueError("too few fields")
+
+    if res:
+        return concat(*res).map(lambda res: tuple(res[i] for i in indices))
+    else:
+        return nothing(())
 
 
 def tokens(tokens):

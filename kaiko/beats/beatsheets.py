@@ -193,17 +193,11 @@ def make_beatmap_parser(filepath, metadata_only=False):
             # ...
             # """)
 
-            track_name = (
-                yield pc.string("[")
-                >> sz.make_str_serializer().parser
-                << pc.string("]")
-            )
+            track_name, = yield pc.template("[{}]", sz.make_str_serializer().parser)
             if track_name in beatmap.tracks:
                 raise ValueError("duplicated name")
             yield pc.string(" = ")
-            track_str = (
-                yield pc.string("BeatTrack.parse(") >> rmstr_parser << pc.string(")")
-            )
+            track_str, = yield pc.template("BeatTrack.parse({})", rmstr_parser)
 
             track = BeatTrack.parse(track_str) if not metadata_only else BeatTrack([])
             beatmap.tracks[track_name] = track
@@ -216,9 +210,18 @@ def make_beatmap_parser(filepath, metadata_only=False):
             # """)
 
             yield pc.string(" = ")
-            beatpoints_str = (
-                yield pc.string("BeatPoints.parse(") >> rmstr_parser << pc.string(")")
-            )
+
+            float_parser = sz.make_float_serializer().parser
+            try:
+                offset, tempo = yield pc.template("BeatPoints.fixed(offset={}, tempo={})", float_parser, float_parser)
+            except pc.ParseFailure:
+                pass
+            else:
+                beatpoints = BeatPoints.fixed(offset=offset, tempo=tempo)
+                beatmap.beatpoints = beatpoints
+                continue
+
+            beatpoints_str, = yield pc.template("BeatPoints.parse({})", rmstr_parser)
 
             beatpoints = BeatPoints.parse(beatpoints_str) if not metadata_only else BeatPoints([])
             beatmap.beatpoints = beatpoints
