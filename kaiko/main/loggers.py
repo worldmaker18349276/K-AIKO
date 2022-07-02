@@ -434,8 +434,10 @@ class Logger:
         return "\n".join(res)
 
     def format_value(self, value, multiline=True, indent=0):
+        if value is None:
+            return f"[py_none]{mu.escape(repr(value))}[/]"
+
         if type(value) in (
-            type(None),
             type(...),
             bool,
             int,
