@@ -1413,6 +1413,7 @@ class BeatmapAudio:
     preview: float = 0.0
 
 
+@dataclasses.dataclass
 class BeatTrack:
     _notations = {
         "x": Soft,
@@ -1426,8 +1427,7 @@ class BeatTrack:
         "Shift": Shift,
     }
 
-    def __init__(self, events):
-        self.events = events
+    events: List[Event]
 
     def __iter__(self):
         yield from self.events
@@ -1616,37 +1616,15 @@ class BeatPoints:
             return beatpoints
 
 
+@dataclasses.dataclass
 class Beatmap:
-    def __init__(
-        self,
-        path=None,
-        info=None,
-        audio=None,
-        beatpoints=None,
-        beatbar_state=None,
-        tracks=None,
-        settings=None,
-    ):
-        self.path = path
-        self.info = info if info is not None else ""
-        self.audio = audio if audio is not None else BeatmapAudio()
-        self.beatpoints = (
-            beatpoints
-            if beatpoints is not None
-            else BeatPoints([])
-        )
-        self.beatbar_state = (
-            beatbar_state if beatbar_state is not None else beatbars.BeatbarState()
-        )
-        self.tracks = tracks if tracks is not None else {}
-        self.settings = settings if settings is not None else BeatmapSettings()
-
-        self.audionode = None
-        self.resources = {}
-        self.total_subjects = 0
-        self.start_time = 0.0
-        self.end_time = float("inf")
-        self.events = []
+    path: Optional[str] = None
+    info: str = ""
+    audio: BeatmapAudio = dataclasses.field(default_factory=BeatmapAudio)
+    beatpoints: BeatPoints = dataclasses.field(default_factory=lambda: BeatPoints([]))
+    beatbar_state: beatbars.BeatbarState = dataclasses.field(default_factory=beatbars.BeatbarState)
+    tracks: Dict[str, BeatTrack] = dataclasses.field(default_factory=dict)
+    settings: BeatmapSettings = dataclasses.field(default_factory=BeatmapSettings)
 
     @dn.datanode
     def play(
@@ -1657,6 +1635,13 @@ class Beatmap:
         engine_loader,
         gameplay_settings=None,
     ):
+        self.audionode = None
+        self.resources = {}
+        self.total_subjects = 0
+        self.start_time = 0.0
+        self.end_time = float("inf")
+        self.events = []
+
         gameplay_settings = gameplay_settings or GameplaySettings()
 
         tickrate = gameplay_settings.controls.tickrate
@@ -1743,7 +1728,7 @@ class Beatmap:
             prepare_time,
         )
 
-        with clock.tick(self, 0.0) as tick_node:
+        with clock.tick(id(self), 0.0) as tick_node:
             event_node = dn.pipe(dn.count(0.0, 1 / tickrate), tick_node, event_node)
             event_task = dn.interval(event_node, dt=1 / tickrate)
             with engine_task_ctxt as engine_task:
@@ -1935,8 +1920,11 @@ class Loop(Beatmap):
     def __init__(
         self, *, offset=1.0, tempo=120.0, width=Fraction(0), track=None, settings=None
     ):
-        beatpoints = BeatPoints.fixed(offset=offset, tempo=tempo)
-        super().__init__(beatpoints=beatpoints, tracks={"main": track}, settings=settings)
+        super().__init__()
+        if settings is not None:
+            self.settings = settings
+        self.tracks["main"] = track
+        self.beatpoints = BeatPoints.fixed(offset=offset, tempo=tempo)
         self.width = width
 
     def repeat_events(self, rich):
