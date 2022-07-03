@@ -1,6 +1,7 @@
 import os
 import math
 from fractions import Fraction
+from typing import Optional
 import re
 import ast
 from ..utils import parsec as pc
@@ -139,8 +140,6 @@ _beatmap_fields = {
     "audio.path": str,
     "audio.volume": float,
     "audio.preview": float,
-    "beatbar_state.bar_shift": float,
-    "beatbar_state.bar_flip": bool,
 }
 
 
@@ -149,6 +148,7 @@ def make_beatmap_parser(filepath, metadata_only=False):
     beatmap_name = "beatmap"
     Beatmap = beatmaps.Beatmap
     BeatTrack = beatmaps.BeatTrack
+    BeatState = beatmaps.BeatState
     BeatPoints = beatmaps.BeatPoints
 
     # parse header
@@ -160,7 +160,7 @@ def make_beatmap_parser(filepath, metadata_only=False):
 
     # parse imports, initialization
     prepare = [
-        pc.string("from kaiko.beats.beatmaps import Beatmap, BeatTrack, BeatPoints"),
+        pc.string("from kaiko.beats.beatmaps import Beatmap, BeatTrack, BeatState, BeatPoints"),
         pc.string(f"{beatmap_name} = Beatmap(__file__)"),
     ]
     for prepare_parser in prepare:
@@ -174,6 +174,7 @@ def make_beatmap_parser(filepath, metadata_only=False):
     # parse fields
     valid_fields = dict(_beatmap_fields)
     valid_fields["tracks"] = dict
+    valid_fields["beatstate"] = object
     valid_fields["beatpoints"] = object
 
     while True:
@@ -201,6 +202,31 @@ def make_beatmap_parser(filepath, metadata_only=False):
 
             track = BeatTrack.parse(track_str) if not metadata_only else BeatTrack([])
             beatmap.tracks[track_name] = track
+
+        elif name == "beatstate":
+            # parse beatstate:
+
+            # beatmap.beatstate = BeatState.parse(r"""
+            # ...
+            # """)
+
+            yield pc.string(" = ")
+
+            shift_parser = sz.make_serializer_from_type_hint(Optional[float]).parser
+            flip_parser = sz.make_serializer_from_type_hint(Optional[bool]).parser
+            try:
+                shift, flip = yield pc.template("BeatState.fixed(shift={}, flip={})", shift_parser, flip_parser)
+            except pc.ParseFailure:
+                pass
+            else:
+                beatstate = BeatState.fixed(shift=shift, flip=flip)
+                beatmap.beatstate = beatstate
+                continue
+
+            beatbarstate_str, = yield pc.template("BeatState.parse({})", rmstr_parser)
+
+            beatstate = BeatState.parse(beatbarstate_str) if not metadata_only else BeatState([])
+            beatmap.beatstate = beatstate
 
         elif name == "beatpoints":
             # parse beatpoints:

@@ -216,96 +216,6 @@ class Title(Event):
             )
 
 
-@dataclasses.dataclass
-class Flip(Event):
-    r"""An event that flips the direction of the beatbar.
-
-    Fields
-    ------
-    beat, length : Fraction
-        `beat` is the time to flip, `length` is meaningless.
-    flip : bool, optional
-        The value of `bar_flip` of the scrolling bar after flipping, or None for
-        changing the direction of the scrolling bar.
-    """
-
-    has_length = False
-
-    flip: Optional[bool] = None
-
-    def prepare(self, beatmap, rich, context):
-        self.time = beatmap.beatpoints.time(self.beat)
-        self.lifespan = (self.time, self.time)
-
-    def register(self, state, beatbar):
-        beatbar.on_before_render(self._node(beatbar))
-
-    @dn.datanode
-    def _node(self, beatbar):
-        time, ran = yield
-
-        while time < self.time:
-            time, ran = yield
-
-        if self.flip is None:
-            beatbar.bar_flip = not beatbar.bar_flip
-        else:
-            beatbar.bar_flip = self.flip
-
-        time, ran = yield
-
-
-@dataclasses.dataclass
-class Shift(Event):
-    r"""An event that shifts the shift of the beatbar.
-
-    Fields
-    ------
-    beat, length : Fraction
-        `beat` is the time to start shifting, `length` is meaningless.
-    shift : float, optional
-        The value of `bar_shift` of the scrolling bar after shifting, default is
-        0.0.
-    span : int or float or Fraction, optional
-        the duration of shifting, default is 0.
-    """
-
-    has_length = False
-
-    shift: float = 0.0
-    span: Union[int, Fraction, float] = 0
-
-    def prepare(self, beatmap, rich, context):
-        self.time = beatmap.beatpoints.time(self.beat)
-        self.end = beatmap.beatpoints.time(self.beat + self.span)
-        self.lifespan = (self.time, self.end)
-
-    def register(self, state, beatbar):
-        beatbar.on_before_render(self._node(beatbar))
-
-    @dn.datanode
-    def _node(self, beatbar):
-        time, ran = yield
-
-        while time < self.time:
-            time, ran = yield
-
-        shift0 = beatbar.bar_shift
-        speed = (
-            (self.shift - shift0) / (self.end - self.time)
-            if self.end != self.time
-            else 0
-        )
-
-        while time < self.end:
-            beatbar.bar_shift = shift0 + speed * (time - self.time)
-            time, ran = yield
-
-        beatbar.bar_shift = self.shift
-
-        time, ran = yield
-
-
 # targets
 class Target(Event):
     r"""A target to hit.
@@ -1423,8 +1333,6 @@ class BeatTrack:
         "@": Spin,
         "Context": Context,
         "Text": Text,
-        "Flip": Flip,
-        "Shift": Shift,
     }
 
     events: List[Event]
@@ -1676,12 +1584,117 @@ class BeatPoints:
 
 
 @dataclasses.dataclass
+class Shift:
+    beat: Fraction = Fraction(0, 1)
+    length: Fraction = Fraction(1, 1)
+    shift: Optional[float] = None
+
+
+@dataclasses.dataclass
+class Flip:
+    beat: Fraction = Fraction(0, 1)
+    length: Fraction = Fraction(1, 1)
+    flip: Optional[bool] = None
+
+
+@dataclasses.dataclass
+class BeatState:
+    points: List[Union[Shift, Flip]]
+
+    DEFAULT_SHIFT = 0.1
+    DEFAULT_FLIP = False
+
+    def get_init_shift(self):
+        shift = next(
+            (statepoint.shift for statepoint in self.points if isinstance(statepoint, Shift)),
+            None,
+        )
+        if shift is None:
+            shift = self.DEFAULT_SHIFT
+        return shift
+
+    def get_init_flip(self):
+        flip = next(
+            (statepoint.flip for statepoint in self.points if isinstance(statepoint, Flip)),
+            None,
+        )
+        if flip is None:
+            flip = self.DEFAULT_FLIP
+        return flip
+
+    @dn.datanode
+    def shift_node(self, beatpoints):
+        prev_shift = self.get_init_shift()
+        time = yield
+        prev_time = time
+
+        for statepoint in self.points:
+            if isinstance(statepoint, Shift):
+                next_time = beatpoints.time(statepoint.beat)
+                speed = (
+                    (statepoint.shift - prev_shift) / (next_time - prev_time)
+                    if statepoint.shift is not None and next_time != prev_time
+                    else 0
+                )
+                while time < next_time:
+                    time = yield prev_shift + speed * (time - prev_time)
+                if statepoint.shift is not None:
+                    prev_shift = statepoint.shift
+                prev_time = next_time
+
+        while True:
+            yield prev_shift
+
+    @dn.datanode
+    def flip_node(self, beatpoints):
+        flip = self.get_init_flip()
+        time = yield
+
+        for statepoint in self.points:
+            if isinstance(statepoint, Flip):
+                next_time = beatpoints.time(statepoint.beat)
+                while time < next_time:
+                    time = yield flip
+                flip = statepoint.flip if statepoint.flip is not None else not flip
+
+        while True:
+            yield flip
+
+    @staticmethod
+    def to_statepoint(note):
+        if note.symbol not in ("Shift", "Flip"):
+            raise ValueError(f"unknown symbol: {note.symbol}")
+        statepoint_cls = Shift if note.symbol == "Shift" else Flip
+        return statepoint_cls(
+            note.beat,
+            note.length,
+            *note.arguments[0],
+            **note.arguments[1],
+        )
+
+    @classmethod
+    def parse(cls, patterns_str):
+        patterns = beatpatterns.patterns_parser.parse(patterns_str)
+        notes, width = beatpatterns.to_notes(patterns)
+        return cls([cls.to_statepoint(note) for note in notes])
+
+    @classmethod
+    def fixed(cls, shift=None, flip=None):
+        points = []
+        if shift is not None:
+            points.append(Shift(shift=shift))
+        if flip is not None:
+            points.append(Flip(flip=flip))
+        return cls(points)
+
+
+@dataclasses.dataclass
 class Beatmap:
     path: Optional[str] = None
     info: str = ""
     audio: BeatmapAudio = dataclasses.field(default_factory=BeatmapAudio)
     beatpoints: BeatPoints = dataclasses.field(default_factory=lambda: BeatPoints([]))
-    beatbar_state: beatbars.BeatbarState = dataclasses.field(default_factory=beatbars.BeatbarState)
+    beatstate: BeatState = dataclasses.field(default_factory=lambda: BeatState([]))
     tracks: Dict[str, BeatTrack] = dataclasses.field(default_factory=dict)
     settings: BeatmapSettings = dataclasses.field(default_factory=BeatmapSettings)
 
@@ -1752,10 +1765,22 @@ class Beatmap:
             renderer,
             controller,
             sight,
-            self.beatbar_state,
+            self.beatstate.get_init_shift(),
+            self.beatstate.get_init_flip(),
         )
 
         beatbar_node = beatbar.load()
+
+        @dn.datanode
+        def state_node(beatbar):
+            with self.beatstate.shift_node(self.beatpoints) as shift_node:
+                with self.beatstate.flip_node(self.beatpoints) as flip_node:
+                    while True:
+                        time, ran = yield
+                        beatbar.bar_shift = shift_node.send(time)
+                        beatbar.bar_flip = flip_node.send(time)
+
+        beatbar.on_before_render(state_node(beatbar))
 
         # layout
         icon_width = gameplay_settings.playfield.layout.icon_width

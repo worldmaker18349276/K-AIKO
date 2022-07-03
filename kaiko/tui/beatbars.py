@@ -151,12 +151,6 @@ class SightWidget:
 
 
 # beatbar
-@dataclasses.dataclass
-class BeatbarState:
-    bar_shift: float = 0.1
-    bar_flip: bool = False
-
-
 class Beatbar:
     def __init__(
         self,
@@ -165,7 +159,8 @@ class Beatbar:
         renderer,
         controller,
         sight,
-        state,
+        bar_shift,
+        bar_flip,
     ):
         self.mixer = mixer
         self.detector = detector
@@ -175,8 +170,8 @@ class Beatbar:
         self.sight = sight
 
         # initialize game state
-        self.bar_shift = state.bar_shift
-        self.bar_flip = state.bar_flip
+        self.bar_shift = bar_shift
+        self.bar_flip = bar_flip
 
         self.bar_pipeline = dn.DynamicPipeline()
 
