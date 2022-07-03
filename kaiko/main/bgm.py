@@ -58,7 +58,7 @@ def play_fadeinout(
         tempo = beatpoints.tempo(time_)
         metronome.tempo(time, beat, tempo)
 
-        for beatpoint in beatpoints.beatpoints:
+        for beatpoint in beatpoints.points:
             while time_ < beatpoint.time:
                 time = yield
                 time_ = start + time - time0

@@ -1492,13 +1492,13 @@ class BeatPoint:
 
 @dataclasses.dataclass
 class BeatPoints:
-    beatpoints: List[BeatPoint]
+    points: List[BeatPoint]
 
     def is_valid(self):
-        length = len(self.beatpoints)
+        length = len(self.points)
         if length == 0:
             return False
-        if length == 1 and self.beatpoints[0].tempo is None:
+        if length == 1 and self.points[0].tempo is None:
             return False
         return True
 
@@ -1517,31 +1517,31 @@ class BeatPoints:
         -------
         time : float
         """
-        length = len(self.beatpoints)
+        length = len(self.points)
 
         if length == 0:
             raise ValueError("No beat point")
 
         if length == 1:
-            beatpoint = self.beatpoints[0]
+            beatpoint = self.points[0]
             if beatpoint.tempo is None:
                 raise ValueError("No tempo")
             return beatpoint.time + (beat - beatpoint.beat) * 60.0 / beatpoint.tempo
 
-        i = bisect(self.beatpoints, beat, key=lambda beatpoint: beatpoint.beat)
+        i = bisect(self.points, beat, key=lambda beatpoint: beatpoint.beat)
 
         if i == 0:
-            left, right = self.beatpoints[:2]
+            left, right = self.points[:2]
             if left.tempo is not None:
                 return left.time + (beat - left.beat) * 60.0 / left.tempo
 
         elif i == length:
-            left, right = self.beatpoints[-2:]
+            left, right = self.points[-2:]
             if right.tempo is not None:
                 return right.time + (beat - right.beat) * 60.0 / right.tempo
 
         else:
-            left, right = self.beatpoints[i-1:i+1]
+            left, right = self.points[i-1:i+1]
 
         s = (beat - left.beat) / (right.beat - left.beat)
         return left.time + s * (right.time - left.time)
@@ -1557,61 +1557,61 @@ class BeatPoints:
         -------
         beat : float
         """
-        length = len(self.beatpoints)
+        length = len(self.points)
 
         if length == 0:
             raise ValueError("No beat point")
 
         if length == 1:
-            beatpoint = self.beatpoints[0]
+            beatpoint = self.points[0]
             if beatpoint.tempo is None:
                 raise ValueError("No tempo")
             return float(beatpoint.beat) + (time - beatpoint.time) * beatpoint.tempo / 60.0
 
-        i = bisect(self.beatpoints, time, key=lambda beatpoint: beatpoint.time)
+        i = bisect(self.points, time, key=lambda beatpoint: beatpoint.time)
 
         if i == 0:
-            left, right = self.beatpoints[:2]
+            left, right = self.points[:2]
             if left.tempo is not None:
                 return float(left.beat) + (time - left.time) * left.tempo / 60.0
 
         elif i == length:
-            left, right = self.beatpoints[-2:]
+            left, right = self.points[-2:]
             if right.tempo is not None:
                 return float(right.beat) + (time - right.time) * right.tempo / 60.0
 
         else:
-            left, right = self.beatpoints[i-1:i+1]
+            left, right = self.points[i-1:i+1]
 
         s = (time - left.time) / (right.time - left.time)
         return float(left.beat) + s * float(right.beat - left.beat)
 
     def tempo(self, time):
-        length = len(self.beatpoints)
+        length = len(self.points)
 
         if length == 0:
             raise ValueError("No beat point")
 
         if length == 1:
-            beatpoint = self.beatpoints[0]
+            beatpoint = self.points[0]
             if beatpoint.tempo is None:
                 raise ValueError("No tempo")
             return float(beatpoint.tempo)
 
-        i = bisect(self.beatpoints, time, key=lambda beatpoint: beatpoint.time)
+        i = bisect(self.points, time, key=lambda beatpoint: beatpoint.time)
 
         if i == 0:
-            left, right = self.beatpoints[:2]
+            left, right = self.points[:2]
             if left.tempo is not None:
                 return left.tempo
 
         elif i == length:
-            left, right = self.beatpoints[-2:]
+            left, right = self.points[-2:]
             if right.tempo is not None:
                 return right.tempo
 
         else:
-            left, right = self.beatpoints[i-1:i+1]
+            left, right = self.points[i-1:i+1]
 
         return float(right.beat - left.beat) / (right.time - left.time) * 60.0
 

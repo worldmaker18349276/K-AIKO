@@ -393,9 +393,9 @@ class OSU:
             beatLength = context["timings"][-1][1]
             meter = context["timings"][-1][2]
         else:
-            beat = beatmap.beatpoints.beat(time/1000) if beatmap.beatpoints.beatpoints else 0.0
+            beat = beatmap.beatpoints.beat(time/1000) if beatmap.beatpoints.is_valid() else 0.0
             beatpoint = beatmaps.BeatPoint(beat=beat, time=time/1000, tempo=60/(beatLength/1000))
-            beatmap.beatpoints.beatpoints.append(beatpoint)
+            beatmap.beatpoints.points.append(beatpoint)
 
         speed = multiplier / 1.4
         volume = 20 * math.log10(volume / 100)
