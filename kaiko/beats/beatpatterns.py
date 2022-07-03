@@ -145,7 +145,7 @@ def arguments_parser():
 @IIFE
 @pc.parsec
 def comment_parser():
-    comment = yield pc.regex(r"#[^\n]*[\n$]").desc("comment")
+    comment = yield pc.regex(r"#[^\n]*(?=[\n$])").desc("comment")
     comment = comment[1:].rstrip("\n")
     if comment.startswith("@"):
         metadata = comment[1:].split(":", 1)
