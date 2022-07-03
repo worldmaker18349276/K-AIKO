@@ -1001,6 +1001,7 @@ def clip(amplitude=1, method="hard"):
 @datanode
 def fadein(samplerate, duration):
     data = yield
+
     t = 0.0
     while t < duration:
         dt = data.shape[0] / samplerate
@@ -1015,26 +1016,20 @@ def fadein(samplerate, duration):
 
 
 @datanode
-def fadeout(samplerate, duration, out_event, before=None):
+def fadeout(samplerate, duration, out_event):
     data = yield
+
+    while not out_event.is_set():
+        data = yield data
+
     t = 0.0
-    t0 = before
-    while True:
-        if (t0 is None or t < t0) and out_event.is_set():
-            t0 = t
+    while t < duration:
         dt = data.shape[0] / samplerate
-
-        if t0 is not None and t0 < t + dt:
-            data *= numpy.clip(
-                numpy.linspace(
-                    1.0 - (t - t0) / duration,
-                    1.0 - (t + dt - t0) / duration,
-                    data.shape[0],
-                ),
-                0.0,
-                1.0,
-            )[:, None]
-
+        data *= numpy.clip(
+            numpy.linspace(1.0 - t / duration, 1.0 - (t + dt) / duration, data.shape[0]),
+            0.0,
+            1.0,
+        )[:, None]
         t += dt
         data = yield data
 

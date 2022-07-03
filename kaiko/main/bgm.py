@@ -17,7 +17,15 @@ from .play import BeatmapManager, BeatmapFilePath, Song
 
 @dn.datanode
 def play_fadeinout(
-    mixer, path, fadein_time, fadeout_time, volume=0.0, start=None, end=None, startup=lambda t:None
+    mixer,
+    path,
+    fadein_time,
+    fadeout_time,
+    volume=0.0,
+    start=None,
+    end=None,
+    beatpoints=None,
+    metronome=None,
 ):
     meta = aud.AudioMetadata.read(path)
     node = aud.load(path)
@@ -27,24 +35,58 @@ def play_fadeinout(
 
     samplerate = mixer.settings.output_samplerate
     out_event = threading.Event()
-    start = start if start is not None else 0.0
-    before = end - start - fadeout_time if end is not None else None
     node = dn.pipe(
         node,
         mixer.resample(meta.samplerate, meta.channels, volume),
         dn.fadein(samplerate, fadein_time),
-        dn.fadeout(samplerate, fadeout_time, out_event, before),
+        dn.fadeout(samplerate, fadeout_time, out_event),
     )
+    node = dn.attach(node)
+
+    start = start if start is not None else 0.0
+    before = end - start - fadeout_time if end is not None else None
 
     @dn.datanode
-    def startup_node():
-        time = yield
-        startup(time)
+    def sync_tempo():
+        if beatpoints is None or not beatpoints.is_valid():
+            while True:
+                yield
+
+        time = time0 = yield
+        time_ = start
+        beat = beatpoints.beat(time_)
+        tempo = beatpoints.tempo(time_)
+        metronome.tempo(time, beat, tempo)
+
+        for beatpoint in beatpoints.beatpoints:
+            while time_ < beatpoint.time:
+                time = yield
+                time_ = start + time - time0
+            beat = beatpoints.beat(time_)
+            tempo = beatpoints.tempo(time_)
+            metronome.tempo(time, beat, tempo)
+
         while True:
             yield
 
-    node = dn.pipe(dn.pair(dn.attach(node), startup_node()), lambda args:args[0])
-    song_handler = mixer.add_effect(mixer.tmask(node, None))
+    @dn.datanode
+    def play_song():
+        tempo_node = sync_tempo()
+        with node, tempo_node:
+            data, time = yield
+            time0 = time
+            while (before is None or time - time0 < before) and not out_event.is_set():
+                data = node.send(data)
+                tempo_node.send(time)
+                data, time = yield data
+
+            out_event.set()
+            time1 = time
+            while time - time1 < fadeout_time:
+                data = node.send(data)
+                data, time = yield data
+
+    song_handler = mixer.add_effect(mixer.tmask(play_song(), None))
     while not song_handler.is_finalized():
         try:
             yield
@@ -155,12 +197,6 @@ class BGMController:
             )
             logger.print(f"[music/] will preview: {path_mu}")
 
-            metronome = self.provider.get(clocks.Metronome)
-            def startup(time):
-                offset = action.song.beatpoints.offset
-                tempo = action.song.beatpoints.tempo
-                metronome.tempo(time, offset, tempo)
-
             yield from play_fadeinout(
                 mixer,
                 action.song.path,
@@ -169,7 +205,8 @@ class BGMController:
                 volume=action.song.audio.volume + self.settings.volume,
                 start=start,
                 end=end,
-                startup=startup,
+                beatpoints=action.song.beatpoints,
+                metronome=self.provider.get(clocks.Metronome),
             ).join()
 
         elif isinstance(action, PlayBGM):
@@ -182,12 +219,6 @@ class BGMController:
             )
             logger.print(f"[music/] will play: {path_mu}")
 
-            metronome = self.provider.get(clocks.Metronome)
-            def startup(time):
-                offset = action.song.beatpoints.offset
-                tempo = action.song.beatpoints.tempo
-                metronome.tempo(time, offset, tempo)
-
             yield from play_fadeinout(
                 mixer,
                 action.song.path,
@@ -195,7 +226,8 @@ class BGMController:
                 fadeout_time=self.settings.fadeout_time,
                 volume=action.song.audio.volume + self.settings.volume,
                 start=action.start,
-                startup=startup,
+                beatpoints=action.song.beatpoints,
+                metronome=self.provider.get(clocks.Metronome),
             ).join()
 
         else:

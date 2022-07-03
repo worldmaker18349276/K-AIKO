@@ -1494,6 +1494,14 @@ class BeatPoint:
 class BeatPoints:
     beatpoints: List[BeatPoint]
 
+    def is_valid(self):
+        length = len(self.beatpoints)
+        if length == 0:
+            return False
+        if length == 1 and self.beatpoints[0].tempo is None:
+            return False
+        return True
+
     @classmethod
     def fixed(cls, offset, tempo):
         return cls([BeatPoint(time=offset, tempo=tempo)])
@@ -1577,6 +1585,35 @@ class BeatPoints:
 
         s = (time - left.time) / (right.time - left.time)
         return float(left.beat) + s * float(right.beat - left.beat)
+
+    def tempo(self, time):
+        length = len(self.beatpoints)
+
+        if length == 0:
+            raise ValueError("No beat point")
+
+        if length == 1:
+            beatpoint = self.beatpoints[0]
+            if beatpoint.tempo is None:
+                raise ValueError("No tempo")
+            return float(beatpoint.tempo)
+
+        i = bisect(self.beatpoints, time, key=lambda beatpoint: beatpoint.time)
+
+        if i == 0:
+            left, right = self.beatpoints[:2]
+            if left.tempo is not None:
+                return left.tempo
+
+        elif i == length:
+            left, right = self.beatpoints[-2:]
+            if right.tempo is not None:
+                return right.tempo
+
+        else:
+            left, right = self.beatpoints[i-1:i+1]
+
+        return float(right.beat - left.beat) / (right.time - left.time) * 60.0
 
     def dtime(self, beat, length):
         r"""Convert length to time difference (in seconds).
