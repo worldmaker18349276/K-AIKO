@@ -1502,10 +1502,6 @@ class BeatPoints:
             return False
         return True
 
-    @classmethod
-    def fixed(cls, offset, tempo):
-        return cls([BeatPoint(time=offset, tempo=tempo)])
-
     def time(self, beat):
         r"""Convert beat to time (in seconds).
 
@@ -1641,6 +1637,10 @@ class BeatPoints:
         )
 
     @classmethod
+    def fixed(cls, offset, tempo):
+        return cls([BeatPoint(time=offset, tempo=tempo)])
+
+    @classmethod
     def parse(cls, patterns_str, ret_width=False):
         patterns = beatpatterns.patterns_parser.parse(patterns_str)
         notes, width = beatpatterns.to_notes(patterns)
@@ -1651,6 +1651,28 @@ class BeatPoints:
             return beatpoints, width
         else:
             return beatpoints
+
+    @dn.datanode
+    def tempo_node(self):
+        if not self.is_valid():
+            while True:
+                yield None
+
+        time = yield
+        beat = self.beat(time)
+        tempo = self.tempo(time)
+        res = beat, tempo
+
+        for beatpoint in self.points:
+            while time < beatpoint.time:
+                time = yield res
+                res = None
+            beat = self.beat(time)
+            tempo = self.tempo(time)
+            res = beat, tempo
+
+        while True:
+            yield None
 
 
 @dataclasses.dataclass

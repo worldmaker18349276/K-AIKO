@@ -48,26 +48,20 @@ def play_fadeinout(
 
     @dn.datanode
     def sync_tempo():
-        if beatpoints is None or not beatpoints.is_valid():
+        if beatpoints is None:
             while True:
                 yield
 
-        time = time0 = yield
-        time_ = start
-        beat = beatpoints.beat(time_)
-        tempo = beatpoints.tempo(time_)
-        metronome.tempo(time, beat, tempo)
-
-        for beatpoint in beatpoints.points:
-            while time_ < beatpoint.time:
+        with beatpoints.tempo_node() as node:
+            time = time0 = yield
+            time_ = start
+            while True:
+                res = node.send(time_)
+                if res:
+                    beat, tempo = res
+                    metronome.tempo(time, beat, tempo)
                 time = yield
                 time_ = start + time - time0
-            beat = beatpoints.beat(time_)
-            tempo = beatpoints.tempo(time_)
-            metronome.tempo(time, beat, tempo)
-
-        while True:
-            yield
 
     @dn.datanode
     def play_song():
