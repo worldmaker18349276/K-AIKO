@@ -15,6 +15,20 @@ You can check your python version with the following command:
 
     python --version
 
+K-AIKO requires an audio codec, one can install ffmpeg:
+
+::
+
+    sudo apt-get install ffmpeg
+
+
+It is recommended to install symbola for full and colorless emoji characters:
+
+::
+
+    sudo apt-get install fonts-symbola
+
+
 K-AIKO requires PyAudio package, which has external dependencies that pip cannot handle.
 
 You can install PyAudio via apt:
