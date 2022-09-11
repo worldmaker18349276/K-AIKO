@@ -457,7 +457,9 @@ class PlayCommand:
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
 
-        beatmap = yield from load_beatmap(beatmap, self.file_manager, self.beatmap_manager, self.logger).join()
+        beatmap = yield from load_beatmap(
+            beatmap, self.file_manager, self.beatmap_manager, self.logger
+        ).join()
         if beatmap is None:
             return
         beatmap_mu = self.logger.format_value(beatmap, multiline=4)
@@ -565,7 +567,9 @@ class KAIKOPlay:
         logger.print()
 
         devices_settings_modified = devices_settings.copy()
-        engine_loader = lambda start_time: self.engine_loader(devices_settings_modified, start_time)
+        engine_loader = lambda start_time: self.engine_loader(
+            devices_settings_modified, start_time
+        )
 
         score = yield from beatmap.play(
             self.start,
@@ -618,8 +622,8 @@ class KAIKOPlay:
             "detector",
             "renderer",
             "controller",
-            clock = clock,
-            monitoring_session = "play" if debug_monitor else None,
+            clock=clock,
+            monitoring_session="play" if debug_monitor else None,
         )
         mixer, detector, renderer, controller = engines
 

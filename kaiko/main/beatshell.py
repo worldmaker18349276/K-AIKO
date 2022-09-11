@@ -89,7 +89,9 @@ class PatternsWidget:
                     time, ran = yield
                     while True:
                         beat, _ = tick_node.send(time)
-                        ind = int(beat * len(markuped_patterns) // 1) % len(markuped_patterns)
+                        ind = int(beat * len(markuped_patterns) // 1) % len(
+                            markuped_patterns
+                        )
                         res = markuped_patterns[ind]
                         time, ran = yield [(0, res)]
 
@@ -317,7 +319,7 @@ class BeatPrompt:
         engine_task, engines = device_manager.load_engines(
             "renderer",
             "controller",
-            monitoring_session = "prompt" if self.settings.debug_monitor else None,
+            monitoring_session="prompt" if self.settings.debug_monitor else None,
         )
         renderer, controller = engines
 

@@ -265,7 +265,9 @@ class KAIKOLauncher:
             prev_dir = self.file_manager.current
 
             try:
-                command = yield from prompt.new_session(self.get_command_parser(), clear).join()
+                command = yield from prompt.new_session(
+                    self.get_command_parser(), clear
+                ).join()
 
             except beatshell.PromptError as e:
                 self.logger.print(f"[warn]{self.logger.escape(str(e.cause))}[/]")

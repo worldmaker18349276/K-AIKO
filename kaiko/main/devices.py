@@ -185,7 +185,9 @@ class DeviceManager:
             if typ == "mixer":
                 mixer_monitor = None
                 if monitoring_session is not None:
-                    path = self.cache_dir.abs / f"{monitoring_session}_mixer_benchmark.csv"
+                    path = (
+                        self.cache_dir.abs / f"{monitoring_session}_mixer_benchmark.csv"
+                    )
                     mixer_monitor = engines.Monitor(path)
 
                 mixer_task, mixer = engines.Mixer.create(
@@ -202,7 +204,10 @@ class DeviceManager:
             elif typ == "detector":
                 detector_monitor = None
                 if monitoring_session is not None:
-                    path = self.cache_dir.abs / f"{monitoring_session}_detector_benchmark.csv"
+                    path = (
+                        self.cache_dir.abs
+                        / f"{monitoring_session}_detector_benchmark.csv"
+                    )
                     detector_monitor = engines.Monitor(path)
 
                 detector_task, detector = engines.Detector.create(
@@ -219,7 +224,10 @@ class DeviceManager:
             elif typ == "renderer":
                 renderer_monitor = None
                 if monitoring_session is not None:
-                    path = self.cache_dir.abs / f"{monitoring_session}_renderer_benchmark.csv"
+                    path = (
+                        self.cache_dir.abs
+                        / f"{monitoring_session}_renderer_benchmark.csv"
+                    )
                     renderer_monitor = engines.Monitor(path)
 
                 renderer_task, renderer = engines.Renderer.create(
@@ -284,9 +292,7 @@ class DeviceManager:
                 raise
 
             except Exception as e:
-                raise RuntimeError(
-                    f"Failed to load resource {sound_path!s}"
-                ) from e
+                raise RuntimeError(f"Failed to load resource {sound_path!s}") from e
 
         elif isinstance(src, dn.Waveform):
             node = src.generate(
@@ -298,9 +304,7 @@ class DeviceManager:
             try:
                 yield from dn.pipe(
                     node,
-                    dn.tspan(
-                        samplerate=samplerate, end=WAVEFORM_MAX_TIME
-                    ),
+                    dn.tspan(samplerate=samplerate, end=WAVEFORM_MAX_TIME),
                     res.append,
                 ).join()
                 return res
@@ -881,7 +885,7 @@ def test_keyboard(logger, devices_manager):
 
     clock = clocks.Clock(0.0, 1.0)
     engine_task, engines = devices_manager.load_engines("controller", clock=clock)
-    controller, = engines
+    (controller,) = engines
 
     controller.add_handler(handler())
     controller.add_handler(lambda _: stop_event.set(), exit_key)
@@ -912,7 +916,7 @@ class WaveformTest:
             return dn.DataNode.wrap([])
 
         engine_task, engines = self.device_manager.load_engines("mixer")
-        mixer, = engines
+        (mixer,) = engines
 
         mixer.play(node)
 
@@ -933,7 +937,7 @@ class KnockTest:
 
         clock = clocks.Clock(0.0, 1.0)
         engine_task, engines = self.device_manager.load_engines("detector", clock=clock)
-        detector, = engines
+        (detector,) = engines
 
         detector.add_listener(self.hit_listener())
 
@@ -1021,7 +1025,10 @@ class SpeakerTest:
         buffer_length = engines.MixerSettings.output_buffer_length
         format = engines.MixerSettings.output_format
 
-        click = dn.chunk(self.make_click(samplerate, nchannels), chunk_shape=(buffer_length, nchannels))
+        click = dn.chunk(
+            self.make_click(samplerate, nchannels),
+            chunk_shape=(buffer_length, nchannels),
+        )
 
         speaker_task = aud.play(
             audio_manager,
@@ -1029,7 +1036,7 @@ class SpeakerTest:
             samplerate=samplerate,
             buffer_shape=(buffer_length, nchannels),
             format=format,
-            device=device
+            device=device,
         )
 
         return dn.pipe(speaker_task, exit_any())
@@ -1121,7 +1128,7 @@ class MicTest:
         tick1 = self.INDICATOR_TICK1
 
         decay = buffer_length / samplerate / decay_time
-        volume_of = lambda x: dn.power2db((x ** 2).mean(), scale=(1e-5, 1e6)) / 60.0
+        volume_of = lambda x: dn.power2db((x**2).mean(), scale=(1e-5, 1e6)) / 60.0
 
         vol = 0.0
         try:
@@ -1139,4 +1146,3 @@ class MicTest:
 
         finally:
             self.logger.print()
-

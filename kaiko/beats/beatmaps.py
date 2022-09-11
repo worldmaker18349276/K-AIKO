@@ -1371,7 +1371,7 @@ def bisect(list, elem, key):
     if length == 0:
         return length
 
-    i, j = 0, length-1
+    i, j = 0, length - 1
 
     if elem < key(list[i]):
         return 0
@@ -1445,7 +1445,7 @@ class BeatPoints:
                 return right.time + (beat - right.beat) * 60.0 / right.tempo
 
         else:
-            left, right = self.points[i-1:i+1]
+            left, right = self.points[i - 1 : i + 1]
 
         s = (beat - left.beat) / (right.beat - left.beat)
         return left.time + s * (right.time - left.time)
@@ -1470,7 +1470,9 @@ class BeatPoints:
             beatpoint = self.points[0]
             if beatpoint.tempo is None:
                 raise ValueError("No tempo")
-            return float(beatpoint.beat) + (time - beatpoint.time) * beatpoint.tempo / 60.0
+            return (
+                float(beatpoint.beat) + (time - beatpoint.time) * beatpoint.tempo / 60.0
+            )
 
         i = bisect(self.points, time, key=lambda beatpoint: beatpoint.time)
 
@@ -1485,7 +1487,7 @@ class BeatPoints:
                 return float(right.beat) + (time - right.time) * right.tempo / 60.0
 
         else:
-            left, right = self.points[i-1:i+1]
+            left, right = self.points[i - 1 : i + 1]
 
         s = (time - left.time) / (right.time - left.time)
         return float(left.beat) + s * float(right.beat - left.beat)
@@ -1515,7 +1517,7 @@ class BeatPoints:
                 return right.tempo
 
         else:
-            left, right = self.points[i-1:i+1]
+            left, right = self.points[i - 1 : i + 1]
 
         return float(right.beat - left.beat) / (right.time - left.time) * 60.0
 
@@ -1606,7 +1608,11 @@ class BeatState:
 
     def get_init_shift(self):
         shift = next(
-            (statepoint.shift for statepoint in self.points if isinstance(statepoint, Shift)),
+            (
+                statepoint.shift
+                for statepoint in self.points
+                if isinstance(statepoint, Shift)
+            ),
             None,
         )
         if shift is None:
@@ -1615,7 +1621,11 @@ class BeatState:
 
     def get_init_flip(self):
         flip = next(
-            (statepoint.flip for statepoint in self.points if isinstance(statepoint, Flip)),
+            (
+                statepoint.flip
+                for statepoint in self.points
+                if isinstance(statepoint, Flip)
+            ),
             None,
         )
         if flip is None:

@@ -17,7 +17,7 @@ def uint_format(value, width, zero_padded=False):
 
     if width == 2 and value < 1000:
         return f"{value:{pad}{width}d}" if value < 10 else "9+"
-    elif value < 10 ** width:
+    elif value < 10**width:
         return f"{value:{pad}{width}d}"
 
     for scale, symbol in enumerate(scales):
@@ -131,8 +131,8 @@ class SpectrumWidget:
             lambda J: dn.power2db(J.mean() * samplerate / 2, scale=(1e-5, 1e6)) / 60.0
         )
 
-        A = numpy.cumsum([0, 2 ** 6, 2 ** 2, 2 ** 1, 2 ** 0])
-        B = numpy.cumsum([0, 2 ** 7, 2 ** 5, 2 ** 4, 2 ** 3])
+        A = numpy.cumsum([0, 2**6, 2**2, 2**1, 2**0])
+        B = numpy.cumsum([0, 2**7, 2**5, 2**4, 2**3])
         draw_bar = lambda a, b: chr(0x2800 + A[int(a * 4)] + B[int(b * 4)])
 
         node = dn.pipe(
@@ -221,7 +221,7 @@ class VolumeIndicatorWidget:
 
         decay = buffer_length / samplerate / vol_decay_time
 
-        volume_of = lambda x: dn.power2db((x ** 2).mean(), scale=(1e-5, 1e6)) / 60.0
+        volume_of = lambda x: dn.power2db((x**2).mean(), scale=(1e-5, 1e6)) / 60.0
 
         @dn.datanode
         def volume_indicator():

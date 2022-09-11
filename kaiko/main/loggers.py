@@ -480,7 +480,9 @@ class Logger:
 
             if type(value) is tuple and len(value) == 1:
                 content = self.format_value(
-                    value[0], multiline=multiline-1 if multiline else multiline, indent=indent
+                    value[0],
+                    multiline=multiline - 1 if multiline else multiline,
+                    indent=indent,
                 )
                 return opening + content + "[py_punctuation],[/]" + closing
 
@@ -495,7 +497,11 @@ class Logger:
             if type(value) is dict:
                 keys = [self.format_value(key, multiline=0) for key in value.keys()]
                 subvalues = [
-                    self.format_value(subvalue, multiline=multiline-1 if multiline else multiline, indent=indent)
+                    self.format_value(
+                        subvalue,
+                        multiline=multiline - 1 if multiline else multiline,
+                        indent=indent,
+                    )
                     for subvalue in value.values()
                 ]
 
@@ -514,7 +520,11 @@ class Logger:
 
             else:
                 content = delimiter.join(
-                    self.format_value(subvalue, multiline=multiline-1 if multiline else multiline, indent=indent)
+                    self.format_value(
+                        subvalue,
+                        multiline=multiline - 1 if multiline else multiline,
+                        indent=indent,
+                    )
                     for subvalue in value
                 )
 
@@ -542,7 +552,9 @@ class Logger:
             content = delimiter.join(
                 f"[py_argument]{mu.escape(field.name)}[/][py_punctuation]=[/]"
                 + self.format_value(
-                    getattr(value, field.name), multiline=multiline-1 if multiline else multiline, indent=indent
+                    getattr(value, field.name),
+                    multiline=multiline - 1 if multiline else multiline,
+                    indent=indent,
                 )
                 for field in fields
             )

@@ -72,7 +72,9 @@ class RecognizedPath:
         ):
             logger.print(f"[warn]Wrong file type {path_mu}[/]")
             path_ = self.abs.parent / (self.abs.name + REDUNDANT_EXT)
-            path_mu_ = file_manager.as_relative_path(UnrecognizedPath(path_, False), markup=True)
+            path_mu_ = file_manager.as_relative_path(
+                UnrecognizedPath(path_, False), markup=True
+            )
             logger.print(f"[data/] Rename {path_mu} to {path_mu_}...")
             self.abs.rename(path_)
 

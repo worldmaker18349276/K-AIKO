@@ -1438,7 +1438,12 @@ def template(template_str, *args):
     res = []
     i = 0
     indices = []
-    for literal_text, field_name, format_spec, conversion in string_module.Formatter().parse(template_str):
+    for (
+        literal_text,
+        field_name,
+        format_spec,
+        conversion,
+    ) in string_module.Formatter().parse(template_str):
         if literal_text:
             res.append(string(literal_text))
 

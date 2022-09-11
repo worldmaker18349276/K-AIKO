@@ -72,7 +72,7 @@ class Monitor:
 
                         self.count += 1
                         total += t
-                        total2 += t ** 2
+                        total2 += t**2
                         spend_N.insert(0, spend)
                         spend_N.pop()
                         recent_N.insert(0, t)
@@ -97,7 +97,7 @@ class Monitor:
                     if self.count > 0:
                         self.total_avg = total / self.count
                         self.total_dev = (
-                            total2 / self.count - self.total_avg ** 2
+                            total2 / self.count - self.total_avg**2
                         ) ** 0.5
                         self.total_eff = total / (stop - start)
 
@@ -228,7 +228,9 @@ class Mixer:
                 data = numpy.zeros((buffer_length, nchannels), dtype=numpy.float32)
                 try:
                     time_slice = timer.send(None)
-                    time_slice = slice(time_slice.start + init_time, time_slice.stop + init_time)
+                    time_slice = slice(
+                        time_slice.start + init_time, time_slice.stop + init_time
+                    )
                     slices_map = tick_node.send(time_slice)
                     data = pipeline.send((data, slices_map))
                 except StopIteration:
@@ -329,7 +331,7 @@ class Mixer:
         zindex=(0,),
     ):
         node = dn.pipe(node, self.resample(samplerate, channels, volume, start, end))
-        node = dn.pipe(lambda args:args[0], dn.attach(node))
+        node = dn.pipe(lambda args: args[0], dn.attach(node))
         node = self.tmask(node, time)
         return self.add_effect(node, zindex=zindex)
 
@@ -641,7 +643,9 @@ class Renderer:
         framerate = self.settings.display_framerate
 
         with clock.tick(self, display_delay) as tick_node:
-            render_node = self._render_node(self.pipeline, tick_node, self.settings, term_settings)
+            render_node = self._render_node(
+                self.pipeline, tick_node, self.settings, term_settings
+            )
             resize_node = self._resize_node(
                 render_node,
                 self.settings,
@@ -909,4 +913,3 @@ class Controller:
                         node.send((None, time, keyname, keycode))
                     except StopIteration:
                         return
-

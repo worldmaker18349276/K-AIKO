@@ -1026,7 +1026,9 @@ def fadeout(samplerate, duration, out_event):
     while t < duration:
         dt = data.shape[0] / samplerate
         data *= numpy.clip(
-            numpy.linspace(1.0 - t / duration, 1.0 - (t + dt) / duration, data.shape[0]),
+            numpy.linspace(
+                1.0 - t / duration, 1.0 - (t + dt) / duration, data.shape[0]
+            ),
             0.0,
             1.0,
         )[:, None]
@@ -1450,19 +1452,19 @@ def get_A_weight(samplerate, win_length):
     f2 = 107.7
     f3 = 737.9
     f4 = 12194.0
-    weight = (f ** 4 * f4 ** 2) ** 2
-    weight /= (f ** 2 + f1 ** 2) ** 2
-    weight /= f ** 2 + f2 ** 2
-    weight /= f ** 2 + f3 ** 2
-    weight /= (f ** 2 + f4 ** 2) ** 2
+    weight = (f**4 * f4**2) ** 2
+    weight /= (f**2 + f1**2) ** 2
+    weight /= f**2 + f2**2
+    weight /= f**2 + f3**2
+    weight /= (f**2 + f4**2) ** 2
 
     # normalize on 1000 Hz
     f0 = 1000.0
-    weight0 = (f0 ** 4 * f4 ** 2) ** 2
-    weight0 /= (f0 ** 2 + f1 ** 2) ** 2
-    weight0 /= f0 ** 2 + f2 ** 2
-    weight0 /= f0 ** 2 + f3 ** 2
-    weight0 /= (f0 ** 2 + f4 ** 2) ** 2
+    weight0 = (f0**4 * f4**2) ** 2
+    weight0 /= (f0**2 + f1**2) ** 2
+    weight0 /= f0**2 + f2**2
+    weight0 /= f0**2 + f3**2
+    weight0 /= (f0**2 + f4**2) ** 2
     # weight0 == 10**-0.1
 
     weight /= weight0

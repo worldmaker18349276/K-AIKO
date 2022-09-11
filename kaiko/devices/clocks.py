@@ -64,7 +64,9 @@ class Clock:
             # update last_time, last_tick, last_ratio
             curr_time = time if action is None else min(action_time, time)
             if last_time < curr_time:
-                time_slice = slice(offset + last_time * ratio, offset + curr_time * ratio)
+                time_slice = slice(
+                    offset + last_time * ratio, offset + curr_time * ratio
+                )
                 last_tick = max(last_tick, time_slice.start)
                 last_ratio = 0 if last_tick > time_slice.stop else ratio
                 last_tick = max(last_tick, time_slice.stop)
@@ -75,7 +77,10 @@ class Clock:
                 if isinstance(action, ClockStop):
                     return
                 if isinstance(action, ClockSpeed):
-                    offset, ratio = offset + action_time * (ratio - action.ratio), action.ratio
+                    offset, ratio = (
+                        offset + action_time * (ratio - action.ratio),
+                        action.ratio,
+                    )
                 elif isinstance(action, ClockSkip):
                     offset += action.offset
                 elif isinstance(action, ClockDelay):
@@ -112,9 +117,13 @@ class Clock:
                 action_time = last_time
 
             # update last_time, last_tick, last_ratio
-            curr_time = time_slice.stop if action is None else min(action_time, time_slice.stop)
+            curr_time = (
+                time_slice.stop if action is None else min(action_time, time_slice.stop)
+            )
             if last_time < curr_time:
-                tick_slice = slice(offset + last_time * ratio, offset + curr_time * ratio)
+                tick_slice = slice(
+                    offset + last_time * ratio, offset + curr_time * ratio
+                )
 
                 if last_tick < tick_slice.start:
                     slices_map.append(
@@ -147,7 +156,10 @@ class Clock:
                 if isinstance(action, ClockStop):
                     return
                 if isinstance(action, ClockSpeed):
-                    offset, ratio = offset + action_time * (ratio - action.ratio), action.ratio
+                    offset, ratio = (
+                        offset + action_time * (ratio - action.ratio),
+                        action.ratio,
+                    )
                 elif isinstance(action, ClockSkip):
                     offset += action.offset
                 elif isinstance(action, ClockDelay):
@@ -239,4 +251,3 @@ class Metronome(Clock):
             tick = self.offset + time * self.ratio
             self.skip(time, (beat - tick) % 1)
             self.speed(time, tempo / 60)
-

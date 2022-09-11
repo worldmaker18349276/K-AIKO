@@ -135,8 +135,8 @@ def make_str_serializer(suggestions=[]):
 
     def format_str(value):
         # make sure it uses double quotation
-        return (
-            '"' + repr(value + '"')[1:-2].replace('"', r"\"").replace(r"\'", "'") + '"'
+        return '"{}"'.format(
+            repr(value + '"')[1:-2].replace('"', r"\"").replace(r"\'", "'")
         )
 
     return Serializer.make_literal(str, expr, format_str).suggest(suggestions or [""])
@@ -415,7 +415,7 @@ def make_dataclass_serializer(cls, fields):
     @pc.parsec
     def parser():
         opening = suggest(
-            pc.regex(fr"{cls.__name__}\s*\(\s*").desc(f"'{cls.__name__}('"),
+            pc.regex(rf"{cls.__name__}\s*\(\s*").desc(f"'{cls.__name__}('"),
             [f"{cls.__name__}("],
         )
         comma = suggest(pc.regex(r"\s*,\s*").desc("comma"), [","])
@@ -428,7 +428,7 @@ def make_dataclass_serializer(cls, fields):
             if not is_first:
                 yield comma
             is_first = False
-            yield suggest(pc.regex(fr"{key}\s*=\s*").desc(f"{key}="), [f"{key}="])
+            yield suggest(pc.regex(rf"{key}\s*=\s*").desc(f"{key}="), [f"{key}="])
             value = yield field_parser
             results[key] = value
         yield comma.optional()
