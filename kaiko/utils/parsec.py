@@ -774,7 +774,7 @@ class Parsec:
             results = []
             is_first = True
             for parser in parsers:
-                if is_first:
+                if not is_first:
                     yield self
                 is_first = False
                 results.append((yield parser))
@@ -1206,7 +1206,7 @@ class Parsec:
             results = []
             is_first = True
             while not (yield end.optional()):
-                if is_first:
+                if not is_first:
                     yield sep
                 is_first = False
                 results.append((yield self))
@@ -1238,7 +1238,7 @@ class Parsec:
                 else:
                     return results, index
 
-                if is_first:
+                if not is_first:
                     _, index = sep.func(text, index)
                 is_first = False
 
