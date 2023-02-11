@@ -9,7 +9,6 @@ import threading
 import subprocess
 import signal
 import ast
-from typing import Callable
 import numpy
 import scipy
 import scipy.signal

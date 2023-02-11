@@ -1063,7 +1063,10 @@ class Mask(Pair):
 
     @property
     def param(self):
-        return f"{self.mask.start if self.mask.start is not None else ''}:{self.mask.stop if self.mask.stop is not None else ''}"
+        return (
+            f"{self.mask.start if self.mask.start is not None else ''}"
+            f":{self.mask.stop if self.mask.stop is not None else ''}"
+        )
 
 
 @dataclasses.dataclass(frozen=True)
@@ -1085,26 +1088,27 @@ class Rich(Pair):
 
 
 class RichParser:
-    default_tags = {
-        Rich.name: Rich,
-        Reset.name: Reset,
-        Weight.name: Weight,
-        Italic.name: Italic,
-        Underline.name: Underline,
-        Strike.name: Strike,
-        Blink.name: Blink,
-        Invert.name: Invert,
-        Color.name: Color,
-        BgColor.name: BgColor,
-        Tab.name: Tab,
-        Newline.name: Newline,
-        Space.name: Space,
-        Wide.name: Wide,
-        X.name: X,
-        DX.name: DX,
-        Restore.name: Restore,
-        Mask.name: Mask,
-    }
+    default_tags = [
+        Rich,
+        Reset,
+        Weight,
+        Italic,
+        Underline,
+        Strike,
+        Blink,
+        Invert,
+        Color,
+        BgColor,
+        Tab,
+        Newline,
+        Space,
+        Wide,
+        X,
+        DX,
+        Restore,
+        Mask,
+    ]
+    default_tags = {tag.name: tag for tag in default_tags}
 
     def __init__(self, unicode_version="auto", color_support=ColorSupport.TRUECOLOR):
         self.tags = dict(self.default_tags)

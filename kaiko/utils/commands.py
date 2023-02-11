@@ -788,7 +788,7 @@ class SubCommandParser(CommandParser):
         Parameters
         ----------
         parent : object
-            The object with fields with command descriptors.
+            The object with command descriptors as fields.
         """
         self.parent = parent
         self.fields = [
