@@ -10,6 +10,7 @@ from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
 from ..utils import markups as mu
+from ..utils import providers
 from ..devices import terminals as term
 from ..devices import audios as aud
 from ..devices import clocks
@@ -32,7 +33,7 @@ class DevicesDirPath(RecognizedDirPath):
     [color=bright_cyan]5──━━━━━━──────╨──╯  [/] Use the command [cmd]show[/] to view the details of your device.
     """
 
-    def rm(self, provider):
+    def rm(self):
         raise InvalidFileOperation(
             "Deleting important directories or files may crash the program"
         )
@@ -108,8 +109,7 @@ class DynamicLoader:
 
 
 class DeviceManager:
-    def __init__(self, provider, cache_dir, resources_dir, settings):
-        self.provider = provider
+    def __init__(self, cache_dir, resources_dir, settings):
         self.cache_dir = cache_dir
         self.resources_dir = resources_dir
         self.settings = settings
@@ -119,18 +119,10 @@ class DeviceManager:
     def set_settings(self, settings):
         self.settings = settings
 
-    @property
-    def logger(self):
-        return self.provider.get(Logger)
-
-    @property
-    def profile_manager(self):
-        return self.provider.get(ProfileManager)
-
     @dn.datanode
     def initialize(self):
-        logger = self.logger
-        profile_manager = self.profile_manager
+        logger = providers.get(Logger)
+        profile_manager = providers.get(ProfileManager)
 
         # check tty
         if not sys.stdout.isatty():
@@ -185,9 +177,7 @@ class DeviceManager:
             if typ == "mixer":
                 mixer_monitor = None
                 if monitoring_session is not None:
-                    path = (
-                        self.cache_dir.abs / f"{monitoring_session}_mixer_perf.csv"
-                    )
+                    path = self.cache_dir.abs / f"{monitoring_session}_mixer_perf.csv"
                     mixer_monitor = engines.Monitor(path)
 
                 mixer_task, mixer = engines.Mixer.create(
@@ -205,8 +195,7 @@ class DeviceManager:
                 detector_monitor = None
                 if monitoring_session is not None:
                     path = (
-                        self.cache_dir.abs
-                        / f"{monitoring_session}_detector_perf.csv"
+                        self.cache_dir.abs / f"{monitoring_session}_detector_perf.csv"
                     )
                     detector_monitor = engines.Monitor(path)
 
@@ -225,8 +214,7 @@ class DeviceManager:
                 renderer_monitor = None
                 if monitoring_session is not None:
                     path = (
-                        self.cache_dir.abs
-                        / f"{monitoring_session}_renderer_perf.csv"
+                        self.cache_dir.abs / f"{monitoring_session}_renderer_perf.csv"
                     )
                     renderer_monitor = engines.Monitor(path)
 
@@ -261,7 +249,8 @@ class DeviceManager:
         return DynamicLoader.create(lambda: self.load_engines(*types))
 
     def load_rich(self):
-        devices_settings = self.profile_manager.current.devices
+        profile_manager = providers.get(ProfileManager)
+        devices_settings = profile_manager.current.devices
         return mu.RichParser(
             devices_settings.terminal.unicode_version,
             devices_settings.terminal.color_support,
@@ -332,7 +321,7 @@ class DeviceManager:
         ------
         audio_manager : PyAudio
         """
-        logger = self.logger
+        logger = providers.get(Logger)
 
         verb_ctxt = logger.verb()
         verb_ctxt.__enter__()
@@ -369,8 +358,9 @@ class DeviceManager:
         fit_task : datanodes.DataNode
             The datanode to manage this process.
         """
-        logger = self.logger
-        terminal_settings = self.profile_manager.current.devices.terminal
+        logger = providers.get(Logger)
+        profile_manager = providers.get(ProfileManager)
+        terminal_settings = profile_manager.current.devices.terminal
 
         width = terminal_settings.best_screen_size
         delay = terminal_settings.adjust_screen_delay
@@ -432,7 +422,7 @@ class DeviceManager:
 
     @dn.datanode
     def determine_unicode_version(self):
-        logger = self.logger
+        logger = providers.get(Logger)
 
         logger.print("[info/] Determine unicode version...")
 
@@ -454,33 +444,6 @@ class DeviceManager:
 
 
 class DevicesCommand:
-    def __init__(self, provider):
-        self.provider = provider
-
-    @property
-    def logger(self):
-        return self.provider.get(Logger)
-
-    @property
-    def device_manager(self):
-        return self.provider.get(DeviceManager)
-
-    @property
-    def audio_manager(self):
-        return self.device_manager.audio_manager
-
-    @property
-    def profile_manager(self):
-        return self.provider.get(ProfileManager)
-
-    @property
-    def file_manager(self):
-        return self.provider.get(FileManager)
-
-    @property
-    def settings(self):
-        return self.profile_manager.current
-
     # audio
 
     @cmd.function_command
@@ -490,10 +453,14 @@ class DevicesCommand:
         usage: [cmd]show[/]
         """
 
-        logger = self.logger
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
+        audio_manager = providers.get(DeviceManager).audio_manager
+        profile_manager = providers.get(ProfileManager)
+        devices_settings = profile_manager.current.devices
 
         with logger.stack():
-            logger.print(f"workspace: {logger.as_uri(self.file_manager.root.abs)}")
+            logger.print(f"workspace: {logger.as_uri(file_manager.root.abs)}")
             logger.print()
 
             term = logger.escape(os.environ.get("TERM", "unknown"))
@@ -529,11 +496,9 @@ class DevicesCommand:
 
             logger.print()
 
-            aud.print_pyaudio_info(self.audio_manager)
+            aud.print_pyaudio_info(audio_manager)
 
             logger.print()
-
-            devices_settings = self.settings.devices
 
             device = devices_settings.detector.input_device
             if device == -1:
@@ -565,7 +530,9 @@ class DevicesCommand:
                  device, -1 is the
                   default device.
         """
-        return MicTest(device, self.logger, self.audio_manager)
+        logger = providers.get(Logger)
+        audio_manager = providers.get(DeviceManager).audio_manager
+        return MicTest(device, logger, audio_manager)
 
     @cmd.function_command
     def test_speaker(self, device):
@@ -577,7 +544,9 @@ class DevicesCommand:
                      device, -1 is the
                       default device.
         """
-        return SpeakerTest(device, self.logger, self.audio_manager)
+        logger = providers.get(Logger)
+        audio_manager = providers.get(DeviceManager).audio_manager
+        return SpeakerTest(device, logger, audio_manager)
 
     @cmd.function_command
     def set_mic(self, device, rate=None, ch=None, len=None, fmt=None):
@@ -592,13 +561,15 @@ class DevicesCommand:
                 device, -1 is the            input: 1 for mono,         of recorded sound.
                  default device.               2 for stereo.
         """
-        logger = self.logger
+        logger = providers.get(Logger)
 
         pa_samplerate = rate
         pa_channels = ch
         pa_format = fmt
 
-        devices_settings = self.settings.devices
+        profile_manager = providers.get(ProfileManager)
+        audio_manager = providers.get(DeviceManager).audio_manager
+        devices_settings = profile_manager.current.devices
 
         if pa_samplerate is None:
             pa_samplerate = devices_settings.detector.input_samplerate
@@ -610,7 +581,7 @@ class DevicesCommand:
         try:
             logger.print("Validate input device...")
             aud.validate_input_device(
-                self.audio_manager, device, pa_samplerate, pa_channels, pa_format
+                audio_manager, device, pa_samplerate, pa_channels, pa_format
             )
             logger.print("Success!")
 
@@ -628,7 +599,7 @@ class DevicesCommand:
                 devices_settings.detector.input_buffer_length = len
             if fmt is not None:
                 devices_settings.detector.input_format = fmt
-            self.profile_manager.set_as_changed()
+            profile_manager.set_as_changed()
 
     @cmd.function_command
     def set_speaker(self, device, rate=None, ch=None, len=None, fmt=None):
@@ -643,13 +614,15 @@ class DevicesCommand:
                     device, -1 is the           output: 1 for mono,          of played sound.
                      default device.               2 for stereo.
         """
-        logger = self.logger
+        logger = providers.get(Logger)
 
         pa_samplerate = rate
         pa_channels = ch
         pa_format = fmt
 
-        devices_settings = self.settings.devices
+        profile_manager = providers.get(ProfileManager)
+        audio_manager = providers.get(DeviceManager).audio_manager
+        devices_settings = profile_manager.current.devices
 
         if pa_samplerate is None:
             pa_samplerate = devices_settings.mixer.output_samplerate
@@ -661,7 +634,7 @@ class DevicesCommand:
         try:
             logger.print("Validate output device...")
             aud.validate_output_device(
-                self.audio_manager, device, pa_samplerate, pa_channels, pa_format
+                audio_manager, device, pa_samplerate, pa_channels, pa_format
             )
             logger.print("Success!")
 
@@ -679,17 +652,19 @@ class DevicesCommand:
                 devices_settings.mixer.output_buffer_length = len
             if fmt is not None:
                 devices_settings.mixer.output_format = fmt
-            self.profile_manager.set_as_changed()
+            profile_manager.set_as_changed()
 
     @test_mic.arg_parser("device")
     @set_mic.arg_parser("device")
     def _set_mic_device_parser(self):
-        return PyAudioDeviceParser(self.audio_manager, True)
+        audio_manager = providers.get(DeviceManager).audio_manager
+        return PyAudioDeviceParser(audio_manager, True)
 
     @test_speaker.arg_parser("device")
     @set_speaker.arg_parser("device")
     def _set_speaker_device_parser(self):
-        return PyAudioDeviceParser(self.audio_manager, False)
+        audio_manager = providers.get(DeviceManager).audio_manager
+        return PyAudioDeviceParser(audio_manager, False)
 
     @set_mic.arg_parser("rate")
     @set_speaker.arg_parser("rate")
@@ -720,8 +695,11 @@ class DevicesCommand:
 
         usage: [cmd]test_knock[/]
         """
-        settings = self.settings.devices.detector
-        return KnockTest(self.logger, self.device_manager)
+        logger = providers.get(Logger)
+        device_manager = providers.get(DeviceManager)
+        profile_manager = providers.get(ProfileManager)
+        settings = profile_manager.current.devices.detector
+        return KnockTest(logger, device_manager)
 
     @cmd.function_command
     @dn.datanode
@@ -730,8 +708,10 @@ class DevicesCommand:
 
         usage: [cmd]test_keyboard[/]
         """
+        logger = providers.get(Logger)
+        device_manager = providers.get(DeviceManager)
 
-        yield from test_keyboard(self.logger, self.device_manager).join()
+        yield from test_keyboard(logger, device_manager).join()
 
     @cmd.function_command
     def test_waveform(self, waveform):
@@ -749,7 +729,9 @@ class DevicesCommand:
         Available templates: sine, square, triangle, sawtooth, square_duty
         Available hashtags: tspan, clip, bandpass, gammatone
         """
-        return WaveformTest(waveform, self.logger, self.device_manager)
+        logger = providers.get(Logger)
+        device_manager = providers.get(DeviceManager)
+        return WaveformTest(waveform, logger, device_manager)
 
     @test_waveform.arg_parser("waveform")
     def _test_waveform_waveform_parser(self):
@@ -768,7 +750,7 @@ class DevicesCommand:
                      to be printed.          bool, use markup or not;
                                                 default is True.
         """
-        logger = self.logger
+        logger = providers.get(Logger)
 
         try:
             logger.print(message, markup=markup)
@@ -799,8 +781,9 @@ class DevicesCommand:
 
         usage: [cmd]fit_screen[/]
         """
+        device_manager = providers.get(DeviceManager)
 
-        return self.device_manager.fit_screen()
+        return device_manager.fit_screen()
 
     @cmd.function_command
     @dn.datanode
@@ -809,12 +792,14 @@ class DevicesCommand:
 
         usage: [cmd]ucs_detect[/]
         """
+        profile_manager = providers.get(ProfileManager)
+        device_manager = providers.get(DeviceManager)
 
-        version = yield from self.device_manager.determine_unicode_version().join()
+        version = yield from device_manager.determine_unicode_version().join()
         if version is not None:
             os.environ["UNICODE_VERSION"] = version
-            self.settings.devices.terminal.unicode_version = version
-            self.profile_manager.set_as_changed()
+            profile_manager.current.devices.terminal.unicode_version = version
+            profile_manager.set_as_changed()
 
 
 class PyAudioDeviceParser(cmd.ArgumentParser):

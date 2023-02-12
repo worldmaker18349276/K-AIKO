@@ -8,7 +8,7 @@ import shutil
 import pkgutil
 from pathlib import Path
 from .. import __version__
-from ..utils.providers import Provider
+from ..utils import providers
 from ..utils import markups as mu
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
@@ -59,9 +59,9 @@ def animated_print(text, kps=30.0, word_delay=0.05, pre_delay=0.5, post_delay=1.
 class RootDirPath(RecognizedDirPath):
     """The workspace of KAIKO"""
 
-    def info_detailed(self, provider):
-        logger = provider.get(Logger)
-        profile_manager = provider.get(ProfileManager)
+    def info_detailed(self):
+        logger = providers.get(Logger)
+        profile_manager = providers.get(ProfileManager)
 
         input_settings = profile_manager.current.shell.input.control
 
@@ -81,7 +81,7 @@ class RootDirPath(RecognizedDirPath):
 
         return "[rich]" + cleandoc(info)
 
-    def mk(self, provider):
+    def mk(self):
         self.abs.mkdir()
 
     beatmaps = as_child("Beatmaps", BeatmapsDirPath)
@@ -94,7 +94,7 @@ class RootDirPath(RecognizedDirPath):
     class resources(RecognizedDirPath):
         """The place to store some resources of KAIKO"""
 
-        def mk(self, provider):
+        def mk(self):
             self.abs.mkdir()
 
     @as_child("Cache")
@@ -109,7 +109,7 @@ class RootDirPath(RecognizedDirPath):
         [color=bright_white]└──────┘[/]
         """
 
-        def mk(self, provider):
+        def mk(self):
             self.abs.mkdir()
 
         @as_child("logs")
@@ -124,9 +124,6 @@ class KAIKOLauncher:
     update_interval = 0.01
     version = __version__
     METRONOME_TEMPO = 120.0
-
-    def __init__(self):
-        self.provider = Provider()
 
     @classmethod
     def launch(cls):
@@ -156,11 +153,11 @@ class KAIKOLauncher:
 
         # logger
         logger = Logger()
-        launcher.provider.set(logger)
+        providers.set_static(logger)
 
         # load workspace
-        file_manager = FileManager(RootDirPath, launcher.provider)
-        launcher.provider.set(file_manager)
+        file_manager = FileManager(RootDirPath)
+        providers.set_static(file_manager)
 
         file_manager.fix()
         logger.set_log_file(file_manager.root.cache.logs.abs)
@@ -168,10 +165,8 @@ class KAIKOLauncher:
         file_manager.init_env()
 
         # load profiles
-        profile_manager = ProfileManager(
-            KAIKOSettings, file_manager.root.profiles, launcher.provider
-        )
-        launcher.provider.set(profile_manager)
+        profile_manager = ProfileManager(KAIKOSettings, file_manager.root.profiles)
+        providers.set_static(profile_manager)
 
         profile_manager.on_change(
             lambda settings: logger.recompile_style(
@@ -192,7 +187,6 @@ class KAIKOLauncher:
 
         # load devices
         device_manager = DeviceManager(
-            launcher.provider,
             file_manager.root.cache,
             file_manager.root.resources,
             launcher.settings.devices,
@@ -200,37 +194,33 @@ class KAIKOLauncher:
         devices_ctxt = yield from device_manager.initialize().join()
 
         with devices_ctxt as device_manager:
-            launcher.provider.set(device_manager)
+            providers.set_static(device_manager)
 
-            beatmap_manager = BeatmapManager(
-                file_manager.root.beatmaps, launcher.provider
-            )
-            launcher.provider.set(beatmap_manager)
+            beatmap_manager = BeatmapManager(file_manager.root.beatmaps)
+            providers.set_static(beatmap_manager)
 
             metronome = clocks.Metronome(launcher.METRONOME_TEMPO)
-            launcher.provider.set(metronome)
+            providers.set_static(metronome)
 
             bgm_controller = BGMController(
-                launcher.provider,
                 launcher.settings.bgm,
                 launcher.settings.devices.mixer,
             )
-            launcher.provider.set(bgm_controller)
+            providers.set_static(bgm_controller)
 
             prompt = beatshell.BeatPrompt(
-                launcher.provider,
                 file_manager.root.cache.beatshell_history,
                 file_manager.root.cache.prompt_perf,
                 launcher.settings.shell,
             )
-            launcher.provider.set(prompt)
 
-            yield from launcher.run().join()
+            yield from launcher.run(prompt).join()
 
     @dn.datanode
-    def run(self):
+    def run(self, prompt):
         r"""Run KAIKO."""
-        logger = self.logger
+        logger = providers.get(Logger)
+        bgm_controller = providers.get(BGMController)
 
         yield
 
@@ -243,26 +233,30 @@ class KAIKOLauncher:
             raise ValueError("unknown arguments: " + " ".join(sys.argv[1:]))
 
         # load bgm
-        bgm_task = self.bgm_controller.start()
+        bgm_task = bgm_controller.start()
 
         # prompt
-        repl_task = self.repl()
+        repl_task = self.repl(prompt)
         yield from dn.pipe(repl_task, bgm_task).join()
 
     @dn.datanode
-    def repl(self):
+    def repl(self, prompt):
         r"""Start REPL."""
-        clock = self.device_manager.clock
-        prompt = self.prompt
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
+        device_manager = providers.get(DeviceManager)
+        bgm_controller = providers.get(BGMController)
 
-        self.logger.print()
+        clock = device_manager.clock
+
+        logger.print()
         prev_dir = None
         clear = True
 
         while True:
-            self.logger.print()
-            prompt.print_banner(prev_dir != self.file_manager.current)
-            prev_dir = self.file_manager.current
+            logger.print()
+            prompt.print_banner(prev_dir != file_manager.current)
+            prev_dir = file_manager.current
 
             try:
                 command = yield from prompt.new_session(
@@ -270,7 +264,7 @@ class KAIKOLauncher:
                 ).join()
 
             except beatshell.PromptError as e:
-                self.logger.print(f"[warn]{self.logger.escape(str(e.cause))}[/]")
+                logger.print(f"[warn]{logger.escape(str(e.cause))}[/]")
                 clear = False
 
             else:
@@ -279,9 +273,9 @@ class KAIKOLauncher:
                 clear = True
 
             prompt.set_settings(self.settings.shell)
-            self.bgm_controller.set_settings(self.settings.bgm)
-            self.bgm_controller.set_mixer_settings(self.settings.devices.mixer)
-            self.device_manager.set_settings(self.settings.devices)
+            bgm_controller.set_settings(self.settings.bgm)
+            bgm_controller.set_mixer_settings(self.settings.devices.mixer)
+            device_manager.set_settings(self.settings.devices)
 
     @dn.datanode
     def execute(self, command):
@@ -296,76 +290,48 @@ class KAIKOLauncher:
         command : function
             The command.
         """
+        logger = providers.get(Logger)
+        bgm_controller = providers.get(BGMController)
+
         try:
             result = command()
 
             if hasattr(result, "execute"):
-                is_bgm_on = self.bgm_controller.is_bgm_on
-                self.bgm_controller.stop()
+                is_bgm_on = bgm_controller.is_bgm_on
+                bgm_controller.stop()
                 yield from result.execute().join()
                 if is_bgm_on:
-                    self.bgm_controller.play()
+                    bgm_controller.play()
 
             elif isinstance(result, dn.DataNode):
                 yield from result.join()
 
             elif result is not None:
                 yield
-                self.logger.print(self.logger.format_value(result))
+                logger.print(logger.format_value(result))
 
         except Exception:
-            self.logger.print_traceback()
-
-    @property
-    def profile_manager(self):
-        return self.provider.get(ProfileManager)
-
-    @property
-    def file_manager(self):
-        return self.provider.get(FileManager)
-
-    @property
-    def logger(self):
-        return self.provider.get(Logger)
-
-    @property
-    def device_manager(self):
-        return self.provider.get(DeviceManager)
-
-    @property
-    def beatmap_manager(self):
-        return self.provider.get(BeatmapManager)
-
-    @property
-    def metronome(self):
-        return self.provider.get(clocks.Metronome)
-
-    @property
-    def bgm_controller(self):
-        return self.provider.get(BGMController)
-
-    @property
-    def prompt(self):
-        return self.provider.get(beatshell.BeatPrompt)
+            logger.print_traceback()
 
     @property
     def settings(self):
         r"""Current settings."""
-        return self.profile_manager.current
+        return providers.get(ProfileManager).current
 
     def get_command_parser(self):
+        file_manager = providers.get(FileManager)
+
         commands = {}
-        if isinstance(self.file_manager.current, RootDirPath.beatmaps):
+        if isinstance(file_manager.current, RootDirPath.beatmaps):
             commands["play"] = PlayCommand(
-                self.provider,
-                self.file_manager.root.resources,
-                self.file_manager.root.cache,
+                file_manager.root.resources,
+                file_manager.root.cache,
             )
-        if isinstance(self.file_manager.current, RootDirPath.devices):
-            commands["devices"] = DevicesCommand(self.provider)
-        if isinstance(self.file_manager.current, RootDirPath.profiles):
-            commands["profiles"] = ProfilesCommand(self.provider)
-        commands["bgm"] = BGMCommand(self.provider)
-        commands["files"] = FilesCommand(self.provider)
-        commands["cd"] = DirectCdCommand(self.provider)
+        if isinstance(file_manager.current, RootDirPath.devices):
+            commands["devices"] = DevicesCommand()
+        if isinstance(file_manager.current, RootDirPath.profiles):
+            commands["profiles"] = ProfilesCommand()
+        commands["bgm"] = BGMCommand()
+        commands["files"] = FilesCommand()
+        commands["cd"] = DirectCdCommand()
         return cmd.RootCommandParser(**commands)

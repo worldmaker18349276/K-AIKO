@@ -10,6 +10,7 @@ from ..utils import datanodes as dn
 from ..utils import commands as cmd
 from ..utils import config as cfg
 from ..utils import markups as mu
+from ..utils import providers
 from ..devices import engines
 from . import sheditors
 from .textboxes import Caret, TextBox, TextBoxWidgetSettings
@@ -607,10 +608,10 @@ class Input:
     def _set_settings(self, settings):
         self.settings = settings
 
-    def _register(self, fin_event, provider):
-        rich = provider.get(mu.RichParser)
-        renderer = provider.get(engines.Renderer)
-        controller = provider.get(engines.Controller)
+    @providers.inject(
+        rich=mu.RichParser, renderer=engines.Renderer, controller=engines.Controller
+    )
+    def _register(self, fin_event, *, rich, renderer, controller):
 
         stroke = InputStroke(self, self.settings.control)
         stroke.register(controller)
@@ -625,7 +626,7 @@ class Input:
         textbox = TextBox(
             text_renderer.render_text(state),
             self.settings.textbox,
-        ).load(provider)
+        ).load()
 
         return textbox
 

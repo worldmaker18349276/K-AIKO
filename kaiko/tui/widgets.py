@@ -3,6 +3,7 @@ from enum import Enum
 import numpy
 from ..utils import datanodes as dn
 from ..utils import markups as mu
+from ..utils import providers
 from ..devices import engines
 
 
@@ -160,9 +161,8 @@ class SpectrumWidget:
 
         return draw()
 
-    def load(self, provider):
-        rich = provider.get(mu.RichParser)
-        mixer = provider.get(engines.Mixer)
+    @providers.inject(rich=mu.RichParser, mixer=engines.Mixer)
+    def load(self, *, rich, mixer):
 
         spec_width = self.settings.spec_width
         samplerate = mixer.settings.output_samplerate
@@ -209,9 +209,8 @@ class VolumeIndicatorWidget:
         self.volume = 0.0
         self.settings = settings
 
-    def load(self, provider):
-        rich = provider.get(mu.RichParser)
-        mixer = provider.get(engines.Mixer)
+    @providers.inject(rich=mu.RichParser, mixer=engines.Mixer)
+    def load(self, *, rich, mixer):
 
         vol_decay_time = self.settings.vol_decay_time
         buffer_length = mixer.settings.output_buffer_length
@@ -272,10 +271,10 @@ class KnockMeterWidget:
             if detected:
                 self.strength = strength
 
-    def load(self, provider):
-        rich = provider.get(mu.RichParser)
-        detector = provider.get(engines.Detector)
-        renderer = provider.get(engines.Renderer)
+    @providers.inject(
+        rich=mu.RichParser, detector=engines.Detector, renderer=engines.Renderer
+    )
+    def load(self, *, rich, detector, renderer):
 
         ticks = " ▏▎▍▌▋▊▉█"
         nticks = len(ticks) - 1
@@ -354,9 +353,8 @@ class AccuracyMeterWidget:
 
                 time, ran = yield [(0, res)]
 
-    def load(self, provider):
-        rich = provider.get(mu.RichParser)
-        renderer = provider.get(engines.Renderer)
+    @providers.inject(rich=mu.RichParser, renderer=engines.Renderer)
+    def load(self, *, rich, renderer):
 
         meter_width = self.settings.meter_width
         meter_decay_time = self.settings.meter_decay_time
@@ -401,13 +399,16 @@ class MonitorWidget:
     def __init__(self, settings):
         self.settings = settings
 
-    def load(self, provider):
+    @providers.inject(
+        mixer=engines.Mixer, detector=engines.Detector, renderer=engines.Renderer
+    )
+    def load(self, *, mixer, detector, renderer):
         if self.settings.target == MonitorTarget.mixer:
-            target = provider.get(engines.Mixer)
+            target = mixer
         elif self.settings.target == MonitorTarget.detector:
-            target = provider.get(engines.Detector)
+            target = detector
         elif self.settings.target == MonitorTarget.renderer:
-            target = provider.get(engines.Renderer)
+            target = renderer
         else:
             raise TypeError
 
@@ -480,8 +481,8 @@ class ScoreWidget:
 
                 time, ran = yield [(0, res)]
 
-    def load(self, provider):
-        rich = provider.get(mu.RichParser)
+    @providers.inject(rich=mu.RichParser)
+    def load(self, *, rich):
 
         template = rich.parse(self.settings.template, slotted=True)
 
@@ -540,8 +541,8 @@ class ProgressWidget:
 
                 time, ran = yield [(0, res)]
 
-    def load(self, provider):
-        rich = provider.get(mu.RichParser)
+    @providers.inject(rich=mu.RichParser)
+    def load(self, *, rich):
 
         template = rich.parse(self.settings.template, slotted=True)
 

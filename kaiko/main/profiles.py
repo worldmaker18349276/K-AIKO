@@ -6,6 +6,7 @@ from ..utils import config as cfg
 from ..utils import parsec as pc
 from ..utils import commands as cmd
 from ..utils import datanodes as dn
+from ..utils import providers
 from .loggers import Logger
 from .files import (
     RecognizedFilePath,
@@ -52,7 +53,7 @@ class ProfilesDirPath(RecognizedDirPath):
     [color=bright_blue]⠀⠀⠀⠀⠈⠉⠀⠀⠀⠀⠀[/]
     """
 
-    def rm(self, provider):
+    def rm(self):
         raise InvalidFileOperation(
             "Deleting important directories or files may crash the program"
         )
@@ -61,8 +62,8 @@ class ProfilesDirPath(RecognizedDirPath):
     class profile(RecognizedFilePath):
         EXTENSION = ".kaiko-profile"
 
-        def info(self, provider):
-            profile_manager = provider.get(ProfileManager)
+        def info(self):
+            profile_manager = providers.get(ProfileManager)
             note = "Your custom profile"
             if (
                 profile_manager.default_path is not None
@@ -73,29 +74,29 @@ class ProfilesDirPath(RecognizedDirPath):
                 note += " (current)"
             return note
 
-        def mk(self, provider):
-            profile_manager = provider.get(ProfileManager)
+        def mk(self):
+            profile_manager = providers.get(ProfileManager)
             succ = profile_manager.create(self)
             if not succ:
                 return
             profile_manager.update()
 
-        def rm(self, provider):
-            profile_manager = provider.get(ProfileManager)
+        def rm(self):
+            profile_manager = providers.get(ProfileManager)
             succ = profile_manager.delete(self)
             if not succ:
                 return
             profile_manager.update()
 
-        def mv(self, dst, provider):
-            profile_manager = provider.get(ProfileManager)
+        def mv(self, dst):
+            profile_manager = providers.get(ProfileManager)
             succ = profile_manager.rename(self, dst)
             if not succ:
                 return
             profile_manager.update()
 
-        def cp(self, src, provider):
-            profile_manager = provider.get(ProfileManager)
+        def cp(self, src):
+            profile_manager = providers.get(ProfileManager)
             succ = profile_manager.create(self, src)
             if not succ:
                 return
@@ -105,14 +106,14 @@ class ProfilesDirPath(RecognizedDirPath):
     class default(RecognizedFilePath):
         "The file of default profile name"
 
-        def mk(self, provider):
-            super().mk(provider)
-            profile_manager = provider.get(ProfileManager)
+        def mk(self):
+            super().mk()
+            profile_manager = providers.get(ProfileManager)
             profile_manager.update()
 
-        def rm(self, provider):
-            super().rm(provider)
-            profile_manager = provider.get(ProfileManager)
+        def rm(self):
+            super().rm()
+            profile_manager = providers.get(ProfileManager)
             profile_manager.update()
 
 
@@ -133,15 +134,13 @@ class ProfileManager:
         The path of current profile.
     current : config.Configurable
         The current configuration.
-    provider : utils.provider.Provider
     """
 
     SETTINGS_NAME = "settings"
 
-    def __init__(self, config_type, profiles_dir, provider):
+    def __init__(self, config_type, profiles_dir):
         self.config_type = config_type
         self.profiles_dir = profiles_dir
-        self.provider = provider
 
         self._profiles_mtime = None
         self._default_mtime = None
@@ -156,14 +155,6 @@ class ProfileManager:
 
     def on_change(self, on_change_handler):
         self.on_change_handlers.append(on_change_handler)
-
-    @property
-    def logger(self):
-        return self.provider.get(Logger)
-
-    @property
-    def file_manager(self):
-        return self.provider.get(FileManager)
 
     # config manipulation
 
@@ -201,10 +192,12 @@ class ProfileManager:
     # profiles management
 
     def update(self):
+        logger = providers.get(Logger)
+
         # update profiles
         profiles_mtime = self.profiles_dir.abs.stat().st_mtime
         if self._profiles_mtime != profiles_mtime:
-            self.logger.print("[data/] Update profiles...")
+            logger.print("[data/] Update profiles...")
             self._profile_paths = list(self.profiles_dir.profile)
             self._profiles_mtime = profiles_mtime
 
@@ -216,7 +209,7 @@ class ProfileManager:
             else None
         )
         if default_mtime is None or self._default_mtime != default_mtime:
-            self.logger.print("[data/] Update default profile...")
+            logger.print("[data/] Update default profile...")
             default_path = (
                 default_meta_path.abs.read_text().rstrip("\n")
                 if default_meta_path.abs.exists()
@@ -241,7 +234,7 @@ class ProfileManager:
         return self._default_path
 
     def validate_profile_path(self, path, should_exist=None):
-        file_manager = self.file_manager
+        file_manager = providers.get(FileManager)
         if not isinstance(path, ProfilesDirPath.profile):
             relpath = file_manager.as_relative_path(path)
             raise InvalidFileOperation(f"Not a valid profile path: {relpath}")
@@ -258,8 +251,8 @@ class ProfileManager:
         -------
         succ : bool
         """
-        logger = self.logger
-        file_manager = self.file_manager
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
 
         path = path if path is not None else self.current_path
 
@@ -286,8 +279,8 @@ class ProfileManager:
         -------
         succ : bool
         """
-        logger = self.logger
-        file_manager = self.file_manager
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
 
         try:
             self.validate_profile_path(self.current_path)
@@ -323,8 +316,8 @@ class ProfileManager:
         -------
         succ : bool
         """
-        logger = self.logger
-        file_manager = self.file_manager
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
 
         try:
             self.validate_profile_path(self.current_path, should_exist=True)
@@ -362,8 +355,8 @@ class ProfileManager:
         -------
         succ : bool
         """
-        logger = self.logger
-        file_manager = self.file_manager
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
 
         if path is None:
             path = self.default_path
@@ -397,8 +390,8 @@ class ProfileManager:
         return True
 
     def use_empty(self):
-        logger = self.logger
-        file_manager = self.file_manager
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
 
         path = rename_path(
             self.profiles_dir.abs, "new profile", ProfilesDirPath.profile.EXTENSION
@@ -427,8 +420,8 @@ class ProfileManager:
         -------
         succ : bool
         """
-        logger = self.logger
-        file_manager = self.file_manager
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
 
         path = path.normalize()
         try:
@@ -475,8 +468,8 @@ class ProfileManager:
         -------
         succ : bool
         """
-        logger = self.logger
-        file_manager = self.file_manager
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
 
         path = path.normalize()
         try:
@@ -506,8 +499,8 @@ class ProfileManager:
         -------
         succ : bool
         """
-        logger = self.logger
-        file_manager = self.file_manager
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
 
         path = path.normalize()
         newpath = newpath.normalize()
@@ -558,21 +551,6 @@ class FieldParser(cmd.TreeParser):
 
 
 class ProfilesCommand:
-    def __init__(self, provider):
-        self.provider = provider
-
-    @property
-    def profile_manager(self):
-        return self.provider.get(ProfileManager)
-
-    @property
-    def file_manager(self):
-        return self.provider.get(FileManager)
-
-    @property
-    def logger(self):
-        return self.provider.get(Logger)
-
     # configuration
 
     @cmd.function_command
@@ -584,9 +562,9 @@ class ProfilesCommand:
                         bool, highlight
                         changes or not.
         """
-        profile_manager = self.profile_manager
-        file_manager = self.file_manager
-        logger = self.logger
+        profile_manager = providers.get(ProfileManager)
+        file_manager = providers.get(FileManager)
+        logger = providers.get(Logger)
 
         text = profile_manager.format()
         is_changed = profile_manager.is_changed()
@@ -613,7 +591,8 @@ class ProfilesCommand:
                      ╱
               The field name.
         """
-        return self.profile_manager.has(field)
+        profile_manager = providers.get(ProfileManager)
+        return profile_manager.has(field)
 
     @cmd.function_command
     def get(self, field):
@@ -623,12 +602,12 @@ class ProfilesCommand:
                      ╱
               The field name.
         """
-        if not self.profile_manager.has(field) and not self.profile_manager.has_default(
-            field
-        ):
-            self.logger.print(f"[warn]No value for field {'.'.join(field)}[/]")
+        profile_manager = providers.get(ProfileManager)
+        logger = providers.get(Logger)
+        if not profile_manager.has(field) and not profile_manager.has_default(field):
+            logger.print(f"[warn]No value for field {'.'.join(field)}[/]")
             return
-        return self.profile_manager.get(field)
+        return profile_manager.get(field)
 
     @cmd.function_command
     def set(self, field, value):
@@ -638,8 +617,9 @@ class ProfilesCommand:
                      ╱         ╲
             The field name.   The value.
         """
-        self.profile_manager.set(field, value)
-        self.profile_manager.set_as_changed()
+        profile_manager = providers.get(ProfileManager)
+        profile_manager.set(field, value)
+        profile_manager.set_as_changed()
 
     @cmd.function_command
     def unset(self, field):
@@ -649,8 +629,9 @@ class ProfilesCommand:
                        ╱
                 The field name.
         """
-        self.profile_manager.unset(field)
-        self.profile_manager.set_as_changed()
+        profile_manager = providers.get(ProfileManager)
+        profile_manager.unset(field)
+        profile_manager.set_as_changed()
 
     @cmd.function_command
     @dn.datanode
@@ -659,9 +640,9 @@ class ProfilesCommand:
 
         usage: [cmd]edit[/]
         """
-        profile_manager = self.profile_manager
-        file_manager = self.file_manager
-        logger = self.logger
+        profile_manager = providers.get(ProfileManager)
+        file_manager = providers.get(FileManager)
+        logger = providers.get(Logger)
 
         title = file_manager.as_relative_path(profile_manager.current_path)
 
@@ -718,12 +699,14 @@ class ProfilesCommand:
     @unset.arg_parser("field")
     @set.arg_parser("field")
     def _field_parser(self):
-        return FieldParser(self.profile_manager.config_type)
+        profile_manager = providers.get(ProfileManager)
+        return FieldParser(profile_manager.config_type)
 
     @set.arg_parser("value")
     def _set_value_parser(self, field):
-        annotation = self.profile_manager.config_type.get_field_type(field)
-        default = self.profile_manager.get(field)
+        profile_manager = providers.get(ProfileManager)
+        annotation = profile_manager.config_type.get_field_type(field)
+        default = profile_manager.get(field)
         return cmd.LiteralParser(annotation, default)
 
     # profiles
@@ -734,8 +717,9 @@ class ProfilesCommand:
 
         usage: [cmd]reload[/]
         """
-        self.profile_manager.load()
-        self.profile_manager.update()
+        profile_manager = providers.get(ProfileManager)
+        profile_manager.load()
+        profile_manager.update()
 
     @cmd.function_command
     def save(self):
@@ -743,8 +727,9 @@ class ProfilesCommand:
 
         usage: [cmd]save[/]
         """
-        self.profile_manager.save()
-        self.profile_manager.update()
+        profile_manager = providers.get(ProfileManager)
+        profile_manager.save()
+        profile_manager.update()
 
     @cmd.function_command
     def set_default(self, profile):
@@ -754,8 +739,9 @@ class ProfilesCommand:
                                ╱
                       The profile path.
         """
-        self.profile_manager.set_default(profile)
-        self.profile_manager.update()
+        profile_manager = providers.get(ProfileManager)
+        profile_manager.set_default(profile)
+        profile_manager.update()
 
     @cmd.function_command
     def use(self, profile):
@@ -765,13 +751,15 @@ class ProfilesCommand:
                        ╱
               The profile path.
         """
-        self.profile_manager.use(profile)
-        self.profile_manager.update()
+        profile_manager = providers.get(ProfileManager)
+        profile_manager.use(profile)
+        profile_manager.update()
 
     @use.arg_parser("profile")
     @set_default.arg_parser("profile")
     def _use_profile_parser(self):
-        return self.file_manager.make_parser(
+        file_manager = providers.get(FileManager)
+        return file_manager.make_parser(
             desc="It should be the path of profile",
             filter=lambda path: isinstance(path, ProfilesDirPath.profile),
         )

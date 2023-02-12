@@ -9,6 +9,7 @@ from ..utils import config as cfg
 from ..utils import markups as mu
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
+from ..utils import providers
 from .loggers import Logger
 
 
@@ -35,13 +36,13 @@ class RecognizedPath:
             abspath = os.path.join(abspath, "")
         return abspath
 
-    def info(self, provider):
+    def info(self):
         doc = type(self).__doc__
         if doc is None:
             return None
         return doc.split("\n", 1)[0]
 
-    def info_detailed(self, provider):
+    def info_detailed(self):
         doc = type(self).__doc__
         if doc is None:
             return None
@@ -52,9 +53,9 @@ class RecognizedPath:
 
         return cleandoc(docs[1])
 
-    def fix(self, provider):
-        file_manager = provider.get(FileManager)
-        logger = provider.get(Logger)
+    def fix(self):
+        file_manager = providers.get(FileManager)
+        logger = providers.get(Logger)
 
         file_manager.validate_path(self, file_type="all")
 
@@ -88,32 +89,32 @@ class RecognizedPath:
         else:
             self.abs.touch(exist_ok=False)
 
-    def mk(self, provider):
-        file_manager = provider.get(FileManager)
+    def mk(self):
+        file_manager = providers.get(FileManager)
         file_manager.validate_path(self, should_exist=False, file_type="all")
         if self.slashend:
             self.abs.mkdir(exist_ok=False)
         else:
             self.abs.touch(exist_ok=False)
 
-    def rm(self, provider):
-        file_manager = provider.get(FileManager)
+    def rm(self):
+        file_manager = providers.get(FileManager)
         file_manager.validate_path(self, should_exist=True, file_type="all")
         if self.abs.is_dir() and not self.abs.is_symlink():
             self.abs.rmdir()
         else:
             self.abs.unlink()
 
-    def mv(self, dst, provider):
+    def mv(self, dst):
         if type(self) != type(dst):
             raise ValueError(f"Different file type: {self!s} -> {dst!s}")
-        file_manager = provider.get(FileManager)
+        file_manager = providers.get(FileManager)
         file_manager.validate_path(self, should_exist=True, file_type="all")
         file_manager.validate_path(dst, should_exist=False, file_type="all")
         self.abs.rename(dst.abs)
 
-    def cp(self, src, provider):
-        file_manager = provider.get(FileManager)
+    def cp(self, src):
+        file_manager = providers.get(FileManager)
         file_manager.validate_path(self, should_exist=False, file_type="all")
         file_manager.validate_path(
             src, should_exist=True, should_in_range=False, file_type="all"
@@ -129,8 +130,8 @@ class RecognizedFilePath(RecognizedPath):
     def normalize(self):
         return dataclasses.replace(self, slashend=False) if self.slashend else self
 
-    def mk(self, provider):
-        file_manager = provider.get(FileManager)
+    def mk(self):
+        file_manager = providers.get(FileManager)
         file_manager.validate_path(self, should_exist=False, file_type="all")
         self.abs.touch(exist_ok=False)
 
@@ -139,8 +140,8 @@ class RecognizedDirPath(RecognizedPath):
     def normalize(self):
         return dataclasses.replace(self, slashend=True) if not self.slashend else self
 
-    def mk(self, provider):
-        file_manager = provider.get(FileManager)
+    def mk(self):
+        file_manager = providers.get(FileManager)
         file_manager.validate_path(self, should_exist=False, file_type="all")
         self.abs.mkdir(exist_ok=False)
 
@@ -349,13 +350,12 @@ class FileManager:
     ROOT_ENVVAR = "KAIKO"
     ROOT_PATH = "~/.local/share/K-AIKO"
 
-    def __init__(self, root_path_type, provider):
+    def __init__(self, root_path_type):
         self.username = getpass.getuser()
         root = Path(self.ROOT_PATH).expanduser()
         self.root = root_path_type(root, True)
         self.current = self.root
         self.settings = FileManagerSettings()
-        self.provider = provider
 
     def init_env(self):
         os.environ[self.ROOT_ENVVAR] = str(self.root.abs)
@@ -363,18 +363,13 @@ class FileManager:
     def set_settings(self, settings):
         self.settings = settings
 
-    @property
-    def logger(self):
-        return self.provider.get(Logger)
-
     def fix(self):
-        logger = self.logger
-        provider = self.provider
+        logger = providers.get(Logger)
 
         if not self.root.abs.exists():
             logger.print(f"[warn]The KAIKO workspace is missing[/]")
             logger.print(f"[data/] Create KAIKO workspace...")
-            self.root.mk(provider)
+            self.root.mk()
             logger.print(
                 f"[data/] Your data will be stored in {logger.as_uri(self.root.abs)}"
             )
@@ -384,7 +379,7 @@ class FileManager:
 
         def go(path):
             for subpath in path.get_children():
-                subpath.fix(provider)
+                subpath.fix()
                 if isinstance(subpath, RecognizedDirPath):
                     go(subpath)
 
@@ -419,16 +414,17 @@ class FileManager:
             return []
 
     def as_relative_path(self, path, parent=None, markup=False):
+        logger = providers.get(Logger)
         if parent is not None:
             relpath = path.try_relative_to(parent)
             if markup:
-                relpath = f"[emph]{self.logger.escape(relpath)}[/]"
+                relpath = f"[emph]{logger.escape(relpath)}[/]"
             return relpath
 
         if not path.abs.is_relative_to(self.root.abs):
             relpath = str(path)
             if markup:
-                relpath = f"[emph]{self.logger.escape(relpath)}[/]"
+                relpath = f"[emph]{logger.escape(relpath)}[/]"
             return relpath
 
         relpath = str(path.abs.relative_to(self.root.abs))
@@ -440,7 +436,7 @@ class FileManager:
             relpath = os.path.join(relpath, "")
 
         if markup:
-            relpath = f"[emph]{self.logger.escape(relpath)}[/]"
+            relpath = f"[emph]{logger.escape(relpath)}[/]"
 
         return relpath
 
@@ -483,7 +479,7 @@ class FileManager:
             self.validate_path(path, should_exist=True, file_type="dir")
 
         except InvalidFileOperation as e:
-            logger = self.logger
+            logger = providers.get(Logger)
             path_mu = self.as_relative_path(path, markup=True)
             logger.print(f"[warn]Failed to change current directory to {path_mu}[/]")
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
@@ -493,10 +489,10 @@ class FileManager:
 
     def mk(self, path):
         try:
-            path.mk(self.provider)
+            path.mk()
 
         except InvalidFileOperation as e:
-            logger = self.logger
+            logger = providers.get(Logger)
             path_mu = self.as_relative_path(path, markup=True)
             logger.print(f"[warn]Failed to make file: {path_mu}[/]")
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
@@ -504,10 +500,10 @@ class FileManager:
 
     def rm(self, path):
         try:
-            path.rm(self.provider)
+            path.rm()
 
         except InvalidFileOperation as e:
-            logger = self.logger
+            logger = providers.get(Logger)
             path_mu = self.as_relative_path(path, markup=True)
             logger.print(f"[warn]Failed to remove file: {path_mu}[/]")
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
@@ -515,10 +511,10 @@ class FileManager:
 
     def mv(self, path, dst):
         try:
-            path.mv(dst, self.provider)
+            path.mv(dst)
 
         except InvalidFileOperation as e:
-            logger = self.logger
+            logger = providers.get(Logger)
             path_mu = self.as_relative_path(path, markup=True)
             dst_mu = self.as_relative_path(dst, markup=True)
             logger.print(f"[warn]Failed to move file: {path_mu} -> {dst_mu}[/]")
@@ -527,10 +523,10 @@ class FileManager:
 
     def cp(self, src, path):
         try:
-            path.cp(src, self.provider)
+            path.cp(src)
 
         except InvalidFileOperation as e:
-            logger = self.logger
+            logger = providers.get(Logger)
             src_mu = self.as_relative_path(src, markup=True)
             path_mu = self.as_relative_path(path, markup=True)
             logger.print(f"[warn]Failed to copy file: {src_mu} -> {path_mu}[/]")
@@ -544,26 +540,14 @@ class FileManager:
             desc=desc,
             filter=filter,
             suggs=[f"${self.ROOT_ENVVAR}/"],
-            provider=self.provider,
         )
 
 
 class FilesCommand:
-    def __init__(self, provider):
-        self.provider = provider
-
-    @property
-    def file_manager(self):
-        return self.provider.get(FileManager)
-
-    @property
-    def logger(self):
-        return self.provider.get(Logger)
-
     @cmd.function_command
     def ls(self):
-        logger = self.logger
-        file_manager = self.file_manager
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
         display_settings = file_manager.settings.display
         current_path = file_manager.current
 
@@ -634,7 +618,7 @@ class FilesCommand:
                 if type(path) in field_types
                 else len(field_types)
             )
-            info = path.info(self.provider)
+            info = path.info()
             info = (
                 logger.rich.parse(info, root_tag=True, expand=False)
                 if info is not None
@@ -669,12 +653,13 @@ class FilesCommand:
 
     @cmd.function_command
     def cd(self, path):
-        self.file_manager.cd(path)
+        file_manager = providers.get(FileManager)
+        file_manager.cd(path)
 
     @cmd.function_command
     def cat(self, path):
-        file_manager = self.file_manager
-        logger = self.logger
+        file_manager = providers.get(FileManager)
+        logger = providers.get(Logger)
 
         try:
             file_manager.validate_path(path, should_exist=True, file_type="file")
@@ -696,30 +681,36 @@ class FilesCommand:
 
     @cmd.function_command
     def mk(self, path):
-        self.file_manager.mk(path)
+        file_manager = providers.get(FileManager)
+        file_manager.mk(path)
 
     @cmd.function_command
     def rm(self, path):
-        self.file_manager.rm(path)
+        file_manager = providers.get(FileManager)
+        file_manager.rm(path)
 
     @cmd.function_command
     def mv(self, path, dst):
-        self.file_manager.mv(path, dst)
+        file_manager = providers.get(FileManager)
+        file_manager.mv(path, dst)
 
     @cmd.function_command
     def cp(self, src, path):
-        self.file_manager.cp(src, path)
+        file_manager = providers.get(FileManager)
+        file_manager.cp(src, path)
 
     @cd.arg_parser("path")
     def _cd_path_parser(self):
-        return self.file_manager.make_parser(
+        file_manager = providers.get(FileManager)
+        return file_manager.make_parser(
             desc="It should be an existing directory",
             filter=lambda path: os.path.isdir(str(path)),
         )
 
     @cat.arg_parser("path")
     def _cat_path_parser(self):
-        return self.file_manager.make_parser(
+        file_manager = providers.get(FileManager)
+        return file_manager.make_parser(
             desc="It should be an existing file",
             filter=lambda path: os.path.isfile(str(path)),
         )
@@ -728,19 +719,22 @@ class FilesCommand:
     @cp.arg_parser("path")
     @mk.arg_parser("path")
     def _any_path_parser(self, *_, **__):
-        return self.file_manager.make_parser()
+        file_manager = providers.get(FileManager)
+        return file_manager.make_parser()
 
     @rm.arg_parser("path")
     @mv.arg_parser("path")
     def _lexists_path_parser(self, *_, **__):
-        return self.file_manager.make_parser(
+        file_manager = providers.get(FileManager)
+        return file_manager.make_parser(
             desc="It should be an existing path",
             filter=lambda path: os.path.lexists(str(path)),
         )
 
     @cp.arg_parser("src")
     def _exists_path_parser(self, *_, **__):
-        return self.file_manager.make_parser(
+        file_manager = providers.get(FileManager)
+        return file_manager.make_parser(
             desc="It should be an existing path",
             filter=lambda path: os.path.exists(str(path)),
         )
@@ -754,7 +748,8 @@ class FilesCommand:
                           bool, move to bottom or
                            not; default is False.
         """
-        self.logger.clear(bottom)
+        logger = providers.get(Logger)
+        logger.clear(bottom)
 
     @cmd.function_command
     @dn.datanode
@@ -765,15 +760,17 @@ class FilesCommand:
         """
         from .profiles import ProfileManager
 
-        profile_is_changed = self.provider.get(ProfileManager).is_changed()
+        logger = providers.get(Logger)
+
+        profile_is_changed = providers.get(ProfileManager).is_changed()
 
         if profile_is_changed:
-            yes = yield from self.logger.ask(
+            yes = yield from logger.ask(
                 "Exit without saving current configuration?"
             ).join()
             if not yes:
                 return
-        self.logger.print("Bye~")
+        logger.print("Bye~")
         raise KeyboardInterrupt
 
     @cmd.function_command
@@ -783,13 +780,14 @@ class FilesCommand:
 
         usage: [cmd]bye_forever[/]
         """
-        logger = self.logger
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
 
         logger.print("This command will clean up all your data.")
 
         yes = yield from logger.ask("Do you really want to do that?", False).join()
         if yes:
-            self.file_manager.remove(logger)
+            file_manager.remove(logger)
             logger.print("Good luck~")
             raise KeyboardInterrupt
 
@@ -804,7 +802,6 @@ class PathParser(cmd.ArgumentParser):
         desc=None,
         filter=lambda _: True,
         suggs=None,
-        provider=None,
     ):
         r"""Contructor.
 
@@ -820,14 +817,12 @@ class PathParser(cmd.ArgumentParser):
             The filter function for the result.
         suggs : list of str, optional
             The absolute path that will be suggested.
-        provider : Provider, optional
         """
         self.root = root
         self.prefix = prefix
         self._desc = desc
         self.filter = filter
         self.suggs = suggs
-        self.provider = provider
 
     def desc(self):
         return self._desc if self._desc is not None else "It should be a path"
@@ -915,34 +910,32 @@ class PathParser(cmd.ArgumentParser):
         return suggestions
 
     def info(self, token):
-        if self.provider is None:
-            return None
         path = self.parse(token)
-        info = path.info_detailed(self.provider)
+        info = path.info_detailed()
         if info is None:
-            info = path.info(self.provider)
+            info = path.info()
         return info
 
 
-def DirectCdCommand(provider):
-    file_commands = FilesCommand(provider)
+def DirectCdCommand():
+    file_commands = FilesCommand()
 
     def make_cd_command(path, doc):
         command = lambda _: file_commands.cd(path)
         command.__doc__ = doc
         return cmd.function_command(command)
 
-    file_manager = provider.get(FileManager)
+    file_manager = providers.get(FileManager)
 
     attrs = {}
 
     path = file_manager.recognize(file_manager.current.abs / "..")
-    doc = path.info_detailed(provider)
+    doc = path.info_detailed()
     attrs[".."] = make_cd_command(path, doc)
 
     for path in file_manager.iterdir():
         if path.slashend:
-            doc = path.info_detailed(provider)
+            doc = path.info_detailed()
             attrs[path.abs.name + "/"] = make_cd_command(path, doc)
 
     return type("DirectCdCommand", (object,), attrs)()

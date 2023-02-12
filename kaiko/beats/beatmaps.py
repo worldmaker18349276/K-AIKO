@@ -6,7 +6,7 @@ from collections import OrderedDict
 from fractions import Fraction
 import threading
 import numpy
-from ..utils.providers import Provider
+from ..utils import providers
 from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..utils import markups as mu
@@ -961,56 +961,55 @@ class BeatbarWidgetFactory:
 
     def __init__(self, state, rich, mixer, detector, renderer):
         self.state = state
-
-        self.provider = Provider()
-        self.provider.set(rich)
-        self.provider.set(mixer)
-        self.provider.set(detector)
-        self.provider.set(renderer)
+        self.rich = rich
+        self.mixer = mixer
+        self.detector = detector
+        self.renderer = renderer
 
     def create(self, widget_settings):
-        if isinstance(widget_settings, BeatbarWidgetFactory.spectrum):
-            return widgets.SpectrumWidget(widget_settings).load(self.provider)
-        elif isinstance(widget_settings, BeatbarWidgetFactory.volume_indicator):
-            return widgets.VolumeIndicatorWidget(widget_settings).load(self.provider)
-        elif isinstance(widget_settings, BeatbarWidgetFactory.knock_meter):
-            return widgets.KnockMeterWidget(widget_settings).load(self.provider)
-        elif isinstance(widget_settings, BeatbarWidgetFactory.accuracy_meter):
-            accuracy_getter = dn.pipe(
-                observe(self.state.perfs), lambda perfs: [perf.err for perf in perfs]
-            )
-            return widgets.AccuracyMeterWidget(accuracy_getter, widget_settings).load(
-                self.provider
-            )
-        elif isinstance(widget_settings, BeatbarWidgetFactory.monitor):
-            return widgets.MonitorWidget(widget_settings).load(self.provider)
-        elif isinstance(widget_settings, BeatbarWidgetFactory.score):
-            score_getter = lambda _: (self.state.score, self.state.full_score)
-            return widgets.ScoreWidget(score_getter, widget_settings).load(
-                self.provider
-            )
-        elif isinstance(widget_settings, BeatbarWidgetFactory.progress):
-            progress_getter = lambda _: (
-                self.state.finished_subjects / self.state.total_subjects
-                if self.state.total_subjects > 0
-                else 1.0
-            )
-            time_getter = lambda _: self.state.time
-            return widgets.ProgressWidget(
-                progress_getter, time_getter, widget_settings
-            ).load(self.provider)
-        elif isinstance(widget_settings, BeatbarWidgetFactory.sight):
-            grade_getter = dn.pipe(
-                observe(self.state.perfs),
-                lambda perfs: [
-                    perf.grade.shift for perf in perfs if perf.grade.shift is not None
-                ],
-            )
-            return beatbars.SightWidget(grade_getter, widget_settings).load(
-                self.provider
-            )
-        else:
-            raise TypeError
+        with providers.set(self.rich, self.mixer, self.detector, self.renderer):
+
+            if isinstance(widget_settings, BeatbarWidgetFactory.spectrum):
+                return widgets.SpectrumWidget(widget_settings).load()
+            elif isinstance(widget_settings, BeatbarWidgetFactory.volume_indicator):
+                return widgets.VolumeIndicatorWidget(widget_settings).load()
+            elif isinstance(widget_settings, BeatbarWidgetFactory.knock_meter):
+                return widgets.KnockMeterWidget(widget_settings).load()
+            elif isinstance(widget_settings, BeatbarWidgetFactory.accuracy_meter):
+                accuracy_getter = dn.pipe(
+                    observe(self.state.perfs),
+                    lambda perfs: [perf.err for perf in perfs],
+                )
+                return widgets.AccuracyMeterWidget(
+                    accuracy_getter, widget_settings
+                ).load()
+            elif isinstance(widget_settings, BeatbarWidgetFactory.monitor):
+                return widgets.MonitorWidget(widget_settings).load()
+            elif isinstance(widget_settings, BeatbarWidgetFactory.score):
+                score_getter = lambda _: (self.state.score, self.state.full_score)
+                return widgets.ScoreWidget(score_getter, widget_settings).load()
+            elif isinstance(widget_settings, BeatbarWidgetFactory.progress):
+                progress_getter = lambda _: (
+                    self.state.finished_subjects / self.state.total_subjects
+                    if self.state.total_subjects > 0
+                    else 1.0
+                )
+                time_getter = lambda _: self.state.time
+                return widgets.ProgressWidget(
+                    progress_getter, time_getter, widget_settings
+                ).load()
+            elif isinstance(widget_settings, BeatbarWidgetFactory.sight):
+                grade_getter = dn.pipe(
+                    observe(self.state.perfs),
+                    lambda perfs: [
+                        perf.grade.shift
+                        for perf in perfs
+                        if perf.grade.shift is not None
+                    ],
+                )
+                return beatbars.SightWidget(grade_getter, widget_settings).load()
+            else:
+                raise TypeError
 
 
 BeatbarIconWidgetSettings = Union[

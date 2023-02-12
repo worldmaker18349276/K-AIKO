@@ -1,7 +1,7 @@
 import threading
 from typing import List, Tuple, Union
 import dataclasses
-from ..utils.providers import Provider
+from ..utils import providers
 from ..utils import datanodes as dn
 from ..utils import config as cfg
 from ..utils import markups as mu
@@ -74,9 +74,8 @@ class PatternsWidget:
     def __init__(self, settings):
         self.settings = settings
 
-    def load(self, provider):
-        rich = provider.get(mu.RichParser)
-        metronome = provider.get(clocks.Metronome)
+    @providers.inject(rich=mu.RichParser, metronome=clocks.Metronome)
+    def load(self, *, rich, metronome):
 
         patterns = self.settings.patterns
 
@@ -119,9 +118,8 @@ class MarkerWidget:
     def __init__(self, settings):
         self.settings = settings
 
-    def load(self, provider):
-        rich = provider.get(mu.RichParser)
-        metronome = provider.get(clocks.Metronome)
+    @providers.inject(rich=mu.RichParser, metronome=clocks.Metronome)
+    def load(self, *, rich, metronome):
 
         blink_ratio = self.settings.blink_ratio
         normal = [(0, rich.parse(self.settings.normal_appearance))]
@@ -242,19 +240,16 @@ class BeatPrompt:
 
     def __init__(
         self,
-        provider,
         history_file_path,
         monitor_file_path,
         settings,
     ):
-        self.provider = provider
-        self.logger = provider.get(Logger)
-        self.metronome = provider.get(clocks.Metronome)
+        self.metronome = providers.get(clocks.Metronome)
         self.settings = settings
         self.history_file_path = history_file_path
         self.monitor_file_path = monitor_file_path
 
-        bgm_controller = provider.get(BGMController)
+        bgm_controller = providers.get(BGMController)
 
         self.input = inputs.Input(
             bgm_controller.preview_handler,
@@ -266,29 +261,25 @@ class BeatPrompt:
         self.settings = settings
         self.input._set_settings(self.settings.input)
 
-    def create_widget(self, provider, widget_settings):
+    def create_widget(self, widget_settings):
         if isinstance(widget_settings, widgets.MonitorWidgetSettings):
-            return widgets.MonitorWidget(widget_settings).load(provider)
+            return widgets.MonitorWidget(widget_settings).load()
         elif isinstance(widget_settings, PatternsWidgetSettings):
-            return PatternsWidget(widget_settings).load(provider)
+            return PatternsWidget(widget_settings).load()
         elif isinstance(widget_settings, MarkerWidgetSettings):
-            return MarkerWidget(widget_settings).load(provider)
+            return MarkerWidget(widget_settings).load()
         else:
             raise TypeError
 
     def register(self, renderer, controller, fin_event):
         # widgets
+        logger = providers.get(Logger)
         settings = self.settings
 
-        provider = Provider()
-        provider.set(self.logger.rich)
-        provider.set(self.metronome)
-        provider.set(renderer)
-        provider.set(controller)
-
-        icon = self.create_widget(provider, settings.prompt.icons)
-        marker = self.create_widget(provider, settings.prompt.marker)
-        textbox = self.input._register(fin_event, provider)
+        with providers.set(logger.rich, self.metronome, renderer, controller):
+            icon = self.create_widget(settings.prompt.icons)
+            marker = self.create_widget(settings.prompt.marker)
+            textbox = self.input._register(fin_event)
 
         # layout
         icon_width = settings.prompt.icon_width
@@ -307,7 +298,8 @@ class BeatPrompt:
 
     @dn.datanode
     def new_session(self, command_parser, clear=True):
-        device_manager = self.provider.get(DeviceManager)
+        device_manager = providers.get(DeviceManager)
+        logger = providers.get(Logger)
         settings = self.settings
         debug_monitor = settings.debug_monitor
 
@@ -327,17 +319,15 @@ class BeatPrompt:
         self.register(renderer, controller, fin_event)
 
         stop_task = dn.take(lambda _: not fin_event.is_set())
-        with self.logger.popup(renderer):
+        with logger.popup(renderer):
             yield from dn.pipe(stop_task, engine_task).join()
 
         result = self.input.result
         if isinstance(result, inputs.ErrorResult):
-            self.logger.log(f"parse command: {result.command_str}")
+            logger.log(f"parse command: {result.command_str}")
             raise PromptError(result.error)
         elif isinstance(result, inputs.CompleteResult):
-            self.logger.log(
-                f"parse command: [{result.command_group}] {result.command_str}"
-            )
+            logger.log(f"parse command: [{result.command_group}] {result.command_str}")
             return result.command
         elif isinstance(result, inputs.EmptyResult):
             return lambda: None
@@ -348,8 +338,9 @@ class BeatPrompt:
         return self.input._record_command()
 
     def print_banner(self, print_info):
-        file_manager = self.provider.get(FileManager)
-        profile_manager = self.provider.get(ProfileManager)
+        file_manager = providers.get(FileManager)
+        profile_manager = providers.get(ProfileManager)
+        logger = providers.get(Logger)
 
         banner_settings = self.settings.banner
 
@@ -359,50 +350,46 @@ class BeatPrompt:
         profile_is_changed = profile_manager.is_changed()
         path_is_known = not isinstance(file_manager.current, UnrecognizedPath)
 
-        username = self.logger.rich.parse(self.logger.escape(username))
-        profile = self.logger.rich.parse(self.logger.escape(current_name))
-        path = self.logger.rich.parse(self.logger.escape(path))
+        username = logger.rich.parse(logger.escape(username))
+        profile = logger.rich.parse(logger.escape(current_name))
+        path = logger.rich.parse(logger.escape(path))
 
         user_markup = banner_settings.user
-        user_markup = self.logger.rich.parse(user_markup, expand=False, slotted=True)
+        user_markup = logger.rich.parse(user_markup, expand=False, slotted=True)
         user_markup = user_markup(user_name=username)
 
         profile_markup = banner_settings.profile
         profile_markup = (
             profile_markup[0] if not profile_is_changed else profile_markup[1]
         )
-        profile_markup = self.logger.rich.parse(
-            profile_markup, expand=False, slotted=True
-        )
+        profile_markup = logger.rich.parse(profile_markup, expand=False, slotted=True)
         profile_markup = profile_markup(profile_name=profile)
 
         path_markup = banner_settings.path
         path_markup = path_markup[0] if path_is_known else path_markup[1]
-        path_markup = self.logger.rich.parse(path_markup, expand=False, slotted=True)
+        path_markup = logger.rich.parse(path_markup, expand=False, slotted=True)
         path_markup = path_markup(current_path=path)
 
         banner_markup = banner_settings.banner
-        banner_markup = self.logger.rich.parse(
-            banner_markup, expand=False, slotted=True
-        )
+        banner_markup = logger.rich.parse(banner_markup, expand=False, slotted=True)
         banner_markup = banner_markup(
             user=user_markup,
             profile=profile_markup,
             path=path_markup,
         )
 
-        self.logger.print(banner_markup, log=False)
+        logger.print(banner_markup, log=False)
 
         if not print_info:
             return
 
-        info = file_manager.current.info_detailed(self.provider)
+        info = file_manager.current.info_detailed()
         if info is None:
             return
 
-        info_markup = self.logger.rich.parse(info, root_tag=True)
-        info_block = self.logger.rich.parse(
+        info_markup = logger.rich.parse(info, root_tag=True)
+        info_block = logger.rich.parse(
             banner_settings.info_block, expand=False, slotted=True
         )
         info_markup = info_block(info_markup)
-        self.logger.print(info_markup, log=False)
+        logger.print(info_markup, log=False)

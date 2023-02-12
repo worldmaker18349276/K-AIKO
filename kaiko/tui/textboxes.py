@@ -4,6 +4,7 @@ import numpy
 from ..utils import datanodes as dn
 from ..utils import markups as mu
 from ..utils import config as cfg
+from ..utils import providers
 from ..devices import engines
 from ..devices import clocks
 
@@ -239,7 +240,6 @@ class TextBox:
                     markup = render_caret.send((markup, beat, key_pressed))
                     time, ran = yield [(-self.text_offset, markup), *ellipses]
 
-    def load(self, provider):
-        rich = provider.get(mu.RichParser)
-        metronome = provider.get(clocks.Metronome)
+    @providers.inject(rich=mu.RichParser, metronome=clocks.Metronome)
+    def load(self, *, rich, metronome):
         return self.render_textbox(rich=rich, metronome=metronome)

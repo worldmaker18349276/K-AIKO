@@ -8,6 +8,7 @@ from pathlib import Path
 from ..utils import markups as mu
 from ..utils import datanodes as dn
 from ..utils import commands as cmd
+from ..utils import providers
 from ..devices import clocks
 from ..devices import audios as aud
 from ..beats import beatmaps
@@ -27,9 +28,9 @@ from .profiles import ProfileManager
 class BeatmapFilePath(RecognizedFilePath):
     "Beatmap of a song"
 
-    def info_detailed(self, provider):
-        beatmap_manager = provider.get(BeatmapManager)
-        logger = provider.get(Logger)
+    def info_detailed(self):
+        beatmap_manager = providers.get(BeatmapManager)
+        logger = providers.get(Logger)
 
         beatmap = beatmap_manager.get_beatmap_metadata(self)
 
@@ -42,8 +43,8 @@ class BeatmapFilePath(RecognizedFilePath):
         )
         return "[rich]" + logger.format_dict(data, show_border=False)
 
-    def rm(self, provider):
-        beatmap_manager = provider.get(BeatmapManager)
+    def rm(self):
+        beatmap_manager = providers.get(BeatmapManager)
         succ = beatmap_manager.remove_beatmap(self)
         if not succ:
             return
@@ -51,8 +52,8 @@ class BeatmapFilePath(RecognizedFilePath):
         beatmap_manager.update_beatmapset(self.parent)
         beatmap_manager.update_beatmap(self)
 
-    def cp(self, src, provider):
-        beatmap_manager = provider.get(BeatmapManager)
+    def cp(self, src):
+        beatmap_manager = providers.get(BeatmapManager)
         succ = beatmap_manager.add_beatmap(self, src)
         if not succ:
             return
@@ -68,16 +69,16 @@ class BeatmapFilePath(RecognizedFilePath):
 class BeatmapsetDirPath(RecognizedDirPath):
     "Beatmapset of a song"
 
-    def rm(self, provider):
-        beatmap_manager = provider.get(BeatmapManager)
+    def rm(self):
+        beatmap_manager = providers.get(BeatmapManager)
         succ = beatmap_manager.remove_beatmapset(self)
         if not succ:
             return
         beatmap_manager.update_beatmapsdir()
         beatmap_manager.update_beatmapset(self)
 
-    def cp(self, src, provider):
-        beatmap_manager = provider.get(BeatmapManager)
+    def cp(self, src):
+        beatmap_manager = providers.get(BeatmapManager)
         succ = beatmap_manager.add_beatmapset(self, src)
         if not succ:
             return
@@ -113,7 +114,7 @@ class BeatmapsDirPath(RecognizedDirPath):
     [color=bright_blue]█▄▄▄▄▄▄█[/] command [cmd]play[/] to play the beatmap in this folder.
     """
 
-    def rm(self, provider):
+    def rm(self):
         raise InvalidFileOperation(
             "Deleting important directories or files may crash the program"
         )
@@ -148,25 +149,16 @@ class BeatmapsDirCache:
 
 
 class BeatmapManager:
-    def __init__(self, beatmaps_dir, provider):
+    def __init__(self, beatmaps_dir):
         self.beatmaps_dir = beatmaps_dir
-        self.provider = provider
         self._beatmaps = BeatmapsDirCache()
-
-    @property
-    def file_manager(self):
-        return self.provider.get(FileManager)
-
-    @property
-    def logger(self):
-        return self.provider.get(Logger)
 
     def update_beatmapsdir(self):
         if self._beatmaps.mtime == self.beatmaps_dir.abs.stat().st_mtime:
             return
 
-        logger = self.logger
-        file_manager = self.file_manager
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
 
         logger.print("[data/] Load beatmaps...")
 
@@ -211,8 +203,8 @@ class BeatmapManager:
         if _beatmapset.mtime == beatmapset_mtime:
             return
 
-        logger = self.logger
-        file_manager = self.file_manager
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
         path_mu = file_manager.as_relative_path(beatmapset_path, markup=True)
         logger.log(f"[data/] Load beatmapsets {path_mu}...")
 
@@ -249,8 +241,8 @@ class BeatmapManager:
         if _beatmap.mtime == beatmap_mtime:
             return
 
-        logger = self.logger
-        file_manager = self.file_manager
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
         path_mu = file_manager.as_relative_path(beatmap_path, markup=True)
         logger.log(f"[data/] Load beatmap {path_mu}...")
 
@@ -305,22 +297,22 @@ class BeatmapManager:
         return [song for song in songs if song is not None]
 
     def validate_beatmapset_path(self, path, should_exist=None):
-        file_manager = self.file_manager
+        file_manager = providers.get(FileManager)
         if not isinstance(path, BeatmapsetDirPath):
             relpath = file_manager.as_relative_path(path)
             raise InvalidFileOperation(f"Not a valid beatmapset path: {relpath}")
         file_manager.validate_path(path, should_exist=should_exist, file_type="dir")
 
     def validate_beatmap_path(self, path, should_exist=None):
-        file_manager = self.file_manager
+        file_manager = providers.get(FileManager)
         if not isinstance(path, BeatmapFilePath):
             relpath = file_manager.as_relative_path(path)
             raise InvalidFileOperation(f"Not a valid beatmap path: {relpath}")
         file_manager.validate_path(path, should_exist=should_exist, file_type="file")
 
     def remove_beatmapset(self, beatmapset_path):
-        logger = self.logger
-        file_manager = self.file_manager
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
 
         beatmapset_path = beatmapset_path.normalize()
 
@@ -337,8 +329,8 @@ class BeatmapManager:
         shutil.rmtree(str(beatmapset_path))
 
     def remove_beatmap(self, beatmap_path):
-        logger = self.logger
-        file_manager = self.file_manager
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
 
         beatmap_path = beatmap_path.normalize()
 
@@ -356,13 +348,14 @@ class BeatmapManager:
         beatmap_path.abs.unlink()
 
     def add_beatmapset(self, beatmapset_path, src_path):
-        logger = self.logger
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
 
         beatmapset_path = beatmapset_path.normalize()
 
         try:
             self.validate_beatmapset_path(beatmapset_path, should_exist=False)
-            self.file_manager.validate_path(
+            file_manager.validate_path(
                 src_path, should_exist=True, should_in_range=False, file_type="dir"
             )
         except InvalidFileOperation as e:
@@ -378,11 +371,12 @@ class BeatmapManager:
         return True
 
     def add_beatmap(self, beatmap_path, src_path):
-        logger = self.logger
+        logger = providers.get(Logger)
+        file_manager = providers.get(FileManager)
 
         try:
             self.validate_beatmap_path(beatmap_path, should_exist=False)
-            self.file_manager.validate_path(
+            file_manager.validate_path(
                 src_path, should_exist=True, should_in_range=False, file_type="file"
             )
         except InvalidFileOperation as e:
@@ -413,30 +407,9 @@ class Song:
 
 
 class PlayCommand:
-    def __init__(self, provider, resources_dir, cache_dir):
-        self.provider = provider
+    def __init__(self, resources_dir, cache_dir):
         self.resources_dir = resources_dir
         self.cache_dir = cache_dir
-
-    @property
-    def logger(self):
-        return self.provider.get(Logger)
-
-    @property
-    def profile_manager(self):
-        return self.provider.get(ProfileManager)
-
-    @property
-    def device_manager(self):
-        return self.provider.get(DeviceManager)
-
-    @property
-    def file_manager(self):
-        return self.provider.get(FileManager)
-
-    @property
-    def beatmap_manager(self):
-        return self.provider.get(BeatmapManager)
 
     # beatmaps
 
@@ -450,20 +423,23 @@ class PlayCommand:
            Path, the path to the
           beatmap you want to parse.
         """
+        beatmap_manager = providers.get(BeatmapManager)
+        file_manager = providers.get(FileManager)
+        logger = providers.get(Logger)
 
         try:
-            self.beatmap_manager.validate_beatmap_path(beatmap, should_exist=True)
+            beatmap_manager.validate_beatmap_path(beatmap, should_exist=True)
         except InvalidFileOperation as e:
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
 
         beatmap = yield from load_beatmap(
-            beatmap, self.file_manager, self.beatmap_manager, self.logger
+            beatmap, file_manager, beatmap_manager, logger
         ).join()
         if beatmap is None:
             return
-        beatmap_mu = self.logger.format_value(beatmap, multiline=4)
-        self.logger.print(beatmap_mu)
+        beatmap_mu = logger.format_value(beatmap, multiline=4)
+        logger.print(beatmap_mu)
 
     @cmd.function_command
     def play(self, beatmap, start=None):
@@ -476,21 +452,26 @@ class PlayCommand:
           Only the beatmaps in your      if you want.
         beatmaps folder can be accessed.
         """
+        profile_manager = providers.get(ProfileManager)
+        beatmap_manager = providers.get(BeatmapManager)
+        device_manager = providers.get(DeviceManager)
+        file_manager = providers.get(FileManager)
+        logger = providers.get(Logger)
 
         try:
-            self.beatmap_manager.validate_beatmap_path(beatmap, should_exist=True)
+            beatmap_manager.validate_beatmap_path(beatmap, should_exist=True)
         except InvalidFileOperation as e:
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
 
         return KAIKOPlay(
-            load_beatmap(beatmap, self.file_manager, self.beatmap_manager, self.logger),
+            load_beatmap(beatmap, file_manager, beatmap_manager, logger),
             start,
             self.resources_dir,
-            self.file_manager,
-            self.profile_manager,
-            self.device_manager,
-            self.logger,
+            file_manager,
+            profile_manager,
+            device_manager,
+            logger,
         )
 
     @cmd.function_command
@@ -502,15 +483,19 @@ class PlayCommand:
             text, the pattern     float, the tempo of         float, the offset time
                 to repeat.     pattern; default is 120.0.    at start; default is 1.0.
         """
+        profile_manager = providers.get(ProfileManager)
+        device_manager = providers.get(DeviceManager)
+        file_manager = providers.get(FileManager)
+        logger = providers.get(Logger)
 
         return KAIKOPlay(
-            load_pattern(pattern, tempo, offset, self.logger),
+            load_pattern(pattern, tempo, offset, logger),
             None,
             self.resources_dir,
-            self.file_manager,
-            self.profile_manager,
-            self.device_manager,
-            self.logger,
+            file_manager,
+            profile_manager,
+            device_manager,
+            logger,
         )
 
     @loop.arg_parser("pattern")
@@ -522,7 +507,8 @@ class PlayCommand:
     @play.arg_parser("beatmap")
     @parse.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        return self.file_manager.make_parser(
+        file_manager = providers.get(FileManager)
+        return file_manager.make_parser(
             desc="It should be a path to the beatmap file",
             filter=lambda path: isinstance(path, BeatmapFilePath),
         )

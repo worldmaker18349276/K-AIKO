@@ -310,7 +310,7 @@ def snap_to_frac(value, epsilon=0.001, N=float("inf")):
     d = 2
     count = 0
     while True:
-        w = epsilon * 0.5 ** d / 2
+        w = epsilon * 0.5**d / 2
         for n in range(1, d):
             if n / d - w < value < n / d + w:
                 return Fraction(n, d)

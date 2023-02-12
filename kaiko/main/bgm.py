@@ -6,6 +6,7 @@ from typing import Optional
 from ..utils import commands as cmd
 from ..utils import config as cfg
 from ..utils import datanodes as dn
+from ..utils import providers
 from ..devices import audios as aud
 from ..devices import clocks
 from ..beats import beatsheets
@@ -138,8 +139,7 @@ class BGMControllerSettings(cfg.Configurable):
 
 
 class BGMController:
-    def __init__(self, provider, settings, mixer_settings):
-        self.provider = provider
+    def __init__(self, settings, mixer_settings):
         self.settings = settings
         self.mixer_settings = mixer_settings
         self._action_queue = queue.Queue()
@@ -152,20 +152,8 @@ class BGMController:
     def set_mixer_settings(self, mixer_settings):
         self.mixer_settings = mixer_settings
 
-    @property
-    def beatmap_manager(self):
-        return self.provider.get(BeatmapManager)
-
-    @property
-    def file_manager(self):
-        return self.provider.get(FileManager)
-
-    @property
-    def logger(self):
-        return self.provider.get(Logger)
-
     def start(self):
-        device_manager = self.provider.get(DeviceManager)
+        device_manager = providers.get(DeviceManager)
         loader_task, loader = device_manager.load_engine_loader("mixer")
         event_task = self._bgm_event_loop(loader.require)
         return dn.pipe(loader_task, event_task)
@@ -184,8 +172,8 @@ class BGMController:
 
             yield from dn.sleep(self.settings.play_delay).join()
 
-            logger = self.logger
-            file_manager = self.file_manager
+            logger = providers.get(Logger)
+            file_manager = providers.get(FileManager)
             path_mu = file_manager.as_relative_path(
                 UnrecognizedPath(action.song.path, False), markup=True
             )
@@ -200,14 +188,14 @@ class BGMController:
                 start=start,
                 end=end,
                 beatpoints=action.song.beatpoints,
-                metronome=self.provider.get(clocks.Metronome),
+                metronome=providers.get(clocks.Metronome),
             ).join()
 
         elif isinstance(action, PlayBGM):
             yield from dn.sleep(self.settings.play_delay).join()
 
-            logger = self.logger
-            file_manager = self.file_manager
+            logger = providers.get(Logger)
+            file_manager = providers.get(FileManager)
             path_mu = file_manager.as_relative_path(
                 UnrecognizedPath(action.song.path, False), markup=True
             )
@@ -221,7 +209,7 @@ class BGMController:
                 volume=action.song.audio.volume + self.settings.volume,
                 start=action.start,
                 beatpoints=action.song.beatpoints,
-                metronome=self.provider.get(clocks.Metronome),
+                metronome=providers.get(clocks.Metronome),
             ).join()
 
         else:
@@ -293,7 +281,9 @@ class BGMController:
                 assert False
 
     def random_song(self):
-        songs = self.beatmap_manager.get_songs()
+        beatmap_manager = providers.get(BeatmapManager)
+
+        songs = beatmap_manager.get_songs()
         current_action = self.current_action
         if current_action is not None and current_action.song in songs:
             songs.remove(current_action.song)
@@ -315,19 +305,20 @@ class BGMController:
         self._action_queue.put(StopPreview())
 
     def preview_handler(self, token):
+        file_manager = providers.get(FileManager)
+        beatmap_manager = providers.get(BeatmapManager)
+
         if token is None:
             self.stop_preview()
             return
 
-        path = self.beatmap_manager.beatmaps_dir.recognize(
-            self.file_manager.current.abs / token
-        )
+        path = beatmap_manager.beatmaps_dir.recognize(file_manager.current.abs / token)
 
         if not isinstance(path, BeatmapFilePath):
             self.stop_preview()
             return
 
-        song = self.beatmap_manager.get_song(path.parent, path)
+        song = beatmap_manager.get_song(path.parent, path)
 
         if song is None:
             self.stop_preview()
@@ -337,8 +328,8 @@ class BGMController:
 
 
 class BGMCommand:
-    def __init__(self, provider):
-        self.subcommand = BGMSubCommand(provider)
+    def __init__(self):
+        self.subcommand = BGMSubCommand()
 
     @cmd.subcommand
     def bgm(self):
@@ -347,33 +338,14 @@ class BGMCommand:
 
 
 class BGMSubCommand:
-    def __init__(self, provider):
-        self.provider = provider
-
-    @property
-    def bgm_controller(self):
-        return self.provider.get(BGMController)
-
-    @property
-    def beatmap_manager(self):
-        return self.provider.get(BeatmapManager)
-
-    @property
-    def file_manager(self):
-        return self.provider.get(FileManager)
-
-    @property
-    def logger(self):
-        return self.provider.get(Logger)
-
     @cmd.function_command
     def on(self):
         """[rich]Turn on bgm.
 
         usage: [cmd]bgm[/] [cmd]on[/]
         """
-        logger = self.logger
-        bgm_controller = self.bgm_controller
+        logger = providers.get(Logger)
+        bgm_controller = providers.get(BGMController)
 
         if bgm_controller.is_bgm_on:
             self.now_playing()
@@ -392,7 +364,8 @@ class BGMSubCommand:
 
         usage: [cmd]bgm[/] [cmd]off[/]
         """
-        self.bgm_controller.stop()
+        bgm_controller = providers.get(BGMController)
+        bgm_controller.stop()
 
     @cmd.function_command
     def skip(self):
@@ -400,8 +373,8 @@ class BGMSubCommand:
 
         usage: [cmd]bgm[/] [cmd]skip[/]
         """
-        logger = self.logger
-        bgm_controller = self.bgm_controller
+        logger = providers.get(Logger)
+        bgm_controller = providers.get(BGMController)
 
         if bgm_controller.current_action is not None:
             song = bgm_controller.random_song()
@@ -420,8 +393,8 @@ class BGMSubCommand:
                  Path, the path to the       float, the time
                beatmap you want to play.     the song started.
         """
-        logger = self.logger
-        beatmap_manager = self.beatmap_manager
+        logger = providers.get(Logger)
+        beatmap_manager = providers.get(BeatmapManager)
 
         try:
             song = beatmap_manager.get_song(beatmap.parent, beatmap)
@@ -436,11 +409,12 @@ class BGMSubCommand:
         self._play(song, start)
 
     def _play(self, song, start=None):
-        self.bgm_controller.play(song, start)
+        bgm_controller = providers.get(BGMController)
+        bgm_controller.play(song, start)
 
     @play.arg_parser("beatmap")
     def _play_beatmap_parser(self):
-        file_manager = self.file_manager
+        file_manager = providers.get(FileManager)
         return file_manager.make_parser(
             desc="It should be a path to the beatmap file",
             filter=lambda path: isinstance(path, BeatmapFilePath),
@@ -456,9 +430,9 @@ class BGMSubCommand:
 
         usage: [cmd]bgm[/] [cmd]now_playing[/]
         """
-        logger = self.logger
-        bgm_controller = self.bgm_controller
-        file_manager = self.file_manager
+        logger = providers.get(Logger)
+        bgm_controller = providers.get(BGMController)
+        file_manager = providers.get(FileManager)
 
         current = bgm_controller.current_action
         if isinstance(current, PlayBGM):

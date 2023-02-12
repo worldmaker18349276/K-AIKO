@@ -5,6 +5,7 @@ import queue
 from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..utils import markups as mu
+from ..utils import providers
 from ..devices import engines
 
 
@@ -62,10 +63,10 @@ class SightWidget:
         self.grade_getter = dn.DataNode.wrap(grade_getter)
         self.settings = settings
 
-    def load(self, provider):
-        rich = provider.get(mu.RichParser)
-        detector = provider.get(engines.Detector)
-        renderer = provider.get(engines.Renderer)
+    @providers.inject(
+        rich=mu.RichParser, detector=engines.Detector, renderer=engines.Renderer
+    )
+    def load(self, *, rich, detector, renderer):
 
         perf_appearances = [
             (
