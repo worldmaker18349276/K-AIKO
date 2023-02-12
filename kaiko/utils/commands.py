@@ -461,7 +461,7 @@ class CommandParser:
     r"""Command parser.
 
     To parse a command with tokens `abc efg 123`, use
-    `cmdparser.parse("abc").parse("efg").parse("123").finish()`.
+    `cmdparser.parse("abc")[1].parse("efg")[1].parse("123")[1].finish()`.
     """
 
     def finish(self):
@@ -661,6 +661,33 @@ class CommandParser:
             except CommandParseError:
                 return None
         return parser.info(target)
+
+
+class CachedParser(CommandParser):
+    def __init__(self, origin):
+        self.origin = origin
+        self.token = None
+        self.result = None
+
+    def finish(self):
+        return self.origin.finish()
+
+    def parse(self, token):
+        if self.token == token:
+            return self.result
+        type, next_parser = self.origin.parse(token)
+        self.token = token
+        self.result = type, CachedParser(next_parser)
+        return self.result
+
+    def suggest(self, token):
+        return self.origin.suggest(token)
+
+    def desc(self):
+        return self.origin.desc()
+
+    def info(self, token):
+        return self.origin.info(token)
 
 
 class FunctionCommandParser(CommandParser):

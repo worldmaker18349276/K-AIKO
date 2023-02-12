@@ -197,21 +197,6 @@ def quoting(compreply, state=SHLEXER_STATE.SPACED):
     return raw if partial else raw + " "
 
 
-class CachedParser:
-    def __init__(self, origin):
-        self.origin = origin
-        self.token = None
-        self.result = None
-
-    def parse(self, token):
-        if self.token == token:
-            return self.result
-        type, next_parser = self.origin.parse(token)
-        self.token = token
-        self.result = type, CachedParser(next_parser)
-        return self.result
-
-
 class Editor:
     r"""Text editor with sematic parser.
 
