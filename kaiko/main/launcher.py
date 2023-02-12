@@ -43,7 +43,7 @@ logo = """
 
 """
 
-logo_animated_text = "  ▣  A sound-controlled terminal-based rhythm game ▣ "
+subtitle = "  ▣  A sound-controlled terminal-based rhythm game ▣ "
 
 
 def animated_print(text, kps=30.0, word_delay=0.05, pre_delay=0.5, post_delay=1.0):
@@ -128,8 +128,8 @@ class KAIKOLauncher:
     def launch(cls):
         # print logo
         print(logo.format(f"v{cls.version}"), flush=True)
-        # animated_print(logo_animated_text)
-        print(logo_animated_text)
+        # animated_print(subtitle)
+        print(subtitle)
         print("\n\n\n", end="", flush=True)
 
         try:
@@ -242,8 +242,6 @@ class KAIKOLauncher:
         file_manager = providers.get(FileManager)
         device_manager = providers.get(DeviceManager)
         bgm_controller = providers.get(BGMController)
-
-        clock = device_manager.clock
 
         logger.print()
         prev_dir = None
