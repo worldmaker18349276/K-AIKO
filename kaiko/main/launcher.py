@@ -117,7 +117,7 @@ class RootDirPath(RecognizedDirPath):
             "The printed messages will be recorded here"
 
         beatshell_history = as_child(".beatshell-history")(beatshell.BeatshellHistory)
-        prompt_benchmark = as_child("prompt_benchmark.csv")(beatshell.PromptBenchmark)
+        prompt_perf = as_child("prompt_perf.csv")(beatshell.PromptPerf)
 
 
 class KAIKOLauncher:
@@ -220,7 +220,7 @@ class KAIKOLauncher:
             prompt = beatshell.BeatPrompt(
                 launcher.provider,
                 file_manager.root.cache.beatshell_history,
-                file_manager.root.cache.prompt_benchmark,
+                file_manager.root.cache.prompt_perf,
                 launcher.settings.shell,
             )
             launcher.provider.set(prompt)

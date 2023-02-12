@@ -233,8 +233,8 @@ class BeatshellHistory(RecognizedFilePath):
     "The command history"
 
 
-class PromptBenchmark(RecognizedFilePath):
-    "The prompt benchmark data"
+class PromptPerf(RecognizedFilePath):
+    "The prompt performance data"
 
 
 class BeatPrompt:

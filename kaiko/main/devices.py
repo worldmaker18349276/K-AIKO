@@ -186,7 +186,7 @@ class DeviceManager:
                 mixer_monitor = None
                 if monitoring_session is not None:
                     path = (
-                        self.cache_dir.abs / f"{monitoring_session}_mixer_benchmark.csv"
+                        self.cache_dir.abs / f"{monitoring_session}_mixer_perf.csv"
                     )
                     mixer_monitor = engines.Monitor(path)
 
@@ -206,7 +206,7 @@ class DeviceManager:
                 if monitoring_session is not None:
                     path = (
                         self.cache_dir.abs
-                        / f"{monitoring_session}_detector_benchmark.csv"
+                        / f"{monitoring_session}_detector_perf.csv"
                     )
                     detector_monitor = engines.Monitor(path)
 
@@ -226,7 +226,7 @@ class DeviceManager:
                 if monitoring_session is not None:
                     path = (
                         self.cache_dir.abs
-                        / f"{monitoring_session}_renderer_benchmark.csv"
+                        / f"{monitoring_session}_renderer_perf.csv"
                     )
                     renderer_monitor = engines.Monitor(path)
 
