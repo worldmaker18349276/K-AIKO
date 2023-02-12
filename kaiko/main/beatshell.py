@@ -244,7 +244,6 @@ class BeatPrompt:
         monitor_file_path,
         settings,
     ):
-        self.metronome = providers.get(clocks.Metronome)
         self.settings = settings
         self.history_file_path = history_file_path
         self.monitor_file_path = monitor_file_path
@@ -274,9 +273,11 @@ class BeatPrompt:
     def register(self, renderer, controller, fin_event):
         # widgets
         logger = providers.get(Logger)
+        bgm_controller = providers.get(BGMController)
+        metronome = bgm_controller.metronome
         settings = self.settings
 
-        with providers.set(logger.rich, self.metronome, renderer, controller):
+        with providers.set(logger.rich, metronome, renderer, controller):
             icon = self.create_widget(settings.prompt.icons)
             marker = self.create_widget(settings.prompt.marker)
             textbox = self.input._register(fin_event)

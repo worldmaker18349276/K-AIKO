@@ -123,7 +123,6 @@ class RootDirPath(RecognizedDirPath):
 class KAIKOLauncher:
     update_interval = 0.01
     version = __version__
-    METRONOME_TEMPO = 120.0
 
     @classmethod
     def launch(cls):
@@ -198,9 +197,6 @@ class KAIKOLauncher:
 
             beatmap_manager = BeatmapManager(file_manager.root.beatmaps)
             providers.set_static(beatmap_manager)
-
-            metronome = clocks.Metronome(launcher.METRONOME_TEMPO)
-            providers.set_static(metronome)
 
             bgm_controller = BGMController(
                 launcher.settings.bgm,

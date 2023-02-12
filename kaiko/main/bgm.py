@@ -129,6 +129,8 @@ class BGMControllerSettings(cfg.Configurable):
         The fade-out time when switching between songs.
     preview_duration : float
         The duration of previewing song.
+    metronome_tempo : float
+        The default tempo of metronome.
     """
 
     volume: float = -10.0
@@ -136,10 +138,12 @@ class BGMControllerSettings(cfg.Configurable):
     fadein_time: float = 0.5
     fadeout_time: float = 1.0
     preview_duration: float = 30.0
+    metronome_tempo: float = 120.0
 
 
 class BGMController:
     def __init__(self, settings, mixer_settings):
+        self.metronome = clocks.Metronome(settings.metronome_tempo)
         self.settings = settings
         self.mixer_settings = mixer_settings
         self._action_queue = queue.Queue()
@@ -188,7 +192,7 @@ class BGMController:
                 start=start,
                 end=end,
                 beatpoints=action.song.beatpoints,
-                metronome=providers.get(clocks.Metronome),
+                metronome=self.metronome,
             ).join()
 
         elif isinstance(action, PlayBGM):
@@ -209,7 +213,7 @@ class BGMController:
                 volume=action.song.audio.volume + self.settings.volume,
                 start=action.start,
                 beatpoints=action.song.beatpoints,
-                metronome=providers.get(clocks.Metronome),
+                metronome=self.metronome,
             ).join()
 
         else:
