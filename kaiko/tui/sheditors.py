@@ -207,8 +207,8 @@ class Editor:
     pos : int
         The caret position of input.
 
-    parser : commands.RootCommandParser
-        The root command parser.
+    parser : commands.CachedParser
+        The cached root command parser.
     tokens : list of ShToken
         The parsed tokens.
     lex_state : SHLEXER_STATE
@@ -235,8 +235,7 @@ class Editor:
         self.length = 0
 
     def update_parser(self, parser):
-        self.parser = parser
-        self._cached_parser = CachedParser(self.parser)
+        self.parser = cmd.CachedParser(parser)
 
     # text operations
 
@@ -312,81 +311,6 @@ class Editor:
 
     # sematic operations
 
-    def get_all_groups(self):
-        return self.parser.get_all_groups()
-
-    def parse(self):
-        tokenizer = tokenize(self.buffer)
-
-        tokens = []
-        while True:
-            try:
-                token = next(tokenizer)
-            except StopIteration as e:
-                self.lex_state = e.value
-                break
-
-            tokens.append(token)
-
-        # parse tokens
-        cached_parser = self._cached_parser
-        types = []
-        result = None
-
-        for token in tokens:
-            try:
-                type, cached_parser = cached_parser.parse(token.string)
-            except cmd.CommandParseError as err:
-                result = err
-                break
-            types.append(type)
-        else:
-            try:
-                res = cached_parser.origin.finish()
-            except cmd.CommandUnfinishError as err:
-                result = err
-            else:
-                result = res
-
-        self.result = result
-        self.length = len(types)
-
-        types.extend([None] * (len(tokens) - len(types)))
-        self.tokens = [
-            dataclasses.replace(token, type=type) for token, type in zip(tokens, types)
-        ]
-        self.group = (
-            self.parser.get_group(self.tokens[0].string) if self.tokens else None
-        )
-
-    def desc(self, length):
-        cached_parser = self._cached_parser
-        for token in self.tokens[:length]:
-            try:
-                _, cached_parser = cached_parser.parse(token.string)
-            except cmd.CommandParseError:
-                return None
-        return cached_parser.origin.desc()
-
-    def info(self, length):
-        assert length >= 1
-        cached_parser = self._cached_parser
-        for token in self.tokens[: length - 1]:
-            try:
-                _, cached_parser = cached_parser.parse(token.string)
-            except cmd.CommandParseError:
-                return None
-        return cached_parser.origin.info(self.tokens[length - 1].string)
-
-    def suggest(self, length, target):
-        cached_parser = self._cached_parser
-        for token in self.tokens[:length]:
-            try:
-                _, cached_parser = cached_parser.parse(token.string)
-            except cmd.CommandParseError:
-                return []
-        return cached_parser.origin.suggest(target)
-
     def find_token(self, pos):
         for index, token in enumerate(self.tokens):
             if token.mask.start <= pos <= token.mask.stop:
@@ -407,3 +331,51 @@ class Editor:
                 return index, token
         else:
             return None, None
+
+    def get_all_groups(self):
+        return self.parser.origin.get_all_groups()
+
+    def parse(self):
+        tokenizer = tokenize(self.buffer)
+
+        tokens = []
+        while True:
+            try:
+                token = next(tokenizer)
+            except StopIteration as e:
+                self.lex_state = e.value
+                break
+
+            tokens.append(token)
+
+        # parse tokens
+        types, result = self.parser.parse_command([token.string for token in tokens])
+        self.result = result
+        self.length = len(types)
+
+        types.extend([None] * (len(tokens) - len(types)))
+        self.tokens = [
+            dataclasses.replace(token, type=type) for token, type in zip(tokens, types)
+        ]
+        self.group = (
+            self.parser.origin.get_group(self.tokens[0].string) if self.tokens else None
+        )
+
+    def desc(self, length):
+        return self.parser.desc_command(
+            [token.string for token in self.tokens[:length]]
+        )
+
+    def info(self, length):
+        if length < 1:
+            raise ValueError
+
+        return self.parser.info_command(
+            [token.string for token in self.tokens[: length - 1]],
+            self.tokens[length - 1].string,
+        )
+
+    def suggest(self, length, target):
+        return self.parser.suggest_command(
+            [token.string for token in self.tokens[:length]], target
+        )
