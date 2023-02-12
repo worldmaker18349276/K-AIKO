@@ -47,74 +47,12 @@ class DevicesSettings(cfg.Configurable):
     terminal = cfg.subconfig(term.TerminalSettings)
 
 
-class DynamicLoader:
-    def __init__(self, engine_factory, ratain_time=3.0):
-        self.engine_factory = engine_factory
-        self.ratain_time = ratain_time
-        self.required = set()
-
-        self.require_lock = threading.Lock()
-        self.engine_task = None
-        self.engine = None
-
-    @classmethod
-    def create(cls, engine_factory, ratain_time=3.0):
-        loader = cls(engine_factory, ratain_time=3.0)
-        return loader._task(), loader
-
-    @contextlib.contextmanager
-    def require(self):
-        key = object()
-
-        with self.require_lock:
-            self.required.add(key)
-            if self.engine is None:
-                self.engine_task, self.engine = self.engine_factory()
-            engine = self.engine
-
-        try:
-            yield engine
-        finally:
-            with self.require_lock:
-                self.required.remove(key)
-
-    @dn.datanode
-    def _task(self):
-        while True:
-            yield
-            with self.require_lock:
-                if self.engine_task is None:
-                    continue
-
-            with self.engine_task:
-                expiration = None
-                while True:
-                    with self.require_lock:
-                        current_time = time.perf_counter()
-                        if expiration is None and not self.required:
-                            expiration = current_time + self.ratain_time
-                        if expiration is not None and self.required:
-                            expiration = None
-                        if expiration is not None and current_time >= expiration:
-                            self.engine_task = None
-                            self.engine = None
-                            break
-
-                    yield
-
-                    try:
-                        self.engine_task.send(None)
-                    except StopIteration:
-                        raise RuntimeError("engine stop unexpectedly")
-
-
 class DeviceManager:
     def __init__(self, cache_dir, resources_dir, settings):
         self.cache_dir = cache_dir
         self.resources_dir = resources_dir
         self.settings = settings
         self.audio_manager = None
-        self.clock = clocks.Clock(0.0, 1.0)
 
     def set_settings(self, settings):
         self.settings = settings
@@ -165,7 +103,7 @@ class DeviceManager:
 
     def load_engines(self, *types, clock=None, monitoring_session=None):
         if clock is None:
-            clock = self.clock
+            clock = clocks.Clock(0.0, 1.0)
             init_time = None
         else:
             init_time = 0.0
@@ -244,9 +182,6 @@ class DeviceManager:
                 raise ValueError(typ)
 
         return dn.pipe(*tasks), res
-
-    def load_engine_loader(self, *types):
-        return DynamicLoader.create(lambda: self.load_engines(*types))
 
     def load_rich(self):
         profile_manager = providers.get(ProfileManager)
@@ -900,7 +835,8 @@ class WaveformTest:
             logger.print_traceback()
             return dn.DataNode.wrap([])
 
-        engine_task, engines = self.device_manager.load_engines("mixer")
+        clock = clocks.Clock(0.0, 1.0)
+        engine_task, engines = self.device_manager.load_engines("mixer", clock=clock)
         (mixer,) = engines
 
         mixer.play(node)

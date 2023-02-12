@@ -1,7 +1,9 @@
 import random
 import threading
 import queue
+import time
 import dataclasses
+import contextlib
 from typing import Optional
 from ..utils import commands as cmd
 from ..utils import config as cfg
@@ -141,6 +143,67 @@ class BGMControllerSettings(cfg.Configurable):
     metronome_tempo: float = 120.0
 
 
+class DynamicLoader:
+    def __init__(self, engine_factory, ratain_time=3.0):
+        self.engine_factory = engine_factory
+        self.ratain_time = ratain_time
+        self.required = set()
+
+        self.require_lock = threading.Lock()
+        self.engine_task = None
+        self.engine = None
+
+    @classmethod
+    def create(cls, engine_factory, ratain_time=3.0):
+        loader = cls(engine_factory, ratain_time=3.0)
+        return loader._task(), loader
+
+    @contextlib.contextmanager
+    def require(self):
+        key = object()
+
+        with self.require_lock:
+            self.required.add(key)
+            if self.engine is None:
+                self.engine_task, self.engine = self.engine_factory()
+            engine = self.engine
+
+        try:
+            yield engine
+        finally:
+            with self.require_lock:
+                self.required.remove(key)
+
+    @dn.datanode
+    def _task(self):
+        while True:
+            yield
+            with self.require_lock:
+                if self.engine_task is None:
+                    continue
+
+            with self.engine_task:
+                expiration = None
+                while True:
+                    with self.require_lock:
+                        current_time = time.perf_counter()
+                        if expiration is None and not self.required:
+                            expiration = current_time + self.ratain_time
+                        if expiration is not None and self.required:
+                            expiration = None
+                        if expiration is not None and current_time >= expiration:
+                            self.engine_task = None
+                            self.engine = None
+                            break
+
+                    yield
+
+                    try:
+                        self.engine_task.send(None)
+                    except StopIteration:
+                        raise RuntimeError("engine stop unexpectedly")
+
+
 class BGMController:
     def __init__(self, settings, mixer_settings):
         self.metronome = clocks.Metronome(settings.metronome_tempo)
@@ -158,7 +221,9 @@ class BGMController:
 
     def start(self):
         device_manager = providers.get(DeviceManager)
-        loader_task, loader = device_manager.load_engine_loader("mixer")
+        loader_task, loader = DynamicLoader.create(
+            lambda: device_manager.load_engines("mixer")
+        )
         event_task = self._bgm_event_loop(loader.require)
         return dn.pipe(loader_task, event_task)
 
