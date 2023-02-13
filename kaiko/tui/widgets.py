@@ -399,16 +399,13 @@ class MonitorWidget:
     def __init__(self, settings):
         self.settings = settings
 
-    @providers.inject(
-        mixer=engines.Mixer, detector=engines.Detector, renderer=engines.Renderer
-    )
-    def load(self, *, mixer, detector, renderer):
+    def load(self):
         if self.settings.target == MonitorTarget.mixer:
-            target = mixer
+            target = providers.get(engines.Mixer)
         elif self.settings.target == MonitorTarget.detector:
-            target = detector
+            target = providers.get(engines.Detector)
         elif self.settings.target == MonitorTarget.renderer:
-            target = renderer
+            target = providers.get(engines.Renderer)
         else:
             raise TypeError
 
