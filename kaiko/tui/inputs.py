@@ -616,15 +616,15 @@ class Input:
         stroke = InputStroke(self, self.settings.control)
         stroke.register(controller)
 
-        state = InputView(self)
+        data = InputViewData()
         text_renderer = TextRenderer(rich, self.settings.hint)
         msg_renderer = MsgRenderer(rich, self.settings.hint)
 
-        renderer.add_drawer(state.load(fin_event), zindex=())
-        renderer.add_drawer(msg_renderer.render_msg(state), zindex=(1,))
+        renderer.add_drawer(data.fetch(self, fin_event), zindex=())
+        renderer.add_drawer(msg_renderer.render_msg(data), zindex=(1,))
 
         textbox = TextBox(
-            text_renderer.render_text(state),
+            text_renderer.render_text(data),
             self.settings.textbox.as_dataclass(),
         ).load()
 
@@ -1461,10 +1461,8 @@ class InputStroke:
         return handler
 
 
-class InputView:
-    def __init__(self, input):
-        self.input = input
-
+class InputViewData:
+    def __init__(self):
         self.key_pressed = False
         self.buffer = []
         self.tokens = []
@@ -1474,49 +1472,49 @@ class InputView:
         self.clean = False
         self.hint = None
         self.popup = []
-        self.suggestions = None
+        self.suggestions = (None, None)
         self.state = "EDIT"
 
     @dn.datanode
-    def load(self, fin_event):
+    def fetch(self, input, fin_event):
         buffer_modified_counter = None
         key_pressed_counter = None
 
         res, time, width = yield
 
         while True:
-            with self.input.edit_ctxt.lock:
-                if self.input.buffer_modified_counter != buffer_modified_counter:
-                    buffer_modified_counter = self.input.buffer_modified_counter
-                    self.buffer = list(self.input.editor.buffer)
-                    self.tokens = list(self.input.editor.tokens)
-                self.pos = self.input.editor.pos
+            with input.edit_ctxt.lock:
+                if input.buffer_modified_counter != buffer_modified_counter:
+                    buffer_modified_counter = input.buffer_modified_counter
+                    self.buffer = list(input.editor.buffer)
+                    self.tokens = list(input.editor.tokens)
+                self.pos = input.editor.pos
 
-                self.typeahead = self.input.typeahead
-                self.clean = self.input.result is not None
-                self.hint = self.input.hint_manager.get_hint()
+                self.typeahead = input.typeahead
+                self.clean = input.result is not None
+                self.hint = input.hint_manager.get_hint()
                 self.suggestions = (
-                    self.input.autocomplete_manager.get_suggestions_list(),
-                    self.input.autocomplete_manager.get_suggestions_index(),
+                    input.autocomplete_manager.get_suggestions_list(),
+                    input.autocomplete_manager.get_suggestions_index(),
                 )
 
                 self.popup = []
                 while True:
                     try:
-                        hint = self.input.hint_manager.popup_queue.get(False)
+                        hint = input.hint_manager.popup_queue.get(False)
                     except queue.Empty:
                         break
                     self.popup.append(hint)
 
-                if isinstance(self.input.result, ErrorResult):
-                    self.highlighted = self.input.result.index
+                if isinstance(input.result, ErrorResult):
+                    self.highlighted = input.result.index
                 else:
-                    self.highlighted = self.input.hint_manager.get_hint_location()
+                    self.highlighted = input.hint_manager.get_hint_location()
 
-                self.state = self.input.state
+                self.state = input.state
 
-                self.key_pressed = self.input.key_pressed_counter != key_pressed_counter
-                key_pressed_counter = self.input.key_pressed_counter
+                self.key_pressed = input.key_pressed_counter != key_pressed_counter
+                key_pressed_counter = input.key_pressed_counter
 
             res, time, width = yield res
 
@@ -1632,7 +1630,7 @@ class TextRenderer:
         return markup
 
     @dn.datanode
-    def render_text(self, state):
+    def render_text(self, data):
         typeahead_template = self.rich.parse(self.settings.typeahead, slotted=True)
         highlight_template = self.rich.parse(self.settings.highlight, slotted=True)
 
@@ -1649,15 +1647,15 @@ class TextRenderer:
             while True:
                 markup = render_grammar.send(
                     (
-                        state.buffer,
-                        state.tokens,
-                        state.typeahead,
-                        state.pos,
-                        state.highlighted,
-                        state.clean,
+                        data.buffer,
+                        data.tokens,
+                        data.typeahead,
+                        data.pos,
+                        data.highlighted,
+                        data.clean,
                     )
                 )
-                yield markup, state.key_pressed
+                yield markup, data.key_pressed
 
 
 class MsgRenderer:
@@ -1666,7 +1664,7 @@ class MsgRenderer:
         self.settings = settings
 
     @dn.datanode
-    def render_msg(self, state):
+    def render_msg(self, data):
         message_max_lines = self.settings.message_max_lines
         sugg_lines = self.settings.suggestions_lines
         sugg_items = self.settings.suggestion_items
@@ -1709,7 +1707,7 @@ class MsgRenderer:
         with render_hint:
             (view, msgs, logs), time, width = yield
             while True:
-                msg = render_hint.send((state.hint, state.suggestions))
+                msg = render_hint.send((data.hint, data.suggestions))
                 if msg is None:
                     if len(msgs) != 0:
                         msgs.clear()
@@ -1719,7 +1717,7 @@ class MsgRenderer:
                         msgs.append(msg)
                 logs.extend(
                     self.render_popup(
-                        state.popup,
+                        data.popup,
                         desc_template=desc_template,
                         info_template=info_template,
                     )
