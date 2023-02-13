@@ -3,7 +3,6 @@ from typing import Tuple
 import numpy
 from ..utils import datanodes as dn
 from ..utils import markups as mu
-from ..utils import config as cfg
 from ..utils import providers
 from ..devices import engines
 from ..devices import clocks
@@ -14,7 +13,8 @@ class Caret(mu.Pair):
     name = "caret"
 
 
-class TextBoxWidgetSettings(cfg.Configurable):
+@dataclasses.dataclass
+class TextBoxWidgetSettings:
     r"""
     Fields
     ------
