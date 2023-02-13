@@ -505,21 +505,21 @@ class ContextDispatcher:
     def on(self):
         with self.lock:
             isin = self.isin
-            if isin:
+            if not isin:
                 for callback in self.before_callbacks:
                     callback()
-            self.isin = False
+            self.isin = True
             try:
                 yield
             except:
                 self.isin = isin
-                if isin:
+                if not isin:
                     for callback in self.onerror_callbacks:
                         callback()
                 raise
             finally:
                 self.isin = isin
-                if isin:
+                if not isin:
                     for callback in self.after_callbacks:
                         callback()
 
