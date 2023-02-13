@@ -478,12 +478,7 @@ class InputSettings(cfg.Configurable):
             "[weight=dim]ⵗ [slot/][/]",
         )
 
-    @cfg.subconfig
-    class textbox(cfg.Configurable, TextBoxWidgetSettings):
-        __doc__ = TextBoxWidgetSettings.__doc__
-
-        def __init__(self):
-            pass
+    textbox = cfg.subconfig(cfg.from_dataclass(TextBoxWidgetSettings))
 
 
 class ContextDispatcher:
@@ -630,7 +625,7 @@ class Input:
 
         textbox = TextBox(
             text_renderer.render_text(state),
-            self.settings.textbox,
+            self.settings.textbox.as_dataclass(),
         ).load()
 
         return textbox

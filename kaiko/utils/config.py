@@ -282,6 +282,30 @@ class Configurable(metaclass=ConfigurableMeta):
         return type(self) == type(other) and equal(type(self), self, other)
 
 
+def from_dataclass(dataclass):
+    default_fields = {
+        name: getattr(dataclass, name)
+        for name in dataclass.__annotations__.keys()
+        if hasattr(dataclass, name)
+    }
+
+    def as_dataclass(self):
+        kwargs = {name: getattr(self, name) for name in self.__annotations__.keys()}
+        return self.origin_dataclass(**kwargs)
+
+    return ConfigurableMeta(
+        dataclass.__name__,
+        (Configurable,),
+        dict(
+            __doc__=dataclass.__doc__,
+            __annotations__=dataclass.__annotations__,
+            origin_dataclass=dataclass,
+            as_dataclass=as_dataclass,
+            **default_fields,
+        )
+    )
+
+
 def set(config, field, value):
     """Set a field of the configuration to the given value.
 
