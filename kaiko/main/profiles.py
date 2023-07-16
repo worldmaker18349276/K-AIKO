@@ -262,7 +262,8 @@ class ProfileManager:
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
-        path_mu = file_manager.as_relative_path(path, self.profiles_dir, markup=True)
+        path_mu = file_manager.as_relative_path(path, self.profiles_dir)
+        path_mu = logger.format_path(path_mu)
 
         logger.print(f"[data/] Set {path_mu} as the default profile...")
 
@@ -289,8 +290,9 @@ class ProfileManager:
             return False
 
         path_mu = file_manager.as_relative_path(
-            self.current_path, self.profiles_dir, markup=True
+            self.current_path, self.profiles_dir
         )
+        path_mu = logger.format_path(path_mu)
         logger.print(f"[data/] Save configuration to {path_mu}...")
 
         try:
@@ -326,8 +328,9 @@ class ProfileManager:
             return False
 
         path_mu = file_manager.as_relative_path(
-            self.current_path, self.profiles_dir, markup=True
+            self.current_path, self.profiles_dir
         )
+        path_mu = logger.format_path(path_mu)
         logger.print(f"[data/] Load configuration from {path_mu}...")
 
         current_mtime = self.current_path.abs.stat().st_mtime
@@ -373,7 +376,8 @@ class ProfileManager:
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
-        path_mu = file_manager.as_relative_path(path, self.profiles_dir, markup=True)
+        path_mu = file_manager.as_relative_path(path, self.profiles_dir)
+        path_mu = logger.format_path(path_mu)
         logger.print(f"[data/] Switch to profile {path_mu}...")
 
         current_mtime = path.abs.stat().st_mtime
@@ -399,7 +403,8 @@ class ProfileManager:
         path = self.profiles_dir.recognize(path).normalize()
         assert isinstance(path, ProfilesDirPath.profile)
 
-        path_mu = file_manager.as_relative_path(path, self.profiles_dir, markup=True)
+        path_mu = file_manager.as_relative_path(path, self.profiles_dir)
+        path_mu = logger.format_path(path_mu)
         logger.print(f"[data/] Load empty configuration as {path_mu}...")
 
         self.current_path = path
@@ -413,7 +418,7 @@ class ProfileManager:
         Parameters
         ----------
         path : ProfilesDirPath.profile
-        src : RecognizedPath, None
+        src : CognizedPath, None
             The source file to copy, or None for empty profile.
 
         Returns
@@ -430,11 +435,13 @@ class ProfileManager:
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
-        path_mu = file_manager.as_relative_path(path, self.profiles_dir, markup=True)
+        path_mu = file_manager.as_relative_path(path, self.profiles_dir)
+        path_mu = logger.format_path(path_mu)
         logger.print(f"[data/] Create a new profile {path_mu}...")
 
         if src is not None:
-            src_mu = file_manager.as_relative_path(src, self.profiles_dir, markup=True)
+            src_mu = file_manager.as_relative_path(src, self.profiles_dir)
+            src_mu = logger.format_path(src_mu)
             logger.print(f"[data/] Copy profile from {src_mu} to {path_mu}...")
 
             if not src.abs.exists():
@@ -478,7 +485,8 @@ class ProfileManager:
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
-        path_mu = file_manager.as_relative_path(path, self.profiles_dir, markup=True)
+        path_mu = file_manager.as_relative_path(path, self.profiles_dir)
+        path_mu = logger.format_path(path_mu)
         logger.print(f"[data/] Delete profile {path_mu}...")
 
         path.abs.unlink()
@@ -512,10 +520,12 @@ class ProfileManager:
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
-        path_mu = file_manager.as_relative_path(path, self.profiles_dir, markup=True)
+        path_mu = file_manager.as_relative_path(path, self.profiles_dir)
+        path_mu = logger.format_path(path_mu)
         newpath_mu = file_manager.as_relative_path(
-            newpath, self.profiles_dir, markup=True
+            newpath, self.profiles_dir
         )
+        newpath_mu = logger.format_path(newpath_mu)
         logger.print(f"[data/] Rename profile {path_mu} to {newpath_mu}...")
 
         is_current = self.current_path == path

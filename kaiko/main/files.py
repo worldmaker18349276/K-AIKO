@@ -14,7 +14,7 @@ from .loggers import Logger
 
 
 @dataclasses.dataclass(frozen=True)
-class RecognizedPath:
+class CognizedPath:
     abs: Path
     slashend: bool
 
@@ -61,7 +61,8 @@ class RecognizedPath:
 
         REDUNDANT_EXT = ".redundant"
 
-        path_mu = file_manager.as_relative_path(self, markup=True)
+        path_mu = file_manager.as_relative_path(self)
+        path_mu = logger.format_path(path_mu)
         if not self.abs.exists():
             logger.print(f"[warn]Missing file {path_mu}[/]")
 
@@ -74,8 +75,9 @@ class RecognizedPath:
             logger.print(f"[warn]Wrong file type {path_mu}[/]")
             path_ = self.abs.parent / (self.abs.name + REDUNDANT_EXT)
             path_mu_ = file_manager.as_relative_path(
-                UnrecognizedPath(path_, False), markup=True
+                UnrecognizedPath(path_, False)
             )
+            path_mu_ = logger.format_path(path_mu_)
             logger.print(f"[data/] Rename {path_mu} to {path_mu_}...")
             self.abs.rename(path_)
 
@@ -122,7 +124,11 @@ class RecognizedPath:
         shutil.copy(src.abs, self.abs)
 
 
-class UnrecognizedPath(RecognizedPath):
+class UnrecognizedPath(CognizedPath):
+    pass
+
+
+class RecognizedPath(CognizedPath):
     pass
 
 
@@ -172,7 +178,7 @@ class RecognizedDirPath(RecognizedPath):
             if not issubclass(curr_path_type, RecognizedDirPath):
                 return UnrecognizedPath(path, slashend)
 
-            for index, field in enumerate(curr_path_type.get_fields()):
+            for field in curr_path_type.get_fields():
                 if not field.match(next_path, next_slashend):
                     continue
 
@@ -267,7 +273,7 @@ def as_pattern(pattern, path_type=None):
     if not re.fullmatch(r"[^/]+", pattern) or pattern in (".", ".."):
         raise ValueError(f"invalid pattern: {pattern}")
 
-    if not issubclass(path_type, RecognizedPath):
+    if not issubclass(path_type, CognizedPath):
         raise TypeError(f"invalid path type: {path_type}")
 
     return DirPatternField(pattern, path_type)
@@ -280,7 +286,7 @@ def as_child(name, path_type=None):
     if not re.fullmatch(r"[^/]+", name) or name in (".", ".."):
         raise ValueError(f"invalid name: {name}")
 
-    if not issubclass(path_type, RecognizedPath):
+    if not issubclass(path_type, CognizedPath):
         raise TypeError(f"invalid path type: {path_type}")
 
     return DirChildField(name, path_type)
@@ -383,9 +389,9 @@ class FileManager:
                 if isinstance(subpath, RecognizedDirPath):
                     go(subpath)
 
-        return go(self.root)
+        go(self.root)
 
-        logger.print(flush=True)
+        logger.print(end="", flush=True)
 
     def remove(self):
         shutil.rmtree(str(self.root))
@@ -398,13 +404,13 @@ class FileManager:
         current_path = self.current
         if isinstance(current_path, RecognizedDirPath):
             return current_path.iterdir()
-        elif current_path.abs.is_dir():
+        elif isinstance(current_path, UnrecognizedPath) and current_path.abs.is_dir():
             return (
                 UnrecognizedPath(subpath, subpath.is_dir())
                 for subpath in current_path.abs.iterdir()
             )
         else:
-            return ()
+            return (_ for _ in [])
 
     def get_field_types(self):
         current_path = self.current
@@ -413,19 +419,12 @@ class FileManager:
         else:
             return []
 
-    def as_relative_path(self, path, parent=None, markup=False):
-        logger = providers.get(Logger)
+    def as_relative_path(self, path, parent=None):
         if parent is not None:
-            relpath = path.try_relative_to(parent)
-            if markup:
-                relpath = f"[emph]{logger.escape(relpath)}[/]"
-            return relpath
+            return path.try_relative_to(parent)
 
         if not path.abs.is_relative_to(self.root.abs):
-            relpath = str(path)
-            if markup:
-                relpath = f"[emph]{logger.escape(relpath)}[/]"
-            return relpath
+            return str(path)
 
         relpath = str(path.abs.relative_to(self.root.abs))
         if relpath == ".":
@@ -434,9 +433,6 @@ class FileManager:
 
         if path.slashend:
             relpath = os.path.join(relpath, "")
-
-        if markup:
-            relpath = f"[emph]{logger.escape(relpath)}[/]"
 
         return relpath
 
@@ -480,7 +476,8 @@ class FileManager:
 
         except InvalidFileOperation as e:
             logger = providers.get(Logger)
-            path_mu = self.as_relative_path(path, markup=True)
+            path_mu = self.as_relative_path(path)
+            path_mu = logger.format_path(path_mu)
             logger.print(f"[warn]Failed to change current directory to {path_mu}[/]")
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
@@ -493,7 +490,8 @@ class FileManager:
 
         except InvalidFileOperation as e:
             logger = providers.get(Logger)
-            path_mu = self.as_relative_path(path, markup=True)
+            path_mu = self.as_relative_path(path)
+            path_mu = logger.format_path(path_mu)
             logger.print(f"[warn]Failed to make file: {path_mu}[/]")
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
@@ -504,7 +502,8 @@ class FileManager:
 
         except InvalidFileOperation as e:
             logger = providers.get(Logger)
-            path_mu = self.as_relative_path(path, markup=True)
+            path_mu = self.as_relative_path(path)
+            path_mu = logger.format_path(path_mu)
             logger.print(f"[warn]Failed to remove file: {path_mu}[/]")
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
@@ -515,8 +514,10 @@ class FileManager:
 
         except InvalidFileOperation as e:
             logger = providers.get(Logger)
-            path_mu = self.as_relative_path(path, markup=True)
-            dst_mu = self.as_relative_path(dst, markup=True)
+            path_mu = self.as_relative_path(path)
+            path_mu = logger.format_path(path_mu)
+            dst_mu = self.as_relative_path(dst)
+            dst_mu = logger.format_path(dst_mu)
             logger.print(f"[warn]Failed to move file: {path_mu} -> {dst_mu}[/]")
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
@@ -527,8 +528,10 @@ class FileManager:
 
         except InvalidFileOperation as e:
             logger = providers.get(Logger)
-            src_mu = self.as_relative_path(src, markup=True)
-            path_mu = self.as_relative_path(path, markup=True)
+            src_mu = self.as_relative_path(src)
+            src_mu = logger.format_path(src_mu)
+            path_mu = self.as_relative_path(path)
+            path_mu = logger.format_path(path_mu)
             logger.print(f"[warn]Failed to copy file: {src_mu} -> {path_mu}[/]")
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
@@ -664,7 +667,8 @@ class FilesCommand:
         try:
             file_manager.validate_path(path, should_exist=True, file_type="file")
         except InvalidFileOperation as e:
-            path_mu = self.as_relative_path(path, markup=True)
+            path_mu = self.as_relative_path(path)
+            path_mu = logger.format_path(path_mu)
             logger.print(f"[warn]Failed to change directory to {path_mu}[/]")
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return

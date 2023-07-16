@@ -395,7 +395,7 @@ class DevicesCommand:
         devices_settings = profile_manager.current.devices
 
         with logger.print_stack() as print:
-            print(f"workspace: {logger.as_uri(file_manager.root.abs)}")
+            print(f"workspace: {logger.format_uri(file_manager.root.abs)}")
             print()
 
             term = logger.escape(os.environ.get("TERM", "unknown"))

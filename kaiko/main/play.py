@@ -166,7 +166,8 @@ class BeatmapManager:
         for zip_file in self.beatmaps_dir.beatmap_zip:
             dst_path = zip_file.abs.parent / zip_file.abs.stem
             if not dst_path.exists():
-                path_mu = file_manager.as_relative_path(zip_file, markup=True)
+                path_mu = file_manager.as_relative_path(zip_file)
+                path_mu = logger.format_path(path_mu)
                 logger.print(f"[data/] Unzip file {path_mu}...")
                 dst_path.mkdir()
                 zf = zipfile.ZipFile(str(zip_file), "r")
@@ -205,7 +206,8 @@ class BeatmapManager:
 
         logger = providers.get(Logger)
         file_manager = providers.get(FileManager)
-        path_mu = file_manager.as_relative_path(beatmapset_path, markup=True)
+        path_mu = file_manager.as_relative_path(beatmapset_path)
+        path_mu = logger.format_path(path_mu)
         logger.log(f"[data/] Load beatmapsets {path_mu}...")
 
         old_beatmap_paths = set(_beatmapset.cache.keys())
@@ -243,7 +245,8 @@ class BeatmapManager:
 
         logger = providers.get(Logger)
         file_manager = providers.get(FileManager)
-        path_mu = file_manager.as_relative_path(beatmap_path, markup=True)
+        path_mu = file_manager.as_relative_path(beatmap_path)
+        path_mu = logger.format_path(path_mu)
         logger.log(f"[data/] Load beatmap {path_mu}...")
 
         try:
@@ -323,8 +326,9 @@ class BeatmapManager:
             return False
 
         path_mu = file_manager.as_relative_path(
-            beatmapset_path, self.beatmaps_dir, markup=True
+            beatmapset_path, self.beatmaps_dir
         )
+        path_mu = logger.format_path(path_mu)
         logger.print(f"[data/] Remove beatmapset {path_mu}...")
         shutil.rmtree(str(beatmapset_path))
 
@@ -341,8 +345,9 @@ class BeatmapManager:
             return False
 
         path_mu = file_manager.as_relative_path(
-            beatmapset_path, self.beatmaps_dir, markup=True
+            beatmapset_path, self.beatmaps_dir
         )
+        path_mu = logger.format_path(path_mu)
         logger.print(f"[data/] Remove beatmap {path_mu}...")
 
         beatmap_path.abs.unlink()
@@ -676,8 +681,9 @@ def load_beatmap(beatmap_path, file_manager, beatmap_manager, logger):
 
     except beatsheets.BeatmapParseError as exc:
         path_mu = file_manager.as_relative_path(
-            beatmap_path, beatmap_manager.beatmaps_dir, markup=True
+            beatmap_path, beatmap_manager.beatmaps_dir
         )
+        path_mu = logger.format_path(path_mu)
         logger.print(f"[warn]Failed to read beatmap: {path_mu}[/]")
         logger.print_traceback(exc)
         return

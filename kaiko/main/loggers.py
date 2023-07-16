@@ -10,6 +10,7 @@ from inspect import cleandoc
 import shutil
 import numpy
 import difflib
+import os.path
 from ..utils import datanodes as dn
 from ..utils import config as cfg
 from ..utils import markups as mu
@@ -121,8 +122,10 @@ class LoggerSettings(cfg.Configurable):
         kw: str = "[color=bright_magenta][slot/][/]"
         arg: str = "[color=bright_green][slot/][/]"
 
+
 class PrebufferedFile:
     """Enable us to write data before opening the file."""
+
     def __init__(self):
         self.buffer = []
         self.file = None
@@ -141,6 +144,7 @@ class PrebufferedFile:
         for text in self.buffer:
             self.file.write(text)
         self.buffer = []
+
 
 class Logger:
     def __init__(self, terminal_settings=None, logger_settings=None):
@@ -303,7 +307,7 @@ class Logger:
                 assert TypeError(type(msg))
 
             stack.append(mu.Group((markup, mu.Text(end))))
-        
+
         try:
             yield print
         finally:
@@ -362,7 +366,7 @@ class Logger:
         else:
             raise ValueError
 
-    def as_uri(self, path, emph=True):
+    def format_uri(self, path, emph=True):
         if path.is_absolute():
             path = path.as_uri()
         else:
@@ -373,6 +377,23 @@ class Logger:
         if emph:
             path = f"[emph]{path}[/]"
         return path
+
+    def format_path(self, path_str):
+        route = []
+        curr_path = path_str
+        while True:
+            (parent, name) = os.path.split(curr_path)
+            route.append(name)
+            curr_path = parent
+            if parent == "":
+                break
+            if parent == "/":
+                route.append("")
+                break
+        route.reverse()
+
+        route_mu = [f"[color=blue]{self.escape(name)}[/]" for name in route]
+        return "[emph]" + "/".join(route_mu) + "[/]"
 
     def format_code(self, content, marked=None, title=None, is_changed=False):
         total_width = 80
@@ -743,7 +764,7 @@ class Logger:
             "│" + grad_infos[7] + "├" + miss_graph + "┤" + stat_infos[0] + "│",
             "│" + grad_infos[8] + "│" + acc_graph[0] + "│" + stat_infos[1] + "│",
             "│" + grad_infos[9] + "│" + acc_graph[1] + "│" + stat_infos[2] + "│",
-            "╘" + grad_bot + "╧" + scat_bot + "╧" + stat_bot + "╛", 
+            "╘" + grad_bot + "╧" + scat_bot + "╧" + stat_bot + "╛",
         ]
 
         return "\n".join(res)
