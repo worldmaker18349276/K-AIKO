@@ -300,9 +300,9 @@ class ProfileManager:
                 self.current_path.abs,
                 name=self.SETTINGS_NAME,
             )
-        except Exception:
+        except Exception as exc:
             logger.print("[warn]Fail to format configuration[/]")
-            logger.print_traceback()
+            logger.print_traceback(exc)
             return False
 
         self._current_mtime = self.current_path.abs.stat().st_mtime
@@ -336,9 +336,9 @@ class ProfileManager:
             self.current = cfg.read(
                 self.config_type, self.current_path.abs, name=self.SETTINGS_NAME
             )
-        except Exception:
+        except Exception as exc:
             logger.print("[warn]Fail to parse configuration[/]")
-            logger.print_traceback()
+            logger.print_traceback(exc)
             return False
 
         self.set_as_changed(current_mtime)
@@ -380,9 +380,9 @@ class ProfileManager:
 
         try:
             self.current = cfg.read(self.config_type, path.abs, name=self.SETTINGS_NAME)
-        except Exception:
+        except Exception as exc:
             logger.print("[warn]Fail to parse configuration[/]")
-            logger.print_traceback()
+            logger.print_traceback(exc)
             return False
 
         self.current_path = path
@@ -450,9 +450,9 @@ class ProfileManager:
 
             try:
                 cfg.write(self.config_type, config, path.abs, name=self.SETTINGS_NAME)
-            except Exception:
+            except Exception as exc:
                 logger.print("[warn]Fail to format configuration[/]")
-                logger.print_traceback()
+                logger.print_traceback(exc)
                 return False
 
         return True

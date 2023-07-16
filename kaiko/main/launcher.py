@@ -116,8 +116,8 @@ class RootDirPath(RecognizedDirPath):
         class logs(RecognizedFilePath):
             "The printed messages will be recorded here"
 
-        beatshell_history = as_child(".beatshell-history")(beatshell.BeatshellHistory)
-        prompt_perf = as_child("prompt_perf.csv")(beatshell.PromptPerf)
+        beatshell_history = as_child(".beatshell-history", beatshell.BeatshellHistory)
+        prompt_perf = as_child("prompt_perf.csv", beatshell.PromptPerf)
 
 
 class KAIKOLauncher:
@@ -188,7 +188,7 @@ class KAIKOLauncher:
         device_manager = DeviceManager(
             file_manager.root.cache,
             file_manager.root.resources,
-            launcher.settings.devices,
+            profile_manager.current.devices,
         )
         devices_ctxt = yield from device_manager.initialize().join()
 
@@ -199,15 +199,15 @@ class KAIKOLauncher:
             providers.set_static(beatmap_manager)
 
             bgm_controller = BGMController(
-                launcher.settings.bgm,
-                launcher.settings.devices.mixer,
+                profile_manager.current.bgm,
+                profile_manager.current.devices.mixer,
             )
             providers.set_static(bgm_controller)
 
             prompt = beatshell.BeatPrompt(
                 file_manager.root.cache.beatshell_history,
                 file_manager.root.cache.prompt_perf,
-                launcher.settings.shell,
+                profile_manager.current.shell,
             )
 
             yield from launcher.run(prompt).join()
@@ -242,6 +242,7 @@ class KAIKOLauncher:
         file_manager = providers.get(FileManager)
         device_manager = providers.get(DeviceManager)
         bgm_controller = providers.get(BGMController)
+        profile_manager = providers.get(ProfileManager)
 
         logger.print()
         prev_dir = None
@@ -266,10 +267,10 @@ class KAIKOLauncher:
                 yield from self.execute(command).join()
                 clear = True
 
-            prompt.set_settings(self.settings.shell)
-            bgm_controller.set_settings(self.settings.bgm)
-            bgm_controller.set_mixer_settings(self.settings.devices.mixer)
-            device_manager.set_settings(self.settings.devices)
+            prompt.set_settings(profile_manager.current.shell)
+            bgm_controller.set_settings(profile_manager.current.bgm)
+            bgm_controller.set_mixer_settings(profile_manager.current.devices.mixer)
+            device_manager.set_settings(profile_manager.current.devices)
 
     @dn.datanode
     def execute(self, command):
@@ -304,13 +305,8 @@ class KAIKOLauncher:
                 yield
                 logger.print(logger.format_value(result))
 
-        except Exception:
-            logger.print_traceback()
-
-    @property
-    def settings(self):
-        r"""Current settings."""
-        return providers.get(ProfileManager).current
+        except Exception as exc:
+            logger.print_traceback(exc)
 
     def get_command_parser(self):
         file_manager = providers.get(FileManager)

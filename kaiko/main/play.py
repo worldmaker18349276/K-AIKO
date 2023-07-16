@@ -566,9 +566,10 @@ class KAIKOPlay:
         ).join()
 
         logger.print()
-        logger.print_scores(
+        scores = logger.format_scores(
             beatmap.settings.difficulty.performance_tolerance, score.perfs
         )
+        logger.print(scores)
 
         if devices_settings == devices_settings_modified:
             return
@@ -649,19 +650,19 @@ def print_hints(logger, settings):
     energy_key_1 = logger.escape(energy_keys[0], type="all")
     energy_key_2 = logger.escape(energy_keys[1], type="all")
 
-    with logger.stack():
-        logger.print(f"[hint/] Press [emph]{pause_key}[/] to pause/resume the game.")
-        logger.print(f"[hint/] Press [emph]{skip_key}[/] to skip time.")
-        logger.print(f"[hint/] Press [emph]{stop_key}[/] to end the game.")
-        logger.print(
+    with logger.print_stack() as print:
+        print(f"[hint/] Press [emph]{pause_key}[/] to pause/resume the game.")
+        print(f"[hint/] Press [emph]{skip_key}[/] to skip time.")
+        print(f"[hint/] Press [emph]{stop_key}[/] to end the game.")
+        print(
             f"[hint/] Use [emph]{display_key_1}[/] and "
             f"[emph]{display_key_2}[/] to adjust display delay."
         )
-        logger.print(
+        print(
             f"[hint/] Use [emph]{knock_key_1}[/] and "
             f"[emph]{knock_key_2}[/] to adjust hit delay."
         )
-        logger.print(
+        print(
             f"[hint/] Use [emph]{energy_key_1}[/] and "
             f"[emph]{energy_key_2}[/] to adjust hit strength."
         )
@@ -673,12 +674,12 @@ def load_beatmap(beatmap_path, file_manager, beatmap_manager, logger):
     try:
         return beatsheets.read(str(beatmap_path))
 
-    except beatsheets.BeatmapParseError:
+    except beatsheets.BeatmapParseError as exc:
         path_mu = file_manager.as_relative_path(
             beatmap_path, beatmap_manager.beatmaps_dir, markup=True
         )
         logger.print(f"[warn]Failed to read beatmap: {path_mu}[/]")
-        logger.print_traceback()
+        logger.print_traceback(exc)
         return
 
 
@@ -688,9 +689,9 @@ def load_pattern(pattern, tempo, offset, logger):
     try:
         track, width = beatmaps.BeatTrack.parse(pattern, ret_width=True)
 
-    except beatsheets.BeatmapParseError:
+    except beatsheets.BeatmapParseError as exc:
         logger.print("[warn]Failed to parse pattern[/]")
-        logger.print_traceback()
+        logger.print_traceback(exc)
         return
 
     return beatmaps.Loop(tempo=tempo, offset=offset, width=width, track=track)

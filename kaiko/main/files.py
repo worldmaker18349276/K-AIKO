@@ -645,11 +645,11 @@ class FilesCommand:
         res = sorted(res, key=lambda e: e[0])
         max_width = max((width for _, width, _, _ in res), default=0)
 
-        with logger.stack():
+        with logger.print_stack() as print:
             for _, width, name, info in res:
                 padding = " " * (max_width - width) if width != -1 else " "
-                logger.print(name, end=padding)
-                logger.print(info, end="\n")
+                print(name, end=padding)
+                print(info, end="\n")
 
     @cmd.function_command
     def cd(self, path):

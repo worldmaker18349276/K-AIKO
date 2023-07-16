@@ -10,12 +10,14 @@ import audioread
 from ..utils import datanodes as dn
 
 
-def print_pyaudio_info(manager):
-    print("portaudio version:")
-    print("  " + pyaudio.get_portaudio_version_text())
-    print()
+def format_pyaudio_info(manager):
+    res = []
 
-    print("available devices:")
+    res.append("portaudio version:")
+    res.append("  " + pyaudio.get_portaudio_version_text())
+    res.append("")
+
+    res.append("available devices:")
     apis_list = [
         manager.get_host_api_info_by_index(i)["name"]
         for i in range(manager.get_host_api_count())
@@ -42,17 +44,18 @@ def print_pyaudio_info(manager):
     chout_len = max(len(entry[5]) for entry in table)
 
     for ind, name, api, freq, chin, chout in table:
-        print(
+        res.append(
             f"  {ind:>{ind_len}}. {name:{name_len}}  by  {api:{api_len}}"
             f"  ({freq:>{freq_len}} kHz, in: {chin:>{chin_len}}, out: {chout:>{chout_len}})"
         )
 
-    print()
+    res.append("")
 
     default_input_device_index = manager.get_default_input_device_info()["index"]
     default_output_device_index = manager.get_default_output_device_info()["index"]
-    print(f"default input device: {default_input_device_index}")
-    print(f"default output device: {default_output_device_index}")
+    res.append(f"default input device: {default_input_device_index}")
+    res.append(f"default output device: {default_output_device_index}")
+    return "\n".join(res)
 
 
 @contextlib.contextmanager

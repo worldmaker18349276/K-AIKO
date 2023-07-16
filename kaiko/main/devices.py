@@ -267,7 +267,7 @@ class DeviceManager:
             with aud.create_manager() as audio_manager:
                 logger.print()
 
-                aud.print_pyaudio_info(audio_manager)
+                logger.print(aud.format_pyaudio_info(audio_manager))
                 verb_ctxt.__exit__(None, None, None)
                 has_exited = True
 
@@ -368,10 +368,10 @@ class DeviceManager:
             logger.print("[warn]Fail to determine unicode version[/]")
 
         else:
-            with logger.stack():
-                logger.print(f"Your unicode version is [emph]{version}[/]")
-                logger.print("[hint/] You can put this command into your .bashrc file:")
-                logger.print(
+            with logger.print_stack() as print:
+                print(f"Your unicode version is [emph]{version}[/]")
+                print("[hint/] You can put this command into your .bashrc file:")
+                print(
                     f"[emph]UNICODE_VERSION={version}; export UNICODE_VERSION[/]"
                 )
 
@@ -394,19 +394,19 @@ class DevicesCommand:
         profile_manager = providers.get(ProfileManager)
         devices_settings = profile_manager.current.devices
 
-        with logger.stack():
-            logger.print(f"workspace: {logger.as_uri(file_manager.root.abs)}")
-            logger.print()
+        with logger.print_stack() as print:
+            print(f"workspace: {logger.as_uri(file_manager.root.abs)}")
+            print()
 
             term = logger.escape(os.environ.get("TERM", "unknown"))
             vte = logger.escape(os.environ.get("VTE_VERSION", "unknown"))
             uni = logger.escape(os.environ.get("UNICODE_VERSION", "unknown"))
             size = shutil.get_terminal_size()
 
-            logger.print(f"  terminal type: {term}")
-            logger.print(f"    VTE version: {vte}")
-            logger.print(f"unicode version: {uni}")
-            logger.print(f"  terminal size: {size.columns}×{size.lines}")
+            print(f"  terminal type: {term}")
+            print(f"    VTE version: {vte}")
+            print(f"unicode version: {uni}")
+            print(f"  terminal size: {size.columns}×{size.lines}")
 
             template = "[color={}]██[/]"
             palette = [
@@ -420,20 +420,20 @@ class DevicesCommand:
                 "white",
             ]
 
-            logger.print()
-            logger.print("color palette:")
-            logger.print(
+            print()
+            print("color palette:")
+            print(
                 " "
                 + "".join(map(template.format, palette))
                 + "\n "
                 + "".join(map(template.format, map("bright_".__add__, palette)))
             )
 
-            logger.print()
+            print()
 
-            aud.print_pyaudio_info(audio_manager)
+            print(aud.format_pyaudio_info(audio_manager))
 
-            logger.print()
+            print()
 
             device = devices_settings.detector.input_device
             if device == -1:
@@ -441,7 +441,7 @@ class DevicesCommand:
             samplerate = devices_settings.detector.input_samplerate
             channels = devices_settings.detector.input_channels
             format = devices_settings.detector.input_format
-            logger.print(
+            print(
                 f"current input device: {device} ({samplerate/1000} kHz, {channels} ch)"
             )
 
@@ -451,7 +451,7 @@ class DevicesCommand:
             samplerate = devices_settings.mixer.output_samplerate
             channels = devices_settings.mixer.output_channels
             format = devices_settings.mixer.output_format
-            logger.print(
+            print(
                 f"current output device: {device} ({samplerate/1000} kHz, {channels} ch)"
             )
 
@@ -520,9 +520,9 @@ class DevicesCommand:
             )
             logger.print("Success!")
 
-        except:
+        except Exception as exc:
             logger.print("[warn]Invalid configuration for mic.[/]")
-            logger.print_traceback()
+            logger.print_traceback(exc)
 
         else:
             devices_settings.detector.input_device = device
@@ -573,9 +573,9 @@ class DevicesCommand:
             )
             logger.print("Success!")
 
-        except:
+        except Exception as exc:
             logger.print("[warn]Invalid configuration for speaker.[/]")
-            logger.print_traceback()
+            logger.print_traceback(exc)
 
         else:
             devices_settings.mixer.output_device = device
@@ -830,9 +830,9 @@ class WaveformTest:
                 self.device_manager.settings.mixer.output_buffer_length,
             )
 
-        except:
+        except Exception as exc:
             self.logger.print("[warn]Fail to compile waveform.[/]")
-            logger.print_traceback()
+            logger.print_traceback(exc)
             return dn.DataNode.wrap([])
 
         clock = clocks.Clock(0.0, 1.0)
@@ -930,9 +930,9 @@ class SpeakerTest:
             )
             self.logger.print("Success!")
 
-        except:
+        except Exception as exc:
             self.logger.print("[warn]Invalid configuration for speaker.[/]")
-            logger.print_traceback()
+            logger.print_traceback(exc)
             return dn.DataNode.wrap([])
 
         else:
@@ -1011,9 +1011,9 @@ class MicTest:
             )
             self.logger.print("Success!")
 
-        except:
+        except Exception as exc:
             self.logger.print("[warn]Invalid configuration for mic.[/]")
-            logger.print_traceback()
+            logger.print_traceback(exc)
             return dn.DataNode.wrap([])
 
         else:

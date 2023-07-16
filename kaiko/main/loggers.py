@@ -121,14 +121,33 @@ class LoggerSettings(cfg.Configurable):
         kw: str = "[color=bright_magenta][slot/][/]"
         arg: str = "[color=bright_green][slot/][/]"
 
+class PrebufferedFile:
+    """Enable us to write data before opening the file."""
+    def __init__(self):
+        self.buffer = []
+        self.file = None
+
+    def write(self, text):
+        if self.file is None:
+            self.buffer.append(text)
+        else:
+            self.file.write(text)
+
+    def open(self, path):
+        if self.file is not None:
+            raise ValueError(f"open a file multiple times: {path}")
+
+        self.file = open(path, "a")
+        for text in self.buffer:
+            self.file.write(text)
+        self.buffer = []
 
 class Logger:
     def __init__(self, terminal_settings=None, logger_settings=None):
-        self.log_file = []
-        self._stack = None
+        self.log_file = PrebufferedFile()
+        self.log_file.write(f"\n\n\n[log_session={datetime.now()}/]\n")
         self._redirect_queue = None
         self.recompile_style(terminal_settings, logger_settings)
-        self.log_file.append(f"\n\n\n[log_session={datetime.now()}/]\n")
 
     def recompile_style(self, terminal_settings, logger_settings):
         if terminal_settings is None:
@@ -152,11 +171,10 @@ class Logger:
         self.warn_block = self.rich.parse(logger_settings.warn_block, slotted=True)
 
     def set_log_file(self, path):
-        log_file = open(path, "a")
-        if isinstance(self.log_file, list):
-            for msg in self.log_file:
-                log_file.write(msg)
-        self.log_file = log_file
+        self.log_file.open(path)
+
+    def log(self, msg):
+        self.log_file.write(f"[log={datetime.now()}/]{msg}\n")
 
     @staticmethod
     def _parse_tag_type(doc):
@@ -211,34 +229,17 @@ class Logger:
             self.log("[/warn_block]")
 
     @contextlib.contextmanager
-    def stack(self, end="", log=True):
-        if self._stack is not None:
-            yield
-            return
-
-        try:
-            self._stack = []
-            yield
-        finally:
-            markup = mu.Group(tuple(self._stack))
-            self._stack = None
-            self.print(markup, end=end, flush=True, log=False)
-            if log:
-                self.log("\n" + markup.represent())
-
-    @staticmethod
-    @dn.datanode
-    def _redirect_node(queue):
-        (view, msgs, logs), _, _ = yield
-        while True:
-            while not queue.empty():
-                logs.append(queue.get().expand())
-            (view, msgs, logs), _, _ = yield (view, msgs, logs)
-
-    @contextlib.contextmanager
     def popup(self, renderer):
+        @dn.datanode
+        def _redirect_node(queue):
+            (view, msgs, logs), _, _ = yield
+            while True:
+                while not queue.empty():
+                    logs.append(queue.get().expand())
+                (view, msgs, logs), _, _ = yield (view, msgs, logs)
+
         redirect_queue = queue.Queue()
-        with renderer.add_drawer(self._redirect_node(redirect_queue)):
+        with renderer.add_drawer(_redirect_node(redirect_queue)):
             try:
                 self._redirect_queue = redirect_queue
                 yield
@@ -253,6 +254,78 @@ class Logger:
             yield
         finally:
             self._redirect_queue = None
+
+    def print(self, msg="", end="\n", flush=False, markup=True, log=True):
+        if not markup:
+            msg = str(msg)
+
+            if log:
+                self.log(msg)
+
+            if self._redirect_queue is not None:
+                self._redirect_queue.put(mu.Text(msg + end))
+                return
+
+            print(msg, end=end, flush=flush)
+            return
+
+        if isinstance(msg, str):
+            markup = self.rich.parse(msg, expand=False)
+        elif isinstance(msg, mu.Markup):
+            markup = msg
+        else:
+            assert TypeError(type(msg))
+
+        if msg and log:
+            self.log(markup.represent())
+
+        if self._redirect_queue is not None:
+            self._redirect_queue.put(mu.Group((markup, mu.Text(end))))
+            return
+
+        print(self.renderer.render(markup.expand()), end=end, flush=flush)
+
+    @contextlib.contextmanager
+    def print_stack(self, end="", log=True):
+        stack = []
+
+        def print(msg="", end="\n", markup=True):
+            if not markup:
+                msg = str(msg)
+                stack.append(mu.Text(msg + end))
+                return
+
+            if isinstance(msg, str):
+                markup = self.rich.parse(msg, expand=False)
+            elif isinstance(msg, mu.Markup):
+                markup = msg
+            else:
+                assert TypeError(type(msg))
+
+            stack.append(mu.Group((markup, mu.Text(end))))
+        
+        try:
+            yield print
+        finally:
+            markup = mu.Group(tuple(stack))
+            self.print(markup, end=end, flush=True, log=False)
+            if log:
+                self.log("\n" + markup.represent())
+
+    def print_traceback(self, exc):
+        with self.warn():
+            msg = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+            self.print(msg, markup=False)
+
+    def clear_line(self, flush=False, log=True):
+        self.print(self.renderer.clear_line(), end="", flush=flush, log=log)
+
+    def clear(self, bottom=False, flush=False, log=False):
+        markup = self.renderer.clear_screen()
+        if bottom:
+            y = shutil.get_terminal_size().lines - 1
+            markup = mu.Group((markup, mu.Move(x=0, y=y)))
+        self.print(markup, end="", flush=flush, log=log)
 
     def backslashreplace(self, ch):
         if ch in "\a\r\n\t\b\v\f":
@@ -300,65 +373,6 @@ class Logger:
         if emph:
             path = f"[emph]{path}[/]"
         return path
-
-    def log(self, msg):
-        msg = f"[log={datetime.now()}/]{msg}\n"
-        if isinstance(self.log_file, list):
-            self.log_file.append(msg)
-        else:
-            self.log_file.write(msg)
-
-    def print(self, msg="", end="\n", flush=False, markup=True, log=True):
-        if not markup:
-            msg = str(msg)
-
-            if self._stack is not None:
-                self._stack.append(mu.Text(msg + end))
-                return
-
-            if log:
-                self.log(msg)
-
-            if self._redirect_queue is not None:
-                self._redirect_queue.put(mu.Text(msg + end))
-                return
-
-            print(msg, end=end, flush=flush)
-            return
-
-        if isinstance(msg, str):
-            markup = self.rich.parse(msg, expand=False)
-        elif isinstance(msg, mu.Markup):
-            markup = msg
-        else:
-            assert TypeError(type(msg))
-
-        if self._stack is not None:
-            self._stack.append(mu.Group((markup, mu.Text(end))))
-            return
-
-        if msg and log:
-            self.log(markup.represent())
-
-        if self._redirect_queue is not None:
-            self._redirect_queue.put(mu.Group((markup, mu.Text(end))))
-            return
-
-        print(self.renderer.render(markup.expand()), end=end, flush=flush)
-
-    def print_traceback(self):
-        with self.warn():
-            self.print(traceback.format_exc(), end="", markup=False)
-
-    def clear_line(self, flush=False, log=True):
-        self.print(self.renderer.clear_line(), end="", flush=flush, log=log)
-
-    def clear(self, bottom=False, flush=False, log=False):
-        markup = self.renderer.clear_screen()
-        if bottom:
-            y = shutil.get_terminal_size().lines - 1
-            markup = mu.Group((markup, mu.Move(x=0, y=y)))
-        self.print(markup, end="", flush=flush, log=log)
 
     def format_code(self, content, marked=None, title=None, is_changed=False):
         total_width = 80
@@ -563,7 +577,7 @@ class Logger:
         else:
             return mu.escape(repr(value))
 
-    def print_scores(self, tol, perfs):
+    def format_scores(self, tol, perfs):
         grad_minwidth = 15
         stat_minwidth = 15
         scat_height = 7
@@ -717,53 +731,22 @@ class Logger:
         acc_graph = [line.tostring().decode("utf-16") for line in acc_code]
 
         # print
-        with self.stack():
-            self.print(
-                "╒" + grad_top + "╤" + scat_top + "╤" + stat_top + "╕", markup=False
-            )
-            self.print(
-                "│" + grad_infos[0] + "│" + scat_graph[0] + "│" + stat_graph[0] + "│",
-                markup=False,
-            )
-            self.print(
-                "│" + grad_infos[1] + "│" + scat_graph[1] + "│" + stat_graph[1] + "│",
-                markup=False,
-            )
-            self.print(
-                "│" + grad_infos[2] + "│" + scat_graph[2] + "│" + stat_graph[2] + "│",
-                markup=False,
-            )
-            self.print(
-                "│" + grad_infos[3] + "│" + scat_graph[3] + "│" + stat_graph[3] + "│",
-                markup=False,
-            )
-            self.print(
-                "│" + grad_infos[4] + "│" + scat_graph[4] + "│" + stat_graph[4] + "│",
-                markup=False,
-            )
-            self.print(
-                "│" + grad_infos[5] + "│" + scat_graph[5] + "│" + stat_graph[5] + "│",
-                markup=False,
-            )
-            self.print(
-                "│" + grad_infos[6] + "│" + scat_graph[6] + "│" + stat_graph[6] + "│",
-                markup=False,
-            )
-            self.print(
-                "│" + grad_infos[7] + "├" + miss_graph + "┤" + stat_infos[0] + "│",
-                markup=False,
-            )
-            self.print(
-                "│" + grad_infos[8] + "│" + acc_graph[0] + "│" + stat_infos[1] + "│",
-                markup=False,
-            )
-            self.print(
-                "│" + grad_infos[9] + "│" + acc_graph[1] + "│" + stat_infos[2] + "│",
-                markup=False,
-            )
-            self.print(
-                "╘" + grad_bot + "╧" + scat_bot + "╧" + stat_bot + "╛", markup=False
-            )
+        res = [
+            "╒" + grad_top + "╤" + scat_top + "╤" + stat_top + "╕",
+            "│" + grad_infos[0] + "│" + scat_graph[0] + "│" + stat_graph[0] + "│",
+            "│" + grad_infos[1] + "│" + scat_graph[1] + "│" + stat_graph[1] + "│",
+            "│" + grad_infos[2] + "│" + scat_graph[2] + "│" + stat_graph[2] + "│",
+            "│" + grad_infos[3] + "│" + scat_graph[3] + "│" + stat_graph[3] + "│",
+            "│" + grad_infos[4] + "│" + scat_graph[4] + "│" + stat_graph[4] + "│",
+            "│" + grad_infos[5] + "│" + scat_graph[5] + "│" + stat_graph[5] + "│",
+            "│" + grad_infos[6] + "│" + scat_graph[6] + "│" + stat_graph[6] + "│",
+            "│" + grad_infos[7] + "├" + miss_graph + "┤" + stat_infos[0] + "│",
+            "│" + grad_infos[8] + "│" + acc_graph[0] + "│" + stat_infos[1] + "│",
+            "│" + grad_infos[9] + "│" + acc_graph[1] + "│" + stat_infos[2] + "│",
+            "╘" + grad_bot + "╧" + scat_bot + "╧" + stat_bot + "╛", 
+        ]
+
+        return "\n".join(res)
 
     def ask(self, prompt, default=True):
         @dn.datanode
