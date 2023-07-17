@@ -193,7 +193,7 @@ class Logger:
 
         while True:
             m = re.match(
-                r"([0-9a-zA-Z_]+) : ([^\n]+)\n+((?:[ ]+[^\n]*(?:\n+|$))*)", doc
+                r"([0-9a-zA-Z_]+) : ([^\n]+)(?:\n+|$)((?:[ ]+[^\n]*(?:\n+|$))*)", doc
             )
             if not m:
                 return res
@@ -204,8 +204,10 @@ class Logger:
         res = Logger._parse_tag_type(type(settings).__doc__)
         for tag_name, tag_type in res.items():
             if tag_type == "single tag":
+                self.log(f"add single tag [{tag_name}/]: {getattr(settings, tag_name)}")
                 self.rich.add_single_tag(tag_name, getattr(settings, tag_name))
             elif tag_type == "pair tag":
+                self.log(f"add pair tag [{tag_name}/]: {getattr(settings, tag_name)}")
                 self.rich.add_pair_tag(tag_name, getattr(settings, tag_name))
             else:
                 assert False

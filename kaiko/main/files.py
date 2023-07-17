@@ -74,9 +74,7 @@ class CognizedPath:
         ):
             logger.print(f"[warn]Wrong file type {path_mu}[/]")
             path_ = self.abs.parent / (self.abs.name + REDUNDANT_EXT)
-            path_mu_ = file_manager.as_relative_path(
-                UnrecognizedPath(path_, False)
-            )
+            path_mu_ = file_manager.as_relative_path(UnrecognizedPath(path_, False))
             path_mu_ = logger.format_path(path_mu_)
             logger.print(f"[data/] Rename {path_mu} to {path_mu_}...")
             self.abs.rename(path_)
@@ -585,10 +583,9 @@ class FilesCommand:
             display_settings.file_other, expand=False, slotted=True
         )
 
-        field_types = file_manager.get_field_types()
-
         res = []
         for path in file_manager.iterdir():
+            # format path name
             if path.abs.is_symlink():
                 name = logger.escape(str(path.abs.readlink()), type="all")
             else:
@@ -616,19 +613,32 @@ class FilesCommand:
                 linkname = logger.rich.parse(linkname, expand=False)
                 name = file_link(src=linkname, dst=name)
 
-            ind = (
-                field_types.index(type(path))
-                if type(path) in field_types
-                else len(field_types)
-            )
+            if isinstance(path, UnrecognizedPath):
+                name = file_unknown(name)
+
+            name = file_item(name)
+
+            # format path info
             info = path.info()
             info = (
                 logger.rich.parse(info, root_tag=True, expand=False)
                 if info is not None
                 else None
             )
+            info = file_info(info) if info is not None else mu.Text("")
 
-            ordering_key = (
+            width = logger.rich.widthof(name.expand())
+            res.append((path, width, name, info))
+
+        # sort paths
+        field_types = file_manager.get_field_types()
+        def key(path):
+            ind = (
+                field_types.index(type(path))
+                if type(path) in field_types
+                else len(field_types)
+            )
+            return (
                 isinstance(path, UnrecognizedPath),
                 ind,
                 path.abs.is_symlink(),
@@ -636,18 +646,9 @@ class FilesCommand:
                 path.abs.suffix,
                 path.abs.stem,
             )
+        res = sorted(res, key=lambda e: key(e[0]))
 
-            if isinstance(path, UnrecognizedPath):
-                name = file_unknown(name)
-            info = file_info(info) if info is not None else mu.Text("")
-            name = file_item(name)
-
-            width = logger.rich.widthof(name.expand())
-            res.append((ordering_key, width, name, info))
-
-        res = sorted(res, key=lambda e: e[0])
         max_width = max((width for _, width, _, _ in res), default=0)
-
         with logger.print_stack() as print:
             for _, width, name, info in res:
                 padding = " " * (max_width - width) if width != -1 else " "
@@ -669,14 +670,14 @@ class FilesCommand:
         except InvalidFileOperation as e:
             path_mu = self.as_relative_path(path)
             path_mu = logger.format_path(path_mu)
-            logger.print(f"[warn]Failed to change directory to {path_mu}[/]")
+            logger.print(f"[warn]Failed to access file: {path_mu}[/]")
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return
 
         try:
             content = path.abs.read_text()
         except UnicodeDecodeError:
-            logger.print("[warn]Cannot read binary file.[/]")
+            logger.print("[warn]Failed to read file as text.[/]")
             return
 
         relpath = file_manager.as_relative_path(path)

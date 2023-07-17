@@ -371,9 +371,7 @@ class DeviceManager:
             with logger.print_stack() as print:
                 print(f"Your unicode version is [emph]{version}[/]")
                 print("[hint/] You can put this command into your .bashrc file:")
-                print(
-                    f"[emph]UNICODE_VERSION={version}; export UNICODE_VERSION[/]"
-                )
+                print(f"[emph]UNICODE_VERSION={version}; export UNICODE_VERSION[/]")
 
         return version
 

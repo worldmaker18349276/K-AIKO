@@ -122,7 +122,7 @@ class ProfileManager:
 
     Attributes
     ----------
-    config_type : cfg.Configurable
+    config_type : config.Configurable
         The configuration type to manage.
     profiles_dir : ProfilesDirPath
         The path of profiles directory.
@@ -132,7 +132,7 @@ class ProfileManager:
         The path of default profile.
     current_path : ProfilesDirPath.profile
         The path of current profile.
-    current : config.Configurable
+    current : config_type
         The current configuration.
     """
 
