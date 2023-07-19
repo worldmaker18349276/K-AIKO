@@ -274,7 +274,9 @@ def to_notes(patterns, beat=0, length=1):
                 beat += length
 
             elif isinstance(pattern, Comment):
-                pass
+                if last_note is not None:
+                    yield last_note
+                last_note = Note("#", beat, Fraction(0, 1), ([pattern.comment], {}))
 
             else:
                 raise TypeError
@@ -329,21 +331,23 @@ def format_arguments(psargs, kwargs):
     return "(%s)" % ", ".join(items)
 
 
-def format_patterns(patterns):
+def patterns_to_str(patterns):
     items = []
     for pattern in patterns:
         if isinstance(pattern, Chord):
-            items.append("{%s}" % format_patterns(pattern.patterns))
+            items.append("{%s}" % patterns_to_str(pattern.patterns))
 
         elif isinstance(pattern, Subdivision):
             temp = "[%s]" if pattern.divisor == 2 else f"[%s]/{pattern.divisor}"
-            items.append(temp % format_patterns(pattern.patterns))
+            items.append(temp % patterns_to_str(pattern.patterns))
 
         elif isinstance(pattern, Symbol):
             items.append(pattern.symbol + format_arguments(*pattern.arguments))
 
         elif isinstance(pattern, Text):
-            items.append(format_value(pattern.text) + format_arguments(*pattern.arguments))
+            items.append(
+                format_value(pattern.text) + format_arguments(*pattern.arguments)
+            )
 
         elif isinstance(pattern, Lengthen):
             items.append("~")
@@ -361,3 +365,21 @@ def format_patterns(patterns):
             assert False
 
     return " ".join(items)
+
+
+LinePatterns = List[Union[Chord, Subdivision, Symbol, Text, Lengthen, Measure, Rest]]
+BlockPatterns = List[LinePatterns]
+BlockComments = List[Comment]
+FormattedPatterns = List[Union[BlockPatterns, BlockComments]]
+
+def format_patterns(formatted_patterns):
+    res = []
+    for block in formatted_patterns:
+        if not block:
+            continue
+        elif isinstance(block[0], Comment):
+            res.append("\n".join("#" + pattern.comment for pattern in block))
+        else:
+            res.append("\n".join(patterns_to_str(patterns) for patterns in block))
+ 
+    return "\n\n".join(res)

@@ -20,11 +20,15 @@ from . import beatpatterns
 class UpdateContext:
     r"""An pseudo-event to update context in preparation phase.
 
-    Attributes
-    ----------
+    Fields
+    ------
+    beat, length : Fraction
+        The start time and sustain time.  length has no meaning.
     update : dict
         The updated fields in the context.
     """
+    beat: Fraction = Fraction(0, 1)
+    length: Fraction = Fraction(0, 1)
 
     update: Dict[str, Union[None, bool, int, Fraction, float, str]] = dataclasses.field(
         default_factory=dict
@@ -35,7 +39,26 @@ class UpdateContext:
 
 
 def Context(beat, length, **contexts):
-    return UpdateContext(contexts)
+    return UpdateContext(beat, length, contexts)
+
+
+@dataclasses.dataclass
+class Comment:
+    r"""An pseudo-event to annotate patterns in sheet.
+
+    Fields
+    ------
+    beat, length : Fraction
+        The start time and sustain time.  length has no meaning.
+    comment : str
+    """
+
+    beat: Fraction = Fraction(0, 1)
+    length: Fraction = Fraction(0, 1)
+    comment: str = ""
+
+    def prepare(self, beatmap, rich, context):
+        pass
 
 
 @dataclasses.dataclass
@@ -1331,10 +1354,11 @@ class BeatTrack:
         "%": Roll,
         "@": Spin,
         "Context": Context,
+        "#": Comment,
         "Text": Text,
     }
 
-    events: List[Event]
+    events: List[Union[Event, UpdateContext, Comment]]
 
     def __iter__(self):
         yield from self.events
