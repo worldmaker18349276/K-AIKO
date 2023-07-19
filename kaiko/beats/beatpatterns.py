@@ -356,6 +356,27 @@ def format_patterns(patterns):
         elif isinstance(pattern, Symbol):
             items.append(pattern.symbol + format_arguments(*pattern.arguments))
 
+        elif isinstance(pattern, Text):
+            items.append(format_value(pattern.text) + format_arguments(*pattern.arguments))
+
+        elif isinstance(pattern, Lengthen):
+            items.append("~")
+
+        elif isinstance(pattern, Measure):
+            items.append("|")
+
+        elif isinstance(pattern, Rest):
+            items.append("_")
+
+        elif isinstance(pattern, Comment):
+            items.append(f"\n#{pattern.comment}\n")
+
+        elif isinstance(pattern, Metadata):
+            if pattern.content is None:
+                items.append(f"\n#@{pattern.title}\n")
+            else:
+                items.append(f"\n#@{pattern.title}:{pattern.content}\n")
+
         else:
             assert False
 
