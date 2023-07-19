@@ -70,7 +70,7 @@ class Rest(AST):
 
 
 @dataclasses.dataclass
-class Division(AST):
+class Subdivision(AST):
     # [x o]
     # [x x o]/3
 
@@ -79,7 +79,7 @@ class Division(AST):
 
 
 @dataclasses.dataclass
-class Instant(AST):
+class Chord(AST):
     # {x x o}
     patterns: List[AST] = dataclasses.field(default_factory=list)
 
@@ -214,10 +214,10 @@ def patterns_parser():
 
     instant = enclose_by(
         pc.proxy(lambda: pattern), msp, pc.string("{"), pc.string("}")
-    ).map(Instant)
+    ).map(Chord)
     division = (
         enclose_by(pc.proxy(lambda: pattern), msp, pc.string("["), pc.string("]")) + div
-    ).starmap(lambda a, b: Division(b, a))
+    ).starmap(lambda a, b: Subdivision(b, a))
     pattern = instant | division | note_parser | comment_parser
     return enclose_by(pattern, msp, pc.nothing(), end)
 
@@ -244,12 +244,12 @@ def collect(it):
 def to_notes(patterns, beat=0, length=1):
     def build(beat, length, last_note, patterns):
         for pattern in patterns:
-            if isinstance(pattern, Division):
+            if isinstance(pattern, Subdivision):
                 beat, last_note = yield from build(
                     beat, length / pattern.divisor, last_note, pattern.patterns
                 )
 
-            elif isinstance(pattern, Instant):
+            elif isinstance(pattern, Chord):
                 if last_note is not None:
                     yield last_note
                 last_note = None
@@ -346,10 +346,10 @@ def format_arguments(psargs, kwargs):
 def format_patterns(patterns):
     items = []
     for pattern in patterns:
-        if isinstance(pattern, Instant):
+        if isinstance(pattern, Chord):
             items.append("{%s}" % format_patterns(pattern.patterns))
 
-        elif isinstance(pattern, Division):
+        elif isinstance(pattern, Subdivision):
             temp = "[%s]" if pattern.divisor == 2 else f"[%s]/{pattern.divisor}"
             items.append(temp % format_patterns(pattern.patterns))
 

@@ -580,7 +580,7 @@ class KAIKOPlay:
             return
 
         logger.print()
-        yes = yield from self.logger.ask("Keep changes to device settings?").join()
+        yes = yield from logger.ask("Keep changes to device settings?").join()
         if yes:
             logger.print("[data/] Update device settings...")
             title = self.file_manager.as_relative_path(
@@ -591,7 +591,7 @@ class KAIKOPlay:
             self.profile_manager.set_as_changed()
             new = self.profile_manager.format()
 
-            self.logger.print(f"[data/] Your changes")
+            logger.print(f"[data/] Your changes")
             logger.print(
                 logger.format_code_diff(old, new, title=title, is_changed=True)
             )

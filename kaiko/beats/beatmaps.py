@@ -95,6 +95,8 @@ class Event:
         defined by beatmap. `length` is the time difference started from `beat`
         in the unit defined by beatmap. If `has_length` is False, the attribute
         `length` can be dropped.
+    has_length : bool, optional
+        True if the field `length` is meaningful.
 
     Attributes
     ----------
@@ -107,8 +109,6 @@ class Event:
     full_score : int, optional
         The full score of this event. To increase score counter and full score
         counter, use `state.add_score` and `state.add_full_score`.
-    has_length : bool, optional
-        True if the attribute `length` is meaningful.
 
     Methods
     -------
@@ -125,10 +125,10 @@ class Event:
 
     beat: Fraction = Fraction(0, 1)
     length: Fraction = Fraction(1, 1)
+    has_length = True
 
     is_subject = False
     full_score = 0
-    has_length = True
 
 
 # scripts

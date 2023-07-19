@@ -99,9 +99,7 @@ def make_rmstr_serializer(suggestions=[]):
 
     def formatter(value):
         if re.search(r'\x00|\r|"""|\\$', value):
-            raise ValueError(
-                "string cannot contain '\\x00', '\\r', '\"\"\"' and single '\\'"
-            )
+            raise ValueError(r'string cannot contain \x00, \r, single \ and """')
         return f'r"""{value}"""'
 
     return sz.Serializer(parser, formatter, validator).suggest(suggestions or ["\n"])
@@ -297,8 +295,9 @@ def make_beatmap_parser(filepath, metadata_only=False):
             yield pc.string(" = ")
             (track_str,) = yield pc.template("BeatTrack.parse({})", rmstr_parser)
 
-            track = BeatTrack.parse(track_str) if not metadata_only else BeatTrack([])
-            beatmap.tracks[track_name] = track
+            beatmap.tracks[track_name] = (
+                BeatTrack.parse(track_str) if not metadata_only else BeatTrack([])
+            )
 
         else:
             assert False
@@ -336,8 +335,11 @@ def format_beatmap(beatmap):
     return "".join(res)
 
 
-class OSU:
-    def read(self, filename, metadata_only=False):
+class OSU_FORMAT:
+    version = "v14"
+
+    @staticmethod
+    def read(filename, metadata_only=False):
         index = 0
 
         with open(filename, encoding="utf-8-sig") as file:
@@ -357,27 +359,27 @@ class OSU:
                 if line == "\n" or line.startswith(r"\\"):
                     pass
                 elif line == "[General]\n":
-                    parse = self.parse_general
+                    parse = OSU_FORMAT.parse_general
                 elif line == "[Editor]\n":
-                    parse = self.parse_editor
+                    parse = OSU_FORMAT.parse_editor
                 elif line == "[Metadata]\n":
-                    parse = self.parse_metadata
+                    parse = OSU_FORMAT.parse_metadata
                 elif line == "[Difficulty]\n":
-                    parse = self.parse_difficulty
+                    parse = OSU_FORMAT.parse_difficulty
                 elif line == "[Events]\n":
-                    parse = self.parse_events
+                    parse = OSU_FORMAT.parse_events
                 elif line == "[TimingPoints]\n":
-                    parse = self.parse_timingpoints
+                    parse = OSU_FORMAT.parse_timingpoints
                 elif line == "[Colours]\n":
-                    parse = self.parse_colours
+                    parse = OSU_FORMAT.parse_colours
                 elif line == "[HitObjects]\n":
-                    parse = self.parse_hitobjects
+                    parse = OSU_FORMAT.parse_hitobjects
                 else:
                     try:
                         if (
                             not metadata_only
-                            or parse != self.parse_timingpoints
-                            and parse != self.parse_hitobjects
+                            or parse != OSU_FORMAT.parse_timingpoints
+                            and parse != OSU_FORMAT.parse_hitobjects
                         ):
                             parse(beatmap, context, line)
                     except Exception as e:
@@ -388,28 +390,34 @@ class OSU:
 
         return beatmap
 
-    def parse_general(self, beatmap, context, line):
+    @staticmethod
+    def parse_general(beatmap, context, line):
         option, value = line.split(": ", maxsplit=1)
         if option == "AudioFilename":
             beatmap.audio.path = value.rstrip("\n")
         elif option == "PreviewTime":
             beatmap.audio.preview = int(value) / 1000
 
-    def parse_editor(self, beatmap, context, line):
+    @staticmethod
+    def parse_editor(beatmap, context, line):
         pass
 
-    def parse_metadata(self, beatmap, context, line):
+    @staticmethod
+    def parse_metadata(beatmap, context, line):
         beatmap.info += line
 
-    def parse_difficulty(self, beatmap, context, line):
+    @staticmethod
+    def parse_difficulty(beatmap, context, line):
         option, value = line.split(":", maxsplit=1)
         if option == "SliderMultiplier":
             context["multiplier0"] = float(value)
 
-    def parse_events(self, beatmap, context, line):
+    @staticmethod
+    def parse_events(beatmap, context, line):
         pass
 
-    def parse_timingpoints(self, beatmap, context, line):
+    @staticmethod
+    def parse_timingpoints(beatmap, context, line):
         (
             time,
             beatLength,
@@ -455,10 +463,12 @@ class OSU:
             (time, beatLength, meter, speed, volume, sliderVelocity, density)
         )
 
-    def parse_colours(self, beatmap, context, line):
+    @staticmethod
+    def parse_colours(beatmap, context, line):
         pass
 
-    def parse_hitobjects(self, beatmap, context, line):
+    @staticmethod
+    def parse_hitobjects(beatmap, context, line):
         x, y, time, type, hitSound, *objectParams, hitSample = line.rstrip("\n").split(
             ","
         )
@@ -508,6 +518,3 @@ class OSU:
                 beat=beat, length=length, density=density, speed=speed, volume=volume
             )
             beatmap.tracks["main"].events.append(event)
-
-
-OSU_FORMAT = OSU()
