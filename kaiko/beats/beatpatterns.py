@@ -25,14 +25,6 @@ class Comment(AST):
 
 
 @dataclasses.dataclass
-class Metadata(AST):
-    # #@TITLE: 123
-
-    title: str
-    content: Optional[str]
-
-
-@dataclasses.dataclass
 class Symbol(AST):
     # XYZ(arg=...)
 
@@ -147,13 +139,7 @@ def arguments_parser():
 def comment_parser():
     comment = yield pc.regex(r"#[^\n]*(?=[\n$])").desc("comment")
     comment = comment[1:].rstrip("\n")
-    if comment.startswith("@"):
-        metadata = comment[1:].split(":", 1)
-        title = metadata[0]
-        content = metadata[1] if len(metadata) >= 2 else None
-        return Metadata(title, content)
-    else:
-        return Comment(comment)
+    return Comment(comment)
 
 
 @IIFE
@@ -287,7 +273,7 @@ def to_notes(patterns, beat=0, length=1):
                 last_note = Note(symbol, beat, length, (args, kw))
                 beat += length
 
-            elif isinstance(pattern, (Comment, Metadata)):
+            elif isinstance(pattern, Comment):
                 pass
 
             else:
@@ -370,12 +356,6 @@ def format_patterns(patterns):
 
         elif isinstance(pattern, Comment):
             items.append(f"\n#{pattern.comment}\n")
-
-        elif isinstance(pattern, Metadata):
-            if pattern.content is None:
-                items.append(f"\n#@{pattern.title}\n")
-            else:
-                items.append(f"\n#@{pattern.title}:{pattern.content}\n")
 
         else:
             assert False
