@@ -78,7 +78,7 @@ class Event:
                |________________________________________________________________________________|
 
     Where `track1` contains three events, and `track2` contains two events. Like
-    `event3`, some events have no length (determined by attribute `has_length`).
+    `event3`, some events have no length (determined by field `has_length`).
     The square bracket is an interval `(beat, beat+length)`, which define the
     timespan of action of this event, just like hit object and hold object in
     others rhythm game. The interval should be ordered and exclusive in each
@@ -119,16 +119,16 @@ class Event:
         in the unit defined by beatmap. If `has_length` is False, the attribute
         `length` can be dropped.
     has_length : bool, optional
-        True if the field `length` is meaningful.
+        True if the field `length` has no effect on the game.
+    is_subject : bool, optional
+        True if this event is an action. To increase the value of progress bar,
+        use `state.add_finished`.
 
     Attributes
     ----------
     lifespan : tuple of float and float
         The start time and end time (in seconds) of this event. In general, the
         lifespan is determined by attributes `beat` and `length`.
-    is_subject : bool, optional
-        True if this event is an action. To increase the value of progress bar,
-        use `state.add_finished`.
     full_score : int, optional
         The full score of this event. To increase score counter and full score
         counter, use `state.add_score` and `state.add_full_score`.
@@ -1377,8 +1377,7 @@ class BeatTrack:
     @classmethod
     def parse(cls, patterns_str, ret_width=False, notations=None):
         notations = notations if notations is not None else cls._notations
-        patterns = beatpatterns.patterns_parser.parse(patterns_str)
-        notes, width = beatpatterns.to_notes(patterns)
+        notes, width = beatpatterns.parse_notes(patterns_str)
 
         track = cls([cls.to_event(note, notations) for note in notes])
 
@@ -1575,8 +1574,7 @@ class BeatPoints:
 
     @classmethod
     def parse(cls, patterns_str, ret_width=False):
-        patterns = beatpatterns.patterns_parser.parse(patterns_str)
-        notes, width = beatpatterns.to_notes(patterns)
+        notes, width = beatpatterns.parse_notes(patterns_str)
 
         beatpoints = cls([cls.to_beatpoint(note) for note in notes])
 
@@ -1707,8 +1705,7 @@ class BeatState:
 
     @classmethod
     def parse(cls, patterns_str):
-        patterns = beatpatterns.patterns_parser.parse(patterns_str)
-        notes, width = beatpatterns.to_notes(patterns)
+        notes, width = beatpatterns.parse_notes(patterns_str)
         return cls([cls.to_statepoint(note) for note in notes])
 
     @classmethod

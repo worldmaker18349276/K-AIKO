@@ -1,12 +1,15 @@
 from fractions import Fraction
 import dataclasses
+import collections
 from typing import List, Tuple, Dict, Union, Optional
+import math
 import ast
 from ..utils import parsec as pc
 
 
 Value = Union[None, bool, int, Fraction, float, str]
-Arguments = Tuple[List[Value], Dict[str, Value]]
+Arguments = collections.namedtuple("Arguments", ["psargs", "kwargs"])
+# Arguments = Tuple[List[Value], Dict[str, Value]]
 
 
 class PatternError(Exception):
@@ -14,6 +17,11 @@ class PatternError(Exception):
 
 
 class AST:
+    pass
+
+
+@dataclasses.dataclass
+class Newline(AST):
     pass
 
 
@@ -110,9 +118,9 @@ def arguments_parser():
     keyworded = False
 
     if not (yield opening):
-        return psargs, kwargs
+        return Arguments(psargs, kwargs)
     if (yield closing):
-        return psargs, kwargs
+        return Arguments(psargs, kwargs)
 
     while True:
         try:
@@ -130,7 +138,7 @@ def arguments_parser():
             psargs.append(value)
 
         if (yield closing):
-            return psargs, kwargs
+            return Arguments(psargs, kwargs)
         yield comma
 
 
@@ -278,6 +286,9 @@ def to_notes(patterns, beat=0, length=1):
                     yield last_note
                 last_note = Note("#", beat, Fraction(0, 1), ([pattern.comment], {}))
 
+            elif isinstance(pattern, Newline):
+                pass
+
             else:
                 raise TypeError
 
@@ -292,6 +303,10 @@ def to_notes(patterns, beat=0, length=1):
         notes.append(last_note)
 
     return notes, last_beat
+
+
+def parse_notes(patterns_str, beat=0, length=1):
+    return to_notes(patterns_parser.parse(patterns_str), beat, length)
 
 
 def snap_to_frac(value, epsilon=0.001, N=float("inf")):
@@ -361,25 +376,339 @@ def patterns_to_str(patterns):
         elif isinstance(pattern, Comment):
             items.append(f"\n#{pattern.comment}\n")
 
+        elif isinstance(pattern, Newline):
+            items.append("\n")
+
         else:
-            assert False
+            raise TypeError(pattern)
 
-    return " ".join(items)
+    def join_sp(items):
+        res = []
+        nosp = True
+        for item in items:
+            if not nosp and not item.startswith("\n"):
+                res.append(" ")
+            res.append(item)
+            nosp = item.endswith("\n")
+        return "".join(res)
+
+    return join_sp(items)
 
 
-LinePatterns = List[Union[Chord, Subdivision, Symbol, Text, Lengthen, Measure, Rest]]
-BlockPatterns = List[LinePatterns]
-BlockComments = List[Comment]
-FormattedPatterns = List[Union[BlockPatterns, BlockComments]]
+@dataclasses.dataclass
+class Grid:
+    offset: Fraction = Fraction(0, 1)
+    start: Fraction = Fraction(0, 1)
+    end: Fraction = Fraction(0, 1)
+    denominator: int = 1
+    subgrids: "List[Grid]" = dataclasses.field(default_factory=list)
 
-def format_patterns(formatted_patterns):
+    @property
+    def unit(self):
+        return Fraction(1, self.denominator)
+
+    def as_str(self, denominator=1):
+        if self.denominator % denominator != 0:
+            raise ValueError
+
+        divisor = self.denominator // denominator
+        subgrids = " ".join(
+            subgrid.as_str(self.denominator) for subgrid in self.subgrids
+        )
+        if divisor == 1:
+            return f"({self.start} {subgrids} {self.end})"
+        else:
+            return f"[{self.start} {subgrids} {self.end}]/{divisor}"
+
+    def validate(self):
+        return (
+            self.denominator % self.start.denominator == 0
+            and self.denominator % self.end.denominator == 0
+            and self.start <= self.end
+            and all(
+                self.denominator % subgrid.start.denominator == 0
+                for subgrid in self.subgrids
+            )
+            and all(
+                self.denominator % subgrid.end.denominator == 0
+                for subgrid in self.subgrids
+            )
+            and all(
+                subgrid.denominator % self.denominator == 0 for subgrid in self.subgrids
+            )
+            and all(self.start <= subgrid.start < self.end for subgrid in self.subgrids)
+            and all(self.start < subgrid.end <= self.end for subgrid in self.subgrids)
+            and all(
+                subgrid1.end <= subgrid2.start
+                for subgrid1, subgrid2 in zip(self.subgrids[:-1], self.subgrids[1:])
+            )
+            and all(subgrid.validate() for subgrid in self.subgrids)
+        )
+
+    @staticmethod
+    def align(start, end, denominator):
+        start_ = Fraction(math.floor(start * denominator), denominator)
+        end_ = Fraction(math.ceil(end * denominator), denominator)
+        return (start_, end_)
+
+    def get(self, pos, post=False):
+        if post:
+            for subgrid in self.subgrids:
+                if subgrid.start < pos <= subgrid.end:
+                    return subgrid
+        else:
+            for subgrid in self.subgrids:
+                if subgrid.start <= pos < subgrid.end:
+                    return subgrid
+        return None
+
+    def coarsen(self, denominator):
+        assert self.denominator % denominator == 0
+        assert denominator % self.start.denominator == 0
+        assert denominator % self.end.denominator == 0
+        if not self.subgrids:
+            self.denominator = denominator
+            return
+
+        start, end = Grid.align(
+            self.subgrids[0].start, self.subgrids[-1].end, denominator
+        )
+        subgrid = Grid(self.offset, start, end, self.denominator, self.subgrids[:])
+        # assert subgird.validate()
+
+        self.denominator = denominator
+        self.subgrids.clear()
+        self.subgrids.append(subgrid)
+        # assert self.validate()
+
+    def last_leaf_end(self, default):
+        if not self.subgrids:
+            return default
+        return self.subgrids[-1].last_leaf_end(self.subgrids[-1].end)
+
+    def insert_last(self, leaf):
+        assert self.last_leaf_end(self.start) <= leaf.start < self.end
+        assert leaf.end <= self.end
+
+        if leaf.denominator % self.denominator != 0:
+            common_denominator = math.gcd(leaf.denominator, self.denominator)
+
+            # try to divide subgrid to fit the leaf
+            last_end = self.subgrids[-1].end if self.subgrids else self.start
+            start_, end_ = Grid.align(leaf.start, last_end, common_denominator)
+            if end_ <= start_:
+                # grid |xxx:xxx:   :   :   :   |                       |
+                # note              ooooo ooooo ooooo ooooo ooooo ooooo
+                # res  |xxx,xxx,   :ooooo,ooooo|ooooo,ooooo:ooooo,ooooo|
+                self.coarsen(common_denominator)
+                # assert self.validate()
+            else:
+                # grid |xxx:   :   |           |
+                # note        ooooo ooooo ooooo
+                # res  |xxx: ,o:o,o|o,o:o,o:o,o|
+                leaf.denominator = math.lcm(leaf.denominator, self.denominator)
+                # assert leaf.validate()
+
+        start, end = Grid.align(leaf.start, leaf.end, self.denominator)
+        subgrid = self.get(leaf.start)
+        if subgrid is None:
+            if start == leaf.start and leaf.end == end:
+                grid = leaf
+            else:
+                grid = Grid(self.offset, start, end, leaf.denominator, [leaf])
+                # assert grid.validate()
+
+            # insert grid to subgrids
+            for i, subgrid in enumerate(self.subgrids[::-1]):
+                if subgrid.end <= grid.start:
+                    self.subgrids.insert(len(self.subgrids) - i, grid)
+                    break
+            else:
+                self.subgrids.insert(0, grid)
+            # assert self.validate()
+            return
+
+        # expand subgrid to contain the leaf
+        subgrid.end = max(subgrid.end, end)
+        subgrid.insert_last(leaf)
+        # assert self.validate()
+
+    @staticmethod
+    def make(notes, offset):
+        start = Fraction(math.floor(notes[0].beat - offset), 1)
+        end = Fraction(math.ceil(notes[-1].beat + notes[-1].length - offset), 1)
+        start -= 1
+        end += 1
+        grid = Grid(offset, start, end, 1, [])
+        for note in notes:
+            leaf_start = note.beat - offset
+            leaf_end = note.beat + note.length - offset
+            leaf_denominator = math.lcm(leaf_start.denominator, leaf_end.denominator)
+            leaf = Grid(offset, leaf_start, leaf_end, leaf_denominator, [])
+            grid.insert_last(leaf)
+        grid.start += 1
+        grid.end -= 1
+        return grid
+
+    @staticmethod
+    def bar_adder(shape=(4, 4, 2)):
+        @IIFE
+        def bars():
+            beat = Fraction(0, 1)
+            while True:
+                beat += 1
+                if beat % shape[0] == 0:
+                    yield Measure(), beat
+                if beat % (shape[0] * shape[1]) == 0:
+                    yield Newline(), beat
+                if beat % (shape[0] * shape[1] * shape[2]) == 0:
+                    yield Newline(), beat
+
+        bar, bar_beat = next(bars, (None, None))
+
+        def add_bar(beat, ast):
+            nonlocal bar, bar_beat
+            while bar_beat is not None and bar_beat == beat:
+                ast.append(bar)
+                bar, bar_beat = next(bars, (None, None))
+
+        return add_bar
+
+    def build_ast(self, notes, add_bar):
+        notes = iter(notes)
+
+        ast = []
+        beat = self.start
+
+        def add_bar_and_node(node, length):
+            nonlocal beat, ast
+            if beat > self.start:
+                add_bar(beat, ast)
+            ast.append(node)
+            beat += length
+
+        # leaf grid
+        if not self.subgrids:
+            note = next(notes, None)
+            start_beat = note.beat - self.offset
+            end_beat = note.beat + note.length - self.offset
+            assert (
+                note is not None and start_beat == self.start and end_beat == self.end
+            )
+
+            if note.symbol == "#":
+                node = Comment(note.arguments[0][0])
+                add_bar_and_node(node, 0)
+            elif note.symbol == "Text":
+                text = note.arguments[0][0]
+                arguments = Arguments(note.arguments[0][1:], note.arguments[1])
+                node = Text(arguments)
+                add_bar_and_node(node, self.unit)
+            else:
+                node = Symbol(note.symbol, note.arguments)
+                add_bar_and_node(node, self.unit)
+
+            while beat < self.end:
+                add_bar_and_node(Lengthen(), self.unit)
+            return ast
+
+        # composite grid
+        subgrids = iter(self.subgrids)
+
+        subgrid = next(subgrids, None)
+        while subgrid is not None:
+            while beat < subgrid.start:
+                add_bar_and_node(Rest(), self.unit)
+            assert beat == subgrid.start
+
+            add_bar(beat, ast)
+            children = subgrid.build_ast(notes, add_bar)
+            if subgrid.start == subgrid.end:
+                assert len(children) == 1
+                if isinstance(children[0], Comment):
+                    add_bar_and_node(children[0], 0)
+                else:
+                    add_bar_and_node(Chord(children), 0)
+            elif subgrid.denominator == self.denominator:
+                ast.extend(children)
+                beat = subgrid.end
+            else:
+                divisor = subgrid.denominator // self.denominator
+                add_bar_and_node(
+                    Subdivision(divisor, children), subgrid.end - subgrid.start
+                )
+            subgrid = next(subgrids, None)
+
+        while beat < self.end:
+            add_bar_and_node(Rest(), self.unit)
+        assert beat == self.end
+
+        return ast
+
+
+@IIFE
+@pc.parsec
+def shape_parser():
+    """parse string like "SHAPE: 4, 4, 2" """
+
+    int_parser = pc.regex(r"(0|[1-9][0-9]*)").map(ast.literal_eval)
+    sp = pc.regex(r"([ \t$])*").desc("whitespace")
+    comma = sp >> pc.string(",") << sp
+
+    yield pc.string("SHAPE:")
+    yield sp
+    a = yield int_parser
+    yield comma
+    b = yield int_parser
+    yield comma
+    c = yield int_parser
+    yield sp
+    yield pc.eof()
+    return (a, b, c)
+
+
+def format_notes(notes, beat=Fraction(0, 1), width=None):
+    # partition notes by shapes
+    Part = collections.namedtuple("Part", ["shape", "metadata", "notes"])
+
+    default_shape = 4, 4, 2
+    parts = [Part(default_shape, None, [])]
+    for note in notes:
+        if note.symbol == "#" and len(note.arguments) >= 1:
+            try:
+                shape = shape_parser.parse(note.arguments[0][0])
+            except pc.ParseError:
+                pass
+            else:
+                shape = tuple(
+                    shape[i] if i < len(shape) else default
+                    for i, default in enumerate(default_shape)
+                )
+                parts.append(Part(shape, note, []))
+                continue
+
+        parts[-1].notes.append(note)
+
+    if not parts[0].notes:
+        parts.pop(0)
+
     res = []
-    for block in formatted_patterns:
-        if not block:
-            continue
-        elif isinstance(block[0], Comment):
-            res.append("\n".join("#" + pattern.comment for pattern in block))
-        else:
-            res.append("\n".join(patterns_to_str(patterns) for patterns in block))
- 
-    return "\n\n".join(res)
+    for shape, metadata, notes in parts:
+        offset = (
+            metadata.beat
+            if metadata is not None
+            else Fraction(math.floor(notes[0].beat), 1)
+        )
+        grid = Grid.make(notes, offset)
+        add_bar = Grid.bar_adder(shape)
+        ast = grid.build_ast(notes, add_bar)
+        add_bar(grid.end, ast)
+
+        if metadata is not None:
+            metadata_node = Comment(metadata.arguments[0][0])
+            res.append(metadata_node)
+            res.append(Newline())
+        res.extend(ast)
+        res.append(Newline())
+
+    return patterns_to_str(res)
