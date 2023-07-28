@@ -566,25 +566,25 @@ class Grid:
 
         bar, bar_beat = next(bars, (None, None))
 
-        def add_bar(beat, ast):
+        def add_bar(beat, patterns):
             nonlocal bar, bar_beat
             while bar_beat is not None and bar_beat == beat:
-                ast.append(bar)
+                patterns.append(bar)
                 bar, bar_beat = next(bars, (None, None))
 
         return add_bar
 
-    def build_ast(self, notes, add_bar):
+    def build_patterns(self, notes, add_bar):
         notes = iter(notes)
 
-        ast = []
+        patterns = []
         beat = self.start
 
-        def add_bar_and_node(node, length):
-            nonlocal beat, ast
+        def add_bar_and_pattern(pattern, length):
+            nonlocal beat, patterns
             if beat > self.start:
-                add_bar(beat, ast)
-            ast.append(node)
+                add_bar(beat, patterns)
+            patterns.append(pattern)
             beat += length
 
         # leaf grid
@@ -597,20 +597,20 @@ class Grid:
             )
 
             if note.symbol == "#":
-                node = Comment(note.arguments[0][0])
-                add_bar_and_node(node, 0)
+                pattern = Comment(note.arguments[0][0])
+                add_bar_and_pattern(pattern, 0)
             elif note.symbol == "Text":
                 text = note.arguments[0][0]
                 arguments = Arguments(note.arguments[0][1:], note.arguments[1])
-                node = Text(arguments)
-                add_bar_and_node(node, self.unit)
+                pattern = Text(arguments)
+                add_bar_and_pattern(pattern, self.unit)
             else:
-                node = Symbol(note.symbol, note.arguments)
-                add_bar_and_node(node, self.unit)
+                pattern = Symbol(note.symbol, note.arguments)
+                add_bar_and_pattern(pattern, self.unit)
 
             while beat < self.end:
-                add_bar_and_node(Lengthen(), self.unit)
-            return ast
+                add_bar_and_pattern(Lengthen(), self.unit)
+            return patterns
 
         # composite grid
         subgrids = iter(self.subgrids)
@@ -618,32 +618,88 @@ class Grid:
         subgrid = next(subgrids, None)
         while subgrid is not None:
             while beat < subgrid.start:
-                add_bar_and_node(Rest(), self.unit)
+                add_bar_and_pattern(Rest(), self.unit)
             assert beat == subgrid.start
 
-            add_bar(beat, ast)
-            children = subgrid.build_ast(notes, add_bar)
+            add_bar(beat, patterns)
+            children = subgrid.build_patterns(notes, add_bar)
             if subgrid.start == subgrid.end:
                 assert len(children) == 1
                 if isinstance(children[0], Comment):
-                    add_bar_and_node(children[0], 0)
+                    add_bar_and_pattern(children[0], 0)
                 else:
-                    add_bar_and_node(Chord(children), 0)
+                    add_bar_and_pattern(Chord(children), 0)
             elif subgrid.denominator == self.denominator:
-                ast.extend(children)
+                patterns.extend(children)
                 beat = subgrid.end
             else:
                 divisor = subgrid.denominator // self.denominator
-                add_bar_and_node(
+                add_bar_and_pattern(
                     Subdivision(divisor, children), subgrid.end - subgrid.start
                 )
             subgrid = next(subgrids, None)
 
         while beat < self.end:
-            add_bar_and_node(Rest(), self.unit)
+            add_bar_and_pattern(Rest(), self.unit)
         assert beat == self.end
 
-        return ast
+        return patterns
+
+
+def extend_notes(patterns, symbols):
+    res = []
+    last = None
+
+    for pattern in patterns:
+        if isinstance(pattern, (Rest, Lengthen)):
+            if last is not None:
+                if (
+                    isinstance(last.patterns[-1], Symbol)
+                    and last.patterns[-1].symbol in symbols
+                ):
+                    if last.patterns[:-1]:
+                        res.append(Chord(last.patterns[:-1]))
+                    res.append(last.patterns[-1])
+                else:
+                    res.append(last)
+                last = None
+            else:
+                res.append(pattern)
+
+        elif isinstance(pattern, (Comment, Text)):
+            if last is not None:
+                res.append(last)
+                last = None
+            res.append(pattern)
+
+        elif isinstance(pattern, (Measure, Newline)):
+            res.append(pattern)
+
+        elif isinstance(pattern, Subdivision):
+            patterns_ = pattern.patterns[:]
+            if last is not None:
+                patterns_.insert(0, last)
+                last = None
+            patterns_ = extend_notes(patterns_, symbols)
+            if patterns_ and isinstance(patterns_[0], Chord):
+                res.append(patterns_.pop(0))
+            if patterns_ and isinstance(patterns_[-1], Chord):
+                last = patterns_.pop(0)
+            res.append(dataclasses.replace(pattern, patterns=patterns_))
+
+        elif isinstance(pattern, Chord):
+            if last is not None:
+                last = Chord(last.patterns + pattern.patterns)
+            else:
+                last = pattern
+
+        else:
+            raise TypeError
+
+    if last is not None:
+        res.append(last)
+
+    return res
 
 
 @IIFE
@@ -667,7 +723,7 @@ def shape_parser():
     return (a, b, c)
 
 
-def format_notes(notes, beat=Fraction(0, 1), width=None):
+def format_notes(notes, beat=Fraction(0, 1), width=None, lengthless_symbols=[]):
     # partition notes by shapes
     Part = collections.namedtuple("Part", ["shape", "metadata", "notes"])
 
@@ -701,14 +757,14 @@ def format_notes(notes, beat=Fraction(0, 1), width=None):
         )
         grid = Grid.make(notes, offset)
         add_bar = Grid.bar_adder(shape)
-        ast = grid.build_ast(notes, add_bar)
-        add_bar(grid.end, ast)
+        patterns = grid.build_patterns(notes, add_bar)
+        add_bar(grid.end, patterns)
 
         if metadata is not None:
             metadata_node = Comment(metadata.arguments[0][0])
             res.append(metadata_node)
             res.append(Newline())
-        res.extend(ast)
+        res.extend(patterns)
         res.append(Newline())
 
-    return patterns_to_str(res)
+    return patterns_to_str(extend_notes(res, lengthless_symbols))
