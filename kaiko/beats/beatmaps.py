@@ -1370,8 +1370,8 @@ class BeatTrack:
         return notations[note.symbol](
             note.beat,
             note.length,
-            *note.arguments[0],
-            **note.arguments[1],
+            *note.arguments.ps,
+            **note.arguments.kw,
         )
 
     @classmethod
@@ -1564,8 +1564,8 @@ class BeatPoints:
         return BeatPoint(
             note.beat,
             note.length,
-            *note.arguments[0],
-            **note.arguments[1],
+            *note.arguments.ps,
+            **note.arguments.kw,
         )
 
     @classmethod
@@ -1699,8 +1699,8 @@ class BeatState:
         return statepoint_cls(
             note.beat,
             note.length,
-            *note.arguments[0],
-            **note.arguments[1],
+            *note.arguments.ps,
+            **note.arguments.kw,
         )
 
     @classmethod

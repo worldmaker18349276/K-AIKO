@@ -8,8 +8,12 @@ from ..utils import parsec as pc
 
 
 Value = Union[None, bool, int, Fraction, float, str]
-Arguments = collections.namedtuple("Arguments", ["psargs", "kwargs"])
-# Arguments = Tuple[List[Value], Dict[str, Value]]
+
+
+@dataclasses.dataclass
+class Arguments:
+    ps: List[Value]
+    kw: Dict[str, Value]
 
 
 class PatternError(Exception):
@@ -159,17 +163,17 @@ def note_parser():
 
     def make_note(sym, arg):
         if sym == "~":
-            if arg[0] or arg[1]:
+            if arg.ps or arg.kw:
                 raise PatternError("lengthen note don't accept any argument")
             return Lengthen()
 
         elif sym == "|":
-            if arg[0] or arg[1]:
+            if arg.ps or arg.kw:
                 raise PatternError("measure note don't accept any argument")
             return Measure()
 
         elif sym == "_":
-            if arg[0] or arg[1]:
+            if arg.ps or arg.kw:
                 raise PatternError("rest note don't accept any argument")
             return Rest()
 
@@ -269,22 +273,24 @@ def to_notes(patterns, beat=0, length=1):
             elif isinstance(pattern, (Text, Symbol)):
                 if isinstance(pattern, Symbol):
                     symbol = pattern.symbol
-                    args = pattern.arguments[0]
-                    kw = pattern.arguments[1]
+                    ps = pattern.arguments.ps
+                    kw = pattern.arguments.kw
                 else:
                     symbol = "Text"
-                    args = (pattern.text, *pattern.arguments[0])
-                    kw = pattern.arguments[1]
+                    ps = (pattern.text, *pattern.arguments.ps)
+                    kw = pattern.arguments.kw
 
                 if last_note is not None:
                     yield last_note
-                last_note = Note(symbol, beat, length, (args, kw))
+                last_note = Note(symbol, beat, length, Arguments(ps, kw))
                 beat += length
 
             elif isinstance(pattern, Comment):
                 if last_note is not None:
                     yield last_note
-                last_note = Note("#", beat, Fraction(0, 1), ([pattern.comment], {}))
+                last_note = Note(
+                    "#", beat, Fraction(0, 1), Arguments([pattern.comment], {})
+                )
 
             elif isinstance(pattern, Newline):
                 pass
@@ -338,11 +344,11 @@ def format_value(value):
         assert False
 
 
-def format_arguments(psargs, kwargs):
-    if len(psargs) + len(kwargs) == 0:
+def format_arguments(arguments):
+    if len(arguments.ps) + len(arguments.kw) == 0:
         return ""
-    items = [format_value(value) for value in psargs]
-    items += [key + "=" + format_value(value) for key, value in kwargs.items()]
+    items = [format_value(value) for value in arguments.ps]
+    items += [key + "=" + format_value(value) for key, value in arguments.kw.items()]
     return "(%s)" % ", ".join(items)
 
 
@@ -357,11 +363,11 @@ def patterns_to_str(patterns):
             items.append(temp % patterns_to_str(pattern.patterns))
 
         elif isinstance(pattern, Symbol):
-            items.append(pattern.symbol + format_arguments(*pattern.arguments))
+            items.append(pattern.symbol + format_arguments(pattern.arguments))
 
         elif isinstance(pattern, Text):
             items.append(
-                format_value(pattern.text) + format_arguments(*pattern.arguments)
+                format_value(pattern.text) + format_arguments(pattern.arguments)
             )
 
         elif isinstance(pattern, Lengthen):
@@ -608,11 +614,11 @@ class Grid:
             )
 
             if note.symbol == "#":
-                pattern = Comment(note.arguments[0][0])
+                pattern = Comment(note.arguments.ps[0])
                 add_bar_and_pattern(pattern, 0)
             elif note.symbol == "Text":
-                text = note.arguments[0][0]
-                arguments = Arguments(note.arguments[0][1:], note.arguments[1])
+                text = note.arguments.ps[0]
+                arguments = Arguments(note.arguments.ps[1:], note.arguments.kw)
                 pattern = Text(arguments)
                 add_bar_and_pattern(pattern, self.unit)
             else:
@@ -759,9 +765,9 @@ def format_notes(notes, beat=Fraction(0, 1), width=None, lengthless_symbols=[]):
     default_shape = 4, 4, 2
     parts = [Part(default_shape, None, [])]
     for note in notes:
-        if note.symbol == "#" and len(note.arguments) >= 1:
+        if note.symbol == "#" and len(note.arguments.ps) >= 1:
             try:
-                shape = shape_parser.parse(note.arguments[0][0])
+                shape = shape_parser.parse(note.arguments.ps[0])
             except pc.ParseError:
                 pass
             else:
@@ -807,7 +813,7 @@ def format_notes(notes, beat=Fraction(0, 1), width=None, lengthless_symbols=[]):
         add_bar(grid.end, patterns)
 
         if part.metadata is not None:
-            metadata_node = Comment(part.metadata.arguments[0][0])
+            metadata_node = Comment(part.metadata.arguments.ps[0])
             res.append(metadata_node)
             res.append(Newline())
         res.extend(patterns)
