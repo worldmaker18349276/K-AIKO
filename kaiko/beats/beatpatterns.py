@@ -422,15 +422,15 @@ class Grid:
 
     def validate(self):
         return (
-            self.denominator % self.start.denominator == 0
-            and self.denominator % self.end.denominator == 0
+            self.denominator % (self.start - self.offset).denominator == 0
+            and self.denominator % (self.end - self.offset).denominator == 0
             and self.start <= self.end
             and all(
-                self.denominator % subgrid.start.denominator == 0
+                self.denominator % (subgrid.start - self.offset).denominator == 0
                 for subgrid in self.subgrids
             )
             and all(
-                self.denominator % subgrid.end.denominator == 0
+                self.denominator % (subgrid.end - self.offset).denominator == 0
                 for subgrid in self.subgrids
             )
             and all(
@@ -446,9 +446,11 @@ class Grid:
         )
 
     @staticmethod
-    def align(start, end, denominator):
-        start_ = Fraction(math.floor(start * denominator), denominator)
-        end_ = Fraction(math.ceil(end * denominator), denominator)
+    def align(start, end, offset, denominator):
+        start_ = (
+            Fraction(math.floor((start - offset) * denominator), denominator) + offset
+        )
+        end_ = Fraction(math.ceil((end - offset) * denominator), denominator) + offset
         return (start_, end_)
 
     def get(self, pos, post=False):
@@ -464,14 +466,14 @@ class Grid:
 
     def coarsen(self, denominator):
         assert self.denominator % denominator == 0
-        assert denominator % self.start.denominator == 0
-        assert denominator % self.end.denominator == 0
+        assert denominator % (self.start - self.offset).denominator == 0
+        assert denominator % (self.end - self.offset).denominator == 0
         if not self.subgrids:
             self.denominator = denominator
             return
 
         start, end = Grid.align(
-            self.subgrids[0].start, self.subgrids[-1].end, denominator
+            self.subgrids[0].start, self.subgrids[-1].end, self.offset, denominator
         )
         subgrid = Grid(self.offset, start, end, self.denominator, self.subgrids[:])
         # assert subgird.validate()
@@ -495,7 +497,9 @@ class Grid:
 
             # try to divide subgrid to fit the leaf
             last_end = self.subgrids[-1].end if self.subgrids else self.start
-            start_, end_ = Grid.align(leaf.start, last_end, common_denominator)
+            start_, end_ = Grid.align(
+                leaf.start, last_end, self.offset, common_denominator
+            )
             if end_ <= start_:
                 # grid |xxx:xxx:   :   :   :   |                       |
                 # note              ooooo ooooo ooooo ooooo ooooo ooooo
@@ -509,7 +513,7 @@ class Grid:
                 leaf.denominator = math.lcm(leaf.denominator, self.denominator)
                 # assert leaf.validate()
 
-        start, end = Grid.align(leaf.start, leaf.end, self.denominator)
+        start, end = Grid.align(leaf.start, leaf.end, self.offset, self.denominator)
         subgrid = self.get(leaf.start)
         if subgrid is None:
             if start == leaf.start and leaf.end == end:
@@ -534,34 +538,41 @@ class Grid:
         # assert self.validate()
 
     @staticmethod
-    def make(notes, offset):
-        start = Fraction(math.floor(notes[0].beat - offset), 1)
-        end = Fraction(math.ceil(notes[-1].beat + notes[-1].length - offset), 1)
-        start -= 1
-        end += 1
-        grid = Grid(offset, start, end, 1, [])
+    def make(notes, start, end):
+        assert start <= notes[0].beat <= end
+        assert start <= notes[-1].beat + notes[-1].length <= end
+        offset = start
+        grid = Grid(start, start, end, 1, [])
+        if (grid.start - grid.offset) % 1 == 0:
+            grid.start -= 1
+        if (grid.end - grid.offset) % 1 == 0:
+            grid.end += 1
         for note in notes:
-            leaf_start = note.beat - offset
-            leaf_end = note.beat + note.length - offset
-            leaf_denominator = math.lcm(leaf_start.denominator, leaf_end.denominator)
+            leaf_start = note.beat
+            leaf_end = note.beat + note.length
+            leaf_denominator = math.lcm(
+                (leaf_start - offset).denominator, (leaf_end - offset).denominator
+            )
             leaf = Grid(offset, leaf_start, leaf_end, leaf_denominator, [])
             grid.insert_last(leaf)
-        grid.start += 1
-        grid.end -= 1
+        if (grid.start - grid.offset) % 1 == 0:
+            grid.start += 1
+        if (grid.end - grid.offset) % 1 == 0:
+            grid.end -= 1
         return grid
 
     @staticmethod
-    def bar_adder(shape=(4, 4, 2)):
+    def bar_adder(offset, shape=(4, 4, 2)):
         @IIFE
         def bars():
-            beat = Fraction(0, 1)
+            beat = offset
             while True:
                 beat += 1
-                if beat % shape[0] == 0:
+                if (beat - offset) % shape[0] == 0:
                     yield Measure(), beat
-                if beat % (shape[0] * shape[1]) == 0:
+                if (beat - offset) % (shape[0] * shape[1]) == 0:
                     yield Newline(), beat
-                if beat % (shape[0] * shape[1] * shape[2]) == 0:
+                if (beat - offset) % (shape[0] * shape[1] * shape[2]) == 0:
                     yield Newline(), beat
 
         bar, bar_beat = next(bars, (None, None))
@@ -590,8 +601,8 @@ class Grid:
         # leaf grid
         if not self.subgrids:
             note = next(notes, None)
-            start_beat = note.beat - self.offset
-            end_beat = note.beat + note.length - self.offset
+            start_beat = note.beat
+            end_beat = note.beat + note.length
             assert (
                 note is not None and start_beat == self.start and end_beat == self.end
             )
@@ -651,7 +662,17 @@ def extend_notes(patterns, symbols):
     last = None
 
     for pattern in patterns:
-        if isinstance(pattern, (Rest, Lengthen)):
+        assert last is None or isinstance(last, Chord)
+        if isinstance(pattern, Lengthen):
+            if last is not None:
+                if last.patterns[:-1]:
+                    res.append(Chord(last.patterns[:-1]))
+                res.append(last.patterns[-1])
+                last = None
+            else:
+                res.append(pattern)
+
+        elif isinstance(pattern, Rest):
             if last is not None:
                 if (
                     isinstance(last.patterns[-1], Symbol)
@@ -662,6 +683,7 @@ def extend_notes(patterns, symbols):
                     res.append(last.patterns[-1])
                 else:
                     res.append(last)
+                    res.append(pattern)
                 last = None
             else:
                 res.append(pattern)
@@ -684,7 +706,7 @@ def extend_notes(patterns, symbols):
             if patterns_ and isinstance(patterns_[0], Chord):
                 res.append(patterns_.pop(0))
             if patterns_ and isinstance(patterns_[-1], Chord):
-                last = patterns_.pop(0)
+                last = patterns_.pop()
             res.append(dataclasses.replace(pattern, patterns=patterns_))
 
         elif isinstance(pattern, Chord):
@@ -723,10 +745,17 @@ def shape_parser():
     return (a, b, c)
 
 
+@dataclasses.dataclass
+class Part:
+    shape: Tuple[int, int, int]
+    metadata: Note
+    notes: List[Note]
+    start: Optional[Fraction] = None
+    end: Optional[Fraction] = None
+
+
 def format_notes(notes, beat=Fraction(0, 1), width=None, lengthless_symbols=[]):
     # partition notes by shapes
-    Part = collections.namedtuple("Part", ["shape", "metadata", "notes"])
-
     default_shape = 4, 4, 2
     parts = [Part(default_shape, None, [])]
     for note in notes:
@@ -740,7 +769,8 @@ def format_notes(notes, beat=Fraction(0, 1), width=None, lengthless_symbols=[]):
                     shape[i] if i < len(shape) else default
                     for i, default in enumerate(default_shape)
                 )
-                parts.append(Part(shape, note, []))
+                parts[-1].end = note.beat
+                parts.append(Part(shape, note, [], note.beat))
                 continue
 
         parts[-1].notes.append(note)
@@ -748,23 +778,40 @@ def format_notes(notes, beat=Fraction(0, 1), width=None, lengthless_symbols=[]):
     if not parts[0].notes:
         parts.pop(0)
 
+    def enum_last(list):
+        l = len(list)
+        for i, elem in enumerate(list):
+            yield i == l - 1, elem
+
     res = []
-    for shape, metadata, notes in parts:
-        offset = (
-            metadata.beat
-            if metadata is not None
-            else Fraction(math.floor(notes[0].beat), 1)
+    for is_last, part in enum_last(parts):
+        start = part.start if part.start is not None else part.notes[0].beat
+        end = (
+            part.end
+            if part.end is not None
+            else part.notes[-1].beat + part.notes[-1].length
         )
-        grid = Grid.make(notes, offset)
-        add_bar = Grid.bar_adder(shape)
-        patterns = grid.build_patterns(notes, add_bar)
+        grid = Grid.make(part.notes, start, end)
+        add_bar = Grid.bar_adder(start, part.shape)
+        patterns = grid.build_patterns(part.notes, add_bar)
+
+        if is_last:
+            # for extending the last lengthless symbol
+            patterns.append(Rest())
+            grid.end += 1
+        patterns = extend_notes(patterns, lengthless_symbols)
+        if is_last and isinstance(patterns[-1], Rest):
+            patterns.pop()
+            grid.end -= 1
+
         add_bar(grid.end, patterns)
 
-        if metadata is not None:
-            metadata_node = Comment(metadata.arguments[0][0])
+        if part.metadata is not None:
+            metadata_node = Comment(part.metadata.arguments[0][0])
             res.append(metadata_node)
             res.append(Newline())
         res.extend(patterns)
-        res.append(Newline())
+        if not is_last and not isinstance(res[-1], Newline):
+            res.append(Newline())
 
-    return patterns_to_str(extend_notes(res, lengthless_symbols))
+    return patterns_to_str(res)
