@@ -20,24 +20,24 @@ class PatternError(Exception):
     pass
 
 
-class AST:
+class Pattern:
     pass
 
 
 @dataclasses.dataclass
-class Newline(AST):
+class Newline(Pattern):
     pass
 
 
 @dataclasses.dataclass
-class Comment(AST):
+class Comment(Pattern):
     # # abc
 
     comment: str
 
 
 @dataclasses.dataclass
-class Symbol(AST):
+class Symbol(Pattern):
     # XYZ(arg=...)
 
     symbol: str
@@ -45,7 +45,7 @@ class Symbol(AST):
 
 
 @dataclasses.dataclass
-class Text(AST):
+class Text(Pattern):
     # "ABC"(arg=...)
 
     text: str
@@ -53,39 +53,39 @@ class Text(AST):
 
 
 @dataclasses.dataclass
-class Lengthen(AST):
+class Lengthen(Pattern):
     # ~
 
     pass
 
 
 @dataclasses.dataclass
-class Measure(AST):
+class Measure(Pattern):
     # |
 
     pass
 
 
 @dataclasses.dataclass
-class Rest(AST):
+class Rest(Pattern):
     # _
 
     pass
 
 
 @dataclasses.dataclass
-class Subdivision(AST):
+class Subdivision(Pattern):
     # [x o]
     # [x x o]/3
 
     divisor: int = 2
-    patterns: List[AST] = dataclasses.field(default_factory=list)
+    patterns: List[Pattern] = dataclasses.field(default_factory=list)
 
 
 @dataclasses.dataclass
-class Chord(AST):
+class Chord(Pattern):
     # {x x o}
-    patterns: List[AST] = dataclasses.field(default_factory=list)
+    patterns: List[Pattern] = dataclasses.field(default_factory=list)
 
 
 def IIFE(func):
@@ -149,9 +149,8 @@ def arguments_parser():
 @IIFE
 @pc.parsec
 def comment_parser():
-    comment = yield pc.regex(r"#[^\n]*(?=[\n$])").desc("comment")
-    comment = comment[1:].rstrip("\n")
-    return Comment(comment)
+    comment = yield pc.regex(r"#[^\n]*(?=\n|$)").desc("comment")
+    return Comment(comment[1:])
 
 
 @IIFE
@@ -185,39 +184,40 @@ def note_parser():
     return symbol_parser | text_parser
 
 
-@pc.parsec
-def enclose_by(elem, sep, opening, closing):
-    yield opening
-    yield sep.optional()
-
-    closing_optional = closing.optional()
-    results = []
-
-    while True:
-        if (yield closing_optional):
-            break
-        results.append((yield elem))
-        if (yield closing_optional):
-            break
-        yield sep
-
-    return results
-
-
 @IIFE
 def patterns_parser():
-    end = pc.regex(r"[ \t\n]*$").desc("end of file")
-    msp = pc.regex(r"([ \t\n$])+").desc("whitespace")
+    msp = pc.regex(r"( |\t|\n|$)+").map(lambda s: [Newline()]*s.count("\n")).desc("whitespace")
     div = pc.regex(r"/(\d+)").map(lambda m: int(m[1:])) | pc.nothing(2)
 
+    @pc.parsec
+    def enclose_by(elem, opening, closing):
+        closing_optional = closing.optional()
+        results = []
+
+        yield opening
+        ln = yield msp.optional()
+        if ln:
+            results.extend(ln[0])
+
+        while True:
+            if (yield closing_optional):
+                break
+            results.append((yield elem))
+            if (yield closing_optional):
+                break
+            ln = yield msp
+            results.extend(ln)
+
+        return results
+
     instant = enclose_by(
-        pc.proxy(lambda: pattern), msp, pc.string("{"), pc.string("}")
+        pc.proxy(lambda: pattern), pc.string("{"), pc.string("}")
     ).map(Chord)
     division = (
-        enclose_by(pc.proxy(lambda: pattern), msp, pc.string("["), pc.string("]")) + div
+        enclose_by(pc.proxy(lambda: pattern), pc.string("["), pc.string("]")) + div
     ).starmap(lambda a, b: Subdivision(b, a))
     pattern = instant | division | note_parser | comment_parser
-    return enclose_by(pattern, msp, pc.nothing(), end)
+    return enclose_by(pattern, pc.nothing(), pc.eof())
 
 
 @dataclasses.dataclass
@@ -296,7 +296,7 @@ def to_notes(patterns, beat=0, length=1):
                 pass
 
             else:
-                raise TypeError
+                raise TypeError(pattern)
 
         return beat, last_note
 
@@ -315,18 +315,14 @@ def parse_notes(patterns_str, beat=0, length=1):
     return to_notes(patterns_parser.parse(patterns_str), beat, length)
 
 
-def snap_to_frac(value, epsilon=0.001, N=float("inf")):
-    d = 2
-    count = 0
-    while True:
+def snap_to_frac(value, epsilon=0.001, D=1024):
+    for d in range(2, D):
         w = epsilon * 0.5**d / 2
-        for n in range(1, d):
-            if n / d - w < value < n / d + w:
-                return Fraction(n, d)
-            count += 1
-            if count > N:
-                raise ValueError(f"cannot snap {value} to any fraction")
-        d += 1
+        n = round(value * d)
+        if n / d - w < value < n / d + w:
+            return Fraction(n, d)
+    else:
+        raise ValueError(f"cannot snap {value} to any fraction")
 
 
 def format_value(value):
@@ -722,7 +718,7 @@ def extend_notes(patterns, symbols):
                 last = pattern
 
         else:
-            raise TypeError
+            raise TypeError(pattern)
 
     if last is not None:
         res.append(last)
@@ -736,7 +732,7 @@ def shape_parser():
     """parse string like "SHAPE: 4, 4, 2" """
 
     int_parser = pc.regex(r"(0|[1-9][0-9]*)").map(ast.literal_eval)
-    sp = pc.regex(r"([ \t$])*").desc("whitespace")
+    sp = pc.regex(r"( |\t|$)*").desc("whitespace")
     comma = sp >> pc.string(",") << sp
 
     yield pc.string("SHAPE:")
