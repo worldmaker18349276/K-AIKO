@@ -186,7 +186,11 @@ def note_parser():
 
 @IIFE
 def patterns_parser():
-    msp = pc.regex(r"( |\t|\n|$)+").map(lambda s: [Newline()]*s.count("\n")).desc("whitespace")
+    msp = (
+        pc.regex(r"( |\t|\n|$)+")
+        .map(lambda s: [Newline()] * s.count("\n"))
+        .desc("whitespace")
+    )
     div = pc.regex(r"/(\d+)").map(lambda m: int(m[1:])) | pc.nothing(2)
 
     @pc.parsec
@@ -210,9 +214,9 @@ def patterns_parser():
 
         return results
 
-    instant = enclose_by(
-        pc.proxy(lambda: pattern), pc.string("{"), pc.string("}")
-    ).map(Chord)
+    instant = enclose_by(pc.proxy(lambda: pattern), pc.string("{"), pc.string("}")).map(
+        Chord
+    )
     division = (
         enclose_by(pc.proxy(lambda: pattern), pc.string("["), pc.string("]")) + div
     ).starmap(lambda a, b: Subdivision(b, a))
@@ -610,12 +614,14 @@ class Grid:
             )
 
             if note.symbol == "#":
-                pattern = Comment(note.arguments.ps[0])
+                pattern = Comment(*note.arguments.ps, **note.arguments.kw)
                 add_bar_and_pattern(pattern, 0)
             elif note.symbol == "Text":
-                text = note.arguments.ps[0]
-                arguments = Arguments(note.arguments.ps[1:], note.arguments.kw)
-                pattern = Text(arguments)
+
+                def makeText(text, *ps, **kw):
+                    return Text(text, Arguments(ps, kw))
+
+                pattern = makeText(*note.arguments.ps, **note.arguments.kw)
                 add_bar_and_pattern(pattern, self.unit)
             else:
                 pattern = Symbol(note.symbol, note.arguments)
@@ -690,7 +696,7 @@ def extend_notes(patterns, symbols):
             else:
                 res.append(pattern)
 
-        elif isinstance(pattern, (Comment, Text)):
+        elif isinstance(pattern, (Comment, Text, Symbol)):
             if last is not None:
                 res.append(last)
                 last = None
@@ -726,27 +732,6 @@ def extend_notes(patterns, symbols):
     return res
 
 
-@IIFE
-@pc.parsec
-def shape_parser():
-    """parse string like "SHAPE: 4, 4, 2" """
-
-    int_parser = pc.regex(r"(0|[1-9][0-9]*)").map(ast.literal_eval)
-    sp = pc.regex(r"( |\t|$)*").desc("whitespace")
-    comma = sp >> pc.string(",") << sp
-
-    yield pc.string("SHAPE:")
-    yield sp
-    a = yield int_parser
-    yield comma
-    b = yield int_parser
-    yield comma
-    c = yield int_parser
-    yield sp
-    yield pc.eof()
-    return (a, b, c)
-
-
 @dataclasses.dataclass
 class Part:
     shape: Tuple[int, int, int]
@@ -756,24 +741,47 @@ class Part:
     end: Optional[Fraction] = None
 
 
+def parse_shape_note(note):
+    if note.symbol != "#":
+        return None
+
+    if note.arguments.ps:
+        comment = note.arguments.ps[0]
+    elif "comment" in note.arguments.kw:
+        comment = note.arguments.kw["comment"]
+    else:
+        return None
+
+    if not isinstance(comment, str):
+        return None
+
+    if not comment.startswith("SHAPE:"):
+        return None
+
+    shape_str = comment[len("SHAPE:") :]
+    shape = shape_str.split(",")
+
+    if not all(s.strip().isdigit() for s in shape):
+        return None
+
+    return tuple(int(s) for s in shape)
+
+
 def format_notes(notes, beat=Fraction(0, 1), width=None, lengthless_symbols=[]):
     # partition notes by shapes
     default_shape = 4, 4, 2
     parts = [Part(default_shape, None, [])]
+
     for note in notes:
-        if note.symbol == "#" and len(note.arguments.ps) >= 1:
-            try:
-                shape = shape_parser.parse(note.arguments.ps[0])
-            except pc.ParseError:
-                pass
-            else:
-                shape = tuple(
-                    shape[i] if i < len(shape) else default
-                    for i, default in enumerate(default_shape)
-                )
-                parts[-1].end = note.beat
-                parts.append(Part(shape, note, [], note.beat))
-                continue
+        shape = parse_shape_note(note)
+        if shape is not None:
+            shape = tuple(
+                shape[i] if i < len(shape) else default
+                for i, default in enumerate(default_shape)
+            )
+            parts[-1].end = note.beat
+            parts.append(Part(shape, note, [], note.beat))
+            continue
 
         parts[-1].notes.append(note)
 
@@ -809,7 +817,9 @@ def format_notes(notes, beat=Fraction(0, 1), width=None, lengthless_symbols=[]):
         add_bar(grid.end, patterns)
 
         if part.metadata is not None:
-            metadata_node = Comment(part.metadata.arguments.ps[0])
+            metadata_node = Comment(
+                *part.metadata.arguments.ps, **part.metadata.arguments.kw
+            )
             res.append(metadata_node)
             res.append(Newline())
         res.extend(patterns)

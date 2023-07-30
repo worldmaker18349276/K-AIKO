@@ -1,3 +1,4 @@
+import contextlib
 import dataclasses
 from pathlib import Path
 from enum import Enum
@@ -11,6 +12,7 @@ from ..utils import config as cfg
 from ..utils import datanodes as dn
 from ..utils import markups as mu
 from ..devices import audios as aud
+from ..devices import clocks
 from ..tui import widgets
 from ..tui import beatbars
 from . import beatpatterns
@@ -1422,7 +1424,7 @@ class BeatTrack:
                 ":",
                 event.beat,
                 Fraction(0, 1),
-                arguments.kw["update"],
+                beatpatterns.Arguments([], arguments.kw["update"]),
             )
 
         symbol = next(
@@ -1437,6 +1439,13 @@ class BeatTrack:
             event.length if event.has_length else Fraction(0, 1),
             arguments,
         )
+
+    def as_patterns_str(self, notations):
+        lengthless = [
+            symbol for symbol in notations if not notations[symbol].has_length
+        ]
+        notes = [self.from_event(event, notations) for event in self.events(notations)]
+        return beatpatterns.format_notes(notes, lengthless_symbols=lengthless)
 
 
 def bisect(list, elem, key):
@@ -1794,14 +1803,7 @@ class Beatmap:
     settings: BeatmapSettings = dataclasses.field(default_factory=BeatmapSettings)
 
     @dn.datanode
-    def play(
-        self,
-        start_time,
-        rich_loader,
-        resource_loader,
-        engine_loader,
-        gameplay_settings=None,
-    ):
+    def play(self, start_time, gameplay_settings=None):
         self.audionode = None
         self.resources = {}
         self.total_subjects = 0
@@ -1814,15 +1816,12 @@ class Beatmap:
         tickrate = gameplay_settings.controls.tickrate
         prepare_time = gameplay_settings.controls.prepare_time
 
-        rich = rich_loader()
+        rich = self.load_rich()
 
         # prepare
         try:
             yield from dn.create_task(
-                dn.chain(
-                    self.load_resources(resource_loader),
-                    self.prepare_events(rich),
-                ),
+                dn.chain(self.load_resources(), self.prepare_events(rich)),
             ).join()
         except aud.IOCancelled:
             return
@@ -1834,7 +1833,7 @@ class Beatmap:
         score.set_total_subjects(self.total_subjects)
 
         # load engines
-        engine_task_ctxt, engines = engine_loader(self.start_time)
+        engine_task, engines = self.load_engine(self.start_time)
         mixer, detector, renderer, controller, clock = engines
 
         Beatmap.register_clock_controller(
@@ -1910,8 +1909,10 @@ class Beatmap:
         with clock.tick(id(self), 0.0) as tick_node:
             event_node = dn.pipe(dn.count(0.0, 1 / tickrate), tick_node, event_node)
             event_task = dn.interval(event_node, dt=1 / tickrate)
-            with engine_task_ctxt as engine_task:
+            with self.play_mode(mixer, detector, renderer):
                 yield from dn.pipe(engine_task, event_task).join()
+
+        self.update_devices_settings(mixer, detector, renderer)
 
         return score
 
@@ -2009,25 +2010,85 @@ class Beatmap:
 
         controller.add_handler(skip_node(), skip_key)
 
-    @dn.datanode
-    def load_resources(self, resource_loader):
-        r"""Load resources to `audionode` and `resources`.
+    @staticmethod
+    def load_rich():
+        from ..utils import providers
+        from ..main.devices import DeviceManager
 
-        Parameters
-        ----------
-        resource_loader : function
-        """
+        return providers.get(DeviceManager).load_rich()
+
+    @staticmethod
+    def load_engine(start_time):
+        from ..utils import providers
+        from ..main.devices import DeviceManager
+        from ..main.profiles import ProfileManager
+
+        device_manager = providers.get(DeviceManager)
+        profile_manager = providers.get(ProfileManager)
+        debug_monitor = profile_manager.current.gameplay.debug_monitor
+
+        clock = clocks.Clock(start_time, 1.0)
+
+        engine_task, engines = device_manager.load_engines(
+            "mixer",
+            "detector",
+            "renderer",
+            "controller",
+            clock=clock,
+            monitoring_session="play" if debug_monitor else None,
+        )
+        mixer, detector, renderer, controller = engines
+
+        return engine_task, (mixer, detector, renderer, controller, clock)
+
+    @staticmethod
+    def update_devices_settings(mixer, detector, renderer):
+        from ..main.profiles import ProfileManager
+
+        profile_manager = providers.get(ProfileManager)
+        devices_settings = profile_manager.current.devices
+        devices_settings.mixer = mixer.settings
+        devices_settings.detector = detector.settings
+        devices_settings.renderer = renderer.settings
+        profile_manager.set_as_changed()
+
+    @staticmethod
+    @contextlib.contextmanager
+    def play_mode(mixer, detector, renderer):
+        from ..main.loggers import Logger
+
+        logger = providers.get(Logger)
+
+        with logger.popup(renderer):
+            yield
+
+        if mixer.monitor is not None:
+            logger.print()
+            logger.print(f"   mixer: {mixer.monitor!s}", markup=False)
+            logger.print(f"detector: {detector.monitor!s}", markup=False)
+            logger.print(f"renderer: {renderer.monitor!s}", markup=False)
+
+    @staticmethod
+    def load_resource_from(src):
+        from ..utils import providers
+        from ..main.devices import DeviceManager
+
+        return providers.get(DeviceManager).load_sound(src)
+
+    @dn.datanode
+    def load_resources(self):
+        r"""Load resources to `audionode` and `resources`."""
 
         if self.path is not None and self.audio.path is not None:
             path = Path(self.path).parent / self.audio.path
-            sound = yield from resource_loader(path).join()
+            sound = yield from self.load_resource_from(path).join()
             volume = self.audio.volume
             if volume != 0.0:
                 sound = dn.pipe(sound, lambda s: s * 10 ** (volume / 20))
             self.audionode = dn.DataNode.wrap(sound)
 
         for name, src in self.settings.resources.items():
-            self.resources[name] = yield from resource_loader(src).join()
+            self.resources[name] = yield from self.load_resource_from(src).join()
 
     @dn.datanode
     def prepare_events(self, rich):

@@ -1,6 +1,7 @@
 import os
 import tempfile
 import subprocess
+import contextlib
 import shutil
 from ..utils import config as cfg
 from ..utils import parsec as pc
@@ -188,6 +189,16 @@ class ProfileManager:
         self._current_mtime = mtime
         for on_change_handler in self.on_change_handlers:
             on_change_handler(self.current)
+
+    @contextlib.contextmanager
+    def restoring(self):
+        _current_mtime = self._current_mtime
+        origin = self.current.copy() if self.current is not None else None
+        try:
+            yield self.current
+        finally:
+            self.current = origin
+            self.set_as_changed(_current_mtime)
 
     # profiles management
 

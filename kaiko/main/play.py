@@ -1,5 +1,4 @@
 import shutil
-import contextlib
 import dataclasses
 import zipfile
 from collections import defaultdict
@@ -325,9 +324,7 @@ class BeatmapManager:
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
-        path_mu = file_manager.as_relative_path(
-            beatmapset_path, self.beatmaps_dir
-        )
+        path_mu = file_manager.as_relative_path(beatmapset_path, self.beatmaps_dir)
         path_mu = logger.format_path(path_mu)
         logger.print(f"[data/] Remove beatmapset {path_mu}...")
         shutil.rmtree(str(beatmapset_path))
@@ -344,9 +341,7 @@ class BeatmapManager:
             logger.print(f"[warn]{logger.escape(str(e))}[/]")
             return False
 
-        path_mu = file_manager.as_relative_path(
-            beatmapset_path, self.beatmaps_dir
-        )
+        path_mu = file_manager.as_relative_path(beatmapset_path, self.beatmaps_dir)
         path_mu = logger.format_path(path_mu)
         logger.print(f"[data/] Remove beatmap {path_mu}...")
 
@@ -545,9 +540,7 @@ class KAIKOPlay:
     @dn.datanode
     def execute(self):
         logger = self.logger
-        devices_settings = self.profile_manager.current.devices
         gameplay_settings = self.profile_manager.current.gameplay
-        device_manager = self.device_manager
 
         beatmap = yield from self.beatmap_loeader.join()
 
@@ -557,18 +550,8 @@ class KAIKOPlay:
         print_hints(logger, gameplay_settings)
         logger.print()
 
-        devices_settings_modified = devices_settings.copy()
-        engine_loader = lambda start_time: self.engine_loader(
-            devices_settings_modified, start_time
-        )
-
-        score = yield from beatmap.play(
-            self.start,
-            self.rich_loader,
-            self.resource_loader,
-            engine_loader,
-            gameplay_settings,
-        ).join()
+        with self.profile_manager.restoring() as settings_modified:
+            score = yield from beatmap.play(self.start, gameplay_settings).join()
 
         logger.print()
         scores = logger.format_scores(
@@ -576,18 +559,20 @@ class KAIKOPlay:
         )
         logger.print(scores)
 
-        if devices_settings == devices_settings_modified:
+        if self.profile_manager.current == settings_modified:
             return
 
         logger.print()
-        yes = yield from logger.ask("Keep changes to device settings?").join()
+        yes = yield from logger.ask(
+            "You changed the settings during the game.\nDo you want to keep it?"
+        ).join()
         if yes:
             logger.print("[data/] Update device settings...")
             title = self.file_manager.as_relative_path(
                 self.profile_manager.current_path
             )
             old = self.profile_manager.format()
-            self.profile_manager.current.devices = devices_settings_modified
+            self.profile_manager.current = settings_modified
             self.profile_manager.set_as_changed()
             new = self.profile_manager.format()
 
@@ -595,46 +580,6 @@ class KAIKOPlay:
             logger.print(
                 logger.format_code_diff(old, new, title=title, is_changed=True)
             )
-
-    def resource_loader(self, src):
-        return self.device_manager.load_sound(src)
-
-    def rich_loader(self):
-        return self.device_manager.load_rich()
-
-    def engine_loader(self, devices_settings_modified, start_time):
-        logger = self.logger
-        device_manager = self.device_manager
-        debug_monitor = self.profile_manager.current.gameplay.debug_monitor
-
-        clock = clocks.Clock(start_time, 1.0)
-
-        engine_task, engines = device_manager.load_engines(
-            "mixer",
-            "detector",
-            "renderer",
-            "controller",
-            clock=clock,
-            monitoring_session="play" if debug_monitor else None,
-        )
-        mixer, detector, renderer, controller = engines
-
-        @contextlib.contextmanager
-        def task_ctxt():
-            with logger.popup(renderer):
-                yield engine_task
-
-            if debug_monitor:
-                logger.print()
-                logger.print(f"   mixer: {mixer.monitor!s}", markup=False)
-                logger.print(f"detector: {detector.monitor!s}", markup=False)
-                logger.print(f"renderer: {renderer.monitor!s}", markup=False)
-
-            devices_settings_modified.mixer = mixer.settings
-            devices_settings_modified.detector = detector.settings
-            devices_settings_modified.renderer = renderer.settings
-
-        return task_ctxt(), (mixer, detector, renderer, controller, clock)
 
 
 def print_hints(logger, settings):
