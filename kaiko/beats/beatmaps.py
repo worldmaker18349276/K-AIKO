@@ -1,7 +1,7 @@
 import dataclasses
 from pathlib import Path
 from enum import Enum
-from typing import List, Tuple, Dict, Optional, Union
+from typing import List, Tuple, Dict, Optional, Union, Callable
 from collections import OrderedDict
 from fractions import Fraction
 import threading
@@ -37,9 +37,9 @@ class UpdateContext:
     def prepare(self, beatmap, rich, context):
         context.update(**self.update)
 
-
-def Context(beat, length, **contexts):
-    return UpdateContext(beat, length, contexts)
+    @staticmethod
+    def make(beat, length, **contexts):
+        return UpdateContext(beat, length, contexts)
 
 
 @dataclasses.dataclass
@@ -110,6 +110,14 @@ class Event:
     can use `dataclasses.replace` to copy the event, which will not copy runtime
     attributes.
 
+    Class Fields
+    ------------
+    has_length : bool, optional
+        True if the field `length` has no effect on the game.
+    is_subject : bool, optional
+        True if this event is an action. To increase the value of progress bar,
+        use `state.add_finished`.
+
     Fields
     ------
     beat, length : Fraction
@@ -118,11 +126,6 @@ class Event:
         defined by beatmap. `length` is the time difference started from `beat`
         in the unit defined by beatmap. If `has_length` is False, the attribute
         `length` can be dropped.
-    has_length : bool, optional
-        True if the field `length` has no effect on the game.
-    is_subject : bool, optional
-        True if this event is an action. To increase the value of progress bar,
-        use `state.add_finished`.
 
     Attributes
     ----------
@@ -642,7 +645,7 @@ class Roll(Target):
         if absence.
     """
 
-    density: Union[int, Fraction, float] = Fraction(2)
+    density: Optional[Union[int, Fraction, float]] = None
     speed: Optional[float] = None
     volume: Optional[float] = None
     nofeedback: Optional[bool] = None
@@ -753,7 +756,7 @@ class Spin(Target):
         if absence.
     """
 
-    density: Union[int, Fraction, float] = 2.0
+    density: Optional[Union[int, Fraction, float]] = None
     speed: Optional[float] = None
     volume: Optional[float] = None
     nofeedback: Optional[bool] = None
@@ -783,6 +786,8 @@ class Spin(Target):
         self.time = beatmap.beatpoints.time(self.beat)
         self.end = beatmap.beatpoints.time(self.beat + self.length)
         self.charge = 0.0
+        if self.density is None:
+            self.density = 2.0
         self.capacity = float(self.length * self.density)
         self.is_finished = False
         self.score = 0
@@ -1347,24 +1352,41 @@ class BeatmapAudio:
 
 @dataclasses.dataclass
 class BeatTrack:
-    _notations = {
-        "x": Soft,
-        "o": Loud,
-        "<": Incr,
-        "%": Roll,
-        "@": Spin,
-        "Context": Context,
-        "#": Comment,
-        "Text": Text,
-    }
+    notes: List[beatpatterns.Note]
 
-    events: List[Union[Event, UpdateContext, Comment]]
+    @classmethod
+    def parse(cls, patterns_str, ret_width=False, notations=None):
+        notes, width = beatpatterns.parse_notes(patterns_str)
 
-    def __iter__(self):
-        yield from self.events
+        track = cls([note for note in notes])
+
+        if ret_width:
+            return track, width
+        else:
+            return track
+
+    def events(self, notations):
+        for note in self.notes:
+            yield self.to_event(note, notations)
 
     @staticmethod
     def to_event(note, notations):
+        if note.symbol == "#":
+            return Comment(
+                note.beat,
+                note.length,
+                *note.arguments.ps,
+                **note.arguments.kw,
+            )
+
+        if note.symbol == ":":
+            return UpdateContext.make(
+                note.beat,
+                note.length,
+                *note.arguments.ps,
+                **note.arguments.kw,
+            )
+
         if note.symbol not in notations:
             raise ValueError(f"unknown symbol: {note.symbol}")
         return notations[note.symbol](
@@ -1374,17 +1396,47 @@ class BeatTrack:
             **note.arguments.kw,
         )
 
-    @classmethod
-    def parse(cls, patterns_str, ret_width=False, notations=None):
-        notations = notations if notations is not None else cls._notations
-        notes, width = beatpatterns.parse_notes(patterns_str)
+    @staticmethod
+    def from_event(event, notations):
+        fields = dataclasses.fields(event)
+        kwargs = {
+            field.name: getattr(event, field.name)
+            for field in fields
+            if getattr(event, field.name) is not None
+        }
+        assert "beat" in kwargs and "length" in kwargs
+        del kwargs["beat"]
+        del kwargs["length"]
+        arguments = beatpatterns.Arguments([], kwargs)
 
-        track = cls([cls.to_event(note, notations) for note in notes])
+        if isinstance(event, Comment):
+            return beatpatterns.Note(
+                "#",
+                event.beat,
+                Fraction(0, 1),
+                arguments,
+            )
 
-        if ret_width:
-            return track, width
-        else:
-            return track
+        if isinstance(event, UpdateContext):
+            return beatpatterns.Note(
+                ":",
+                event.beat,
+                Fraction(0, 1),
+                arguments.kw["update"],
+            )
+
+        symbol = next(
+            (symbol for symbol in notations if isinstance(event, notations[symbol])),
+            None,
+        )
+        if symbol is None:
+            raise ValueError(f"unknown event: {type(event)}")
+        return beatpatterns.Note(
+            symbol,
+            event.beat,
+            event.length if event.has_length else Fraction(0, 1),
+            arguments,
+        )
 
 
 def bisect(list, elem, key):
@@ -1718,6 +1770,16 @@ class BeatState:
         return cls(points)
 
 
+DEFAULT_NOTATIONS = {
+    "x": Soft,
+    "o": Loud,
+    "<": Incr,
+    "%": Roll,
+    "@": Spin,
+    "Text": Text,
+}
+
+
 @dataclasses.dataclass
 class Beatmap:
     path: Optional[str] = None
@@ -1725,6 +1787,9 @@ class Beatmap:
     audio: BeatmapAudio = dataclasses.field(default_factory=BeatmapAudio)
     beatpoints: BeatPoints = dataclasses.field(default_factory=lambda: BeatPoints([]))
     beatstate: BeatState = dataclasses.field(default_factory=lambda: BeatState([]))
+    notations: Dict[str, type[Event]] = dataclasses.field(
+        default_factory=lambda: dict(**DEFAULT_NOTATIONS)
+    )
     tracks: Dict[str, BeatTrack] = dataclasses.field(default_factory=dict)
     settings: BeatmapSettings = dataclasses.field(default_factory=BeatmapSettings)
 
@@ -1975,13 +2040,12 @@ class Beatmap:
         events = []
         for track in self.tracks.values():
             context = {}
-            for event in track:
+            for event in track.events(self.notations):
                 try:
                     yield
                 except GeneratorExit:
                     raise aud.IOCancelled("The operation has been cancelled.")
 
-                event = dataclasses.replace(event)
                 event.prepare(self, rich, context)
                 if isinstance(event, Event):
                     events.append(event)
@@ -2050,7 +2114,7 @@ class Loop(Beatmap):
         while True:
             events = []
 
-            for event in track:
+            for event in track.events(self.notations):
                 event = dataclasses.replace(event, beat=event.beat + n * width)
                 event.prepare(self, rich, context)
                 if isinstance(event, Event):
