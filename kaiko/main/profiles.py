@@ -193,7 +193,8 @@ class ProfileManager:
     @contextlib.contextmanager
     def restoring(self):
         _current_mtime = self._current_mtime
-        origin = self.current.copy() if self.current is not None else None
+        origin = self.current
+        self.current = origin.copy() if origin is not None else None
         try:
             yield self.current
         finally:

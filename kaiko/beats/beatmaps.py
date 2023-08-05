@@ -774,8 +774,7 @@ class Spin(Target):
             rich.parse(beatmap.settings.notes.spin_finishing_appearance[1]),
         )
         self.finish_sustain_time = beatmap.settings.notes.spin_finish_sustain_time
-        sound = beatmap.resources.get(beatmap.settings.notes.spin_disk_sound, None)
-        self.sound = dn.DataNode.wrap(sound) if sound is not None else None
+        self.sound = beatmap.resources.get(beatmap.settings.notes.spin_disk_sound, None)
         self.full_score = beatmap.settings.scores.spin_score
 
         if self.speed is None:
@@ -816,7 +815,9 @@ class Spin(Target):
     def approach(self, state, beatbar):
         for time in self.times:
             if self.sound is not None:
-                beatbar.play(self.sound, time=time, volume=self.volume)
+                beatbar.play(
+                    dn.DataNode.wrap(self.sound), time=time, volume=self.volume
+                )
 
         beatbar.draw_content(
             self.pos,
@@ -857,6 +858,146 @@ class Spin(Target):
             if self.speed < 0:
                 appearance = appearance[::-1]
             beatbar.draw_sight(appearance, duration=self.finish_sustain_time)
+
+
+@dataclasses.dataclass
+class Hit:
+    offset: Fraction
+    beat: Fraction
+    is_soft: bool
+
+
+@dataclasses.dataclass
+class FreeStyle(Target):
+    r"""A target to play free style within a certain timespan.
+
+    Fields
+    ------
+    beat, length : Fraction
+        `beat` is the time this target start spinning, `length` is the duration
+        of free style.
+    tempo : int, optional
+        The tempo of free style (unit: hits per beat). Default value is 1.
+    subtempo : int, optional
+        The subtempo of free style, which is the subdivision of tempo,
+        indicating the minimal detectable hits. Default value is 4.
+    speed : float, optional
+        The speed of this target (unit: half bar per second). Default speed will
+        be determined by context value `speed`, or 1.0 if absence.
+    volume : float, optional
+        The relative volume of sound of this target (unit: dB). Default volume
+        will be determined by context value `volume`, or 0.0 if absence.
+    nofeedback : bool, optional
+        Whether to make a visual cue for the action of hitting the target.
+        Default value will be determined by context value `nofeedback`, or False
+        if absence.
+    """
+    tempo: Optional[int] = None
+    subtempo: Optional[int] = None
+    speed: Optional[float] = None
+    volume: Optional[float] = None
+    nofeedback: Optional[bool] = None
+
+    def prepare(self, beatmap, rich, context):
+        self.tolerance = beatmap.settings.difficulty.failed_tolerance
+        self.performance_tolerance = beatmap.settings.difficulty.performance_tolerance
+        self.soft_threshold = beatmap.settings.difficulty.soft_threshold
+        self.freestyle_appearance = (
+            rich.parse(beatmap.settings.notes.freestyle_appearances[0]),
+            rich.parse(beatmap.settings.notes.freestyle_appearances[1]),
+        )
+        self.soft_approach_appearance = (
+            rich.parse(beatmap.settings.notes.soft_approach_appearance[0]),
+            rich.parse(beatmap.settings.notes.soft_approach_appearance[1]),
+        )
+        self.loud_approach_appearance = (
+            rich.parse(beatmap.settings.notes.loud_approach_appearance[0]),
+            rich.parse(beatmap.settings.notes.loud_approach_appearance[1]),
+        )
+        self.sound = beatmap.resources.get(beatmap.settings.notes.freestyle_sound, None)
+        self.full_score = beatmap.settings.scores.freestyle_score
+
+        if self.tempo is None:
+            self.tempo = context.get("tempo", 1)
+        if self.subtempo is None:
+            self.subtempo = context.get("subtempo", 4)
+        if self.speed is None:
+            self.speed = context.get("speed", 1.0)
+        if self.volume is None:
+            self.volume = context.get("volume", 0.0)
+        if self.nofeedback is None:
+            self.nofeedback = context.get("nofeedback", False)
+
+        self.is_finished = False
+        self.score = 0
+
+        self.time = beatmap.beatpoints.time(self.beat)
+        self.end = beatmap.beatpoints.time(self.beat + self.length)
+        self.beats_times = [
+            (
+                Fraction(i, 1) / (self.tempo * self.subtempo),
+                beatmap.beatpoints.time(self.beat + i / (self.tempo * self.subtempo)),
+            )
+            for i in range(int(self.length * self.tempo * self.subtempo) + 1)
+        ]
+        travel_time = 1.0 / abs(0.5 * self.speed)
+        self.lifespan = (self.time - travel_time, self.end + travel_time)
+        self.range = (self.time - self.tolerance, self.end + self.tolerance)
+
+        self.hits = []
+
+    def approach(self, state, beatbar):
+        for _, time in self.beats_times[:: self.subtempo]:
+            if self.sound is not None:
+                beatbar.play(
+                    dn.DataNode.wrap(self.sound), time=time, volume=self.volume
+                )
+
+            beatbar.draw_content(
+                self.pos_of(time),
+                lambda time: self.freestyle_appearance,
+                zindex=(-3,),
+                start=self.lifespan[0],
+                duration=self.lifespan[1] - self.lifespan[0],
+            )
+
+    def pos_of(self, target_time):
+        return lambda time: (target_time - time) * 0.5 * self.speed
+
+    def appearance_of(self, is_soft):
+        if self.nofeedback:
+            return lambda time: (mu.Text(""), mu.Text(""))
+        elif is_soft:
+            return lambda time: self.soft_approach_appearance
+        else:
+            return lambda time: self.loud_approach_appearance
+
+    def zindex(self):
+        return (-1, -self.range[0])
+
+    def hit(self, state, beatbar, time, strength):
+        target_beat, target_time = min(self.beats_times, key=lambda t: abs(t[1] - time))
+        is_soft = strength < self.soft_threshold
+
+        perf = Performance.judge(self.performance_tolerance, target_time, time, True)
+        state.add_perf(perf)
+        self.hits.append(Hit(self.beat, target_beat, is_soft))
+
+        beatbar.draw_content(
+            self.pos_of(target_time),
+            self.appearance_of(is_soft),
+            zindex=self.zindex,
+            start=self.lifespan[0],
+            duration=self.lifespan[1] - self.lifespan[0],
+        )
+
+    def finish(self, state, beatbar):
+        self.is_finished = True
+        state.add_full_score(self.full_score)
+
+        # TODO: judge score
+        self.score = self.full_score
+        state.add_score(self.score)
 
 
 # performance
@@ -1152,7 +1293,9 @@ class BeatmapSettings(cfg.Configurable):
         roll_rock_score : int
             The score of each rock in the roll note.
         spin_score : int
-            The score of sping note.
+            The score of spin note.
+        freestyle_score : int
+            The score of freestyle note.
         """
         performances_scores: Dict[PerformanceGrade, int] = {
             PerformanceGrade.MISS: 0,
@@ -1178,6 +1321,7 @@ class BeatmapSettings(cfg.Configurable):
 
         roll_rock_score: int = 2
         spin_score: int = 16
+        freestyle_score: int = 32
 
     @cfg.subconfig
     class notes(cfg.Configurable):
@@ -1218,6 +1362,11 @@ class BeatmapSettings(cfg.Configurable):
             The sustain time for the finishing spin note.
         spin_disk_sound : str
             The name of sound of spin note.
+
+        freestyle_appearances : tuple of str and str
+            The freestyle appearance of freestyle note.
+        freestyle_sound : str
+            The name of sound of freestyle note.
 
         event_leadin_time : float
             The minimum time of silence before and after the gameplay.
@@ -1266,6 +1415,11 @@ class BeatmapSettings(cfg.Configurable):
         )
         spin_finish_sustain_time: float = 0.1
         spin_disk_sound: str = "disk"
+        freestyle_appearances: Tuple[str, str] = (
+            "[color=bright_blue]|[/]",
+            "[color=bright_blue]|[/]",
+        )
+        freestyle_sound: str = "freestyle"
 
         event_leadin_time: float = 1.0
 
@@ -1275,6 +1429,7 @@ class BeatmapSettings(cfg.Configurable):
         "incr": dn.Waveform("1.0*2**(-t/0.01)*{sine:t*1661.2}#tspan:0,0.06"),
         "rock": dn.Waveform("0.5*2**(-t/0.005)*{sine:t*1661.2}#tspan:0,0.03"),
         "disk": dn.Waveform("1.0*2**(-t/0.005)*{sine:t*1661.2}#tspan:0,0.03"),
+        "freestyle": dn.Waveform("0.5*2**(-t/0.01)*{sine:t*830.61}#tspan:0,0.06"),
     }
 
 
@@ -1786,6 +1941,7 @@ DEFAULT_NOTATIONS = {
     "%": Roll,
     "@": Spin,
     "Text": Text,
+    "FreeStyle": FreeStyle,
 }
 
 
