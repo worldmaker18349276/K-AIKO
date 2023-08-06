@@ -862,9 +862,31 @@ class Spin(Target):
 
 @dataclasses.dataclass
 class Hit:
-    offset: Fraction
+    time: float
+    strength: float
     beat: Fraction
     is_soft: bool
+
+    def as_note(self):
+        return beatpatterns.Note(
+            "x" if self.is_soft else "o",
+            self.beat,
+            Fraction(0, 1),
+            beatpatterns.Arguments([], {}),
+        )
+
+
+@dataclasses.dataclass
+class FreeStyleSection:
+    beat: Fraction
+    length: Fraction
+    contents: List[Hit]
+
+    def as_patterns_str(self):
+        notes = [hit.as_note() for hit in self.contents]
+        return beatpatterns.format_notes(
+            notes, self.beat, self.length, lengthless_symbols=["x", "o"]
+        )
 
 
 @dataclasses.dataclass
@@ -935,7 +957,7 @@ class FreeStyle(Target):
         self.end = beatmap.beatpoints.time(self.beat + self.length)
         self.beats_times = [
             (
-                Fraction(i, 1) / (self.tempo * self.subtempo),
+                self.beat + Fraction(i, 1) / (self.tempo * self.subtempo),
                 beatmap.beatpoints.time(self.beat + i / (self.tempo * self.subtempo)),
             )
             for i in range(int(self.length * self.tempo * self.subtempo) + 1)
@@ -944,10 +966,15 @@ class FreeStyle(Target):
         self.lifespan = (self.time - travel_time, self.end + travel_time)
         self.range = (self.time - self.tolerance, self.end + self.tolerance)
 
-        self.hits = []
+        if "<freestyle>" not in context:
+            context["<freestyle>"] = []
+        groups = context["<freestyle>"]
+
+        self.section = FreeStyleSection(self.beat, self.length, [])
+        groups.append(self.section)
 
     def approach(self, state, beatbar):
-        for _, time in self.beats_times[:: self.subtempo]:
+        for _, time in self.beats_times[: -1 : self.subtempo]:
             if self.sound is not None:
                 beatbar.play(
                     dn.DataNode.wrap(self.sound), time=time, volume=self.volume
@@ -978,10 +1005,12 @@ class FreeStyle(Target):
     def hit(self, state, beatbar, time, strength):
         target_beat, target_time = min(self.beats_times, key=lambda t: abs(t[1] - time))
         is_soft = strength < self.soft_threshold
+        if target_beat == self.beats_times[-1][0]:
+            return
 
         perf = Performance.judge(self.performance_tolerance, target_time, time, True)
         state.add_perf(perf)
-        self.hits.append(Hit(self.beat, target_beat, is_soft))
+        self.section.contents.append(Hit(time, strength, target_beat, is_soft))
 
         beatbar.draw_content(
             self.pos_of(target_time),
@@ -1966,6 +1995,7 @@ class Beatmap:
         self.start_time = 0.0
         self.end_time = float("inf")
         self.events = []
+        self.contexts = {}
 
         gameplay_settings = gameplay_settings or GameplaySettings()
 
@@ -2255,19 +2285,22 @@ class Beatmap:
         rich : markups.RichParser
         """
         events = []
-        for track in self.tracks.values():
-            context = {}
+        contexts = {}
+        for name in self.tracks.keys():
+            track = self.tracks[name]
+            contexts[name] = {}
             for event in track.events(self.notations):
                 try:
                     yield
                 except GeneratorExit:
                     raise aud.IOCancelled("The operation has been cancelled.")
 
-                event.prepare(self, rich, context)
+                event.prepare(self, rich, contexts[name])
                 if isinstance(event, Event):
                     events.append(event)
 
         self.events = sorted(events, key=lambda e: e.lifespan[0])
+        self.contexts = contexts
 
         duration = 0.0
         if self.path is not None and self.audio.path is not None:

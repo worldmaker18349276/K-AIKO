@@ -495,7 +495,7 @@ class Grid:
         return self.subgrids[-1].last_leaf_end(self.subgrids[-1].end)
 
     def insert_last(self, leaf):
-        assert self.last_leaf_end(self.start) <= leaf.start < self.end
+        assert self.last_leaf_end(self.start) <= leaf.start <= self.end
         assert leaf.end <= self.end
 
         if leaf.denominator % self.denominator != 0:
@@ -658,7 +658,7 @@ class Grid:
                 )
             subgrid = next(subgrids, None)
 
-        while beat < self.end:
+        while beat <= self.end - self.unit:
             add_bar_and_pattern(Rest(), self.unit)
         assert beat == self.end
 
@@ -787,6 +787,16 @@ def format_notes(notes, beat=Fraction(0, 1), width=None, lengthless_symbols=[]):
 
     if not parts[0].notes:
         parts.pop(0)
+
+    if parts and (parts[0].start is None or parts[0].start > beat):
+        parts[0].start = beat
+
+    if (
+        parts
+        and width is not None
+        and (parts[-1].end is None or parts[-1].end < beat + width)
+    ):
+        parts[-1].end = beat + width
 
     def enum_last(list):
         l = len(list)
