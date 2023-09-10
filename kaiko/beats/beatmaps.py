@@ -885,7 +885,7 @@ class FreeStyleSection:
     def as_patterns_str(self):
         notes = [hit.as_note() for hit in self.contents]
         return beatpatterns.format_notes(
-            notes, self.beat, self.length, lengthless_symbols=["x", "o"]
+            notes, self.beat, self.beat + self.length, lengthless_symbols=["x", "o"]
         )
 
 
@@ -2099,6 +2099,11 @@ class Beatmap:
                 yield from dn.pipe(engine_task, event_task).join()
 
         self.update_devices_settings(mixer, detector, renderer)
+
+        for context in self.contexts.values():
+            if "<freestyle>" in context:
+                for section in context["<freestyle>"]:
+                    print(section.as_patterns_str())
 
         return score
 
