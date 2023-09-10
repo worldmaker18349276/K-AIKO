@@ -395,7 +395,7 @@ class Logger:
         route.reverse()
 
         route_mu = [f"[color=blue]{self.escape(name)}[/]" for name in route]
-        return "[emph]" + "/".join(route_mu) + "[/]"
+        return "[emph]" + "[color=white]/[/]".join(route_mu) + "[/]"
 
     def format_code(self, content, marked=None, title=None, is_changed=False):
         total_width = 80
@@ -411,12 +411,12 @@ class Logger:
         for i, line in enumerate(lines):
             if marked and marked[0] == i:
                 line = (
-                    self.escape(line[: marked[1]], type="all")
+                    self.escape(line[: marked[1]])
                     + "[color=red]◊[/]"
-                    + self.escape(line[marked[1] :], type="all")
+                    + self.escape(line[marked[1] :])
                 )
             else:
-                line = self.escape(line, type="all")
+                line = self.escape(line)
             res.append(
                 f" [weight=dim]{i+1:>{n}d}[/] [weight=dim]│[/] [color=bright_white]{line}[/]"
             )

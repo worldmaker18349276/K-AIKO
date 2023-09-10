@@ -12,6 +12,7 @@ from .loggers import Logger
 from .files import (
     RecognizedFilePath,
     RecognizedDirPath,
+    UnmovablePath,
     InvalidFileOperation,
     as_pattern,
     as_child,
@@ -43,7 +44,7 @@ def edit_by_external_editor(text, editor, suffix=""):
         return open(file.name, mode="r").read()
 
 
-class ProfilesDirPath(RecognizedDirPath):
+class ProfilesDirPath(RecognizedDirPath, UnmovablePath):
     """The place to manage your profiles
 
     [rich][color=bright_blue]⠀⡠⠤⣀⠎⠉⢆⡠⠤⡀⠀[/]
@@ -53,11 +54,6 @@ class ProfilesDirPath(RecognizedDirPath):
     [color=bright_blue]⠀⠣⠤⠒⡄⠀⡔⠢⠤⠃⠀[/] different set of settings by the command [cmd]use[/].
     [color=bright_blue]⠀⠀⠀⠀⠈⠉⠀⠀⠀⠀⠀[/]
     """
-
-    def rm(self):
-        raise InvalidFileOperation(
-            "Deleting important directories or files may crash the program"
-        )
 
     @as_pattern("*.kaiko-profile")
     class profile(RecognizedFilePath):

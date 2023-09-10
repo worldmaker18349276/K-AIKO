@@ -107,7 +107,9 @@ class CognizedPath:
 
     def mv(self, dst):
         if type(self) != type(dst):
-            raise ValueError(f"Different file type: {self!s} -> {dst!s}")
+            raise InvalidFileOperation(
+                f"Different file type: {type(self).__name__} -> {type(dst).__name__}"
+            )
         file_manager = providers.get(FileManager)
         file_manager.validate_path(self, should_exist=True, file_type="all")
         file_manager.validate_path(dst, should_exist=False, file_type="all")
@@ -120,6 +122,18 @@ class CognizedPath:
             src, should_exist=True, should_in_range=False, file_type="all"
         )
         shutil.copy(src.abs, self.abs)
+
+
+class UnmovablePath(CognizedPath):
+    def rm(self):
+        raise InvalidFileOperation(
+            "Deleting important directories or files may crash the program"
+        )
+
+    def mv(self, dst):
+        raise InvalidFileOperation(
+            "Moving important directories or files may crash the program"
+        )
 
 
 class UnrecognizedPath(CognizedPath):
@@ -632,6 +646,7 @@ class FilesCommand:
 
         # sort paths
         field_types = file_manager.get_field_types()
+
         def key(path):
             ind = (
                 field_types.index(type(path))
@@ -646,6 +661,7 @@ class FilesCommand:
                 path.abs.suffix,
                 path.abs.stem,
             )
+
         res = sorted(res, key=lambda e: key(e[0]))
 
         max_width = max((width for _, width, _, _ in res), default=0)

@@ -16,13 +16,13 @@ from ..devices import audios as aud
 from ..devices import clocks
 from ..devices import engines
 from .loggers import Logger
-from .files import FileManager, RecognizedDirPath
+from .files import FileManager, RecognizedDirPath, UnmovablePath
 from .profiles import ProfileManager
 from pyaudio import PyAudio
 import numpy
 
 
-class DevicesDirPath(RecognizedDirPath):
+class DevicesDirPath(RecognizedDirPath, UnmovablePath):
     """The place to manage your devices
 
     [rich][color=bright_cyan]  ╭────────▫ ╭──────6[/]
@@ -32,11 +32,6 @@ class DevicesDirPath(RecognizedDirPath):
     [color=bright_cyan]4────╯ └╌╌⬡ □ ─║─╯╭─0[/]
     [color=bright_cyan]5──━━━━━━──────╨──╯  [/] Use the command [cmd]show[/] to view the details of your device.
     """
-
-    def rm(self):
-        raise InvalidFileOperation(
-            "Deleting important directories or files may crash the program"
-        )
 
 
 class DevicesSettings(cfg.Configurable):
@@ -782,7 +777,12 @@ def test_keyboard(logger, devices_manager):
 
     logger.print(f"[hint/] Press [emph]{exit_key_mu}[/] to end test.")
     logger.print()
-    logger.print("[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r", log=False)
+    title = (
+        "[color=bright_blue][[ [emph]<time>[/]  ]][/] "
+        "[emph]<keyname>[/]"
+        " [color=bright_green]'[emph]<keycode>[/]'[/]"
+    )
+    logger.print(title, end="\r", log=False)
 
     stop_event = threading.Event()
 
@@ -791,13 +791,16 @@ def test_keyboard(logger, devices_manager):
         try:
             while True:
                 _, time, keyname, keycode = yield
-                keyname = logger.escape(keyname, type="all")
+                keyname = logger.escape(keyname.ljust(9), type="all")
                 keycode = logger.escape(keycode, type="all")
                 logger.clear_line(log=False)
-                logger.print(f"[[{time:07.3f} s]] {keyname} '{keycode}'", log=False)
                 logger.print(
-                    "[[ <time>  ]] [emph]<keyname>[/] '<keycode>'", end="\r", log=False
+                    f"[color=bright_blue][[{time:07.3f} s]][/] "
+                    f"{keyname}"
+                    f" [color=bright_green]'{keycode}'[/]",
+                    log=False,
                 )
+                logger.print(title, end="\r", log=False)
         finally:
             logger.print()
 
@@ -830,7 +833,7 @@ class WaveformTest:
 
         except Exception as exc:
             self.logger.print("[warn]Fail to compile waveform.[/]")
-            logger.print_traceback(exc)
+            self.logger.print_traceback(exc)
             return dn.DataNode.wrap([])
 
         clock = clocks.Clock(0.0, 1.0)
@@ -870,7 +873,9 @@ class KnockTest:
         try:
             while True:
                 self.logger.print(
-                    "[[ <time>  ]] │[emph]<strength>[/]│ (<value>)",
+                    "[color=bright_blue][[ [emph]<time>[/]  ]][/] "
+                    "│[emph]<strength>[/]│"
+                    " [color=bright_green]([emph]<value>[/])[/]",
                     end="\r",
                     log=False,
                 )
@@ -884,9 +889,11 @@ class KnockTest:
                     ticks[min(nticks, max(0, value - i * nticks))]
                     for i in range(length)
                 )
-                level = f"{level[:length//2]}[weight=bold]{level[length//2:]}[/]"
                 self.logger.print(
-                    f"[[{time:07.3f} s]] │{level}│ ({strength:.5f})", log=False
+                    f"[color=bright_blue][[{time:07.3f} s]][/] "
+                    f"│{level[:length//2]}[weight=bold]{level[length//2:]}[/]│"
+                    f" [color=bright_green]({strength:.5f})[/]",
+                    log=False,
                 )
 
         finally:
@@ -929,8 +936,9 @@ class SpeakerTest:
             self.logger.print("Success!")
 
         except Exception as exc:
-            self.logger.print("[warn]Invalid configuration for speaker.[/]")
-            logger.print_traceback(exc)
+            self.logger.print(
+                f"[warn]Invalid configuration for speaker: {self.logger.escape(repr(exc))}[/]"
+            )
             return dn.DataNode.wrap([])
 
         else:
@@ -1010,8 +1018,9 @@ class MicTest:
             self.logger.print("Success!")
 
         except Exception as exc:
-            self.logger.print("[warn]Invalid configuration for mic.[/]")
-            logger.print_traceback(exc)
+            self.logger.print(
+                f"[warn]Invalid configuration for mic: {self.logger.escape(repr(exc))}[/]"
+            )
             return dn.DataNode.wrap([])
 
         else:

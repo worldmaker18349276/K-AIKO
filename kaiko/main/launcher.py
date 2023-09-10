@@ -20,6 +20,7 @@ from .files import (
     DirectCdCommand,
     RecognizedDirPath,
     RecognizedFilePath,
+    UnmovablePath,
     as_child,
 )
 from .settings import KAIKOSettings
@@ -56,7 +57,7 @@ def animated_print(text, kps=30.0, word_delay=0.05, pre_delay=0.5, post_delay=1.
     time.sleep(post_delay)
 
 
-class RootDirPath(RecognizedDirPath):
+class RootDirPath(RecognizedDirPath, UnmovablePath):
     """The workspace of KAIKO"""
 
     def info_detailed(self):
@@ -91,7 +92,7 @@ class RootDirPath(RecognizedDirPath):
     devices = as_child("Devices", DevicesDirPath)
 
     @as_child("Resources")
-    class resources(RecognizedDirPath):
+    class resources(RecognizedDirPath, UnmovablePath):
         """The place to store some resources of KAIKO"""
 
         def mk(self):
@@ -306,6 +307,7 @@ class KAIKOLauncher:
                 logger.print(logger.format_value(result))
 
         except Exception as exc:
+            logger.print("[warn]An unexpected error occurred[/]")
             logger.print_traceback(exc)
 
     def get_command_parser(self):

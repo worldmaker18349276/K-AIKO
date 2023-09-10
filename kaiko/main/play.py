@@ -17,6 +17,7 @@ from .devices import DeviceManager
 from .files import (
     RecognizedFilePath,
     RecognizedDirPath,
+    UnmovablePath,
     as_pattern,
     InvalidFileOperation,
     FileManager,
@@ -104,7 +105,7 @@ class BeatmapsetDirPath(RecognizedDirPath):
                 yield path
 
 
-class BeatmapsDirPath(RecognizedDirPath):
+class BeatmapsDirPath(RecognizedDirPath, UnmovablePath):
     """The place to hold your beatmaps
 
     [rich][color=bright_blue]█▀▀▀▀▀▀█[/]
@@ -112,11 +113,6 @@ class BeatmapsDirPath(RecognizedDirPath):
     [color=bright_blue]█ ▓▓▓▓ █[/] file or the unzipped beatmapset folder here.  You can use the
     [color=bright_blue]█▄▄▄▄▄▄█[/] command [cmd]play[/] to play the beatmap in this folder.
     """
-
-    def rm(self):
-        raise InvalidFileOperation(
-            "Deleting important directories or files may crash the program"
-        )
 
     beatmapset = as_pattern("*")(BeatmapsetDirPath)
 
