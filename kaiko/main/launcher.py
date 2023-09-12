@@ -60,7 +60,7 @@ def animated_print(text, kps=30.0, word_delay=0.05, pre_delay=0.5, post_delay=1.
 class RootDirPath(RecognizedDirPath, UnmovablePath):
     """The workspace of KAIKO"""
 
-    def info_detailed(self):
+    def banner(self):
         logger = providers.get(Logger)
         profile_manager = providers.get(ProfileManager)
 
@@ -80,7 +80,7 @@ class RootDirPath(RecognizedDirPath, UnmovablePath):
         [hint/] If you need help, press [emph]{help_key}[/].
         """
 
-        return "[rich]" + cleandoc(info)
+        return cleandoc(info)
 
     def mk(self):
         self.abs.mkdir()
@@ -100,22 +100,25 @@ class RootDirPath(RecognizedDirPath, UnmovablePath):
 
     @as_child("Cache")
     class cache(RecognizedDirPath):
-        """The place to cache some data for better experience
+        """The place to cache some data for better experience"""
 
-        [rich][color=bright_white]┌──────┐[/]
-        [color=bright_white]│☰☲☰☱  │[/]
-        [color=bright_white]│☴☲☱☴☱ │[/] Cached data stored here will be used to improve user experience
-        [color=bright_white]│☱☴☲   │[/] and debugging, deleting them will not break the system, so feel
-        [color=bright_white]│⚌     │[/] free to manage them.
-        [color=bright_white]└──────┘[/]
-        """
+        def banner(self):
+            """
+            [color=bright_white]┌──────┐[/]
+            [color=bright_white]│☰☲☰☱  │[/]
+            [color=bright_white]│☴☲☱☴☱ │[/] Cached data stored here will be used to improve user experience
+            [color=bright_white]│☱☴☲   │[/] and debugging, deleting them will not break the system, so feel
+            [color=bright_white]│⚌     │[/] free to manage them.
+            [color=bright_white]└──────┘[/]
+            """
+            return cleandoc(self.banner.__doc__)
 
         def mk(self):
             self.abs.mkdir()
 
         @as_child("logs")
         class logs(RecognizedFilePath):
-            "The printed messages will be recorded here"
+            "The log file to record printed messages and events"
 
         beatshell_history = as_child(".beatshell-history", beatshell.BeatshellHistory)
         prompt_perf = as_child("prompt_perf.csv", beatshell.PromptPerf)

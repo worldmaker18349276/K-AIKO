@@ -1,6 +1,7 @@
 import shutil
 import dataclasses
 import zipfile
+from inspect import cleandoc
 from collections import defaultdict
 from typing import Optional, Dict
 from pathlib import Path
@@ -87,15 +88,15 @@ class BeatmapsetDirPath(RecognizedDirPath):
 
     @as_pattern("*.kaiko")
     class beatmap_KAIKO(BeatmapFilePath):
-        "(Beatmap file in kaiko format)"
+        "Beatmap file in kaiko format"
 
     @as_pattern("*.ka")
     class beatmap_KA(BeatmapFilePath):
-        "(Beatmap file in kaiko format)"
+        "Beatmap file in kaiko format"
 
     @as_pattern("*.osu")
     class beatmap_OSU(BeatmapFilePath):
-        "(Beatmap file in osu format)"
+        "Beatmap file in osu format"
 
     @property
     def beatmap(self):
@@ -106,19 +107,22 @@ class BeatmapsetDirPath(RecognizedDirPath):
 
 
 class BeatmapsDirPath(RecognizedDirPath, UnmovablePath):
-    """The place to hold your beatmaps
+    """The place to hold your beatmaps"""
 
-    [rich][color=bright_blue]█▀▀▀▀▀▀█[/]
-    [color=bright_blue]█ ▓▓▓▓ █[/] All the beatmaps will be managed here.  You should put the .osz
-    [color=bright_blue]█ ▓▓▓▓ █[/] file or the unzipped beatmapset folder here.  You can use the
-    [color=bright_blue]█▄▄▄▄▄▄█[/] command [cmd]play[/] to play the beatmap in this folder.
-    """
+    def banner(self):
+        """
+        [color=bright_blue]█▀▀▀▀▀▀█[/]
+        [color=bright_blue]█ ▓▓▓▓ █[/] All the beatmaps will be managed here.  You should put the .osz
+        [color=bright_blue]█ ▓▓▓▓ █[/] file or the unzipped beatmapset folder here.  You can use the
+        [color=bright_blue]█▄▄▄▄▄▄█[/] command [cmd]play[/] to play the beatmap in this folder.
+        """
+        return cleandoc(self.banner.__doc__)
 
     beatmapset = as_pattern("*")(BeatmapsetDirPath)
 
     @as_pattern("*.osz")
     class beatmap_zip(RecognizedFilePath):
-        "(Compressed beatmapset file)"
+        "Compressed beatmapset file"
 
 
 @dataclasses.dataclass

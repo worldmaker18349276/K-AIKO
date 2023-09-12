@@ -2,6 +2,7 @@ import os
 import tempfile
 import subprocess
 import contextlib
+from inspect import cleandoc
 import shutil
 from ..utils import config as cfg
 from ..utils import parsec as pc
@@ -45,15 +46,18 @@ def edit_by_external_editor(text, editor, suffix=""):
 
 
 class ProfilesDirPath(RecognizedDirPath, UnmovablePath):
-    """The place to manage your profiles
+    """The place to manage your profiles"""
 
-    [rich][color=bright_blue]⠀⡠⠤⣀⠎⠉⢆⡠⠤⡀⠀[/]
-    [color=bright_blue]⠀⢣⠀⠀⠀⠀⠀⠀⢠⠃⠀[/]
-    [color=bright_blue]⡎⠁⠀⠀⡎⠉⡆⠀⠀⠉⡆[/] Your settings will be managed here.  Use the commands [cmd]get[/], [cmd]set[/]
-    [color=bright_blue]⠈⡱⠀⠀⠈⠉⠀⠀⠰⡉⠀[/] and [cmd]unset[/] to configure your settings.  You can switch to
-    [color=bright_blue]⠀⠣⠤⠒⡄⠀⡔⠢⠤⠃⠀[/] different set of settings by the command [cmd]use[/].
-    [color=bright_blue]⠀⠀⠀⠀⠈⠉⠀⠀⠀⠀⠀[/]
-    """
+    def banner(self):
+        """
+        [color=bright_blue]⠀⡠⠤⣀⠎⠉⢆⡠⠤⡀⠀[/]
+        [color=bright_blue]⠀⢣⠀⠀⠀⠀⠀⠀⢠⠃⠀[/]
+        [color=bright_blue]⡎⠁⠀⠀⡎⠉⡆⠀⠀⠉⡆[/] Your settings will be managed here.  Use the commands [cmd]get[/], [cmd]set[/]
+        [color=bright_blue]⠈⡱⠀⠀⠈⠉⠀⠀⠰⡉⠀[/] and [cmd]unset[/] to configure your settings.  You can switch to
+        [color=bright_blue]⠀⠣⠤⠒⡄⠀⡔⠢⠤⠃⠀[/] different set of settings by the command [cmd]use[/].
+        [color=bright_blue]⠀⠀⠀⠀⠈⠉⠀⠀⠀⠀⠀[/]
+        """
+        return cleandoc(self.banner.__doc__)
 
     @as_pattern("*.kaiko-profile")
     class profile(RecognizedFilePath):

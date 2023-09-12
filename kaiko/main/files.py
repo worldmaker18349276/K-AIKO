@@ -53,6 +53,9 @@ class CognizedPath:
 
         return cleandoc(docs[1])
 
+    def banner(self):
+        return None
+
     def fix(self):
         file_manager = providers.get(FileManager)
         logger = providers.get(Logger)

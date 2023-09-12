@@ -384,11 +384,11 @@ class BeatPrompt:
         if not print_info:
             return
 
-        info = file_manager.current.info_detailed()
+        info = file_manager.current.banner()
         if info is None:
             return
 
-        info_markup = logger.rich.parse(info, root_tag=True)
+        info_markup = logger.rich.parse(info)
         info_block = logger.rich.parse(
             banner_settings.info_block, expand=False, slotted=True
         )
