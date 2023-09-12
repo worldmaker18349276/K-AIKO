@@ -947,16 +947,21 @@ def DirectCdCommand():
         return cmd.function_command(command)
 
     file_manager = providers.get(FileManager)
+    logger = providers.get(Logger)
 
     attrs = {}
 
     path = file_manager.recognize(file_manager.current.abs / "..")
-    doc = path.info_detailed()
+    relpath = "../"
+    relpath_mu = logger.format_path(relpath)
+    doc = f"[rich]change directory to {relpath_mu}\n" + (path.info() or "")
     attrs[".."] = make_cd_command(path, doc)
 
     for path in file_manager.iterdir():
         if path.slashend:
-            doc = path.info_detailed()
-            attrs[path.abs.name + "/"] = make_cd_command(path, doc)
+            relpath = path.abs.name + "/"
+            relpath_mu = logger.format_path(relpath)
+            doc = f"[rich]change directory to {relpath_mu}\n" + (path.info() or "")
+            attrs[relpath] = make_cd_command(path, doc)
 
     return type("DirectCdCommand", (object,), attrs)()
