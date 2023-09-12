@@ -77,6 +77,7 @@ class LoggerSettings(cfg.Configurable):
         py_argument : pair tag
         py_class : pair tag
         py_attribute : pair tag
+        py_nonrepr : pair tag
         """
         py_none: str = "[color=bright_cyan][slot/][/]"
         py_ellipsis: str = "[color=bright_cyan][slot/][/]"
@@ -91,6 +92,7 @@ class LoggerSettings(cfg.Configurable):
         py_argument: str = "[color=bright_white][slot/][/]"
         py_class: str = "[color=bright_blue][slot/][/]"
         py_attribute: str = "[color=bright_blue][slot/][/]"
+        py_nonrepr: str = "[weight=dim][slot/][/]"
 
     @cfg.subconfig
     class shell(cfg.Configurable):
@@ -491,6 +493,9 @@ class Logger:
         ):
             return f"[py_{type(value).__name__}]{mu.escape(repr(value))}[/]"
 
+        elif isinstance(value, type):
+            return f"[py_class]{mu.escape(value.__name__)}[/]"
+
         elif isinstance(value, enum.Enum):
             cls = type(value)
             cls_name = f"[py_class]{mu.escape(cls.__name__)}[/]"
@@ -567,7 +572,7 @@ class Logger:
 
             return template % (opening, content, closing)
 
-        elif dataclasses.is_dataclass(value):
+        elif dataclasses.is_dataclass(value) and not isinstance(value, type):
             cls = type(value)
             fields = dataclasses.fields(cls)
             cls_name = f"[py_class]{mu.escape(cls.__name__)}[/]"
@@ -598,7 +603,10 @@ class Logger:
             return template % content
 
         else:
-            return mu.escape(repr(value))
+            value_str = mu.escape(repr(value))
+            if value_str.startswith("<") and value_str.endswith(">"):
+                value_str = f"[py_nonrepr]{value_str}[/]"
+            return value_str
 
     def format_scores(self, tol, perfs):
         grad_minwidth = 15
