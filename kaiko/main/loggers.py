@@ -401,8 +401,9 @@ class Logger:
 
     def format_code(self, content, marked=None, title=None, is_changed=False):
         total_width = 80
+        line_limit = 500
         lines = content.split("\n")
-        n = len(str(content.count("\n") + 1))
+        n = len(str(min(line_limit, content.count("\n")) + 1))
         res = []
         if title is not None:
             title = self.escape(title, type="all")
@@ -419,9 +420,16 @@ class Logger:
                 )
             else:
                 line = self.escape(line)
-            res.append(
-                f" [weight=dim]{i+1:>{n}d}[/] [weight=dim]│[/] [color=bright_white]{line}[/]"
-            )
+            if i < line_limit:
+                res.append(
+                    f" [weight=dim]{i+1:>{n}d}[/] [weight=dim]│[/] [color=bright_white]{line}[/]"
+                )
+            else:
+                remains = len(lines) - line_limit
+                res.append(
+                    f" [weight=dim]{'...':>{n}}[/] [weight=dim]│[/] [weight=dim]<{remains} lines are not displayed>[/]"
+                )
+                break
         res.append(f"[weight=dim]{'─'*n}──┴─{'─'*(max(0, total_width-n-4))}[/]")
         return "\n".join(res)
 
