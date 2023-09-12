@@ -490,13 +490,17 @@ class OSU_FORMAT:
                 event = beatmaps.Soft(
                     beat=beat, length=Fraction(0), speed=speed, volume=volume
                 )
-                beatmap.tracks["main"].events.append(event)
+                beatmap.tracks["main"].notes.append(
+                    beatmaps.BeatTrack.from_event(event, beatmap.notations)
+                )
 
             elif hitSound & 10:  # kat
                 event = beatmaps.Loud(
                     beat=beat, length=Fraction(0), speed=speed, volume=volume
                 )
-                beatmap.tracks["main"].events.append(event)
+                beatmap.tracks["main"].notes.append(
+                    beatmaps.BeatTrack.from_event(event, beatmap.notations)
+                )
 
         elif type & 2:  # slider
             # curve,slides,sliderLength,edgeSounds,edgeSets = objectParams
@@ -507,7 +511,9 @@ class OSU_FORMAT:
             event = beatmaps.Roll(
                 beat=beat, length=length, density=density, speed=speed, volume=volume
             )
-            beatmap.tracks["main"].events.append(event)
+            beatmap.tracks["main"].notes.append(
+                beatmaps.BeatTrack.from_event(event, beatmap.notations)
+            )
 
         elif type & 8:  # spinner
             (end_time,) = objectParams
@@ -517,4 +523,6 @@ class OSU_FORMAT:
             event = beatmaps.Spin(
                 beat=beat, length=length, density=density, speed=speed, volume=volume
             )
-            beatmap.tracks["main"].events.append(event)
+            beatmap.tracks["main"].notes.append(
+                beatmaps.BeatTrack.from_event(event, beatmap.notations)
+            )
