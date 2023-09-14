@@ -243,6 +243,65 @@ class DeviceManager:
         else:
             raise TypeError
 
+    @staticmethod
+    def format_pyaudio_info(manager):
+        info = aud.pyaudio_info(manager)
+        res = []
+
+        res.append("[color=bright_blue]portaudio version:[/]")
+        res.append("  " + info["version"])
+        res.append("")
+
+        res.append("[color=bright_blue]available devices:[/]")
+
+        table = []
+        for index, device in enumerate(info["device_infos"]):
+            ind = str(index)
+            name = device["name"]
+            api = info["api_infos"][device["hostApi"]]["name"]
+            freq = str(device["defaultSampleRate"] / 1000)
+            chin = str(device["maxInputChannels"])
+            chout = str(device["maxOutputChannels"])
+
+            table.append((ind, name, api, freq, chin, chout))
+
+        ind_len = max(len(entry[0]) for entry in table)
+        name_len = max(len(entry[1]) for entry in table)
+        api_len = max(len(entry[2]) for entry in table)
+        freq_len = max(len(entry[3]) for entry in table)
+        chin_len = max(len(entry[4]) for entry in table)
+        chout_len = max(len(entry[5]) for entry in table)
+
+        for ind, name, api, freq, chin, chout in table:
+            res.append(
+                f"  [weight=dim]{ind:>{ind_len}}.[/]"
+                f" [color=magenta][weight=bold]{name:{name_len}}[/][/]"
+                f"  [weight=dim]by[/]  [color=magenta]{api:{api_len}}[/]"
+                f"  ([color=cyan][weight=bold]{freq:>{freq_len}}[/] kHz[/],"
+                f" [weight=dim]in:[/]"
+                f" [color=bright_blue][weight={'dim' if chin=='0' else 'bold'}]{chin:>{chin_len}}[/][/],"
+                f" [weight=dim]out:[/]"
+                f" [color=bright_red][weight={'dim' if chout=='0' else 'bold'}]{chout:>{chout_len}}[/][/])"
+            )
+
+        res.append("")
+
+        default_input_device = info["default_input"]
+        default_output_device = info["default_output"]
+        res.append(
+            f"[color=bright_blue]default input device:[/] "
+            f" [color=magenta][weight=bold]{default_input_device['name']}[/][/]"
+            f" ([color=cyan][weight=bold]{default_input_device['defaultSampleRate'] / 1000}[/] kHz[/],"
+            f" [color=bright_blue][weight=bold]{default_input_device['maxInputChannels']}[/] ch[/])"
+        )
+        res.append(
+            f"[color=bright_blue]default output device:[/]"
+            f" [color=magenta][weight=bold]{default_output_device['name']}[/][/]"
+            f" ([color=cyan][weight=bold]{default_output_device['defaultSampleRate'] / 1000}[/] kHz[/],"
+            f" [color=bright_red][weight=bold]{default_output_device['maxOutputChannels']}[/] ch[/])"
+        )
+        return "\n".join(res)
+
     @contextlib.contextmanager
     def prepare_pyaudio(self):
         r"""Prepare PyAudio and print out some information.
@@ -266,7 +325,9 @@ class DeviceManager:
             with aud.create_manager() as audio_manager:
                 logger.print()
 
-                logger.print(aud.format_pyaudio_info(audio_manager))
+                info = DeviceManager.format_pyaudio_info(audio_manager)
+                info = logger.renderer.render_plain(logger.rich.parse(info))
+                logger.print(info)
                 verb_ctxt.__exit__(None, None, None)
                 has_exited = True
 
@@ -392,7 +453,9 @@ class DevicesCommand:
         devices_settings = profile_manager.current.devices
 
         with logger.print_stack() as print:
-            print(f"workspace: {logger.format_uri(file_manager.root.abs)}")
+            print(
+                f"[color=bright_blue]workspace:[/] {logger.format_uri(file_manager.root.abs)}"
+            )
             print()
 
             term = logger.escape(os.environ.get("TERM", "unknown"))
@@ -400,10 +463,10 @@ class DevicesCommand:
             uni = logger.escape(os.environ.get("UNICODE_VERSION", "unknown"))
             size = shutil.get_terminal_size()
 
-            print(f"  terminal type: {term}")
-            print(f"    VTE version: {vte}")
-            print(f"unicode version: {uni}")
-            print(f"  terminal size: {size.columns}×{size.lines}")
+            print(f"[color=bright_blue]  terminal type:[/] {term}")
+            print(f"[color=bright_blue]    VTE version:[/] {vte}")
+            print(f"[color=bright_blue]unicode version:[/] {uni}")
+            print(f"[color=bright_blue]  terminal size:[/] {size.columns}×{size.lines}")
 
             template = "[color={}]██[/]"
             palette = [
@@ -418,7 +481,7 @@ class DevicesCommand:
             ]
 
             print()
-            print("color palette:")
+            print("[color=bright_blue]color palette:[/]")
             print(
                 " "
                 + "".join(map(template.format, palette))
@@ -428,7 +491,7 @@ class DevicesCommand:
 
             print()
 
-            print(aud.format_pyaudio_info(audio_manager))
+            print(DeviceManager.format_pyaudio_info(audio_manager))
 
             print()
 
@@ -439,7 +502,10 @@ class DevicesCommand:
             channels = devices_settings.detector.input_channels
             format = devices_settings.detector.input_format
             print(
-                f"current input device: {device} ({samplerate/1000} kHz, {channels} ch)"
+                f"[color=bright_blue]current input device:[/] "
+                f" [color=magenta][weight=bold]{device}[/][/]"
+                f" ([color=cyan][weight=bold]{samplerate/1000}[/] kHz[/],"
+                f" [color=bright_blue][weight=bold]{channels}[/] ch[/])"
             )
 
             device = devices_settings.mixer.output_device
@@ -449,7 +515,10 @@ class DevicesCommand:
             channels = devices_settings.mixer.output_channels
             format = devices_settings.mixer.output_format
             print(
-                f"current output device: {device} ({samplerate/1000} kHz, {channels} ch)"
+                f"[color=bright_blue]current output device:[/]"
+                f" [color=magenta][weight=bold]{device}[/][/]"
+                f" ([color=cyan][weight=bold]{samplerate/1000}[/] kHz[/],"
+                f" [color=bright_red][weight=bold]{channels}[/] ch[/])"
             )
 
     @cmd.function_command

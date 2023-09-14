@@ -1203,6 +1203,30 @@ class RichRenderer:
     def clear_screen(self):
         return Group((Clear(ClearRegion.screen), Pos(0, 0)))
 
+    def _render_plain(self, markup):
+        if isinstance(markup, Text):
+            yield markup.string
+
+        elif isinstance(markup, ControlCharacter):
+            yield ""
+
+        elif isinstance(markup, Group):
+            for child in markup.children:
+                yield from self._render_plain(child)
+
+        elif isinstance(markup, CSI):
+            yield ""
+
+        elif isinstance(markup, SGR):
+            for child in markup.children:
+                yield from self._render_plain(child)
+
+        else:
+            raise TypeError(f"unknown markup type: {type(markup)}")
+
+    def render_plain(self, markup):
+        return "".join(self._render_plain(markup))
+
     def _render(self, markup, reopens=()):
         if isinstance(markup, Text):
             yield markup.string

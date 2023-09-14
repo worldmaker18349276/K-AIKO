@@ -10,52 +10,20 @@ import audioread
 from ..utils import datanodes as dn
 
 
-def format_pyaudio_info(manager):
-    res = []
-
-    res.append("portaudio version:")
-    res.append("  " + pyaudio.get_portaudio_version_text())
-    res.append("")
-
-    res.append("available devices:")
-    apis_list = [
-        manager.get_host_api_info_by_index(i)["name"]
+def pyaudio_info(manager):
+    res = {}
+    res["version"] = pyaudio.get_portaudio_version_text()
+    res["api_infos"] = [
+        manager.get_host_api_info_by_index(i)
         for i in range(manager.get_host_api_count())
     ]
-
-    table = []
-    for index in range(manager.get_device_count()):
-        info = manager.get_device_info_by_index(index)
-
-        ind = str(index)
-        name = info["name"]
-        api = apis_list[info["hostApi"]]
-        freq = str(info["defaultSampleRate"] / 1000)
-        chin = str(info["maxInputChannels"])
-        chout = str(info["maxOutputChannels"])
-
-        table.append((ind, name, api, freq, chin, chout))
-
-    ind_len = max(len(entry[0]) for entry in table)
-    name_len = max(len(entry[1]) for entry in table)
-    api_len = max(len(entry[2]) for entry in table)
-    freq_len = max(len(entry[3]) for entry in table)
-    chin_len = max(len(entry[4]) for entry in table)
-    chout_len = max(len(entry[5]) for entry in table)
-
-    for ind, name, api, freq, chin, chout in table:
-        res.append(
-            f"  {ind:>{ind_len}}. {name:{name_len}}  by  {api:{api_len}}"
-            f"  ({freq:>{freq_len}} kHz, in: {chin:>{chin_len}}, out: {chout:>{chout_len}})"
-        )
-
-    res.append("")
-
-    default_input_device_index = manager.get_default_input_device_info()["index"]
-    default_output_device_index = manager.get_default_output_device_info()["index"]
-    res.append(f"default input device: {default_input_device_index}")
-    res.append(f"default output device: {default_output_device_index}")
-    return "\n".join(res)
+    res["device_infos"] = [
+        manager.get_device_info_by_index(i)
+        for i in range(manager.get_device_count())
+    ]
+    res["default_input"] = manager.get_default_input_device_info()
+    res["default_output"] = manager.get_default_output_device_info()
+    return res
 
 
 @contextlib.contextmanager
