@@ -255,8 +255,8 @@ class DeviceManager:
         res.append("[color=bright_blue]available devices:[/]")
 
         table = []
-        for index, device in enumerate(info["device_infos"]):
-            ind = str(index)
+        for device in info["device_infos"]:
+            ind = str(device["index"])
             name = device["name"]
             api = info["api_infos"][device["hostApi"]]["name"]
             freq = str(device["defaultSampleRate"] / 1000)
@@ -279,28 +279,57 @@ class DeviceManager:
                 f"  [weight=dim]by[/]  [color=magenta]{api:{api_len}}[/]"
                 f"  ([color=cyan][weight=bold]{freq:>{freq_len}}[/] kHz[/],"
                 f" [weight=dim]in:[/]"
-                f" [color=bright_blue][weight={'dim' if chin=='0' else 'bold'}]{chin:>{chin_len}}[/][/],"
+                f" [color=bright_blue][weight={'dim' if chin=='0' else 'bold'}]{chin:>{chin_len}}[/] ch[/],"
                 f" [weight=dim]out:[/]"
-                f" [color=bright_red][weight={'dim' if chout=='0' else 'bold'}]{chout:>{chout_len}}[/][/])"
+                f" [color=bright_red][weight={'dim' if chout=='0' else 'bold'}]{chout:>{chout_len}}[/] ch[/])"
             )
 
         res.append("")
 
-        default_input_device = info["default_input"]
-        default_output_device = info["default_output"]
+        default_input_device = info["default_input"]["index"]
+        default_output_device = info["default_output"]["index"]
         res.append(
-            f"[color=bright_blue]default input device:[/] "
-            f" [color=magenta][weight=bold]{default_input_device['name']}[/][/]"
-            f" ([color=cyan][weight=bold]{default_input_device['defaultSampleRate'] / 1000}[/] kHz[/],"
-            f" [color=bright_blue][weight=bold]{default_input_device['maxInputChannels']}[/] ch[/])"
+            f"[color=bright_blue]default input device:[/]  "
+            + DeviceManager.format_device_info(info, default_input_device, True)
         )
         res.append(
-            f"[color=bright_blue]default output device:[/]"
-            f" [color=magenta][weight=bold]{default_output_device['name']}[/][/]"
-            f" ([color=cyan][weight=bold]{default_output_device['defaultSampleRate'] / 1000}[/] kHz[/],"
-            f" [color=bright_red][weight=bold]{default_output_device['maxOutputChannels']}[/] ch[/])"
+            f"[color=bright_blue]default output device:[/] "
+            + DeviceManager.format_device_info(info, default_input_device, False)
         )
         return "\n".join(res)
+
+    @staticmethod
+    def format_device_info(info, index, is_input):
+        if index == -1:
+            index = (
+                info["default_input"]["index"]
+                if is_input
+                else info["default_output"]["index"]
+            )
+
+        device = info["device_infos"][index]
+        name = device["name"]
+        api = info["api_infos"][device["hostApi"]]["name"]
+        freq = device["defaultSampleRate"] / 1000
+        chin = device["maxInputChannels"]
+        chout = device["maxOutputChannels"]
+
+        if is_input:
+            return (
+                f"[color=magenta][weight=bold]{name}[/][/]"
+                f" [weight=dim]by[/]"
+                f" [color=magenta]{api}[/]"
+                f" ([color=cyan][weight=bold]{freq}[/] kHz[/],"
+                f" [color=bright_blue][weight={'dim' if chin==0 else 'bold'}]{chin}[/] ch[/])"
+            )
+        else:
+            return (
+                f"[color=magenta][weight=bold]{name}[/][/]"
+                f" [weight=dim]by[/]"
+                f" [color=magenta]{api}[/]"
+                f" ([color=cyan][weight=bold]{freq}[/] kHz[/],"
+                f" [color=bright_red][weight={'dim' if chout==0 else 'bold'}]{chout}[/] ch[/])"
+            )
 
     @contextlib.contextmanager
     def prepare_pyaudio(self):
@@ -327,7 +356,7 @@ class DeviceManager:
 
                 info = DeviceManager.format_pyaudio_info(audio_manager)
                 info = logger.renderer.render_plain(logger.rich.parse(info))
-                logger.print(info)
+                logger.print(info, markup=False)
                 verb_ctxt.__exit__(None, None, None)
                 has_exited = True
 
@@ -448,7 +477,7 @@ class DevicesCommand:
 
         logger = providers.get(Logger)
         file_manager = providers.get(FileManager)
-        audio_manager = providers.get(DeviceManager).audio_manager
+        device_manager = providers.get(DeviceManager)
         profile_manager = providers.get(ProfileManager)
         devices_settings = profile_manager.current.devices
 
@@ -491,34 +520,21 @@ class DevicesCommand:
 
             print()
 
-            print(DeviceManager.format_pyaudio_info(audio_manager))
+            print(DeviceManager.format_pyaudio_info(device_manager.audio_manager))
 
             print()
 
+            info = aud.pyaudio_info(device_manager.audio_manager)
             device = devices_settings.detector.input_device
-            if device == -1:
-                device = "default"
-            samplerate = devices_settings.detector.input_samplerate
-            channels = devices_settings.detector.input_channels
-            format = devices_settings.detector.input_format
             print(
-                f"[color=bright_blue]current input device:[/] "
-                f" [color=magenta][weight=bold]{device}[/][/]"
-                f" ([color=cyan][weight=bold]{samplerate/1000}[/] kHz[/],"
-                f" [color=bright_blue][weight=bold]{channels}[/] ch[/])"
+                f"[color=bright_blue]current input device:[/]  "
+                + DeviceManager.format_device_info(info, device, True)
             )
 
             device = devices_settings.mixer.output_device
-            if device == -1:
-                device = "default"
-            samplerate = devices_settings.mixer.output_samplerate
-            channels = devices_settings.mixer.output_channels
-            format = devices_settings.mixer.output_format
             print(
-                f"[color=bright_blue]current output device:[/]"
-                f" [color=magenta][weight=bold]{device}[/][/]"
-                f" ([color=cyan][weight=bold]{samplerate/1000}[/] kHz[/],"
-                f" [color=bright_red][weight=bold]{channels}[/] ch[/])"
+                f"[color=bright_blue]current output device:[/] "
+                + DeviceManager.format_device_info(info, device, False)
             )
 
     @cmd.function_command
@@ -532,8 +548,8 @@ class DevicesCommand:
                   default device.
         """
         logger = providers.get(Logger)
-        audio_manager = providers.get(DeviceManager).audio_manager
-        return MicTest(device, logger, audio_manager)
+        device_manager = providers.get(DeviceManager)
+        return MicTest(device, logger, device_manager)
 
     @cmd.function_command
     def test_speaker(self, device):
@@ -546,8 +562,8 @@ class DevicesCommand:
                       default device.
         """
         logger = providers.get(Logger)
-        audio_manager = providers.get(DeviceManager).audio_manager
-        return SpeakerTest(device, logger, audio_manager)
+        device_manager = providers.get(DeviceManager)
+        return SpeakerTest(device, logger, device_manager)
 
     @cmd.function_command
     def set_mic(self, device, rate=None, ch=None, len=None, fmt=None):
@@ -658,14 +674,14 @@ class DevicesCommand:
     @test_mic.arg_parser("device")
     @set_mic.arg_parser("device")
     def _set_mic_device_parser(self):
-        audio_manager = providers.get(DeviceManager).audio_manager
-        return PyAudioDeviceParser(audio_manager, True)
+        device_manager = providers.get(DeviceManager)
+        return PyAudioDeviceParser(device_manager, True)
 
     @test_speaker.arg_parser("device")
     @set_speaker.arg_parser("device")
     def _set_speaker_device_parser(self):
-        audio_manager = providers.get(DeviceManager).audio_manager
-        return PyAudioDeviceParser(audio_manager, False)
+        device_manager = providers.get(DeviceManager)
+        return PyAudioDeviceParser(device_manager, False)
 
     @set_mic.arg_parser("rate")
     @set_speaker.arg_parser("rate")
@@ -804,11 +820,11 @@ class DevicesCommand:
 
 
 class PyAudioDeviceParser(cmd.ArgumentParser):
-    def __init__(self, audio_manager, is_input):
-        self.audio_manager = audio_manager
+    def __init__(self, device_manager, is_input):
+        self.device_manager = device_manager
         self.is_input = is_input
         self.options = ["-1"]
-        for index in range(audio_manager.get_device_count()):
+        for index in range(device_manager.audio_manager.get_device_count()):
             self.options.append(str(index))
 
     def parse(self, token):
@@ -820,24 +836,10 @@ class PyAudioDeviceParser(cmd.ArgumentParser):
         return [val + "\000" for val in cmd.fit(token, self.options)]
 
     def info(self, token):
-        value = int(token)
-        if value == -1:
-            if self.is_input:
-                value = self.audio_manager.get_default_input_device_info()["index"]
-            else:
-                value = self.audio_manager.get_default_output_device_info()["index"]
-
-        device_info = self.audio_manager.get_device_info_by_index(value)
-
-        name = device_info["name"]
-        api = self.audio_manager.get_host_api_info_by_index(device_info["hostApi"])[
-            "name"
-        ]
-        freq = device_info["defaultSampleRate"] / 1000
-        ch_in = device_info["maxInputChannels"]
-        ch_out = device_info["maxOutputChannels"]
-
-        return f"{name} by {api} ({freq} kHz, in: {ch_in}, out: {ch_out})"
+        index = int(token)
+        info = aud.pyaudio_info(self.device_manager.audio_manager)
+        info_str = DeviceManager.format_device_info(info, index, self.is_input)
+        return "[rich]" + info_str + "[/]"
 
 
 def exit_any():
@@ -985,17 +987,19 @@ class SpeakerTest:
     CLICK_WAVEFORM = "2**(-t/0.01)*{sine:t*1000.0}#tspan:0,0.1"
     CLICK_DELAY = 0.5
 
-    def __init__(self, device, logger, audio_manager):
+    def __init__(self, device, logger, device_manager):
         self.device = device
         self.logger = logger
-        self.audio_manager = audio_manager
+        self.device_manager = device_manager
 
     def execute(self):
         device = self.device
 
         if device == -1:
-            device = self.audio_manager.get_default_output_device_info()["index"]
-        device_info = self.audio_manager.get_device_info_by_index(device)
+            device = self.device_manager.audio_manager.get_default_output_device_info()[
+                "index"
+            ]
+        device_info = self.device_manager.audio_manager.get_device_info_by_index(device)
 
         samplerate = int(device_info["defaultSampleRate"])
         nchannels = min(device_info["maxOutputChannels"], 2)
@@ -1004,7 +1008,7 @@ class SpeakerTest:
         try:
             self.logger.print("Validate output device...")
             aud.validate_output_device(
-                self.audio_manager, device, samplerate, nchannels, format
+                self.device_manager.audio_manager, device, samplerate, nchannels, format
             )
             self.logger.print("Success!")
 
@@ -1015,13 +1019,12 @@ class SpeakerTest:
             return dn.DataNode.wrap([])
 
         else:
-            info = PyAudioDeviceParser(self.audio_manager, False).info(str(device))
-            info = self.logger.escape(info)
-            self.logger.print(f"Test output device [emph]{info}[/]...")
+            info = PyAudioDeviceParser(self.device_manager, False).info(str(device))
+            self.logger.print(f"Test output device {info}...")
             self.logger.print("[hint/] Press any key to end testing.")
-            return self.test_speaker(self.audio_manager, device, samplerate, nchannels)
+            return self.test_speaker(device, samplerate, nchannels)
 
-    def test_speaker(self, audio_manager, device, samplerate, nchannels):
+    def test_speaker(self, device, samplerate, nchannels):
         buffer_length = engines.MixerSettings.output_buffer_length
         format = engines.MixerSettings.output_format
 
@@ -1031,7 +1034,7 @@ class SpeakerTest:
         )
 
         speaker_task = aud.play(
-            audio_manager,
+            self.device_manager.audio_manager,
             click,
             samplerate=samplerate,
             buffer_shape=(buffer_length, nchannels),
@@ -1066,17 +1069,19 @@ class MicTest:
     INDICATOR_TICK0 = " "
     INDICATOR_TICK1 = "▮"
 
-    def __init__(self, device, logger, audio_manager):
+    def __init__(self, device, logger, device_manager):
         self.device = device
         self.logger = logger
-        self.audio_manager = audio_manager
+        self.device_manager = device_manager
 
     def execute(self):
         device = self.device
 
         if device == -1:
-            device = self.audio_manager.get_default_input_device_info()["index"]
-        device_info = self.audio_manager.get_device_info_by_index(device)
+            device = self.device_manager.audio_manager.get_default_input_device_info()[
+                "index"
+            ]
+        device_info = self.device_manager.audio_manager.get_device_info_by_index(device)
 
         samplerate = int(device_info["defaultSampleRate"])
         channels = 1
@@ -1086,7 +1091,7 @@ class MicTest:
         try:
             self.logger.print("Validate input device...")
             aud.validate_input_device(
-                self.audio_manager, device, samplerate, channels, format
+                self.device_manager.audio_manager, device, samplerate, channels, format
             )
             self.logger.print("Success!")
 
@@ -1097,13 +1102,12 @@ class MicTest:
             return dn.DataNode.wrap([])
 
         else:
-            info = PyAudioDeviceParser(self.audio_manager, True).info(str(device))
-            info = self.logger.escape(info)
-            self.logger.print(f"Test input device [emph]{info}[/]...")
+            info = PyAudioDeviceParser(self.device_manager, True).info(str(device))
+            self.logger.print(f"Test input device {info}...")
             self.logger.print("[hint/] Press any key to end testing.")
-            return self.test_mic(self.audio_manager, device, samplerate)
+            return self.test_mic(device, samplerate)
 
-    def test_mic(self, audio_manager, device, samplerate):
+    def test_mic(self, device, samplerate):
         channels = 1
         buffer_length = engines.DetectorSettings.input_buffer_length
         format = engines.DetectorSettings.input_format
@@ -1111,7 +1115,7 @@ class MicTest:
         vol = dn.branch(self.draw_volume(samplerate, buffer_length))
 
         mic_task = aud.record(
-            audio_manager,
+            self.device_manager.audio_manager,
             vol,
             samplerate=samplerate,
             buffer_shape=(buffer_length, channels),
