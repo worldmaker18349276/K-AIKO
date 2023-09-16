@@ -1068,6 +1068,7 @@ class MicTest:
     INDICATOR_WIDTH = 12
     INDICATOR_TICK0 = " "
     INDICATOR_TICK1 = "▮"
+    WIN_LENGTH = 1024
 
     def __init__(self, device, logger, device_manager):
         self.device = device
@@ -1112,7 +1113,10 @@ class MicTest:
         buffer_length = engines.DetectorSettings.input_buffer_length
         format = engines.DetectorSettings.input_format
 
-        vol = dn.branch(self.draw_volume(samplerate, buffer_length))
+        vol = dn.branch(
+            dn.frame(self.WIN_LENGTH, buffer_length),
+            self.draw_volume(samplerate, buffer_length),
+        )
 
         mic_task = aud.record(
             self.device_manager.audio_manager,
