@@ -540,8 +540,13 @@ class KAIKOPlay:
         print_hints(logger, gameplay_settings)
         logger.print()
 
-        with self.profile_manager.restoring() as settings_modified:
-            score = yield from beatmap.play(self.start, gameplay_settings).join()
+        try:
+            with self.profile_manager.restoring() as settings_modified:
+                score = yield from beatmap.play(self.start, gameplay_settings).join()
+        except beatmaps.BeatmapLoadError as exc:
+            logger.print(f"[warn]Failed to load beatmap[/]")
+            logger.print_traceback(exc)
+            return
 
         logger.print()
         scores = logger.format_scores(

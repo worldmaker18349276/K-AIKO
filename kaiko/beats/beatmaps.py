@@ -1974,6 +1974,10 @@ DEFAULT_NOTATIONS = {
 }
 
 
+class BeatmapLoadError(Exception):
+    pass
+
+
 @dataclasses.dataclass
 class Beatmap:
     path: Optional[str] = None
@@ -2006,11 +2010,14 @@ class Beatmap:
 
         # prepare
         try:
-            yield from dn.create_task(
-                dn.chain(self.load_resources(), self.prepare_events(rich)),
-            ).join()
-        except aud.IOCancelled:
-            return
+            yield from dn.create_task(self.load_resources()).join()
+        except dn.ThreadError as exc:
+            raise BeatmapLoadError() from exc.__cause__
+
+        try:
+            yield from dn.create_task(self.prepare_events(rich)).join()
+        except dn.ThreadError as exc:
+            raise BeatmapLoadError() from exc.__cause__
 
         if start_time is not None:
             self.start_time = start_time
