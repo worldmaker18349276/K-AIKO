@@ -537,22 +537,29 @@ class KAIKOPlay:
         if beatmap is None:
             return
 
-        print_hints(logger, gameplay_settings)
+        hints = KAIKOPlay.generate_hints(logger, gameplay_settings)
         logger.print()
 
         try:
             with self.profile_manager.restoring() as settings_modified:
-                score = yield from beatmap.play(self.start, gameplay_settings).join()
+                score = yield from beatmap.play(
+                    self.start, gameplay_settings, hints=hints
+                ).join()
         except beatmaps.BeatmapLoadError as exc:
             logger.print(f"[warn]Failed to load beatmap[/]")
             logger.print_traceback(exc)
             return
 
         logger.print()
-        scores = logger.format_scores(
-            beatmap.settings.difficulty.performance_tolerance, score.perfs
+        logger.print(
+            logger.format_scores(
+                beatmap.settings.difficulty.performance_tolerance, score.perfs
+            )
         )
-        logger.print(scores)
+
+        for section in score.freestyles:
+            logger.print("freestyle:")
+            logger.print(section.as_patterns_str(), markup=False)
 
         if self.profile_manager.current == settings_modified:
             return
@@ -576,41 +583,42 @@ class KAIKOPlay:
                 logger.format_code_diff(old, new, title=title, is_changed=True)
             )
 
+    @staticmethod
+    def generate_hints(logger, settings):
+        pause_key = settings.controls.pause_key
+        skip_key = settings.controls.skip_key
+        stop_key = settings.controls.stop_key
+        display_keys = settings.controls.display_delay_adjust_keys
+        knock_keys = settings.controls.knock_delay_adjust_keys
+        energy_keys = settings.controls.knock_energy_adjust_keys
 
-def print_hints(logger, settings):
-    pause_key = settings.controls.pause_key
-    skip_key = settings.controls.skip_key
-    stop_key = settings.controls.stop_key
-    display_keys = settings.controls.display_delay_adjust_keys
-    knock_keys = settings.controls.knock_delay_adjust_keys
-    energy_keys = settings.controls.knock_energy_adjust_keys
+        pause_key = logger.escape(pause_key, type="all")
+        skip_key = logger.escape(skip_key, type="all")
+        stop_key = logger.escape(stop_key, type="all")
+        display_key_1 = logger.escape(display_keys[0], type="all")
+        display_key_2 = logger.escape(display_keys[1], type="all")
+        knock_key_1 = logger.escape(knock_keys[0], type="all")
+        knock_key_2 = logger.escape(knock_keys[1], type="all")
+        energy_key_1 = logger.escape(energy_keys[0], type="all")
+        energy_key_2 = logger.escape(energy_keys[1], type="all")
 
-    pause_key = logger.escape(pause_key, type="all")
-    skip_key = logger.escape(skip_key, type="all")
-    stop_key = logger.escape(stop_key, type="all")
-    display_key_1 = logger.escape(display_keys[0], type="all")
-    display_key_2 = logger.escape(display_keys[1], type="all")
-    knock_key_1 = logger.escape(knock_keys[0], type="all")
-    knock_key_2 = logger.escape(knock_keys[1], type="all")
-    energy_key_1 = logger.escape(energy_keys[0], type="all")
-    energy_key_2 = logger.escape(energy_keys[1], type="all")
-
-    with logger.print_stack() as print:
-        print(f"[hint/] Press [emph]{pause_key}[/] to pause/resume the game.")
-        print(f"[hint/] Press [emph]{skip_key}[/] to skip time.")
-        print(f"[hint/] Press [emph]{stop_key}[/] to end the game.")
-        print(
+        res = []
+        res.append(f"[hint/] Press [emph]{pause_key}[/] to pause/resume the game.")
+        res.append(f"[hint/] Press [emph]{skip_key}[/] to skip time.")
+        res.append(f"[hint/] Press [emph]{stop_key}[/] to end the game.")
+        res.append(
             f"[hint/] Use [emph]{display_key_1}[/] and "
             f"[emph]{display_key_2}[/] to adjust display delay."
         )
-        print(
+        res.append(
             f"[hint/] Use [emph]{knock_key_1}[/] and "
             f"[emph]{knock_key_2}[/] to adjust hit delay."
         )
-        print(
+        res.append(
             f"[hint/] Use [emph]{energy_key_1}[/] and "
             f"[emph]{energy_key_2}[/] to adjust hit strength."
         )
+        return "\n".join(res)
 
 
 @dn.datanode

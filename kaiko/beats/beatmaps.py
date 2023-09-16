@@ -1119,6 +1119,7 @@ class BeatmapScore:
     score: int = 0
     perfs: List[Performance] = dataclasses.field(default_factory=lambda: [])
     time: float = 0.0
+    freestyles: List[FreeStyleSection] = dataclasses.field(default_factory=lambda: [])
 
     def set_total_subjects(self, total_subjects):
         self.total_subjects = total_subjects
@@ -1134,6 +1135,9 @@ class BeatmapScore:
 
     def add_perf(self, perf):
         self.perfs.append(perf)
+
+    def add_freestyle(self, section):
+        self.freestyles.append(section)
 
 
 @dn.datanode
@@ -1992,7 +1996,7 @@ class Beatmap:
     settings: BeatmapSettings = dataclasses.field(default_factory=BeatmapSettings)
 
     @dn.datanode
-    def play(self, start_time, gameplay_settings=None):
+    def play(self, start_time, gameplay_settings=None, hints=None):
         self.audionode = None
         self.resources = {}
         self.total_subjects = 0
@@ -2102,7 +2106,7 @@ class Beatmap:
         with clock.tick(id(self), 0.0) as tick_node:
             event_node = dn.pipe(dn.count(0.0, 1 / tickrate), tick_node, event_node)
             event_task = dn.interval(event_node, dt=1 / tickrate)
-            with self.play_mode(mixer, detector, renderer):
+            with self.play_mode(mixer, detector, renderer, hints):
                 yield from dn.pipe(engine_task, event_task).join()
 
         self.update_devices_settings(mixer, detector, renderer)
@@ -2110,7 +2114,7 @@ class Beatmap:
         for context in self.contexts.values():
             if "<freestyle>" in context:
                 for section in context["<freestyle>"]:
-                    print(section.as_patterns_str())
+                    score.add_freestyle(section)
 
         return score
 
@@ -2252,10 +2256,13 @@ class Beatmap:
 
     @staticmethod
     @contextlib.contextmanager
-    def play_mode(mixer, detector, renderer):
+    def play_mode(mixer, detector, renderer, hints=None):
         from ..main.loggers import Logger
 
         logger = providers.get(Logger)
+
+        if hints is not None:
+            logger.print(hints)
 
         with logger.popup(renderer):
             yield
