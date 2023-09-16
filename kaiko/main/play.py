@@ -1,7 +1,6 @@
 import shutil
 import dataclasses
 import zipfile
-from inspect import cleandoc
 from collections import defaultdict
 from typing import Optional, Dict
 from pathlib import Path
@@ -108,15 +107,6 @@ class BeatmapsetDirPath(RecognizedDirPath):
 
 class BeatmapsDirPath(RecognizedDirPath, UnmovablePath):
     """The place to hold your beatmaps"""
-
-    def banner(self):
-        """
-        [color=bright_blue]█▀▀▀▀▀▀█[/]
-        [color=bright_blue]█ ▓▓▓▓ █[/] All the beatmaps will be managed here.  You should put the .osz
-        [color=bright_blue]█ ▓▓▓▓ █[/] file or the unzipped beatmapset folder here.  You can use the
-        [color=bright_blue]█▄▄▄▄▄▄█[/] command [cmd]play[/] to play the beatmap in this folder.
-        """
-        return cleandoc(self.banner.__doc__)
 
     beatmapset = as_pattern("*")(BeatmapsetDirPath)
 

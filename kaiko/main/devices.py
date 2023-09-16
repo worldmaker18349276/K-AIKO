@@ -3,7 +3,6 @@ import os
 import time
 import shutil
 import contextlib
-from inspect import cleandoc
 from pathlib import Path
 import threading
 import queue
@@ -25,17 +24,6 @@ import numpy
 
 class DevicesDirPath(RecognizedDirPath, UnmovablePath):
     """The place to manage your devices"""
-
-    def banner(self):
-        """
-        [color=bright_cyan]  ╭────────▫ ╭──────6[/]
-        [color=bright_cyan]1─╯╭─────▫ │ │ ╔════7[/] This folder doesn't contain any meaningful file, but
-        [color=bright_cyan]2──╯╭──▫─│─│─│─║────8[/] is used to manage your devices such as keyboard,
-        [color=bright_cyan]3───╯╭─┆─⬡ ⬡ ⬡ ║ ╭──9[/] terminal, audios, etc.
-        [color=bright_cyan]4────╯ └╌╌⬡ □ ─║─╯╭─0[/]
-        [color=bright_cyan]5──━━━━━━──────╨──╯  [/] Use the command [cmd]show[/] to view the details of your device.
-        """
-        return cleandoc(self.banner.__doc__)
 
 
 class DevicesSettings(cfg.Configurable):

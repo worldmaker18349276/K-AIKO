@@ -338,7 +338,7 @@ class BeatPrompt:
     def record_command(self):
         return self.input._record_command()
 
-    def print_banner(self, print_info):
+    def print_banner(self):
         file_manager = providers.get(FileManager)
         profile_manager = providers.get(ProfileManager)
         logger = providers.get(Logger)
@@ -380,17 +380,3 @@ class BeatPrompt:
         )
 
         logger.print(banner_markup, log=False)
-
-        if not print_info:
-            return
-
-        info = file_manager.current.banner()
-        if info is None:
-            return
-
-        info_markup = logger.rich.parse(info)
-        info_block = logger.rich.parse(
-            banner_settings.info_block, expand=False, slotted=True
-        )
-        info_markup = info_block(info_markup)
-        logger.print(info_markup, log=False)

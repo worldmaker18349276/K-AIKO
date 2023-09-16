@@ -56,31 +56,26 @@ def animated_print(text, kps=30.0, word_delay=0.05, pre_delay=0.5, post_delay=1.
         time.sleep(word_delay)
     time.sleep(post_delay)
 
+def hint():
+    logger = providers.get(Logger)
+    profile_manager = providers.get(ProfileManager)
+
+    input_settings = profile_manager.current.shell.input.control
+
+    confirm_key = logger.escape(input_settings.confirm_key, type="all")
+    help_key = logger.escape(input_settings.help_key, type="all")
+    tab_key = logger.escape(input_settings.autocomplete_keys[0], type="all")
+
+    hint = f"""
+    [hint/] Use headphones for the best experience.
+    [hint/] Type command and press [emph]{confirm_key}[/] to execute.
+    [hint/] Use [emph]{tab_key}[/] to autocomplete command.
+    [hint/] If you need help, press [emph]{help_key}[/].
+    """
+    return cleandoc(hint)
 
 class RootDirPath(RecognizedDirPath, UnmovablePath):
     """The workspace of KAIKO"""
-
-    def banner(self):
-        logger = providers.get(Logger)
-        profile_manager = providers.get(ProfileManager)
-
-        input_settings = profile_manager.current.shell.input.control
-
-        confirm_key = logger.escape(input_settings.confirm_key, type="all")
-        help_key = logger.escape(input_settings.help_key, type="all")
-        tab_key = logger.escape(input_settings.autocomplete_keys[0], type="all")
-
-        info = f"""
-        [color=bright_green]⠟⣡⡾⠋⣀⡰⡟⠛⢻⡆⠙⢻⡟⠓⢸⣇⣴⠟⠁⡏⣭⣭⢹[/]
-        [color=bright_green]⡾⠋⠻⣦⡉⢱⡟⠛⢻⡇⢤⣼⣧⣄⢸⡟⠙⢷⣄⣇⣛⣛⣸[/]
-
-        [hint/] Use headphones for the best experience.
-        [hint/] Type command and press [emph]{confirm_key}[/] to execute.
-        [hint/] Use [emph]{tab_key}[/] to autocomplete command.
-        [hint/] If you need help, press [emph]{help_key}[/].
-        """
-
-        return cleandoc(info)
 
     def mk(self):
         self.abs.mkdir()
@@ -102,17 +97,6 @@ class RootDirPath(RecognizedDirPath, UnmovablePath):
     class cache(RecognizedDirPath):
         """The place to cache some data for better experience"""
 
-        def banner(self):
-            """
-            [color=bright_white]┌──────┐[/]
-            [color=bright_white]│☰☲☰☱  │[/]
-            [color=bright_white]│☴☲☱☴☱ │[/] Cached data stored here will be used to improve user experience
-            [color=bright_white]│☱☴☲   │[/] and debugging, deleting them will not break the system, so feel
-            [color=bright_white]│⚌     │[/] free to manage them.
-            [color=bright_white]└──────┘[/]
-            """
-            return cleandoc(self.banner.__doc__)
-
         def mk(self):
             self.abs.mkdir()
 
@@ -130,12 +114,6 @@ class KAIKOLauncher:
 
     @classmethod
     def launch(cls):
-        # print logo
-        print(logo.format(f"v{cls.version}"), flush=True)
-        # animated_print(subtitle)
-        print(subtitle)
-        print("\n\n\n", end="", flush=True)
-
         try:
             cls.init_and_run().exhaust(dt=cls.update_interval, interruptible=True)
 
@@ -232,12 +210,23 @@ class KAIKOLauncher:
         elif len(sys.argv) != 1:
             raise ValueError("unknown arguments: " + " ".join(sys.argv[1:]))
 
+        # print logo
+        self.print_logo()
+
         # load bgm
         bgm_task = bgm_controller.start()
 
         # prompt
         repl_task = self.repl(prompt)
         yield from dn.pipe(repl_task, bgm_task).join()
+
+    def print_logo(self):
+        logger = providers.get(Logger)
+        logger.print(logo.format(f"v{self.version}"), markup=False, flush=True)
+        # animated_print(subtitle)
+        logger.print(subtitle, markup=False)
+        logger.print("\n\n", end="", markup=False, flush=True)
+        logger.print(hint())
 
     @dn.datanode
     def repl(self, prompt):
@@ -254,7 +243,7 @@ class KAIKOLauncher:
 
         while True:
             logger.print()
-            prompt.print_banner(prev_dir != file_manager.current)
+            prompt.print_banner()
             prev_dir = file_manager.current
 
             try:
