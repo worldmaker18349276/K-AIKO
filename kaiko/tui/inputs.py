@@ -1222,7 +1222,7 @@ class Input:
             self.ask_for_hint(index)
             return False
 
-        return self.hint_manager.popup_hint()
+        return False
 
     @locked
     @onstate("EDIT")
